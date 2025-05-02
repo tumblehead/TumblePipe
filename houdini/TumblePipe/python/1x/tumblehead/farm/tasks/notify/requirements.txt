@@ -1,0 +1,5 @@
+numpy
+openexr
+opencolorio
+pillow
+discord.py

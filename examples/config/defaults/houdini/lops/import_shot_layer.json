@@ -1,0 +1,11 @@
+{
+    "departments": [
+        "layout",
+        "environment",
+        "animation",
+        "crowd",
+        "effects",
+        "cfx",
+        "light"
+    ]
+}

@@ -1,0 +1,75 @@
+[PythonVersion]
+Type=string
+Label=Python Version
+Category=Command Script Options
+CategoryOrder=0
+Index=0
+Description=The Python Version to use.
+Required=false
+DisableIfBlank=false
+Default=
+
+[ScriptFile]
+Type=filename
+Label=Script File
+Category=Command Script Options
+CategoryOrder=0
+Index=0
+Description=The script file to execute.
+Required=true
+DisableIfBlank=false
+Default=
+
+[EnvironmentFile]
+Type=filename
+Label=Environment File
+Category=Command Script Options
+CategoryOrder=0
+Index=0
+Description=The environment file to execute under.
+Required=false
+DisableIfBlank=false
+Default=
+
+[RequirementsFile]
+Type=filename
+Label=Requirements File
+Category=Command Script Options
+CategoryOrder=0
+Index=0
+Description=The requirements file to execute under.
+Required=false
+DisableIfBlank=false
+Default=
+
+[Arguments]
+Type=string
+Label=Arguments
+Category=Command Script Options
+CategoryOrder=0
+Index=1
+Description=The command arguments to use
+Required=false
+DisableIfBlank=true
+
+[StartupDirectory]
+Type=folder
+Label=Shell Startup Directory
+Category=Command Script Options
+CategoryOrder=0
+Index=2
+Description=The directory to start the command script in (leave blank to use default).
+Required=true
+DisableIfBlank=false
+Default=
+
+[SingleFramesOnly]
+Type=boolean
+Label=Single Frames Only
+Category=Command Script Options
+CategoryOrder=0
+Index=3
+Description=If enabled, the plugin will only render one frame at a time even if a single task contains a chunk of frames.
+Required=false
+DisableIfBlank=false
+Default=true

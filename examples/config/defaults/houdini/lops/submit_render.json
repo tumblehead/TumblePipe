@@ -1,0 +1,20 @@
+{
+    "departments": {
+        "shot": [
+            "layout",
+            "environment",
+            "animation",
+            "crowd",
+            "effects",
+            "cfx",
+            "light"
+        ],
+        "render": [
+            "render"
+        ]
+    },
+    "pools": [
+        "rnd",
+        "test"
+    ]
+}

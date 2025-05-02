@@ -1,0 +1,28 @@
+{
+    "preset": "medium",
+    "load_preset": "0",
+    "save_preset": "0",
+    "unlock_save": true,
+    "camera": "/cameras/shotCam/shotCam",
+    "resolution": [
+        1920,
+        1080
+    ],
+    "overscan": [
+        0.0,
+        0.0
+    ],
+    "pathtracedsamples": 128,
+    "diffuselimit": 2.0,
+    "reflectionlimit": 4.0,
+    "refractionlimit": 4.0,
+    "volumelimit": 0.0,
+    "ssslimit": 1.0,
+    "enabledof": true,
+    "enablemblur": true,
+    "enabledenoising": true,
+    "usedicingcamera": false,
+    "dicingframe": 1001,
+    "dicingfocallength": 50.0,
+    "dicingqualityscale": 1.0
+}
