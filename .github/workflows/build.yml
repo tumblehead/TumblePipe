@@ -47,17 +47,15 @@ jobs:
         working-directory: './houdini/TumblePipe/python3.${{ matrix.python-version }}libs/external/${{ matrix.platform }}'
         run: uv pip install --no-cache-dir --upgrade -r ../requirements.txt
 
-      - name: Build Zip
-        uses: byteever/action-build-zip@master
-        with:
-          filename: TumblePipe_${{ matrix.platform }}_py3${{ matrix.python-version }}.zip
+      - name: Build Archive
+        run: git archive --format=zip -o TumblePipe_${{ matrix.platform }}_py3${{ matrix.python-version }}.zip HEAD
       
       - name: Upload Artifact
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}-py3${{ matrix.python-version }}
-          path: dist/TumblePipe_${{ matrix.platform }}_py3${{ matrix.python-version }}.zip
+          path: TumblePipe_${{ matrix.platform }}_py3${{ matrix.python-version }}.zip
   
   release:
     name: Release
