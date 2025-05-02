@@ -48,7 +48,7 @@ jobs:
         run: uv pip install --no-cache-dir --upgrade -r ../requirements.txt
 
       - name: Build Zip
-        uses: byteever/action-build-zip@v1
+        uses: byteever/action-build-zip@master
         with:
           filename: TumblePipe_${{ matrix.platform }}_py3${{ matrix.python-version }}.zip
       
