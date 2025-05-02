@@ -66,9 +66,10 @@ jobs:
 
       - name: Download Archives
         uses: actions/download-artifact@v4
+        with:
+          merge: true
 
       - name: Release Archives
         uses: softprops/action-gh-release@v2
         with:
           files: '*.zip'
-          merge: true
