@@ -48,14 +48,14 @@ jobs:
         run: uv pip install --no-cache-dir --upgrade -r ../requirements.txt
 
       - name: Build Archive
-        run: git archive --format=zip -o TumblePipe_${{ matrix.platform }}_py3${{ matrix.python-version }}.zip HEAD
+        run: git archive --format=zip -o TumblePipe_${{ matrix.os }}_py3${{ matrix.python-version }}.zip HEAD
       
       - name: Upload Archive
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.platform }}-py3${{ matrix.python-version }}
-          path: TumblePipe_${{ matrix.platform }}_py3${{ matrix.python-version }}.zip
+          name: ${{ matrix.os }}-py3${{ matrix.python-version }}
+          path: TumblePipe_${{ matrix.os }}_py3${{ matrix.python-version }}.zip
   
   release:
     name: Release
