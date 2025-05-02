@@ -1,0 +1,5 @@
+.github/
+dist/
+__pycache__/
+.distignore
+.gitignore

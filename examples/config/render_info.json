@@ -1,0 +1,38 @@
+{
+    "render": {
+        "asset": [
+            "model",
+            "lookdev"
+        ],
+        "kit": [
+            "general"
+        ],
+        "shot": [
+            "layout",
+            "environment",
+            "animation",
+            "crowd",
+            "effects",
+            "cfx",
+            "light"
+        ]
+    },
+    "denoise": {
+        "asset": [],
+        "kit": [],
+        "shot": []
+    },
+    "wip": {
+        "asset": [
+            "model"
+        ],
+        "kit": [
+            "general"
+        ],
+        "shot": [
+            "layout",
+            "animation",
+            "light"
+        ]
+    }
+}
