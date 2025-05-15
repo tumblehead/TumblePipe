@@ -5,12 +5,12 @@ from enum import Enum
 from qtpy.QtCore import (
     Qt,
     Signal,
-    Property
+    Property,
+    QSize
 )
 from qtpy.QtGui import (
     QPainter,
     QPainterPath,
-    QPixmap,
     QCursor,
     QColor,
     QBrush,
@@ -18,12 +18,8 @@ from qtpy.QtGui import (
 )
 from qtpy.QtWidgets import (
     QWidget,
-    QDialog,
     QStackedLayout,
-    QHBoxLayout,
-    QSizePolicy,
-    QGraphicsBlurEffect,
-    QGraphicsPixmapItem
+    QSizePolicy
 )
 
 from tumblehead.ui import style
@@ -49,17 +45,29 @@ class Dimension:
 class Size:
     width: Dimension = field(default_factory = Dimension)
     height: Dimension = field(default_factory = Dimension)
-    spacing: int = 0
+    spacing: int = style.SPACING_SIZE
+
+    def get_width(self):
+        return dimension_size(self.width.value, self.spacing)
+
+    def get_height(self):
+        return dimension_size(self.height.value, self.spacing)
 
     def apply(self, card: QWidget):
         width = dimension_size(self.width.value, self.spacing)
         height = dimension_size(self.height.value, self.spacing)
         card.setMinimumSize(width, height)
-        if not self.width.expanding: card.setMaximumWidth(width)
-        if not self.height.expanding: card.setMaximumHeight(height)
+        if not self.width.expanding:
+            card.setMaximumWidth(width)
+        if not self.height.expanding:
+            card.setMaximumHeight(height)
         card.setSizePolicy(
-            QSizePolicy.Expanding if self.width.expanding else QSizePolicy.Fixed,
-            QSizePolicy.Expanding if self.height.expanding else QSizePolicy.Fixed
+            QSizePolicy.MinimumExpanding
+            if self.width.expanding else
+            QSizePolicy.Fixed,
+            QSizePolicy.MinimumExpanding
+            if self.height.expanding else
+            QSizePolicy.Fixed
         )
 
 ##############################################################################
@@ -616,6 +624,13 @@ class Card(QWidget):
         self.__selected = selected
         self.update()
     
+    def sizeHint(self):
+        content_hint = self.__content.sizeHint()
+        return QSize(
+            max(self.__size.get_width(), content_hint.width()),
+            max(self.__size.get_height(), content_hint.height())
+        )
+    
     def paint_background(self, painter, shape):
         painter.setBrush(self.background)
         painter.drawPath(shape)
@@ -705,158 +720,18 @@ class Card(QWidget):
         # Accept the event
         event.accept()
 
+        # Define the painter shape
+        shape = self.get_shape()
+
         # Create the painter
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.HighQualityAntialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
+        painter.setClipPath(shape)
         painter.setBrush(Qt.NoBrush)
         painter.setPen(Qt.NoPen)
-
-        # Define the painter shape
-        shape = self.get_shape()
 
         # Paint the card
         self.paint(painter, shape)
-
-class _DropShadow(QWidget):
-    def __init__(self,
-        content,
-        parent = None
-        ):
-        super().__init__(parent)
-
-        # Settings
-        self.setObjectName('ModalCard::_DropShadow')
-        self.setAttribute(Qt.WA_NoSystemBackground, True)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-
-        # Members
-        self._content = content
-    
-    def paintEvent(self, event):
-
-        # Prepare the buffer
-        shape = self._content.get_shape()
-        shadow_rect = self.rect()
-        shadow_pixmap = QPixmap(
-            shadow_rect.width(),
-            shadow_rect.height()
-        )
-        shadow_pixmap.fill(Qt.transparent)
-
-        # Paint the drop shadow
-        shadow_painter = QPainter(shadow_pixmap)
-        shadow_painter.setRenderHint(QPainter.Antialiasing, True)
-        shadow_painter.setRenderHint(QPainter.HighQualityAntialiasing, True)
-        shadow_painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
-        shadow_painter.setRenderHint(QPainter.TextAntialiasing, True)
-        shadow_painter.setPen(Qt.NoPen)
-        shadow_painter.setBrush(style.COLOR_BLACK)
-        shadow_painter.drawPath(shape)
-
-        # Blur the drop shadow
-        shadow_item = QGraphicsPixmapItem(shadow_pixmap)
-        shadow_blur = QGraphicsBlurEffect()
-        shadow_blur.setBlurHints(QGraphicsBlurEffect.QualityHint)
-        shadow_blur.setBlurRadius(style.SHADOW_DISTANCE)
-        shadow_item.setGraphicsEffect(shadow_blur)
-
-        # Draw the drop shadow
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setRenderHint(QPainter.HighQualityAntialiasing, True)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
-        painter.setRenderHint(QPainter.TextAntialiasing, True)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(Qt.NoBrush)
-        painter.translate(
-            style.SHADOW_DIRECTION[0] * style.SHADOW_DISTANCE,
-            style.SHADOW_DIRECTION[1] * style.SHADOW_DISTANCE
-        )
-        painter.drawPixmap(
-            shadow_rect,
-            shadow_pixmap
-        )
-
-        # Render the content card
-        super().paintEvent(event)
-
-class ModalCard(QDialog):
-    def __init__(
-        self: 'ModalCard',
-        size: Size = Size(),
-        radius: int = style.RADIUS_SIZE,
-        border: Optional[Border] = None,
-        color: QColor = style.COLOR_NONE,
-        tooltip: Optional[str] = None,
-        focusable: bool = False,
-        selectable: bool = False,
-        interaction: Optional[Interaction] = None,
-        parent: Optional[QWidget] = None
-        ):
-        super().__init__(parent)
-
-        # Settings
-        self.setObjectName('Card')
-        self.setAttribute(Qt.WA_NoSystemBackground, True)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setWindowFlags(
-            Qt.NoDropShadowWindowHint |
-            Qt.FramelessWindowHint |
-            Qt.Popup
-        )
-
-        # Create the main layout
-        self.__layout = QStackedLayout(self)
-        self.__layout.setContentsMargins(0, 0, 0, 0)
-        self.__layout.setStackingMode(QStackedLayout.StackAll)
-
-        # Create the main content card
-        self.__content = Card(
-            size = size,
-            radius = radius,
-            border = border,
-            color = color,
-            tooltip = tooltip,
-            focusable = focusable,
-            selectable = selectable,
-            interaction = interaction,
-            parent = self
-        )
-
-        # Create the drop shadow
-        self.__shadow = _DropShadow(
-            content = self.__content
-        )
-
-        # Set the layout
-        self.__layout.addWidget(self.__shadow)
-        self.__layout.addWidget(self.__content)
-        self.setLayout(self.__layout)
-    
-    def set_content(self, content):
-        if self.__content.get_content() == content: return
-        self.__content.set_content(content)
-    
-    def execute(self, location):
-        self.move(location)
-        self.setFocus()
-        self.exec_()
-    
-    def focusOutEvent(self, event):
-        self.close()
-    
-    def _update_shadow_geometry(self):
-        rect = self.__content.rect()
-        self.__shadow.setGeometry(rect.adjusted(
-            0, 0,
-            style.SHADOW_DISTANCE * 2,
-            style.SHADOW_DISTANCE * 2
-        ))
-        self.__shadow.update()
-    
-    def moveEvent(self, event):
-        self._update_shadow_geometry()
-        super().moveEvent(event)

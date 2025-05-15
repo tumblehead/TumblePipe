@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import sys
+import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -133,7 +134,8 @@ def build(config, paths, staging_path):
         TH_USER = get_user_name(),
         TH_CONFIG_PATH = path_str(to_wsl_path(api.CONFIG_PATH)),
         TH_PROJECT_PATH = path_str(to_wsl_path(api.PROJECT_PATH)),
-        TH_PIPELINE_PATH = path_str(to_wsl_path(api.PIPELINE_PATH))
+        TH_PIPELINE_PATH = path_str(to_wsl_path(api.PIPELINE_PATH)),
+        OCIO = path_str(to_wsl_path(Path(os.environ['OCIO'])))
     ))
     task.output_paths.append(to_windows_path(receipt_path))
     return task

@@ -91,6 +91,9 @@ def _env(key):
     assert key in os.environ, f'{key} environment variable not set'
     return fix_path(Path(os.environ[key]))
 
+def is_dev():
+    return os.environ.get('TH_DEV', '0') == '1'
+
 def get_project_name():
     project_path = _env('TH_PROJECT_PATH')
     return project_path.name

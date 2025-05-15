@@ -3,6 +3,7 @@ from pathlib import Path
 import logging
 import shutil
 import sys
+import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -17,7 +18,7 @@ from tumblehead.api import (
 )
 from tumblehead.util.io import load_json
 from tumblehead.config import BlockRange
-from tumblehead.apps import mp4
+from tumblehead.apps import exr, mp4
 
 api = default_client()
 
@@ -45,6 +46,12 @@ def main(
     output_paths: list[Path]
     ) -> int:
 
+    # Check that OCIO has been set
+    assert os.environ.get('OCIO') is not None, (
+        'OCIO environment variable not set. '
+        'Please set it to the OCIO config file.'
+    )
+
     # Find output paths that are not generated
     missing_output_paths = [
         output_path
@@ -60,11 +67,22 @@ def main(
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
+
+        # Convert EXRs to JPGs
+        temp_input_path = temp_path / 'temp.*.jpg'
+        temp_input_path.parent.mkdir(parents=True, exist_ok=True)
+        for frame_index in render_range:
+            input_frame_path = _get_frame_path(input_path, frame_index)
+            temp_frame_path = _get_frame_path(temp_input_path, frame_index)
+            exr.to_jpeg(
+                to_wsl_path(input_frame_path),
+                temp_frame_path
+            )
     
         # Encode to mp4
         temp_output_path = temp_path / 'temp.mp4'
         mp4.from_jpg(
-            to_wsl_path(input_path),
+            to_wsl_path(temp_input_path),
             render_range,
             24,
             temp_output_path
@@ -91,6 +109,9 @@ def main(
 
 """
 config = {
+    'first_frame': 1,
+    'last_frame': 100,
+    'step_size': 1,
     'input_path': 'path/to/input.####.exr',
     'output_paths': [
         'path/to/output1.mp4',
@@ -100,6 +121,13 @@ config = {
 """
 
 def _is_valid_config(config):
+    if not isinstance(config, dict): return False
+    if 'first_frame' not in config: return False
+    if not isinstance(config['first_frame'], int): return False
+    if 'last_frame' not in config: return False
+    if not isinstance(config['last_frame'], int): return False
+    if 'step_size' not in config: return False
+    if not isinstance(config['step_size'], int): return False
     if 'input_path' not in config: return False
     if not isinstance(config['input_path'], str): return False
     if 'output_paths' not in config: return False
@@ -125,11 +153,12 @@ def cli():
         return _error(f'Invalid config file: {config_path}')
 
     # Get the render range
-    first_frame = args.first_frame
-    last_frame = args.last_frame
+    first_frame = config['first_frame']
+    last_frame = config['last_frame']
+    step_size = config['step_size']
     if first_frame > last_frame:
         return _error('Invalid render range')
-    render_range = BlockRange(first_frame, last_frame)
+    render_range = BlockRange(first_frame, last_frame, step_size)
     
     # Check the input path
     input_path = _fix_frame_pattern(Path(config['input_path']), '*')

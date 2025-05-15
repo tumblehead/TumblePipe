@@ -5,10 +5,13 @@ import datetime as dt
 from qtpy.QtCore import Qt, Signal, QEvent
 from qtpy.QtGui import QStandardItemModel, QStandardItem, QBrush
 from qtpy import QtWidgets
+
+import voptoolutils
 from hou import qt as hqt
 import hou
 
 from tumblehead.api import (
+    is_dev,
     path_str,
     default_client,
     get_user_name
@@ -42,7 +45,8 @@ from tumblehead.pipe.houdini.lops import (
     import_render_layer,
     render_vars,
     render_settings,
-    lookdev_studio
+    lookdev_studio,
+    light_preview
 )
 from tumblehead.pipe.houdini.sops import (
     export_rig,
@@ -446,6 +450,7 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         self._selection = None
 
         # Settings
+        self.setObjectName('WorkspaceBrowser')
         self.setMinimumHeight(0)
 
         # Set the layout
@@ -821,6 +826,7 @@ class DepartmentBrowser(QtWidgets.QWidget):
         self._buttons = dict()
 
         # Settings
+        self.setObjectName('DepartmentBrowser')
         self.setMinimumHeight(0)
 
         # Create the outer layout
@@ -1721,6 +1727,7 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._auto_settings = AUTO_SETTINGS_DEFAULT.copy()
 
         # Settings
+        self.setObjectName('ProjectBrowser')
         self.setMinimumHeight(0)
 
         # Set the grid layout
@@ -1734,7 +1741,9 @@ class ProjectBrowser(QtWidgets.QWidget):
         layout.setColumnStretch(2, 1)
 
         # Create the workspace label
-        workspace_label = QtWidgets.QLabel('Workspace')
+        workspace_label = QtWidgets.QLabel(
+            'Workspace DEV' if is_dev() else 'Workspace'
+        )
         workspace_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(workspace_label, 0, 0)
 
@@ -2358,10 +2367,11 @@ class ProjectBrowser(QtWidgets.QWidget):
                     # Create the SOP create node
                     sop_node = scene_node.createNode('sopcreate', 'create_model')
                     sop_node.parm('pathprefix').set(f'/{category_name}/{asset_name}/geo/')
+                    prev_node = sop_node
                     
                     # Create the export node
                     export_node = export_asset_layer.create(scene_node, 'export_model')
-                    export_node.native().setInput(0, sop_node)
+                    export_node.setInput(0, prev_node)
                 
                 case 'blendshape':
 
@@ -2393,7 +2403,7 @@ class ProjectBrowser(QtWidgets.QWidget):
 
                     # Create the SOP cache node
                     sop_cache_node = cache.create(sop_dive_node, 'cache')
-                    sop_cache_node.native().setInput(0, sop_goz_import_node)
+                    sop_cache_node.setInput(0, sop_goz_import_node)
 
                     # Create the SOP name node
                     sop_name_node = sop_dive_node.createNode('name', 'name')
@@ -2413,22 +2423,62 @@ class ProjectBrowser(QtWidgets.QWidget):
 
                     # Create the export node
                     export_node = export_asset_layer.create(scene_node, 'export_blendshapes')
-                    export_node.native().setInput(0, sop_node)
+                    export_node.setInput(0, sop_node)
 
                 case 'lookdev':
 
                     # Create the import model node
                     import_node = import_asset_layer.create(scene_node, 'import_model')
                     import_node.set_department_name('model')
+                    prev_node = import_node.native()
+
+                    # Create the material library node
+                    library_node = scene_node.createNode('materiallibrary', 'material_library')
+                    library_node.parm('matpathprefix').set(
+                        f'/{category_name}'
+                        f'/{asset_name}'
+                        '/mat'
+                        '/'
+                    )
+                    library_node.setInput(0, prev_node)
+                    prev_node = library_node
+
+                    # Create the preview material
+                    preview_material = voptoolutils._setupMtlXBuilderSubnet(
+                        destination_node = library_node,
+                        name = 'Preview_MAT',
+                        mask = voptoolutils.KARMAMTLX_TAB_MASK,
+                        folder_label = 'Karma Material Builder', 
+                        render_context = 'kma'
+                    )
+                    surface = preview_material.node('mtlxstandard_surface')
+                    geo_color = preview_material.createNode('mtlxgeomcolor', 'geometry_color')
+                    surface.setInput(surface.inputIndex('base_color'), geo_color)
+                    surface.parm('specular_roughness').set(0.8)
+
+                    # Create the material assign node
+                    assign_node = scene_node.createNode('assignmaterial', 'material_assign')
+                    assign_node.parm('nummaterials').set(1)
+                    assign_node.parm('primpattern1').set('%type:Mesh ^%instanceproxy()')
+                    assign_node.parm('matspecpath1').set(
+                        f'/{category_name}'
+                        f'/{asset_name}'
+                        '/mat'
+                        '/Preview_MAT'
+                    )
+                    assign_node.parm('bindpurpose1').set('preview')
+                    assign_node.setInput(0, prev_node)
+                    prev_node = assign_node
 
                     # Create the lookdev studio node
                     studio_node = lookdev_studio.create(scene_node, 'lookdev_studio')
                     studio_node.parm('primpattern').set(f'/{category_name}/{asset_name}')
-                    studio_node.setInput(0, import_node.native())
+                    studio_node.setInput(0, prev_node)
+                    prev_node = studio_node.native()
                     
                     # Create the export node
                     export_node = export_asset_layer.create(scene_node, 'export_lookdev')
-                    export_node.native().setInput(0, studio_node.native(), 1)
+                    export_node.setInput(0, prev_node, 1)
 
                 case 'rig':
                     
@@ -2446,19 +2496,36 @@ class ProjectBrowser(QtWidgets.QWidget):
                     sop_node.parm('unpacktopolygons').set(1)
                     sop_node.setInput(0, import_model_node.native())
 
+                    # Create the export rig node
+                    dive_node = sop_node.node('modify/modify')
+                    dive_input_node = dive_node.indirectInputs()[0]
+                    export_node = export_rig.create(dive_node, 'export_rig')
+                    export_node.setInput(0, dive_input_node)
+                    dive_node.layoutChildren()
+
                 case _: return
 
         def _initialize_shot_scene(sequence_name, shot_name, department_name):
             match department_name:
                 case 'layout':
+
+                    # Create the import node
                     import_node = import_assets.create(scene_node, 'import_assets')
+                    prev_node = import_node.native()
+
+                    # Create the export node
                     export_node = export_shot_layer.create(scene_node, 'export_shot')
-                    export_node.native().setInput(0, import_node.native())
+                    export_node.setInput(0, prev_node)
 
                 case 'environment':
+
+                    # Create the import node
                     import_node = build_shot.create(scene_node, 'import_shot')
+                    prev_node = import_node.native()
+                    
+                    # Create the export node
                     export_node = export_shot_layer.create(scene_node, 'export_shot')
-                    export_node.native().setInput(0, import_node.native())
+                    export_node.setInput(0, prev_node)
 
                 case 'animation':
                     
@@ -2475,7 +2542,7 @@ class ProjectBrowser(QtWidgets.QWidget):
 
                     # Create the animation node
                     animate_node = animate.create(scene_node, 'animate_shot')
-                    animate_node.native().setInput(0, import_node.native())
+                    animate_node.setInput(0, import_node.native())
                     inner_animate_node = animate_node.native().node('anim/sopnet/create')
                     output_animate_node = inner_animate_node.node('output0')
 
@@ -2495,42 +2562,76 @@ class ProjectBrowser(QtWidgets.QWidget):
 
                     # Create the playblast node
                     playblast_node = playblast.create(inner_animate_node, 'playblast')
-                    playblast_node.native().setInput(0, invoke_scene_node)
+                    playblast_node.setInput(0, invoke_scene_node)
 
                     # Layout the dive nodes
                     inner_animate_node.layoutChildren()
 
                     # Create the export node
                     export_node = export_shot_layer.create(scene_node, 'export_shot')
-                    export_node.native().setInput(0, animate_node.native())
+                    export_node.setInput(0, animate_node.native())
 
                 case 'crowd':
+
+                    # Create the import node
                     import_node = build_shot.create(scene_node, 'import_shot')
+                    prev_node = import_node.native()
+
+                    # Create the export node
                     export_node = export_shot_layer.create(scene_node, 'export_shot')
-                    export_node.native().setInput(0, import_node.native())
+                    export_node.setInput(0, prev_node)
 
                 case 'effects':
+
+                    # Create the import node
                     import_node = build_shot.create(scene_node, 'import_shot')
+                    prev_node = import_node.native()
+
+                    # Create the export node
                     export_node = export_shot_layer.create(scene_node, 'export_shot')
-                    export_node.native().setInput(0, import_node.native())
+                    export_node.setInput(0, prev_node)
 
                 case 'cfx':
+
+                    # Create the import node
                     import_node = build_shot.create(scene_node, 'import_shot')
+                    prev_node = import_node.native()
+
+                    # Create the export node
                     export_node = export_shot_layer.create(scene_node, 'export_shot')
-                    export_node.native().setInput(0, import_node.native())
+                    export_node.setInput(0, prev_node)
 
                 case 'light':
+                    
+                    # Create the import node
                     import_node = build_shot.create(scene_node, 'import_shot')
+                    prev_node = import_node.native()
+
+                    # Create the preview node
+                    preview_node = light_preview.create(scene_node, 'light_preview')
+                    preview_node.setInput(0, prev_node)
+                    prev_node = preview_node.native()
+
+                    # Create the render vars node
                     render_vars_node = render_vars.create(scene_node, 'render_vars')
+                    render_vars_node.setInput(0, prev_node, 1)
+                    prev_node = render_vars_node.native()
+
+                    # Create the render settings node
                     render_settings_node = render_settings.create(scene_node, 'render_settings')
+                    render_settings_node.setInput(0, prev_node)
+                    prev_node = render_settings_node.native()
+
+                    # Create the export node
                     export_node = export_shot_layer.create(scene_node, 'export_shot')
-                    render_vars_node.setInput(0, import_node.native())
-                    render_settings_node.native().setInput(0, render_vars_node)
-                    export_node.native().setInput(0, render_settings_node.native())
+                    export_node.setInput(0, prev_node)
+                    prev_node = export_node.native()
+                    
+                    # Create the render layer nodes
                     render_layer_names = api.config.list_render_layer_names(sequence_name, shot_name)
                     for render_layer_name in render_layer_names:
                         render_layer_node = export_render_layer.create(scene_node, f'export_{render_layer_name}')
-                        render_layer_node.native().setInput(0, export_node.native())
+                        render_layer_node.setInput(0, prev_node)
 
                 case 'composite':
                     cop_node = scene_node.createNode('copnet', 'composite_shot')
@@ -2547,14 +2648,11 @@ class ProjectBrowser(QtWidgets.QWidget):
         # Initialize the scene
         match self._context:
             case AssetContext(department_name, category_name, asset_name):
-                try: _initialize_asset_scene(category_name, asset_name, department_name)
-                except: pass
+                _initialize_asset_scene(category_name, asset_name, department_name)
             case ShotContext(department_name, sequence_name, shot_name):
-                try: _initialize_shot_scene(sequence_name, shot_name, department_name)
-                except: pass
+                _initialize_shot_scene(sequence_name, shot_name, department_name)
             case KitContext(department_name, category_name, kit_name):
-                try: _initialize_kit_scene(category_name, kit_name, department_name)
-                except: pass
+                _initialize_kit_scene(category_name, kit_name, department_name)
             case None: pass
         
         # Layout the nodes

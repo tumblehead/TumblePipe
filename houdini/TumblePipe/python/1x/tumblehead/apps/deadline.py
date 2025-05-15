@@ -432,7 +432,14 @@ class Deadline:
     
     def maintenance(self):
         root_path = Path(__file__).parent.parent
-        task_path = root_path / 'tasks' / 'cleanup' / 'task.py'
+        task_path = (
+            root_path /
+            'farm' /
+            'jobs' /
+            'general' /
+            'cleanup' /
+            'task.py'
+        )
         print(app.call([
             str(DEADLINE_PATH),
             '-SubmitCommandLineJob',

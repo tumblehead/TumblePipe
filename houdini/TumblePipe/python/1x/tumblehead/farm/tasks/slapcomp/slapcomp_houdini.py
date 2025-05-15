@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import os
 
 import hou
 
@@ -18,6 +19,10 @@ def _error(msg):
     print(f'ERROR: {msg}')
     return 1
 
+def _expect(value, message):
+    if value is None: raise ValueError(message)
+    return value
+
 def _fix_frame_pattern(frame_path, expected_frame_pattern):
     frame_name, frame_pattern, frame_suffix = frame_path.name.rsplit('.', 2)
     if frame_pattern == expected_frame_pattern: return frame_path
@@ -32,6 +37,12 @@ def main(
     input_paths: dict[str, dict[str, Path]],
     output_path: Path
     ):
+
+    # Check that OCIO has been set
+    assert os.environ.get('OCIO') is not None, (
+        'OCIO environment variable not set. '
+        'Please set it to the OCIO config file.'
+    )
 
     # Get the layer names
     layer_names = list(input_paths.keys())
@@ -50,6 +61,21 @@ def main(
         for layer_name, aov_paths in input_paths.items()
     }
 
+    # Map to export format
+    layer_data = {
+        layer_name: {
+            aov_name: dict(
+                path = aov.get_aov_frame_path('$F4'),
+                render_range = _expect(
+                    aov.get_frame_range(),
+                    f'Could not find frame range for {aov_name}'
+                )
+            )
+            for aov_name, aov in aovs.items()
+        }
+        for layer_name, aovs in layer_aovs.items()
+    }
+
     # Create slapcomp node
     scene = hou.node('/stage')
     cops_node = scene.createNode('copnet', 'cops')
@@ -60,7 +86,7 @@ def main(
     slapcomp_node._export(
         render_range,
         layer_names,
-        layer_aovs,
+        layer_data,
         _fix_frame_pattern(output_path, '$F4')
     )
 
@@ -71,6 +97,7 @@ def main(
 config = {
     'first_frame': 1,
     'last_frame': 100,
+    'step_size': 1,
     'input_paths': {
         'layer1': {
             'diffuse': 'path/to/diffuse.####.exr',
@@ -81,7 +108,7 @@ config = {
             'depth': 'path/to/depth.####.exr'
         }
     },
-    'output_path': 'path/to/output.####.jpg'
+    'output_path': 'path/to/output.####.exr'
 }
 """
 
@@ -98,6 +125,8 @@ def _is_valid_config(config):
     if not isinstance(config['first_frame'], int): return False
     if 'last_frame' not in config: return False
     if not isinstance(config['last_frame'], int): return False
+    if 'step_size' not in config: return False
+    if not isinstance(config['step_size'], int): return False
     if 'input_paths' not in config: return False
     if not isinstance(config['input_paths'], dict): return False
     for layer_name, layer in config['input_paths'].items():
@@ -129,7 +158,8 @@ def cli():
     # Get the render range
     render_range = BlockRange(
         config['first_frame'],
-        config['last_frame']
+        config['last_frame'],
+        config['step_size']
     )
 
     # Get the input paths

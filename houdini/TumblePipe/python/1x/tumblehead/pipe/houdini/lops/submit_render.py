@@ -357,43 +357,31 @@ class SubmitRender(ns.Node):
         samples = self.get_samples()
         aov_names = self.get_aov_names()
         slapcomp_path = self.get_slapcomp_path()
+        frame_range = self.get_frame_range()
+        render_range = frame_range.full_range()
+        step_size = self.get_step_size()
+        batch_size = self.get_batch_size()
 
         # Prepare tasks
         tasks = dict()
 
         # Add the stage task
-        frame_range = self.get_frame_range()
-        render_range = frame_range.full_range()
         tasks['stage'] = dict(
-            first_frame = render_range.first_frame,
-            last_frame = render_range.last_frame,
             channel_name = 'exports'
         )
 
         # Maybe add partial render task
         if self.get_submit_partial():
-            first_frame, middle_frame, last_frame = self.get_partial_frames()
             denoise = self.get_partial_denoise()
             tasks['partial_render'] = dict(
-                first_frame = first_frame,
-                middle_frame = middle_frame,
-                last_frame = last_frame,
                 denoise = denoise,
                 channel_name = 'previews'
             )
         
         # Maybe add full render task
         if self.get_submit_full():
-            frame_range = self.get_frame_range()
-            render_range = frame_range.full_range()
-            step_size = self.get_step_size()
-            batch_size = self.get_batch_size()
             denoise = self.get_full_denoise()
             tasks['full_render'] = dict(
-                first_frame = render_range.first_frame,
-                last_frame = render_range.last_frame,
-                step_size = step_size,
-                batch_size = batch_size,
                 denoise = denoise,
                 channel_name = 'renders'
             )
@@ -443,7 +431,11 @@ class SubmitRender(ns.Node):
                     slapcomp_path = (
                         None if relative_slapcomp_path is None else
                         path_str(relative_slapcomp_path)
-                    )
+                    ),
+                    first_frame = render_range.first_frame,
+                    last_frame = render_range.last_frame,
+                    step_size = step_size,
+                    batch_size = batch_size,
                 ),
                 tasks = tasks
             ), {

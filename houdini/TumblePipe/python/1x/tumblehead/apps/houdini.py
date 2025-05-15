@@ -7,6 +7,7 @@ from tumblehead.api import path_str, to_windows_path
 from tumblehead.util import ipc
 from tumblehead.apps import app
 
+DEFAULT_HOUDINI_VERSION = '20.5.550'
 RUNNER_SCRIPT_PATH = Path(__file__).parent / 'houdini_runner.py'
 
 def _is_valid_version(version: str) -> bool:
@@ -36,11 +37,14 @@ def _scan_path_for_versions(root_path) -> dict[str, dict[str, Path]]:
         bin_path = houdini_version / 'bin'
         hython_path = bin_path / 'hython.exe'
         husk_path = bin_path / 'husk.exe'
+        iconvert_path = bin_path / 'iconvert.exe'
         if not hython_path.exists(): continue
         if not husk_path.exists(): continue
+        if not iconvert_path.exists(): continue
         result[version] = dict(
             hython = hython_path,
-            husk = husk_path
+            husk = husk_path,
+            iconvert = iconvert_path
         )
     return result
 
@@ -82,7 +86,7 @@ def _get_version(
     return _find_appropriate_version(version_name, versions)
 
 class Hython:
-    def __init__(self, version_name: str):
+    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
     
         # Check if hython is available
         _versions = _scan_drives_for_versions()
@@ -111,11 +115,14 @@ class Hython:
         
         port = ipc.free_port()
         async with ipc.Server('localhost', port, _from_runner):
-            return await app.run_async([
-                path_str(self._hython),
-                path_str(to_windows_path(RUNNER_SCRIPT_PATH)),
-                str(port)
-            ], env = env)
+            return await app.run_async(
+                [
+                    path_str(self._hython),
+                    path_str(to_windows_path(RUNNER_SCRIPT_PATH)),
+                    str(port)
+                ],
+                env = env
+            )
 
     def run(self,
         script_path: Path,
@@ -129,7 +136,7 @@ class Hython:
         )
 
 class Husk:
-    def __init__(self, version_name: str):
+    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
 
         # Check if husk is available
         _versions = _scan_drives_for_versions()
@@ -144,18 +151,63 @@ class Husk:
     async def run_async(self,
         usd_path: Path,
         args: list[str],
+        cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None
         ) -> int:
-        return await app.run_async([
-            path_str(self._husk),
-            path_str(usd_path),
-            *args
-        ])
+        return await app.run_async(
+            [
+                path_str(self._husk),
+                path_str(usd_path),
+                *args
+            ],
+            cwd = cwd,
+            env = env
+        )
 
     def run(self,
         usd_path: Path,
-        args: list[str]
+        args: list[str],
+        cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None
         ) -> int:
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(
-            self.run_async(usd_path, args)
+            self.run_async(usd_path, args, cwd, env)
+        )
+
+class IConvert:
+    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
+
+        # Check if iconvert is available
+        _versions = _scan_drives_for_versions()
+        version = _get_version(version_name, _versions)
+        if version is None:
+            assert False, 'No valid Houdini version was found'
+        
+        # Members
+        self._version = version_name
+        self._iconvert = version['iconvert']
+    
+    async def run_async(self,
+        args: list[str],
+        cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None
+        ) -> int:
+        return await app.run_async(
+            [
+                path_str(self._iconvert),
+                *args
+            ],
+            cwd = cwd,
+            env = env
+        )
+
+    def run(self,
+        args: list[str],
+        cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None
+        ) -> int:
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(
+            self.run_async(args, cwd, env)
         )

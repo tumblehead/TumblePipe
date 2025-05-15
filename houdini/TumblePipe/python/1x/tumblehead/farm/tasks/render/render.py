@@ -5,6 +5,7 @@ import logging
 import shutil
 import json
 import sys
+import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -56,7 +57,12 @@ def main(
     slapcomp_path: Optional[Path],
     output_paths: dict[str, Path]
     ) -> int:
-    _headline('Rendering')
+
+    # Check that OCIO has been set
+    assert os.environ.get('OCIO') is not None, (
+        'OCIO environment variable not set. '
+        'Please set it to the OCIO config file.'
+    )
 
     # Output receipt paths
     receipt_paths = [
@@ -77,7 +83,7 @@ def main(
         return 0
 
     # Get husk ready
-    husk = Husk('20.5.550')
+    husk = Husk()
 
     # Open a temporary directory
     root_temp_path = fix_path(api.storage.resolve('temp:/'))
@@ -89,6 +95,7 @@ def main(
         temp_frame_path = temp_path / 'render' / 'render.*.exr'
 
         # Render with husk and Karama XPU
+        _headline('Rendering')
         temp_frame_path.parent.mkdir(parents=True, exist_ok=True)
         husk.run(
             to_windows_path(input_path),
@@ -108,7 +115,10 @@ def main(
                 '--output', path_str(to_windows_path(
                     _fix_frame_pattern(temp_frame_path, '$F4')
                 ))
-            ]
+            ],
+            env = dict(
+                OCIO = path_str(to_windows_path(Path(os.environ['OCIO']))),
+            )
         )
 
         # Check that the frames were generated

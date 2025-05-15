@@ -2,6 +2,7 @@ from tempfile import TemporaryDirectory
 from pathlib import Path
 import logging
 import sys
+import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -54,7 +55,12 @@ def main(
     receipt_path,
     output_path
     ):
-    _headline('Running slapcomp')
+
+    # Check that OCIO has been set
+    assert os.environ.get('OCIO') is not None, (
+        'OCIO environment variable not set. '
+        'Please set it to the OCIO config file.'
+    )
 
     # Receipt files
     receipt_paths = [
@@ -75,7 +81,7 @@ def main(
         return 0
 
     # Get hython ready
-    hython = Hython('20.5.550')
+    hython = Hython()
 
     # Open a temporary directory
     root_temp_path = fix_path(api.storage.resolve('temp:/'))
@@ -88,6 +94,7 @@ def main(
         store_json(slapcomp_config_path, dict(
             first_frame = render_range.first_frame,
             last_frame = render_range.last_frame,
+            step_size = render_range.step_size,
             input_paths = {
                 layer_name: {
                     aov_name: path_str(input_path)
@@ -100,6 +107,7 @@ def main(
         ))
     
         # Run script in hython
+        _headline('Running slapcomp')
         hython.run(
             to_windows_path(SCRIPT_PATH),
             [
@@ -113,7 +121,8 @@ def main(
                 HOUDINI_PACKAGE_DIR = ';'.join([
                     path_str(to_windows_path(api.storage.resolve('pipeline:/houdini'))),
                     path_str(to_windows_path(api.storage.resolve('project:/_pipeline/houdini')))
-                ])
+                ]),
+                OCIO = path_str(to_windows_path(Path(os.environ['OCIO'])))
             )
         )
 
@@ -139,6 +148,9 @@ def main(
 
 """
 config = {
+    'first_frame': 1,
+    'last_frame': 10,
+    'step_size': 1,
     'input_paths': {
         'layer1': {
             'diffuse': 'path/to/diffuse.####.exr',
@@ -150,7 +162,7 @@ config = {
         }
     },
     'receipt_path': 'path/to/receipt.####.json',
-    'output_path': 'path/to/output.####.jpg'
+    'output_path': 'path/to/output.####.exr'
 }
 """
 
@@ -163,6 +175,12 @@ def _is_valid_config(config):
             if not isinstance(aov_path, str): return False
         return True
 
+    if 'first_frame' not in config: return False
+    if not isinstance(config['first_frame'], int): return False
+    if 'last_frame' not in config: return False
+    if not isinstance(config['last_frame'], int): return False
+    if 'step_size' not in config: return False
+    if not isinstance(config['step_size'], int): return False
     if 'input_paths' not in config: return False
     if not isinstance(config['input_paths'], dict): return False
     for layer_name, layer in config['input_paths'].items():
@@ -191,11 +209,12 @@ def cli():
         return _error(f'Invalid config file: {config_path}')
     
     # Check render range
-    first_frame = args.first_frame
-    last_frame = args.last_frame
+    first_frame = config['first_frame']
+    last_frame = config['last_frame']
+    step_size = config['step_size']
     if first_frame > last_frame:
         return _error('Invalid render range')
-    render_range = BlockRange(first_frame, last_frame)
+    render_range = BlockRange(first_frame, last_frame, step_size)
 
     # Get the input paths
     input_paths = {

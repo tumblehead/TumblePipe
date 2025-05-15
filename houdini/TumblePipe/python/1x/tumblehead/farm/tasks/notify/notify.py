@@ -10,6 +10,7 @@ import logging
 import OpenEXR
 import Imath
 import sys
+import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -162,7 +163,7 @@ def _post_mp4(
         return _error(f'MP4 not found: {path_str(mp4_path)}')
     
     # Check if the mp4 is too large
-    if mp4_path.stat().st_size > 10485760:
+    if to_wsl_path(mp4_path).stat().st_size > 10485760:
         return _post_message(
             user_name,
             channel_name,
@@ -272,6 +273,12 @@ def _open_exr(path: Path) -> Image:
     def _map_channel_name(channel_name):
         if '.' not in channel_name: return channel_name
         return channel_name.rsplit('.', 1)[1].upper()
+    
+    # Check that OCIO has been set
+    assert os.environ.get('OCIO') is not None, (
+        'OCIO environment variable not set. '
+        'Please set it to the OCIO config file.'
+    )
 
     # Open the EXR file
     exr = OpenEXR.InputFile(path_str(to_wsl_path(path)))

@@ -5,9 +5,14 @@ from pathlib import Path
 import datetime as dt
 import shutil
 import sys
+import os
 
-from tumblehead.api import path_str, to_wsl_path
-from tumblehead.apps import app
+from tumblehead.api import (
+    path_str,
+    to_wsl_path,
+    to_windows_path
+)
+from tumblehead.apps import app, houdini
 from tumblehead.apps import wsl
 
 def _run(args, **kwargs):
@@ -199,7 +204,15 @@ def to_jpeg(input_path, output_path):
     if output_path.suffix.lower() != '.jpg': return None
 
     # Convert to JPEG
-    return _run([
-        'oiiotool', path_str(to_wsl_path(input_path)),
-        '-o', path_str(to_wsl_path(output_path))
-    ])
+    iconvert = houdini.IConvert()
+    return iconvert.run(
+        [
+            '--iscolorspace', 'acescg',
+            '--ociodisplay', 'sRGB - Display', 'ACES 1.0 - SDR Video',
+            path_str(to_windows_path(input_path)),
+            path_str(to_windows_path(output_path))
+        ],
+        env = dict(
+            OCIO = path_str(to_windows_path(Path(os.environ['OCIO']))),
+        )
+    )

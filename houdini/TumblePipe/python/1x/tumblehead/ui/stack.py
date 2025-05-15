@@ -283,6 +283,7 @@ class StackView(card.Card):
         # Create the content widget
         content = QWidget()
         content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
         
         # Add the items
         self._stack.clear()
