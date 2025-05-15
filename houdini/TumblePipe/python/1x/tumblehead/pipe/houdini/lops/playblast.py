@@ -90,8 +90,10 @@ class Playblast(ns.Node):
 
     def get_camera_path(self):
         camera_paths = self.list_camera_paths()
+        if len(camera_paths) == 0: return None
         camera_names = self.list_camera_names()
         camera_name = self.parm('camera').eval()
+        if len(camera_name) == 0: return camera_paths[0]
         if camera_name not in camera_names: return None
         camera_index = camera_names.index(camera_name)
         if camera_index < 0: return None

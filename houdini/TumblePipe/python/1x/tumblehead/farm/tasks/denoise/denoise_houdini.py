@@ -1,6 +1,7 @@
 from tempfile import TemporaryDirectory
 from pathlib import Path
 import json
+import os
 
 import hou
 
@@ -82,6 +83,12 @@ def main(
     input_paths: dict[str, dict[str, Path]],
     output_paths: dict[str, dict[str, Path]]
     ) -> int:
+
+    # Check that OCIO has been set
+    assert os.environ.get('OCIO') is not None, (
+        'OCIO environment variable not set. '
+        'Please set it to the OCIO config file.'
+    )
 
     # Check if the enough aovs are available
     if not 'normal' in input_paths:

@@ -21,6 +21,7 @@ from tumblehead.util.io import (
     load_json,
     store_json
 )
+from tumblehead.config import BlockRange
 from tumblehead.apps.deadline import Deadline, Batch
 from tumblehead.pipe.paths import (
     Entity,
@@ -72,19 +73,16 @@ config = {
         'pool_name': 'string',
         'input_path': 'string',
         'node_path': 'string'
+        'first_frame': 'int',
+        'last_frame': 'int',
+        'step_size': 'int',
+        'batch_size': 'int',
     },
     'tasks': {
         'partial_composite': {
-            'first_frame': 'int',
-            'middle_frame': 'int',
-            'last_frame': 'int',
             'channel_name': 'string'
         },
         'full_composite': {
-            'first_frame': 'int',
-            'last_frame': 'int',
-            'step_size': 'int',
-            'batch_size': 'int',
             'channel_name': 'string'
         }
     }
@@ -133,24 +131,21 @@ def _is_valid_config(config):
         if not _check_str(settings, 'pool_name'): return False
         if not _check_str(settings, 'input_path'): return False
         if not _check_str(settings, 'node_path'): return False
+        if not _check_int(settings, 'first_frame'): return False
+        if not _check_int(settings, 'last_frame'): return False
+        if not _check_int(settings, 'step_size'): return False
+        if not _check_int(settings, 'batch_size'): return False
         return True
     
     def _valid_tasks(tasks):
 
         def _valid_partial_composite(partial_composite):
             if not isinstance(partial_composite, dict): return False
-            if not _check_int(partial_composite, 'first_frame'): return False
-            if not _check_int(partial_composite, 'middle_frame'): return False
-            if not _check_int(partial_composite, 'last_frame'): return False
             if not _check_str(partial_composite, 'channel_name'): return False
             return True
     
         def _valid_full_composite(full_composite):
             if not isinstance(full_composite, dict): return False
-            if not _check_int(full_composite, 'first_frame'): return False
-            if not _check_int(full_composite, 'last_frame'): return False
-            if not _check_int(full_composite, 'step_size'): return False
-            if not _check_int(full_composite, 'batch_size'): return False
             if not _check_str(full_composite, 'channel_name'): return False
             return True
         
@@ -183,9 +178,17 @@ def _build_partial_composite_task(
     pool_name = config['settings']['pool_name']
     input_path = config['settings']['input_path']
     node_path = config['settings']['node_path']
-    first_frame = config['tasks']['partial_composite']['first_frame']
-    middle_frame = config['tasks']['partial_composite']['middle_frame']
-    last_frame = config['tasks']['partial_composite']['last_frame']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+
+    # Find the middle frame
+    frame_range = BlockRange(
+        first_frame,
+        last_frame,
+        step_size
+    )
+    middle_frame = frame_range.frame(0.5)
 
     # Parameters
     receipt_path = get_next_frame_path(
@@ -241,7 +244,8 @@ def _build_partial_composite_task(
         render_department_name = 'composite',
         version_name = version_name,
         first_frame = first_frame,
-        last_frame = last_frame
+        last_frame = last_frame,
+        step_size = step_size
     ))
 
     # Done
@@ -262,10 +266,10 @@ def _build_full_composite_task(
     pool_name = config['settings']['pool_name']
     input_path = Path(config['settings']['input_path'])
     node_path = config['settings']['node_path']
-    first_frame = config['tasks']['full_composite']['first_frame']
-    last_frame = config['tasks']['full_composite']['last_frame']
-    step_size = config['tasks']['full_composite']['step_size']
-    batch_size = config['tasks']['full_composite']['batch_size']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+    batch_size = config['settings']['batch_size']
 
     # Find receipt path and version name
     def _receipt_path(version_name):
@@ -338,7 +342,8 @@ def _build_full_composite_task(
         render_department_name = 'composite',
         version_name = version_name,
         first_frame = first_frame,
-        last_frame = last_frame
+        last_frame = last_frame,
+        step_size = step_size
     ))
 
     # Done
@@ -356,8 +361,9 @@ def _build_slapcomp_task(
     purpose = config['settings']['purpose']
     priority = config['settings']['priority']
     pool_name = config['settings']['pool_name']
-    first_frame = config['tasks']['full_composite']['first_frame']
-    last_frame = config['tasks']['full_composite']['last_frame']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
 
     # Paramaters
     input_paths = {
@@ -384,7 +390,7 @@ def _build_slapcomp_task(
     )
     version_name = receipt_path.parent.name
     title = (
-        f'slapcomp composite'
+        f'slapcomp composite '
         f'{version_name}'
     )
     output_path = get_frame_path(
@@ -393,7 +399,7 @@ def _build_slapcomp_task(
         'slapcomp',
         version_name,
         '####',
-        'jpg',
+        'exr',
         purpose
     )
 
@@ -404,6 +410,7 @@ def _build_slapcomp_task(
         pool_name = pool_name,
         first_frame = first_frame,
         last_frame = last_frame,
+        step_size = step_size,
         input_paths = {
             layer_name: {
                 aov_name: path_str(to_windows_path(aov_path))
@@ -423,7 +430,8 @@ def _build_slapcomp_task(
         render_layer_name = 'slapcomp',
         version_name = version_name,
         first_frame = first_frame,
-        last_frame = last_frame
+        last_frame = last_frame,
+        step_size = step_size
     ))
 
     # Done
@@ -441,8 +449,9 @@ def _build_mp4_task(
     purpose = config['settings']['purpose']
     priority = config['settings']['priority']
     pool_name = config['settings']['pool_name']
-    first_frame = config['tasks']['full_composite']['first_frame']
-    last_frame = config['tasks']['full_composite']['last_frame']    
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
 
     # Parameters
     playblast_path = get_playblast_path(entity, slapcomp_version_name, purpose)
@@ -457,7 +466,7 @@ def _build_mp4_task(
         'slapcomp',
         slapcomp_version_name,
         '####',
-        'jpg',
+        'exr',
         purpose
     )
 
@@ -468,6 +477,7 @@ def _build_mp4_task(
         pool_name = pool_name,
         first_frame = first_frame,
         last_frame = last_frame,
+        step_size = step_size,
         input_path = path_str(to_windows_path(input_path)),
         output_paths = [
             path_str(to_windows_path(playblast_path)),
@@ -490,10 +500,18 @@ def _build_partial_notify_task(
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    first_frame = config['tasks']['partial_composite']['first_frame']
-    middle_frame = config['tasks']['partial_composite']['middle_frame']
-    last_frame = config['tasks']['partial_composite']['last_frame']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
     channel_name = config['tasks']['partial_composite']['channel_name']
+
+    # Find the middle frame
+    frame_range = BlockRange(
+        first_frame,
+        last_frame,
+        step_size
+    )
+    middle_frame = frame_range.frame(0.5)
     
     # Parameters
     title = (

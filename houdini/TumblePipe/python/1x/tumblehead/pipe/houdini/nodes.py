@@ -98,13 +98,13 @@ class Node:
     def outputConnections(self):
         return self.native().outputConnections()
     
-    def setInput(self, port, node):
+    def setInput(self, in_port, node, out_port = 0):
         _node = (
             node.native()
             if issubclass(type(node), Node)
             else node
         )
-        self.native().setInput(port, _node)
+        self.native().setInput(in_port, _node, out_port)
     
     # Layout
 

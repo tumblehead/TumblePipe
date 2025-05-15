@@ -2,6 +2,7 @@ from tempfile import TemporaryDirectory
 from pathlib import Path
 import logging
 import sys
+import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -54,6 +55,12 @@ def main(
     output_paths: dict[str, Path]
     ) -> int:
 
+    # Check that OCIO has been set
+    assert os.environ.get('OCIO') is not None, (
+        'OCIO environment variable not set. '
+        'Please set it to the OCIO config file.'
+    )
+
     # Output receipt paths
     receipt_paths = [
         _get_frame_path(receipt_path, frame_index)
@@ -77,7 +84,7 @@ def main(
         return 0
 
     # Get hython ready
-    hython = Hython('20.5.550')
+    hython = Hython()
 
     # Open a temporary directory
     root_temp_path = fix_path(api.storage.resolve('temp:/'))
@@ -116,7 +123,8 @@ def main(
                 HOUDINI_PACKAGE_DIR = ';'.join([
                     path_str(to_windows_path(api.storage.resolve('pipeline:/houdini'))),
                     path_str(to_windows_path(api.storage.resolve('project:/_pipeline/houdini')))
-                ])
+                ]),
+                OCIO = path_str(to_windows_path(Path(os.environ['OCIO'])))
             )
         )
 

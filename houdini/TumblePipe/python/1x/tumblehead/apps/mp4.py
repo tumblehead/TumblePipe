@@ -30,7 +30,7 @@ def from_jpg(
     )))
 
     # Find missing frames
-    frame_count = len(frame_range)
+    frame_count = (frame_range.first_frame - frame_range.last_frame) + 1
     available_frame_indices = {
         int(frame.name.split('.')[-2])
         for frame in input_frames

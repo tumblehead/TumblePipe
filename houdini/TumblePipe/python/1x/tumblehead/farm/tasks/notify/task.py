@@ -129,7 +129,7 @@ def build(config, paths, staging_path):
         TH_CONFIG_PATH = path_str(to_wsl_path(api.CONFIG_PATH)),
         TH_PROJECT_PATH = path_str(to_wsl_path(api.PROJECT_PATH)),
         TH_PIPELINE_PATH = path_str(to_wsl_path(api.PIPELINE_PATH)),
-        OCIO = path_str(to_wsl_path(os.environ['OCIO']))
+        OCIO = path_str(to_wsl_path(Path(os.environ['OCIO'])))
     ))
 
     # Done

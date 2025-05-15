@@ -58,26 +58,21 @@ config = {
         'pool_name': 'string',
         'render_layer_name': 'string',
         'render_department_name': 'string',
-        'render_settings_path': 'string'
+        'render_settings_path': 'string',
+        'first_frame': 'int',
+        'last_frame': 'int',
+        'step_size': 'int',
+        'batch_size': 'int'
     },
     'tasks': {
         'stage': {
-            'first_frame': 'int',
-            'last_frame': 'int',
             'channel_name': 'string'
         },
         'partial_render': {
-            'first_frame': 'int',
-            'middle_frame': 'int',
-            'last_frame': 'int',
             'denoise': 'bool',
             'channel_name': 'string'
         },
         'full_render': {
-            'first_frame': 'int',
-            'last_frame': 'int',
-            'step_size': 'int',
-            'batch_size': 'int',
             'denoise': 'bool',
             'channel_name': 'string'
         }
@@ -132,32 +127,27 @@ def _is_valid_config(config):
         if not _check_str(settings, 'render_layer_name'): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
+        if not _check_int(settings, 'first_frame'): return False
+        if not _check_int(settings, 'last_frame'): return False
+        if not _check_int(settings, 'step_size'): return False
+        if not _check_int(settings, 'batch_size'): return False
         return True
     
     def _valid_tasks(tasks):
 
         def _valid_stage(stage):
             if not isinstance(stage, dict): return False
-            if not _check_int(stage, 'first_frame'): return False
-            if not _check_int(stage, 'last_frame'): return False
             if not _check_str(stage, 'channel_name'): return False
             return True
 
         def _valid_partial_render(partial_render):
             if not isinstance(partial_render, dict): return False
-            if not _check_int(partial_render, 'first_frame'): return False
-            if not _check_int(partial_render, 'middle_frame'): return False
-            if not _check_int(partial_render, 'last_frame'): return False
             if not _check_bool(partial_render, 'denoise'): return False
             if not _check_str(partial_render, 'channel_name'): return False
             return True
     
         def _valid_full_render(full_render):
             if not isinstance(full_render, dict): return False
-            if not _check(full_render, 'first_frame', int): return False
-            if not _check(full_render, 'last_frame', int): return False
-            if not _check(full_render, 'step_size', int): return False
-            if not _check(full_render, 'batch_size', int): return False
             if not _check(full_render, 'denoise', bool): return False
             if not _check_str(full_render, 'channel_name'): return False
             return True

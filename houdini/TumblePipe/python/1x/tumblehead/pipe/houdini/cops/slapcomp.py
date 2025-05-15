@@ -22,6 +22,10 @@ from tumblehead.apps.deadline import log_progress
 
 api = default_client()
 
+def _expect(value, message):
+    if value is None: raise ValueError(message)
+    return value
+
 def _ensure_node(context, node_type, name):
     node = context.node(name)
     if node is not None: return node
@@ -135,7 +139,13 @@ class Slapcomp(ns.Node):
 
             # Store the aov paths
             render_layer_aovs[render_layer_name] = {
-                aov_name: aov.get_aov_frame_path('$F4')
+                aov_name: dict(
+                    path = aov.get_aov_frame_path('$F4'),
+                    render_range = _expect(
+                        aov.get_frame_range(),
+                        f'Could not find frame range for {aov_name}'
+                    )
+                )
                 for aov_name, aov in render_layer.aovs.items()
             }
         
@@ -148,7 +158,7 @@ class Slapcomp(ns.Node):
             render_department_name,
             'slapcomp',
             '$F4',
-            'jpg'
+            'exr'
         )
 
         # Export slapcomp
@@ -177,16 +187,12 @@ class Slapcomp(ns.Node):
         util.set_block_range(render_range)
 
         # Build render layer comps
-        def _create_aov_import_node(render_layer_name, aov):
-
-            # Get aov frame path
-            aov_name = aov.label
-            aov_frame_path = aov.get_aov_frame_path('$F4')
-            aov_render_range = aov.get_frame_range()
-            assert aov_frame_path is not None, (
-                'Could not find aov frame path for '
-                f'{aov_name}'
-            )
+        def _create_aov_import_node(
+            render_layer_name,
+            aov_name,
+            aov_path,
+            aov_render_range
+            ):
 
             # Create import node
             aov_import_node_name = (
@@ -197,7 +203,7 @@ class Slapcomp(ns.Node):
             aov_import_node = _ensure_node(
                 dive_node, 'file', aov_import_node_name
             )
-            aov_import_node.parm('filename').set(path_str(aov_frame_path))
+            aov_import_node.parm('filename').set(path_str(aov_path))
             aov_import_node.parm('videoframestart').deleteAllKeyframes()
             aov_import_node.parm('videoframestart').set(
                 aov_render_range.first_frame
@@ -238,7 +244,10 @@ class Slapcomp(ns.Node):
                 aov = render_layer.get(aov_name)
                 assert aov is not None, f'Could not find aov {aov_name}'
                 aov_nodes[aov_name] = _create_aov_import_node(
-                    render_layer_name, aov
+                    render_layer_name,
+                    aov_name,
+                    aov['path'],
+                    aov['render_range']
                 )
             
             # Make sure we have a color aov
@@ -337,7 +346,7 @@ class Slapcomp(ns.Node):
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
 
-            temp_frame_path = temp_path / 'slapcomp.$F4.jpg'
+            temp_frame_path = temp_path / 'slapcomp.$F4.exr'
             export_node.parm('copoutput').set(path_str(temp_frame_path))
 
             # Export frames

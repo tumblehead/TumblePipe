@@ -50,12 +50,16 @@ class MemoryStore(Store):
         curr_path = uri.path
         curr_data = self._data
         while not _is_item(curr_path):
-            assert isinstance(curr_path, muri.NamedSection), f'{uri} is a valid uri for insertion'
+            assert isinstance(curr_path, muri.NamedSection), (
+                f'{uri} is a valid uri for insertion'
+            )
             if curr_path.name not in curr_data:
                 curr_data[curr_path.name] = dict()
             curr_data = curr_data[curr_path.name]
             curr_path = curr_path.path
-        assert isinstance(curr_path, muri.NamedItem), f'{uri} is a valid uri for insertion'
+        assert isinstance(curr_path, muri.NamedItem), (
+            f'{uri} is a valid uri for insertion'
+        )
         assert curr_path.name not in curr_data, f'{uri} already defined'
         
         # Insert

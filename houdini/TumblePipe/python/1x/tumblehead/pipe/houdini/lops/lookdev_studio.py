@@ -116,8 +116,6 @@ class LookdevStudio(ns.Node):
 
             # Add the export task
             tasks['export'] = dict(
-                first_frame = render_range.first_frame,
-                last_frame = render_range.last_frame,
                 input_path = path_str(relative_input_path),
                 node_path = node_path,
                 channel_name = 'exports'
@@ -125,10 +123,6 @@ class LookdevStudio(ns.Node):
 
             # Add the render task
             tasks['full_render'] = dict(
-                first_frame = render_range.first_frame,
-                last_frame = render_range.last_frame,
-                step_size = step_size,
-                batch_size = batch_size,
                 denoise = False,
                 channel_name = 'previews'
             )
@@ -170,7 +164,11 @@ class LookdevStudio(ns.Node):
                     slapcomp_path = (
                         None if relative_slapcomp_path is None else
                         path_str(relative_slapcomp_path)
-                    )
+                    ),
+                    first_frame = render_range.first_frame,
+                    last_frame = render_range.last_frame,
+                    step_size = step_size,
+                    batch_size = batch_size
                 ),
                 tasks = tasks
             ), {
@@ -180,6 +178,13 @@ class LookdevStudio(ns.Node):
                 {} if slapcomp_path is None else
                 { slapcomp_path: relative_slapcomp_path }
             ))
+
+def create(scene, name):
+    node_type = ns.find_node_type('lookdev_studio', 'Lop')
+    assert node_type is not None, 'Could not find lookdev_studio node type'
+    native = scene.node(name)
+    if native is not None: return LookdevStudio(native)
+    return LookdevStudio(scene.createNode(node_type.name(), name))
 
 def submit():
     raw_node = hou.pwd()

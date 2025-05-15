@@ -172,3 +172,12 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Houdini backup folders
+backup/
+
+# Stuff that is not ready for release
+radialmenu/
+viewer_states/
+toolbar/
+*.keymap2*

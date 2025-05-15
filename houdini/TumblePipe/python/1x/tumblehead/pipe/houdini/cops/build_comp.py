@@ -1072,41 +1072,29 @@ class BuildComp(ns.Node):
         priority = self.get_priority()
         workfile_path = Path(hou.hipFile.path())
         node_path = self.native().node('render').path()
+        frame_range = self.get_frame_range()
+        render_range = frame_range.full_range()
+        step_size = self.get_step_size()
+        batch_size = self.get_batch_size()
 
         # Prepare tasks
         tasks = dict()
 
         # Add the stage task
-        frame_range = self.get_frame_range()
-        render_range = frame_range.full_range()
         tasks['stage'] = dict(
-            first_frame = render_range.first_frame,
-            last_frame = render_range.last_frame,
             channel_name = 'exports'
         )
 
         # Maybe add partial render task
         if self.get_submit_partial():
-            first_frame, middle_frame, last_frame = self.get_partial_frames()
             tasks['partial_composite'] = dict(
-                first_frame = first_frame,
-                middle_frame = middle_frame,
-                last_frame = last_frame,
                 channel_name = 'previews'
             )
         
         # Maybe add full render task
         if self.get_submit_full():
-            frame_range = self.get_frame_range()
-            render_range = frame_range.full_range()
-            step_size = self.get_step_size()
-            batch_size = self.get_batch_size()
             tasks['full_composite'] = dict(
-                first_frame = render_range.first_frame,
-                last_frame = render_range.last_frame,
-                step_size = step_size,
-                batch_size = batch_size,
-                channel_name = 'renders'
+                channel_name = 'comp'
             )
         
         # Open temporary directory
@@ -1139,7 +1127,11 @@ class BuildComp(ns.Node):
                             priority = priority,
                             pool_name = pool_name,
                             input_path = path_str(relative_input_path),
-                            node_path = node_path
+                            node_path = node_path,
+                            first_frame = render_range.first_frame,
+                            last_frame = render_range.last_frame,
+                            step_size = step_size,
+                            batch_size = batch_size
                         ),
                         tasks = tasks
                     ), {
@@ -1196,11 +1188,12 @@ class BuildComp(ns.Node):
                 render_node.parm('port1').set(render_layer_index + 1)
                 render_node.parm('f1').set(render_range.first_frame)
                 render_node.parm('f2').set(render_range.last_frame)
+                render_node.parm('f3').set(render_range.step_size)
                 render_node.parm('execute').pressButton()
 
                 # Copy the frames to the output
                 output_frames_path.parent.mkdir(parents = True, exist_ok = True)
-                for frame in range(render_range.first_frame, render_range.last_frame + 1):
+                for frame in render_range:
                     frame_name = str(frame).zfill(4)
                     temp_frame_path = _get_frame_path(temp_frames_path, frame_name)
                     output_frame_path = _get_frame_path(output_frames_path, frame_name)
@@ -1211,7 +1204,10 @@ class BuildComp(ns.Node):
                 store_json(output_context_path, dict(
                     sequence_name = sequence_name,
                     shot_name = shot_name,
-                    render_layer_name = render_layer_name
+                    render_layer_name = render_layer_name,
+                    first_frame = render_range.first_frame,
+                    last_frame = render_range.last_frame,
+                    step_size = render_range.step_size
                 ))
 
 def create(scene, name):

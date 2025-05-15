@@ -21,6 +21,7 @@ from tumblehead.util.io import (
     load_json,
     store_json
 )
+from tumblehead.config import BlockRange
 from tumblehead.apps.deadline import Deadline, Batch
 from tumblehead.pipe.paths import (
     Entity,
@@ -75,21 +76,18 @@ config = {
         'render_layer_name': 'string',
         'render_department_name: 'string,
         'render_settings_path: 'string',
-        'input_path': 'string'
+        'input_path': 'string',
+        'first_frame': 'int',
+        'last_frame': 'int',
+        'step_size': 'int',
+        'batch_size': 'int'
     },
     'tasks': {
         'partial_render': {
-            'first_frame': 'int',
-            'middle_frame': 'int',
-            'last_frame': 'int',
             'denoise': 'bool',
             'channel_name': 'string'
         },
         'full_render': {
-            'first_frame': 'int',
-            'last_frame': 'int',
-            'step_size': 'int',
-            'batch_size': 'int',
             'denoise': 'bool',
             'channel_name': 'string'
         }
@@ -145,25 +143,22 @@ def _is_valid_config(config):
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
         if not _check_str(settings, 'input_path'): return False
+        if not _check_int(settings, 'first_frame'): return False
+        if not _check_int(settings, 'last_frame'): return False
+        if not _check_int(settings, 'step_size'): return False
+        if not _check_int(settings, 'batch_size'): return False
         return True
     
     def _valid_tasks(tasks):
 
         def _valid_partial_render(partial_render):
             if not isinstance(partial_render, dict): return False
-            if not _check_int(partial_render, 'first_frame'): return False
-            if not _check_int(partial_render, 'middle_frame'): return False
-            if not _check_int(partial_render, 'last_frame'): return False
             if not _check_bool(partial_render, 'denoise'): return False
             if not _check_str(partial_render, 'channel_name'): return False
             return True
     
         def _valid_full_render(full_render):
             if not isinstance(full_render, dict): return False
-            if not _check_int(full_render, 'first_frame'): return False
-            if not _check_int(full_render, 'last_frame'): return False
-            if not _check_int(full_render, 'step_size'): return False
-            if not _check_int(full_render, 'batch_size'): return False
             if not _check_bool(full_render, 'denoise'): return False
             if not _check_str(full_render, 'channel_name'): return False
             return True
@@ -199,9 +194,17 @@ def _build_partial_render_task(
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     input_path = config['settings']['input_path']
-    first_frame = config['tasks']['partial_render']['first_frame']
-    middle_frame = config['tasks']['partial_render']['middle_frame']
-    last_frame = config['tasks']['partial_render']['last_frame']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+
+    # Find middle frame
+    frame_range = BlockRange(
+        first_frame,
+        last_frame,
+        step_size
+    )
+    middle_frame = frame_range.frame(0.5)
 
     # Get the aov names
     render_settings = load_json(render_settings_path)
@@ -267,7 +270,8 @@ def _build_partial_render_task(
         render_department_name = render_department_name,
         version_name = version_name,
         first_frame = first_frame,
-        last_frame = last_frame
+        last_frame = last_frame,
+        step_size = step_size
     ))
 
     # Done
@@ -290,10 +294,10 @@ def _build_full_render_task(
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     input_path = Path(config['settings']['input_path'])
-    first_frame = config['tasks']['full_render']['first_frame']
-    last_frame = config['tasks']['full_render']['last_frame']
-    step_size = config['tasks']['full_render']['step_size']
-    batch_size = config['tasks']['full_render']['batch_size']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+    batch_size = config['settings']['batch_size']
 
     # Find receipt path and version name
     def _receipt_path(version_name):
@@ -376,7 +380,8 @@ def _build_full_render_task(
         render_department_name = render_department_name,
         version_name = version_name,
         first_frame = first_frame,
-        last_frame = last_frame
+        last_frame = last_frame,
+        step_size = step_size
     ))
 
     # Done
@@ -396,9 +401,17 @@ def _build_partial_denoise_task(
     pool_name = config['settings']['pool_name']
     render_layer_name = config['settings']['render_layer_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
-    first_frame = config['tasks']['partial_render']['first_frame']
-    middle_frame = config['tasks']['partial_render']['middle_frame']
-    last_frame = config['tasks']['partial_render']['last_frame']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+
+    # Find middle frame
+    frame_range = BlockRange(
+        first_frame,
+        last_frame,
+        step_size
+    )
+    middle_frame = frame_range.frame(0.5)
 
     # Get the aov names
     render_settings = load_json(render_settings_path)
@@ -479,7 +492,8 @@ def _build_partial_denoise_task(
         render_layer_name = render_layer_name,
         version_name = version_name,
         first_frame = first_frame,
-        last_frame = last_frame
+        last_frame = last_frame,
+        step_size = step_size
     ))
 
     # Done
@@ -500,8 +514,9 @@ def _build_full_denoise_task(
     pool_name = config['settings']['pool_name']
     render_layer_name = config['settings']['render_layer_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
-    first_frame = config['tasks']['full_render']['first_frame']
-    last_frame = config['tasks']['full_render']['last_frame']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
 
     # Get the aov names
     render_settings = load_json(render_settings_path)
@@ -582,7 +597,8 @@ def _build_full_denoise_task(
         render_layer_name = render_layer_name,
         version_name = version_name,
         first_frame = first_frame,
-        last_frame = last_frame
+        last_frame = last_frame,
+        step_size = step_size
     ))
 
     # Done
@@ -602,8 +618,9 @@ def _build_slapcomp_task(
     priority = config['settings']['priority']
     pool_name = config['settings']['pool_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
-    first_frame = config['tasks']['full_render']['first_frame']
-    last_frame = config['tasks']['full_render']['last_frame']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
 
     # Get the aov names
     render_settings = load_json(render_settings_path)
@@ -651,7 +668,7 @@ def _build_slapcomp_task(
         'slapcomp',
         version_name,
         '####',
-        'jpg',
+        'exr',
         purpose
     )
 
@@ -662,6 +679,7 @@ def _build_slapcomp_task(
         pool_name = pool_name,
         first_frame = first_frame,
         last_frame = last_frame,
+        step_size = step_size,
         input_paths = {
             layer_name: {
                 aov_name: path_str(to_windows_path(aov_path))
@@ -681,7 +699,8 @@ def _build_slapcomp_task(
         render_layer_name = 'slapcomp',
         version_name = version_name,
         first_frame = first_frame,
-        last_frame = last_frame
+        last_frame = last_frame,
+        step_size = step_size
     ))
 
     # Done
@@ -700,8 +719,9 @@ def _build_mp4_task(
     purpose = config['settings']['purpose']
     priority = config['settings']['priority']
     pool_name = config['settings']['pool_name']
-    first_frame = config['tasks']['full_render']['first_frame']
-    last_frame = config['tasks']['full_render']['last_frame']    
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
 
     # Parameters
     playblast_path = get_playblast_path(entity, slapcomp_version_name, purpose)
@@ -717,7 +737,7 @@ def _build_mp4_task(
         'slapcomp',
         slapcomp_version_name,
         '####',
-        'jpg',
+        'exr',
         purpose
     )
 
@@ -728,6 +748,7 @@ def _build_mp4_task(
         pool_name = pool_name,
         first_frame = first_frame,
         last_frame = last_frame,
+        step_size = step_size,
         input_path = path_str(to_windows_path(input_path)),
         output_paths = [
             path_str(to_windows_path(playblast_path)),
@@ -752,10 +773,18 @@ def _build_partial_notify_task(
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
     render_layer_name = config['settings']['render_layer_name']
-    first_frame = config['tasks']['partial_render']['first_frame']
-    middle_frame = config['tasks']['partial_render']['middle_frame']
-    last_frame = config['tasks']['partial_render']['last_frame']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
     channel_name = config['tasks']['partial_render']['channel_name']
+
+    # Find middle frame
+    frame_range = BlockRange(
+        first_frame,
+        last_frame,
+        step_size
+    )
+    middle_frame = frame_range.frame(0.5)
     
     # Parameters
     title = (

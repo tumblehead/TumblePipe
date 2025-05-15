@@ -165,25 +165,35 @@ class AOV:
         return self.path / f'{self.name}.{index_pattern}.{self.suffix}'
     
     def get_frame_range(self) -> Optional[BlockRange]:
-        frame_path = self.get_aov_frame_path('*')
-        frame_paths = list(map(
-            lambda path: int(path.stem.split('.')[-1]),
-            frame_path.parent.glob(frame_path.name)
-        ))
-        if len(frame_paths) == 0: return None
-        first_frame = min(frame_paths)
-        last_frame = max(frame_paths)
-        frame_count = last_frame - first_frame + 1
-        if frame_count != len(frame_paths): return None
+        context_path = self.path.parent / 'context.json'
+        context = load_json(context_path)
+        if context is None: return None
+        first_frame = context.get('first_frame')
+        if first_frame is None: return None
+        last_frame = context.get('last_frame')
+        if last_frame is None: return None
+        step_size = context.get('step_size')
+        if step_size is None: return None
         return BlockRange(
             first_frame,
-            last_frame
+            last_frame,
+            step_size
         )
 
     def is_complete(self, expected_frame_range: BlockRange) -> bool:
-        actual_frame_range = self.get_frame_range()
-        if actual_frame_range is None: return False
-        return expected_frame_range in actual_frame_range
+        frame_path = self.get_aov_frame_path('*')
+        actual_frame_indices = list(sorted(map(
+            lambda path: int(path.stem.split('.')[-1]),
+            frame_path.parent.glob(frame_path.name)
+        )))
+        expected_count = len(expected_frame_range)
+        actual_count = len(actual_frame_indices)
+        if expected_count != actual_count: return False
+        for expected_frame, actual_frame in zip(
+            list(expected_frame_range),
+            actual_frame_indices):
+            if expected_frame != actual_frame: return False
+        return True
 
 @dataclass(frozen=True)
 class Layer:
@@ -202,9 +212,12 @@ class Layer:
         if first_frame is None: return None
         last_frame = context.get('last_frame')
         if last_frame is None: return None
+        step_size = context.get('step_size')
+        if step_size is None: return None
         return BlockRange(
             first_frame,
-            last_frame
+            last_frame,
+            step_size
         )
 
     def get_frame_path(self, index_pattern: str) -> Path:

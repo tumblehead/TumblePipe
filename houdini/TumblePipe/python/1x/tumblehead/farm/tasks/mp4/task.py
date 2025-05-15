@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import sys
+import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -28,6 +29,7 @@ config = {
     'pool_name': 'general',
     'first_frame': 1,
     'last_frame': 100,
+    'step_size': 1,
     'input_path': 'path/to/input.####.exr',
     'output_paths': [
         'path/to/output1.mp4',
@@ -48,6 +50,8 @@ def _is_valid_config(config):
     if not isinstance(config['first_frame'], int): return False
     if 'last_frame' not in config: return False
     if not isinstance(config['last_frame'], int): return False
+    if 'step_size' not in config: return False
+    if not isinstance(config['step_size'], int): return False
     if 'input_path' not in config: return False
     if not isinstance(config['input_path'], str): return False
     if 'output_paths' not in config: return False
@@ -71,7 +75,8 @@ def build(config, paths, staging_path):
     pool_name = config['pool_name']
     render_range = BlockRange(
         config['first_frame'],
-        config['last_frame']
+        config['last_frame'],
+        config['step_size']
     )
     output_paths = list(map(Path, config['output_paths']))
 
@@ -79,6 +84,9 @@ def build(config, paths, staging_path):
     task_path = staging_path / f'mp4_{random_name(8)}'
     context_path = task_path / 'context.json'
     store_json(context_path, dict(
+        first_frame = render_range.first_frame,
+        last_frame = render_range.last_frame,
+        step_size = render_range.step_size,
         input_path = config['input_path'],
         output_paths = config['output_paths']
     ))
@@ -103,7 +111,8 @@ def build(config, paths, staging_path):
         TH_USER = get_user_name(),
         TH_CONFIG_PATH = path_str(to_wsl_path(api.CONFIG_PATH)),
         TH_PROJECT_PATH = path_str(to_wsl_path(api.PROJECT_PATH)),
-        TH_PIPELINE_PATH = path_str(to_wsl_path(api.PIPELINE_PATH))
+        TH_PIPELINE_PATH = path_str(to_wsl_path(api.PIPELINE_PATH)),
+        OCIO = path_str(to_wsl_path(Path(os.environ['OCIO'])))
     ))
     task.output_paths.extend(list(map(to_windows_path, output_paths)))
 

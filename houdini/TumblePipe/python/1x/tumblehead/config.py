@@ -6,33 +6,52 @@ WORD_ALPHABET = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456
 class BlockRange:
     first_frame: int
     last_frame: int
+    step_size: int = 1
 
-    def timecode(self, frame_index: int) -> float:
+    def timecode(self, frame: int) -> float:
         if self.first_frame == self.last_frame: return 1.0
-        return (frame_index - self.first_frame) / (self.last_frame - self.first_frame)
+        return (
+            (frame - self.first_frame) /
+            (self.last_frame - self.first_frame)
+        )
+    
+    def frame(self, timecode: float) -> int:
+        assert 0 <= timecode <= 1, f'Invalid timecode: {timecode}'
+        frames = list(self)
+        index = int((len(frames) - 1) * timecode)
+        return frames[index]
     
     def __len__(self):
-        return self.last_frame - self.first_frame + 1
+        return (self.last_frame - self.first_frame + 1) // self.step_size
 
     def __iter__(self):
-        return iter(range(self.first_frame, self.last_frame + 1))
+        return iter(range(
+            self.first_frame,
+            self.last_frame + 1,
+            self.step_size
+        ))
     
     def __contains__(self, obj):
         if isinstance(obj, int):
-            return self.first_frame <= obj <= self.last_frame
+            if obj < self.first_frame: return False
+            if obj > self.last_frame: return False
+            if (obj - self.first_frame) % self.step_size != 0: return False
+            return True
         if isinstance(obj, BlockRange):
+            if self.step_size != obj.step_size: return False
             if obj.first_frame < self.first_frame: return False
             if obj.last_frame > self.last_frame: return False
             return True
         assert False, f'Invalid object: {obj}'
     
     def __str__(self):
-        return f'{self.first_frame}-{self.last_frame}'
+        return f'{self.first_frame}-{self.last_frame}x{self.step_size}'
     
     def __eq__(self, other):
         if not isinstance(other, BlockRange): return False
         if self.first_frame != other.first_frame: return False
         if self.last_frame != other.last_frame: return False
+        if self.step_size != other.step_size: return False
         return True
 
 @dataclass(frozen=True)
@@ -41,17 +60,25 @@ class FrameRange:
     end_frame: int
     start_roll: int
     end_roll: int
+    step_size: int = 1
 
     def play_range(self) -> BlockRange:
-        return BlockRange(self.start_frame, self.end_frame)
+        return BlockRange(
+            self.start_frame,
+            self.end_frame,
+            self.step_size
+        )
 
     def full_range(self) -> BlockRange:
         first_frame = self.start_frame - self.start_roll
         last_frame = self.end_frame + self.end_roll
-        return BlockRange(first_frame, last_frame)
+        return BlockRange(first_frame, last_frame, self.step_size)
     
-    def timecode(self, frame_index: int) -> float:
-        return self.full_range().timecode(frame_index)
+    def timecode(self, frame: int) -> float:
+        return self.full_range().timecode(frame)
+    
+    def frame(self, timecode: float) -> int:
+        return self.full_range().frame(timecode)
     
     def __len__(self):
         return len(self.full_range())
@@ -63,7 +90,7 @@ class FrameRange:
         return obj in self.full_range()
     
     def __str__(self):
-        return f'{self.start_frame}-{self.end_frame}|{self.start_roll}-{self.end_roll}'
+        return f'{self.start_frame}-{self.end_frame}|{self.start_roll}-{self.end_roll}x{self.step_size}'
     
     def __eq__(self, other):
         if not isinstance(other, FrameRange): return False
@@ -71,6 +98,7 @@ class FrameRange:
         if self.end_frame != other.end_frame: return False
         if self.start_roll != other.start_roll: return False
         if self.end_roll != other.end_roll: return False
+        if self.step_size != other.step_size: return False
         return True
 
 class ConfigConvention:

@@ -43,11 +43,13 @@ def main(config):
     render_layer_name = config['settings']['render_layer_name']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
-    first_frame = config['tasks']['stage']['first_frame']
-    last_frame = config['tasks']['stage']['last_frame']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+    batch_size = config['settings']['batch_size']
 
     # Get hython ready
-    hython = Hython('20.5.550')
+    hython = Hython()
 
     # Open a temporary directory
     root_temp_path = fix_path(api.storage.resolve('temp:/'))
@@ -88,7 +90,7 @@ def main(config):
                     path_str(to_windows_path(api.storage.resolve('pipeline:/houdini'))),
                     path_str(to_windows_path(api.storage.resolve('project:/_pipeline/houdini')))
                 ]),
-                OCIO = path_str(to_windows_path(os.environ['OCIO']))
+                OCIO = path_str(to_windows_path(Path(os.environ['OCIO'])))
             )
         )
 
@@ -109,7 +111,11 @@ def main(config):
                 render_layer_name = render_layer_name,
                 render_department_name = render_department_name,
                 render_settings_path = path_str(render_settings_path),
-                input_path = path_str(relative_stage_path)
+                input_path = path_str(relative_stage_path),
+                first_frame = first_frame,
+                last_frame = last_frame,
+                step_size = step_size,
+                batch_size = batch_size
             ),
             tasks = tasks
         ), {
@@ -146,26 +152,21 @@ config = {
         'pool_name': 'string',
         'render_layer_name': 'string',
         'render_department_name': 'string',
-        'render_settings_path': 'string'
+        'render_settings_path': 'string',
+        'first_frame': 'int',
+        'last_frame': 'int',
+        'step_size': 'int',
+        'batch_size': 'int'
     },
     'tasks': {
         'stage': {
-            'first_frame': 'int',
-            'last_frame': 'int',
             'channel_name': 'string
         },
         'partial_render': {
-            'first_frame': 'int',
-            'middle_frame': 'int',
-            'last_frame': 'int',
             'denoise': 'bool',
             'channel_name': 'string
         },
         'full_render': {
-            'first_frame': 'int',
-            'last_frame': 'int',
-            'step_size': 'int',
-            'batch_size': 'int',
             'denoise': 'bool',
             'channel_name': 'string
         }
@@ -220,32 +221,27 @@ def _is_valid_config(config):
         if not _check_str(settings, 'render_layer_name'): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
+        if not _check_int(settings, 'first_frame'): return False
+        if not _check_int(settings, 'last_frame'): return False
+        if not _check_int(settings, 'step_size'): return False
+        if not _check_int(settings, 'batch_size'): return False
         return True
     
     def _valid_tasks(tasks):
 
         def _valid_stage(stage):
             if not isinstance(stage, dict): return False
-            if not _check_int(stage, 'first_frame'): return False
-            if not _check_int(stage, 'last_frame'): return False
             if not _check_str(stage, 'channel_name'): return False
             return True
 
         def _valid_partial_render(partial_render):
             if not isinstance(partial_render, dict): return False
-            if not _check_int(partial_render, 'first_frame'): return False
-            if not _check_int(partial_render, 'middle_frame'): return False
-            if not _check_int(partial_render, 'last_frame'): return False
             if not _check_bool(partial_render, 'denoise'): return False
             if not _check_str(partial_render, 'channel_name'): return False
             return True
     
         def _valid_full_render(full_render):
             if not isinstance(full_render, dict): return False
-            if not _check_int(full_render, 'first_frame'): return False
-            if not _check_int(full_render, 'last_frame'): return False
-            if not _check_int(full_render, 'step_size'): return False
-            if not _check_int(full_render, 'batch_size'): return False
             if not _check_bool(full_render, 'denoise'): return False
             if not _check_str(full_render, 'channel_name'): return False
             return True
