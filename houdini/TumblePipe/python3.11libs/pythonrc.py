@@ -7,7 +7,7 @@ def load():
 
     # Paths
     pipeline_path = Path(os.environ['TH_PIPELINE_PATH'])
-    package_path = pipeline_path / 'houdini' / 'Tumblehead'
+    package_path = pipeline_path / 'houdini' / 'TumblePipe'
     libs_path = package_path / 'python3.11libs'
 
     # Add the shared python packages location to sys.path
