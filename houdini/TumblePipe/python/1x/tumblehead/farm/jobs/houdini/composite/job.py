@@ -631,7 +631,8 @@ def submit(
     timestamp = dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
 
     # Get deadline ready
-    farm = Deadline()
+    try: farm = Deadline()
+    except: return _error('Could not connect to Deadline')
 
     # Open temporary directory
     root_temp_path = fix_path(api.storage.resolve('temp:/'))

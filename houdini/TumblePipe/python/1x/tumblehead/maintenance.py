@@ -3,8 +3,13 @@ import sys
 
 from .apps.deadline import Deadline
 
+def _error(msg):
+    logging.error(msg)
+    return 1
+
 def main():
-    deadline = Deadline()
+    try: deadline = Deadline()
+    except: return _error('Could not connect to Deadline')
     deadline.maintenance()
     return 0
 

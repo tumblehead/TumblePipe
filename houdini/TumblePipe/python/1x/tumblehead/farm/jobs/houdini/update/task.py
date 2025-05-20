@@ -137,7 +137,8 @@ def main(
     department_names = department_names[:department_names.index(department_name) + 1]
 
     # Get deadline ready
-    farm = Deadline()
+    try: farm = Deadline()
+    except: return _error('Could not connect to Deadline')
 
     # Batch and jobs
     logging.info(f'Creating batch')
@@ -191,7 +192,8 @@ def cli():
     args = parser.parse_args()
 
     # Prepare
-    deadline = Deadline()
+    try: deadline = Deadline()
+    except: return _error('Could not connect to Deadline')
 
     # Check department name
     department_name = args.department_name

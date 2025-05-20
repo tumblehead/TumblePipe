@@ -147,7 +147,7 @@ class ExportShotLayer(ns.Node):
 
         # Nodes
         context = self.native()
-        stage_node = context.node('stage')
+        stage_node = context.node('IN_stage')
         cache_node = context.node('cache')
         bypass_node = context.node('bypass')
         dive_node = context.node('dive')
@@ -162,7 +162,13 @@ class ExportShotLayer(ns.Node):
         timestamp = dt.datetime.now().isoformat()
 
         # Paths
-        export_path = api.storage.resolve(f'export:/shots/{sequence_name}/{shot_name}/{department_name}')
+        export_path = api.storage.resolve(
+            'export:'
+            '/shots'
+            f'/{sequence_name}'
+            f'/{shot_name}'
+            f'/{department_name}'
+        )
         version_path = get_next_version_path(export_path)
         version_name = version_path.name
 
@@ -173,7 +179,10 @@ class ExportShotLayer(ns.Node):
         assets = dict()
         asset_inputs = set()
         for asset_metadata in util.list_assets(root):
-            asset_path = f'/{asset_metadata["category"]}/{asset_metadata["instance"]}'
+            asset_path = (
+                f'/{asset_metadata["category"]}'
+                f'/{asset_metadata["instance"]}'
+            )
             assets[asset_path] = asset_metadata
             asset_inputs.update(set(map(json.dumps, asset_metadata['inputs'])))
         
@@ -204,7 +213,14 @@ class ExportShotLayer(ns.Node):
                 category_name = asset_metadata['category']
                 asset_name = asset_metadata['asset']
                 instance_name = asset_metadata['instance']
-                output_file_name = f'asset_{category_name}_{asset_name}_{instance_name}_{department_name}_{version_name}.usd'
+                output_file_name = (
+                    f'asset_'
+                    f'{category_name}_'
+                    f'{asset_name}_'
+                    f'{instance_name}_'
+                    f'{department_name}_'
+                    f'{version_name}.usd'
+                )
                 output_file_path = temp_path / output_file_name
                 _export_prim(dive_node, asset_path, render_range, step, output_file_path)
                 parameter_assets.add(json.dumps(dict(

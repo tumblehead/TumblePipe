@@ -1682,23 +1682,7 @@ def get_workfile_context(hip_file_path: Path) -> Optional[Context]:
     workspace, *path = hip_file_path.parent.parts[-4:]
     match workspace:
         case 'assets':
-
-            # Parse the path
             category_name, asset_name, department_name = path
-
-            # Check category name
-            category_names = api.config.list_category_names()
-            if category_name not in category_names: return None
-
-            # Check asset name
-            asset_names = api.config.list_asset_names(category_name)
-            if asset_name not in asset_names: return None
-            
-            # Check department name
-            department_names = api.config.list_asset_department_names()
-            if department_name not in department_names: return None
-
-            # Return the names
             return AssetContext(
                 department_name = department_name,
                 category_name = category_name,
@@ -1706,23 +1690,7 @@ def get_workfile_context(hip_file_path: Path) -> Optional[Context]:
                 version_name = version_name
             )
         case 'shots':
-
-            # Parse the path
             sequence_name, shot_name, department_name = path
-
-            # Check sequence name
-            sequence_names = api.config.list_sequence_names()
-            if sequence_name not in sequence_names: return None
-            
-            # Check shot name
-            shot_names = api.config.list_shot_names(sequence_name)
-            if shot_name not in shot_names: return None
-            
-            # Check department name
-            department_names = api.config.list_shot_department_names()
-            if department_name not in department_names: return None
-
-            # Return the names
             return ShotContext(
                 department_name = department_name,
                 sequence_name = sequence_name,
@@ -1730,23 +1698,7 @@ def get_workfile_context(hip_file_path: Path) -> Optional[Context]:
                 version_name = version_name
             )
         case 'kits':
-                
-            # Parse the path
             category_name, kit_name, department_name = path
-
-            # Check category name
-            category_names = api.config.list_kit_category_names()
-            if category_name not in category_names: return None
-
-            # Check kit name
-            kit_names = api.config.list_kit_names(category_name)
-            if kit_name not in kit_names: return None
-            
-            # Check department name
-            department_names = api.config.list_kit_department_names()
-            if department_name not in department_names: return None
-
-            # Return the names
             return KitContext(
                 department_name = department_name,
                 category_name = category_name,

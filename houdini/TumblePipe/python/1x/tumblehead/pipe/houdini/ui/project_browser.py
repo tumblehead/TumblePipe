@@ -122,10 +122,6 @@ class FrameRange:
     Padded = 'Padded'
     Full = 'Full'
 
-def _get_context():
-    file_path = Path(hou.hipFile.path())
-    return get_workfile_context(file_path)
-
 def _latest_asset_context(category_name, asset_name, department_name):
     file_path = latest_asset_hip_file_path(category_name, asset_name, department_name)
     version_name = None if file_path is None else file_path.stem.rsplit('_', 1)[-1]
@@ -1793,9 +1789,6 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._version_view.open_location.connect(self._open_workspace_location)
         self._version_view.open_version.connect(self._open_version)
         self._version_view.revive_version.connect(self._revive_version)
-
-        # Register file path changed callback
-        hou.hipFile.addEventCallback(self._file_path_changed)
     
     def refresh(self):
         self._details_view.refresh()
@@ -1840,19 +1833,6 @@ class ProjectBrowser(QtWidgets.QWidget):
             context.department_name,
             context.version_name
         )
-
-    def _file_path_changed(self, event_type):
-        return
-        match event_type:
-            case hou.hipFileEventType.AfterClear:
-                self._context = None
-                self.refresh()
-            case hou.hipFileEventType.AfterLoad:
-                context = _get_context()
-                if self._context == context: return
-                self._context = context
-                self._update_scene()
-                self.refresh()
 
     def _update_scene(self):
 
@@ -2510,11 +2490,17 @@ class ProjectBrowser(QtWidgets.QWidget):
                 case 'layout':
 
                     # Create the import node
-                    import_node = import_assets.create(scene_node, 'import_assets')
+                    import_node = import_assets.create(
+                        scene_node,
+                        'import_assets'
+                    )
                     prev_node = import_node.native()
 
                     # Create the export node
-                    export_node = export_shot_layer.create(scene_node, 'export_shot')
+                    export_node = export_shot_layer.create(
+                        scene_node,
+                        'export_shot'
+                    )
                     export_node.setInput(0, prev_node)
 
                 case 'environment':
@@ -2524,10 +2510,20 @@ class ProjectBrowser(QtWidgets.QWidget):
                     prev_node = import_node.native()
                     
                     # Create the export node
-                    export_node = export_shot_layer.create(scene_node, 'export_shot')
+                    export_node = export_shot_layer.create(
+                        scene_node,
+                        'export_shot'
+                    )
                     export_node.setInput(0, prev_node)
 
                 case 'animation':
+
+                    def _add(rig_imports, category_name, asset_name):
+                        if category_name not in rig_imports:
+                            rig_imports[category_name] = {}
+                        if asset_name not in rig_imports[category_name]:
+                            rig_imports[category_name][asset_name] = 0
+                        rig_imports[category_name][asset_name] += 1
                     
                     # Import the assets
                     import_node = build_shot.create(scene_node, 'import_shot')
@@ -2535,40 +2531,59 @@ class ProjectBrowser(QtWidgets.QWidget):
                     
                     # Scrape the assets
                     root = import_node.native().stage().GetPseudoRoot()
-                    assets = [
-                        (asset_info['category'], asset_info['asset'])
-                        for asset_info in util.list_assets(root)
-                    ]
+                    rig_imports = dict()
+                    for asset_info in util.list_assets(root):
+                        _add(
+                            rig_imports,
+                            asset_info['category'],
+                            asset_info['asset']
+                        )
 
                     # Create the animation node
                     animate_node = animate.create(scene_node, 'animate_shot')
                     animate_node.setInput(0, import_node.native())
-                    inner_animate_node = animate_node.native().node('anim/sopnet/create')
+                    inner_animate_node = animate_node.native().node(
+                        'anim/sopnet/create'
+                    )
                     output_animate_node = inner_animate_node.node('output0')
 
                     # Import the rigs
-                    rigs_node = import_rigs.create(inner_animate_node, 'import_rigs')
-                    for category_name, asset_name in assets:
-                        rigs_node.inc_asset_entry(category_name, asset_name)
+                    rigs_node = import_rigs.create(
+                        inner_animate_node,
+                        'import_rigs'
+                    )
+                    rigs_node.set_rig_imports(rig_imports)
                     rigs_node.execute()
 
                     # Create the scene animate nodes
-                    scene_animate_node = inner_animate_node.createNode('apex::sceneanimate', 'scene_animate')
+                    scene_animate_node = inner_animate_node.createNode(
+                        'apex::sceneanimate',
+                        'scene_animate'
+                    )
                     scene_animate_node.setInput(0, rigs_node.native())
-                    invoke_scene_node = inner_animate_node.createNode('apex::sceneinvoke', 'scene_invoke')
+                    invoke_scene_node = inner_animate_node.createNode(
+                        'apex::sceneinvoke',
+                        'scene_invoke'
+                    )
                     invoke_scene_node.setInput(0, scene_animate_node)
                     invoke_scene_node.parm('outputallshapes').pressButton()
                     output_animate_node.setInput(0, invoke_scene_node)
 
                     # Create the playblast node
-                    playblast_node = playblast.create(inner_animate_node, 'playblast')
+                    playblast_node = playblast.create(
+                        inner_animate_node,
+                        'playblast'
+                    )
                     playblast_node.setInput(0, invoke_scene_node)
 
                     # Layout the dive nodes
                     inner_animate_node.layoutChildren()
 
                     # Create the export node
-                    export_node = export_shot_layer.create(scene_node, 'export_shot')
+                    export_node = export_shot_layer.create(
+                        scene_node,
+                        'export_shot'
+                    )
                     export_node.setInput(0, animate_node.native())
 
                 case 'crowd':
@@ -2578,7 +2593,10 @@ class ProjectBrowser(QtWidgets.QWidget):
                     prev_node = import_node.native()
 
                     # Create the export node
-                    export_node = export_shot_layer.create(scene_node, 'export_shot')
+                    export_node = export_shot_layer.create(
+                        scene_node,
+                        'export_shot'
+                    )
                     export_node.setInput(0, prev_node)
 
                 case 'effects':
@@ -2588,7 +2606,10 @@ class ProjectBrowser(QtWidgets.QWidget):
                     prev_node = import_node.native()
 
                     # Create the export node
-                    export_node = export_shot_layer.create(scene_node, 'export_shot')
+                    export_node = export_shot_layer.create(
+                        scene_node,
+                        'export_shot'
+                    )
                     export_node.setInput(0, prev_node)
 
                 case 'cfx':
@@ -2598,7 +2619,10 @@ class ProjectBrowser(QtWidgets.QWidget):
                     prev_node = import_node.native()
 
                     # Create the export node
-                    export_node = export_shot_layer.create(scene_node, 'export_shot')
+                    export_node = export_shot_layer.create(
+                        scene_node,
+                        'export_shot'
+                    )
                     export_node.setInput(0, prev_node)
 
                 case 'light':
