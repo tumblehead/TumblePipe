@@ -69,7 +69,9 @@ class SubmitRender(ns.Node):
         ]
 
     def list_pool_names(self):
-        pool_names = Deadline().list_pools()
+        try: deadline = Deadline()
+        except: return []
+        pool_names = deadline.list_pools()
         if len(pool_names) == 0: return []
         default_values = api.config.resolve(
             'defaults:/houdini/lops/submit_render'

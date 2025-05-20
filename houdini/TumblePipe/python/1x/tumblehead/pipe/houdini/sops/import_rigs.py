@@ -101,6 +101,17 @@ class ImportRigs(ns.Node):
     def set_instances(self, index, instances):
         self.parm(f'instances{index}').set(instances)
     
+    def set_rig_imports(self, rig_imports):
+        self.parm('rig_imports').set(0)
+        for category_name, asset_instances in rig_imports.items():
+            for asset_name, instances in asset_instances.items():
+                if instances == 0: continue
+                index = self.parm('rig_imports').eval() + 1
+                self.parm('rig_imports').set(index)
+                self.set_category_name(index, category_name)
+                self.set_asset_name(index, asset_name)
+                self.set_instances(index, instances)
+    
     def execute(self):
 
         # Clear scene

@@ -281,7 +281,8 @@ def cli():
         parser.error(f'Invalid render department: {render_department_name}')
     
     # Prepare deadline
-    deadline = Deadline()
+    try: deadline = Deadline()
+    except: parser.error('Failed to connect to Deadline')
 
     # Check pool
     pool_names = deadline.list_pools()
