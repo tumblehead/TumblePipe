@@ -28,6 +28,63 @@ Here is a sparse walkthrough of this repository's directory structure:
 # Download
 You can find downloads for the zipped package releases on the GitHub repository, under [releases](https://github.com/tumblehead/TumblePipe/releases).
 
+# Prerequisites
+Before installing TumblePipe, you'll need to set up a Linux environment with the required tools. This is necessary both for workstations and render farm workers.
+
+## WSL2 and Ubuntu
+TumblePipe's tools and farm scripts run in a Linux environment, which on Windows is provided by WSL2 (Windows Subsystem for Linux):
+
+1) **Install WSL2** by following Microsoft's official guide: [Install WSL on Windows](https://learn.microsoft.com/en-us/windows/wsl/install)
+    - The default Ubuntu distribution works well
+2) This applies to:
+    - **Individuals**: Your workstation where you run Houdini
+    - **Teams**: Both artist workstations and render farm workers
+
+## Required Tools
+Install the following tools on Ubuntu/WSL2:
+
+### Astral UV
+UV provides Python environment management for the pipeline's farm scripts.
+
+- **Installation Guide**: [UV Getting Started](https://docs.astral.sh/uv/getting-started/installation/)
+- **Quick Install**:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+
+### Image and Video Tools
+The pipeline uses these tools for render processing:
+
+```bash
+sudo apt install ffmpeg
+sudo apt install openimageio-tools
+sudo apt install opencolorio-tools
+```
+
+## Drive Mapping
+Your Windows project drives must be accessible from WSL2 for the pipeline to read/write files.
+
+1) Edit `/etc/fstab` in Ubuntu to mount your project drives:
+   ```bash
+   sudo nano /etc/fstab
+   ```
+
+2) Add mount entries for your project drives, for example:
+   ```
+   P: /mnt/p drvfs defaults 0 0
+   ```
+
+3) The drives you mount must match what your launcher scripts reference in environment variables like `TH_PROJECT_PATH` and `TH_PIPELINE_PATH`
+
+4) This drive mapping is required on:
+    - **Individuals**: Your workstation
+    - **Teams**: All artist workstations and **all render farm workers** (critical for file access)
+
+## Environment Variables
+The pipeline uses several `TH_*` environment variables (detailed in the Configuration section). Note that:
+- `TH_USER` is optional and defaults to your system username
+- Other variables like `TH_PROJECT_PATH` and `TH_PIPELINE_PATH` are set in your launcher script
+
 # Installation
 Installing a Houdini package is simply as unzipping the downloaded release.
 
@@ -66,6 +123,32 @@ The file name of the these Python modules are not optional, the pipeline expect 
 As an additional example of a pipeline configuration, please check out the Turbulence project work files. You can find this resource along with other information on the Turbulence project's dedicated SideFX [tech-demo](https://www.sidefx.com/tech-demos/turbulence/) website.
 
 # Deadline and Render Farm
-In order to be able to use the render farm scripts, there is some work that needs to be done regarding setting up the render workers.
+In order to use the render farm scripts, you'll need to set up Deadline workers with the same prerequisites as your workstations.
 
-🚧 This will be documented in the future 🚧
+## Render Farm Prerequisites
+Each farm worker needs the same WSL2/Ubuntu setup as described in the Prerequisites section:
+
+- **WSL2 and Ubuntu**: Follow the same installation steps
+- **Required Tools**: Install UV, ffmpeg, openimageio-tools, and opencolorio-tools
+- **Drive Mapping**: This is **critical** - workers must have identical drive mappings in `/etc/fstab` to access project files
+  - If your workstation has `P: /mnt/p drvfs defaults 0 0`, all workers need the same mapping
+  - Without matching drive mappings, farm jobs will fail to read/write files
+
+## Installing the UV Deadline Plugin
+TumblePipe uses a custom Deadline plugin that leverages Astral UV for fast Python environment management.
+
+1) **Copy the plugin** to your Deadline repository:
+   ```
+   Copy deadline/UV/ to <DeadlineRepository>/custom/plugins/UV/
+   ```
+
+2) **Restart Deadline workers** to load the new plugin
+
+3) **For detailed configuration**, see the [UV Plugin README](deadline/UV/README.md) which covers:
+   - Performance tuning (cache directories, Python pre-installation)
+   - Troubleshooting common issues
+   - Advanced usage and optimization
+
+## Additional Resources
+- **Deadline Plugin Development**: [Thinkbox Documentation](https://docs.thinkboxsoftware.com/products/deadline/10.1/1_User%20Manual/manual/manual-plugins.html)
+- **UV Documentation**: [Astral UV Docs](https://docs.astral.sh/uv/)
