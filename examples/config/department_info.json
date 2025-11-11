@@ -1,0 +1,26 @@
+{
+    "asset": [
+        "model",
+        "blendshape",
+        "lookdev",
+        "rig"
+    ],
+    "shot": [
+        "layout",
+        "environment",
+        "animation",
+        "crowd",
+        "effects",
+        "cfx",
+        "light",
+	    "composite"
+    ],
+    "kit": [
+        "general"
+    ],
+    "render": [
+        "render",
+        "denoise",
+        "composite"
+    ]
+}

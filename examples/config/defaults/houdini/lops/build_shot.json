@@ -1,0 +1,20 @@
+{
+    "departments": {
+        "asset": [
+            "model",
+            "lookdev"
+        ],
+        "kit": [
+            "general"
+        ],
+        "shot": [
+            "layout",
+            "environment",
+            "animation",
+            "crowd",
+            "effects",
+            "cfx",
+            "light"
+        ]
+    }
+}
