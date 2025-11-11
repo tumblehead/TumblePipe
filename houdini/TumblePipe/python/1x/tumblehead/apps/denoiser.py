@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from tumblehead.api import path_str, to_windows_path
+from tumblehead.api import path_str, fix_path, to_windows_path
 from tumblehead.apps import app
 
 def _find_renderman_denoiser():
-    pixar_path = Path('/mnt/c/Program Files/Pixar')
+    pixar_path = fix_path(Path('/mnt/c/Program Files/Pixar'))
     for dir_path in pixar_path.iterdir():
         if not dir_path.is_dir(): continue
         if not dir_path.name.startswith('RenderManProServer-'): continue
@@ -21,6 +21,10 @@ class Denoiser:
         assert self._denoiser is not None, 'RenderMan denoiser not found'
 
     def run(self, config_path):
+        print(' '.join([
+            path_str(self._denoiser), '-cf', '-t',
+            '-j', path_str(to_windows_path(config_path))
+        ]))
         return app.run([
             path_str(self._denoiser), '-cf', '-t',
             '-j', path_str(to_windows_path(config_path))

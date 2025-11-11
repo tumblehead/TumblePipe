@@ -13,7 +13,7 @@ from tumblehead.api import (
     default_client
 )
 from tumblehead.config import FrameRange
-from tumblehead.util.io import store_json
+from tumblehead.util.io import store_json, load_json
 from tumblehead.apps.deadline import Deadline
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.houdini.util as util
@@ -23,11 +23,30 @@ from tumblehead.pipe.paths import (
     get_workfile_context,
     get_next_frame_path,
     entity_from_context,
-    ShotContext,
     ShotEntity
 )
 
 api = default_client()
+
+def _entity_from_context_json():
+    
+    # Path to current workfile
+    file_path = Path(hou.hipFile.path())
+    if not file_path.exists(): return None
+
+    # Look for context.json in the workfile directory
+    context_json_path = file_path.parent / "context.json"
+    if not context_json_path.exists(): return None
+    context_data = load_json(context_json_path)
+    if context_data is None: return None
+
+    # Parse the loaded context
+    if context_data.get('entity') != 'shot': return None
+    return ShotEntity(
+        sequence_name = context_data['sequence'],
+        shot_name = context_data['shot'],
+        department_name = context_data['department']
+    )
 
 def _set(data, value, *path_steps):
     data = data.setdefault(path_steps[0], dict())
@@ -57,10 +76,15 @@ def _ensure_node(context, node_type, name):
 def _connect(output_node, output_index, input_node, input_index):
     input_node.setInput(input_index, output_node, output_index)
 
+def _is_valid_aov_node_name(name: str) -> bool:
+    if '_' not in name: return False
+    return len(name.split('_')) == 2
+
 def _aov_included(aov_name):
     name = aov_name.lower()
     if name.startswith('beauty_'): return True
     if name.startswith('objid_'): return True
+    if name.startswith('holdout_'): return True
     if name == 'beauty': return True
     if name == 'alpha': return True
     if name == 'albedo': return True
@@ -69,6 +93,20 @@ def _aov_included(aov_name):
     if name == 'uv': return True
     if name == 'position': return True
     return False
+
+def _aov_output_type(aov_name):
+    name = aov_name.lower()
+    if name.startswith('beauty_'): return 2
+    if name.startswith('objid_'): return 2
+    if name.startswith('holdout_'): return 0
+    if name == 'beauty': return 2
+    if name == 'alpha': return 0
+    if name == 'albedo': return 2
+    if name == 'normal': return 2
+    if name == 'depth': return 2
+    if name == 'uv': return 1
+    if name == 'position': return 2
+    assert False, f'Unknown aov type for {aov_name}'
 
 def _get_frame_path(framestack_path, frame_index):
     frame_name = str(frame_index).zfill(4)
@@ -171,6 +209,14 @@ class BuildComp(ns.Node):
         if sequence_name is None: return []
         return api.config.list_shot_names(sequence_name)
     
+    def list_render_layer_names(self):
+        sequence_name = self.get_sequence_name()
+        if sequence_name is None: return []
+        shot_name = self.get_shot_name()
+        if shot_name is None: return []
+        render_layer_names = api.config.list_render_layer_names(sequence_name, shot_name)
+        return render_layer_names
+    
     def list_render_department_names(self):
         render_department_names = api.config.list_render_department_names()
         if not render_department_names: return []
@@ -192,22 +238,58 @@ class BuildComp(ns.Node):
             for pool_name in default_values['pools']
             if pool_name in pool_names
         ]
-    
+
+    def get_entity_source(self):
+        return self.parm('entity_source').eval()
+
     def get_sequence_name(self):
-        sequence_names = self.list_sequence_names()
-        if len(sequence_names) == 0: return None
-        sequence_name = self.parm('sequence').eval()
-        if len(sequence_name) == 0: return sequence_names[0]
-        if sequence_name not in sequence_names: return None
-        return sequence_name
+        entity_source = self.get_entity_source()
+        match entity_source:
+            case 'from_context':
+                entity_data = _entity_from_context_json()
+                if entity_data is None: return None
+                return entity_data.sequence_name
+            case 'from_settings':
+                sequence_names = self.list_sequence_names()
+                if len(sequence_names) == 0: return None
+                sequence_name = self.parm('sequence').eval()
+                if len(sequence_name) == 0: return sequence_names[0]
+                if sequence_name not in sequence_names: return None
+                return sequence_name
+            case _:
+                raise AssertionError(f'Unknown entity source token: {entity_source}')
 
     def get_shot_name(self):
-        shot_names = self.list_shot_names()
-        if len(shot_names) == 0: return None
-        shot_name = self.parm('shot').eval()
-        if len(shot_name) == 0: return shot_names[0]
-        if shot_name not in shot_names: return None
-        return shot_name
+        entity_source = self.get_entity_source()
+        match entity_source:
+            case 'from_context':
+                entity_data = _entity_from_context_json()
+                if entity_data is None: return None
+                return entity_data.shot_name
+            case 'from_settings':
+                shot_names = self.list_shot_names()
+                if len(shot_names) == 0: return None
+                shot_name = self.parm('shot').eval()
+                if len(shot_name) == 0: return shot_names[0]
+                if shot_name not in shot_names: return None
+                return shot_name
+            case _:
+                raise AssertionError(f'Unknown entity source token: {entity_source}')
+    
+    def get_render_layer_name(self):
+        render_layer_names = self.list_render_layer_names()
+        if len(render_layer_names) == 0: return None
+        render_layer_name = self.parm('render_layer').eval()
+        if len(render_layer_name) == 0: return render_layer_names[0]
+        if render_layer_name == 'all': return 'all'
+        if render_layer_name not in render_layer_names: return None
+        return render_layer_name
+
+    def get_render_layer_names(self):
+        render_layer_name = self.get_render_layer_name()
+        if render_layer_name is None: return []
+        if render_layer_name != 'all': return [render_layer_name]
+        return self.list_render_layer_names()
     
     def get_render_department_name(self):
         department_names = self.list_render_department_names()
@@ -287,7 +369,12 @@ class BuildComp(ns.Node):
         shot_names = self.list_shot_names()
         if shot_name not in shot_names: return
         self.parm('shot').set(shot_name)
-    
+
+    def set_entity_source(self, entity_source):
+        valid_sources = ['from_context', 'from_settings']
+        if entity_source not in valid_sources: return
+        self.parm('entity_source').set(entity_source)
+
     def set_render_department_name(self, render_department_name):
         department_names = self.list_render_department_names()
         if render_department_name not in department_names: return
@@ -334,6 +421,9 @@ class BuildComp(ns.Node):
         tops_node.parm('dirtybutton').pressButton()
         tops_node.parm('cookbutton').pressButton()
     
+    def execute(self):
+        self.update()
+    
     def _resolve_aovs(
         self,
         source_name,
@@ -377,6 +467,9 @@ class BuildComp(ns.Node):
             # Find mono names
             mono_names = list()
             if 'alpha' in aov_names: mono_names.append('alpha')
+            for aov_name in aov_names:
+                if not aov_name.startswith('holdout_'): continue
+                mono_names.append(aov_name)
 
             # The rest is util names
             util_names = list(
@@ -457,7 +550,10 @@ class BuildComp(ns.Node):
         hou.setFrame(render_range.first_frame)
         aov_import_node.parm('missingdata').set(1)
         aov_import_node.parm('missingcolora').set(0)
-        aov_import_node.parm('addaovs').pressButton()
+        aov_import_node.parm('colorspace').set(0)
+        aov_import_node.parm('aovs').set(1)
+        aov_import_node.parm('aov1').set(aov.label)
+        aov_import_node.parm('type1').set(_aov_output_type(aov.label))
 
         # Create the resample node
         aov_resample_node = _ensure_node(aov_subnet, 'resample', 'resample')
@@ -508,7 +604,10 @@ class BuildComp(ns.Node):
         hou.setFrame(render_range.first_frame)
         aov_import_node.parm('missingdata').set(1)
         aov_import_node.parm('missingcolora').set(0)
-        aov_import_node.parm('addaovs').pressButton()
+        aov_import_node.parm('colorspace').set(1)
+        aov_import_node.parm('aovs').set(1)
+        aov_import_node.parm('aov1').set(aov.label)
+        aov_import_node.parm('type1').set(_aov_output_type(aov.label))
 
         # Create the resample node
         aov_resample_node = _ensure_node(aov_subnet, 'resample', 'resample')
@@ -561,7 +660,10 @@ class BuildComp(ns.Node):
         hou.setFrame(render_range.first_frame)
         aov_import_node.parm('missingdata').set(1)
         aov_import_node.parm('missingcolora').set(0)
-        aov_import_node.parm('addaovs').pressButton()
+        aov_import_node.parm('colorspace').set(1)
+        aov_import_node.parm('aovs').set(1)
+        aov_import_node.parm('aov1').set(aov.label)
+        aov_import_node.parm('type1').set(_aov_output_type(aov.label))
 
         # Create the resample node
         aov_resample_node = _ensure_node(aov_subnet, 'resample', 'resample')
@@ -608,7 +710,10 @@ class BuildComp(ns.Node):
         hou.setFrame(render_range.first_frame)
         aov_import_node.parm('missingdata').set(1)
         aov_import_node.parm('missingcolora').set(0)
-        aov_import_node.parm('addaovs').pressButton()
+        aov_import_node.parm('colorspace').set(1)
+        aov_import_node.parm('aovs').set(1)
+        aov_import_node.parm('aov1').set(aov.label)
+        aov_import_node.parm('type1').set(_aov_output_type(aov.label))
 
         # Create the resample node
         aov_resample_node = _ensure_node(aov_subnet, 'resample', 'resample')
@@ -625,6 +730,146 @@ class BuildComp(ns.Node):
         # Return aov subnet
         return aov_subnet
     
+    def _update_grade_subnet(self, grade_subnet, render_layer_subnet, render_layer_name, lpe_names, aov_nodes):
+
+        # Get or create grade subnet
+        lpe_subnet_inputs = grade_subnet.node('inputs')
+        lpe_subnet_outputs = grade_subnet.node('outputs')
+
+        # Set up inputs - include all LPEs (including beauty) plus alpha
+        num_lpes = len(lpe_names)
+        grade_subnet.parm('inputs').set(num_lpes + 1)
+        for lpe_index, lpe_name in enumerate(lpe_names):
+            grade_subnet.parm(f'inputlabel{lpe_index + 1}').set(lpe_name)
+            grade_subnet.parm(f'inputtype{lpe_index + 1}').set(3)
+        grade_subnet.parm(f'inputlabel{num_lpes + 1}').set('alpha')
+        grade_subnet.parm(f'inputtype{num_lpes + 1}').set(1)
+
+        # Set up outputs - one rgba output plus individual graded outputs for each LPE
+        grade_subnet.parm('outputs').set(num_lpes + 1)
+        grade_subnet.parm('outputlabel1').set('rgba')
+        grade_subnet.parm('outputtype1').set(4)
+        for lpe_index, lpe_name in enumerate(lpe_names):
+            grade_subnet.parm(f'outputlabel{lpe_index + 2}').set(lpe_name)
+            grade_subnet.parm(f'outputtype{lpe_index + 2}').set(3)
+        
+        # Colors
+        grade_subnet.setColor(hou.Color((1, 0, 1)))
+        lpe_subnet_inputs.setColor(hou.Color((1, 1, 1)))
+        lpe_subnet_outputs.setColor(hou.Color((0, 0, 0)))
+
+        # Prepare spare parameters - preserve existing ones, but exclude LPE parameters that we're about to recreate
+        parm_group = hou.ParmTemplateGroup()
+        spare_folder_old = hou.FolderParmTemplate(
+            'old_parms', 'Old Parameters'
+        )
+        
+        # Create set of parameter names we're about to add to avoid conflicts
+        new_parm_names = set()
+        for lpe_name in lpe_names:
+            new_parm_names.add(f'{lpe_name}_brightness')
+            new_parm_names.add(f'{lpe_name}_tint')
+        
+        # Only preserve old parameters that don't conflict with new ones
+        for old_parm in grade_subnet.parmTemplateGroup().entries():
+            if old_parm.name() not in new_parm_names:
+                spare_folder_old.addParmTemplate(old_parm)
+        spare_folder_old.hide(True)
+        parm_group.append(spare_folder_old)
+
+        # Connect LPE import nodes to grade subnet inputs
+        for lpe_index, lpe_name in enumerate(lpe_names):
+            lpe_import_node = aov_nodes[AOVType.LPE][lpe_name]
+            _connect(lpe_import_node, 0, grade_subnet, lpe_index)
+
+        # Create or update grade nodes per LPE
+        grade_nodes = dict()
+        layer_output_node = None
+        for lpe_index, lpe_name in enumerate(lpe_names):
+
+            # Create color correct node
+            lpe_grade_node = _ensure_node(
+                grade_subnet, 'bright',
+                f'{render_layer_name}_{lpe_name}_grade'
+            )
+            grade_nodes[lpe_name] = lpe_grade_node
+            _connect(lpe_subnet_inputs, lpe_index, lpe_grade_node, 0)
+
+            # Add spare brightness parameter
+            spare_brightness_parm = (
+                lpe_grade_node
+                .parmTuple('bright')
+                .parmTemplate()
+            )
+            spare_brightness_parm.setName(f'{lpe_name}_brightness')
+            spare_brightness_parm.setLabel(f'{lpe_name} brightness')
+            parm_group.append(spare_brightness_parm)
+
+            # Add spare color parameter
+            spare_color_parm = (
+                lpe_grade_node
+                .parmTuple('brighttint')
+                .parmTemplate()
+            )
+            spare_color_parm.setName(f'{lpe_name}_tint')
+            spare_color_parm.setLabel(f'{lpe_name} tint')
+            parm_group.append(spare_color_parm)
+
+            # Merge LPEs
+            if layer_output_node is None:
+                layer_output_node = (lpe_name, lpe_grade_node)
+            else:
+                prev_lpe_name, prev_output_node = layer_output_node
+                add_node = _ensure_node(
+                    grade_subnet, 'blend',
+                    f'{render_layer_name}_{prev_lpe_name}_{lpe_name}_add'
+                )
+                add_node.parm('mode').set('add')
+                _connect(prev_output_node, 0, add_node, 0)
+                _connect(lpe_grade_node, 0, add_node, 1)
+                layer_output_node = (lpe_name, add_node)
+        
+        # Set the spare parameters on the grade subnet
+        grade_subnet.setParmTemplateGroup(parm_group)
+
+        # Hook up the new spare parameters
+        for lpe_name in lpe_names:
+            grade_node = grade_nodes[lpe_name]
+
+            # Brightness - use relative path from child to parent parameter
+            grade_node.parm('bright').setExpression(
+                f'ch("../{lpe_name}_brightness")'
+            )
+
+            # Tint - use relative path from child to parent parameter
+            grade_node.parm('brighttintr').setExpression(
+                f'ch("../{lpe_name}_tintr")'
+            )
+            grade_node.parm('brighttintg').setExpression(
+                f'ch("../{lpe_name}_tintg")'
+            )
+            grade_node.parm('brighttintb').setExpression(
+                f'ch("../{lpe_name}_tintb")'
+            )
+        
+        # Convert grade output to rgba
+        grade_rgba_node = _ensure_node(grade_subnet, 'rgbtorgba', 'rgba')
+        final_output_node = None if layer_output_node is None else layer_output_node[1]
+        if final_output_node is None:
+            _connect(lpe_subnet_inputs, num_lpes, grade_rgba_node, 0)
+        else:
+            _connect(final_output_node, 0, grade_rgba_node, 0)
+        _connect(lpe_subnet_inputs, num_lpes, grade_rgba_node, 1)
+        _connect(grade_rgba_node, 0, lpe_subnet_outputs, 0)
+
+        # Connect individual graded LPE outputs
+        for lpe_index, lpe_name in enumerate(lpe_names):
+            grade_node = grade_nodes[lpe_name]
+            _connect(grade_node, 0, lpe_subnet_outputs, lpe_index + 1)
+
+        # Layout grade subnet nodes
+        grade_subnet.layoutChildren()
+    
     def _update(self):
 
         # Nodes
@@ -637,6 +882,7 @@ class BuildComp(ns.Node):
         source_name = self.get_source_name()
         resolution_name = self.get_proxy_resolution()
         scale = _scale(resolution_name)
+        render_layer_names = api.config.list_render_layer_names(sequence_name, shot_name)
 
         # Find the ordered list of render department names
         render_department_names = self.list_render_department_names()
@@ -662,7 +908,9 @@ class BuildComp(ns.Node):
 
             # Get aov context
             aov_import_node_name = aov_import_node.name()
+            if not _is_valid_aov_node_name(aov_import_node_name): continue
             render_layer_name, aov_name = aov_import_node_name.split('_', 1)
+            if render_layer_name not in render_layer_names: continue
 
             # Get the resample node
             aov_resample_node = _get_connected_output(aov_import_node, 0)
@@ -724,6 +972,55 @@ class BuildComp(ns.Node):
                 # Store import node
                 if render_layer_name not in aov_import_nodes: aov_import_nodes[render_layer_name] = dict()
                 aov_import_nodes[render_layer_name][aov.label] = (aov_subnet.node('outputs'), aov_subnet.node('inputs'))
+
+        # Update grade subnets for render layers with new LPEs
+        for render_layer_name, aovs in aov_context.items():
+            render_layer_subnet = dive_node.node(render_layer_name)
+            if render_layer_subnet is None: continue
+            
+            grade_subnet = render_layer_subnet.node('grade')
+            if grade_subnet is None: continue
+            
+            # Check if we have new LPEs for this render layer
+            layer_aov_types = _get(aov_types, render_layer_name)
+            if layer_aov_types is None: continue
+            
+            # Collect all LPE names (including beauty and new LPEs)
+            aov_nodes_by_type = {
+                AOVType.LPE: dict(),
+                AOVType.Mask: dict(), 
+                AOVType.Util: dict(),
+                AOVType.Mono: dict()
+            }
+            
+            # Group aovs by type
+            for aov in aovs.values():
+                if not _aov_included(aov.label): continue
+                aov_type = layer_aov_types.get(aov.label)
+                if aov_type is None: continue
+                
+                # Find the aov subnet node
+                aov_subnet = render_layer_subnet.node(aov.label)
+                if aov_subnet is None: continue
+                
+                aov_nodes_by_type[aov_type][aov.label] = aov_subnet
+            
+            # Get all LPE names including beauty
+            lpe_names = list(aov_nodes_by_type[AOVType.LPE].keys())
+            if lpe_names:  # Only update if we have LPEs
+                # Update the grade subnet with current LPEs
+                self._update_grade_subnet(
+                    grade_subnet, 
+                    render_layer_subnet,
+                    render_layer_name, 
+                    lpe_names, 
+                    aov_nodes_by_type
+                )
+                
+                # Connect alpha to grade subnet
+                if 'alpha' in aov_nodes_by_type[AOVType.Mono]:
+                    alpha_node = aov_nodes_by_type[AOVType.Mono]['alpha']
+                    _connect(alpha_node, 0, grade_subnet, len(lpe_names))
 
     def _build(self):
 
@@ -841,144 +1138,24 @@ class BuildComp(ns.Node):
                 'Missing beauty aov in '
                 f'{render_layer_name}'
             )
-            num_lpes = len(aov_nodes[AOVType.LPE]) - 1
-            lpe_names = [
-                lpe_name for lpe_name in aov_nodes[AOVType.LPE].keys()
-                if lpe_name != 'beauty'
-            ]
+            
+            # Include all LPE names including beauty
+            lpe_names = list(aov_nodes[AOVType.LPE].keys())
             grade_subnet = _ensure_node(render_layer_subnet, 'subnet', 'grade')
-            grade_subnet.parm('inputs').set(num_lpes + 1)
-            for lpe_index, lpe_name in enumerate(lpe_names):
-                grade_subnet.parm(f'inputlabel{lpe_index + 1}').set(lpe_name)
-                grade_subnet.parm(f'inputtype{lpe_index + 1}').set(3)
-            grade_subnet.parm(f'inputlabel{num_lpes + 1}').set('alpha')
-            grade_subnet.parm(f'inputtype{num_lpes + 1}').set(1)
-            grade_subnet.parm('outputs').set(1)
-            grade_subnet.parm('outputlabel1').set('rgba')
-            grade_subnet.parm('outputtype1').set(4)
-            lpe_subnet_inputs = grade_subnet.node('inputs')
-            lpe_subnet_outputs = grade_subnet.node('outputs')
-            grade_subnet.setColor(hou.Color((1, 0, 1)))
-            lpe_subnet_inputs.setColor(hou.Color((1, 1, 1)))
-            lpe_subnet_outputs.setColor(hou.Color((0, 0, 0)))
-
-            # Prepare spare parameters
-            parm_group = hou.ParmTemplateGroup()
-            spare_folder_old = hou.FolderParmTemplate(
-                'old_parms', 'Old Parameters'
+            
+            # Use the helper method to build/update the grade subnet
+            self._update_grade_subnet(
+                grade_subnet,
+                render_layer_subnet,
+                render_layer_name,
+                lpe_names,
+                aov_nodes
             )
-            for old_parm in grade_subnet.parmTemplateGroup().entries():
-                spare_folder_old.addParmTemplate(old_parm)
-            spare_folder_old.hide(True)
-            parm_group.append(spare_folder_old)
-
-            # Compose LPEs per render layer
-            grade_nodes = dict()
-            layer_output_node = None
-            for lpe_index, lpe_name in enumerate(lpe_names):
-
-                # Get LPE import node
-                lpe_import_node = aov_nodes[AOVType.LPE][lpe_name]
-                _connect(lpe_import_node, 0, grade_subnet, lpe_index)
-
-                # Create color correct node
-                lpe_grade_node = _ensure_node(
-                    grade_subnet, 'bright',
-                    f'{render_layer_name}_{lpe_name}_grade'
-                )
-                grade_nodes[lpe_name] = lpe_grade_node
-                _connect(lpe_subnet_inputs, lpe_index, lpe_grade_node, 0)
-
-                # Add spare brightness parameter
-                spare_brightness_parm = (
-                    lpe_grade_node
-                    .parmTuple('bright')
-                    .parmTemplate()
-                )
-                spare_brightness_parm.setName(f'{lpe_name}_brightness')
-                spare_brightness_parm.setLabel(f'{lpe_name} brightness')
-                parm_group.append(spare_brightness_parm)
-
-                # Add spare color parameter
-                spare_color_parm = (
-                    lpe_grade_node
-                    .parmTuple('brighttint')
-                    .parmTemplate()
-                )
-                spare_color_parm.setName(f'{lpe_name}_tint')
-                spare_color_parm.setLabel(f'{lpe_name} tint')
-                parm_group.append(spare_color_parm)
-
-                # Merge LPEs
-                if layer_output_node is None:
-                    layer_output_node = (lpe_name, lpe_grade_node)
-                else:
-                    prev_lpe_name, prev_output_node = layer_output_node
-                    add_node = _ensure_node(
-                        grade_subnet, 'blend',
-                        f'{render_layer_name}_{prev_lpe_name}_{lpe_name}_add'
-                    )
-                    add_node.parm('mode').set('add')
-                    _connect(prev_output_node, 0, add_node, 0)
-                    _connect(lpe_grade_node, 0, add_node, 1)
-                    layer_output_node = (lpe_name, add_node)
-            
-            # Set the spare parameters on the grade subnet
-            grade_subnet.setParmTemplateGroup(parm_group)
-
-            # Hook up the new spare parameters
-            for lpe_name in lpe_names:
-                grade_node = grade_nodes[lpe_name]
-
-                # Brightness
-                grade_node.parm('bright').setExpression(
-                    grade_node
-                    .parm('bright')
-                    .referenceExpression(
-                        grade_subnet.parm(f'{lpe_name}_brightness')
-                    )
-                )
-
-                # Tint
-                grade_node.parm('brighttintr').setExpression(
-                    grade_node
-                    .parm('brighttintr')
-                    .referenceExpression(
-                        grade_subnet.parm(f'{lpe_name}_tintr')
-                    )
-                )
-                grade_node.parm('brighttintg').setExpression(
-                    grade_node
-                    .parm('brighttintg')
-                    .referenceExpression(
-                        grade_subnet.parm(f'{lpe_name}_tintg')
-                    )
-                )
-                grade_node.parm('brighttintb').setExpression(
-                    grade_node
-                    .parm('brighttintb')
-                    .referenceExpression(
-                        grade_subnet.parm(f'{lpe_name}_tintb')
-                    )
-                )
-            
-            # Convert grade output to rgba
-            grade_rgba_node = _ensure_node(grade_subnet, 'rgbtorgba', 'rgba')
-            final_output_node = None if layer_output_node is None else layer_output_node[1]
-            if final_output_node is None:
-                _connect(lpe_subnet_inputs, num_lpes, grade_rgba_node, 0)
-            else:
-                _connect(final_output_node, 0, grade_rgba_node, 0)
-            _connect(lpe_subnet_inputs, num_lpes, grade_rgba_node, 1)
-            _connect(grade_rgba_node, 0, lpe_subnet_outputs, 0)
             
             # Create the render layer subnet output node
             render_layer_alpha_node = aov_nodes[AOVType.Mono]['alpha']
-            _connect(render_layer_alpha_node, 0, grade_subnet, num_lpes)
+            _connect(render_layer_alpha_node, 0, grade_subnet, len(lpe_names))
             _connect(grade_subnet, 0, render_layer_subnet_outputs, 0)
-
-            # Layout grade subnet nodes
-            grade_subnet.layoutChildren()
             
             # Layout render layer subnet nodes
             render_layer_subnet.layoutChildren()
@@ -1120,6 +1297,9 @@ class BuildComp(ns.Node):
                     hou.hipFile.save()
                     shutil.copyfile(workfile_path, input_path)
 
+                    # Get layer names for composite job
+                    layer_names = self.get_render_layer_names()
+
                     # Submit the job
                     composite_job.submit(dict(
                         entity = entity.to_json(),
@@ -1130,6 +1310,7 @@ class BuildComp(ns.Node):
                             pool_name = pool_name,
                             input_path = path_str(relative_input_path),
                             node_path = node_path,
+                            layer_names = layer_names,
                             first_frame = render_range.first_frame,
                             last_frame = render_range.last_frame,
                             step_size = step_size,
@@ -1221,29 +1402,11 @@ def create(scene, name):
 
 def on_created(raw_node):
 
-    # Context
-    raw_node_type = raw_node.type()
-    if raw_node_type is None: return
-    node_type = ns.find_node_type('build_comp', 'Cop')
-    if node_type is None: return
-    if raw_node_type != node_type: return
+    # Change entity source to settings if we have no context
+    entity = _entity_from_context_json()
+    if entity is not None: return
     node = BuildComp(raw_node)
-
-    # Parse scene file path
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-    if context is None: return
-    
-    # Set the default values
-    match context:
-        case ShotContext(
-            department_name,
-            sequence_name,
-            shot_name,
-            version_name
-            ):
-            node.set_sequence_name(sequence_name)
-            node.set_shot_name(shot_name)
+    node.set_entity_source('from_settings')
 
 def update():
     raw_node = hou.pwd()

@@ -3,7 +3,6 @@ from pathlib import Path
 import hou
 
 from tumblehead.api import path_str, default_client
-from tumblehead.util.cache import Cache
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.paths import (
     list_version_paths,
@@ -88,8 +87,6 @@ def _set_metadata_script(category_name, asset_name, department_name, version_nam
     script += footer
     return script
 
-CACHE_VERSION_NAMES = Cache()
-
 class ImportAssetLayer(ns.Node):
     def __init__(self, native):
         super().__init__(native)
@@ -116,16 +113,12 @@ class ImportAssetLayer(ns.Node):
         category_name = self.get_category_name()
         asset_name = self.get_asset_name()
         department_name = self.get_department_name()
-        asset_key = (category_name, asset_name, department_name)
-        if CACHE_VERSION_NAMES.contains(asset_key):
-            return CACHE_VERSION_NAMES.lookup(asset_key).copy()
         asset_path = api.storage.resolve(f'export:/assets/{category_name}/{asset_name}/{department_name}')
         version_paths = list(filter(
             _valid_version_path,
             list_version_paths(asset_path)
         ))
         version_names = [version_path.name for version_path in version_paths]
-        CACHE_VERSION_NAMES.insert(asset_key, version_names)
         return version_names
 
     def get_category_name(self):
@@ -156,7 +149,8 @@ class ImportAssetLayer(ns.Node):
         version_names = self.list_version_names()
         if len(version_names) == 0: return None
         version_name = self.parm('version').eval()
-        if len(version_name) == 0: return version_names[0]
+        if len(version_name) == 0: return version_names[-1]
+        if version_name == 'latest': return version_names[-1]
         if version_name not in version_names: return None
         return version_name
     
@@ -193,39 +187,24 @@ class ImportAssetLayer(ns.Node):
     
     def execute(self):
 
-        # Clear scene
-        context = self.native()
-        import_node = context.node('import')
-        metaprim_node = context.node('metaprim')
-        metadata_node = context.node('metadata')
-        switch_node = context.node('switch')
-        bypass_node = context.node('bypass')
-
         # Parameters
         category_name = self.get_category_name()
         asset_name = self.get_asset_name()
         department_name = self.get_department_name()
         version_name = self.get_version_name()
-        include_layerbreak = self.get_include_layerbreak()
 
         # Set metadata script
-        metaprim_node.parm('primpath').set(f'/METADATA/asset/{category_name}/{asset_name}')
+        self.parm('metaprim_primpath').set(f'/METADATA/asset/{category_name}/{asset_name}')
         script = _set_metadata_script(category_name, asset_name, department_name, version_name)
-        metadata_node.parm('python').set('\n'.join(script))
-
-        # Enable or disable layerbreak
-        switch_node.parm('input').set(1 if include_layerbreak else 0)
+        self.parm('metadata_python').set('\n'.join(script))
 
         # Load asset
         file_path = get_asset_export_file_path(category_name, asset_name, department_name, version_name)
-        if file_path.exists():
-            import_node.parm('filepath1').set(path_str(file_path))
-            bypass_node.parm('input').set(1)
-        else:
-            bypass_node.parm('input').set(0)
+        self.parm('import_filepath1').set(path_str(file_path))
+        self.parm('bypass_input').set(1 if file_path.exists() else 0)
 
-def clear_cache():
-    CACHE_VERSION_NAMES.clear()
+        # Update the version label on the node UI
+        self.parm('version_label').set(f'v{version_name}')
 
 def create(scene, name):
     node_type = ns.find_node_type('import_asset_layer', 'Lop')
@@ -266,16 +245,6 @@ def on_created(raw_node):
             ):
             node.set_category_name(category_name)
             node.set_asset_name(asset_name)
-
-def on_loaded(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
-def latest():
-    raw_node = hou.pwd()
-    node = ImportAssetLayer(raw_node)
-    node.latest()
 
 def execute():
     raw_node = hou.pwd()

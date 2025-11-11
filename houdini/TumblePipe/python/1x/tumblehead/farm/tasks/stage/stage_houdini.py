@@ -88,13 +88,13 @@ def main(
     sequence_name: str,
     shot_name: str,
     render_range: BlockRange,
-    render_layer_name: str,
+    render_layer_names: list[str],
     render_department_name: str,
     render_settings_path: Path,
     output_path: Path
     ) -> int:
     _headline('Stage Shot')
-    
+
     # Prepare scene
     scene_node = hou.node('/stage')
 
@@ -112,36 +112,39 @@ def main(
     shot_node.execute()
     prev_node = shot_node.native()
 
-    # Prepare import render layers
-    render_layer_subnet = scene_node.createNode('subnet', '__render_layers')
-    render_layer_subnet.node('output0').destroy()
-    render_layer_subnet_input = render_layer_subnet.indirectInputs()[0]
-    render_layer_subnet_output = render_layer_subnet.createNode(
-        'output', 'output'
-    )
+    # Loop over each render layer to create separate render layer subnets
+    for render_layer_name in render_layer_names:
 
-    # Connect build shot to subnet
-    _connect(prev_node, render_layer_subnet)
-    prev_node = render_layer_subnet_input
-
-    # Setup render layers node
-    for included_department_name in included_department_names:
-        layer_node = import_render_layer.create(
-            render_layer_subnet,
-            included_department_name
+        # Prepare import render layers
+        render_layer_subnet = scene_node.createNode('subnet', f'__render_layer_{render_layer_name}')
+        render_layer_subnet.node('output0').destroy()
+        render_layer_subnet_input = render_layer_subnet.indirectInputs()[0]
+        render_layer_subnet_output = render_layer_subnet.createNode(
+            'output', 'output'
         )
-        layer_node.set_sequence_name(sequence_name)
-        layer_node.set_shot_name(shot_name)
-        layer_node.set_department_name(included_department_name)
-        layer_node.set_render_layer_name(render_layer_name)
-        layer_node.latest()
-        layer_node.execute()
-        _connect(prev_node, layer_node.native())
-        prev_node = layer_node.native()
-    
-    # Connect last node to subnet output
-    _connect(prev_node, render_layer_subnet_output)
-    prev_node = render_layer_subnet
+
+        # Connect build shot to subnet
+        _connect(prev_node, render_layer_subnet)
+        subnet_prev_node = render_layer_subnet_input
+
+        # Setup render layers node for this specific render layer
+        for included_department_name in included_department_names:
+            layer_node = import_render_layer.create(
+                render_layer_subnet,
+                included_department_name
+            )
+            layer_node.set_sequence_name(sequence_name)
+            layer_node.set_shot_name(shot_name)
+            layer_node.set_department_name(included_department_name)
+            layer_node.set_render_layer_name(render_layer_name)
+            layer_node.latest()
+            layer_node.execute()
+            _connect(subnet_prev_node, layer_node.native())
+            subnet_prev_node = layer_node.native()
+
+        # Connect last node to subnet output
+        _connect(subnet_prev_node, render_layer_subnet_output)
+        prev_node = render_layer_subnet
 
     # Setup edit render settings
     edit_render_settings_node = scene_node.createNode(
@@ -189,6 +192,12 @@ def main(
     export_node.parm('f2').set(render_range.last_frame)
     export_node.parm('execute').pressButton()
 
+    # Verify the USD file was created
+    if not output_path.exists():
+        return _error(f'Failed to export USD stage: {output_path}')
+
+    print(f'Successfully exported USD stage: {output_path}')
+
     # Done
     return 0
 
@@ -212,7 +221,7 @@ config = {
     },
     'first_frame': 'int',
     'last_frame': 'int',
-    'render_layer_name': 'string',
+    'render_layer_names': ['string'],
     'render_department_name': 'string',
     'render_settings_path': 'path/to/render_settings.json',
     'output_path': 'path/to/stage.usd'
@@ -258,7 +267,8 @@ def _is_valid_config(config):
     if not _valid_entity(config['entity']): return False
     if not _check_int(config, 'first_frame'): return False
     if not _check_int(config, 'last_frame'): return False
-    if not _check_str(config, 'render_layer_name'): return False
+    if 'render_layer_names' not in config: return False
+    if not isinstance(config['render_layer_names'], list): return False
     if not _check_str(config, 'render_department_name'): return False
     if not _check_str(config, 'render_settings_path'): return False
     if not _check_str(config, 'output_path'): return False
@@ -293,7 +303,7 @@ def cli():
         config['first_frame'],
         config['last_frame']
     )
-    render_layer_name = config['render_layer_name']
+    render_layer_names = config['render_layer_names']
     render_department_name = config['render_department_name']
     render_settings_path = Path(config['render_settings_path'])
     output_path = Path(config['output_path'])
@@ -303,7 +313,7 @@ def cli():
         entity.sequence_name,
         entity.shot_name,
         render_range,
-        render_layer_name,
+        render_layer_names,
         render_department_name,
         render_settings_path,
         output_path

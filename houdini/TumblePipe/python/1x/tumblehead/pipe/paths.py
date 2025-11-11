@@ -313,7 +313,8 @@ class Render:
     
     def get_latest_complete_layer(
         self,
-        layer_name: str
+        layer_name: str,
+        expected_frame_range: Optional[BlockRange] = None
         ) -> Optional[Layer]:
         if layer_name not in self.layers: return None
         version_names = list(self.layers[layer_name].keys())
@@ -321,7 +322,30 @@ class Render:
         version_names.sort(key = api.naming.get_version_code)
         for version_name in reversed(version_names):
             layer = self.layers[layer_name][version_name]
-            if layer.is_complete(): return layer
+            if expected_frame_range is not None:
+                # Validate against expected frame range
+                if len(layer.aovs) == 0:
+                    layer_frame = AOV(
+                        path = layer.path,
+                        label = layer.label,
+                        name = layer.name,
+                        suffix = layer.suffix
+                    )
+                    if not layer_frame.is_complete(expected_frame_range):
+                        continue
+                else:
+                    all_complete = True
+                    for aov in layer.aovs.values():
+                        if not aov.is_complete(expected_frame_range):
+                            all_complete = False
+                            break
+                    if not all_complete:
+                        continue
+            else:
+                # Use layer's own frame range from context.json
+                if not layer.is_complete():
+                    continue
+            return layer
         return None
 
     def get_newer_latest_complete_layer(
@@ -552,6 +576,124 @@ class RenderContext:
             aovs[render_department_name] = render.list_latest_complete_aovs()
         return aovs
 
+    def resolve_latest_aovs(
+        self,
+        shot_department_priority: list[str],
+        render_department_priority: list[str],
+        min_shot_department: Optional[str] = None,
+        min_render_department: Optional[str] = None,
+        aov_filter: Optional[callable] = None
+        ) -> dict[str, dict[str, tuple[str, str, AOV, str]]]:
+        """Resolve the latest version of each layer/AOV across shot and render departments.
+
+        Returns a dict structure: result[layer_name][aov_name] = (render_dept, version, aov, shot_dept)
+        where the AOV is selected using hierarchical comparison: shot dept > render dept > version.
+
+        Args:
+            shot_department_priority: Shot department names in priority order (e.g., light < render < composite)
+            render_department_priority: Render department names in priority order (e.g., render < denoise < composite)
+            min_shot_department: Minimum shot department to consider (inclusive)
+            min_render_department: Minimum render department to consider (inclusive)
+            aov_filter: Optional function to filter which AOVs to include. Takes aov_name, returns bool.
+
+        Returns:
+            Nested dict mapping layer_name -> aov_name -> (render_dept, version, aov, shot_dept)
+        """
+        latest_aovs = {}
+
+        # Helper to get department priority index, returns -1 if not in list
+        def get_dept_priority(dept, priority_list):
+            try:
+                return priority_list.index(dept)
+            except ValueError:
+                return -1
+
+        # Determine minimum thresholds
+        min_shot_idx = get_dept_priority(min_shot_department, shot_department_priority) if min_shot_department else -1
+        min_render_idx = get_dept_priority(min_render_department, render_department_priority) if min_render_department else -1
+
+        # Scan all available render departments
+        for render_department_name in self.renders.keys():
+            # Check if this department meets minimum threshold
+            shot_idx = get_dept_priority(render_department_name, shot_department_priority)
+            render_idx = get_dept_priority(render_department_name, render_department_priority)
+
+            # Department must be in at least one priority list and meet minimum threshold
+            is_valid_shot = shot_idx >= min_shot_idx
+            is_valid_render = render_idx >= min_render_idx
+
+            if not (is_valid_shot or is_valid_render):
+                continue
+
+            render = self.renders[render_department_name]
+
+            for layer_name, layer_versions in render.layers.items():
+                # Get all versions and find the latest complete one
+                version_names = list(layer_versions.keys())
+                if len(version_names) == 0:
+                    continue
+                version_names.sort(key=api.naming.get_version_code)
+
+                # Try versions from newest to oldest
+                for version_name in reversed(version_names):
+                    layer = layer_versions[version_name]
+                    frame_range = layer.get_frame_range()
+                    if frame_range is None:
+                        continue
+
+                    for aov_name, aov in layer.aovs.items():
+                        # Apply filter if provided
+                        if aov_filter is not None and not aov_filter(aov_name):
+                            continue
+
+                        # Verify AOV is complete
+                        if not aov.is_complete(frame_range):
+                            continue
+
+                        # Initialize layer dict if needed
+                        if layer_name not in latest_aovs:
+                            latest_aovs[layer_name] = {}
+
+                        # Get shot department from layer context
+                        context_path = layer.path / 'context.json'
+                        context = load_json(context_path)
+                        curr_shot_dept = context.get('entity', {}).get('department_name') if context else None
+                        curr_shot_idx = get_dept_priority(curr_shot_dept, shot_department_priority) if curr_shot_dept else -1
+                        curr_render_idx = get_dept_priority(render_department_name, render_department_priority)
+
+                        # Update if this is a better version
+                        if aov_name not in latest_aovs[layer_name]:
+                            latest_aovs[layer_name][aov_name] = (
+                                render_department_name, version_name, aov, curr_shot_dept
+                            )
+                        else:
+                            prev_render_dept, prev_version, _, prev_shot_dept = latest_aovs[layer_name][aov_name]
+                            prev_shot_idx = get_dept_priority(prev_shot_dept, shot_department_priority) if prev_shot_dept else -1
+                            prev_render_idx = get_dept_priority(prev_render_dept, render_department_priority)
+
+                            # Hierarchical comparison: shot dept > render dept > version
+                            should_update = False
+                            if curr_shot_idx > prev_shot_idx:
+                                should_update = True
+                            elif curr_shot_idx == prev_shot_idx:
+                                if curr_render_idx > prev_render_idx:
+                                    should_update = True
+                                elif curr_render_idx == prev_render_idx:
+                                    prev_version_code = api.naming.get_version_code(prev_version)
+                                    curr_version_code = api.naming.get_version_code(version_name)
+                                    if curr_version_code > prev_version_code:
+                                        should_update = True
+
+                            if should_update:
+                                latest_aovs[layer_name][aov_name] = (
+                                    render_department_name, version_name, aov, curr_shot_dept
+                                )
+
+                    # Only take the latest version from this layer
+                    break
+
+        return latest_aovs
+
 def get_frame_path(
     entity: Entity,
     render_department_name: str,
@@ -775,6 +917,86 @@ def get_latest_frame_path(
                 f'{suffix}'
             )
             return version_path / frame_name
+        case _:
+            assert False, f'Invalid entity: {entity}'
+
+def get_aov_frame_uri(
+    entity: Entity,
+    render_department_name: str,
+    render_layer_name: str,
+    version_name: str,
+    aov_name: str,
+    frame_pattern: str,
+    suffix: str = 'exr',
+    purpose: str = 'render'   
+    ) -> str:
+    match entity:
+        case ShotEntity(sequence_name, shot_name, _):
+            render_path = (
+                f'{purpose}:/'
+                'render/'
+                'shots/'
+                f'{sequence_name}/'
+                f'{shot_name}/'
+                f'{render_department_name}/'
+                f'{render_layer_name}/'
+                f'{version_name}/'
+                f'{aov_name}'
+            )
+            frame_name = (
+                f'{sequence_name}_'
+                f'{shot_name}_'
+                f'{render_layer_name}_'
+                f'{aov_name}_'
+                f'{version_name}.'
+                f'{frame_pattern}.'
+                f'{suffix}'
+            )
+            return f'{render_path}/{frame_name}'
+        case KitEntity(category_name, kit_name, _):
+            render_path = (
+                f'{purpose}:/'
+                'render/'
+                'kits/'
+                f'{category_name}/'
+                f'{kit_name}/'
+                f'{render_department_name}/'
+                f'{render_layer_name}/'
+                f'{version_name}/'
+                f'{aov_name}'
+            )
+            frame_name = (
+                f'{category_name}_'
+                f'{kit_name}_'
+                f'{render_layer_name}_'
+                f'{aov_name}_'
+                f'{version_name}.'
+                f'{frame_pattern}.'
+                f'{suffix}'
+            )
+            return f'{render_path}/{frame_name}'
+        case AssetEntity(category_name, asset_name, _):
+            render_path = (
+                f'{purpose}:/'
+                'render/'
+                'assets/'
+                f'{category_name}/'
+                f'{asset_name}/'
+                f'{render_department_name}/'
+                f'{render_layer_name}/'
+                f'{version_name}/'
+                f'{aov_name}'
+            )
+            frame_name = (
+                f'{category_name}_'
+                f'{asset_name}_'
+                f'{render_layer_name}_'
+                f'{aov_name}_'
+                f'{version_name}.'
+                f'{frame_pattern}.'
+                f'{suffix}'
+            )
+            return f'{render_path}/{frame_name}'
         case _:
             assert False, f'Invalid entity: {entity}'
 
@@ -1019,6 +1241,52 @@ def get_latest_aov_frame_path(
         case _:
             assert False, f'Invalid entity: {entity}'
 
+def get_layer_playblast_path(
+    entity: Entity,
+    render_layer_name: str,
+    version_name: str,
+    purpose: str = 'render'
+    ) -> Path:
+    match entity:
+        case ShotEntity(sequence_name, shot_name, department_name):
+            assert department_name is not None
+            return api.storage.resolve(
+                f'{purpose}:/'
+                'playblast/'
+                'shots/'
+                f'{sequence_name}/'
+                f'{shot_name}/'
+                f'{department_name}/'
+                f'{render_layer_name}/'
+                f'{version_name}.mp4'
+            )
+        case KitEntity(category_name, kit_name, department_name):
+            assert department_name is not None
+            return api.storage.resolve(
+                f'{purpose}:/'
+                'playblast/'
+                'kits/'
+                f'{category_name}/'
+                f'{kit_name}/'
+                f'{department_name}/'
+                f'{render_layer_name}/'
+                f'{version_name}.mp4'
+            )
+        case AssetEntity(category_name, asset_name, department_name):
+            assert department_name is not None
+            return api.storage.resolve(
+                f'{purpose}:/'
+                'playblast/'
+                'assets/'
+                f'{category_name}/'
+                f'{asset_name}/'
+                f'{department_name}/'
+                f'{render_layer_name}/'
+                f'{version_name}.mp4'
+            )
+        case _:
+            assert False, f'Invalid entity: {entity}'
+
 def get_playblast_path(
     entity: Entity,
     version_name: str,
@@ -1060,6 +1328,68 @@ def get_playblast_path(
             )
         case _:
             assert False, f'Invalid entity: {entity}'
+
+def get_next_layer_playblast_path(
+    entity: Entity,
+    render_layer_name: str,
+    purpose: str = 'render'
+    ) -> Path:
+
+    def _layer_playblast_path(
+        entity: Entity,
+        render_layer_name: str,
+        purpose: str
+        ) -> Path:
+        match entity:
+            case ShotEntity(sequence_name, shot_name, department_name):
+                assert department_name is not None
+                return api.storage.resolve(
+                    f'{purpose}:/'
+                    'playblast/'
+                    'shots/'
+                    f'{sequence_name}/'
+                    f'{shot_name}/'
+                    f'{department_name}/'
+                    f'{render_layer_name}'
+                )
+            case KitEntity(category_name, kit_name, department_name):
+                assert department_name is not None
+                return api.storage.resolve(
+                    f'{purpose}:/'
+                    'playblast/'
+                    'kits/'
+                    f'{category_name}/'
+                    f'{kit_name}/'
+                    f'{department_name}/'
+                    f'{render_layer_name}'
+                )
+            case AssetEntity(category_name, asset_name, department_name):
+                assert department_name is not None
+                return api.storage.resolve(
+                    f'{purpose}:/'
+                    'playblast/'
+                    'assets/'
+                    f'{category_name}/'
+                    f'{asset_name}/'
+                    f'{department_name}/'
+                    f'{render_layer_name}'
+                )
+            case _:
+                assert False, f'Invalid entity: {entity}'
+
+    playblast_path = _layer_playblast_path(entity, render_layer_name, purpose)
+    version_names = list(filter(
+        api.naming.is_valid_version_name,
+        map(
+            lambda path: path.stem,
+            playblast_path.glob('*.mp4')
+        )
+    ))
+    version_names.sort(key = api.naming.get_version_code)
+    if len(version_names) == 0: return playblast_path / 'v0001.mp4'
+    version_name = version_names[-1]
+    next_version_name = get_next_version_name(version_name)
+    return playblast_path / f'{next_version_name}.mp4'
 
 def get_next_playblast_path(
     entity: Entity,
@@ -1103,7 +1433,7 @@ def get_next_playblast_path(
                 )
             case _:
                 assert False, f'Invalid entity: {entity}'
-    
+
     playblast_path = _playblast_path(entity, purpose)
     version_names = list(filter(
         api.naming.is_valid_version_name,
@@ -1117,6 +1447,67 @@ def get_next_playblast_path(
     version_name = version_names[-1]
     next_version_name = get_next_version_name(version_name)
     return playblast_path / f'{next_version_name}.mp4'
+
+def get_latest_layer_playblast_path(
+    entity: Entity,
+    render_layer_name: str,
+    purpose: str = 'render'
+    ) -> Optional[Path]:
+
+    def _layer_playblast_path(
+        entity: Entity,
+        render_layer_name: str,
+        purpose: str
+        ) -> Path:
+        match entity:
+            case ShotEntity(sequence_name, shot_name, department_name):
+                assert department_name is not None
+                return api.storage.resolve(
+                    f'{purpose}:/'
+                    'playblast/'
+                    'shots/'
+                    f'{sequence_name}/'
+                    f'{shot_name}/'
+                    f'{department_name}/'
+                    f'{render_layer_name}'
+                )
+            case KitEntity(category_name, kit_name, department_name):
+                assert department_name is not None
+                return api.storage.resolve(
+                    f'{purpose}:/'
+                    'playblast/'
+                    'kits/'
+                    f'{category_name}/'
+                    f'{kit_name}/'
+                    f'{department_name}/'
+                    f'{render_layer_name}'
+                )
+            case AssetEntity(category_name, asset_name, department_name):
+                assert department_name is not None
+                return api.storage.resolve(
+                    f'{purpose}:/'
+                    'playblast/'
+                    'assets/'
+                    f'{category_name}/'
+                    f'{asset_name}/'
+                    f'{department_name}/'
+                    f'{render_layer_name}'
+                )
+            case _:
+                assert False, f'Invalid entity: {entity}'
+
+    playblast_path = _layer_playblast_path(entity, render_layer_name, purpose)
+    version_names = list(filter(
+        api.naming.is_valid_version_name,
+        map(
+            lambda path: path.stem,
+            playblast_path.glob('*.mp4')
+        )
+    ))
+    version_names.sort(key = api.naming.get_version_code)
+    if len(version_names) == 0: return None
+    latest_version_name = version_names[-1]
+    return playblast_path / f'{latest_version_name}.mp4'
 
 def get_latest_playblast_path(
     entity: Entity,
@@ -1160,7 +1551,7 @@ def get_latest_playblast_path(
                 )
             case _:
                 assert False, f'Invalid entity: {entity}'
-    
+
     playblast_path = _playblast_path(entity, purpose)
     version_names = list(filter(
         api.naming.is_valid_version_name,
@@ -1173,6 +1564,45 @@ def get_latest_playblast_path(
     if len(version_names) == 0: return None
     latest_version_name = version_names[-1]
     return playblast_path / f'{latest_version_name}.mp4'
+
+def get_layer_daily_path(
+    entity: Entity,
+    render_layer_name: str,
+    purpose: str = 'render'
+    ) -> Path:
+    match entity:
+        case ShotEntity(sequence_name, shot_name, department_name):
+            assert department_name is not None
+            return api.storage.resolve(
+                f'{purpose}:/'
+                'daily/'
+                'shots/'
+                f'{department_name}/'
+                f'{render_layer_name}/'
+                f'{sequence_name}_{shot_name}_{render_layer_name}.mp4'
+            )
+        case KitEntity(category_name, kit_name, department_name):
+            assert department_name is not None
+            return api.storage.resolve(
+                f'{purpose}:/'
+                'daily/'
+                'kits/'
+                f'{department_name}/'
+                f'{render_layer_name}/'
+                f'{category_name}_{kit_name}_{render_layer_name}.mp4'
+            )
+        case AssetEntity(category_name, asset_name, department_name):
+            assert department_name is not None
+            return api.storage.resolve(
+                f'{purpose}:/'
+                'daily/'
+                'assets/'
+                f'{department_name}/'
+                f'{render_layer_name}/'
+                f'{category_name}_{asset_name}_{render_layer_name}.mp4'
+            )
+        case _:
+            assert False, f'Invalid entity: {entity}'
 
 def get_daily_path(
     entity: Entity,
@@ -1645,6 +2075,52 @@ def next_kit_hip_file_path(
     next_version_name = api.naming.get_version_name(next_version_code)
     hip_file_name = hip_file_name_pattern.replace('*', next_version_name)
     return workspace_path / hip_file_name
+
+def latest_hip_file_path(entity: Entity):
+    match entity:
+        case AssetEntity(category_name, asset_name, department_name):
+            return latest_asset_hip_file_path(
+                category_name = category_name,
+                asset_name = asset_name,
+                department_name = department_name
+            )
+        case ShotEntity(sequence_name, shot_name, department_name):
+            return latest_shot_hip_file_path(
+                sequence_name = sequence_name,
+                shot_name = shot_name,
+                department_name = department_name
+            )
+        case KitEntity(category_name, kit_name, department_name):
+            return latest_kit_hip_file_path(
+                category_name = category_name,
+                kit_name = kit_name,
+                department_name = department_name
+            )
+        case _:
+            return None
+
+def next_hip_file_path(entity: Entity):
+    match entity:
+        case AssetEntity(category_name, asset_name, department_name):
+            return next_asset_hip_file_path(
+                category_name = category_name,
+                asset_name = asset_name,
+                department_name = department_name
+            )
+        case ShotEntity(sequence_name, shot_name, department_name):
+            return next_shot_hip_file_path(
+                sequence_name = sequence_name,
+                shot_name = shot_name,
+                department_name = department_name
+            )
+        case KitEntity(category_name, kit_name, department_name):
+            return next_kit_hip_file_path(
+                category_name = category_name,
+                kit_name = kit_name,
+                department_name = department_name
+            )
+        case _:
+            return None
 
 @dataclass(frozen=True)
 class Context: pass

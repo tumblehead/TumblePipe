@@ -59,11 +59,6 @@ def on_created(raw_node):
     # Set node style
     set_style(raw_node)
 
-def on_loaded(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
 def load():
     raw_node = hou.pwd()
     node = RenderSettings(raw_node)

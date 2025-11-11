@@ -7,6 +7,12 @@ class BlockRange:
     first_frame: int
     last_frame: int
     step_size: int = 1
+    
+    def __post_init__(self):
+        if self.step_size <= 0:
+            raise ValueError(f"step_size must be positive, got {self.step_size}")
+        if self.first_frame > self.last_frame:
+            raise ValueError(f"first_frame ({self.first_frame}) cannot be greater than last_frame ({self.last_frame})")
 
     def timecode(self, frame: int) -> float:
         if self.first_frame == self.last_frame: return 1.0
@@ -61,6 +67,16 @@ class FrameRange:
     start_roll: int
     end_roll: int
     step_size: int = 1
+    
+    def __post_init__(self):
+        if self.step_size <= 0:
+            raise ValueError(f"step_size must be positive, got {self.step_size}")
+        if self.start_frame > self.end_frame:
+            raise ValueError(f"start_frame ({self.start_frame}) cannot be greater than end_frame ({self.end_frame})")
+        if self.start_roll < 0:
+            raise ValueError(f"start_roll must be non-negative, got {self.start_roll}")
+        if self.end_roll < 0:
+            raise ValueError(f"end_roll must be non-negative, got {self.end_roll}")
 
     def play_range(self) -> BlockRange:
         return BlockRange(
@@ -72,6 +88,15 @@ class FrameRange:
     def full_range(self) -> BlockRange:
         first_frame = self.start_frame - self.start_roll
         last_frame = self.end_frame + self.end_roll
+        
+        if first_frame <= 0:
+            raise ValueError(f"full_range first_frame ({first_frame}) must be positive. "
+                           f"start_frame={self.start_frame}, start_roll={self.start_roll}")
+        if first_frame > last_frame:
+            raise ValueError(f"full_range first_frame ({first_frame}) cannot be greater than last_frame ({last_frame}). "
+                           f"start_frame={self.start_frame}, end_frame={self.end_frame}, "
+                           f"start_roll={self.start_roll}, end_roll={self.end_roll}")
+        
         return BlockRange(first_frame, last_frame, self.step_size)
     
     def timecode(self, frame: int) -> float:
@@ -113,7 +138,10 @@ class ConfigConvention:
     
     def list_asset_names(self, category_name):
         raise NotImplementedError()
-    
+
+    def get_asset_animatable(self, category_name, asset_name):
+        raise NotImplementedError()
+
     def list_kit_category_names(self):
         raise NotImplementedError()
 
@@ -196,6 +224,12 @@ class ConfigConvention:
         raise NotImplementedError()
     
     def remove_kit_name(self, kit_category_name, kit_name):
+        raise NotImplementedError()
+    
+    def get_fps(self):
+        raise NotImplementedError()
+
+    def get_shot_fps(self, sequence_name, shot_name):
         raise NotImplementedError()
 
     def is_valid_path(self, path):

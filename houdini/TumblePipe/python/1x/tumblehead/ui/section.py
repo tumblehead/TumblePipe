@@ -13,10 +13,6 @@ from tumblehead.ui import (
     style
 )
 
-from importlib import reload
-reload(card)
-reload(style)
-
 EXPAND_ICON = '▶'
 COLLAPSE_ICON = '▼'
 

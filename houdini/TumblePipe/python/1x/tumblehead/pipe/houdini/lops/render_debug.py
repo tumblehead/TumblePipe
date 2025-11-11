@@ -177,11 +177,6 @@ def on_created(raw_node):
             node.set_sequence_name(sequence_name)
             node.set_shot_name(shot_name)
 
-def on_loaded(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
 def execute():
     raw_node = hou.pwd()
     node = RenderDebug(raw_node)

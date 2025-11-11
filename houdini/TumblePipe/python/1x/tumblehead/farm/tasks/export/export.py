@@ -43,6 +43,7 @@ def main(config):
     render_layer_name = config['settings']['render_layer_name']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
+    tile_count = config['settings']['tile_count']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
@@ -77,7 +78,7 @@ def main(config):
         ))
     
         # Export the USD stage
-        hython.run(
+        result = hython.run(
             to_windows_path(SCRIPT_PATH),
             [
                 path_str(to_windows_path(config_path))
@@ -94,6 +95,10 @@ def main(config):
                 OCIO = path_str(to_windows_path(Path(os.environ['OCIO'])))
             )
         )
+
+        # Check if hython process succeeded
+        if result != 0:
+            return _error(f'Hython export failed with return code: {result}')
 
         # Check if stage was exported
         if not stage_path.exists():
@@ -113,6 +118,7 @@ def main(config):
                 render_department_name = render_department_name,
                 render_settings_path = path_str(render_settings_path),
                 input_path = path_str(relative_stage_path),
+                tile_count = tile_count,
                 first_frame = first_frame,
                 last_frame = last_frame,
                 step_size = step_size,
@@ -154,6 +160,7 @@ config = {
         'render_layer_name': 'string',
         'render_department_name': 'string',
         'render_settings_path': 'string',
+        'tile_count': 'int',
         'first_frame': 'int',
         'last_frame': 'int',
         'step_size': 'int',
@@ -224,6 +231,7 @@ def _is_valid_config(config):
         if not _check_str(settings, 'render_layer_name'): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
+        if not _check_int(settings, 'tile_count'): return False
         if not _check_int(settings, 'first_frame'): return False
         if not _check_int(settings, 'last_frame'): return False
         if not _check_int(settings, 'step_size'): return False

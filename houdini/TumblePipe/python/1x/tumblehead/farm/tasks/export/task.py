@@ -44,11 +44,11 @@ config = {
     'settings': {
         'user_name': 'string',
         'purpose': 'string',
-        'priority': 'int',
         'pool_name': 'string',
         'render_layer_name': 'string',
-        'render_department_name: 'string',
+        'render_department_name': 'string',
         'render_settings_path': 'string',
+        'tile_count': 'int',
         'first_frame': 'int',
         'last_frame': 'int',
         'step_size': 'int',
@@ -56,15 +56,18 @@ config = {
     },
     'tasks': {
         'export': {
+            'priority': 'int',
             'input_path': 'string',
             'node_path': 'string',
             'channel_name': 'string'
         },
         'partial_render': {
+            'priority': 'int',
             'denoise': 'bool',
             'channel_name': 'string
         },
         'full_render': {
+            'priority': 'int',
             'denoise': 'bool',
             'channel_name': 'string
         }
@@ -114,11 +117,11 @@ def _is_valid_config(config):
         if not isinstance(settings, dict): return False
         if not _check_str(settings, 'user_name'): return False
         if not _check_str(settings, 'purpose'): return False
-        if not _check_int(settings, 'priority'): return False
         if not _check_str(settings, 'pool_name'): return False
         if not _check_str(settings, 'render_layer_name'): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
+        if not _check_int(settings, 'tile_count'): return False
         if not _check_int(settings, 'first_frame'): return False
         if not _check_int(settings, 'last_frame'): return False
         if not _check_int(settings, 'step_size'): return False
@@ -129,6 +132,7 @@ def _is_valid_config(config):
 
         def _valid_export(export):
             if not isinstance(export, dict): return False
+            if not _check_int(export, 'priority'): return False
             if not _check_str(export, 'input_path'): return False
             if not _check_str(export, 'node_path'): return False
             if not _check_str(export, 'channel_name'): return False
@@ -136,12 +140,14 @@ def _is_valid_config(config):
 
         def _valid_partial_render(partial_render):
             if not isinstance(partial_render, dict): return False
+            if not _check_int(partial_render, 'priority'): return False
             if not _check_bool(partial_render, 'denoise'): return False
             if not _check_str(partial_render, 'channel_name'): return False
             return True
     
         def _valid_full_render(full_render):
             if not isinstance(full_render, dict): return False
+            if not _check_int(full_render, 'priority'): return False
             if not _check_bool(full_render, 'denoise'): return False
             if not _check_str(full_render, 'channel_name'): return False
             return True
@@ -175,6 +181,7 @@ def build(config, paths, staging_path):
 
     # Config
     entity = Entity.from_json(config['entity'])
+    priority = config['tasks']['export']['priority']
     pool_name = config['settings']['pool_name']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
@@ -196,7 +203,7 @@ def build(config, paths, staging_path):
     task.name = title
     task.pool = pool_name
     task.group = 'houdini'
-    task.priority = 90
+    task.priority = priority
     task.start_frame = render_range.first_frame
     task.end_frame = render_range.last_frame
     task.step_size = 1

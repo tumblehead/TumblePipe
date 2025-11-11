@@ -37,11 +37,6 @@ def on_created(raw_node):
     # Set node style
     set_style(raw_node)
 
-def on_loaded(raw_node):
-    
-    # Set node style
-    set_style(raw_node)
-
 def execute():
     raw_node = hou.pwd()
     node = RenamePacked(raw_node)

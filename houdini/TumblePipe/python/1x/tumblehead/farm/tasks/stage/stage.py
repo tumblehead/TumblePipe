@@ -38,11 +38,11 @@ def main(config):
     entity = Entity.from_json(config['entity'])
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
-    priority = config['settings']['priority']
     pool_name = config['settings']['pool_name']
-    render_layer_name = config['settings']['render_layer_name']
+    render_layer_names = config['settings']['render_layer_names']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
+    tile_count = config['settings']['tile_count']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
@@ -69,14 +69,14 @@ def main(config):
             entity = entity.to_json(),
             first_frame = first_frame,
             last_frame = last_frame,
-            render_layer_name = render_layer_name,
+            render_layer_names = render_layer_names,
             render_department_name = render_department_name,
             render_settings_path = path_str(render_settings_path),
             output_path = path_str(to_windows_path(stage_path))
         ))
     
         # Export the USD stage
-        hython.run(
+        result = hython.run(
             to_windows_path(SCRIPT_PATH),
             [
                 path_str(to_windows_path(config_path))
@@ -94,11 +94,15 @@ def main(config):
             )
         )
 
+        # Check if hython process succeeded
+        if result != 0:
+            return _error(f'Hython export failed with return code: {result}')
+
         # Check if temp stage was generated
         if not stage_path.exists():
             return _error(f'Stage not exported: {stage_path}')
-        
-        # Submit the render pipe tasks
+
+        # Submit the render pipe tasks with all render layers
         tasks = config['tasks'].copy()
         tasks.pop('stage')
         render_job.submit(dict(
@@ -106,12 +110,12 @@ def main(config):
             settings = dict(
                 user_name = user_name,
                 purpose = purpose,
-                priority = priority,
                 pool_name = pool_name,
-                render_layer_name = render_layer_name,
+                render_layer_names = render_layer_names,
                 render_department_name = render_department_name,
                 render_settings_path = path_str(render_settings_path),
                 input_path = path_str(relative_stage_path),
+                tile_count = tile_count,
                 first_frame = first_frame,
                 last_frame = last_frame,
                 step_size = step_size,
@@ -124,7 +128,6 @@ def main(config):
         })
 
     # Done
-    print('Success')
     return 0
 
 """
@@ -148,11 +151,11 @@ config = {
     'settings': {
         'user_name': 'string',
         'purpose': 'string',
-        'priority': 'int',
         'pool_name': 'string',
-        'render_layer_name': 'string',
+        'render_layer_names': ['string'],
         'render_department_name': 'string',
         'render_settings_path': 'string',
+        'tile_count': 'int',
         'first_frame': 'int',
         'last_frame': 'int',
         'step_size': 'int',
@@ -160,13 +163,16 @@ config = {
     },
     'tasks': {
         'stage': {
+            'priority': 'int',
             'channel_name': 'string
         },
         'partial_render': {
+            'priority': 'int',
             'denoise': 'bool',
             'channel_name': 'string
         },
         'full_render': {
+            'priority': 'int',
             'denoise': 'bool',
             'channel_name': 'string
         }
@@ -216,11 +222,12 @@ def _is_valid_config(config):
         if not isinstance(settings, dict): return False
         if not _check_str(settings, 'user_name'): return False
         if not _check_str(settings, 'purpose'): return False
-        if not _check_int(settings, 'priority'): return False
         if not _check_str(settings, 'pool_name'): return False
-        if not _check_str(settings, 'render_layer_name'): return False
+        if 'render_layer_names' not in settings: return False
+        if not isinstance(settings['render_layer_names'], list): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
+        if not _check_int(settings, 'tile_count'): return False
         if not _check_int(settings, 'first_frame'): return False
         if not _check_int(settings, 'last_frame'): return False
         if not _check_int(settings, 'step_size'): return False
@@ -231,17 +238,20 @@ def _is_valid_config(config):
 
         def _valid_stage(stage):
             if not isinstance(stage, dict): return False
+            if not _check_int(stage, 'priority'): return False
             if not _check_str(stage, 'channel_name'): return False
             return True
 
         def _valid_partial_render(partial_render):
             if not isinstance(partial_render, dict): return False
+            if not _check_int(partial_render, 'priority'): return False
             if not _check_bool(partial_render, 'denoise'): return False
             if not _check_str(partial_render, 'channel_name'): return False
             return True
     
         def _valid_full_render(full_render):
             if not isinstance(full_render, dict): return False
+            if not _check_int(full_render, 'priority'): return False
             if not _check_bool(full_render, 'denoise'): return False
             if not _check_str(full_render, 'channel_name'): return False
             return True
@@ -277,6 +287,7 @@ def cli():
     config = load_json(config_path)
     if config is None:
         return _error(f'Config file not found: {config_path}')
+
     if not _is_valid_config(config):
         return _error(f'Invalid config file: {config_path}')
     

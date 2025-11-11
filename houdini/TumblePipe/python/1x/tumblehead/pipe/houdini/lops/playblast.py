@@ -116,7 +116,8 @@ class Playblast(ns.Node):
                     self.parm('frame_settingsx').eval(),
                     self.parm('frame_settingsy').eval(),
                     self.parm('roll_settingsx').eval(),
-                    self.parm('roll_settingsy').eval()
+                    self.parm('roll_settingsy').eval(),
+                    1  # step_size
                 )
             case _:
                 assert False, f'Unknown frame range token: {frame_range_source}'
@@ -145,6 +146,7 @@ class Playblast(ns.Node):
         
         # Find nodes
         context = self.native()
+        metadata_node = context.node('metadata')
         cache_node = context.node('cache')
         ropnet_node = context.node('ropnet')
         render_node = ropnet_node.node('render')
@@ -157,7 +159,10 @@ class Playblast(ns.Node):
         )
         camera_path = self.get_camera_path()
         frame_range = self.get_frame_range()
+        print(f"[DEBUG] FrameRange: start={frame_range.start_frame}, end={frame_range.end_frame}, start_roll={frame_range.start_roll}, end_roll={frame_range.end_roll}, step={frame_range.step_size}")
         render_range = frame_range.full_range()
+        print(f"[DEBUG] BlockRange: first={render_range.first_frame}, last={render_range.last_frame}, step={render_range.step_size}")
+        fps = api.config.get_fps()
 
         # Check camera path
         assert camera_path is not None, 'No camera path found'
@@ -181,6 +186,12 @@ class Playblast(ns.Node):
             temp_jpg_path = temp_dir_path / 'jpg' / 'playblast.$F4.jpg'
             temp_playblast_path = temp_dir_path / 'playblast.mp4'
 
+            # Set metadata
+            metadata_node.parm('starttime').set(render_range.first_frame)
+            metadata_node.parm('endtime').set(render_range.last_frame)
+            metadata_node.parm('timepersecond').set(fps)
+            metadata_node.parm('framespersecond').set(fps)
+
             # Export the cache
             cache_node.parm('file').set(path_str(temp_cache_path))
             cache_node.parm('f1').set(render_range.first_frame)
@@ -200,7 +211,7 @@ class Playblast(ns.Node):
             mp4.from_jpg(
                 temp_jpg_path,
                 render_range,
-                24,
+                api.config.get_fps(),
                 temp_playblast_path
             )
 
@@ -231,6 +242,21 @@ class Playblast(ns.Node):
                 severity=hou.severityType.Message
             )
         os.startfile(path_str(output_playblast_path))
+    
+    def open_location(self):
+
+        # Parameters and paths
+        entity = ShotEntity(
+            self.get_sequence_name(),
+            self.get_shot_name(),
+            self.get_department_name()
+        )
+        output_playblast_path = get_latest_playblast_path(entity)
+        output_path = output_playblast_path.parent
+
+        # Create and open the directory containing the playblast
+        output_path.mkdir(parents=True, exist_ok=True)
+        hou.ui.showInFileBrowser(f'{path_str(output_path)}/')
 
 def create(scene, name):
     node_type = ns.find_node_type('playblast', 'Lop')
@@ -271,11 +297,6 @@ def on_created(raw_node):
             node.set_shot_name(shot_name)
             node.set_department_name(department_name)
 
-def on_loaded(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
 def export():
     raw_node = hou.pwd()
     node = Playblast(raw_node)
@@ -285,3 +306,8 @@ def view_latest():
     raw_node = hou.pwd()
     node = Playblast(raw_node)
     node.view_latest()
+
+def open_location():
+    raw_node = hou.pwd()
+    node = Playblast(raw_node)
+    node.open_location()

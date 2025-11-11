@@ -3,7 +3,6 @@ from pathlib import Path
 import hou
 
 from tumblehead.api import path_str, default_client
-from tumblehead.util.cache import Cache
 from tumblehead.util.io import load_json
 import tumblehead.pipe.context as ctx
 import tumblehead.pipe.houdini.nodes as ns
@@ -14,9 +13,6 @@ from tumblehead.pipe.paths import (
 )
 
 api = default_client()
-
-CACHE_VERSION_NAMES = Cache()
-CACHE_INSTANCE_NAMES = Cache()
 
 class ImportShotLayer(ns.Node):
     def __init__(self, native):
@@ -44,34 +40,26 @@ class ImportShotLayer(ns.Node):
         sequence_name = self.get_sequence_name()
         shot_name = self.get_shot_name()
         department_name = self.get_department_name()
-        layer_key = (sequence_name, shot_name, department_name)
-        if CACHE_VERSION_NAMES.contains(layer_key):
-            return CACHE_VERSION_NAMES.lookup(layer_key).copy()
         layer_path = api.storage.resolve(f'export:/shots/{sequence_name}/{shot_name}/{department_name}')
         version_paths = list_version_paths(layer_path)
         version_names = [path.name for path in version_paths]
-        CACHE_VERSION_NAMES.insert(layer_key, version_names)
         return version_names
     
-    def _update_instance_names(self):
-        
+    def _get_instance_names(self):
+
         # Parameters
         sequence_name = self.get_sequence_name()
         shot_name = self.get_shot_name()
         department_name = self.get_department_name()
         version_name = self.get_version_name()
 
-        # Check cache
-        asset_key = (sequence_name, shot_name, department_name, version_name)
-        if CACHE_INSTANCE_NAMES.contains(asset_key): return
-        
         # Load context
         layer_path = api.storage.resolve(
             f'export:/shots/{sequence_name}/{shot_name}'
             f'/{department_name}/{version_name}'
         )
         context_file_path = layer_path / 'context.json'
-        if not context_file_path.exists(): return
+        if not context_file_path.exists(): return dict()
         context = load_json(context_file_path)
         layer_info = ctx.find_output(context,
             context = 'shot',
@@ -79,7 +67,8 @@ class ImportShotLayer(ns.Node):
             shot = shot_name,
             layer = department_name
         )
-        assert layer_info is not None, f'Could not find layer info for {sequence_name} {shot_name} {department_name}'
+        if layer_info is None:
+            return dict()
         parameters = layer_info['parameters']
 
         # Find assets instances
@@ -93,32 +82,17 @@ class ImportShotLayer(ns.Node):
             if asset_name not in asset_instances[category_name]:
                 asset_instances[category_name][asset_name] = list()
             asset_instances[category_name][asset_name].append(instance_name)
-        
-        # Store in cache
-        CACHE_INSTANCE_NAMES.insert(asset_key, asset_instances)
+
+        return asset_instances
     
     def list_category_names(self):
-        self._update_instance_names()
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
-        department_name = self.get_department_name()
-        version_name = self.get_version_name()
-        asset_key = (sequence_name, shot_name, department_name, version_name)
-        if not CACHE_INSTANCE_NAMES.contains(asset_key): return list()
-        asset_instances = CACHE_INSTANCE_NAMES.lookup(asset_key)
+        asset_instances = self._get_instance_names()
         match self.get_stage_type():
             case 'asset': return list(asset_instances.keys())
             case _: return list()
-    
+
     def list_item_names(self):
-        self._update_instance_names()
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
-        department_name = self.get_department_name()
-        version_name = self.get_version_name()
-        asset_key = (sequence_name, shot_name, department_name, version_name)
-        if not CACHE_INSTANCE_NAMES.contains(asset_key): return list()
-        asset_instances = CACHE_INSTANCE_NAMES.lookup(asset_key)
+        asset_instances = self._get_instance_names()
         match self.get_stage_type():
             case 'asset':
                 category_name = self.get_category_name()
@@ -126,22 +100,21 @@ class ImportShotLayer(ns.Node):
                 return list(asset_instances[category_name].keys())
             case _:
                 return list()
-    
+
     def list_instance_names(self):
-        self._update_instance_names()
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
-        department_name = self.get_department_name()
-        version_name = self.get_version_name()
-        asset_key = (sequence_name, shot_name, department_name, version_name)
-        if not CACHE_INSTANCE_NAMES.contains(asset_key): return list()
-        asset_instances = CACHE_INSTANCE_NAMES.lookup(asset_key)
+        asset_instances = self._get_instance_names()
         match self.get_stage_type():
             case 'asset':
                 category_name = self.get_category_name()
                 asset_name = self.get_item_name()
                 if category_name not in asset_instances: return list()
                 if asset_name not in asset_instances[category_name]: return list()
+
+                # For non-animatable assets, return empty list (bundled file contains all instances)
+                animatable = api.config.get_asset_animatable(category_name, asset_name)
+                if not animatable:
+                    return list()
+
                 return asset_instances[category_name][asset_name]
             case _:
                 return list()
@@ -174,7 +147,8 @@ class ImportShotLayer(ns.Node):
         version_names = self.list_version_names()
         if len(version_names) == 0: return None
         version_name = self.parm('version').eval()
-        if len(version_name) == 0: return version_names[0]
+        if len(version_name) == 0: return version_names[-1]
+        if version_name == 'latest': return version_names[-1]
         if version_name not in version_names: return None
         return version_name
     
@@ -233,6 +207,7 @@ class ImportShotLayer(ns.Node):
             case 'asset': self.parm('stage_type').set('asset')
             case 'cameras': self.parm('stage_type').set('cameras')
             case 'lights': self.parm('stage_type').set('lights')
+            case 'volumes': self.parm('stage_type').set('volumes')
             case 'collections': self.parm('stage_type').set('collections')
             case 'render': self.parm('stage_type').set('render')
             case 'scene': self.parm('stage_type').set('scene')
@@ -263,25 +238,15 @@ class ImportShotLayer(ns.Node):
 
     def execute(self):
 
-        # Get context
-        context = self.native()
-        import_node = context.node('import')
-        switch_node = context.node('switch')
-        bypass_node = context.node('bypass')
-
         # General parameters
         sequence_name = self.get_sequence_name()
         shot_name = self.get_shot_name()
         department_name = self.get_department_name()
         version_name = self.get_version_name()
-        include_layerbreak = self.get_include_layerbreak()
         input_version_path = api.storage.resolve(
             f'export:/shots/{sequence_name}/{shot_name}'
             f'/{department_name}/{version_name}'
         )
-
-        # Enable or disable layerbreak
-        switch_node.parm('input').set(1 if include_layerbreak else 0)
         
         # Get layer file path
         def _get_layer_file_name():
@@ -291,11 +256,22 @@ class ImportShotLayer(ns.Node):
                     category_name = self.get_category_name()
                     asset_name = self.get_item_name()
                     instance_name = self.get_instance_name()
-                    return f'asset_{category_name}_{asset_name}_{instance_name}_{department_name}_{version_name}.usd'
+
+                    # Check if asset is animatable to determine filename format
+                    animatable = api.config.get_asset_animatable(category_name, asset_name)
+
+                    if animatable:
+                        # Animatable assets: separate file per instance
+                        return f'asset_{category_name}_{asset_name}_{instance_name}_{department_name}_{version_name}.usd'
+                    else:
+                        # Non-animatable assets: bundled file for all instances
+                        return f'asset_{category_name}_{asset_name}_{department_name}_{version_name}.usd'
                 case 'cameras':
                     return f'cameras_{version_name}.usd'
                 case 'lights':
                     return f'lights_{version_name}.usd'
+                case 'volumes':
+                    return f'volumes_{version_name}.usd'
                 case 'collections':
                     return f'collections_{version_name}.usd'
                 case 'render':
@@ -308,15 +284,11 @@ class ImportShotLayer(ns.Node):
         input_file_path = input_version_path / _get_layer_file_name()
         
         # Import layer file
-        if input_file_path.exists():
-            import_node.parm('filepath1').set(path_str(input_file_path))
-            bypass_node.parm('input').set(1)
-        else:
-            bypass_node.parm('input').set(0)
+        self.parm('import_enable1').set(1 if input_file_path.exists() else 0)
+        self.parm('import_filepath1').set(path_str(input_file_path))
 
-def clear_cache():
-    CACHE_VERSION_NAMES.clear()
-    CACHE_INSTANCE_NAMES.clear()
+        # Update the version label on the node UI
+        self.parm('version_label').set(f'v{version_name}')
 
 def create(scene, name):
     node_type = ns.find_node_type('import_shot_layer', 'Lop')
@@ -357,16 +329,6 @@ def on_created(raw_node):
             ):
             node.set_sequence_name(sequence_name)
             node.set_shot_name(shot_name)
-
-def on_loaded(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
-def latest():
-    raw_node = hou.pwd()
-    node = ImportShotLayer(raw_node)
-    node.latest()
 
 def execute():
     raw_node = hou.pwd()

@@ -1,9 +1,14 @@
+from tempfile import TemporaryDirectory
 from pathlib import Path
-import tempfile
 import logging
 import shutil
 
-from tumblehead.api import path_str, fix_path, to_wsl_path, default_client
+from tumblehead.api import (
+    path_str,
+    fix_path,
+    to_wsl_path,
+    default_client
+)
 from tumblehead.config import BlockRange
 from tumblehead.apps import wsl
 
@@ -44,7 +49,7 @@ def from_jpg(
     # Open temporary workspace
     base_temp_path = fix_path(api.storage.resolve('temp:/'))
     base_temp_path.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
+    with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
         temp_dir_path = Path(temp_dir)
         
         # Copy over framestack
@@ -98,6 +103,47 @@ def from_jpg(
             '-c:v', 'libx264',
             '-crf', '17',
             '-pix_fmt', 'yuv420p',
+            path_str(to_wsl_path(temp_output_mp4_path))
+        ])
+        output_mp4_path.parent.mkdir(exist_ok=True, parents=True)
+        shutil.copyfile(temp_output_mp4_path, output_mp4_path)
+
+def scale(
+    input_mp4_path: Path,
+    output_mp4_path: Path,
+    scale_factor: int
+    ):
+
+    # Check if the input file exists
+    if not input_mp4_path.exists():
+        raise FileNotFoundError(
+            f'Input MP4 file does not exist: {input_mp4_path}'
+        )
+    
+    # Open temporary workspace
+    base_temp_path = fix_path(api.storage.resolve('temp:/'))
+    base_temp_path.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
+        temp_dir_path = Path(temp_dir)
+
+        # Temporary paths
+        temp_output_mp4_path = temp_dir_path / 'output.mp4'
+        temp_output_mp4_path.parent.mkdir(exist_ok=True, parents=True)
+
+        # Scale the video
+        scale_expression = (
+            f'*{2**scale_factor}'
+            if scale_factor >= 0 else
+            f'/{2**(-scale_factor)}'
+        )
+        wsl.run([
+            FFMPEG_PATH, 
+            '-i', path_str(input_mp4_path), 
+            '-vf', (
+                'scale='
+                f'iw{scale_expression}:'
+                f'ih{scale_expression}'
+            ),
             path_str(to_wsl_path(temp_output_mp4_path))
         ])
         output_mp4_path.parent.mkdir(exist_ok=True, parents=True)

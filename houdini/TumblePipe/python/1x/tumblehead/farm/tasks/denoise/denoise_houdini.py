@@ -44,7 +44,11 @@ def _get_frame_path(frames_path, frame_index):
 def _should_denoise_aov(aov_name):
     name = aov_name.lower()
     if name == 'beauty': return True
+    if name == 'alpha': return True
+    if name.endswith('_mse'): return False
     if name.startswith('beauty_'): return True
+    if name.startswith('holdout_'): return True
+    if name.startswith('objid_'): return True
     return False
 
 def _create_file_node(parent, name):
@@ -75,6 +79,7 @@ def _set_file_node(file_node, file_path, aov_name):
     file_node.parm('filename').set(path_str(file_path))
     file_node.parm('aovs').set(0)
     file_node.parm('addaovs').pressButton()
+    file_node.parm('type1').set(2)
 
 def main(
     render_range: BlockRange,
@@ -119,7 +124,7 @@ def main(
     albedo_file_node = _create_file_node(cops_node, 'albedo')
     denoise_node = _create_denoise_node(cops_node, 'denoise')
     render_node = _create_render_node(cops_node, 'render', denoise_node)
-    denoise_node.setInput(0, source_file_node, 0)
+    denoise_node.setInput(0, source_file_node)
     denoise_node.setInput(1, normal_file_node)
     denoise_node.setInput(2, albedo_file_node)
 
@@ -157,6 +162,7 @@ def main(
             _set_file_node(source_file_node, source_file_path, aov_name)
             render_node.parm('copoutput').set(path_str(temp_frames_path))
             render_node.parm('aov1').set(aov_name)
+            render_node.parm('size1').set(5)
 
             # Denoise the input frames
             temp_frames_path.parent.mkdir(parents = True, exist_ok = True)

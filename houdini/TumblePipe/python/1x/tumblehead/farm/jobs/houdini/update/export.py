@@ -42,7 +42,7 @@ def main(
         return 0
 
     # Get houdini ready
-    houdini_version = '20.5.410'
+    houdini_version = '21.0.480'
     houdini = Houdini(houdini_version)
 
     # Export

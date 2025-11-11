@@ -7,7 +7,7 @@ from tumblehead.api import path_str, to_windows_path
 from tumblehead.util import ipc
 from tumblehead.apps import app
 
-DEFAULT_HOUDINI_VERSION = '20.5.550'
+DEFAULT_HOUDINI_VERSION = '21.0.480'
 RUNNER_SCRIPT_PATH = Path(__file__).parent / 'houdini_runner.py'
 
 def _is_valid_version(version: str) -> bool:
@@ -38,13 +38,15 @@ def _scan_path_for_versions(root_path) -> dict[str, dict[str, Path]]:
         hython_path = bin_path / 'hython.exe'
         husk_path = bin_path / 'husk.exe'
         iconvert_path = bin_path / 'iconvert.exe'
+        itilestitch_path = bin_path / 'itilestitch.exe'
         if not hython_path.exists(): continue
         if not husk_path.exists(): continue
         if not iconvert_path.exists(): continue
         result[version] = dict(
             hython = hython_path,
             husk = husk_path,
-            iconvert = iconvert_path
+            iconvert = iconvert_path,
+            itilestitch = itilestitch_path
         )
     return result
 
@@ -196,6 +198,43 @@ class IConvert:
         return await app.run_async(
             [
                 path_str(self._iconvert),
+                *args
+            ],
+            cwd = cwd,
+            env = env
+        )
+
+    def run(self,
+        args: list[str],
+        cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None
+        ) -> int:
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(
+            self.run_async(args, cwd, env)
+        )
+
+class ITileStitch:
+    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
+        
+        # Check if iconvert is available
+        _versions = _scan_drives_for_versions()
+        version = _get_version(version_name, _versions)
+        if version is None:
+            assert False, 'No valid Houdini version was found'
+        
+        # Members
+        self._version = version_name
+        self._itilestitch = version['itilestitch']
+    
+    async def run_async(self,
+        args: list[str],
+        cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None
+        ) -> int:
+        return await app.run_async(
+            [
+                path_str(self._itilestitch),
                 *args
             ],
             cwd = cwd,

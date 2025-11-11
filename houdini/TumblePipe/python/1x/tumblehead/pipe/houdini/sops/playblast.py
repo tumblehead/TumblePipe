@@ -134,7 +134,7 @@ class Playblast(ns.Node):
             mp4.from_jpg(
                 temp_framestack_path,
                 render_range,
-                24,
+                api.config.get_fps(),
                 temp_playblast_path
             )
 
@@ -171,6 +171,27 @@ class Playblast(ns.Node):
                 severity=hou.severityType.Message
             )
         os.startfile(path_str(output_playblast_path))
+
+    def open_location(self):
+
+        # Find nodes
+        context = self.native()
+        raw_animate_node = context.node('../../../../')
+        assert raw_animate_node.type().name().startswith('th::animate'), 'Parent node is not an animate node'
+        animate_node = animate.Animate(raw_animate_node)
+
+        # Parameters and paths
+        entity = ShotEntity(
+            animate_node.get_sequence_name(),
+            animate_node.get_shot_name(),
+            self.get_department_names()
+        )
+        output_playblast_path = get_latest_playblast_path(entity)
+        output_path = output_playblast_path.parent
+
+        # Create and open the directory containing the playblast
+        output_path.mkdir(parents=True, exist_ok=True)
+        hou.ui.showInFileBrowser(f'{path_str(output_path)}/')
 
 def create(scene, name):
     node_type = ns.find_node_type('playblast', 'Sop')
@@ -209,11 +230,6 @@ def on_created(raw_node):
             ):
             node.set_department_name(department_name)
 
-def on_loaded(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
 def export():
     raw_node = hou.pwd()
     node = Playblast(raw_node)
@@ -223,3 +239,8 @@ def view_latest():
     raw_node = hou.pwd()
     node = Playblast(raw_node)
     node.view_latest()
+
+def open_location():
+    raw_node = hou.pwd()
+    node = Playblast(raw_node)
+    node.open_location()

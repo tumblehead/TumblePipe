@@ -44,11 +44,11 @@ config = {
     'settings': {
         'user_name': 'string',
         'purpose': 'string',
-        'priority': 'int',
         'pool_name': 'string',
-        'render_layer_name': 'string',
+        'render_layer_names': ['string'],
         'render_department_name': 'string',
         'render_settings_path': 'string',
+        'tile_count': 'int',
         'first_frame': 'int',
         'last_frame': 'int',
         'step_size': 'int',
@@ -56,13 +56,16 @@ config = {
     },
     'tasks': {
         'stage': {
+            'priority': 'int',
             'channel_name': 'string'
         },
         'partial_render': {
+            'priority': 'int',
             'denoise': 'bool',
             'channel_name': 'string
         },
         'full_render': {
+            'priority': 'int',
             'denoise': 'bool',
             'channel_name': 'string
         }
@@ -110,13 +113,14 @@ def _is_valid_config(config):
     
     def _valid_settings(settings):
         if not isinstance(settings, dict): return False
-        if not _check_str(settings, 'user_name'): return
+        if not _check_str(settings, 'user_name'): return False
         if not _check_str(settings, 'purpose'): return False
-        if not _check_int(settings, 'priority'): return False
         if not _check_str(settings, 'pool_name'): return False
-        if not _check_str(settings, 'render_layer_name'): return False
+        if 'render_layer_names' not in settings: return False
+        if not isinstance(settings['render_layer_names'], list): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
+        if not _check_int(settings, 'tile_count'): return False
         if not _check_int(settings, 'first_frame'): return False
         if not _check_int(settings, 'last_frame'): return False
         if not _check_int(settings, 'step_size'): return False
@@ -127,17 +131,20 @@ def _is_valid_config(config):
 
         def _valid_stage(stage):
             if not isinstance(stage, dict): return False
+            if not _check_int(stage, 'priority'): return False
             if not _check_str(stage, 'channel_name'): return False
             return True
 
         def _valid_partial_render(partial_render):
             if not isinstance(partial_render, dict): return False
+            if not _check_int(partial_render, 'priority'): return False
             if not _check_bool(partial_render, 'denoise'): return False
             if not _check_str(partial_render, 'channel_name'): return False
             return True
     
         def _valid_full_render(full_render):
             if not isinstance(full_render, dict): return False
+            if not _check_int(full_render, 'priority'): return False
             if not _check_bool(full_render, 'denoise'): return False
             if not _check_str(full_render, 'channel_name'): return False
             return True
@@ -171,7 +178,7 @@ def build(config, paths, staging_path):
 
     # Config
     entity = Entity.from_json(config['entity'])
-    priority = config['settings']['priority']
+    priority = config['tasks']['stage']['priority']
     pool_name = config['settings']['pool_name']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']

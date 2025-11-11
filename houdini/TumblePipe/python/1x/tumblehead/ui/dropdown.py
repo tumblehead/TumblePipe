@@ -23,10 +23,6 @@ from tumblehead.ui import (
     style
 )
 
-from importlib import reload
-reload(card)
-reload(style)
-
 class ElidedLabel(QLabel):
     def __init__(
         self,

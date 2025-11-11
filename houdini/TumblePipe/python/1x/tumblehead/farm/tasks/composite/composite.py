@@ -53,7 +53,9 @@ def main(
     receipt_path: Path,
     input_path: Path,
     node_path: str,
-    output_paths: dict[str, Path]
+    layer_names: list[str],
+    output_paths: dict[str, Path],
+    entity_json: dict
     ) -> int:
 
     # Check that OCIO has been set
@@ -96,12 +98,14 @@ def main(
         # Store composite config
         config_path = temp_path / 'config.json'
         store_json(config_path, dict(
+            entity = entity_json,
             first_frame = render_range.first_frame,
             last_frame = render_range.last_frame,
             frames = missing_frames,
             receipt_path = path_str(receipt_path),
             input_path = path_str(input_path),
             node_path = node_path,
+            layer_names = layer_names,
             output_paths = {
                 aov_name: path_str(output_path)
                 for aov_name, output_path in output_paths.items()
@@ -138,12 +142,19 @@ def main(
 
 """
 config = {
+    'entity': {
+        'tag': 'shot',
+        'sequence_name': 'seq010',
+        'shot_name': 'shot0010',
+        'department_name': 'composite'
+    },
     'receipt_path': 'path/to/receipt.####.json',
     'input_path': 'path/to/input.hip',
     'node_path': 'path/to/node',
+    'layer_names': ['main', 'mirror'],
     'output_paths': {
-        'diffuse': 'path/to/diffuse.####.exr',
-        'depth': 'path/to/depth.####.exr'
+        'main': 'path/to/main.####.exr',
+        'mirror': 'path/to/mirror.####.exr'
     }
 }
 """
@@ -156,13 +167,17 @@ def _is_valid_config(config):
             if not isinstance(aov_name, str): return False
             if not isinstance(aov_path, str): return False
         return True
-    
+
+    if 'entity' not in config: return False
+    if not isinstance(config['entity'], dict): return False
     if 'receipt_path' not in config: return False
     if not isinstance(config['receipt_path'], str): return False
     if 'input_path' not in config: return False
     if not isinstance(config['input_path'], str): return False
     if 'node_path' not in config: return False
     if not isinstance(config['node_path'], str): return False
+    if 'layer_names' not in config: return False
+    if not isinstance(config['layer_names'], list): return False
     if 'output_paths' not in config: return False
     if not _is_valid_layer(config['output_paths']): return False
     return True
@@ -199,11 +214,17 @@ def cli():
     # Get the node path
     node_path = config['node_path']
 
+    # Get the layer names
+    layer_names = config['layer_names']
+
     # Get the output paths
     output_paths = {
         aov_name: _fix_frame_pattern(Path(aov_path), '*')
         for aov_name, aov_path in config['output_paths'].items()
     }
+
+    # Get the entity
+    entity_json = config['entity']
 
     # Run the main function
     return main(
@@ -211,7 +232,9 @@ def cli():
         receipt_path,
         input_path,
         node_path,
-        output_paths
+        layer_names,
+        output_paths,
+        entity_json
     )
 
 if __name__ == '__main__':

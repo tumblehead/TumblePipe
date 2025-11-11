@@ -7,30 +7,34 @@ import platform
 import asyncio
 import logging
 import signal
+import sys
 import os
 
 Command = list[str]
 
 def _wsl_patch_env(env):
-    patch = ':'.join([k for k in env])
-    return env.copy() | { 'WSLENV': patch }
+    keys = os.environ.get('WSLENV', '').split(':')
+    keys += [key for key in env if key not in keys]
+    return env.copy() | { 'WSLENV': ':'.join(keys) }
 
 def run(
     command: Command,
     cwd: Optional[Path] = None,
     env: Optional[dict[str, str]] = None
     ) -> int:
-    
+
     # Prepare env
     _env = os.environ.copy()
     _env['PYTHONUNBUFFERED'] = '1'
     if env is not None:
         _env.update(_wsl_patch_env(env))
-    
+
     # Prepare args
     _args = dict(
         stdout = subprocess.PIPE,
         stderr = subprocess.STDOUT,
+        text = True,
+        bufsize = 1,
         env = _env
     )
     if cwd is not None:
@@ -40,8 +44,9 @@ def run(
     try:
         logging.debug(' '.join(command))
         process = subprocess.Popen(command, **_args)
-        for line in iter(process.stdout.readline, b''):
-            print(line.decode('utf-8').strip())
+        for line in process.stdout:
+            print(line, end='')
+            sys.stdout.flush()
         return process.wait()
     except KeyboardInterrupt:
         process.send_signal(signal.SIGINT)
@@ -58,26 +63,28 @@ def call(
     _env['PYTHONUNBUFFERED'] = '1'
     if env is not None:
         _env.update(_wsl_patch_env(env))
-    
+
     # Prepare args
     _args = dict(
         stdout = subprocess.PIPE,
         stderr = subprocess.STDOUT,
+        text = True,
+        bufsize = 1,
         env = _env
     )
     if platform.system() == 'Windows':
         _args['creationflags'] = subprocess.CREATE_NO_WINDOW
     if cwd is not None:
         _args['cwd'] = str(cwd)
-    
+
     # Run command
     try:
         logging.debug(' '.join(command))
         process = subprocess.Popen(command, **_args)
         result = ''
         with process.stdout:
-            for line in iter(process.stdout.readline, b''):
-                result += line.decode('utf-8')
+            for line in process.stdout:
+                result += line
         process.wait()
         return result
     except KeyboardInterrupt:
@@ -95,7 +102,7 @@ async def run_async(
     _env['PYTHONUNBUFFERED'] = '1'
     if env is not None:
         _env.update(_wsl_patch_env(env))
-    
+
     # Prepare args
     _args = dict(
         stdout = asyncio.subprocess.PIPE,
@@ -114,7 +121,8 @@ async def run_async(
             if not line: break
             yield line
     async for line in aiter(_read_lines()):
-        print(line.decode('utf-8').strip())
+        print(line.decode('utf-8'), end='')
+        sys.stdout.flush()
     return await process.wait()
 
 async def call_async(

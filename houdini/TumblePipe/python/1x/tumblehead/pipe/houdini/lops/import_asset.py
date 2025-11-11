@@ -1,14 +1,11 @@
 import hou
 
 from tumblehead.api import default_client
-from tumblehead.util.cache import Cache
 from tumblehead.util import result
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.lops import import_asset_layer
 
 api = default_client()
-
-CACHE_VERSION_NAMES = Cache()
 
 def _clear_scene(dive_node, output_node):
 
@@ -141,9 +138,6 @@ class ImportAsset(ns.Node):
         # Done
         return result.Value(None)
 
-def clear_cache():
-    CACHE_VERSION_NAMES.clear()
-
 def create(scene, name):
     node_type = ns.find_node_type('import_asset', 'Lop')
     assert node_type is not None, 'Could not find import_asset node type'
@@ -156,11 +150,6 @@ def set_style(raw_node):
     raw_node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
-def on_loaded(raw_node):
 
     # Set node style
     set_style(raw_node)

@@ -18,7 +18,11 @@ from tumblehead.api import (
 )
 from tumblehead.util.io import load_json
 from tumblehead.pipe.paths import Entity
-from tumblehead.apps.deadline import Deadline, Batch
+from tumblehead.apps.deadline import (
+    Deadline,
+    Batch,
+    Job
+)
 
 import tumblehead.farm.tasks.export.task as export_task
 import tumblehead.farm.tasks.notify.task as notify_task
@@ -54,11 +58,11 @@ config = {
     'settings': {
         'user_name': 'string',
         'purpose': 'string',
-        'priority': 'int',
         'pool_name': 'string',
         'render_layer_name': 'string',
         'render_department_name': 'string',
         'render_settings_path': 'string',
+        'tile_count': 'int',
         'first_frame': 'int',
         'last_frame': 'int',
         'step_size': 'int',
@@ -66,15 +70,18 @@ config = {
     },
     'tasks': {
         'export': {
+            'priority': 'int',
             'input_path': 'string',
             'node_path': 'string',
             'channel_name': 'string'
         },
         'partial_render': {
+            'priority': 'int',
             'denoise': 'bool',
             'channel_name': 'string
         },
         'full_render': {
+            'priority': 'int',
             'denoise': 'bool',
             'channel_name': 'string'
         }
@@ -124,11 +131,11 @@ def _is_valid_config(config):
         if not isinstance(settings, dict): return False
         if not _check_str(settings, 'user_name'): return False
         if not _check_str(settings, 'purpose'): return False
-        if not _check_int(settings, 'priority'): return False
         if not _check_str(settings, 'pool_name'): return False
         if not _check_str(settings, 'render_layer_name'): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
+        if not _check_int(settings, 'tile_count'): return False
         if not _check_int(settings, 'first_frame'): return False
         if not _check_int(settings, 'last_frame'): return False
         if not _check_int(settings, 'step_size'): return False
@@ -139,6 +146,7 @@ def _is_valid_config(config):
 
         def _valid_export(export):
             if not isinstance(export, dict): return False
+            if not _check_int(export, 'priority'): return False
             if not _check_str(export, 'input_path'): return False
             if not _check_str(export, 'node_path'): return False
             if not _check_str(export, 'channel_name'): return False
@@ -146,14 +154,16 @@ def _is_valid_config(config):
 
         def _valid_partial_render(partial_render):
             if not isinstance(partial_render, dict): return False
+            if not _check_int(partial_render, 'priority'): return False
             if not _check_bool(partial_render, 'denoise'): return False
             if not _check_str(partial_render, 'channel_name'): return False
             return True
     
         def _valid_full_render(full_render):
             if not isinstance(full_render, dict): return False
-            if not _check(full_render, 'denoise', bool): return False
-            if not _check_str(full_render, 'channel_name'): return
+            if not _check_int(full_render, 'priority'): return False
+            if not _check_bool(full_render, 'denoise'): return False
+            if not _check_str(full_render, 'channel_name'): return False
             return True
         
         if not isinstance(tasks, dict): return False
@@ -174,22 +184,28 @@ def _is_valid_config(config):
     if not _valid_tasks(config['tasks']): return False
     return True
 
-def _add_tasks(batch, tasks):
-    tasks = list(filter(lambda job_layer: len(job_layer) != 0, tasks))
-    task_indices = [
-        [
-            batch.add_job(task)
-            for task in job_layer
-        ]
-        for job_layer in tasks
-    ]
-    if len(tasks) <= 1: return
-    prev_layer = task_indices[0]
-    for curr_layer in task_indices[1:]:
-        for curr_index in curr_layer:
-            for prev_index in prev_layer:
-                batch.add_dep(curr_index, prev_index)
-        prev_layer = curr_layer
+def _add_jobs(
+    batch: Batch,
+    jobs: dict[str, Job],
+    deps: dict[str, list[str]]
+    ):
+    indicies = {
+        job_name: batch.add_job(job)
+        for job_name, job in jobs.items()
+    }
+    for job_name, job_deps in deps.items():
+        if len(job_deps) == 0: continue
+        for dep_name in job_deps:
+            if dep_name not in indicies:
+                logging.warning(
+                    f'Job "{job_name}" depends on '
+                    f'non-existing job "{dep_name}"'
+                )
+                continue
+            batch.add_dep(
+                indicies[job_name],
+                indicies[dep_name]
+            )
 
 def submit(
     config: dict,
@@ -202,6 +218,7 @@ def submit(
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
     channel_name = config['tasks']['export']['channel_name']
+    render_layer_name = config['settings']['render_layer_name']
 
     # Parameters
     project_name = get_project_name()
@@ -218,33 +235,42 @@ def submit(
         temp_path = Path(temp_dir)
         logging.info(f'Temporary directory: {temp_path}')
 
-        # Batch and jobs
-        job_batch = Batch(
+        # Batch
+        batch = Batch(
             f'{project_name} '
             f'{purpose} '
             f'{entity} '
+            f'{render_layer_name} '
             f'{user_name} '
             f'{timestamp}'
         )
 
-        # Add job layers
-        _add_tasks(job_batch, [
-            [export_task.build(config, paths, temp_path)],
-            [notify_task.build(dict(
-                title = f'notify export {entity}',
-                priority = 90,
-                pool_name = pool_name,
-                user_name = user_name,
-                channel_name = channel_name,
-                message = f'Exported {purpose} {entity}',
-                command = dict(
-                    mode = 'notify'
-                )
-            ), dict(), temp_path)]
-        ])
+        # Prepare adding jobs
+        jobs = dict()
+        deps = dict()
+        def _add_job(job_name, job, job_deps):
+            jobs[job_name] = job
+            deps[job_name] = job_deps
+
+        # Add jobs
+        export_job = export_task.build(config, paths, temp_path)
+        notify_job = notify_task.build(dict(
+            title = f'notify export {entity}',
+            priority = 90,
+            pool_name = pool_name,
+            user_name = user_name,
+            channel_name = channel_name,
+            message = f'Exported {purpose} {entity}',
+            command = dict(
+                mode = 'notify'
+            )
+        ), dict(), temp_path)
+        _add_job('export', export_job, [])
+        _add_job('notify', notify_job, ['export'])
+        _add_jobs(batch, jobs, deps)
 
         # Submit
-        farm.submit(job_batch, api.storage.resolve('export:/other/jobs'))
+        farm.submit(batch, api.storage.resolve('export:/other/jobs'))
 
     # Done
     return 0

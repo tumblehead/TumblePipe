@@ -24,9 +24,6 @@ from qtpy.QtWidgets import (
 
 from tumblehead.ui import style
 
-from importlib import reload
-reload(style)
-
 ##############################################################################
 # Card Sizing
 ##############################################################################
@@ -726,7 +723,6 @@ class Card(QWidget):
         # Create the painter
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setRenderHint(QPainter.HighQualityAntialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
         painter.setClipPath(shape)

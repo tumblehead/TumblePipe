@@ -1,0 +1,234 @@
+from tempfile import TemporaryDirectory
+from functools import partial
+from pathlib import Path
+import logging
+import sys
+import os
+
+# Add tumblehead python packages path
+tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
+if tumblehead_packages_path not in sys.path:
+    sys.path.append(str(tumblehead_packages_path))
+
+from tumblehead.api import (
+    path_str,
+    fix_path,
+    get_user_name,
+    to_windows_path,
+    default_client
+)
+from tumblehead.util.io import (
+    load_json,
+    store_json
+)
+from tumblehead.apps.houdini import Hython
+from tumblehead.pipe.paths import (
+    next_asset_export_path,
+    next_shot_export_path,
+    next_kit_export_path
+)
+
+api = default_client()
+
+def _error(msg):
+    logging.error(msg)
+    return 1
+
+def _next_export_path(entity):
+    if entity['tag'] == 'asset':
+        return next_asset_export_path(
+            category_name = entity['category_name'],
+            asset_name = entity['asset_name'],
+            department_name = entity['department_name']
+        )
+    elif entity['tag'] == 'shot':
+        return next_shot_export_path(
+            sequence_name = entity['sequence_name'],
+            shot_name = entity['shot_name'],
+            department_name = entity['department_name']
+        )
+    elif entity['tag'] == 'kit':
+        return next_kit_export_path(
+            category_name = entity['category_name'],
+            kit_name = entity['kit_name'],
+            department_name = entity['department_name']
+        )
+    else:
+        return None
+
+SCRIPT_PATH = Path(__file__).parent / 'publish_houdini.py'
+def main(config):
+
+    # Decide on the next export path
+    export_path = _next_export_path(config['entity'])
+    if export_path is None:
+        return _error('Invalid entity type in config')
+
+    # Get hython ready
+    hython = Hython()
+
+    # Open a temporary directory
+    root_temp_path = fix_path(api.storage.resolve('temp:/'))
+    root_temp_path.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Create a temporary config file
+        temp_config_path = temp_path / 'config.json'
+        store_json(temp_config_path, config)
+    
+        # Run script in hython
+        hython.run(
+            to_windows_path(SCRIPT_PATH),
+            [
+                path_str(to_windows_path(temp_config_path)),
+            ],
+            env = dict(
+                TH_USER = get_user_name(),
+                TH_PROJECT_PATH = path_str(to_windows_path(api.PROJECT_PATH)),
+                TH_PIPELINE_PATH = path_str(to_windows_path(api.PIPELINE_PATH)),
+                TH_CONFIG_PATH = path_str(to_windows_path(api.CONFIG_PATH)),
+                HOUDINI_PACKAGE_DIR = ';'.join([
+                    path_str(to_windows_path(api.storage.resolve('pipeline:/houdini'))),
+                    path_str(to_windows_path(api.storage.resolve('project:/_pipeline/houdini')))
+                ]),
+                OCIO = path_str(to_windows_path(Path(os.environ['OCIO'])))
+            )
+        )
+
+    # Check if the export was generated
+    if not export_path.exists():
+        return _error(f'Export not found: {export_path}')
+
+    # Done
+    print('Success')
+    return 0
+
+"""
+config = {
+    'entity': {
+        'tag': 'asset',
+        'category_name': 'string',
+        'asset_name': 'string',
+        'department_name': 'string'
+    } | {
+        'tag': 'shot',
+        'sequence_name': 'string',
+        'shot_name': 'string',
+        'department_name': 'string'
+    } | {
+        'tag': 'kit',
+        'category_name': 'string',
+        'kit_name': 'string',
+        'department_name': 'string'
+    },
+    'settings': {
+        'priority': 'int',
+        'pool_name': 'string',
+        'first_frame': 'int',
+        'last_frame': 'int'
+    },
+    'tasks': {
+        'publish': {
+            'downstream_departments': 'list[string]'
+        }
+    }
+}
+"""
+
+def _is_valid_config(config):
+
+    def _is_str(datum):
+        return isinstance(datum, str)
+    
+    def _is_int(datum):
+        return isinstance(datum, int)
+    
+    def _is_list(datum):
+        return isinstance(datum, list)
+
+    def _check(value_checker, data, key):
+        if key not in data: return False
+        if not value_checker(data[key]): return False
+        return True
+    
+    _check_str = partial(_check, _is_str)
+    _check_int = partial(_check, _is_int)
+    _check_list = partial(_check, _is_list)
+
+    def _valid_entity(entity):
+        if not isinstance(entity, dict): return False
+        if 'tag' not in entity: return False
+        match entity['tag']:
+            case 'asset':
+                if not _check_str(entity, 'category_name'): return False
+                if not _check_str(entity, 'asset_name'): return False
+                if not _check_str(entity, 'department_name'): return False
+            case 'shot':
+                if not _check_str(entity, 'sequence_name'): return False
+                if not _check_str(entity, 'shot_name'): return False
+                if not _check_str(entity, 'department_name'): return False
+            case 'kit':
+                if not _check_str(entity, 'category_name'): return False
+                if not _check_str(entity, 'kit_name'): return False
+                if not _check_str(entity, 'department_name'): return False
+        return True
+    
+    def _valid_settings(settings):
+        if not isinstance(settings, dict): return False
+        if not _check_int(settings, 'priority'): return False
+        if not _check_str(settings, 'pool_name'): return False
+        if not _check_int(settings, 'first_frame'): return False
+        if not _check_int(settings, 'last_frame'): return False
+        return True
+    
+    def _valid_tasks(tasks):
+
+        def _valid_publish(publish):
+            if not isinstance(publish, dict): return False
+            if 'downstream_departments' in publish:
+                if not _check_list(publish, 'downstream_departments'): return False
+                for dept in publish['downstream_departments']:
+                    if not isinstance(dept, str): return False
+            return True
+
+        if not isinstance(tasks, dict): return False
+        if 'publish' in tasks:
+            if not _valid_publish(tasks['publish']): return False
+        return True
+    
+    if not isinstance(config, dict): return False
+    if 'entity' not in config: return False
+    if not _valid_entity(config['entity']): return False
+    if 'settings' not in config: return False
+    if not _valid_settings(config['settings']): return False
+    if 'tasks' not in config: return False
+    if not _valid_tasks(config['tasks']): return False
+    return True
+
+def cli():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('config_path', type=str)
+    parser.add_argument('start_frame', type=int)
+    parser.add_argument('end_frame', type=int)
+    args = parser.parse_args()
+    
+   # Load config data
+    config_path = Path(args.config_path)
+    config = load_json(config_path)
+    if config is None:
+        return _error(f'Config file not found: {config_path}')
+    if not _is_valid_config(config):
+        return _error(f'Invalid config file: {config_path}')
+
+    # Run main
+    return main(config)
+
+if __name__ == '__main__':
+    logging.basicConfig(
+        level = logging.DEBUG,
+        format = '%(message)s',
+        stream = sys.stdout
+    )
+    sys.exit(cli())

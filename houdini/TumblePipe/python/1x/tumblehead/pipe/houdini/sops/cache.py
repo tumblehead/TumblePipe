@@ -131,13 +131,13 @@ class Cache(ns.Node):
     def cache(self):
 
         # Nodes
-        context = self.native()
+        native = self.native()
 
         # Check if name is defined
         cache_name = self.get_cache_name()
         if cache_name is None:
-            context.parm('cache/file').set('')
-            context.parm('cache/loadfromdisk').set(0)
+            native.parm('cache/file').set('')
+            native.parm('cache/loadfromdisk').set(0)
             return
 
         # Output path
@@ -148,20 +148,20 @@ class Cache(ns.Node):
         # Cache the scene
         frame_range, frame_step = self.get_frame_range()
         render_range = frame_range.full_range()
-        context.parm('cache/file').set(path_str(output_path))
-        context.parm('cache/f1').set(render_range.first_frame)
-        context.parm('cache/f2').set(render_range.last_frame)
-        context.parm('cache/f3').set(frame_step)
-        context.parm('cache/execute').pressButton()
-        context.parm('cache/loadfromdisk').set(1)
+        native.parm('cache/file').set(path_str(output_path))
+        native.parm('cache/f1').set(render_range.first_frame)
+        native.parm('cache/f2').set(render_range.last_frame)
+        native.parm('cache/f3').set(frame_step)
+        native.parm('cache/execute').pressButton()
+        native.parm('cache/loadfromdisk').set(1)
 
         # Check the frame range source
         frame_range_source = self.get_frame_range_source()
         if frame_range_source == 'single_frame':
-            context.parm('timeshift/frame').set(render_range.first_frame)
-            context.parm('switch/input').set(0)
+            native.parm('timeshift/frame').set(render_range.first_frame)
+            native.parm('switch/input').set(0)
         else:
-            context.parm('switch/input').set(1)
+            native.parm('switch/input').set(1)
 
         # Set version name
         self.set_version_name(version_name)
@@ -169,7 +169,7 @@ class Cache(ns.Node):
     def load(self):
 
         # Nodes
-        context = self.native()
+        native = self.native()
 
         # Parameters
         cache_name = self.get_cache_name()
@@ -177,8 +177,8 @@ class Cache(ns.Node):
 
         # Check if version is defined
         if cache_name is None or version_name is None:
-            context.parm('cache/file').set('')
-            context.parm('cache/loadfromdisk').set(0)
+            native.parm('cache/file').set('')
+            native.parm('cache/loadfromdisk').set(0)
             return
 
         # Input path
@@ -194,22 +194,37 @@ class Cache(ns.Node):
         # Cache the scene
         frame_range, frame_step = self.get_frame_range()
         render_range = frame_range.full_range()
-        context.parm('cache/file').set(path_str(output_path))
-        context.parm('cache/f1').set(render_range.first_frame)
-        context.parm('cache/f2').set(render_range.last_frame)
-        context.parm('cache/f3').set(frame_step)
-        context.parm('cache/loadfromdisk').set(1)
+        native.parm('cache/file').set(path_str(output_path))
+        native.parm('cache/f1').set(render_range.first_frame)
+        native.parm('cache/f2').set(render_range.last_frame)
+        native.parm('cache/f3').set(frame_step)
+        native.parm('cache/loadfromdisk').set(1)
 
         # Check the frame range source
         frame_range_source = self.get_frame_range_source()
         if frame_range_source == 'single_frame':
-            context.parm('timeshift/frame').set(render_range.first_frame)
-            context.parm('switch/input').set(0)
+            native.parm('timeshift/frame').set(render_range.first_frame)
+            native.parm('switch/input').set(0)
         else:
-            context.parm('switch/input').set(1)
+            native.parm('switch/input').set(1)
+        
+        # Set node state color
+        latest_version_name = self.list_version_names()[-1]
+        native.setColor(
+            hou.Color(0, .8, .1)
+            if version_name == latest_version_name else
+            hou.Color(1, 0.6, 0)
+        )
+
+        # Update node comment
+        native.setComment(
+            f'Latest version: {latest_version_name}\n'
+            f'Loaded {version_name}'
+        )
+        native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
 def create(scene, name):
-    node_type = ns.find_node_type('cache', 'Lop')
+    node_type = ns.find_node_type('cache', 'Sop')
     assert node_type is not None, 'Could not find cache node type'
     native = scene.node(name)
     if native is not None: return Cache(native)
@@ -220,11 +235,6 @@ def set_style(raw_node):
     raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DEFAULT)
 
 def on_created(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
-def on_loaded(raw_node):
 
     # Set node style
     set_style(raw_node)

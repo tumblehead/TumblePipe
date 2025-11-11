@@ -1,4 +1,12 @@
+from pathlib import Path
+
 import hou
+
+from tumblehead.util.io import store_json, load_json
+
+##############################################################################
+# Node Type helpers
+##############################################################################
 
 def find_node_type(type_name, context):
     def _version_code(version_name):
@@ -37,6 +45,10 @@ def list_by_node_type(type_name, context):
         if type_category.name() != context: return False
         return node.type().name().lower().startswith(f'th::{type_name}::')
     return list(filter(_valid_node, hou.node('/').allSubChildren()))
+
+##############################################################################
+# Base Node class
+##############################################################################
 
 class Node:
     def __init__(self, native):
@@ -114,10 +126,15 @@ class Node:
     def layoutChildren(self):
         self.native().layoutChildren()
 
-# Constants
+##############################################################################
+# Styling
+##############################################################################
+
+# Colors
 COLOR_NODE_DEFAULT = hou.Color((0.631373, 0.870588, 1.0))
 COLOR_NODE_BLACK = hou.Color((0.0, 0.0, 0.0))
 
+# Shapes
 SHAPE_NODE_IMPORT = 'bulge_down'
 SHAPE_NODE_EXPORT = 'bulge'
 SHAPE_NODE_DIVE = 'cigar'

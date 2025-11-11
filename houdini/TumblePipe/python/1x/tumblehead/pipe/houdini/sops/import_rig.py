@@ -1,7 +1,6 @@
 import hou
 
 from tumblehead.api import path_str, default_client
-from tumblehead.util.cache import Cache
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.sops import rename_packed
 from tumblehead.pipe.paths import list_version_paths
@@ -18,8 +17,6 @@ def _clear_scene(dive_node, output_node):
     for node in dive_node.children():
         if node.name() == output_node.name(): continue
         node.destroy()
-
-CACHE_VERSION_NAMES = Cache()
 
 class ImportRig(ns.Node):
     def __init__(self, native):
@@ -38,13 +35,9 @@ class ImportRig(ns.Node):
         if category_name is None: return []
         asset_name = self.get_asset_name()
         if asset_name is None: return []
-        asset_key = (category_name, asset_name)
-        if CACHE_VERSION_NAMES.contains(asset_key):
-            return CACHE_VERSION_NAMES.lookup(asset_key).copy()
         asset_path = api.storage.resolve(f'export:/assets/{category_name}/{asset_name}/rig')
         version_paths = list_version_paths(asset_path)
         version_names = [version_path.name for version_path in version_paths]
-        CACHE_VERSION_NAMES.insert(asset_key, version_names)
         return version_names
 
     def get_category_name(self):
@@ -160,9 +153,6 @@ class ImportRig(ns.Node):
         # Disable bypass
         bypass_node.parm('input').set(1)
 
-def clear_cache():
-    CACHE_VERSION_NAMES.clear()
-
 def create(scene, name):
     node_type = ns.find_node_type('import_rig', 'Sop')
     assert node_type is not None, 'Could not find import_rig node type'
@@ -175,11 +165,6 @@ def set_style(raw_node):
     raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DIVE)
 
 def on_created(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
-def on_loaded(raw_node):
 
     # Set node style
     set_style(raw_node)

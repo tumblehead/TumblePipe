@@ -9,12 +9,28 @@ from tumblehead.api import fix_path, to_windows_path, path_str
 from tumblehead.apps import app
 
 def log_progress(iterable):
-    items = list(iterable)
+    try:
+        items = list(iterable)
+    except Exception as e:
+        iterable_info = f"type: {type(iterable)}"
+        if hasattr(iterable, '__dict__'):
+            try:
+                iterable_info += f", attrs: {iterable.__dict__}"
+            except:
+                pass
+        raise ValueError(f"Failed to convert iterable to list: {e}. Iterable {iterable_info}")
+    
     total = len(items)
+    if total == 0:
+        return
+    
+    prev_progress = 0
     for index, item in enumerate(items):
         yield item
         progress = int((index + 1) / total * 100)
-        print(f'Progress: {progress}')
+        if progress != prev_progress:
+            print(f'Progress: {progress}')
+            prev_progress = progress
 
 def _walk_path(path: Path):
     if path.is_file(): yield path; return
@@ -208,7 +224,7 @@ class Job:
             'UserName': getpass.getuser(),
             'MachineName': platform.node(),
             'InitialStatus': 'Active',
-            'Plugin': 'Shell',
+            'Plugin': 'UV',
             'Frames': self._frames(),
             'ChunkSize': str(self.chunk_size),
             'EnableFrameTimeouts': 'true',
@@ -444,7 +460,7 @@ class Deadline:
             str(DEADLINE_PATH),
             '-SubmitCommandLineJob',
             '-executable', 'c:/Windows/System32/wsl.exe',
-            '-arguments', f'--shell-type login micromamba run -n general python {task_path}',
+            '-arguments', f'--shell-type login python3 {task_path}',
             '-priority', '100',
             '-frames', '1',
             '-name', 'Worker Maintenance',

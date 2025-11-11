@@ -2,10 +2,6 @@ from qtpy.QtWidgets import QWidget
 
 from tumblehead.ui import flow, card
 
-from importlib import reload
-reload(flow)
-reload(card)
-
 class GridView(card.Card):
     def __init__(
         self: 'GridView',

@@ -96,9 +96,6 @@ class ExportRig(ns.Node):
         )
         store_json(context_path, context)
 
-        # Clear import cache
-        import_rig.clear_cache()
-
 def create(scene, name):
     node_type = ns.find_node_type('export_rig', 'Sop')
     assert node_type is not None, 'Could not find export_rig node type'
@@ -138,11 +135,6 @@ def on_created(raw_node):
             ):
             node.set_category_name(category_name)
             node.set_asset_name(asset_name)
-
-def on_loaded(raw_node):
-
-    # Set node style
-    set_style(raw_node)
 
 def execute():
     raw_node = hou.pwd()

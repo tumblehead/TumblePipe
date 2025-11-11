@@ -17,6 +17,7 @@ from tumblehead.api import fix_path
 
 def _headline(msg):
     print(f' {msg} '.center(80, '='))
+    sys.stdout.flush()
 
 @dataclass
 class Task:
@@ -46,6 +47,7 @@ def _run_script(script_file_path: Path, args: list[str]):
     _headline('Houdini Runner: Running script')
     print(f'Script path: {script_file_path}')
     print(f'Arguments: {args}')
+    sys.stdout.flush()
     script = _read_script_file(script_file_path)
     with patch.object(sys, 'argv', [sys.argv[0], str(script_file_path), *args]):
         exec(
@@ -65,8 +67,10 @@ def _task_run(task: Task):
         _headline('Houdini Runner: Setting environment variables')
         for key, value in task.env.items():
             print(f'{key} = {value}')
+        sys.stdout.flush()
+        for key, value in task.env.items():
             os.environ[key] = value
-        
+
     # Run the script
     _run_script(task.path, task.args)
 

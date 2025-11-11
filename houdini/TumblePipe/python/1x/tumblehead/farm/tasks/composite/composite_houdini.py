@@ -17,8 +17,8 @@ from tumblehead.util.io import (
 )
 from tumblehead.config import BlockRange
 from tumblehead.pipe.houdini import util
+from tumblehead.pipe.paths import ShotEntity
 from tumblehead.apps.deadline import log_progress
-from tumblehead.apps import exr
 
 api = default_client()
 
@@ -48,7 +48,9 @@ def main(
     receipt_path: Path,
     input_path: Path,
     node_path: str,
-    output_paths: dict[str, dict[str, Path]]
+    layer_names: list[str],
+    output_paths: dict[str, Path],
+    entity_json: dict
     ) -> int:
 
     # Check that OCIO has been set
@@ -70,82 +72,103 @@ def main(
     # Set the playback range
     util.set_block_range(render_range)
 
+    # HACK: Make sure the graph is cooked
+    render_node.parm('f1').set(render_range.first_frame)
+    render_node.parm('f2').set(render_range.first_frame)
+    render_node.parm('execute').pressButton()
+    # HACK: Make sure the graph is cooked
+
+    # Get render layer names
+    entity = ShotEntity.from_json(entity_json)
+    render_layer_names = api.config.list_render_layer_names(
+        entity.sequence_name,
+        entity.shot_name
+    )
+
     # Open a temporary directory
     root_temp_path = to_windows_path(api.storage.resolve('temp:/'))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
 
-        # Set the output path
-        temp_frames_path = temp_path / f'composite.$F4.exr'
-        render_node.parm('copoutput').set(path_str(temp_frames_path))
+        # Render each layer separately
+        all_layer_aov_paths = {}  # {frame_index: {layer_name: {aov_name: (temp_path, output_path)}}}
 
-        # HACK: Make sure the graph is cooked
-        render_node.parm('f1').set(render_range.first_frame)
-        render_node.parm('f2').set(render_range.first_frame)
-        render_node.parm('execute').pressButton()
-        # HACK: Make sure the graph is cooked
+        for layer_name in layer_names:
+            _headline(f'Rendering layer: {layer_name}')
 
-        # Render the frames
-        _headline('Rendering')
-        for frame_index in log_progress(render_range):
+            # Set the dive node output port to select the render layer
+            layer_index = render_layer_names.index(layer_name)
+            render_node.parm('port1').set(layer_index + 1)
 
-            # Skip if already rendered
-            if frame_index not in frames: continue
-            print(f'Rendering frame: {frame_index}')
+            # Set the output path for this layer
+            temp_layer_path = temp_path / layer_name
+            temp_layer_path.mkdir(parents=True, exist_ok=True)
+            temp_frames_path = temp_layer_path / f'composite.$F4.exr'
+            render_node.parm('copoutput').set(path_str(temp_frames_path))
 
-            # Render the frame
-            render_node.parm('f1').set(frame_index)
-            render_node.parm('f2').set(frame_index)
-            render_node.parm('execute').pressButton()
-        
-        # Split the frames into AOVss
-        _headline('Splitting AOVs')
-        temp_output_paths = dict()
-        for frame_index in render_range:
+            # Render the frames for this layer
+            print(f'  Rendering frames for layer: {layer_name}')
+            for frame_index in log_progress(render_range):
 
-            # Skip if already rendered
-            if frame_index not in frames: continue
-            print(f'Splitting frame: {frame_index}')
+                # Skip if already rendered
+                if frame_index not in frames: continue
+                print(f'  Rendering frame {frame_index} for layer {layer_name}')
 
-            # Split the frame
-            current_frame_path = _get_frame_path(temp_frames_path, frame_index)
-            split_frame_paths = exr.split_subimages(current_frame_path, temp_path)
-            print(split_frame_paths)
+                # Render the frame
+                render_node.parm('f1').set(frame_index)
+                render_node.parm('f2').set(frame_index)
+                render_node.parm('execute').pressButton()
 
-            # Check splitter output
-            if split_frame_paths is None:
-                return _error(f'Failed to split AOVs: {current_frame_path}')
-        
-            # Store the paths
-            aov_paths = dict()
-            for aov_name, temp_aov_path in split_frame_paths.items():
-                output_aov_path = output_paths.get(aov_name)
-                if output_aov_path is None: continue
-                output_aov_path = _fix_frames_pattern(output_aov_path)
-                aov_paths[aov_name] = (
-                    temp_aov_path,
-                    _get_frame_path(output_aov_path, frame_index)
+            # Store RGBA beauty frames for this layer
+            print(f'  Processing rendered frames for layer: {layer_name}')
+            for frame_index in render_range:
+
+                # Skip if already rendered
+                if frame_index not in frames: continue
+                print(f'  Processing frame {frame_index} for layer {layer_name}')
+
+                # Get the RGBA frame path
+                rgba_frame_path = _get_frame_path(temp_frames_path, frame_index)
+                if not rgba_frame_path.exists():
+                    return _error(f'RGBA frame not found: {rgba_frame_path}')
+
+                # Store the paths for this layer
+                if frame_index not in all_layer_aov_paths:
+                    all_layer_aov_paths[frame_index] = {}
+                if layer_name not in all_layer_aov_paths[frame_index]:
+                    all_layer_aov_paths[frame_index][layer_name] = {}
+
+                # Get the output path for this layer's beauty (RGBA)
+                output_beauty_path = output_paths.get(layer_name)
+                if output_beauty_path is None:
+                    return _error(f'No output path for layer: {layer_name}')
+
+                output_beauty_path = _fix_frames_pattern(output_beauty_path)
+                all_layer_aov_paths[frame_index][layer_name] = (
+                    rgba_frame_path,
+                    _get_frame_path(output_beauty_path, frame_index)
                 )
-            temp_output_paths[frame_index] = aov_paths
-        
-        # DWAB compress and copy to the output path
+
+        # Copy to the output path
         _headline('Copying files to network')
-        for aov_paths in temp_output_paths.values():
-            for temp_aov_path, output_aov_path in aov_paths.values():
-                print(f'Copying file: {output_aov_path}')
-                output_aov_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(temp_aov_path, output_aov_path)
-        
+        for frame_index, layer_paths in all_layer_aov_paths.items():
+            for layer_name, (temp_path, output_path) in layer_paths.items():
+                print(f'Copying file: {output_path}')
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(temp_path, output_path)
+
         # Create the output receipts
         _headline('Creating output receipts')
-        for frame_index, aov_paths in temp_output_paths.items():
+        for frame_index, layer_paths in all_layer_aov_paths.items():
             current_receipt_path = _get_frame_path(receipt_path, frame_index)
             print(f'Creating receipt: {current_receipt_path}')
-            store_json(current_receipt_path, {
-                aov_name: path_str(output_aov_path)
-                for aov_name, (_, output_aov_path) in aov_paths.items()
-            })
+
+            receipt_data = {
+                layer_name: path_str(output_path)
+                for layer_name, (_, output_path) in layer_paths.items()
+            }
+            store_json(current_receipt_path, receipt_data)
 
     # Done
     _headline('Done')
@@ -153,28 +176,37 @@ def main(
 
 """
 config = {
+    'entity': {
+        'tag': 'shot',
+        'sequence_name': 'seq0010',
+        'shot_name': 'shot0010',
+        'department_name': 'composite'
+    },
     'first_frame': 1,
     'last_frame': 100,
     'frames': [1, 2, 3, 4, 5],
     'receipt_path': 'path/to/receipt.####.json',
     'input_path': 'path/to/input.hip',
     'node_path': '/path/to/node',
+    'layer_names': ['main', 'mirror'],
     'output_paths': {
-        'diffuse': 'path/to/diffuse.####.exr',
-        'depth': 'path/to/depth.####.exr'
+        'main': 'path/to/main/beauty.####.exr',
+        'mirror': 'path/to/mirror/beauty.####.exr'
     }
 }
 """
 
 def _is_valid_config(config):
 
-    def _is_valid_layer(layer):
-        if not isinstance(layer, dict): return False
-        for aov_name, aov_path in layer.items():
-            if not isinstance(aov_name, str): return False
-            if not isinstance(aov_path, str): return False
+    def _is_valid_output_paths(output_paths):
+        if not isinstance(output_paths, dict): return False
+        for layer_name, output_path in output_paths.items():
+            if not isinstance(layer_name, str): return False
+            if not isinstance(output_path, str): return False
         return True
 
+    if 'entity' not in config: return False
+    if not isinstance(config['entity'], dict): return False
     if 'first_frame' not in config: return False
     if not isinstance(config['first_frame'], int): return False
     if 'last_frame' not in config: return False
@@ -189,8 +221,13 @@ def _is_valid_config(config):
     if not isinstance(config['input_path'], str): return False
     if 'node_path' not in config: return False
     if not isinstance(config['node_path'], str): return False
+    if 'layer_names' not in config: return False
+    if not isinstance(config['layer_names'], list): return False
+    if len(config['layer_names']) == 0: return False
+    for layer_name in config['layer_names']:
+        if not isinstance(layer_name, str): return False
     if 'output_paths' not in config: return False
-    if not _is_valid_layer(config['output_paths']): return False
+    if not _is_valid_output_paths(config['output_paths']): return False
     return True
 
 def cli():
@@ -228,12 +265,18 @@ def cli():
     # Get the node path
     node_path = config['node_path']
 
+    # Get the layer names
+    layer_names = config['layer_names']
+
     # Get the output paths
     output_paths = {
-        aov_name: Path(aov_path)
-        for aov_name, aov_path in config['output_paths'].items()
+        output_key: Path(output_path)
+        for output_key, output_path in config['output_paths'].items()
     }
-    
+
+    # Get the entity
+    entity_json = config['entity']
+
     # Run the main function
     return main(
         render_range,
@@ -241,7 +284,9 @@ def cli():
         receipt_path,
         input_path,
         node_path,
-        output_paths
+        layer_names,
+        output_paths,
+        entity_json
     )
 
 if __name__ == '__main__':

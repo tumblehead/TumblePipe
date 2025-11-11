@@ -1,6 +1,7 @@
 from tempfile import TemporaryDirectory
 from pathlib import Path
 import logging
+import shutil
 import sys
 import os
 
@@ -12,7 +13,6 @@ if tumblehead_packages_path not in sys.path:
 from tumblehead.api import (
     path_str,
     fix_path,
-    get_user_name,
     to_wsl_path,
     to_windows_path,
     default_client
@@ -22,7 +22,7 @@ from tumblehead.util.io import (
     store_json
 )
 from tumblehead.config import BlockRange
-from tumblehead.apps.houdini import Hython
+from tumblehead.apps import exr
 
 api = default_client()
 
@@ -47,7 +47,178 @@ def _get_frame_path(framestack_path, frame_index):
         framestack_path.name.replace('*', frame_name)
     )
 
-SCRIPT_PATH = Path(__file__).parent / 'slapcomp_houdini.py'
+def _merge_rgba(
+    beauty_path: Path,
+    alpha_path: Path,
+    output_path: Path
+    ) -> int:
+    """Merge RGB beauty with single-channel alpha using oiiotool --chappend"""
+    oiiotool_cmd = [
+        'oiiotool',
+        path_str(to_wsl_path(beauty_path)),
+        path_str(to_wsl_path(alpha_path)),
+        '--chappend',  # Append alpha channel to RGB
+        '--chnames', 'R,G,B,A',  # Name the channels properly
+        '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
+        '-o', path_str(to_wsl_path(output_path))
+    ]
+    print(f'    Merging RGBA: beauty + alpha -> temp')
+    return exr._run(oiiotool_cmd)
+
+def _composite_frame(
+    frame_index: int,
+    input_paths: dict[str, dict[str, Path]],
+    output_path: Path
+    ) -> int:
+    """Composite a single frame using oiiotool"""
+
+    # Check if output already exists
+    output_frame_path = _get_frame_path(output_path, frame_index)
+    if to_wsl_path(output_frame_path).exists():
+        print(f'Frame {frame_index} already exists, skipping')
+        return 0
+
+    print(f'Processing frame {frame_index}')
+
+    # Composite layers using oiiotool
+    with TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        layer_output_paths = []
+
+        # Process each render layer
+        for layer_index, (layer_name, layer_aovs) in enumerate(input_paths.items()):
+
+            # Get beauty AOV path for this layer
+            if 'beauty' not in layer_aovs:
+                print(f'  Warning: No beauty AOV found for layer {layer_name}, skipping')
+                continue
+
+            beauty_path = _get_frame_path(layer_aovs['beauty'], frame_index)
+            if not to_wsl_path(beauty_path).exists():
+                print(f'  Warning: Beauty AOV not found at {beauty_path}, skipping')
+                continue
+
+            # Check if we need to merge alpha channel
+            needs_alpha_merge = 'alpha' in layer_aovs
+            if needs_alpha_merge:
+                alpha_path = _get_frame_path(layer_aovs['alpha'], frame_index)
+                if not to_wsl_path(alpha_path).exists():
+                    print(f'  Warning: Alpha AOV specified but not found at {alpha_path}')
+                    needs_alpha_merge = False
+
+            # Find all LPE AOVs (beauty_*)
+            lpe_aovs = {
+                aov_name: aov_path
+                for aov_name, aov_path in layer_aovs.items()
+                if aov_name.lower().startswith('beauty_') and aov_name.lower() != 'beauty'
+            }
+
+            # Determine the RGB source (either LPE composite or beauty)
+            if lpe_aovs:
+                print(f'  Layer {layer_name}: Compositing {len(lpe_aovs)} LPE AOVs')
+
+                # Build oiiotool command to add all LPE AOVs together
+                oiiotool_cmd = ['oiiotool']
+
+                for lpe_index, (lpe_name, lpe_path) in enumerate(lpe_aovs.items()):
+                    lpe_frame_path = _get_frame_path(lpe_path, frame_index)
+                    if not to_wsl_path(lpe_frame_path).exists():
+                        print(f'    Warning: LPE AOV {lpe_name} not found, skipping')
+                        continue
+
+                    # Add this LPE to the command
+                    oiiotool_cmd.append(path_str(to_wsl_path(lpe_frame_path)))
+
+                    # Add previous result if not first LPE
+                    if lpe_index > 0:
+                        oiiotool_cmd.append('--add')
+
+                # Save composited LPEs to temp file
+                rgb_source_path = temp_path / f'layer_{layer_index}_lpe_composite.exr'
+                oiiotool_cmd.extend([
+                    '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
+                    '-o', path_str(to_wsl_path(rgb_source_path))
+                ])
+
+                result = exr._run(oiiotool_cmd)
+                if result != 0:
+                    return _error(f'Failed to composite LPE AOVs for layer {layer_name}')
+            else:
+                # No LPE AOVs, use beauty directly as RGB source
+                print(f'  Layer {layer_name}: Using beauty AOV directly')
+                rgb_source_path = beauty_path
+
+            # Merge alpha if needed
+            if needs_alpha_merge:
+                print(f'  Layer {layer_name}: Merging alpha channel')
+                layer_rgba_path = temp_path / f'layer_{layer_index}_rgba.exr'
+                result = _merge_rgba(rgb_source_path, alpha_path, layer_rgba_path)
+                if result != 0:
+                    return _error(f'Failed to merge RGBA for layer {layer_name}')
+                layer_output_paths.append((layer_name, layer_rgba_path, beauty_path))
+            else:
+                # No alpha, add constant alpha=1.0 to make RGBA
+                print(f'  Layer {layer_name}: Adding constant alpha=1.0')
+                layer_rgba_path = temp_path / f'layer_{layer_index}_rgba.exr'
+                add_alpha_cmd = [
+                    'oiiotool',
+                    path_str(to_wsl_path(rgb_source_path)),
+                    '--ch', 'R,G,B,A=1.0',
+                    '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
+                    '-o', path_str(to_wsl_path(layer_rgba_path))
+                ]
+                result = exr._run(add_alpha_cmd)
+                if result != 0:
+                    return _error(f'Failed to add constant alpha for layer {layer_name}')
+                layer_output_paths.append((layer_name, layer_rgba_path, beauty_path))
+
+        # Composite all layers together using "over" operation
+        if not layer_output_paths:
+            return _error('No valid layers to composite')
+
+        if len(layer_output_paths) == 1:
+            # Only one layer, copy it directly
+            _, layer_path, _ = layer_output_paths[0]
+            output_frame_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(to_wsl_path(layer_path), to_wsl_path(output_frame_path))
+        else:
+            # Multiple layers, composite them
+            print(f'  Compositing {len(layer_output_paths)} layers')
+
+            # Print layer order for debugging
+            for i, (layer_name, _, _) in enumerate(layer_output_paths):
+                print(f'    Layer {i}: {layer_name}')
+
+            # Build oiiotool command to composite layers
+            # NOTE: oiiotool "A B --over" means "B over A", so we need to
+            # process layers from back to front to get correct layering
+            oiiotool_cmd = ['oiiotool']
+
+            # Start with the LAST layer (bottom/background)
+            _, last_layer_path, _ = layer_output_paths[-1]
+            oiiotool_cmd.append(path_str(to_wsl_path(last_layer_path)))
+
+            # Composite each layer from second-to-last to first (back to front)
+            # This way: background ... middle --over foreground --over
+            for layer_name, layer_path, beauty_path in reversed(layer_output_paths[:-1]):
+                oiiotool_cmd.append(path_str(to_wsl_path(layer_path)))
+                oiiotool_cmd.append('--over')
+
+            print(f'    Composite order: {" --over ".join([name for name, _, _ in reversed(layer_output_paths)])}')
+
+            # Write final output with proper colorspace metadata
+            output_frame_path.parent.mkdir(parents=True, exist_ok=True)
+            oiiotool_cmd.extend([
+                '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
+                '-o', path_str(to_wsl_path(output_frame_path))
+            ])
+
+            result = exr._run(oiiotool_cmd)
+            if result != 0:
+                return _error(f'Failed to composite layers for frame {frame_index}')
+
+    print(f'  Completed frame {frame_index}')
+    return 0
 
 def main(
     render_range,
@@ -80,51 +251,12 @@ def main(
         print('Output receipts already exist')
         return 0
 
-    # Get hython ready
-    hython = Hython()
-
-    # Open a temporary directory
-    root_temp_path = fix_path(api.storage.resolve('temp:/'))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
-
-        # Store slapcomp config
-        slapcomp_config_path = temp_path / 'slapcomp.json'
-        store_json(slapcomp_config_path, dict(
-            first_frame = render_range.first_frame,
-            last_frame = render_range.last_frame,
-            step_size = render_range.step_size,
-            input_paths = {
-                layer_name: {
-                    aov_name: path_str(input_path)
-                    for aov_name, input_path in aovs.items()
-                }
-                for layer_name, aovs in input_paths.items()
-            },
-            receipt_path = path_str(receipt_path),
-            output_path = path_str(output_path)
-        ))
-    
-        # Run script in hython
-        _headline('Running slapcomp')
-        hython.run(
-            to_windows_path(SCRIPT_PATH),
-            [
-                path_str(to_windows_path(slapcomp_config_path))
-            ],
-            env = dict(
-                TH_USER = get_user_name(),
-                TH_CONFIG_PATH = path_str(to_windows_path(api.CONFIG_PATH)),
-                TH_PROJECT_PATH = path_str(to_windows_path(api.PROJECT_PATH)),
-                TH_PIPELINE_PATH = path_str(to_windows_path(api.PIPELINE_PATH)),
-                HOUDINI_PACKAGE_DIR = ';'.join([
-                    path_str(to_windows_path(api.storage.resolve('pipeline:/houdini'))),
-                    path_str(to_windows_path(api.storage.resolve('project:/_pipeline/houdini')))
-                ]),
-                OCIO = path_str(to_windows_path(Path(os.environ['OCIO'])))
-            )
-        )
+    # Composite frames
+    _headline('Compositing frames')
+    for frame_index in render_range:
+        result = _composite_frame(frame_index, input_paths, output_path)
+        if result != 0:
+            return result
 
     # Check if outputs were generated
     for frame_index in render_range:

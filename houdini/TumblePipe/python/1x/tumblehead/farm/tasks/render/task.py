@@ -27,13 +27,13 @@ config = {
     'title': 'render',
     'priority': 50,
     'pool_name': 'general',
+    'tile_count': 4,
     'first_frame': 1,
     'last_frame': 100,
     'frames': [1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
     'step_size': 1,
     'batch_size': 10,
     'receipt_path': 'path/to/receipt.####.json',
-    'slapcomp_path': None | 'path/to/slapcomp.bgeo.sc',
     'input_path': 'path/to/input.usd',
     'output_paths': {
         'diffuse': 'path/to/diffuse.####.exr',
@@ -50,6 +50,8 @@ def _is_valid_config(config):
     if not isinstance(config['priority'], int): return False
     if 'pool_name' not in config: return False
     if not isinstance(config['pool_name'], str): return False
+    if 'tile_count' not in config: return False
+    if not isinstance(config['tile_count'], int): return False
     if 'first_frame' not in config: return False
     if not isinstance(config['first_frame'], int): return False
     if 'last_frame' not in config: return False
@@ -64,10 +66,6 @@ def _is_valid_config(config):
     if not isinstance(config['batch_size'], int): return False
     if 'receipt_path' not in config: return False
     if not isinstance(config['receipt_path'], str): return False
-    if 'slapcomp_path' not in config: return False
-    if not (
-        config['slapcomp_path'] == None or
-        isinstance(config['slapcomp_path'], str)): return False
     if 'input_path' not in config: return False
     if not isinstance(config['input_path'], str): return False
     if 'output_paths' not in config: return False
@@ -103,8 +101,8 @@ def build(config, paths, staging_path):
     task_path = staging_path / f'render_{random_name(8)}'
     context_path = task_path / 'context.json'
     store_json(context_path, dict(
+        tile_count = config['tile_count'],
         receipt_path = config['receipt_path'],
-        slapcomp_path = config['slapcomp_path'],
         input_path = config['input_path'],
         output_paths = config['output_paths']
     ))

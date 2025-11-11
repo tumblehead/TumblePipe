@@ -2,6 +2,7 @@ from tempfile import TemporaryDirectory
 from pathlib import Path
 import logging
 import shutil
+import time
 import sys
 import os
 
@@ -40,6 +41,10 @@ def _get_frame_path(frame_path, frame_index):
         frame_path.name.replace('*', frame_name)
     )
 
+def _out_of_date(path: Path) -> bool:
+    if not path.exists(): return True
+    return path.stat().st_mtime < time.time()
+
 def main(
     render_range: BlockRange,
     input_path: Path,
@@ -56,7 +61,7 @@ def main(
     missing_output_paths = [
         output_path
         for output_path in output_paths
-        if not to_wsl_path(output_path).exists()
+        if _out_of_date(to_wsl_path(output_path))
     ]
     if len(missing_output_paths) == 0:
         print('Output files already exist')
@@ -84,7 +89,7 @@ def main(
         mp4.from_jpg(
             to_wsl_path(temp_input_path),
             render_range,
-            24,
+            api.config.get_fps(),
             temp_output_path
         )
 

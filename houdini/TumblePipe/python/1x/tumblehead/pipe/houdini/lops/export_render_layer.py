@@ -5,33 +5,57 @@ import hou
 
 from tumblehead.api import get_user_name, path_str, default_client
 from tumblehead.pipe.houdini.lops import import_render_layer
+from tumblehead.util.io import store_json, load_json
 from tumblehead.config import FrameRange
-from tumblehead.util.io import store_json
 from tumblehead.pipe.houdini import util
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.paths import (
     get_next_version_path,
-    get_workfile_context,
-    ShotContext
+    latest_render_layer_export_path,
+    ShotEntity
 )
 
 api = default_client()
 
+def _entity_from_context_json():
+
+    # Path to current workfilw
+    file_path = Path(hou.hipFile.path())
+    if not file_path.exists(): return None
+
+    # Look for context.json in the workfile directory
+    context_json_path = file_path.parent / "context.json"
+    if not context_json_path.exists(): return None
+    context_data = load_json(context_json_path)
+    if context_data is None: return None
+
+    # Parse the loaded context
+    if context_data.get('entity') != 'shot': return None
+    return ShotEntity(
+        sequence_name = context_data['sequence'],
+        shot_name = context_data['shot'],
+        department_name = context_data['department']
+    )
+
 def _sort_aov_names(aov_names):
     beauty = None
     lpes = []
-    objs = []
+    mattes = []
+    mses = []
     other = []
     for aov_name in aov_names:
         name = aov_name.lower()
         if name == 'beauty': beauty = aov_name; continue
+        if name.endswith('_mse'): mses.append(aov_name); continue
         if name.startswith('beauty_'): lpes.append(aov_name); continue
-        if name.startswith('objid_'): objs.append(aov_name); continue
+        if name.startswith('objid_'): mattes.append(aov_name); continue
+        if name.startswith('holdout_'): mattes.append(aov_name); continue
         other.append(aov_name)
     other.sort()
     result = [] if beauty is None else [beauty]
     result += lpes
-    result += objs
+    result += mattes
+    result += mses
     result += other
     return result
 
@@ -66,29 +90,56 @@ class ExportRenderLayer(ns.Node):
         if shot_name is None: return []
         return api.config.list_render_layer_names(sequence_name, shot_name)
     
+    def get_entity_source(self):
+        return self.parm('entity_source').eval()
+
     def get_sequence_name(self):
-        sequence_names = self.list_sequence_names()
-        if len(sequence_names) == 0: return None
-        sequence_name = self.parm('sequence').eval()
-        if len(sequence_name) == 0: return sequence_names[0]
-        if sequence_name not in sequence_names: return None
-        return sequence_name
+        entity_source = self.get_entity_source()
+        match entity_source:
+            case 'from_context':
+                entity_data = _entity_from_context_json()
+                return entity_data.sequence_name
+            case 'from_settings':
+                sequence_names = self.list_sequence_names()
+                if len(sequence_names) == 0: return None
+                sequence_name = self.parm('sequence').eval()
+                if len(sequence_name) == 0: return sequence_names[0]
+                if sequence_name not in sequence_names: return None
+                return sequence_name
+            case _:
+                raise AssertionError(f'Unknown entity source token: {entity_source}')
 
     def get_shot_name(self):
-        shot_names = self.list_shot_names()
-        if len(shot_names) == 0: return None
-        shot_name = self.parm('shot').eval()
-        if len(shot_name) == 0: return shot_names[0]
-        if shot_name not in shot_names: return None
-        return shot_name
-    
+        entity_source = self.get_entity_source()
+        match entity_source:
+            case 'from_context':
+                entity_data = _entity_from_context_json()
+                return entity_data.shot_name
+            case 'from_settings':
+                shot_names = self.list_shot_names()
+                if len(shot_names) == 0: return None
+                shot_name = self.parm('shot').eval()
+                if len(shot_name) == 0: return shot_names[0]
+                if shot_name not in shot_names: return None
+                return shot_name
+            case _:
+                raise AssertionError(f'Unknown entity source token: {entity_source}')
+
     def get_department_name(self):
-        department_names = self.list_department_names()
-        if len(department_names) == 0: return None
-        department_name = self.parm('department').eval()
-        if len(department_name) == 0: return department_names[0]
-        if department_name not in department_names: return None
-        return department_name
+        entity_source = self.get_entity_source()
+        match entity_source:
+            case 'from_context':
+                entity_data = _entity_from_context_json()
+                return entity_data.department_name
+            case 'from_settings':
+                department_names = self.list_department_names()
+                if len(department_names) == 0: return None
+                department_name = self.parm('department').eval()
+                if len(department_name) == 0: return department_names[0]
+                if department_name not in department_names: return None
+                return department_name
+            case _:
+                raise AssertionError(f'Unknown entity source token: {entity_source}')
     
     def get_render_layer_name(self):
         render_layer_names = self.list_render_layer_names()
@@ -104,7 +155,7 @@ class ExportRenderLayer(ns.Node):
     def get_frame_range(self):
         frame_range_source = self.get_frame_range_source()
         match frame_range_source:
-            case 'from_config':
+            case 'from_context':
                 sequence_name = self.get_sequence_name()
                 shot_name = self.get_shot_name()
                 frame_range = api.config.get_frame_range(sequence_name, shot_name)
@@ -118,6 +169,11 @@ class ExportRenderLayer(ns.Node):
                 ), self.parm('frame_settingsz').eval()
             case _:
                 assert False, f'Unknown frame range token: {frame_range_source}'
+    
+    def set_entity_source(self, entity_source):
+        valid_sources = ['from_context', 'from_settings']
+        if entity_source not in valid_sources: return
+        self.parm('entity_source').set(entity_source)
     
     def set_sequence_name(self, sequence_name):
         sequence_names = self.list_sequence_names()
@@ -142,8 +198,8 @@ class ExportRenderLayer(ns.Node):
     def execute(self):
 
         # Nodes
-        context = self.native()
-        stage_node = context.node('stage')
+        native = self.native()
+        stage_node = self.native().node('IN_stage')
 
         # Parameters
         sequence_name = self.get_sequence_name()
@@ -152,7 +208,8 @@ class ExportRenderLayer(ns.Node):
         render_layer_name = self.get_render_layer_name()
         frame_range, frame_step = self.get_frame_range()
         render_range = frame_range.full_range()
-        timestamp = dt.datetime.now().isoformat()
+        timestamp = dt.datetime.now()
+        user_name = get_user_name()
 
         # Scrape stage for aovs
         aov_names = list()
@@ -177,11 +234,11 @@ class ExportRenderLayer(ns.Node):
         file_path = version_path / file_name
 
         # Export layer
-        context.parm('export/lopoutput').set(path_str(file_path))
-        context.parm('export/f1').set(render_range.first_frame)
-        context.parm('export/f2').set(render_range.last_frame)
-        context.parm('export/f3').set(frame_step)
-        context.parm('export/execute').pressButton()
+        self.parm('export_lopoutput').set(path_str(file_path))
+        self.parm('export_f1').set(render_range.first_frame)
+        self.parm('export_f2').set(render_range.last_frame)
+        self.parm('export_f3').set(frame_step)
+        self.parm('export_execute').pressButton()
 
         # Store context
         context_path = version_path / 'context.json'
@@ -191,8 +248,8 @@ class ExportRenderLayer(ns.Node):
                 context = 'render_layer',
                 render_layer = render_layer_name,
                 version = version_name,
-                timestamp = timestamp,
-                user = get_user_name(),
+                timestamp = timestamp.isoformat(),
+                user = user_name,
                 parameters = {
                     'aov_names': _sort_aov_names(aov_names)
                 }
@@ -200,8 +257,29 @@ class ExportRenderLayer(ns.Node):
         )
         store_json(context_path, context)
 
-        # Clear import cache
-        import_render_layer.clear_cache()
+        # Update node comment
+        native.setComment(
+            'last export: '
+            f'{version_name} \n'
+            f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
+            f'by {user_name}'
+        )
+        native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+
+    def open_location(self):
+        sequence_name = self.get_sequence_name() 
+        shot_name = self.get_shot_name()
+        department_name = self.get_department_name()
+        render_layer_name = self.get_render_layer_name()
+        export_path = latest_render_layer_export_path(
+            sequence_name,
+            shot_name,
+            department_name,
+            render_layer_name
+        )
+        if export_path is None: return
+        if not export_path.exists(): return
+        hou.ui.showInFileBrowser(f'{path_str(export_path)}/')
 
 def create(scene, name):
     node_type = ns.find_node_type('export_render_layer', 'Lop')
@@ -219,37 +297,18 @@ def on_created(raw_node):
     # Set node style
     set_style(raw_node)
 
-    # Context
-    raw_node_type = raw_node.type()
-    if raw_node_type is None: return
-    node_type = ns.find_node_type('export_render_layer', 'Lop')
-    if node_type is None: return
-    if raw_node_type != node_type: return
+    # Change entity source to settings if we have no context
+    entity = _entity_from_context_json()
+    if entity is not None: return
     node = ExportRenderLayer(raw_node)
-
-    # Parse scene file path
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-    if context is None: return
-    
-    # Set the default values
-    match context:
-        case ShotContext(
-            department_name,
-            sequence_name,
-            shot_name,
-            version_name
-            ):
-            node.set_sequence_name(sequence_name)
-            node.set_shot_name(shot_name)
-            node.set_department_name(department_name)
-
-def on_loaded(raw_node):
-
-    # Set node style
-    set_style(raw_node)
+    node.set_entity_source('from_settings')
 
 def execute():
     raw_node = hou.pwd()
     node = ExportRenderLayer(raw_node)
     node.execute()
+
+def open_location():
+    raw_node = hou.pwd()
+    node = ExportRenderLayer(raw_node)
+    node.open_location()

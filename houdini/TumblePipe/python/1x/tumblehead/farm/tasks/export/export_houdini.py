@@ -147,6 +147,12 @@ def main(
     export_node.parm('f2').set(render_range.last_frame)
     export_node.parm('execute').pressButton()
 
+    # Verify the USD file was created
+    if not output_path.exists():
+        return _error(f'Failed to export USD stage: {output_path}')
+
+    print(f'Successfully exported USD stage: {output_path}')
+
     # Done
     return 0
 

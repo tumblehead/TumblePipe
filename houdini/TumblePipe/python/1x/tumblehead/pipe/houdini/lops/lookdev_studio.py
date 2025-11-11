@@ -66,14 +66,12 @@ class LookdevStudio(ns.Node):
         return self.parm('farm_batchsize').eval()
 
     def get_aov_names(self):
-        root = self.native().node('stage_OUT').stage().GetPseudoRoot()
+        root = self.native().node('OUT/stage_OUT').stage().GetPseudoRoot()
         return [
             aov_path.rsplit('/', 1)[-1].lower()
             for aov_path in util.list_render_vars(root)
         ]
     
-    def get_slapcomp_path(self):
-        pass
     
     def submit(self):
         
@@ -91,7 +89,7 @@ class LookdevStudio(ns.Node):
         entity = entity_from_context(context)
 
         # Parameters
-        node_path = self.path()
+        node_path = self.node('OUT/stage_OUT').path()
         frame_range = self.get_frame_range()
         render_range = frame_range.full_range()
         priority = self.get_priority()
@@ -99,7 +97,6 @@ class LookdevStudio(ns.Node):
         step_size = self.get_step_size()
         batch_size = self.get_batch_size()
         aov_names = self.get_aov_names()
-        slapcomp_path = self.get_slapcomp_path()
 
         # Open temporary directory
         root_temp_path = fix_path(api.storage.resolve('temp:/'))
@@ -118,6 +115,7 @@ class LookdevStudio(ns.Node):
 
             # Add the export task
             tasks['export'] = dict(
+                priority = priority,
                 input_path = path_str(relative_input_path),
                 node_path = node_path,
                 channel_name = 'exports'
@@ -125,18 +123,11 @@ class LookdevStudio(ns.Node):
 
             # Add the render task
             tasks['full_render'] = dict(
+                priority = priority,
                 denoise = False,
                 channel_name = 'previews'
             )
 
-            # Copy the slapcomp file
-            temp_slapcomp_path = temp_path / 'slapcomp.bgeo.sc'
-            relative_slapcomp_path = (
-                None if slapcomp_path is None else
-                temp_slapcomp_path.relative_to(temp_path)
-            )
-            if slapcomp_path is not None:
-                shutil.copyfile(slapcomp_path, temp_slapcomp_path)
 
             # Save the render settings
             render_settings_path = temp_path / 'render_settings.json'
@@ -156,17 +147,13 @@ class LookdevStudio(ns.Node):
                 settings = dict(
                     user_name = get_user_name(),
                     purpose = 'turntable',
-                    priority = priority,
                     pool_name = pool_name,
                     render_layer_name = 'main',
                     render_department_name = 'render',
                     render_settings_path = path_str(
                         relative_render_settings_path
                     ),
-                    slapcomp_path = (
-                        None if relative_slapcomp_path is None else
-                        path_str(relative_slapcomp_path)
-                    ),
+                    tile_count = 1,  # No tiling needed for turntable previews
                     first_frame = render_range.first_frame,
                     last_frame = render_range.last_frame,
                     step_size = step_size,
@@ -176,10 +163,7 @@ class LookdevStudio(ns.Node):
             ), {
                 input_path: relative_input_path,
                 render_settings_path: relative_render_settings_path
-            } | (
-                {} if slapcomp_path is None else
-                { slapcomp_path: relative_slapcomp_path }
-            ))
+            })
 
 def create(scene, name):
     node_type = ns.find_node_type('lookdev_studio', 'Lop')
@@ -198,11 +182,6 @@ def set_style(raw_node):
     raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DEFAULT)
 
 def on_created(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
-def on_loaded(raw_node):
 
     # Set node style
     set_style(raw_node)

@@ -1,6 +1,6 @@
 from tempfile import TemporaryDirectory
 from pathlib import Path
-import shutil
+import datetime as dt
 
 import hou
 
@@ -20,12 +20,52 @@ import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.context as ctx
 from tumblehead.pipe.paths import (
     latest_render_layer_export_path,
-    get_workfile_context,
-    ShotContext,
     ShotEntity
 )
 
 api = default_client()
+
+def _entity_from_context_json():
+
+    # Path to current workfile
+    file_path = Path(hou.hipFile.path())
+    if not file_path.exists(): return None
+
+    # Look for context.json in the workfile directory
+    context_json_path = file_path.parent / "context.json"
+    if not context_json_path.exists(): return None
+    context_data = load_json(context_json_path)
+    if context_data is None: return None
+
+    # Parse the loaded context
+    if context_data.get('entity') != 'shot': return None
+    return ShotEntity(
+        sequence_name = context_data['sequence'],
+        shot_name = context_data['shot'],
+        department_name = context_data['department']
+    )
+
+def _get_output(node, index):
+    connections = node.outputConnectors()
+    if len(connections) == 0: return []
+    if len(connections) <= index: return []
+    return [
+        connection.outputNode()
+        for connection in connections[index]
+    ]
+
+def _get_preview_node(node):
+    preview_nodes = _get_output(node, 1)
+    if len(preview_nodes) == 0: return None
+    return preview_nodes[0]
+
+def _ensure_preview_node(node):
+    preview_node = _get_preview_node(node)
+    if preview_node is not None: return preview_node
+    preview_node = node.parent().createNode('null', f'{node.name()}_preview')
+    preview_node.setInput(0, node, 1)
+    node.parent().layoutChildren(items = [node, preview_node])
+    return preview_node
 
 class SubmitRender(ns.Node):
     def __init__(self, native):
@@ -54,7 +94,8 @@ class SubmitRender(ns.Node):
         if sequence_name is None: return []
         shot_name = self.get_shot_name()
         if shot_name is None: return []
-        return api.config.list_render_layer_names(sequence_name, shot_name)
+        render_layer_names = api.config.list_render_layer_names(sequence_name, shot_name)
+        return render_layer_names
     
     def list_render_department_names(self):
         render_department_names = api.config.list_render_department_names()
@@ -82,14 +123,14 @@ class SubmitRender(ns.Node):
             if pool_name in pool_names
         ]
     
-    def list_aov_names(self):
+    def list_aov_names(self, render_layer_name):
         sequence_name = self.get_sequence_name()
         shot_name = self.get_shot_name()
-        render_layer_name = self.get_render_layer_name()
+        department_name = self.get_shot_department_name()
         export_path = latest_render_layer_export_path(
             sequence_name,
             shot_name,
-            'light',
+            department_name,
             render_layer_name
         )
         if export_path is None: return []
@@ -103,23 +144,62 @@ class SubmitRender(ns.Node):
         if layer_info is None: return []
         return layer_info['parameters']['aov_names']
     
+    def get_entity_source(self):
+        return self.parm('entity_source').eval()
+
     def get_sequence_name(self):
+        entity_source = self.get_entity_source()
+        match entity_source:
+            case 'from_context':
+                entity_data = _entity_from_context_json()
+                if entity_data is not None:
+                    return entity_data.sequence_name
+            case 'from_settings':
+                pass
+            case _:
+                raise AssertionError(f'Unknown entity source token: {entity_source}')
+
+        # Fall back to settings
         sequence_names = self.list_sequence_names()
         if len(sequence_names) == 0: return None
         sequence_name = self.parm('sequence').eval()
         if len(sequence_name) == 0: return sequence_names[0]
         if sequence_name not in sequence_names: return None
         return sequence_name
-    
+
     def get_shot_name(self):
+        entity_source = self.get_entity_source()
+        match entity_source:
+            case 'from_context':
+                entity_data = _entity_from_context_json()
+                if entity_data is not None:
+                    return entity_data.shot_name
+            case 'from_settings':
+                pass
+            case _:
+                raise AssertionError(f'Unknown entity source token: {entity_source}')
+
+        # Fall back to settings
         shot_names = self.list_shot_names()
         if len(shot_names) == 0: return None
         shot_name = self.parm('shot').eval()
         if len(shot_name) == 0: return shot_names[0]
         if shot_name not in shot_names: return None
         return shot_name
-    
+
     def get_shot_department_name(self):
+        entity_source = self.get_entity_source()
+        match entity_source:
+            case 'from_context':
+                entity_data = _entity_from_context_json()
+                if entity_data is not None:
+                    return entity_data.department_name
+            case 'from_settings':
+                pass
+            case _:
+                raise AssertionError(f'Unknown entity source token: {entity_source}')
+
+        # Fall back to settings
         shot_department_names = self.list_shot_department_names()
         if len(shot_department_names) == 0: return None
         shot_department_name = self.parm('shot_department').eval()
@@ -131,8 +211,16 @@ class SubmitRender(ns.Node):
         render_layer_names = self.list_render_layer_names()
         if len(render_layer_names) == 0: return None
         render_layer_name = self.parm('render_layer').eval()
+        if len(render_layer_name) == 0: return render_layer_names[0]
+        if render_layer_name == 'all': return 'all'
         if render_layer_name not in render_layer_names: return None
         return render_layer_name
+
+    def get_render_layer_names(self):
+        render_layer_name = self.get_render_layer_name()
+        if render_layer_name is None: return []
+        if render_layer_name != 'all': return [render_layer_name]
+        return self.list_render_layer_names()
 
     def get_render_department_name(self):
         render_department_names = self.list_render_department_names()
@@ -173,9 +261,12 @@ class SubmitRender(ns.Node):
         if pool_name not in pool_names: return pool_names[0]
         return pool_name
     
-    def get_priority(self):
-        return self.parm('priority').eval()
-    
+    def get_priority_full(self):
+        return self.parm('full_priority').eval()
+
+    def get_priority_partial(self):
+        return self.parm('partial_priority').eval()
+
     def get_step_size(self):
         return self.parm('stepsize').eval()
     
@@ -201,25 +292,8 @@ class SubmitRender(ns.Node):
                 return self.parm('samples').eval()
             case _: assert False, f'Unknown render settings token: {render_settings}'
         
-    def get_aov_names(self):
-        all_aov_names = self.list_aov_names()
-        selected_aov_names = self.parm('aovs').eval().split(' ')
-        match self.parm('aovs_mode').eval():
-            case 'all': return all_aov_names
-            case 'include':
-                return [
-                    aov_name
-                    for aov_name in selected_aov_names
-                    if aov_name in all_aov_names
-                ]
-            case 'exclude':
-                return [
-                    aov_name
-                    for aov_name in all_aov_names
-                    if aov_name not in selected_aov_names
-                ]
-            case aovs_mode:
-                assert False, f'Unknown aovs mode token: {aovs_mode}'
+    def get_tile_count(self):
+        return int(self.parm('tile_count').eval())
     
     def get_submit_partial(self):
         return self.parm('submit_partial').eval()
@@ -239,23 +313,11 @@ class SubmitRender(ns.Node):
 
     def get_full_denoise(self):
         return bool(self.parm('full_denoise_task').eval())
-    
-    def get_slapcomp_path(self):
-        mode = self.parm('slapcomp_mode').eval()
-        match mode:
-            case 'none':
-                return None
-            case 'cops':
-                # TODO: Not implemented yet
-                return None
-            case 'file':
-                slapcomp_path = self.parm('slapcomp_file').eval()
-                if len(slapcomp_path) == 0: return None
-                slapcomp_path = Path(slapcomp_path)
-                if not slapcomp_path.exists(): return None
-                return slapcomp_path
-            case _:
-                assert False, f'Unknown slapcomp mode token: {mode}'
+
+    def set_entity_source(self, entity_source):
+        valid_sources = ['from_context', 'from_settings']
+        if entity_source not in valid_sources: return
+        self.parm('entity_source').set(entity_source)
     
     def set_sequence_name(self, sequence_name):
         sequence_names = self.list_sequence_names()
@@ -283,10 +345,9 @@ class SubmitRender(ns.Node):
         self.parm('render_department').set(render_department_name)
     
     def set_frame_range_source(self, frame_range_source):
-        match frame_range_source:
-            case 'from_config': self.parm('frame_range').set('from_config')
-            case 'from_settings': self.parm('frame_range').set('from_settings')
-            case _: assert False, f'Unknown frame range source: {frame_range_source}'
+        valid_sources = ['from_config', 'from_settings']
+        if frame_range_source not in valid_sources: return
+        self.parm('frame_range_source').set(frame_range_source)
     
     def set_frame_range(self, frame_range):
         self.parm('frame_settingsx').set(frame_range.start_frame)
@@ -299,10 +360,14 @@ class SubmitRender(ns.Node):
         if pool_name not in pool_names: return
         self.parm('pool').set(pool_name)
     
-    def set_priority(self, priority):
+    def set_priority_full(self, priority):
         assert priority >= 0 and priority <= 100, 'Invalid priority'
-        self.parm('priority').set(priority)
-    
+        self.parm('full_priority').set(priority)
+
+    def set_priority_partial(self, priority):
+        assert priority >= 0 and priority <= 100, 'Invalid priority'
+        self.parm('partial_priority').set(priority)
+
     def set_batch_size(self, batch_size):
         assert batch_size >= 1, 'Invalid batch size'
         self.parm('batchsize').set(batch_size)
@@ -313,35 +378,50 @@ class SubmitRender(ns.Node):
     def set_submit_full(self, submit_full):
         self.parm('submit_full').set(submit_full)
     
-    def preview(self):
+    def build_preview(self):
 
         # Parameters
         sequence_name = self.get_sequence_name()
         shot_name = self.get_shot_name()
         render_layer_name = self.get_render_layer_name()
+        if render_layer_name == 'all':
+            render_layer_names = self.list_render_layer_names()
+            render_layer_name = render_layer_names[0]
 
         # Set the preview parameters
         self.parm('preview_sequence').set(sequence_name)
         self.parm('preview_shot').set(shot_name)
         self.parm('preview_render_layer').set(render_layer_name)
 
+        # Create the preview null node
+        preview_node = _ensure_preview_node(self.native())
+        preview_node.setSelected(True, clear_all_selected=True)
+        preview_node.setDisplayFlag(True)
+
         # Execute the preview
         self.native().node('preview').parm('build').pressButton()
 
-    def submit(self):
+    def submit_farm(self):
 
         # Import the job module
-        from importlib import reload
         from tumblehead.farm.jobs.houdini.stage_render import (
             job as stage_render_job
         )
-        reload(stage_render_job)
 
-        # Check if scene has been previewed
-        stage = self.native().stage()
-        root = stage.GetPseudoRoot()
-        render_prim = root.GetPrimAtPath('/Render')
-        if not render_prim.IsValid(): self.preview()
+        # Submit the job
+        return self._submit(stage_render_job)
+    
+    def submit_cloud(self):
+
+        # Import the job module
+        from tumblehead.farm.jobs.houdini.cloud_stage_render import (
+            job as cloud_stage_render_job
+        )
+
+        # Submit the job
+        return self._submit(cloud_stage_render_job)
+
+    def _submit(self, stage_render_job):
 
         # Get the entity
         entity = ShotEntity(
@@ -350,25 +430,45 @@ class SubmitRender(ns.Node):
             self.get_shot_department_name()
         )
 
-        # Prepare settings
+        # Get render layer names to process
+        render_layer_names = self.get_render_layer_names()
+        if len(render_layer_names) == 0:
+            raise ValueError("No render layers to submit")
+
+        # Prepare common settings
         user_name = get_user_name()
         pool_name = self.get_pool_name()
-        priority = self.get_priority()
-        render_layer_name = self.get_render_layer_name()
+        full_priority = self.get_priority_full()
+        partial_priority = self.get_priority_partial()
         render_department_name = self.get_render_department_name()
         samples = self.get_samples()
-        aov_names = self.get_aov_names()
-        slapcomp_path = self.get_slapcomp_path()
+        tile_count = self.get_tile_count()
         frame_range = self.get_frame_range()
         render_range = frame_range.full_range()
         step_size = self.get_step_size()
         batch_size = self.get_batch_size()
+        timestamp = dt.datetime.now()
+
+        # Collect AOVs for all render layers
+        all_aov_names = []
+        for render_layer_name in render_layer_names:
+            layer_aov_names = self.list_aov_names(render_layer_name)
+            all_aov_names.extend(layer_aov_names)
+
+        # Remove duplicates while preserving order
+        seen = set()
+        aov_names = []
+        for aov in all_aov_names:
+            if aov in seen: continue
+            seen.add(aov)
+            aov_names.append(aov)
 
         # Prepare tasks
         tasks = dict()
 
         # Add the stage task
         tasks['stage'] = dict(
+            priority = full_priority,
             channel_name = 'exports'
         )
 
@@ -376,14 +476,16 @@ class SubmitRender(ns.Node):
         if self.get_submit_partial():
             denoise = self.get_partial_denoise()
             tasks['partial_render'] = dict(
+                priority = partial_priority,
                 denoise = denoise,
                 channel_name = 'previews'
             )
-        
+
         # Maybe add full render task
         if self.get_submit_full():
             denoise = self.get_full_denoise()
             tasks['full_render'] = dict(
+                priority = full_priority,
                 denoise = denoise,
                 channel_name = 'renders'
             )
@@ -394,15 +496,6 @@ class SubmitRender(ns.Node):
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
 
-            # Copy the slapcomp file
-            temp_slapcomp_path = temp_path / 'slapcomp.bgeo.sc'
-            relative_slapcomp_path = (
-                None if slapcomp_path is None else
-                temp_slapcomp_path .relative_to(temp_path)
-            )
-            if slapcomp_path is not None:
-                shutil.copyfile(slapcomp_path, temp_slapcomp_path)
-
             # Save the render settings
             render_settings_path = temp_path / 'render_settings.json'
             relative_render_settings_path = (
@@ -410,7 +503,7 @@ class SubmitRender(ns.Node):
                 .relative_to(temp_path)
             )
             store_json(render_settings_path, dict(
-                layer_names = [render_layer_name],
+                layer_names = render_layer_names,
                 aov_names = aov_names,
                 overrides = {
                     'karma:global:pathtracedsamples': samples
@@ -423,17 +516,13 @@ class SubmitRender(ns.Node):
                 settings = dict(
                     user_name = user_name,
                     purpose = 'render',
-                    priority = priority,
                     pool_name = pool_name,
-                    render_layer_name = render_layer_name,
+                    render_layer_names = render_layer_names,
                     render_department_name = render_department_name,
                     render_settings_path = path_str(
                         relative_render_settings_path
                     ),
-                    slapcomp_path = (
-                        None if relative_slapcomp_path is None else
-                        path_str(relative_slapcomp_path)
-                    ),
+                    tile_count = tile_count,
                     first_frame = render_range.first_frame,
                     last_frame = render_range.last_frame,
                     step_size = step_size,
@@ -442,11 +531,20 @@ class SubmitRender(ns.Node):
                 tasks = tasks
             ), {
                 render_settings_path: relative_render_settings_path
-            } | (
-                {} if slapcomp_path is None else
-                { slapcomp_path: relative_slapcomp_path }
-            ))
+            })
 
+        # Update node comment
+        native = self.native()
+        layers_text = ', '.join(render_layer_names)
+        new_comment = (
+            f'{user_name} submitted:\n'
+            f'{layers_text}\n'
+            f'{samples} samples\n'
+            f'{timestamp.strftime("%Y-%m-%d %H:%M")}\n'
+        )
+        native.setComment(new_comment)
+        native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+    
 def create(scene, name):
     node_type = ns.find_node_type('submit_render', 'Lop')
     assert node_type is not None, 'Could not find submit_render node type'
@@ -463,42 +561,18 @@ def on_created(raw_node):
     # Set node style
     set_style(raw_node)
 
-    # Context
-    raw_node_type = raw_node.type()
-    if raw_node_type is None: return
-    node_type = ns.find_node_type('submit_render', 'Lop')
-    if node_type is None: return
-    if raw_node_type != node_type: return
+    # Change entity source to settings if we have no context
+    entity = _entity_from_context_json()
+    if entity is not None: return
     node = SubmitRender(raw_node)
+    node.set_entity_source('from_settings')
 
-    # Parse scene file path
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-    if context is None: return
-    
-    # Set the default values
-    match context:
-        case ShotContext(
-            department_name,
-            sequence_name,
-            shot_name,
-            version_name
-            ):
-            node.set_sequence_name(sequence_name)
-            node.set_shot_name(shot_name)
-            node.set_shot_department_name(department_name)
-
-def on_loaded(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
-def preview():
+def build_preview():
     raw_node = hou.pwd()
     node = SubmitRender(raw_node)
-    node.preview()
+    node.build_preview()
 
-def submit():
+def submit_farm():
     raw_node = hou.pwd()
     node = SubmitRender(raw_node)
-    node.submit()
+    node.submit_farm()

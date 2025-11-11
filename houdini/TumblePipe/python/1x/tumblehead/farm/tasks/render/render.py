@@ -3,6 +3,7 @@ from typing import Optional
 from pathlib import Path
 import logging
 import shutil
+import math
 import json
 import sys
 import os
@@ -24,7 +25,7 @@ from tumblehead.util.io import (
     store_json
 )
 from tumblehead.config import BlockRange
-from tumblehead.apps.houdini import Husk
+from tumblehead.apps.houdini import Husk, ITileStitch
 from tumblehead.apps import exr
 
 api = default_client()
@@ -51,10 +52,10 @@ def _get_frame_path(frame_path, frame_index):
     )
 
 def main(
+    tile_count: int,
     render_range: BlockRange,
     input_path: Path,
     receipt_path: Path,
-    slapcomp_path: Optional[Path],
     output_paths: dict[str, Path]
     ) -> int:
 
@@ -82,8 +83,9 @@ def main(
         print('Output receipts already exist')
         return 0
 
-    # Get husk ready
+    # Get apps ready
     husk = Husk()
+    itilestitch = ITileStitch()
 
     # Open a temporary directory
     root_temp_path = fix_path(api.storage.resolve('temp:/'))
@@ -95,31 +97,69 @@ def main(
         temp_frame_path = temp_path / 'render' / 'render.*.exr'
 
         # Render with husk and Karama XPU
-        _headline('Rendering')
+        _headline('Rendering tiles')
+        x_tiles = y_tiles = int(math.sqrt(tile_count))
         temp_frame_path.parent.mkdir(parents=True, exist_ok=True)
-        husk.run(
-            to_windows_path(input_path),
-            [
-                '--make-output-path',
-                '--no-mplay',
-                '--core',
-                '--list-license-checks',
-                '--threads', '-1',
-                '--engine', 'xpu',
-                '--frame', str(render_range.first_frame),
-                '--frame-count', str(len(render_range))
-            ] + (
-                [] if slapcomp_path is None else
-                ['--slap-comp', to_windows_path(slapcomp_path)]
-            ) + [
-                '--output', path_str(to_windows_path(
-                    _fix_frame_pattern(temp_frame_path, '$F4')
-                ))
-            ],
-            env = dict(
-                OCIO = path_str(to_windows_path(Path(os.environ['OCIO']))),
+
+        # Build base husk arguments
+        base_args = [
+            '--make-output-path',
+            '--no-mplay',
+            '--check-licenses', 'Karma Renderer',
+            '--threads', '-1',
+            '--engine', 'xpu',
+            '--frame', str(render_range.first_frame),
+            '--frame-count', str(len(render_range))
+        ]
+
+        # Render tiles
+        if tile_count == 1:
+            # Single tile - render directly without tile flags
+            husk.run(
+                to_windows_path(input_path),
+                base_args + [
+                    '--output', path_str(to_windows_path(
+                        _fix_frame_pattern(temp_frame_path, '$F4')
+                    ))
+                ],
+                env = dict(
+                    OCIO = path_str(to_windows_path(Path(os.environ['OCIO']))),
+                )
             )
-        )
+        else:
+            # Multiple tiles - render with tile flags
+            for tile_index in range(tile_count):
+                husk.run(
+                    to_windows_path(input_path),
+                    base_args + [
+                        '--tile-count', str(x_tiles), str(y_tiles),
+                        '--tile-index', str(tile_index),
+                        '--tile-suffix', '.%04d',
+                        '--output', path_str(to_windows_path(
+                            _fix_frame_pattern(temp_frame_path, '$F4')
+                        ))
+                    ],
+                    env = dict(
+                        OCIO = path_str(to_windows_path(Path(os.environ['OCIO']))),
+                    )
+                )
+
+            # Stitch the tiles together to create the frames
+            _headline('Stitching tiles')
+            for frame_index in render_range:
+                frame_path = _get_frame_path(temp_frame_path, frame_index)
+                tile_paths = [
+                    temp_frame_path.parent / f'render.{frame_index:04d}.{tile_index:04d}.exr'
+                    for tile_index in range(tile_count)
+                ]
+                print(f'Stitching tiles for frame {frame_index}: {frame_path}')
+                itilestitch.run(
+                    [ path_str(to_windows_path(frame_path)) ] +
+                    [ path_str(to_windows_path(tile_path)) for tile_path in tile_paths ],
+                    env = dict(
+                        OCIO = path_str(to_windows_path(Path(os.environ['OCIO']))),
+                    )
+                )
 
         # Check that the frames were generated
         for frame_index in render_range:
@@ -162,7 +202,16 @@ def main(
                 output_aov_path = to_wsl_path(output_aov_path)
                 output_aov_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(temp_aov_path, output_aov_path)
-        
+
+        # Verify all frames were copied successfully
+        _headline('Verifying copied frames')
+        for frame_index, aov_paths in framestack_aov_paths.items():
+            for aov_name, (_, output_aov_path) in aov_paths.items():
+                output_aov_path = to_wsl_path(output_aov_path)
+                if not output_aov_path.exists():
+                    return _error(f'Frame not copied: {output_aov_path}')
+                print(f'Verified: {output_aov_path}')
+
         # Create the output receipts
         _headline('Creating output receipts')
         for frame_index, aov_paths in framestack_aov_paths.items():
@@ -184,8 +233,8 @@ def main(
 
 """
 config = {
+    'tile_count': 1,
     'receipt_path': 'path/to/receipt.####.json',
-    'slapcomp_path': None | 'path/to/slapcomp.bgeo.sc',
     'input_path': 'path/to/input.usd',
     'output_paths': {
         'diffuse': 'path/to/diffuse.####.exr',
@@ -196,14 +245,12 @@ config = {
 
 def _is_valid_config(config):
     if not isinstance(config, dict): return False
+    if 'tile_count' not in config: return False
+    if not isinstance(config['tile_count'], int): return False
     if 'input_path' not in config: return False
     if not isinstance(config['input_path'], str): return False
     if 'receipt_path' not in config: return False
     if not isinstance(config['receipt_path'], str): return False
-    if 'slapcomp_path' not in config: return False
-    if not (
-        config['slapcomp_path'] == None or
-        isinstance(config['slapcomp_path'], str)): return False
     if 'output_paths' not in config: return False
     if not isinstance(config['output_paths'], dict): return False
     for key, value in config['output_paths'].items():
@@ -231,6 +278,11 @@ def cli():
     _headline('Config')
     print(json.dumps(config, indent=4))
 
+    # Check tile count
+    tile_count = config['tile_count']
+    if tile_count not in (1, 4, 16, 64, 256):
+        return _error(f'Invalid tile count: {tile_count}')
+
     # Check render range
     first_frame = args.first_frame
     last_frame = args.last_frame
@@ -240,13 +292,6 @@ def cli():
 
     # Get the receipt path
     receipt_path = _fix_frame_pattern(Path(config['receipt_path']), '*')
-
-    # Get the slapcomp path
-    slapcomp_path = config.get('slapcomp_path')
-    if slapcomp_path is not None:
-        slapcomp_path = Path(slapcomp_path)
-        if not slapcomp_path.exists():
-            return _error(f'Slapcomp path not found: {slapcomp_path}')
 
     # Check the input path
     input_path = Path(config['input_path'])
@@ -261,10 +306,10 @@ def cli():
 
     # Run main
     return main(
+        tile_count,
         render_range,
         input_path,
         receipt_path,
-        slapcomp_path,
         output_paths
     )
 

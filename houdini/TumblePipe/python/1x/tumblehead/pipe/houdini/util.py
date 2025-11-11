@@ -73,9 +73,10 @@ class _UpdateModeContext:
     def __init__(self, mode):
         self.mode = mode
         self.previous_mode = None
-        self.has_ui = hou.isUIAvailable()
+        self.has_ui = False
 
     def __enter__(self):
+        self.has_ui = hou.isUIAvailable()
         if not self.has_ui: return
         self.previous_mode = hou.updateModeSetting()
         hou.setUpdateMode(self.mode)
@@ -83,6 +84,7 @@ class _UpdateModeContext:
     def __exit__(self, *args):
         if not self.has_ui: return
         hou.setUpdateMode(self.previous_mode)
+        self.has_ui = False
 
 def update_mode(mode):
     return _UpdateModeContext(mode)

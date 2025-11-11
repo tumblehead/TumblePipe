@@ -22,27 +22,36 @@ from tumblehead.util.io import (
     store_json
 )
 from tumblehead.config import BlockRange
-from tumblehead.apps.deadline import Deadline, Batch
+from tumblehead.apps.deadline import (
+    Deadline,
+    Batch,
+    Job
+)
 from tumblehead.pipe.paths import (
     Entity,
+    ShotEntity,
     get_frame_path,
     get_next_frame_path,
     get_aov_frame_path,
     get_playblast_path,
-    get_daily_path
+    get_daily_path,
+    get_layer_playblast_path,
+    get_layer_daily_path
 )
-import tumblehead.farm.tasks.render.task as render_task
-import tumblehead.farm.tasks.denoise.task as denoise_task
-import tumblehead.farm.tasks.slapcomp.task as slapcomp_task
-import tumblehead.farm.tasks.mp4.task as mp4_task
-import tumblehead.farm.tasks.notify.task as notify_task
+import tumblehead.farm.tasks.render.task as render_job
+import tumblehead.farm.tasks.denoise.task as denoise_job
+import tumblehead.farm.tasks.slapcomp.task as slapcomp_job
+import tumblehead.farm.tasks.mp4.task as mp4_job
+import tumblehead.farm.tasks.notify.task as notify_job
+import tumblehead.farm.tasks.edit.task as edit_task
 
 from importlib import reload
-reload(render_task)
-reload(denoise_task)
-reload(slapcomp_task)
-reload(mp4_task)
-reload(notify_task)
+reload(render_job)
+reload(denoise_job)
+reload(slapcomp_job)
+reload(mp4_job)
+reload(notify_job)
+reload(edit_task)
 
 api = default_client()
 
@@ -71,12 +80,12 @@ config = {
     'settings': {
         'user_name': 'string',
         'purpose': 'string',
-        'priority': 'int',
         'pool_name': 'string',
-        'render_layer_name': 'string',
-        'render_department_name: 'string,
-        'render_settings_path: 'string',
+        'render_layer_names': ['string'],
+        'render_department_name': 'string',
+        'render_settings_path': 'string',
         'input_path': 'string',
+        'tile_count': 'int',
         'first_frame': 'int',
         'last_frame': 'int',
         'step_size': 'int',
@@ -84,10 +93,12 @@ config = {
     },
     'tasks': {
         'partial_render': {
+            'priority': 'int',
             'denoise': 'bool',
             'channel_name': 'string'
         },
         'full_render': {
+            'priority': 'int',
             'denoise': 'bool',
             'channel_name': 'string'
         }
@@ -137,28 +148,31 @@ def _is_valid_config(config):
         if not isinstance(settings, dict): return False
         if not _check_str(settings, 'user_name'): return False
         if not _check_str(settings, 'purpose'): return False
-        if not _check_int(settings, 'priority'): return False
         if not _check_str(settings, 'pool_name'): return False
-        if not _check_str(settings, 'render_layer_name'): return False
+        if 'render_layer_names' not in settings: return False
+        if not isinstance(settings['render_layer_names'], list): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
         if not _check_str(settings, 'input_path'): return False
+        if not _check_int(settings, 'tile_count'): return False
         if not _check_int(settings, 'first_frame'): return False
         if not _check_int(settings, 'last_frame'): return False
         if not _check_int(settings, 'step_size'): return False
         if not _check_int(settings, 'batch_size'): return False
         return True
     
-    def _valid_tasks(tasks):
+    def _valid_jobs(tasks):
 
         def _valid_partial_render(partial_render):
             if not isinstance(partial_render, dict): return False
+            if not _check_int(partial_render, 'priority'): return False
             if not _check_bool(partial_render, 'denoise'): return False
             if not _check_str(partial_render, 'channel_name'): return False
             return True
     
         def _valid_full_render(full_render):
             if not isinstance(full_render, dict): return False
+            if not _check_int(full_render, 'priority'): return False
             if not _check_bool(full_render, 'denoise'): return False
             if not _check_str(full_render, 'channel_name'): return False
             return True
@@ -176,10 +190,10 @@ def _is_valid_config(config):
     if 'settings' not in config: return False
     if not _valid_settings(config['settings']): return False
     if 'tasks' not in config: return False
-    if not _valid_tasks(config['tasks']): return False
+    if not _valid_jobs(config['tasks']): return False
     return True
 
-def _build_partial_render_task(
+def _build_partial_render_job(
     config: dict,
     paths: dict[Path, Path],
     staging_path: Path
@@ -190,10 +204,12 @@ def _build_partial_render_task(
     entity = Entity.from_json(config['entity'])
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
+    priority = config['tasks']['partial_render']['priority']
     render_layer_name = config['settings']['render_layer_name']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
-    input_path = config['settings']['input_path']
+    input_path = Path(config['settings']['input_path'])
+    tile_count = config['settings']['tile_count']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
@@ -244,17 +260,17 @@ def _build_partial_render_task(
     }
     
     # Create the task
-    task = render_task.build(dict(
+    task = render_job.build(dict(
         title = title,
-        priority = 90,
+        priority = priority,
         pool_name = pool_name,
+        tile_count = tile_count,
         first_frame = first_frame,
         last_frame = last_frame,
         frames = [first_frame, middle_frame, last_frame],
         step_size = 1,
         batch_size = 1,
         input_path = path_str(to_windows_path(input_path)),
-        slapcomp_path = None,
         receipt_path = path_str(to_windows_path(receipt_path)),
         output_paths = {
             aov_name: path_str(to_windows_path(aov_path))
@@ -277,7 +293,7 @@ def _build_partial_render_task(
     # Done
     return task, version_name
 
-def _build_full_render_task(
+def _build_full_render_job(
     config: dict,
     paths: dict[Path, Path],
     staging_path: Path,
@@ -288,12 +304,13 @@ def _build_full_render_task(
     # Config
     entity = Entity.from_json(config['entity'])
     purpose = config['settings']['purpose']
-    priority = config['settings']['priority']
+    priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
     render_layer_name = config['settings']['render_layer_name']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     input_path = Path(config['settings']['input_path'])
+    tile_count = config['settings']['tile_count']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
@@ -354,17 +371,17 @@ def _build_full_render_task(
     }
 
     # Create the task
-    task = render_task.build(dict(
+    task = render_job.build(dict(
         title = title,
         priority = priority,
         pool_name = pool_name,
+        tile_count = tile_count,
         first_frame = first_frame,
         last_frame = last_frame,
         frames = [],
         step_size = step_size,
         batch_size = batch_size,
         input_path = path_str(to_windows_path(input_path)),
-        slapcomp_path = None,
         receipt_path = path_str(to_windows_path(receipt_path)),
         output_paths = {
             aov_name: path_str(to_windows_path(aov_path))
@@ -387,7 +404,59 @@ def _build_full_render_task(
     # Done
     return task, version_name
 
-def _build_partial_denoise_task(
+def _should_sync_aov(aov_name: str) -> bool:
+    """Check if an AOV should be synced to edit"""
+    if aov_name == 'beauty':
+        return True
+    if aov_name.startswith('objid_'):
+        return True
+    if aov_name.startswith('holdout_'):
+        return True
+    return False
+
+def _build_edit_job(
+    config: dict,
+    staging_path: Path
+    ):
+    """Build single edit job that will resolve and sync all layer/AOV combinations at runtime.
+
+    The AOV resolution happens at task execution time (not submission time) so that newly
+    rendered frames are included in the resolution.
+    """
+    logging.debug('Creating edit task')
+
+    # Config
+    entity = Entity.from_json(config['entity'])
+    assert entity is not None, 'Invalid entity in config'
+    purpose = config['settings']['purpose']
+    pool_name = config['settings']['pool_name']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+
+    # Extract entity fields
+    match entity:
+        case ShotEntity(sequence_name, shot_name, _):
+            pass
+        case _:
+            assert False, f'Edit task only supports shot entities: {entity}'
+
+    # Create single edit task that will resolve AOVs at runtime
+    title = f'edit {entity}'
+    task = edit_task.build(dict(
+        title = title,
+        priority = 90,
+        pool_name = pool_name,
+        sequence_name = sequence_name,
+        shot_name = shot_name,
+        first_frame = first_frame,
+        last_frame = last_frame,
+        purpose = purpose
+    ), dict(), staging_path)
+
+    # Done
+    return task
+
+def _build_partial_denoise_job(
     config: dict,
     staging_path: Path,
     render_department_name: str,
@@ -399,6 +468,7 @@ def _build_partial_denoise_task(
     entity = Entity.from_json(config['entity'])
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
+    priority = config['tasks']['partial_render']['priority']
     render_layer_name = config['settings']['render_layer_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     first_frame = config['settings']['first_frame']
@@ -464,9 +534,9 @@ def _build_partial_denoise_task(
     }
 
     # Create the task
-    task = denoise_task.build(dict(
+    task = denoise_job.build(dict(
         title = title,
-        priority = 90,
+        priority = priority,
         pool_name = pool_name,
         first_frame = first_frame,
         last_frame = last_frame,
@@ -499,7 +569,7 @@ def _build_partial_denoise_task(
     # Done
     return task, version_name
 
-def _build_full_denoise_task(
+def _build_full_denoise_job(
     config: dict,
     staging_path: Path,
     render_department_name: str,
@@ -510,7 +580,7 @@ def _build_full_denoise_task(
     # Config parameters
     entity = Entity.from_json(config['entity'])
     purpose = config['settings']['purpose']
-    priority = config['settings']['priority']
+    priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
     render_layer_name = config['settings']['render_layer_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
@@ -569,7 +639,7 @@ def _build_full_denoise_task(
     }
 
     # Create the task
-    task = denoise_task.build(dict(
+    task = denoise_job.build(dict(
         title = title,
         priority = priority,
         pool_name = pool_name,
@@ -604,7 +674,7 @@ def _build_full_denoise_task(
     # Done
     return task, version_name
 
-def _build_slapcomp_task(
+def _build_slapcomp_job(
     config: dict,
     staging_path: Path,
     render_department_name: str,
@@ -615,7 +685,7 @@ def _build_slapcomp_task(
     # Config
     entity = Entity.from_json(config['entity'])
     purpose = config['settings']['purpose']
-    priority = config['settings']['priority']
+    priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     first_frame = config['settings']['first_frame']
@@ -673,7 +743,7 @@ def _build_slapcomp_task(
     )
 
     # Create the task
-    task = slapcomp_task.build(dict(
+    task = slapcomp_job.build(dict(
         title = title,
         priority = priority,
         pool_name = pool_name,
@@ -706,28 +776,92 @@ def _build_slapcomp_task(
     # Done
     return task, version_name
 
-def _build_mp4_task(
+def _build_layer_mp4_job(
+    config: dict,
+    staging_path: Path,
+    render_department_name: str,
+    render_version_name: str
+    ):
+    logging.debug('Creating layer mp4 task')
+
+    # Config
+    entity = Entity.from_json(config['entity'])
+    assert entity is not None, 'Invalid entity in config'
+    purpose = config['settings']['purpose']
+    priority = config['tasks']['full_render']['priority']
+    pool_name = config['settings']['pool_name']
+    render_layer_name = config['settings']['render_layer_name']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+
+    # Parameters - use layer-specific paths for individual render layers
+    playblast_path = get_layer_playblast_path(
+        entity,
+        render_layer_name,
+        render_version_name,
+        purpose
+    )
+    daily_path = get_layer_daily_path(entity, render_layer_name, purpose)
+    title = (
+        f'mp4 layer '
+        f'{render_department_name} '
+        f'{render_layer_name} '
+        f'{render_version_name}'
+    )
+    # Input is the beauty AOV from the render layer
+    input_path = get_aov_frame_path(
+        entity,
+        render_department_name,
+        render_layer_name,
+        render_version_name,
+        'beauty',
+        '####',
+        'exr',
+        purpose
+    )
+
+    # Create the task
+    task = mp4_job.build(dict(
+        title = title,
+        priority = priority,
+        pool_name = pool_name,
+        first_frame = first_frame,
+        last_frame = last_frame,
+        step_size = step_size,
+        input_path = path_str(to_windows_path(input_path)),
+        output_paths = [
+            path_str(to_windows_path(playblast_path)),
+            path_str(to_windows_path(daily_path))
+        ]
+    ), dict(), staging_path)
+
+    # Done
+    return task, render_version_name
+
+def _build_slapcomp_mp4_job(
     config: dict,
     staging_path: Path,
     render_department_name: str,
     slapcomp_version_name: str
     ):
-    logging.debug('Creating mp4 task')
+    logging.debug('Creating slapcomp mp4 task')
 
     # Config
     entity = Entity.from_json(config['entity'])
+    assert entity is not None, 'Invalid entity in config'
     purpose = config['settings']['purpose']
-    priority = config['settings']['priority']
+    priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
 
-    # Parameters
+    # Parameters - use department-level paths for slapcomp
     playblast_path = get_playblast_path(entity, slapcomp_version_name, purpose)
     daily_path = get_daily_path(entity, purpose)
     title = (
-        f'mp4 '
+        f'mp4 slapcomp '
         f'{render_department_name} '
         f'{slapcomp_version_name}'
     )
@@ -742,7 +876,7 @@ def _build_mp4_task(
     )
 
     # Create the task
-    task = mp4_task.build(dict(
+    task = mp4_job.build(dict(
         title = title,
         priority = priority,
         pool_name = pool_name,
@@ -759,7 +893,7 @@ def _build_mp4_task(
     # Done
     return task, slapcomp_version_name
 
-def _build_partial_notify_task(
+def _build_partial_notify_job(
     config: dict,
     staging_path: Path,
     render_department_name: str,
@@ -809,9 +943,9 @@ def _build_partial_notify_task(
     )
 
     # Create the task
-    task = notify_task.build(dict(
+    task = notify_job.build(dict(
         title = title,
-        priority = 90,
+        priority = 55,
         pool_name = pool_name,
         user_name = user_name,
         channel_name = channel_name,
@@ -828,42 +962,43 @@ def _build_partial_notify_task(
     # Done
     return task
 
-def _build_full_notify_task(
+def _build_slapcomp_notify_job(
     config: dict,
     staging_path: Path,
     render_department_name: str,
     version_name: str
     ):
-    logging.debug('Creating full notify task')
+    logging.debug('Creating slapcomp notify task')
 
     # Config
     entity = Entity.from_json(config['entity'])
+    assert entity is not None, 'Invalid entity in config'
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
     channel_name = config['tasks']['full_render']['channel_name']
 
-    # Parameters
-    title = (
-        f'notify full '
-        f'{render_department_name} '
-        f'{version_name}'
-    )
-    message = (
-        f'{entity} - '
-        f'{render_department_name} - '
-        f'{version_name}'
-    )
+    # Parameters - slapcomp playblast
     video_path = get_playblast_path(
         entity,
         version_name,
         purpose
     )
+    title = (
+        f'notify slapcomp '
+        f'{render_department_name} '
+        f'{version_name}'
+    )
+    message = (
+        f'{entity} - '
+        f'{render_department_name}/slapcomp - '
+        f'{version_name}'
+    )
 
     # Create the task
-    task = notify_task.build(dict(
+    task = notify_job.build(dict(
         title = title,
-        priority = 90,
+        priority = 60,
         pool_name = pool_name,
         user_name = user_name,
         channel_name = channel_name,
@@ -877,22 +1012,28 @@ def _build_full_notify_task(
     # Done
     return task
 
-def _add_tasks(batch, tasks):
-    tasks = list(filter(lambda job_layer: len(job_layer) != 0, tasks))
-    task_indices = [
-        [
-            batch.add_job(task)
-            for task in job_layer
-        ]
-        for job_layer in tasks
-    ]
-    if len(tasks) <= 1: return
-    prev_layer = task_indices[0]
-    for curr_layer in task_indices[1:]:
-        for curr_index in curr_layer:
-            for prev_index in prev_layer:
-                batch.add_dep(curr_index, prev_index)
-        prev_layer = curr_layer
+def _add_jobs(
+    batch: Batch,
+    jobs: dict[str, Job],
+    deps: dict[str, list[str]]
+    ):
+    indicies = {
+        job_name: batch.add_job(job)
+        for job_name, job in jobs.items()
+    }
+    for job_name, job_deps in deps.items():
+        if len(job_deps) == 0: continue
+        for dep_name in job_deps:
+            if dep_name not in indicies:
+                logging.warning(
+                    f'Job "{job_name}" depends on '
+                    f'non-existing job "{dep_name}"'
+                )
+                continue
+            batch.add_dep(
+                indicies[job_name],
+                indicies[dep_name]
+            )
 
 def submit(
     config: dict,
@@ -903,6 +1044,7 @@ def submit(
     entity = Entity.from_json(config['entity'])
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
+    render_layer_names = config['settings']['render_layer_names']
 
     # Parameters
     project_name = get_project_name()
@@ -920,132 +1062,203 @@ def submit(
         logging.info(f'Temporary directory: {temp_path}')
 
         # Batch and jobs
-        batch_name = (
+        layers_text = f"[{', '.join(render_layer_names)}]"
+        batch = Batch(
             f'{project_name} '
             f'{purpose} '
             f'{entity} '
+            f'{layers_text} '
             f'{user_name} '
             f'{timestamp}'
         )
-        job_batch = Batch(batch_name)
-        job_layers = []
 
         # Parameters
         render_department_name = config['settings']['render_department_name']
 
-        # Prepare jobs
-        job_layer1 = list()
-        job_layer2 = list()
-        job_layer3 = list()
-        job_layer4 = list()
-        job_layer5 = list()
-        job_layer6 = list()
+        # Prepare adding jobs
+        jobs = dict()
+        deps = dict()
+        def _add_job(job_name, job, job_deps):
+            jobs[job_name] = job
+            deps[job_name] = job_deps
 
-        # Initial partial render job
-        render_version_name = None
+        # Track version names per layer
+        render_version_names = {}
+        denoise_version_names = {}
+
+        # PARTIAL RENDER: Create jobs for each layer
         if 'partial_render' in config['tasks']:
-            render_result = _build_partial_render_task(config, paths, temp_path)
-            render_task, render_version_name = render_result
-            job_layer1.append(render_task)
-            if config['tasks']['partial_render']['denoise']:
-                denoise_result = _build_partial_denoise_task(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    render_version_name
-                )
-                denoise_task, denoise_version_name = denoise_result
-                job_layer2.append(denoise_task)
-                job_layer3.append(_build_partial_notify_task(
-                    config,
-                    temp_path,
-                    'denoise',
-                    denoise_version_name
-                ))
-            else:
-                job_layer3.append(_build_partial_notify_task(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    render_version_name
-                ))
+            for layer_name in render_layer_names:
+                # Create layer-specific config
+                layer_config = config.copy()
+                layer_config['settings'] = config['settings'].copy()
+                layer_config['settings']['render_layer_name'] = layer_name
 
-        # Following full render jobs
+                # Build partial render job for this layer
+                render_result = _build_partial_render_job(layer_config, paths, temp_path)
+                render_job, render_version = render_result
+                render_version_names[layer_name] = render_version
+                _add_job(f'partial_render_{layer_name}', render_job, [])
+
+                if config['tasks']['partial_render']['denoise']:
+                    denoise_result = _build_partial_denoise_job(
+                        layer_config,
+                        temp_path,
+                        render_department_name,
+                        render_version
+                    )
+                    denoise_job, denoise_version = denoise_result
+                    denoise_version_names[layer_name] = denoise_version
+                    _add_job(f'partial_denoise_{layer_name}', denoise_job, [f'partial_render_{layer_name}'])
+
+                    notify_job = _build_partial_notify_job(
+                        layer_config,
+                        temp_path,
+                        'denoise',
+                        denoise_version
+                    )
+                    _add_job(f'partial_notify_{layer_name}', notify_job, [f'partial_denoise_{layer_name}'])
+                else:
+                    notify_job = _build_partial_notify_job(
+                        layer_config,
+                        temp_path,
+                        render_department_name,
+                        render_version
+                    )
+                    _add_job(f'partial_notify_{layer_name}', notify_job, [f'partial_render_{layer_name}'])
+
+        # FULL RENDER: Create jobs for each layer
         if 'full_render' in config['tasks']:
-            render_result = _build_full_render_task(
-                config,
-                paths,
-                temp_path,
-                render_version_name
-            )
-            render_task, render_version_name = render_result
-            job_layer2.append(render_task)
-            if config['tasks']['full_render']['denoise']:
-                denoise_result = _build_full_denoise_task(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    render_version_name
-                )
-                denoise_task, denoise_version_name = denoise_result
-                job_layer3.append(denoise_task)
-                slapcomp_result = _build_slapcomp_task(
-                    config,
-                    temp_path,
-                    'denoise',
-                    denoise_version_name
-                )
-                slapcomp_task, slapcomp_version_name = slapcomp_result
-                job_layer4.append(slapcomp_task)
-                mp4_result = _build_mp4_task(
-                    config,
-                    temp_path,
-                    'denoise',
-                    slapcomp_version_name
-                )
-                mp4_task, mp4_version_name = mp4_result
-                job_layer5.append(mp4_task)
-                job_layer6.append(_build_full_notify_task(
-                    config,
-                    temp_path,
-                    'denoise',
-                    mp4_version_name
-                ))
-            else:
-                slapcomp_result = _build_slapcomp_task(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    render_version_name
-                )
-                slapcomp_task, slapcomp_version_name = slapcomp_result
-                job_layer3.append(slapcomp_task)
-                mp4_result = _build_mp4_task(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    slapcomp_version_name
-                )
-                mp4_task, mp4_version_name = mp4_result
-                job_layer4.append(mp4_task)
-                job_layer5.append(_build_full_notify_task(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    mp4_version_name
-                ))
+            for layer_name in render_layer_names:
+                # Create layer-specific config
+                layer_config = config.copy()
+                layer_config['settings'] = config['settings'].copy()
+                layer_config['settings']['render_layer_name'] = layer_name
 
-        # Add job layers
-        job_layers.append(job_layer1)
-        job_layers.append(job_layer2)
-        job_layers.append(job_layer3)
-        job_layers.append(job_layer4)
-        job_layers.append(job_layer5)
-        job_layers.append(job_layer6)
-        _add_tasks(job_batch, job_layers)
+                # Build full render job for this layer
+                render_result = _build_full_render_job(
+                    layer_config,
+                    paths,
+                    temp_path,
+                    render_version_names.get(layer_name)
+                )
+                render_job, render_version = render_result
+                render_version_names[layer_name] = render_version
+
+                # Determine dependencies
+                render_deps = []
+                if 'partial_render' in config['tasks']:
+                    render_deps = [f'partial_render_{layer_name}']
+
+                _add_job(f'full_render_{layer_name}', render_job, render_deps)
+
+                if config['tasks']['full_render']['denoise']:
+                    denoise_result = _build_full_denoise_job(
+                        layer_config,
+                        temp_path,
+                        render_department_name,
+                        render_version
+                    )
+                    denoise_job, denoise_version = denoise_result
+                    denoise_version_names[layer_name] = denoise_version
+                    _add_job(f'full_denoise_{layer_name}', denoise_job, [f'full_render_{layer_name}'])
+
+                    layer_mp4_result = _build_layer_mp4_job(
+                        layer_config,
+                        temp_path,
+                        'denoise',
+                        denoise_version
+                    )
+                    layer_mp4_job, _ = layer_mp4_result
+                    _add_job(f'layer_mp4_{layer_name}', layer_mp4_job, [f'full_denoise_{layer_name}'])
+                else:
+                    layer_mp4_result = _build_layer_mp4_job(
+                        layer_config,
+                        temp_path,
+                        render_department_name,
+                        render_version
+                    )
+                    layer_mp4_job, _ = layer_mp4_result
+                    _add_job(f'layer_mp4_{layer_name}', layer_mp4_job, [f'full_render_{layer_name}'])
+
+            # CROSS-LAYER JOBS: Create once, depend on all layer jobs
+            if config['tasks']['full_render']['denoise']:
+                # Collect all denoise job names
+                all_denoise_jobs = [f'full_denoise_{ln}' for ln in render_layer_names]
+
+                # Edit job depends on all denoise jobs
+                edit_job = _build_edit_job(config, temp_path)
+                _add_job('edit', edit_job, all_denoise_jobs)
+
+                # Slapcomp depends on all denoise jobs
+                # Use version from first layer (all should have same version number)
+                first_layer = render_layer_names[0]
+                slapcomp_result = _build_slapcomp_job(
+                    config,
+                    temp_path,
+                    'denoise',
+                    denoise_version_names[first_layer]
+                )
+                slapcomp_job, slapcomp_version = slapcomp_result
+                _add_job('slapcomp', slapcomp_job, all_denoise_jobs)
+
+                slapcomp_mp4_result = _build_slapcomp_mp4_job(
+                    config,
+                    temp_path,
+                    'denoise',
+                    slapcomp_version
+                )
+                slapcomp_mp4_job, _ = slapcomp_mp4_result
+                _add_job('slapcomp_mp4', slapcomp_mp4_job, ['slapcomp'])
+
+                slapcomp_notify_job = _build_slapcomp_notify_job(
+                    config,
+                    temp_path,
+                    'denoise',
+                    slapcomp_version
+                )
+                _add_job('slapcomp_notify', slapcomp_notify_job, ['slapcomp_mp4'])
+            else:
+                # Collect all render job names
+                all_render_jobs = [f'full_render_{ln}' for ln in render_layer_names]
+
+                # Edit job depends on all render jobs
+                edit_job = _build_edit_job(config, temp_path)
+                _add_job('edit', edit_job, all_render_jobs)
+
+                # Slapcomp depends on all render jobs
+                first_layer = render_layer_names[0]
+                slapcomp_result = _build_slapcomp_job(
+                    config,
+                    temp_path,
+                    render_department_name,
+                    render_version_names[first_layer]
+                )
+                slapcomp_job, slapcomp_version = slapcomp_result
+                _add_job('slapcomp', slapcomp_job, all_render_jobs)
+
+                slapcomp_mp4_result = _build_slapcomp_mp4_job(
+                    config,
+                    temp_path,
+                    render_department_name,
+                    slapcomp_version
+                )
+                slapcomp_mp4_job, _ = slapcomp_mp4_result
+                _add_job('slapcomp_mp4', slapcomp_mp4_job, ['slapcomp'])
+
+                slapcomp_notify_job = _build_slapcomp_notify_job(
+                    config,
+                    temp_path,
+                    render_department_name,
+                    slapcomp_version
+                )
+                _add_job('slapcomp_notify', slapcomp_notify_job, ['slapcomp_mp4'])
+
+        # Add jobs
+        _add_jobs(batch, jobs, deps)
 
         # Submit
-        farm.submit(job_batch, api.storage.resolve('export:/other/jobs'))
+        farm.submit(batch, api.storage.resolve('export:/other/jobs'))
 
     # Done
     return 0

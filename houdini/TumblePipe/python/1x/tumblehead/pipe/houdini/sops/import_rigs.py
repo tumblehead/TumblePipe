@@ -152,9 +152,6 @@ class ImportRigs(ns.Node):
         # Done
         return result.Value(None)
 
-def clear_cache():
-    import_rig.clear_cache()
-
 def create(scene, name):
     node_type = ns.find_node_type('import_rigs', 'Sop')
     assert node_type is not None, 'Could not find import_rigs node type'
@@ -168,11 +165,6 @@ def set_style(raw_node):
 
 def on_created(raw_node):
 
-    # Set node style
-    set_style(raw_node)
-
-def on_loaded(raw_node):
-    
     # Set node style
     set_style(raw_node)
 

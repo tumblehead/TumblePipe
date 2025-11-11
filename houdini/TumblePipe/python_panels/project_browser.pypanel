@@ -6,16 +6,12 @@
  same interface or of the interfaces menu are not allowed
  in a single file. -->
   <interface name="tumblehead_project_browser" label="Tumblehead Project Browser" icon="P:/Turbulence/00_Tumblehead/pipeline/houdini/Tumblehead/resources/logo.png" showNetworkNavigationBar="false" help_url="">
-    <script><![CDATA[from importlib import reload
-
-from tumblehead.pipe.houdini.ui import project_browser
-reload(project_browser)
+    <script><![CDATA[from tumblehead.pipe.houdini.ui import project_browser
 
 PROJECT_BROWSER = None
 
 def onCreateInterface():
     global PROJECT_BROWSER
-    reload(project_browser)
     if PROJECT_BROWSER is None:
         PROJECT_BROWSER = project_browser.create()
     return PROJECT_BROWSER]]></script>

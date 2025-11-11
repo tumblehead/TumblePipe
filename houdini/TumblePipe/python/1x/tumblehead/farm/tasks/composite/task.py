@@ -24,6 +24,12 @@ api = default_client()
 
 """
 config = {
+    'entity': {
+        'tag': 'shot',
+        'sequence_name': 'seq010',
+        'shot_name': 'shot0010',
+        'department_name': 'composite'
+    },
     'title': 'composite',
     'priority': 50,
     'pool_name': 'general',
@@ -35,22 +41,25 @@ config = {
     'receipt_path': 'path/to/receipt.####.json',
     'input_path': 'path/to/input.hip',
     'node_path': 'path/to/node',
+    'layer_names': ['main', 'mirror'],
     'output_paths': {
-        'diffuse': 'path/to/diffuse.####.exr',
-        'depth': 'path/to/depth.####.exr'
+        'main': 'path/to/main/beauty.####.exr',
+        'mirror': 'path/to/mirror/beauty.####.exr'
     }
 }
 """
 
 def _is_valid_config(config):
 
-    def _is_valid_layer(layer):
-        if not isinstance(layer, dict): return False
-        for aov_name, aov_path in layer.items():
-            if not isinstance(aov_name, str): return False
-            if not isinstance(aov_path, str): return False
+    def _is_valid_output_paths(output_paths):
+        if not isinstance(output_paths, dict): return False
+        for layer_name, output_path in output_paths.items():
+            if not isinstance(layer_name, str): return False
+            if not isinstance(output_path, str): return False
         return True
 
+    if 'entity' not in config: return False
+    if not isinstance(config['entity'], dict): return False
     if 'title' not in config: return False
     if not isinstance(config['title'], str): return False
     if 'priority' not in config: return False
@@ -75,8 +84,13 @@ def _is_valid_config(config):
     if not isinstance(config['input_path'], str): return False
     if 'node_path' not in config: return False
     if not isinstance(config['node_path'], str): return False
+    if 'layer_names' not in config: return False
+    if not isinstance(config['layer_names'], list): return False
+    if len(config['layer_names']) == 0: return False
+    for layer_name in config['layer_names']:
+        if not isinstance(layer_name, str): return False
     if 'output_paths' not in config: return False
-    if not _is_valid_layer(config['output_paths']): return False
+    if not _is_valid_output_paths(config['output_paths']): return False
     return True
 
 SCRIPT_PATH = Path(__file__).parent / 'composite.py'
@@ -105,9 +119,14 @@ def build(config, paths, staging_path):
     task_path = staging_path / f'composite_{random_name(8)}'
     context_path = task_path / 'context.json'
     store_json(context_path, dict(
+        entity = config['entity'],
+        first_frame = config['first_frame'],
+        last_frame = config['last_frame'],
+        frames = config['frames'],
         receipt_path = config['receipt_path'],
         input_path = config['input_path'],
         node_path = config['node_path'],
+        layer_names = config['layer_names'],
         output_paths = config['output_paths']
     ))
 

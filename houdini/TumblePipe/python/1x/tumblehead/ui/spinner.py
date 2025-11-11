@@ -23,10 +23,6 @@ from tumblehead.ui import (
     style
 )
 
-from importlib import reload
-reload(card)
-reload(style)
-
 def _add_angle(angle: int, offset: int) -> int:
     return (angle + offset) % 360
 

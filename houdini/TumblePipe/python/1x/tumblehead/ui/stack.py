@@ -23,10 +23,6 @@ from tumblehead.ui import (
     style
 )
 
-from importlib import reload
-reload(card)
-reload(style)
-
 @dataclass
 class ReorderEvent:
     from_index: int

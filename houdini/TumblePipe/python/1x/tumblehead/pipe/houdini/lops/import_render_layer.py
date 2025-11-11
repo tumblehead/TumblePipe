@@ -3,7 +3,6 @@ from pathlib import Path
 import hou
 
 from tumblehead.api import path_str, default_client
-from tumblehead.util.cache import Cache
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.paths import (
     list_version_paths,
@@ -12,8 +11,6 @@ from tumblehead.pipe.paths import (
 )
 
 api = default_client()
-
-CACHE_VERSION_NAMES = Cache()
 
 class ImportRenderLayer(ns.Node):
     def __init__(self, native):
@@ -49,9 +46,6 @@ class ImportRenderLayer(ns.Node):
         shot_name = self.get_shot_name()
         department_name = self.get_department_name()
         render_layer_name = self.get_render_layer_name()
-        layer_key = (sequence_name, shot_name, render_layer_name)
-        if CACHE_VERSION_NAMES.contains(layer_key):
-            return CACHE_VERSION_NAMES.lookup(layer_key).copy()
         layer_path = api.storage.resolve(
             f'export:/shots/{sequence_name}/{shot_name}/render_layers'
             f'/{department_name}/{render_layer_name}'
@@ -59,7 +53,6 @@ class ImportRenderLayer(ns.Node):
         if not layer_path.exists(): return []
         version_paths = list_version_paths(layer_path)
         version_names = [path.name for path in version_paths]
-        CACHE_VERSION_NAMES.insert(layer_key, version_names)
         return version_names
     
     def get_sequence_name(self):
@@ -98,7 +91,8 @@ class ImportRenderLayer(ns.Node):
         version_names = self.list_version_names()
         if len(version_names) == 0: return None
         version_name = self.parm('version').eval()
-        if len(version_name) == 0: return version_names[0]
+        if len(version_name) == 0: return version_names[-1]
+        if version_name == 'latest': return version_names[-1]
         if version_name not in version_names: return None
         return version_name
     
@@ -134,11 +128,6 @@ class ImportRenderLayer(ns.Node):
 
     def execute(self):
 
-        # Nodes
-        context = self.native()
-        import_node = context.node('import')
-        bypass_node = context.node('bypass')
-
         # Parameters
         sequence_name = self.get_sequence_name()
         shot_name = self.get_shot_name()
@@ -155,14 +144,11 @@ class ImportRenderLayer(ns.Node):
         input_file_path = version_path / input_file_name
 
         # Import layer file
-        if input_file_path.exists():
-            import_node.parm('filepath1').set(path_str(input_file_path))
-            bypass_node.parm('input').set(1)
-        else:
-            bypass_node.parm('input').set(0)
+        self.parm('import_enable1').set(1 if input_file_path.exists() else 0)
+        self.parm('import_filepath1').set(path_str(input_file_path))
 
-def clear_cache():
-    CACHE_VERSION_NAMES.clear()
+        # Update the version label on the node UI
+        self.parm('version_label').set(f'v{version_name}')
 
 def create(scene, name):
     node_type = ns.find_node_type('import_render_layer', 'Lop')
@@ -203,16 +189,6 @@ def on_created(raw_node):
             ):
             node.set_sequence_name(sequence_name)
             node.set_shot_name(shot_name)
-
-def on_loaded(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
-def latest():
-    raw_node = hou.pwd()
-    node = ImportRenderLayer(raw_node)
-    node.latest()
 
 def execute():
     raw_node = hou.pwd()
