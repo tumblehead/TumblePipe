@@ -1,6 +1,6 @@
 {
     "CHAR": [
-        "example"
+        {"name": "example", "animatable": false}
     ],
     "PROP": [],
     "SET": []

@@ -5,6 +5,7 @@
             "frame_end": 1200,
             "roll_start": 0,
             "roll_end": 0,
+            "fps": 24,
             "render_layers": [
                 "main"
             ]

@@ -64,9 +64,9 @@ def _remove(data, *key_path):
     data.remove(key_path[-1])
     return True
 
-class _ConfigConvention(ConfigConvention):
+class ProjectConfigConvention(ConfigConvention):
     def __init__(self):
-        
+
         # Paths
         self.config_path = get_config_path()
         self.shot_info_path = self.config_path / 'shot_info.json'
@@ -85,79 +85,94 @@ class _ConfigConvention(ConfigConvention):
 
     def _load_shot_info(self):
         self.shot_info = _load_json(self.shot_info_path)
-    
+
     def _save_shot_info(self):
         _store_json(self.shot_info_path, self.shot_info)
 
     def _load_asset_info(self):
         self.asset_info = _load_json(self.asset_info_path)
-    
+
     def _save_asset_info(self):
         _store_json(self.asset_info_path, self.asset_info)
-    
+
     def _load_kit_info(self):
         self.kit_info = _load_json(self.kit_info_path)
-    
+
     def _save_kit_info(self):
         _store_json(self.kit_info_path, self.kit_info)
-    
+
     def _load_department_info(self):
         self.department_info = _load_json(self.department_info_path)
-    
+
     def _save_department_info(self):
         _store_json(self.department_info_path, self.department_info)
-    
+
     def _load_procedural_info(self):
         self.procedural_info = _load_json(self.procedural_info_path)
 
     def list_sequence_names(self):
         if self.shot_info is None: self._load_shot_info()
         return list(self.shot_info.keys())
-    
+
     def list_shot_names(self, sequence_name):
         if self.shot_info is None: self._load_shot_info()
-        return list(self.shot_info[sequence_name].keys())
-    
+        return list(self.shot_info.get(sequence_name, dict()).keys())
+
     def list_category_names(self):
         if self.asset_info is None: self._load_asset_info()
         return list(self.asset_info.keys())
-    
+
     def list_asset_names(self, category_name):
         if self.asset_info is None: self._load_asset_info()
-        return self.asset_info[category_name]
-    
+        assets = self.asset_info.get(category_name, list())
+        return [asset['name'] for asset in assets]
+
+    def get_asset_animatable(self, category_name, asset_name):
+        if self.asset_info is None: self._load_asset_info()
+        assets = self.asset_info.get(category_name, list())
+        for asset in assets:
+            if asset['name'] == asset_name:
+                return asset['animatable']
+        return None
+
     def list_kit_category_names(self):
         if self.kit_info is None: self._load_kit_info()
         return list(self.kit_info.keys())
 
     def list_kit_names(self, category_name):
         if self.kit_info is None: self._load_kit_info()
-        return self.kit_info[category_name]
-    
+        return self.kit_info.get(category_name, list())
+
     def list_asset_department_names(self):
         if self.department_info is None: self._load_department_info()
-        return self.department_info['asset']
-    
+        return self.department_info.get('asset', list())
+
     def list_shot_department_names(self):
         if self.department_info is None: self._load_department_info()
-        return self.department_info['shot']
-    
+        return self.department_info.get('shot', list())
+
     def list_kit_department_names(self):
         if self.department_info is None: self._load_department_info()
-        return self.department_info['kit']
-    
+        return self.department_info.get('kit', list())
+
     def list_render_department_names(self):
         if self.department_info is None: self._load_department_info()
-        return self.department_info['render']
-    
+        return self.department_info.get('render', list())
+
     def list_render_layer_names(self, sequence_name, shot_name):
         if self.shot_info is None: self._load_shot_info()
-        info = self.shot_info[sequence_name][shot_name]
-        return info['render_layers']
-    
+        infos = self.shot_info.get(sequence_name, None)
+        if infos is None: return list()
+        info = infos.get(shot_name, None)
+        if info is None: return list()
+        return info.get('render_layers', list())
+
     def get_frame_range(self, sequence_name, shot_name):
         if self.shot_info is None: self._load_shot_info()
-        info = self.shot_info[sequence_name][shot_name]
+        infos = self.shot_info.get(sequence_name, None)
+        if infos is None: return None
+        info = infos.get(shot_name, None)
+        if info is None: return None
         return FrameRange(
             info['frame_start'],
             info['frame_end'],
@@ -236,11 +251,13 @@ class _ConfigConvention(ConfigConvention):
     def add_shot_name(self, sequence_name, shot_name):
         if self.shot_info is None: self._load_shot_info()
         if _contains(self.shot_info, sequence_name, shot_name): return
+        fps = self.get_fps()
         default_shot_info = dict(
             frame_start = 1001,
             frame_end = 1100,
             roll_start = 0,
             roll_end = 0,
+            fps = fps,
             render_layers = ['main']
         )
         updated = _set(
@@ -256,10 +273,13 @@ class _ConfigConvention(ConfigConvention):
         updated = _set(self.asset_info, list(), category_name)
         if updated: self._save_asset_info()
 
-    def add_asset_name(self, category_name, asset_name):
+    def add_asset_name(self, category_name, asset_name, animatable=False):
         if self.asset_info is None: self._load_asset_info()
-        if _contains(self.asset_info, category_name, asset_name): return
-        updated = _append(self.asset_info, asset_name, category_name)
+        assets = self.asset_info.get(category_name, list())
+        if any(asset['name'] == asset_name for asset in assets):
+            return
+        asset_obj = {"name": asset_name, "animatable": animatable}
+        updated = _append(self.asset_info, asset_obj, category_name)
         if updated: self._save_asset_info()
 
     def add_kit_category_name(self, kit_category_name):
@@ -294,9 +314,12 @@ class _ConfigConvention(ConfigConvention):
 
     def remove_asset_name(self, category_name, asset_name):
         if self.asset_info is None: self._load_asset_info()
-        if not _contains(self.asset_info, category_name, asset_name): return
-        updated = _remove(self.asset_info, category_name, asset_name)
-        if updated: self._save_asset_info()
+        assets = self.asset_info.get(category_name, list())
+        for i, asset in enumerate(assets):
+            if asset['name'] == asset_name:
+                assets.pop(i)
+                self._save_asset_info()
+                return
 
     def remove_kit_category_name(self, kit_category_name):
         if self.kit_info is None: self._load_kit_info()
@@ -309,7 +332,19 @@ class _ConfigConvention(ConfigConvention):
         if not _contains(self.kit_info, kit_category_name, kit_name): return
         updated = _remove(self.kit_info, kit_category_name, kit_name)
         if updated: self._save_kit_info()
-    
+
+    def get_fps(self):
+        return 24
+
+    def get_shot_fps(self, sequence_name, shot_name):
+        if self.shot_info is None: self._load_shot_info()
+        default_fps = self.get_fps()
+        infos = self.shot_info.get(sequence_name, None)
+        if infos is None: return default_fps
+        info = infos.get(shot_name, None)
+        if info is None: return default_fps
+        return info.get('fps', default_fps)
+
     def resolve(self, path):
         if not self.is_valid_path(path): return None
         purpose, parts = self.parse_path(path)
@@ -327,4 +362,4 @@ class _ConfigConvention(ConfigConvention):
         return result
 
 def create():
-    return _ConfigConvention()
+    return ProjectConfigConvention()

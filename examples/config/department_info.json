@@ -13,7 +13,8 @@
         "effects",
         "cfx",
         "light",
-	    "composite"
+        "render",
+        "composite"
     ],
     "kit": [
         "general"
