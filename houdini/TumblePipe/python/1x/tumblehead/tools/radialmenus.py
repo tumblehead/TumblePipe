@@ -4,9 +4,9 @@ from pathlib import Path
 import os
 import json
 import sys
-import hou
+import hou # type: ignore
 from typing import Callable
-import loputils
+import loputils # type: ignore
 
 from tumblehead.api import default_client, fix_path, get_user_name
 from tumblehead.util.io import load_json

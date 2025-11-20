@@ -28,7 +28,7 @@ def get_icon_from_type(category_name: str, type_name: str ) -> str:
         "sop": hou.sopNodeTypeCategory(),
         "lop": hou.lopNodeTypeCategory(),
         "object": hou.objNodeTypeCategory(),
-        "cop": hou.cop2NodeTypeCategory(),
+        "cop": hou.copNodeTypeCategory(),
         "vop": hou.vopNodeTypeCategory(),
     }
 
@@ -81,7 +81,7 @@ def log_recent_node_type(node: hou.Node):
             with open(RECENT_NODES_PATH, "r") as f:
                 data = json.load(f)
         else:
-            data = []
+            data = [] 
 
         data = [entry for entry in data if entry["type"] != node_data["type"]]
             
@@ -487,7 +487,7 @@ def place_and_create_node(parent: hou.Node, type: str, name: str) -> hou.Node | 
     selected_node = hou.selectedNodes()[-1] if hou.selectedNodes() else None
     created_node = hou.nodeType(parent.childTypeCategory(), type)
 
-    if selected_node and created_node.maxNumInputs() > 0:
+    if selected_node and selected_node.type().maxNumInputs()  and created_node.maxNumInputs() > 0:
         pos = network_editor.selectPosition(selected_node, 0)
     else:
         pos = network_editor.selectPosition()
@@ -495,11 +495,11 @@ def place_and_create_node(parent: hou.Node, type: str, name: str) -> hou.Node | 
     created_node = parent.createNode(type, name, force_valid_node_name=True)
     created_node.setSelected(True, clear_all_selected=True)
     created_node.setPosition(pos)
-    created_node.setDisplayFlag(True)
+    if not isinstance(created_node, hou.OpNode):
+        created_node.setDisplayFlag(True)
 
-    if selected_node and created_node.type().maxNumInputs() > 0:
+    if selected_node and selected_node.type().maxNumInputs() > 0 and created_node.type().maxNumInputs() > 0:
         created_node.setInput(0, selected_node)
-
 
     return created_node
 
