@@ -1,5 +1,5 @@
 from qtpy.QtCore import Qt
-from qtpy.QtGui import QColor, QPen, QFont, QBrush
+from qtpy.QtGui import QColor, QPen
 from qtpy.QtWidgets import QTableView, QStyledItemDelegate, QStyle
 
 

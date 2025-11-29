@@ -8,54 +8,43 @@ from tumblehead.api import (
     path_str,
     default_client
 )
+from tumblehead.util.uri import Uri
 from tumblehead.util.io import store_json
-from tumblehead.pipe.houdini.sops import import_rig
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.paths import (
     get_next_version_path,
-    get_workfile_context,
-    AssetContext
+    get_rig_export_path,
+    get_workfile_context
 )
 
 api = default_client()
 
+DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/sops/export_rig')
+
 class ExportRig(ns.Node):
     def __init__(self, native):
         super().__init__(native)
-    
-    def list_category_names(self):
-        return api.config.list_category_names()
 
-    def list_asset_names(self):
-        category_name = self.get_category_name()
-        if category_name is None: return []
-        return api.config.list_asset_names(category_name)
+    def list_asset_uris(self) -> list[Uri]:
+        asset_entities = api.config.list_entities(
+            filter = Uri.parse_unsafe('entity:/assets'),
+            closure = True
+        )
+        return list(asset_entities)
 
-    def get_category_name(self):
-        category_names = self.list_category_names()
-        if len(category_names) == 0: return None
-        category_name = self.parm('category').eval()
-        if len(category_name) == 0: return category_names[0]
-        if category_name not in category_names: return None
-        return category_name
+    def get_asset_uri(self) -> Uri | None:
+        asset_uris = self.list_asset_uris()
+        if len(asset_uris) == 0: return None
+        asset_uri_raw = self.parm('asset').eval()
+        if len(asset_uri_raw) == 0: return asset_uris[0]
+        asset_uri = Uri.parse_unsafe(asset_uri_raw)
+        if asset_uri not in asset_uris: return None
+        return asset_uri
 
-    def get_asset_name(self):
-        asset_names = self.list_asset_names()
-        if len(asset_names) == 0: return None
-        asset_name = self.parm('asset').eval()
-        if len(asset_name) == 0: return asset_names[0]
-        if asset_name not in asset_names: return None
-        return asset_name
-
-    def set_category_name(self, category_name):
-        category_names = self.list_category_names()
-        if category_name not in category_names: return
-        self.parm('category').set(category_name)
-
-    def set_asset_name(self, asset_name):
-        asset_names = self.list_asset_names()
-        if asset_name not in asset_names: return
-        self.parm('asset').set(asset_name)
+    def set_asset_uri(self, asset_uri: Uri):
+        asset_uris = self.list_asset_uris()
+        if asset_uri not in asset_uris: return
+        self.parm('asset').set(str(asset_uri))
 
     def execute(self):
 
@@ -64,15 +53,15 @@ class ExportRig(ns.Node):
         export_node = context.node('export')
 
         # Parameters
-        category_name = self.get_category_name()
-        asset_name = self.get_asset_name()
-        export_path = api.storage.resolve(f'export:/assets/{category_name}/{asset_name}/rig')
+        asset_uri = self.get_asset_uri()
+        export_path = get_rig_export_path(asset_uri)
         version_path = get_next_version_path(export_path)
         version_name = version_path.name
         timestamp = dt.datetime.now().isoformat()
 
         # Prepare rig export
-        output_file_path = version_path / f'{category_name}_{asset_name}_rig_{version_name}.bgeo.sc'
+        rig_file_name = '_'.join(asset_uri.segments[1:] + ['rig', version_name]) + '.bgeo.sc'
+        output_file_path = version_path / rig_file_name
         export_node.parm('file').set(path_str(output_file_path))
 
         # Export rig
@@ -84,10 +73,8 @@ class ExportRig(ns.Node):
         context = dict(
             inputs = [],
             outputs = [dict(
-                context = 'asset',
-                category = category_name,
-                asset = asset_name,
-                layer = 'rig',
+                entity = str(asset_uri),
+                department = 'rig',
                 version = version_name,
                 timestamp = timestamp,
                 user = get_user_name(),
@@ -124,17 +111,9 @@ def on_created(raw_node):
     file_path = Path(hou.hipFile.path())
     context = get_workfile_context(file_path)
     if context is None: return
-    
-    # Set the default values
-    match context:
-        case AssetContext(
-            department_name,
-            category_name,
-            asset_name,
-            version_name
-            ):
-            node.set_category_name(category_name)
-            node.set_asset_name(asset_name)
+
+    # Set the default values from context
+    node.set_asset_uri(context.entity_uri)
 
 def execute():
     raw_node = hou.pwd()

@@ -2,6 +2,7 @@ import shutil
 import json
 import os
 from tumblehead.api import default_client, fix_path
+from tumblehead.util.uri import Uri
 
 from pathlib import Path
 
@@ -11,7 +12,7 @@ import hou # type: ignore
 
 api = default_client()
 
-RECENT_NODES_PATH = fix_path(api.storage.resolve("temp:/") /"recent_nodes.json")
+RECENT_NODES_PATH = fix_path(api.storage.resolve(Uri.parse_unsafe("temp:/")) /"recent_nodes.json")
 MAX_RECENTS = 8
 
 #region make_name_valid
@@ -186,7 +187,6 @@ def get_items_in_order(nodes: list[hou.NetworkMovableItem], axis: str = "x", rev
 
 #region create_cop_reference
 def create_cop_reference(parm: str, kwargs):
-    from tumblehead.tools import uiutils
     node = kwargs.get("node")
     stage = hou.node("/stage")
 

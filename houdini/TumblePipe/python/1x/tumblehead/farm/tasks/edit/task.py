@@ -17,7 +17,7 @@ from tumblehead.api import (
 from tumblehead.util.io import store_json
 from tumblehead.naming import random_name
 from tumblehead.apps.deadline import Job as Task
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
 
 api = default_client()
 
@@ -26,8 +26,7 @@ config = {
     'title': 'edit',
     'priority': 50,
     'pool_name': 'general',
-    'sequence_name': 'string',
-    'shot_name': 'string',
+    'entity_uri': 'entity:/shots/sequence/shot',
     'first_frame': 1,
     'last_frame': 100,
     'purpose': 'render'  # optional
@@ -41,10 +40,8 @@ def _is_valid_config(config):
     if not isinstance(config['priority'], int): return False
     if 'pool_name' not in config: return False
     if not isinstance(config['pool_name'], str): return False
-    if 'sequence_name' not in config: return False
-    if not isinstance(config['sequence_name'], str): return False
-    if 'shot_name' not in config: return False
-    if not isinstance(config['shot_name'], str): return False
+    if 'entity_uri' not in config: return False
+    if not isinstance(config['entity_uri'], str): return False
     if 'first_frame' not in config: return False
     if not isinstance(config['first_frame'], int): return False
     if 'last_frame' not in config: return False
@@ -73,8 +70,7 @@ def build(config, paths, staging_path):
     task_path = staging_path / f'edit_{random_name(8)}'
     context_path = task_path / 'context.json'
     store_json(context_path, dict(
-        sequence_name = config['sequence_name'],
-        shot_name = config['shot_name'],
+        entity_uri = config['entity_uri'],
         purpose = config.get('purpose', 'render')
     ))
 

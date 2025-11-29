@@ -1,17 +1,12 @@
 from enum import Enum
 
-from qtpy.QtCore import Qt, Signal, QModelIndex, QAbstractItemModel
-from qtpy.QtGui import QStandardItemModel, QStandardItem
 from qtpy import QtWidgets
-from hou import qt as hqt
-import hou
 
-from tumblehead.api import path_str, default_client
+from tumblehead.api import default_client
 
 api = default_client()
 
 class Department(Enum):
-    Kit = 'Kit'
     Asset = 'Asset'
     Shot = 'Shot'
     Preset = 'Preset'
@@ -24,25 +19,6 @@ class DepartmentDialog(QtWidgets.QDialog):
         # Set up the layout
         self.layout = QtWidgets.QVBoxLayout()
         self.setLayout(self.layout)
-
-        # Kit department label and editable list
-        self.kit_department_label = QtWidgets.QLabel('Kit Departments')
-        self.kit_department_list = QtWidgets.QListWidget()
-        self.layout.addWidget(self.kit_department_label)
-        self.layout.addWidget(self.kit_department_list)
-
-        # Kit department list buttons
-        self.kit_department_add_button = QtWidgets.QPushButton('Add')
-        self.kit_department_remove_button = QtWidgets.QPushButton('Remove')
-        self.kit_department_add_button.clicked.connect(lambda: self.add_department(Department.Kit))
-        self.kit_department_remove_button.clicked.connect(lambda: self.remove_department(Department.Kit))
-        
-        # Kit department list button layout
-        kit_department_button_layout = QtWidgets.QHBoxLayout()
-        self.layout.addLayout(kit_department_button_layout)
-        kit_department_button_layout.addWidget(self.kit_department_add_button)
-        kit_department_button_layout.addWidget(self.kit_department_remove_button)
-        kit_department_button_layout.addStretch()
 
         # Asset department label and editable list
         self.asset_department_label = QtWidgets.QLabel('Asset Departments')
@@ -135,10 +111,6 @@ class DepartmentDialog(QtWidgets.QDialog):
     def remove_department(self, department):
         pass
 
-class KitDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
-        super(KitDialog, self).__init__(parent)
-
 class AssetDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(AssetDialog, self).__init__(parent)
@@ -167,11 +139,6 @@ class ProjectConfig(QtWidgets.QWidget):
         self.layout.addWidget(self.edit_departments_button)
         self.edit_departments_button.clicked.connect(self.edit_departments)
 
-        # Edit kits button
-        self.edit_kits_button = QtWidgets.QPushButton('Edit Kits')
-        self.layout.addWidget(self.edit_kits_button)
-        self.edit_kits_button.clicked.connect(self.edit_kits)
-
         # Edit assets button
         self.edit_assets_button = QtWidgets.QPushButton('Edit Assets')
         self.layout.addWidget(self.edit_assets_button)
@@ -193,10 +160,6 @@ class ProjectConfig(QtWidgets.QWidget):
     def edit_departments(self):
         department_dialog = DepartmentDialog()
         department_dialog.exec_()
-
-    def edit_kits(self):
-        kit_dialog = KitDialog()
-        kit_dialog.exec_()
 
     def edit_assets(self):
         asset_dialog = AssetDialog()

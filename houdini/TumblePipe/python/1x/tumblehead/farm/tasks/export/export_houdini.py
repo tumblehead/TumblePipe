@@ -9,7 +9,7 @@ from tumblehead.api import (
     default_client
 )
 from tumblehead.util.io import load_json
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
 from tumblehead.pipe.houdini import util
 
 api = default_client()

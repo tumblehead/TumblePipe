@@ -3,12 +3,11 @@ from pathlib import Path
 import hou
 
 from tumblehead.api import path_str, default_client
-from tumblehead.config import FrameRange
+from tumblehead.config.timeline import FrameRange
 from tumblehead.pipe.houdini import util
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.paths import (
-    list_version_paths,
-    get_workfile_context
+    list_version_paths
 )
 
 api = default_client()

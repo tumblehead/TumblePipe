@@ -3,6 +3,9 @@
 from qtpy.QtCore import QThread, Signal, QObject
 import traceback
 
+from tumblehead.util.uri import Uri
+from tumblehead.config.department import list_departments
+
 
 class AsyncRefreshWorker(QThread):
     """Background worker for async refresh operations"""
@@ -75,16 +78,14 @@ class AsyncRefreshManager(QObject):
 
         if not components_to_refresh or 'workspace' in components_to_refresh:
             operations.extend([
-                ('categories', lambda: self._api.config.list_category_names()),
-                ('sequences', lambda: self._api.config.list_sequence_names()),
-                ('kit_categories', lambda: self._api.config.list_kit_category_names()),
+                ('asset_entities', lambda: self._api.config.list_entities(Uri.parse_unsafe('entity:/assets'), closure=True)),
+                ('shot_entities', lambda: self._api.config.list_entities(Uri.parse_unsafe('entity:/shots'), closure=True)),
             ])
 
         if not components_to_refresh or 'departments' in components_to_refresh:
             operations.extend([
-                ('asset_departments', lambda: self._api.config.list_asset_department_names()),
-                ('shot_departments', lambda: self._api.config.list_shot_department_names()),
-                ('kit_departments', lambda: self._api.config.list_kit_department_names()),
+                ('asset_departments', lambda: [d.name for d in list_departments('assets')]),
+                ('shot_departments', lambda: [d.name for d in list_departments('shots')]),
             ])
 
         # Create and start worker
@@ -122,14 +123,12 @@ def create_enhanced_refresh_operations(api):
     """Create a list of refresh operations that can be run async"""
     operations = [
         ('workspace_config', lambda: {
-            'categories': api.config.list_category_names(),
-            'sequences': api.config.list_sequence_names(),
-            'kit_categories': api.config.list_kit_category_names(),
+            'asset_entities': api.config.list_entities(Uri.parse_unsafe('entity:/assets'), closure=True),
+            'shot_entities': api.config.list_entities(Uri.parse_unsafe('entity:/shots'), closure=True),
         }),
         ('department_config', lambda: {
-            'asset_departments': api.config.list_asset_department_names(),
-            'shot_departments': api.config.list_shot_department_names(),
-            'kit_departments': api.config.list_kit_department_names(),
+            'asset_departments': [d.name for d in list_departments('assets')],
+            'shot_departments': [d.name for d in list_departments('shots')],
         }),
     ]
     return operations

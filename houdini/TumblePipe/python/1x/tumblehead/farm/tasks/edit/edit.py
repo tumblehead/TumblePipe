@@ -10,10 +10,11 @@ if tumblehead_packages_path not in sys.path:
     sys.path.append(str(tumblehead_packages_path))
 
 from tumblehead.api import default_client
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
+from tumblehead.config.department import list_departments
 from tumblehead.util.io import load_json, store_json
-from tumblehead.apps.deadline import log_progress
-from tumblehead.pipe.paths import get_render_context, ShotEntity
+from tumblehead.pipe.paths import get_render_context
+from tumblehead.util.uri import Uri
 
 api = default_client()
 
@@ -56,19 +57,14 @@ def _manifest_get(data, *path_steps):
         data = data.get(step)
     return data
 
-def main(config, render_range):
-
-    # Parameters
-    sequence_name = config['sequence_name']
-    shot_name = config['shot_name']
-    purpose = config.get('purpose', 'render')
+def main(shot_uri: Uri, purpose: str, render_range: BlockRange):
 
     # Get render context and resolve latest AOVs at runtime
     _headline('Resolving latest AOVs across all departments')
-    render_context = get_render_context(sequence_name, shot_name, purpose=purpose)
+    render_context = get_render_context(shot_uri, purpose=purpose)
 
     # Get both shot and render department priorities
-    shot_departments = api.config.list_shot_department_names()
+    shot_departments = [d.name for d in list_departments('shots')]
     render_departments = api.config.list_render_department_names()
 
     print(f'Shot department priority (low->high): {shot_departments}')
@@ -96,9 +92,9 @@ def main(config, render_range):
         return 0
 
     # Load manifest
-    manifest_path = api.storage.resolve('edit:/') / 'manifest.json'
+    manifest_path = api.storage.resolve(Uri.parse_unsafe('edit:/')) / 'manifest.json'
     manifest_data = load_json(manifest_path) or {}
-    shot_key = f'{sequence_name}/{shot_name}'
+    shot_key = str(shot_uri)
 
     # Debug: Show what's in the manifest
     if shot_key in manifest_data:
@@ -110,7 +106,7 @@ def main(config, render_range):
         print()
 
     # Department priorities for manifest checking (matching resolve_latest_aovs hierarchy)
-    shot_department_priority = api.config.list_shot_department_names()
+    shot_department_priority = [d.name for d in list_departments('shots')]
     render_department_priority = api.config.list_render_department_names()
 
     # Sync each resolved layer/AOV combination
@@ -166,14 +162,15 @@ def main(config, render_range):
             # Sync this AOV
             print(f'Sync {layer_name}/{aov_name} from {render_department_name}/{aov_version_name}')
 
-            # Build output path
+            # Build output path using URI segments for hierarchy
+            uri_path_segments = shot_uri.segments[1:]  # Skip 'shots'
+            uri_name = '_'.join(uri_path_segments)
             output_path = (
-                api.storage.resolve('edit:/') /
-                sequence_name /
-                shot_name /
+                api.storage.resolve(Uri.parse_unsafe('edit:/')) /
+                '/'.join(uri_path_segments) /
                 layer_name /
                 aov_name /
-                f'{sequence_name}_{shot_name}.####.exr'
+                f'{uri_name}.####.exr'
             )
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -203,18 +200,15 @@ def main(config, render_range):
 
 """
 config = {
-    'sequence_name': 'string',
-    'shot_name': 'string',
+    'entity_uri': 'entity:/shots/sequence/shot',
     'purpose': 'render'  # optional
 }
 """
 
 def _is_valid_config(config):
     if not isinstance(config, dict): return False
-    if 'sequence_name' not in config: return False
-    if not isinstance(config['sequence_name'], str): return False
-    if 'shot_name' not in config: return False
-    if not isinstance(config['shot_name'], str): return False
+    if 'entity_uri' not in config: return False
+    if not isinstance(config['entity_uri'], str): return False
     return True
 
 def cli():
@@ -236,12 +230,22 @@ def cli():
     # Print config
     _headline('Config')
     print(json.dumps(config, indent=4))
-    
+
+    # Parse entity URI
+    entity_uri = Uri.parse_unsafe(config['entity_uri'])
+    if entity_uri.segments[0] != 'shots':
+        return _error(f'Invalid entity type: {entity_uri.segments[0]} (expected shots)')
+    if len(entity_uri.segments) < 3:
+        return _error(f'Invalid entity URI: {entity_uri} (expected entity:/shots/sequence/shot)')
+
+    # Get purpose from config (optional, defaults to 'render')
+    purpose = config.get('purpose', 'render')
+
     # Get the start and end frames
     render_range = BlockRange(args.start_frame, args.end_frame)
 
     # Run main
-    return main(config, render_range)
+    return main(entity_uri, purpose, render_range)
 
 if __name__ == '__main__':
     logging.basicConfig(

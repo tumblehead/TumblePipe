@@ -21,7 +21,7 @@ from tumblehead.util.io import (
     load_json,
     store_json
 )
-from tumblehead.pipe.paths import Entity
+from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Hython
 from tumblehead.farm.jobs.houdini.render import job as render_job
 
@@ -35,7 +35,8 @@ SCRIPT_PATH = Path(__file__).parent / 'export_houdini.py'
 def main(config):
 
     # Get config data
-    entity = Entity.from_json(config['entity'])
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    department_name = config['entity']['department']
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     priority = config['settings']['priority']
@@ -55,7 +56,7 @@ def main(config):
     hython = Hython()
 
     # Open a temporary directory
-    root_temp_path = fix_path(api.storage.resolve('temp:/'))
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -89,8 +90,8 @@ def main(config):
                 TH_PROJECT_PATH = path_str(to_windows_path(api.PROJECT_PATH)),
                 TH_PIPELINE_PATH = path_str(to_windows_path(api.PIPELINE_PATH)),
                 HOUDINI_PACKAGE_DIR = ';'.join([
-                    path_str(to_windows_path(api.storage.resolve('pipeline:/houdini'))),
-                    path_str(to_windows_path(api.storage.resolve('project:/_pipeline/houdini')))
+                    path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini')))),
+                    path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('project:/_pipeline/houdini'))))
                 ]),
                 OCIO = path_str(to_windows_path(Path(os.environ['OCIO'])))
             )
@@ -108,7 +109,8 @@ def main(config):
         tasks = config['tasks'].copy()
         tasks.pop('export')
         render_job.submit(dict(
-            entity = entity.to_json(),
+            entity = str(entity_uri),
+            department = department_name,
             settings = dict(
                 user_name = user_name,
                 purpose = purpose,
@@ -137,20 +139,8 @@ def main(config):
 """
 config = {
     'entity': {
-        'tag': 'asset',
-        'category_name': 'string',
-        'asset_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'shot',
-        'sequence_name': 'string',
-        'shot_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'kit',
-        'category_name': 'string',
-        'kit_name': 'string',
-        'department_name': 'string'
+        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
+        'department': 'string'
     },
     'settings': {
         'user_name': 'string',
@@ -206,20 +196,8 @@ def _is_valid_config(config):
 
     def _valid_entity(entity):
         if not isinstance(entity, dict): return False
-        if 'tag' not in entity: return False
-        match entity['tag']:
-            case 'asset':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'asset_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'shot':
-                if not _check_str(entity, 'sequence_name'): return False
-                if not _check_str(entity, 'shot_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'kit':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'kit_name'): return False
-                if not _check_str(entity, 'department_name'): return False
+        if not _check_str(entity, 'uri'): return False
+        if not _check_str(entity, 'department'): return False
         return True
     
     def _valid_settings(settings):
@@ -240,11 +218,11 @@ def _is_valid_config(config):
     
     def _valid_tasks(tasks):
 
-        def _valid_stage(stage):
-            if not isinstance(stage, dict): return False
-            if not _check_str(stage, 'input_path'): return False
-            if not _check_str(stage, 'node_path'): return False
-            if not _check_str(stage, 'channel_name'): return False
+        def _valid_export(export):
+            if not isinstance(export, dict): return False
+            if not _check_str(export, 'input_path'): return False
+            if not _check_str(export, 'node_path'): return False
+            if not _check_str(export, 'channel_name'): return False
             return True
 
         def _valid_partial_render(partial_render):
@@ -252,16 +230,16 @@ def _is_valid_config(config):
             if not _check_bool(partial_render, 'denoise'): return False
             if not _check_str(partial_render, 'channel_name'): return False
             return True
-    
+
         def _valid_full_render(full_render):
             if not isinstance(full_render, dict): return False
             if not _check_bool(full_render, 'denoise'): return False
             if not _check_str(full_render, 'channel_name'): return False
             return True
-        
+
         if not isinstance(tasks, dict): return False
-        if 'stage' in tasks:
-            if not _valid_stage(tasks['stage']): return False
+        if 'export' in tasks:
+            if not _valid_export(tasks['export']): return False
         if 'partial_render' in tasks:
             if not _valid_partial_render(tasks['partial_render']): return False
         if 'full_render' in tasks:

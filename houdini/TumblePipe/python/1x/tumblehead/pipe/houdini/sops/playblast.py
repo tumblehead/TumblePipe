@@ -7,6 +7,7 @@ import hou
 
 from tumblehead.api import path_str, fix_path, default_client
 from tumblehead.apps import mp4
+from tumblehead.config.timeline import get_frame_range, get_fps
 from tumblehead.pipe.houdini import util
 from tumblehead.pipe.houdini import nodes as ns
 from tumblehead.pipe.houdini.lops import animate
@@ -14,12 +15,14 @@ from tumblehead.pipe.paths import (
     get_next_playblast_path,
     get_latest_playblast_path,
     get_daily_path,
-    get_workfile_context,
-    ShotEntity,
-    ShotContext
+    get_workfile_context
 )
+from tumblehead.util.uri import Uri
+from tumblehead.config.department import list_departments
 
 api = default_client()
+
+DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/sops/playblast')
 
 class Playblast(ns.Node):
     def __init__(self, native):
@@ -38,9 +41,10 @@ class Playblast(ns.Node):
         return stage.GetPseudoRoot()
 
     def list_department_names(self):
-        shot_department_names = api.config.list_shot_department_names()
-        if shot_department_names is None: return []
-        default_values = api.config.resolve('defaults:/houdini/sops/playblast')
+        shot_departments = list_departments('shots')
+        if len(shot_departments) == 0: return []
+        shot_department_names = [dept.name for dept in shot_departments]
+        default_values = api.config.get_properties(DEFAULTS_URI)
         return [
             department_name
             for department_name in default_values['departments']
@@ -85,7 +89,7 @@ class Playblast(ns.Node):
         self.parm('camera').set(camera_name)
     
     def playblast(self):
-        
+
         # Find nodes
         context = self.native()
         objects_node = context.node('objects')
@@ -97,25 +101,19 @@ class Playblast(ns.Node):
         animate_node = animate.Animate(raw_animate_node)
 
         # Parameters and paths
-        entity = ShotEntity(
-            animate_node.get_sequence_name(),
-            animate_node.get_shot_name(),
-            self.get_department_names()
-        )
+        shot_uri = animate_node.get_shot_uri()
+        department_name = self.get_department_names()
         camera_path = self.get_camera_path()
-        frame_range = api.config.get_frame_range(
-            entity.sequence_name,
-            entity.shot_name
-        )
+        frame_range = get_frame_range(shot_uri)
         render_range = frame_range.full_range()
-        output_playblast_path = get_next_playblast_path(entity)
-        output_daily_path = get_daily_path(entity)
+        output_playblast_path = get_next_playblast_path(shot_uri, department_name)
+        output_daily_path = get_daily_path(shot_uri, department_name)
 
         # Set the camera path
         camera_node.parm('primpath').set(camera_path)
 
         # Work in a temporary directory
-        root_temp_path = fix_path(api.storage.resolve('temp:/'))
+        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_dir_path = Path(temp_dir)
@@ -134,7 +132,7 @@ class Playblast(ns.Node):
             mp4.from_jpg(
                 temp_framestack_path,
                 render_range,
-                api.config.get_fps(),
+                get_fps(),
                 temp_playblast_path
             )
 
@@ -153,18 +151,15 @@ class Playblast(ns.Node):
         animate_node = animate.Animate(raw_animate_node)
 
         # Parameters and paths
-        entity = ShotEntity(
-            animate_node.get_sequence_name(),
-            animate_node.get_shot_name(),
-            self.get_department_names()
-        )
-        output_playblast_path = get_latest_playblast_path(entity)
+        shot_uri = animate_node.get_shot_uri()
+        department_name = self.get_department_names()
+        output_playblast_path = get_latest_playblast_path(shot_uri, department_name)
 
         # Open playblast
         if not output_playblast_path.exists():
             return hou.ui.displayMessage(
                 (
-                    f'No playblast found for {entity}.\n'
+                    f'No playblast found for {shot_uri}.\n'
                     f'{output_playblast_path}'
                 ),
                 title='Playblast',
@@ -181,17 +176,14 @@ class Playblast(ns.Node):
         animate_node = animate.Animate(raw_animate_node)
 
         # Parameters and paths
-        entity = ShotEntity(
-            animate_node.get_sequence_name(),
-            animate_node.get_shot_name(),
-            self.get_department_names()
-        )
-        output_playblast_path = get_latest_playblast_path(entity)
+        shot_uri = animate_node.get_shot_uri()
+        department_name = self.get_department_names()
+        output_playblast_path = get_latest_playblast_path(shot_uri, department_name)
         output_path = output_playblast_path.parent
 
         # Create and open the directory containing the playblast
         output_path.mkdir(parents=True, exist_ok=True)
-        hou.ui.showInFileBrowser(f'{path_str(output_path)}/')
+        hou.ui.showInFileBrowser(f'{path_str(output_path)}')
 
 def create(scene, name):
     node_type = ns.find_node_type('playblast', 'Sop')
@@ -220,15 +212,8 @@ def on_created(raw_node):
     context = get_workfile_context(file_path)
     if context is None: return
     
-    # Set the default values
-    match context:
-        case ShotContext(
-            department_name,
-            sequence_name,
-            shot_name,
-            version_name
-            ):
-            node.set_department_name(department_name)
+    # Set the default values from context
+    node.set_department_name(context.department_name)
 
 def export():
     raw_node = hou.pwd()

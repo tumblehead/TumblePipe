@@ -82,11 +82,6 @@ class Client:
         _config_module = _load_module(self.CONFIG_CONVENTION_PATH)
         self.config = _config_module.create()
 
-        # Load render convention
-        self.RENDER_CONVENTION_PATH = config_path / 'render_convention.py'
-        _render_module = _load_module(self.RENDER_CONVENTION_PATH)
-        self.render = _render_module.create()
-
 def _env(key):
     assert key in os.environ, f'{key} environment variable not set'
     return fix_path(Path(os.environ[key]))

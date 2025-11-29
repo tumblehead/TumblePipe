@@ -7,6 +7,9 @@ import sys
 import os
 
 from .api import fix_path, path_str, Client
+from .util.uri import Uri
+from .config.timeline import get_frame_range
+from .config.department import list_departments
 from .apps.micromamba import Micromamba, parse_package_spec
 from .apps.deadline import Deadline
 
@@ -27,8 +30,7 @@ def _error(msg: str) -> int:
 
 @dataclass
 class Task:
-    sequence_name: str
-    shot_name: str
+    entity_uri: Uri
     task_path: Path
     log_path: Path
 
@@ -43,7 +45,8 @@ def _run_task(
 
     # Set up logging
     timestamp = dt.datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_path = task.log_path / f'{task.sequence_name}_{task.shot_name}_{timestamp}.log'
+    entity_display = task.entity_uri.display_name().replace('/', '_')
+    log_path = task.log_path / f'{entity_display}_{timestamp}.log'
     
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
@@ -85,12 +88,11 @@ def _run_task(
             return _error('Failed to create environment')
         
         # Run the task in the python environment
-        logging.info(f'Running task: {task.task_path} on {task.sequence_name} {task.shot_name}')
-        frame_range = api.config.get_frame_range(task.sequence_name, task.shot_name)
+        logging.info(f'Running task: {task.task_path} on {task.entity_uri.display_name()}')
+        frame_range = get_frame_range(task.entity_uri)
         render_range = frame_range.full_range()
         task_args = [
-            task.sequence_name,
-            task.shot_name,
+            str(task.entity_uri),  # entity_uri
             shot_department_name,
             render_department_name,
             pool_name,
@@ -120,30 +122,44 @@ def _run_task(
         # Done
         return 0
 
-def _scan_sequence_dirs(api: Client, shots_dir: Path) -> dict[str, list[Path]]:
-    result = dict()
-    for sequence_dir in shots_dir.iterdir():
-        if not sequence_dir.is_dir(): continue
-        sequence_name = sequence_dir.name
-        if not api.naming.is_valid_sequence_name(sequence_name): continue
-        result[sequence_name] = sequence_dir
+def _scan_entity_dirs(api: Client, parent_dir: Path) -> list[Path]:
+    """Recursively scan directories for valid entity names."""
+    result = []
+    for child_dir in parent_dir.iterdir():
+        if not child_dir.is_dir():
+            continue
+        entity_name = child_dir.name
+        if not api.naming.is_valid_entity_name(entity_name):
+            continue
+        result.append(child_dir)
+        result.extend(_scan_entity_dirs(api, child_dir))
     return result
 
-def _scan_shot_dirs(api: Client, sequence_dir: Path) -> dict[str, list[Path]]:
-    result = dict()
-    for shot_dir in sequence_dir.iterdir():
-        if not shot_dir.is_dir(): continue
-        shot_name = shot_dir.name
-        if not api.naming.is_valid_shot_name(shot_name): continue
-        result[shot_name] = shot_dir
-    return result
+def _dir_to_entity_uri(shots_dir: Path, entity_dir: Path) -> Uri:
+    """Convert a directory path to an entity URI."""
+    relative_path = entity_dir.relative_to(shots_dir)
+    return Uri.parse_unsafe(f'entity:/shots/{relative_path.as_posix()}')
+
+def _is_leaf_entity(api: Client, entity_dir: Path) -> bool:
+    """Check if directory has no valid child entities (is a leaf)."""
+    for child_dir in entity_dir.iterdir():
+        if not child_dir.is_dir():
+            continue
+        if api.naming.is_valid_entity_name(child_dir.name):
+            return False
+    return True
+
+def _matches_pattern(shots_dir: Path, entity_dir: Path, pattern: str) -> bool:
+    """Check if entity directory matches the given glob pattern."""
+    import fnmatch
+    relative_path = entity_dir.relative_to(shots_dir).as_posix()
+    return fnmatch.fnmatch(relative_path, pattern)
 
 def main(
     api: Client,
     dry_run: bool,
     task_path: Path,
-    sequence_arg: str,
-    shot_arg: str,
+    entity_pattern: str,
     shot_department_name: str,
     render_department_name: str,
     pool_name: str,
@@ -151,42 +167,26 @@ def main(
     ):
 
     # Paths
-    shots_dir = api.storage.resolve('shots:/')
-    log_dir = api.storage.resolve(f'export:/other/logs/{task_path.parent.name}')
+    shots_dir = api.storage.resolve(Uri.parse_unsafe('shots:/'))
+    log_dir = api.storage.resolve(Uri.parse_unsafe(f'export:/other/logs/{task_path.parent.name}'))
     log_dir.mkdir(parents = True, exist_ok = True)
 
     # Task list
     tasks: list[Task] = list()
 
-    # Map sequences
-    sequence_dirs = _scan_sequence_dirs(api, shots_dir)
-    if sequence_arg != '*' and sequence_arg not in sequence_dirs:
-        return _error(f'Invalid sequence: {sequence_arg}')
-    sequence_names = (
-        list(sequence_dirs.keys())
-        if sequence_arg == '*'
-        else [ sequence_arg ]
-    )
+    # Scan all entity directories
+    entity_dirs = _scan_entity_dirs(api, shots_dir)
 
-    # Iterate over sequences
-    for sequence_name in sequence_names:
-        sequence_dir = sequence_dirs[sequence_name]
+    # Filter by pattern if provided
+    if entity_pattern != '*':
+        entity_dirs = [d for d in entity_dirs if _matches_pattern(shots_dir, d, entity_pattern)]
 
-        # Map shots
-        shot_dirs = _scan_shot_dirs(api, sequence_dir)
-        if shot_arg != '*' and shot_arg not in shot_dirs:
-            return _error(f'Invalid shot: {shot_arg}')
-        shot_names = (
-            list(shot_dirs.keys())
-            if shot_arg == '*'
-            else [ shot_arg ]
-        )
-
-        # Iterate over shots
-        for shot_name in shot_names:
+    # Create tasks for leaf entities (directories with no valid child entities)
+    for entity_dir in entity_dirs:
+        if _is_leaf_entity(api, entity_dir):
+            entity_uri = _dir_to_entity_uri(shots_dir, entity_dir)
             tasks.append(Task(
-                sequence_name = sequence_name,
-                shot_name = shot_name,
+                entity_uri = entity_uri,
                 task_path = task_path,
                 log_path = log_dir
             ))
@@ -194,9 +194,9 @@ def main(
     # Run tasks
     for task in tasks:
         if dry_run:
-            logging.info(f'Would run task: {task.task_path} on {task.sequence_name} {task.shot_name}')
+            logging.info(f'Would run task: {task.task_path} on {task.entity_uri.display_name()}')
         else:
-            logging.info(f'Running task: {task.task_path} on {task.sequence_name} {task.shot_name}')
+            logging.info(f'Running task: {task.task_path} on {task.entity_uri.display_name()}')
             _run_task(
                 api,
                 task,
@@ -209,13 +209,13 @@ def main(
     # Done
     return 0
 
-def _is_valid_sequence_arg(api: Client, sequence_arg: str) -> bool:
-    if sequence_arg == '*': return True
-    return api.naming.is_valid_sequence_name(sequence_arg)
-
-def _is_valid_shot_arg(api: Client, shot_arg: str) -> bool:
-    if shot_arg == '*': return True
-    return api.naming.is_valid_shot_name(shot_arg)
+def _is_valid_entity_pattern(pattern: str) -> bool:
+    """Check if the entity pattern is valid (basic validation)."""
+    if pattern == '*':
+        return True
+    # Allow alphanumeric, underscore, forward slash, and glob wildcards
+    allowed_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_/*?[]')
+    return all(c in allowed_chars for c in pattern)
 
 def cli():
     import argparse
@@ -225,8 +225,7 @@ def cli():
     parser.add_argument('project_path', type=str, help='Path to the project directory.')
     parser.add_argument('pipeline_path', type=str, help='Path to the pipeline directory.')
     parser.add_argument('task', help='Task to perform.')
-    parser.add_argument('sequence', default='*', help='Sequence/s to process.')
-    parser.add_argument('shot', default='*', help='Shot/s to process.')
+    parser.add_argument('entity_pattern', default='*', help='Entity pattern to process (e.g., "*", "seq01/*", "season01/*/seq01/*").')
     parser.add_argument('shot_department', type=str, help='Shot department to use.')
     parser.add_argument('render_department', type=str, help='Render department to use.')
     parser.add_argument('pool', type=str, help='Pool to use.')
@@ -258,28 +257,25 @@ def cli():
     if not task_path.exists():
         parser.error(f'Invalid task: {task_name}')
 
-    # Check sequence
-    sequence_arg = args.sequence
-    if not _is_valid_sequence_arg(api, sequence_arg):
-        parser.error(f'Invalid sequence: {sequence_arg}')
-    
-    # Check shot
-    shot_arg = args.shot
-    if not _is_valid_shot_arg(api, shot_arg):
-        parser.error(f'Invalid shot: {shot_arg}')
-    
+    # Check entity pattern
+    entity_pattern = args.entity_pattern
+    if not _is_valid_entity_pattern(entity_pattern):
+        parser.error(f'Invalid entity pattern: {entity_pattern}')
+
     # Check shot department
-    shot_department_names = api.config.list_shot_department_names()
+    shot_departments = list_departments('shots')
+    shot_department_names = [d.name for d in shot_departments]
     shot_department_name = args.shot_department
     if shot_department_name not in shot_department_names:
         parser.error(f'Invalid shot department: {shot_department_name}')
 
     # Check render department
-    render_department_names = api.config.list_render_department_names()
+    render_departments = api.config.list_render_departments()
+    render_department_names = [d.name for d in render_departments]
     render_department_name = args.render_department
     if render_department_name not in render_department_names:
         parser.error(f'Invalid render department: {render_department_name}')
-    
+
     # Prepare deadline
     try: deadline = Deadline()
     except: parser.error('Failed to connect to Deadline')
@@ -289,19 +285,18 @@ def cli():
     pool_name = args.pool
     if pool_name not in pool_names:
         parser.error(f'Invalid pool: {pool_name}')
-    
+
     # Check priority
     priority = args.priority
     if not 0 <= priority <= 100:
         parser.error(f'Invalid priority: {priority}')
-    
+
     # Run main
     return main(
         api,
         args.dry_run,
         task_path,
-        sequence_arg,
-        shot_arg,
+        entity_pattern,
         shot_department_name,
         render_department_name,
         pool_name,

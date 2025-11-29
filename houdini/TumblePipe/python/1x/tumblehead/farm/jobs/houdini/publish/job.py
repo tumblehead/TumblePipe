@@ -18,7 +18,6 @@ from tumblehead.api import (
     default_client
 )
 from tumblehead.util.io import load_json
-from tumblehead.pipe.paths import Entity
 from tumblehead.apps.deadline import (
     Deadline,
     Batch,
@@ -41,20 +40,8 @@ def _error(msg):
 """
 config = {
     'entity': {
-        'tag': 'asset',
-        'category_name': 'string',
-        'asset_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'shot',
-        'sequence_name': 'string',
-        'shot_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'kit',
-        'category_name': 'string',
-        'kit_name': 'string',
-        'department_name': 'string'
+        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
+        'department': 'string'
     },
     'settings': {
         'priority': 'int',
@@ -74,10 +61,10 @@ def _is_valid_config(config):
 
     def _is_str(datum):
         return isinstance(datum, str)
-    
+
     def _is_int(datum):
         return isinstance(datum, int)
-    
+
     def _is_list(datum):
         return isinstance(datum, list)
 
@@ -85,27 +72,15 @@ def _is_valid_config(config):
         if key not in data: return False
         if not value_checker(data[key]): return False
         return True
-    
+
     _check_str = partial(_check, _is_str)
     _check_int = partial(_check, _is_int)
     _check_list = partial(_check, _is_list)
 
     def _valid_entity(entity):
         if not isinstance(entity, dict): return False
-        if 'tag' not in entity: return False
-        match entity['tag']:
-            case 'asset':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'asset_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'shot':
-                if not _check_str(entity, 'sequence_name'): return False
-                if not _check_str(entity, 'shot_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'kit':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'kit_name'): return False
-                if not _check_str(entity, 'department_name'): return False
+        if not _check_str(entity, 'uri'): return False
+        if not _check_str(entity, 'department'): return False
         return True
     
     def _valid_settings(settings):
@@ -170,9 +145,8 @@ def submit(
     ) -> int:
     
     # Config
-    entity = Entity.from_json(config['entity'])
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = get_user_name()
-    priority = config['settings']['priority']
     pool_name = config['settings']['pool_name']
     downstream_departments = config['tasks']['publish'].get('downstream_departments', [])
     
@@ -185,7 +159,7 @@ def submit(
     except: return _error('Could not connect to Deadline')
     
     # Open temporary directory
-    root_temp_path = fix_path(api.storage.resolve('temp:/'))
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -196,7 +170,7 @@ def submit(
         batch = Batch(
             f'{project_name} '
             f'publish '
-            f'{entity} '
+            f'{entity_uri} '
             f'{user_name} '
             f'{timestamp}'
             f'{downstream_suffix}'
@@ -212,12 +186,12 @@ def submit(
         # Add publish job
         publish_job = publish_task.build(config, paths, temp_path)
         notify_job = notify_task.build(dict(
-            title = f'notify publish {entity}',
+            title = f'notify publish {entity_uri}',
             priority = 90,
             pool_name = pool_name,
             user_name = user_name,
             channel_name = 'exports',
-            message = f'Published {entity}' + (f' +{len(downstream_departments)} downstream' if downstream_departments else ''),
+            message = f'Published {entity_uri}' + (f' +{len(downstream_departments)} downstream' if downstream_departments else ''),
             command = dict(
                 mode = 'notify'
             )
@@ -228,7 +202,7 @@ def submit(
         _add_jobs(batch, jobs, deps)
 
         # Submit
-        farm.submit(batch, api.storage.resolve('export:/other/jobs'))
+        farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))
 
     # Done
     return 0

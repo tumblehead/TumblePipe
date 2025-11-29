@@ -1,6 +1,6 @@
 from qtpy.QtCore import Qt, QTimer, QPoint
 from qtpy.QtWidgets import QWidget, QLabel, QVBoxLayout, QApplication
-from qtpy.QtGui import QPainter, QColor, QFont, QPixmap, QTransform
+from qtpy.QtGui import QPainter, QColor, QTransform
 from hou import qt as hqt
 import time
 
@@ -97,7 +97,7 @@ class SpinnerOverlay(QWidget):
             # Draw rotated icon
             painter.setTransform(transform)
             painter.drawPixmap(0, 0, pixmap)
-        except Exception as e:
+        except Exception:
             pass  # Fallback to simple rectangle if icon loading fails
             # Fallback: draw simple rotating white rectangle
             painter.setPen(QColor(255, 255, 255))
@@ -142,8 +142,6 @@ class SpinnerOverlay(QWidget):
             self.setGeometry(0, 0, target_rect.width(), target_rect.height())
 
             # Debug widget hierarchy
-            widget = self._target_widget
-            level = 0
 
         # Show overlay with high z-order
         self.show()

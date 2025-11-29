@@ -16,15 +16,18 @@ from tumblehead.api import (
     get_user_name,
     default_client
 )
+from tumblehead.util.uri import Uri
+from tumblehead.config.timeline import get_frame_range
+from tumblehead.config.department import list_departments
 from tumblehead.apps.deadline import (
     Deadline,
     Batch,
     Job
 )
 from tumblehead.pipe.paths import (
-    latest_shot_hip_file_path,
-    latest_shot_export_path,
-    next_shot_export_path
+    latest_hip_file_path,
+    latest_export_path,
+    next_export_path
 )
 
 api = default_client()
@@ -32,20 +35,8 @@ api = default_client()
 """
 config = {
     'entity': {
-        'tag': 'asset',
-        'category_name': 'string',
-        'asset_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'shot',
-        'sequence_name': 'string',
-        'shot_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'kit',
-        'category_name': 'string',
-        'kit_name': 'string',
-        'department_name': 'string'
+        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
+        'department': 'string'
     },
     'settings': {
         'priority': 'int',
@@ -84,20 +75,8 @@ def _is_valid_config(config):
 
     def _valid_entity(entity):
         if not isinstance(entity, dict): return False
-        if 'tag' not in entity: return False
-        match entity['tag']:
-            case 'asset':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'asset_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'shot':
-                if not _check_str(entity, 'sequence_name'): return False
-                if not _check_str(entity, 'shot_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'kit':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'kit_name'): return False
-                if not _check_str(entity, 'department_name'): return False
+        if not _check_str(entity, 'uri'): return False
+        if not _check_str(entity, 'department'): return False
         return True
     
     def _valid_settings(settings):
@@ -128,31 +107,20 @@ def _is_valid_config(config):
     if not _valid_jobs(config['tasks']): return False
     return True
 
-def _is_submissable(sequence_name, shot_name, department_name):
-    if sequence_name == '000': return False
-    if shot_name == '000': return False
-    latest_hip_file_path = latest_shot_hip_file_path(
-        sequence_name,
-        shot_name,
-        department_name
-    )
-    if latest_hip_file_path is None: return False
-    return latest_hip_file_path.exists()
+def _is_submissable(entity_uri, department_name):
+    # Skip placeholder entities (any segment with '000')
+    if '000' in entity_uri.segments:
+        return False
+    hip_path = latest_hip_file_path(entity_uri, department_name)
+    if hip_path is None: return False
+    return hip_path.exists()
 
-def _is_out_of_date(sequence_name, shot_name, department_name):
-    latest_hip_file_path = latest_shot_hip_file_path(
-        sequence_name,
-        shot_name,
-        department_name
-    )
-    latest_export_path = latest_shot_export_path(
-        sequence_name,
-        shot_name,
-        department_name
-    )
-    if latest_export_path is None: return True
-    if not latest_export_path.exists(): return True
-    return latest_hip_file_path.stat().st_mtime > latest_export_path.stat().st_mtime
+def _is_out_of_date(entity_uri, department_name):
+    hip_path = latest_hip_file_path(entity_uri, department_name)
+    export_path = latest_export_path(entity_uri, department_name)
+    if export_path is None: return True
+    if not export_path.exists(): return True
+    return hip_path.stat().st_mtime > export_path.stat().st_mtime
 
 def _error(msg):
     logging.error(msg)
@@ -161,38 +129,30 @@ def _error(msg):
 PUBLISH_SCRIPT_PATH = Path(__file__).parent / 'publish.py'
 def _create_publish_job(
     api,
-    sequence_name,
-    shot_name,
+    entity_uri,
     department_name,
     pool_name,
     priority
     ):
     logging.debug(
         f'Creating publish job for '
-        f'{sequence_name} '
-        f'{shot_name} '
+        f'{entity_uri} '
         f'{department_name}'
     )
-    
-    frame_range = api.config.get_frame_range(sequence_name, shot_name)
+
+    frame_range = get_frame_range(entity_uri)
     render_range = frame_range.full_range()
 
-    output_path = next_shot_export_path(
-        sequence_name,
-        shot_name,
-        department_name
-    )
+    output_path = next_export_path(entity_uri, department_name)
     version_name = output_path.name
     job = Job(
         to_wsl_path(PUBLISH_SCRIPT_PATH), None,
-        sequence_name,
-        shot_name,
+        str(entity_uri),
         department_name
     )
     job.name = (
         f'publish '
-        f'{sequence_name} '
-        f'{shot_name} '
+        f'{entity_uri} '
         f'{department_name} '
         f'{version_name}'
     )
@@ -249,7 +209,8 @@ def main(
     timestamp = dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
 
     # Find partment names up to and including the given department name
-    department_names = api.config.list_shot_department_names()
+    shot_departments = list_departments('shots')
+    department_names = [d.name for d in shot_departments]
     department_names = department_names[:department_names.index(department_name) + 1]
 
     # Get deadline ready
@@ -272,23 +233,19 @@ def main(
         deps[job_name] = job_deps
 
     # Create update jobs for each sequence and shot
-    for sequence_name in api.config.list_sequence_names():
-        for shot_name in api.config.list_shot_names(sequence_name):
-            prev_job_name = None
-            down_stream_changed = False
-            for department_name in department_names:
-                if not _is_submissable(sequence_name, shot_name, department_name): continue
-                out_of_date = _is_out_of_date(sequence_name, shot_name, department_name)
+    for uri in api.config.list_entities(Uri.parse_unsafe('entity:/shots/*/*')):
+        prev_job_name = None
+        down_stream_changed = False
+        for department_name in department_names:
+                if not _is_submissable(uri, department_name): continue
+                out_of_date = _is_out_of_date(uri, department_name)
                 if not down_stream_changed and not out_of_date: continue
-                job_name = (
-                    f'{sequence_name}_'
-                    f'{shot_name}_'
-                    f'{department_name}'
-                )
+                # Create job name from URI path segments
+                uri_name = '_'.join(uri.segments[1:])
+                job_name = f'{uri_name}_{department_name}'
                 job = _create_publish_job(
                     api,
-                    sequence_name,
-                    shot_name,
+                    uri,
                     department_name,
                     pool_name,
                     priority
@@ -304,7 +261,7 @@ def main(
     _add_jobs(batch, jobs, deps)
 
     # Submit
-    farm.submit(batch, api.storage.resolve('export:/other/jobs'))
+    farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))
 
     # Done
     return 0
@@ -323,7 +280,8 @@ def cli():
 
     # Check department name
     department_name = args.department_name
-    department_names = api.config.list_shot_department_names()
+    shot_departments = list_departments('shots')
+    department_names = [d.name for d in shot_departments]
     if department_name not in department_names:
         return _error(f'Invalid department name: {department_name}')
 

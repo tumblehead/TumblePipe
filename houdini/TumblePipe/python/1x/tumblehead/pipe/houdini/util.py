@@ -1,6 +1,7 @@
 import json
 
-from tumblehead.config import BlockRange, FrameRange
+from tumblehead.config.timeline import BlockRange, FrameRange
+from tumblehead.util.uri import Uri
 
 import hou
 
@@ -8,14 +9,14 @@ import hou
 # Helper functions
 ###############################################################################
 
-def list_to_menu(items):
+def list_to_menu(items: list[str]) -> list[str]:
     result = []
     for item in items:
         result.append(item)
         result.append(item)
     return result
 
-def list_to_checked_menu(items, checked):
+def list_to_checked_menu(items: list[str], checked: list[str]) -> list[str]:
     result = list()
     for item in items:
         result.append(item)
@@ -31,7 +32,7 @@ def iter_scene(prim, predicate):
         for subsubprim in iter_scene(subprim, predicate):
             yield subsubprim
 
-def get_frame_range():
+def get_frame_range() -> FrameRange:
     first_frame, last_frame = hou.playbar.frameRange()
     start_frame, end_frame = hou.playbar.playbackRange()
     start_roll = first_frame - start_frame
@@ -97,7 +98,7 @@ def get_metadata(prim):
     if not prim.HasMetadata('customData'): return None
     _metadata = prim.GetMetadata('customData')
     if _metadata is None: return None
-    if 'context' not in _metadata: return None
+    if 'uri' not in _metadata: return None
     metadata = _metadata.copy()
     metadata['inputs'] = json.loads(metadata['inputs'])
     return metadata
@@ -118,14 +119,8 @@ def remove_metadata(prim):
 def is_asset(prim):
     metadata = get_metadata(prim)
     if metadata is None: return False
-    if metadata['context'] != 'asset': return False
-    return True
-
-def is_kit(prim):
-    metadata = get_metadata(prim)
-    if metadata is None: return False
-    if metadata['context'] != 'kit': return False
-    return True
+    uri = Uri.parse_unsafe(metadata['uri'])
+    return uri.segments[0] == 'assets' if len(uri.segments) > 0 else False
 
 def is_camera(prim):
     return prim.GetTypeName() == 'Camera'
@@ -141,11 +136,6 @@ def list_assets(root):
     if not metadata_root.IsValid(): return []
     return list(map(get_metadata, iter_scene(metadata_root, is_asset)))
 
-def list_kits(prim):
-    metadat_root = prim.GetPrimAtPath('/METADATA')
-    if not metadat_root.IsValid(): return []
-    return list(map(get_metadata, iter_scene(metadat_root, is_kit)))
-
 def list_cameras(prim):
     def _get_path(prim): return str(prim.GetPath())
     return list(map(_get_path, iter_scene(prim, is_camera)))
@@ -157,3 +147,68 @@ def list_lights(prim):
 def list_render_vars(prim):
     def _get_path(prim): return str(prim.GetPath())
     return list(map(_get_path, iter_scene(prim, is_render_var)))
+
+###############################################################################
+# USD Prim Path Helpers
+###############################################################################
+
+def uri_to_prim_path(uri: Uri) -> str:
+    """
+    Convert entity URI to USD prim path by omitting first segment.
+
+    Examples:
+        entity:/shots/seq010/shot0010 -> /seq010/shot0010
+        entity:/assets/char/mom -> /char/mom
+
+    Args:
+        uri: Entity URI
+
+    Returns:
+        USD prim path string
+    """
+    segments = uri.segments[1:]  # Omit first segment (assets/shots)
+    return '/' + '/'.join(segments) if segments else '/'
+
+
+def uri_to_metadata_prim_path(uri: Uri) -> str:
+    """
+    Convert entity URI to USD metadata prim path, keeping all segments.
+
+    Examples:
+        entity:/shots/seq010/shot0010 -> /METADATA/shots/seq010/shot0010
+        entity:/assets/char/mom -> /METADATA/assets/char/mom
+
+    Args:
+        uri: Entity URI
+
+    Returns:
+        USD metadata prim path string
+    """
+    if len(uri.segments) == 0:
+        return '/METADATA'
+
+    # Build path: /METADATA/{all_segments}
+    path_segments = ['', 'METADATA'] + uri.segments
+    return '/'.join(path_segments)
+
+
+def uri_to_parent_prim_path(uri: Uri) -> str:
+    """
+    Convert entity URI to parent-level prim path.
+
+    Returns all URI segments except the entity type and last segment.
+
+    Examples:
+        entity:/assets/char/mom -> /char
+        entity:/assets/props/furniture/chair -> /props/furniture
+
+    Args:
+        uri: Entity URI
+
+    Returns:
+        USD prim path for the parent level
+    """
+    if len(uri.segments) < 3:  # Need at least: entity_type/parent/name
+        return '/'
+    parent_segments = uri.segments[1:-1]  # Everything except entity_type and last
+    return '/' + '/'.join(parent_segments)

@@ -16,30 +16,18 @@ from tumblehead.api import (
     default_client
 )
 from tumblehead.util.io import store_json
+from tumblehead.util.uri import Uri
 from tumblehead.naming import random_name
 from tumblehead.apps.deadline import Job as Task
-from tumblehead.config import BlockRange
-from tumblehead.pipe.paths import Entity
+from tumblehead.config.timeline import BlockRange
 
 api = default_client()
 
 """
 config = {
     'entity': {
-        'tag': 'asset',
-        'category_name': 'string',
-        'asset_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'shot',
-        'sequence_name': 'string',
-        'shot_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'kit',
-        'category_name': 'string',
-        'kit_name': 'string',
-        'department_name': 'string'
+        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
+        'department': 'string'
     },
     'settings': {
         'user_name': 'string',
@@ -89,20 +77,8 @@ def _is_valid_config(config):
 
     def _valid_entity(entity):
         if not isinstance(entity, dict): return False
-        if 'tag' not in entity: return False
-        match entity['tag']:
-            case 'asset':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'asset_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'shot':
-                if not _check_str(entity, 'sequence_name'): return False
-                if not _check_str(entity, 'shot_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'kit':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'kit_name'): return False
-                if not _check_str(entity, 'department_name'): return False
+        if not _check_str(entity, 'uri'): return False
+        if not _check_str(entity, 'department'): return False
         return True
     
     def _valid_settings(settings):
@@ -160,14 +136,15 @@ def build(config, paths, staging_path):
     )
 
     # Config
-    entity = Entity.from_json(config['entity'])
     priority = config['settings']['priority']
     pool_name = config['settings']['pool_name']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
 
     # Parameters
-    title = f'stage {entity}'
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    entity_display = entity_uri.display_name()
+    title = f"cloud_stage {entity_display}"
     render_range = BlockRange(first_frame, last_frame)
 
     # Task context

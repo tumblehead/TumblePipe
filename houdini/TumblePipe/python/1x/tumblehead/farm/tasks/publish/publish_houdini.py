@@ -5,13 +5,9 @@ import hou
 
 from tumblehead.api import path_str, default_client
 from tumblehead.util.io import load_json
+from tumblehead.util.uri import Uri
 from tumblehead.pipe.paths import (
-    latest_hip_file_path,
-    next_hip_file_path,
-    Entity,
-    AssetEntity,
-    ShotEntity,
-    KitEntity,
+    next_hip_file_path
 )
 from tumblehead.pipe.houdini import nodes as ns
 from tumblehead.pipe.houdini.lops import (
@@ -19,12 +15,10 @@ from tumblehead.pipe.houdini.lops import (
     import_assets,
     import_asset_layer,
     import_shot_layer,
-    import_kit_layer,
     import_render_layer,
     export_asset_layer,
     export_shot_layer,
-    export_render_layer,
-    export_kit_layer
+    export_render_layer
 )
 from tumblehead.pipe.houdini.sops import (
     import_rigs
@@ -43,7 +37,7 @@ def _error(msg):
     print(f'ERROR: {msg}')
     return 1
 
-def _update(entity):
+def _update():
 
     # Find shot build nodes
     build_shot_nodes = list(map(
@@ -67,12 +61,6 @@ def _update(entity):
     import_asset_layer_nodes = list(map(
         import_asset_layer.ImportAssetLayer,
         ns.list_by_node_type('import_asset_layer', 'Lop')
-    ))
-
-    # Find the import kit layer nodes
-    import_kit_layer_nodes = list(map(
-        import_kit_layer.ImportKitLayer,
-        ns.list_by_node_type('import_kit_layer', 'Lop')
     ))
 
     # Find the import shot layer nodes
@@ -117,14 +105,7 @@ def _update(entity):
         import_node.latest()
         import_node.execute()
         print(f'Updated {import_node.path()}')
-    
-    # Import latest kit layers
-    for import_node in import_kit_layer_nodes:
-        if not import_node.is_valid(): continue
-        import_node.latest()
-        import_node.execute()
-        print(f'Updated {import_node.path()}')
-    
+
     # Import latest shot layers
     for import_node in import_shot_layer_nodes:
         if not import_node.is_valid(): continue
@@ -145,20 +126,18 @@ def _update(entity):
         import_node.execute()
         print(f'Updated {import_node.path()}')
 
-def _publish(entity: Entity):
+def _publish(entity_uri: Uri, department_name: str):
 
     def _publish_asset(
-        category_name: str,
-        asset_name: str,
-        department_name: str    
+        asset_uri: Uri,
+        department_name: str
         ):
 
         def _is_asset_export_correct(node):
             if node.get_department_name() != department_name: return False
-            if node.get_category_name() != category_name: return False
-            if node.get_asset_name() != asset_name: return False
+            if node.get_asset_uri() != asset_uri: return False
             return True
-        
+
         # Find the export nodes
         export_nodes = list(filter(
             _is_asset_export_correct,
@@ -169,26 +148,28 @@ def _publish(entity: Entity):
         ))
 
         # Execute the export node
+        if len(export_nodes) == 0:
+            print(f'WARNING: No export node found for {asset_uri}/{department_name}')
+            print(f'Skipping export for this department')
+            return
+
         asset_export_node = export_nodes[0]
         asset_export_node.execute(force_local=True)
         print(f'Published {asset_export_node.path()}')
 
     def _publish_shot(
-        sequence_name: str,
-        shot_name: str,
-        department_name: str    
+        shot_uri: Uri,
+        department_name: str
         ):
-        
+
         def _is_shot_export_correct(node):
             if node.get_department_name() != department_name: return False
-            if node.get_sequence_name() != sequence_name: return False
-            if node.get_shot_name() != shot_name: return False
+            if node.get_shot_uri() != shot_uri: return False
             return True
 
         def _is_render_layer_export_correct(node):
             if node.get_department_name() != department_name: return False
-            if node.get_sequence_name() != sequence_name: return False
-            if node.get_shot_name() != shot_name: return False
+            if node.get_shot_uri() != shot_uri: return False
             return True
 
         # Find the export nodes
@@ -208,6 +189,11 @@ def _publish(entity: Entity):
         ))
 
         # Execute the export node
+        if len(shot_export_nodes) == 0:
+            print(f'WARNING: No export node found for {shot_uri}/{department_name}')
+            print(f'Skipping export for this department')
+            return
+
         shot_export_node = shot_export_nodes[0]
         shot_export_node.execute(force_local=True)
         print(f'Published {shot_export_node.path()}')
@@ -217,81 +203,53 @@ def _publish(entity: Entity):
             render_layer_export_node.execute()
             print(f'Published {render_layer_export_node.path()}')
 
-    def _publish_kit(
-        category_name: str,
-        kit_name: str,
-        department_name: str    
-        ):
-        
-        def _is_kit_export_correct(node):
-            if node.get_department_name() != department_name: return False
-            if node.get_category_name() != category_name: return False
-            if node.get_kit_name() != kit_name: return False
-            return True
-    
-        # Find the export nodes
-        kit_export_nodes = list(filter(
-            _is_kit_export_correct,
-            map(
-                export_kit_layer.ExportKitLayer,
-                ns.list_by_node_type('export_kit_layer', 'Lop')
-            )
-        ))
+    # Get entity type from URI
+    if entity_uri.segments[0] == 'assets':
+        _publish_asset(
+            asset_uri = entity_uri,
+            department_name = department_name
+        )
+    elif entity_uri.segments[0] == 'shots':
+        _publish_shot(
+            shot_uri = entity_uri,
+            department_name = department_name
+        )
+    else:
+        return _error(f'Invalid entity type: {entity_uri.segments[0]}')
 
-        # Execute the export node
-        kit_export_node = kit_export_nodes[0]
-        kit_export_node.execute(force_local=True)
-        print(f'Published {kit_export_node.path()}')
+def _save(entity_uri: Uri, department_name: str):
+    # Get next hip file path using Uri
+    hip_file_path = next_hip_file_path(entity_uri, department_name)
 
-    match entity:
-        case AssetEntity(category_name, asset_name, department_name):
-            _publish_asset(
-                category_name = category_name,
-                asset_name = asset_name,
-                department_name = department_name
-            )
-        case ShotEntity(sequence_name, shot_name, department_name):
-            _publish_shot(
-                sequence_name = sequence_name,
-                shot_name = shot_name,
-                department_name = department_name
-            )
-        case KitEntity(category_name, kit_name, department_name):
-            _publish_kit(
-                category_name = category_name,
-                kit_name = kit_name,
-                department_name = department_name
-            )
-        case _:
-            return _error(f'Invalid entity type: {entity}')
-
-def _save(entity: Entity):
-    hip_file_path = next_hip_file_path(entity)
     hou.hipFile.save(path_str(hip_file_path))
 
-def _load_workfile(entity: Entity, force_reload: bool = True) -> bool:
-    """Load the latest workfile for the given entity. Returns True if successful."""
-    hip_file_path = latest_hip_file_path(entity)
-    if hip_file_path is None or not hip_file_path.exists():
-        print(f'No workfile found for entity: {entity}')
+def _load_workfile(bundled_path: Path, force_reload: bool = True) -> bool:
+    """Load bundled workfile. Returns True if successful."""
+
+    # Workfile MUST be provided by job - no searching
+    if not bundled_path.exists():
+        print(f'ERROR: Bundled workfile not found: {bundled_path}')
+        print(f'The job must provide a valid workfile via workfile_path config')
         return False
-    
+
+    print(f'Loading bundled workfile: {bundled_path}')
+
     # Check if we're already in the correct workfile
     current_file = hou.hipFile.path()
-    if not force_reload and current_file == path_str(hip_file_path):
-        print(f'Already in correct workfile: {hip_file_path}')
+    if not force_reload and current_file == path_str(bundled_path):
+        print(f'Already in correct workfile: {bundled_path}')
         return True
-    
+
     try:
         hou.hipFile.load(
-            path_str(hip_file_path),
+            path_str(bundled_path),
             suppress_save_prompt = True,
             ignore_load_warnings = True
         )
-        print(f'Loaded workfile: {hip_file_path}')
+        print(f'Loaded workfile: {bundled_path}')
         return True
     except Exception as e:
-        print(f'Failed to load workfile {hip_file_path}: {e}')
+        print(f'ERROR: Failed to load workfile {bundled_path}: {e}')
         return False
 
 
@@ -301,63 +259,58 @@ def main(config) -> int:
     _headline('Parameters')
     print(f'Config: {json.dumps(config, indent=2)}')
 
+    # Read bundled workfile path from config - REQUIRED
+    if 'workfile_path' not in config:
+        print('ERROR: workfile_path not found in config')
+        print('The job must provide a bundled workfile')
+        return 1
+
+    bundled_workfile = Path(config['workfile_path'])
+    # Resolve relative to current directory (job data path)
+    if not bundled_workfile.is_absolute():
+        bundled_workfile = Path.cwd() / bundled_workfile
+
     # Parse the entity from the config
-    entity = Entity.from_json(config['entity'])
-    if entity is None:
-        return _error('Invalid entity in config')
-    
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    department_name = config['entity']['department']
+
     # Get downstream departments from config
     downstream_departments = config['tasks']['publish'].get('downstream_departments', [])
 
-    # Build list of all entities to process (main + downstream)
-    downstream_entities = [entity]
-    for department_name in downstream_departments:
-        match entity:
-            case ShotEntity(sequence_name, shot_name, _):
-                downstream_entities.append(ShotEntity(
-                    sequence_name = sequence_name,
-                    shot_name = shot_name,
-                    department_name = department_name
-                ))
-            case KitEntity(category_name, kit_name, _):
-                downstream_entities.append(KitEntity(
-                    category_name = category_name,
-                    kit_name = kit_name,
-                    department_name = department_name
-                ))
-            case AssetEntity(category_name, asset_name, _):
-                downstream_entities.append(AssetEntity(
-                    category_name = category_name,
-                    asset_name = asset_name,
-                    department_name = department_name
-                ))
-            case _: assert False, f'Unknown entity: {entity}'
+    # Build list of all entity URIs + department names to process (main + downstream)
+    downstream_entity_pairs = [(entity_uri, department_name)]
+
+    if entity_uri.segments[0] == 'shots' or entity_uri.segments[0] == 'assets':
+        for dept_name in downstream_departments:
+            downstream_entity_pairs.append((entity_uri, dept_name))
+    else:
+        return _error(f'Unknown entity type: {entity_uri.segments[0]}')
 
     # Process all entities using the same code path
     _headline('Processing Entities')
-    for entity in downstream_entities:
-        print(f'\nDepartment: {entity.department_name}')
-        
-        # Load workfile for this entity
-        if not _load_workfile(entity, force_reload = True):
-            print(f'Skipping {entity} - could not load workfile')
-            continue
-        
+    for curr_entity_uri, curr_dept_name in downstream_entity_pairs:
+        print(f'\nDepartment: {curr_dept_name}')
+
+        # Load workfile - no fallback searching
+        if not _load_workfile(bundled_workfile, force_reload = True):
+            print(f'ERROR: Failed to load bundled workfile for {curr_entity_uri}')
+            return 1
+
         try:
             # Update the scene with latest imports
             _headline('Updating')
-            _update(entity)
-            
+            _update()
+
             # Publish the department
             _headline('Publishing')
-            _publish(entity)
-            
+            _publish(curr_entity_uri, curr_dept_name)
+
             # Save new version
             _headline('Saving')
-            _save(entity)
-            
+            _save(curr_entity_uri, curr_dept_name)
+
         except Exception as e:
-            print(f'Error processing department {entity.department_name}: {e}')
+            print(f'Error processing department {curr_dept_name}: {e}')
             continue
 
     # Done

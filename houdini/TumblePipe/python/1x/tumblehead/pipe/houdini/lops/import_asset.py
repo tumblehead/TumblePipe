@@ -1,11 +1,15 @@
 import hou
 
 from tumblehead.api import default_client
+from tumblehead.util.uri import Uri
+from tumblehead.config.department import list_departments
 from tumblehead.util import result
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.lops import import_asset_layer
 
 api = default_client()
+
+DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/import_asset')
 
 def _clear_scene(dive_node, output_node):
 
@@ -25,40 +29,33 @@ def _connect(node1, node2):
 class ImportAsset(ns.Node):
     def __init__(self, native):
         super().__init__(native)
-    
-    def list_category_names(self):
-        return api.config.list_category_names()
 
-    def list_asset_names(self):
-        category_name = self.get_category_name()
-        if category_name is None: return []
-        return api.config.list_asset_names(category_name)
-    
+    def list_asset_uris(self) -> list[Uri]:
+        asset_entities = api.config.list_entities(
+            filter = Uri.parse_unsafe('entity:/assets'),
+            closure = True
+        )
+        return list(asset_entities)
+
     def list_department_names(self):
-        asset_department_names = api.config.list_asset_department_names()
-        if len(asset_department_names) == 0: return []
-        default_values = api.config.resolve('defaults:/houdini/lops/import_asset')
+        asset_departments = list_departments('assets')
+        if len(asset_departments) == 0: return []
+        asset_department_names = [dept.name for dept in asset_departments]
+        default_values = api.config.get_properties(DEFAULTS_URI)
         return [
             department_name
             for department_name in default_values['departments']
             if department_name in asset_department_names
         ]
 
-    def get_category_name(self):
-        category_names = self.list_category_names()
-        if len(category_names) == 0: return None
-        category_name = self.parm('category').eval()
-        if len(category_name) == 0: return category_names[0]
-        if category_name not in category_names: return None
-        return category_name
-
-    def get_asset_name(self):
-        asset_names = self.list_asset_names()
-        if len(asset_names) == 0: return None
-        asset_name = self.parm('asset').eval()
-        if len(asset_name) == 0: return asset_names[0]
-        if asset_name not in asset_names: return None
-        return asset_name
+    def get_asset_uri(self) -> Uri | None:
+        asset_uris = self.list_asset_uris()
+        if len(asset_uris) == 0: return None
+        asset_uri_raw = self.parm('asset').eval()
+        if len(asset_uri_raw) == 0: return asset_uris[0]
+        asset_uri = Uri.parse_unsafe(asset_uri_raw)
+        if asset_uri not in asset_uris: return None
+        return asset_uri
     
     def get_exclude_department_names(self):
         return list(filter(len, self.parm('departments').eval().split()))
@@ -76,15 +73,10 @@ class ImportAsset(ns.Node):
     def get_include_layerbreak(self):
         return bool(self.parm('include_layerbreak').eval())
 
-    def set_category_name(self, category_name):
-        category_names = self.list_category_names()
-        if category_name not in category_names: return
-        self.parm('category').set(category_name)
-
-    def set_asset_name(self, asset_name):
-        asset_names = self.list_asset_names()
-        if asset_name not in asset_names: return
-        self.parm('asset').set(asset_name)
+    def set_asset_uri(self, asset_uri: Uri):
+        asset_uris = self.list_asset_uris()
+        if asset_uri not in asset_uris: return
+        self.parm('asset').set(str(asset_uri))
     
     def set_exclude_department_names(self, exclude_department_names):
         department_names = self.list_department_names()
@@ -107,17 +99,21 @@ class ImportAsset(ns.Node):
         _clear_scene(dive_node, output_node)
 
         # Parameters
-        category_name = self.get_category_name()
-        asset_name = self.get_asset_name()
+        asset_uri = self.get_asset_uri()
         department_names = self.get_department_names()
         include_layerbreak = self.get_include_layerbreak()
+
+        # Check parameters
+        if asset_uri is None: return result.Value(None)
+
+        # Create node name from URI segments
+        uri_name = '_'.join(asset_uri.segments[1:])
 
         # Build asset layer nodes
         prev_node = None
         for department_name in department_names:
-            layer_node = import_asset_layer.create(dive_node, f'{category_name}_{asset_name}_{department_name}')
-            layer_node.set_category_name(category_name)
-            layer_node.set_asset_name(asset_name)
+            layer_node = import_asset_layer.create(dive_node, f'{uri_name}_{department_name}')
+            layer_node.set_asset_uri(asset_uri)
             layer_node.set_department_name(department_name)
             layer_node.set_include_layerbreak(False)
             layer_node.latest()
@@ -125,7 +121,7 @@ class ImportAsset(ns.Node):
             if prev_node is not None:
                 _connect(prev_node, layer_node.native())
             prev_node = layer_node.native()
-        
+
         # Connect to output
         _connect(prev_node, output_node)
 

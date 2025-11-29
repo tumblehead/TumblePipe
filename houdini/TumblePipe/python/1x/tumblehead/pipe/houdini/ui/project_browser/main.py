@@ -8,8 +8,8 @@ import hou
 from hou import qt as hqt
 
 from tumblehead.api import is_dev, path_str, default_client
-from tumblehead.config import BlockRange
-import tumblehead.pipe.context as ctx
+from tumblehead.config.timeline import BlockRange, get_frame_range
+from tumblehead.util.uri import Uri
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.ui.util import (
     center_all_network_editors,
@@ -19,23 +19,19 @@ from tumblehead.pipe.houdini import util
 from tumblehead.pipe.houdini.lops import (
     build_shot,
     export_asset_layer,
-    export_kit_layer,
     export_shot_layer,
     export_render_layer,
     import_assets,
     import_asset_layer,
-    import_kit_layer,
     import_shot_layer,
     import_render_layer,
 )
 from tumblehead.pipe.houdini.sops import export_rig, import_rigs
 from tumblehead.pipe.houdini.cops import build_comp
-from tumblehead.pipe.paths import (
-    AssetContext,
-    ShotContext,
-    KitContext,
-    get_workfile_context,
-)
+from tumblehead.pipe.paths import get_workfile_context, Context
+from tumblehead.util.io import store_json
+from tumblehead.naming import random_name
+import tumblehead.farm.jobs.houdini.propagate.job as propagate_job
 
 from .constants import AUTO_SETTINGS_DEFAULT, Section, Action, Location, FrameRangeMode
 from .helpers import (
@@ -43,11 +39,11 @@ from .helpers import (
     save_context,
     save_entity_context,
     load_module,
-    entity_from_path,
-    entity_from_context,
     path_from_context,
     file_path_from_context,
-    latest_export_path,
+    latest_export_path_from_context,
+    entity_uri_from_path,
+    get_entity_type,
 )
 from .views import WorkspaceBrowser, DepartmentBrowser, DetailsView, VersionView, SettingsView
 from .utils.async_refresh import AsyncRefreshManager
@@ -101,6 +97,14 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._global_refresh_button.setMaximumWidth(30)
         self._global_refresh_button.clicked.connect(self._global_refresh)
         workspace_header_layout.addWidget(self._global_refresh_button)
+
+        # Create the manage groups button
+        self._manage_groups_button = QtWidgets.QPushButton()
+        self._manage_groups_button.setIcon(hqt.Icon("BUTTONS_list_info"))
+        self._manage_groups_button.setToolTip("Manage entity groups")
+        self._manage_groups_button.setMaximumWidth(30)
+        self._manage_groups_button.clicked.connect(self._open_group_manager)
+        workspace_header_layout.addWidget(self._manage_groups_button)
 
         layout.addWidget(workspace_header_widget, 0, 0)
 
@@ -196,7 +200,7 @@ class ProjectBrowser(QtWidgets.QWidget):
                         # Update internal context if it was None or different
                         if self._context != detected_context:
                             self._context = detected_context
-            except Exception as e:
+            except Exception:
                 # If context detection fails, use existing context
                 pass
 
@@ -281,9 +285,6 @@ class ProjectBrowser(QtWidgets.QWidget):
 
     def _restore_preserved_state(self):
         """Restore the preserved UI state with comprehensive error handling"""
-        restored_workspace = False
-        restored_department = False
-        restored_context = False
 
         try:
             # Step 1: Restore workspace selection (most critical)
@@ -293,23 +294,21 @@ class ProjectBrowser(QtWidgets.QWidget):
                     # Verify selection was actually restored
                     current_selection = self._workspace_browser.get_selection()
                     assert current_selection == self._preserved_workspace_selection, f"Workspace selection restoration failed: expected {self._preserved_workspace_selection}, got {current_selection}"
-                    restored_workspace = True
                 except Exception as e:
                     raise RuntimeError(f"Failed to restore workspace selection: {e}")
 
             # Step 2: Restore department and context information
             if hasattr(self, '_preserved_context') and self._preserved_context:
                 try:
-                    entity = entity_from_context(self._preserved_context)
-                    assert entity is not None, f"Failed to create entity from preserved context: {self._preserved_context}"
+                    entity_uri = self._preserved_context.entity_uri
+                    assert entity_uri is not None, f"Failed to get entity_uri from preserved context: {self._preserved_context}"
 
                     # Set entity in department browser
-                    self._department_browser.set_entity(entity)
+                    self._department_browser.set_entity(entity_uri)
 
                     # Select department by name
                     if self._preserved_context.department_name:
                         self._department_browser.select(self._preserved_context.department_name)
-                        restored_department = True
 
                     # Update detail and version views
                     self._details_view.set_context(self._preserved_context)
@@ -323,7 +322,6 @@ class ProjectBrowser(QtWidgets.QWidget):
                     self._selected_workspace = path_from_context(self._preserved_context)
                     self._selected_department = (self._preserved_context.department_name, self._preserved_context.version_name)
                     self._context = self._preserved_context
-                    restored_context = True
                 except Exception as e:
                     raise RuntimeError(f"Failed to restore context: {e}")
 
@@ -407,38 +405,31 @@ class ProjectBrowser(QtWidgets.QWidget):
         from qtpy.QtCore import QTimer
         QTimer.singleShot(600, lambda: self._hide_refresh_spinner())
 
+    def _open_group_manager(self):
+        """Open the entity groups manager dialog"""
+        from tumblehead.pipe.houdini.ui.project_browser.dialogs import GroupManagerDialog
+
+        dialog = GroupManagerDialog(api, parent=self)
+        dialog.exec_()
+
+        # Refresh workspace browser after dialog closes
+        # (groups may have changed, affecting workfile paths)
+        self.refresh()
+
     def _selection(self):
         if self._selected_workspace is None:
             return None
         if self._selected_department is None:
             return None
-        workspace_name, *remain = self._selected_workspace
         department_name, version_name = self._selected_department
-        match workspace_name:
-            case "Assets":
-                category_name, asset_name = remain
-                return AssetContext(
-                    department_name=department_name,
-                    category_name=category_name,
-                    asset_name=asset_name,
-                    version_name=version_name,
-                )
-            case "Shots":
-                sequence_name, shot_name = remain
-                return ShotContext(
-                    department_name=department_name,
-                    sequence_name=sequence_name,
-                    shot_name=shot_name,
-                    version_name=version_name,
-                )
-            case "Kits":
-                category_name, kit_name = remain
-                return KitContext(
-                    department_name=department_name,
-                    category_name=category_name,
-                    kit_name=kit_name,
-                    version_name=version_name,
-                )
+        entity_uri = entity_uri_from_path(self._selected_workspace)
+        if entity_uri is None:
+            return None
+        return Context(
+            entity_uri=entity_uri,
+            department_name=department_name,
+            version_name=version_name,
+        )
 
     def _select(self, context):
         self._selected_workspace = path_from_context(context)
@@ -452,15 +443,15 @@ class ProjectBrowser(QtWidgets.QWidget):
         consistent UI state across all components.
 
         Args:
-            context: The context to display (AssetContext, ShotContext, or KitContext)
+            context: The Context to display
         """
-        entity = entity_from_context(context)
+        entity_uri = context.entity_uri
 
         # Update workspace browser (tree view) - this was often missing!
-        self._workspace_browser.select(entity)
+        self._workspace_browser.select(entity_uri)
 
         # Update department browser
-        self._department_browser.set_entity(entity)
+        self._department_browser.set_entity(entity_uri)
         self._department_browser.select(context.department_name)
 
         # Update detail and version views
@@ -474,13 +465,13 @@ class ProjectBrowser(QtWidgets.QWidget):
         try:
             self._selected_workspace = selected_path
 
-            # Convert path to entity with validation
-            selected_entity = None
+            # Convert path to entity Uri with validation
+            selected_entity_uri = None
             if selected_path is not None and len(selected_path) >= 3:  # Need at least ["Assets/Shots/Kits", "category", "item"]
-                selected_entity = entity_from_path(selected_path)
+                selected_entity_uri = entity_uri_from_path(selected_path)
 
             # Update department browser with new entity
-            self._department_browser.set_entity(selected_entity)
+            self._department_browser.set_entity(selected_entity_uri)
 
             # If we have a current context, try to maintain department selection
             if self._context is not None:
@@ -499,259 +490,88 @@ class ProjectBrowser(QtWidgets.QWidget):
             return
         uri = "/".join(selected_path[1:])
         match selected_path[0]:
-            case "Assets":
-                location_path = api.storage.resolve(f"assets:/{uri}")
-            case "Shots":
-                location_path = api.storage.resolve(f"shots:/{uri}")
-            case "Kits":
-                location_path = api.storage.resolve(f"kits:/{uri}")
+            case "assets":
+                location_path = api.storage.resolve(Uri.parse_unsafe(f"assets:/{uri}"))
+            case "shots":
+                location_path = api.storage.resolve(Uri.parse_unsafe(f"shots:/{uri}"))
         location_path.mkdir(parents=True, exist_ok=True)
         self._open_location_path(location_path)
     
     def _create_entry(self, selected_path):
-        def _create_asset_category():
-            # Prompt the user for the category name
-            category_name, accepted = QtWidgets.QInputDialog.getText(
-                self, "Create Asset Category", "Enter the category name:"
+        def _create_entity(entity_type: str, parent_path: str):
+            """Create a new entity under the given parent path.
+
+            Args:
+                entity_type: 'assets' or 'shots'
+                parent_path: The parent path (empty string for root level)
+            """
+            # Prompt for entity name
+            entity_name, accepted = QtWidgets.QInputDialog.getText(
+                self, "Add Entity", "Enter the entity name:"
             )
             if not accepted:
                 return
-            if len(category_name) == 0:
+            if len(entity_name) == 0:
                 return
 
-            # Create the asset category
-            api.config.add_category_name(category_name)
+            # Create the entity URI
+            if len(parent_path) == 0:
+                entity_uri = Uri.parse_unsafe(f'entity:/{entity_type}/{entity_name}')
+            else:
+                entity_uri = Uri.parse_unsafe(f'entity:/{entity_type}/{parent_path}/{entity_name}')
+
+            # Add the entity
+            api.config.add_entity(entity_uri)
 
             # Update the UI
             self.refresh()
 
-        def _create_asset(category_name):
-            # Prompt the user for the asset name
-            asset_name, accepted = QtWidgets.QInputDialog.getText(
-                self, "Create Asset", "Enter the asset name:"
-            )
-            if not accepted:
-                return
-            if len(asset_name) == 0:
-                return
+        # Handle empty selection
+        if len(selected_path) == 0:
+            return
 
-            # Create the asset
-            api.config.add_asset_name(category_name, asset_name)
+        # Extract entity type and parent path
+        entity_type = selected_path[0]  # 'assets' or 'shots'
+        parent_path = '/'.join(selected_path[1:])  # empty string if at root
 
-            # Update the UI
-            self.refresh()
-
-        def _create_shot_sequence():
-            # Prompt the user for the sequence name
-            sequence_name, accepted = QtWidgets.QInputDialog.getText(
-                self, "Create Shot Sequence", "Enter the sequence name:"
-            )
-            if not accepted:
-                return
-            if len(sequence_name) == 0:
-                return
-
-            # Create the shot sequence
-            api.config.add_sequence_name(sequence_name)
-
-            # Update the UI
-            self.refresh()
-
-        def _create_shot(sequence_name):
-            # Prompt the user for the shot name
-            shot_name, accepted = QtWidgets.QInputDialog.getText(
-                self, "Create Shot", "Enter the shot name:"
-            )
-            if not accepted:
-                return
-            if len(shot_name) == 0:
-                return
-
-            # Create the shot
-            api.config.add_shot_name(sequence_name, shot_name)
-
-            # Update the UI
-            self.refresh()
-
-        def _create_kit_category():
-            # Prompt the user for the category name
-            category_name, accepted = QtWidgets.QInputDialog.getText(
-                self, "Create Kit Category", "Enter the category name:"
-            )
-            if not accepted:
-                return
-            if len(category_name) == 0:
-                return
-
-            # Create the kit category
-            api.config.add_kit_category_name(category_name)
-
-            # Update the UI
-            self.refresh()
-
-        def _create_kit(category_name):
-            # Prompt the user for the kit name
-            kit_name, accepted = QtWidgets.QInputDialog.getText(
-                self, "Create Kit", "Enter the kit name:"
-            )
-            if not accepted:
-                return
-            if len(kit_name) == 0:
-                return
-
-            # Create the kit
-            api.config.add_kit_name(category_name, kit_name)
-
-            # Update the UI
-            self.refresh()
-
-        match len(selected_path):
-            case 0:
-                return
-            case 1:
-                match selected_path[0]:
-                    case "Assets":
-                        _create_asset_category()
-                    case "Shots":
-                        _create_shot_sequence()
-                    case "Kits":
-                        _create_kit_category()
-            case 2:
-                match selected_path[0]:
-                    case "Assets":
-                        category_name = selected_path[1]
-                        _create_asset(category_name)
-                    case "Shots":
-                        sequence_name = selected_path[1]
-                        _create_shot(sequence_name)
-                    case "Kits":
-                        category_name = selected_path[1]
-                        _create_kit(category_name)
+        # Create the entity
+        _create_entity(entity_type, parent_path)
     
     def _remove_entry(self, selected_path):
-        def _remove_asset_category(category_name):
+        def _remove_entity(entity_uri: Uri):
+            """Remove an entity after user confirmation."""
+            # Display the full path (excluding entity type)
+            display_name = '/'.join(entity_uri.segments[1:])
+
             # Prompt the user to confirm the removal
             result = QtWidgets.QMessageBox.question(
                 self,
-                "Remove Asset Category",
-                f"Are you sure you want to remove the asset category: {category_name}?",
+                "Remove Entity",
+                f"Are you sure you want to remove: {display_name}?",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
             )
             if result != QtWidgets.QMessageBox.Yes:
                 return
 
-            # Remove the asset category
-            api.config.remove_category_name(category_name)
+            # Remove the entity
+            api.config.remove_entity(entity_uri)
 
             # Update the UI
             self.refresh()
 
-        def _remove_asset(category_name, asset_name):
-            # Prompt the user to confirm the removal
-            result = QtWidgets.QMessageBox.question(
-                self,
-                "Remove Asset",
-                f"Are you sure you want to remove the asset: {category_name}/{asset_name}?",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            )
-            if result != QtWidgets.QMessageBox.Yes:
-                return
+        # Convert path to URI and remove
+        if len(selected_path) < 2:
+            return  # Need at least entity type + one segment
 
-            # Remove the asset
-            api.config.remove_asset_name(category_name, asset_name)
-
-            # Update the UI
-            self.refresh()
-
-        def _remove_sequence(sequence_name):
-            # Prompt the user to confirm the removal
-            result = QtWidgets.QMessageBox.question(
-                self,
-                "Remove Sequence",
-                f"Are you sure you want to remove the sequence: {sequence_name}?",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            )
-            if result != QtWidgets.QMessageBox.Yes:
-                return
-
-            # Remove the sequence
-            api.config.remove_sequence_name(sequence_name)
-
-            # Update the UI
-            self.refresh()
-
-        def _remove_shot(sequence_name, shot_name):
-            # Prompt the user to confirm the removal
-            result = QtWidgets.QMessageBox.question(
-                self,
-                "Remove Shot",
-                f"Are you sure you want to remove the shot: {sequence_name}/{shot_name}?",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            )
-            if result != QtWidgets.QMessageBox.Yes:
-                return
-
-            # Remove the shot
-            api.config.remove_shot_name(sequence_name, shot_name)
-
-            # Update the UI
-            self.refresh()
-
-        def _remove_kit_category(category_name):
-            # Prompt the user to confirm the removal
-            result = QtWidgets.QMessageBox.question(
-                self,
-                "Remove Kit Category",
-                f"Are you sure you want to remove the kit category: {category_name}?",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            )
-            if result != QtWidgets.QMessageBox.Yes:
-                return
-
-            # Remove the kit category
-            api.config.remove_kit_category_name(category_name)
-
-            # Update the UI
-            self.refresh()
-
-        def _remove_kit(category_name, kit_name):
-            # Prompt the user to confirm the removal
-            result = QtWidgets.QMessageBox.question(
-                self,
-                "Remove Kit",
-                f"Are you sure you want to remove the kit: {category_name}/{kit_name}?",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            )
-            if result != QtWidgets.QMessageBox.Yes:
-                return
-
-            # Remove the kit
-            api.config.remove_kit_name(category_name, kit_name)
-
-            # Update the UI
-            self.refresh()
-
-        # Identify the selected path
-        match selected_path:
-            case ["Assets", category_name]:
-                _remove_asset_category(category_name)
-            case ["Assets", category_name, asset_name]:
-                _remove_asset(category_name, asset_name)
-            case ["Shots", sequence_name]:
-                _remove_sequence(sequence_name)
-            case ["Shots", sequence_name, shot_name]:
-                _remove_shot(sequence_name, shot_name)
-            case ["Kits", category_name]:
-                _remove_kit_category(category_name)
-            case ["Kits", category_name, kit_name]:
-                _remove_kit(category_name, kit_name)
+        entity_uri = Uri.parse_unsafe(f'entity:/{"/".join(selected_path)}')
+        _remove_entity(entity_uri)
         
     def _department_changed(self, payload):
         """Handle department selection change with auto_save flag"""
         context, auto_save = payload
         # Don't update _selected_department immediately - let _open_scene handle it after save prompt
         new_department = (context.department_name, context.version_name)
-        success = self._open_scene(auto_save=auto_save, new_department=new_department)
+        self._open_scene(auto_save=auto_save, new_department=new_department)
         # Note: No need to handle return value here - _open_scene handles all state updates internally
 
     def _on_auto_refresh_changed(self, enabled):
@@ -759,36 +579,32 @@ class ProjectBrowser(QtWidgets.QWidget):
         # Update the auto settings to reflect the new refresh setting
         self._auto_settings[Section.Asset][Action.Refresh] = enabled
         self._auto_settings[Section.Shot][Action.Refresh] = enabled
-        self._auto_settings[Section.Kit][Action.Refresh] = enabled
         
     def _department_open_location(self, context):
         if self._selected_workspace is None:
             return
-        workspace, *remain = self._selected_workspace
+        entity_uri = entity_uri_from_path(self._selected_workspace)
+        if entity_uri is None:
+            return
         department_name = context.department_name
-        match workspace:
-            case "Assets":
-                category_name, asset_name = remain
-                location_path = api.storage.resolve(
-                    f"assets:/{category_name}/{asset_name}/{department_name}"
-                )
-            case "Shots":
-                sequence_name, shot_name = remain
-                location_path = api.storage.resolve(
-                    f"shots:/{sequence_name}/{shot_name}/{department_name}"
-                )
-            case "Kits":
-                category_name, kit_name = remain
-                location_path = api.storage.resolve(
-                    f"kits:/{category_name}/{kit_name}/{department_name}"
-                )
+        entity_type = entity_uri.segments[0]
+        entity_path = '/'.join(entity_uri.segments[1:])
+        match entity_type:
+            case "assets":
+                location_path = api.storage.resolve(Uri.parse_unsafe(
+                    f"assets:/{entity_path}/{department_name}"
+                ))
+            case "shots":
+                location_path = api.storage.resolve(Uri.parse_unsafe(
+                    f"shots:/{entity_path}/{department_name}"
+                ))
         location_path.mkdir(parents=True, exist_ok=True)
         self._open_location_path(location_path)
         
     def _department_reload_scene(self, _context):
         if self._selected_workspace is None:
             return
-        success = self._open_scene(True)
+        self._open_scene(True)
         # Note: No need to handle return value - this is a reload, state remains the same
         
     def _department_new_from_current(self, context):
@@ -801,37 +617,15 @@ class ProjectBrowser(QtWidgets.QWidget):
         if self._selected_workspace is None:
             return
 
-        workspace_name, *remain = self._selected_workspace
         department_name = context.department_name
-
-        # Construct target context based on workspace type (version_name=None for new version)
-        match workspace_name:
-            case "Assets":
-                category_name, asset_name = remain
-                selected_context = AssetContext(
-                    department_name=department_name,
-                    category_name=category_name,
-                    asset_name=asset_name,
-                    version_name=None  # Creating new version
-                )
-            case "Shots":
-                sequence_name, shot_name = remain
-                selected_context = ShotContext(
-                    department_name=department_name,
-                    sequence_name=sequence_name,
-                    shot_name=shot_name,
-                    version_name=None  # Creating new version
-                )
-            case "Kits":
-                category_name, kit_name = remain
-                selected_context = KitContext(
-                    department_name=department_name,
-                    category_name=category_name,
-                    kit_name=kit_name,
-                    version_name=None  # Creating new version
-                )
-            case _:
-                return
+        entity_uri = entity_uri_from_path(self._selected_workspace)
+        if entity_uri is None:
+            return
+        selected_context = Context(
+            entity_uri=entity_uri,
+            department_name=department_name,
+            version_name=None  # Creating new version
+        )
 
         # Maybe save changes (state not modified yet, so safe to cancel)
         success = self._save_changes()
@@ -862,37 +656,15 @@ class ProjectBrowser(QtWidgets.QWidget):
         if self._selected_workspace is None:
             return
 
-        workspace_name, *remain = self._selected_workspace
         department_name = context.department_name
-
-        # Construct target context based on workspace type (version_name=None for new version)
-        match workspace_name:
-            case "Assets":
-                category_name, asset_name = remain
-                selected_context = AssetContext(
-                    department_name=department_name,
-                    category_name=category_name,
-                    asset_name=asset_name,
-                    version_name=None  # Creating new version
-                )
-            case "Shots":
-                sequence_name, shot_name = remain
-                selected_context = ShotContext(
-                    department_name=department_name,
-                    sequence_name=sequence_name,
-                    shot_name=shot_name,
-                    version_name=None  # Creating new version
-                )
-            case "Kits":
-                category_name, kit_name = remain
-                selected_context = KitContext(
-                    department_name=department_name,
-                    category_name=category_name,
-                    kit_name=kit_name,
-                    version_name=None  # Creating new version
-                )
-            case _:
-                return
+        entity_uri = entity_uri_from_path(self._selected_workspace)
+        if entity_uri is None:
+            return
+        selected_context = Context(
+            entity_uri=entity_uri,
+            department_name=department_name,
+            version_name=None  # Creating new version
+        )
 
         # Maybe save changes (state not modified yet, so safe to cancel)
         success = self._save_changes()
@@ -965,9 +737,9 @@ class ProjectBrowser(QtWidgets.QWidget):
             self._update_scene()
 
             # Update the details and versions view
-            entity = entity_from_context(self._context)
-            self._workspace_browser.select(entity)
-            self._department_browser.set_entity(entity)
+            entity_uri = self._context.entity_uri
+            self._workspace_browser.select(entity_uri)
+            self._department_browser.set_entity(entity_uri)
             # Department selection is handled by confirm_selection() in _open_scene() - don't call select() here
             self._details_view.set_context(self._context)
             self._version_view.set_context(self._context)
@@ -995,36 +767,15 @@ class ProjectBrowser(QtWidgets.QWidget):
             # Construct target context directly from workspace + new_department
             if self._selected_workspace is None:
                 return False
-            workspace_name, *remain = self._selected_workspace
             department_name, version_name = new_department
-
-            match workspace_name:
-                case "Assets":
-                    category_name, asset_name = remain
-                    selected_context = AssetContext(
-                        department_name=department_name,
-                        category_name=category_name,
-                        asset_name=asset_name,
-                        version_name=version_name,
-                    )
-                case "Shots":
-                    sequence_name, shot_name = remain
-                    selected_context = ShotContext(
-                        department_name=department_name,
-                        sequence_name=sequence_name,
-                        shot_name=shot_name,
-                        version_name=version_name,
-                    )
-                case "Kits":
-                    category_name, kit_name = remain
-                    selected_context = KitContext(
-                        department_name=department_name,
-                        category_name=category_name,
-                        kit_name=kit_name,
-                        version_name=version_name,
-                    )
-                case _:
-                    return False
+            entity_uri = entity_uri_from_path(self._selected_workspace)
+            if entity_uri is None:
+                return False
+            selected_context = Context(
+                entity_uri=entity_uri,
+                department_name=department_name,
+                version_name=version_name,
+            )
         else:
             # Use existing selection logic for other cases (reload, etc.)
             selected_context = self._selection()
@@ -1160,19 +911,17 @@ class ProjectBrowser(QtWidgets.QWidget):
             hou.ui.displayMessage(f"Error saving scene: {str(e)}", severity=hou.severityType.Error)
         
     def _update_scene(self):
-        # Refresh the scene
-        match self._context:
-            case AssetContext(_, _, _):
-                if self._auto_settings[Section.Asset][Action.Refresh]:
-                    self._refresh_scene()
-            case ShotContext(_, _, _):
-                if self._auto_settings[Section.Shot][Action.Refresh]:
-                    self._refresh_scene()
-            case KitContext(_, _, _):
-                if self._auto_settings[Section.Kit][Action.Refresh]:
-                    self._refresh_scene()
-            case None:
-                return
+        # Refresh the scene based on entity type
+        if self._context is None:
+            return
+
+        entity_type = get_entity_type(self._context.entity_uri)
+        if entity_type == 'asset':
+            if self._auto_settings[Section.Asset][Action.Refresh]:
+                self._refresh_scene()
+        elif entity_type == 'shot':
+            if self._auto_settings[Section.Shot][Action.Refresh]:
+                self._refresh_scene()
 
         # Set the frame range
         self._set_frame_range(FrameRangeMode.Padded)
@@ -1199,14 +948,6 @@ class ProjectBrowser(QtWidgets.QWidget):
             map(
                 import_asset_layer.ImportAssetLayer,
                 ns.list_by_node_type("import_asset_layer", "Lop"),
-            )
-        )
-
-        # Find the import kit layer nodes
-        import_kit_layer_nodes = list(
-            map(
-                import_kit_layer.ImportKitLayer,
-                ns.list_by_node_type("import_kit_layer", "Lop"),
             )
         )
 
@@ -1255,13 +996,6 @@ class ProjectBrowser(QtWidgets.QWidget):
             import_node.latest()
             import_node.execute()
 
-        # Import latest kit layers
-        for import_node in import_kit_layer_nodes:
-            if not import_node.is_valid():
-                continue
-            import_node.latest()
-            import_node.execute()
-
         # Import latest shot layers
         for import_node in import_shot_layer_nodes:
             if not import_node.is_valid():
@@ -1296,36 +1030,28 @@ class ProjectBrowser(QtWidgets.QWidget):
         # Prepare to initialize the scene
         scene_node = hou.node("/stage")
 
-        # Initialize the scene
-        match self._context:
-            case AssetContext(department_name, category_name, asset_name, _):
-                template_name = (
-                    f"{category_name}_{asset_name}_{department_name}_template"
-                )
-                template_path = api.storage.resolve(
-                    f"config:/templates/assets/{department_name}/template.py"
-                )
-                template = load_module(template_path, template_name)
-                template.create(scene_node, category_name, asset_name)
-            case ShotContext(department_name, sequence_name, shot_name, _):
-                template_name = (
-                    f"{sequence_name}_{shot_name}_{department_name}_template"
-                )
-                template_path = api.storage.resolve(
-                    f"config:/templates/shots/{department_name}/template.py"
-                )
-                template = load_module(template_path, template_name)
-                template.create(scene_node, sequence_name, shot_name)
-            case KitContext(department_name, category_name, kit_name, _):
-                template_name = (
-                    f"{category_name}_{kit_name}_{department_name}_template"
-                )
-                template_path = api.storage.resolve(
-                    f"config:/templates/kits/{department_name}/template.py"
-                )
-                template = load_module(template_path, template_name)
-                template.create(scene_node, category_name, kit_name)
-        
+        # Initialize the scene based on entity type
+        entity_type = get_entity_type(self._context.entity_uri)
+        department_name = self._context.department_name
+
+        # Create unique template module name from URI segments
+        uri_name = '_'.join(self._context.entity_uri.segments[1:])
+
+        if entity_type == 'asset':
+            template_name = f"{uri_name}_{department_name}_template"
+            template_path = api.storage.resolve(Uri.parse_unsafe(
+                f"config:/templates/assets/{department_name}/template.py"
+            ))
+            template = load_module(template_path, template_name)
+            template.create(scene_node, self._context.entity_uri)
+        elif entity_type == 'shot':
+            template_name = f"{uri_name}_{department_name}_template"
+            template_path = api.storage.resolve(Uri.parse_unsafe(
+                f"config:/templates/shots/{department_name}/template.py"
+            ))
+            template = load_module(template_path, template_name)
+            template.create(scene_node, self._context.entity_uri)
+
         # Layout the scene
         scene_node.layoutChildren()
         
@@ -1334,242 +1060,237 @@ class ProjectBrowser(QtWidgets.QWidget):
         if self._context is None:
             return
 
+        entity_type = get_entity_type(self._context.entity_uri)
+        department_name = self._context.department_name
+
         def _is_asset_export_correct(node):
-            match self._context:
-                case AssetContext(department_name, category_name, asset_name, _):
-                    if node.get_department_name() != department_name:
-                        return False
-                    if node.get_category_name() != category_name:
-                        return False
-                    if node.get_asset_name() != asset_name:
-                        return False
-                    return True
-                case _:
-                    return False
+            if entity_type != 'asset':
+                return False
+            if node.get_department_name() != department_name:
+                return False
+            if node.get_asset_uri() != self._context.entity_uri:
+                return False
+            return True
 
         def _is_rig_export_correct(node):
-            match self._context:
-                case AssetContext(department_name, category_name, asset_name, _):
-                    if department_name != "rig":
-                        return False
-                    if node.get_category_name() != category_name:
-                        return False
-                    if node.get_asset_name() != asset_name:
-                        return False
-                    return True
-                case _:
-                    return False
+            if entity_type != 'asset':
+                return False
+            if department_name != "rig":
+                return False
+            if node.get_asset_uri() != self._context.entity_uri:
+                return False
+            return True
 
         def _is_shot_export_correct(node):
-            match self._context:
-                case ShotContext(department_name, sequence_name, shot_name, _):
-                    if node.get_department_name() != department_name:
-                        return False
-                    if node.get_sequence_name() != sequence_name:
-                        return False
-                    if node.get_shot_name() != shot_name:
-                        return False
-                    return True
-                case _:
-                    return False
+            if entity_type != 'shot':
+                return False
+            if node.get_department_name() != department_name:
+                return False
+            shot_uri = node.get_shot_uri()
+            if shot_uri != self._context.entity_uri:
+                return False
+            return True
 
         def _is_render_layer_export_correct(node):
-            match self._context:
-                case ShotContext(department_name, sequence_name, shot_name, _):
-                    if node.get_department_name() != department_name:
-                        return False
-                    if node.get_sequence_name() != sequence_name:
-                        return False
-                    if node.get_shot_name() != shot_name:
-                        return False
-                    return True
-                case _:
-                    return False
-
-        def _is_kit_export_correct(node):
-            match self._context:
-                case KitContext(department_name, category_name, kit_name, _):
-                    if node.get_department_name() != department_name:
-                        return False
-                    if node.get_category_name() != category_name:
-                        return False
-                    if node.get_kit_name() != kit_name:
-                        return False
-                    return True
-                case _:
-                    return False
+            if entity_type != 'shot':
+                return False
+            if node.get_department_name() != department_name:
+                return False
+            shot_uri = node.get_shot_uri()
+            if shot_uri != self._context.entity_uri:
+                return False
+            return True
 
         # Find the export node with the correct workspace and department
-        match self._context:
-            case AssetContext("rig", _, _, _):
-                # Find the export nodes
-                rig_export_nodes = list(
-                    filter(
-                        _is_rig_export_correct,
-                        map(
-                            export_rig.ExportRig,
-                            ns.list_by_node_type("export_rig", "Sop"),
-                        ),
-                    )
+        if entity_type == 'asset' and department_name == 'rig':
+            # Find the export nodes
+            rig_export_nodes = list(
+                filter(
+                    _is_rig_export_correct,
+                    map(
+                        export_rig.ExportRig,
+                        ns.list_by_node_type("export_rig", "Sop"),
+                    ),
                 )
+            )
 
-                # Check if we have any export nodes, report if not
-                if len(rig_export_nodes) == 0:
-                    if ignore_missing_export:
-                        return
-                    hou.ui.displayMessage(
-                        "No rig export nodes found for the current asset.",
-                        severity=hou.severityType.Warning,
-                    )
+            # Check if we have any export nodes, report if not
+            if len(rig_export_nodes) == 0:
+                if ignore_missing_export:
                     return
-
-                # Check if there are more than one export nodes, report if so
-                if len(rig_export_nodes) > 1:
-                    hou.ui.displayMessage(
-                        "More than one rig export node found for the current asset.",
-                        severity=hou.severityType.Warning,
-                    )
-                    return
-
-                # Execute the export node
-                rig_export_node = rig_export_nodes[0]
-                rig_export_node.execute()
-
-            case AssetContext(_, _, _, _):
-                # Find the export nodes
-                asset_export_nodes = list(
-                    filter(
-                        _is_asset_export_correct,
-                        map(
-                            export_asset_layer.ExportAssetLayer,
-                            ns.list_by_node_type("export_asset_layer", "Lop"),
-                        ),
-                    )
+                hou.ui.displayMessage(
+                    "No rig export nodes found for the current asset.",
+                    severity=hou.severityType.Warning,
                 )
+                return
 
-                # Check if we have any export nodes, report if not
-                if len(asset_export_nodes) == 0:
-                    if ignore_missing_export:
-                        return
-                    hou.ui.displayMessage(
-                        "No export nodes found for the current asset.",
-                        severity=hou.severityType.Warning,
-                    )
-                    return
-
-                # Check if there are more than one export nodes, report if so
-                if len(asset_export_nodes) > 1:
-                    hou.ui.displayMessage(
-                        "More than one export node found for the current asset.",
-                        severity=hou.severityType.Warning,
-                    )
-                    return
-
-                # Execute the export node
-                asset_export_node = asset_export_nodes[0]
-                asset_export_node.execute()
-
-            case ShotContext(_, _, _, _):
-                # Find any build shot nodes
-                build_shot_nodes = list(
-                    map(build_shot.BuildShot, ns.list_by_node_type("build_shot", "Lop"))
+            # Check if there are more than one export nodes, report if so
+            if len(rig_export_nodes) > 1:
+                hou.ui.displayMessage(
+                    "More than one rig export node found for the current asset.",
+                    severity=hou.severityType.Warning,
                 )
+                return
 
-                # Temporarily disable procedurals
-                build_node_include_procedurals = {
-                    build_shot_node.path(): build_shot_node.get_include_procedurals()
-                    for build_shot_node in build_shot_nodes
-                }
-                for build_shot_node in build_shot_nodes:
-                    build_shot_node.set_include_procedurals(False)
+            # Execute the export node
+            rig_export_node = rig_export_nodes[0]
+            rig_export_node.execute()
 
-                # Find the export nodes
-                shot_export_nodes = list(
-                    filter(
-                        _is_shot_export_correct,
-                        map(
-                            export_shot_layer.ExportShotLayer,
-                            ns.list_by_node_type("export_shot_layer", "Lop"),
-                        ),
-                    )
+        elif entity_type == 'asset':
+            # Find the export nodes
+            asset_export_nodes = list(
+                filter(
+                    _is_asset_export_correct,
+                    map(
+                        export_asset_layer.ExportAssetLayer,
+                        ns.list_by_node_type("export_asset_layer", "Lop"),
+                    ),
                 )
-                render_layer_export_nodes = list(
-                    filter(
-                        _is_render_layer_export_correct,
-                        map(
-                            export_render_layer.ExportRenderLayer,
-                            ns.list_by_node_type("export_render_layer", "Lop"),
-                        ),
-                    )
+            )
+
+            # Check if we have any export nodes, report if not
+            if len(asset_export_nodes) == 0:
+                if ignore_missing_export:
+                    return
+                hou.ui.displayMessage(
+                    "No export nodes found for the current asset.",
+                    severity=hou.severityType.Warning,
                 )
+                return
 
-                # Check if we have any export nodes, report if not
-                if len(shot_export_nodes) == 0:
-                    if ignore_missing_export:
-                        return
-                    hou.ui.displayMessage(
-                        "No export nodes found for the current shot.",
-                        severity=hou.severityType.Warning,
-                    )
-                    return
-
-                # Check if there are more than one export nodes, report if so
-                if len(shot_export_nodes) > 1:
-                    hou.ui.displayMessage(
-                        "More than one export node found for the current shot.",
-                        severity=hou.severityType.Warning,
-                    )
-                    return
-
-                # Execute the export node
-                shot_export_node = shot_export_nodes[0]
-                shot_export_node.execute()
-
-                # Export the render layers
-                for render_layer_export_node in render_layer_export_nodes:
-                    render_layer_export_node.execute()
-
-                # Re-enable procedurals
-                for build_shot_node in build_shot_nodes:
-                    include_procedurals = build_node_include_procedurals[
-                        build_shot_node.path()
-                    ]
-                    build_shot_node.set_include_procedurals(include_procedurals)
-
-            case KitContext(_, _, _, _):
-                # Find the export nodes
-                kit_export_nodes = list(
-                    filter(
-                        _is_kit_export_correct,
-                        map(
-                            export_kit_layer.ExportKitLayer,
-                            ns.list_by_node_type("export_kit_layer", "Lop"),
-                        ),
-                    )
+            # Check if there are more than one export nodes, report if so
+            if len(asset_export_nodes) > 1:
+                hou.ui.displayMessage(
+                    "More than one export node found for the current asset.",
+                    severity=hou.severityType.Warning,
                 )
+                return
 
-                # Check if we have any export nodes, report if not
-                if len(kit_export_nodes) == 0:
-                    if ignore_missing_export:
-                        return
-                    hou.ui.displayMessage(
-                        "No export nodes found for the current kit.",
-                        severity=hou.severityType.Warning,
-                    )
+            # Execute the export node
+            asset_export_node = asset_export_nodes[0]
+            asset_export_node.execute()
+
+        elif entity_type == 'shot':
+            # Find any build shot nodes
+            build_shot_nodes = list(
+                map(build_shot.BuildShot, ns.list_by_node_type("build_shot", "Lop"))
+            )
+
+            # Temporarily disable procedurals
+            build_node_include_procedurals = {
+                build_shot_node.path(): build_shot_node.get_include_procedurals()
+                for build_shot_node in build_shot_nodes
+            }
+            for build_shot_node in build_shot_nodes:
+                build_shot_node.set_include_procedurals(False)
+
+            # Find the export nodes
+            shot_export_nodes = list(
+                filter(
+                    _is_shot_export_correct,
+                    map(
+                        export_shot_layer.ExportShotLayer,
+                        ns.list_by_node_type("export_shot_layer", "Lop"),
+                    ),
+                )
+            )
+            render_layer_export_nodes = list(
+                filter(
+                    _is_render_layer_export_correct,
+                    map(
+                        export_render_layer.ExportRenderLayer,
+                        ns.list_by_node_type("export_render_layer", "Lop"),
+                    ),
+                )
+            )
+
+            # Check if we have any export nodes, report if not
+            if len(shot_export_nodes) == 0:
+                if ignore_missing_export:
                     return
+                hou.ui.displayMessage(
+                    "No export nodes found for the current shot.",
+                    severity=hou.severityType.Warning,
+                )
+                return
 
-                # Check if there are more than one export nodes, report if so
-                if len(kit_export_nodes) > 1:
-                    hou.ui.displayMessage(
-                        "More than one export node found for the current kit.",
-                        severity=hou.severityType.Warning,
-                    )
-                    return
+            # Check if there are more than one export nodes, report if so
+            if len(shot_export_nodes) > 1:
+                hou.ui.displayMessage(
+                    "More than one export node found for the current shot.",
+                    severity=hou.severityType.Warning,
+                )
+                return
 
-                # Execute the export node
-                kit_export_node = kit_export_nodes[0]
-                kit_export_node.execute()
+            # Execute the export node
+            shot_export_node = shot_export_nodes[0]
+            shot_export_node.execute()
+
+            # Export the render layers
+            for render_layer_export_node in render_layer_export_nodes:
+                render_layer_export_node.execute()
+
+            # Re-enable procedurals
+            for build_shot_node in build_shot_nodes:
+                include_procedurals = build_node_include_procedurals[
+                    build_shot_node.path()
+                ]
+                build_shot_node.set_include_procedurals(include_procedurals)
         
+    def _submit_propagate_job(self):
+        if self._context is None:
+            return
+
+        if not self._settings_view.get_auto_propagate_enabled():
+            return
+
+        # Get propagation settings
+        priority = self._settings_view.get_propagation_priority()
+        pool_name = self._settings_view.get_propagation_pool()
+
+        # Create entity dict from context
+        entity_dict = {
+            'uri': str(self._context.entity_uri),
+            'department': self._context.department_name
+        }
+
+        # Get frame range for job
+        frame_range = BlockRange(1, 1)
+        entity_type = get_entity_type(self._context.entity_uri)
+        if entity_type == 'shot':
+            shot_frame_range = get_frame_range(self._context.entity_uri)
+            if shot_frame_range is not None:
+                frame_range = shot_frame_range.full_range()
+
+        config = {
+            'entity': entity_dict,
+            'settings': {
+                'priority': priority,
+                'pool_name': pool_name,
+                'first_frame': frame_range.first_frame,
+                'last_frame': frame_range.last_frame
+            }
+        }
+
+        # Create temp directory for config
+        import tempfile
+        from tumblehead.api import fix_path
+        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path.mkdir(parents=True, exist_ok=True)
+
+        with tempfile.TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
+            temp_path = Path(temp_dir)
+            config_path = temp_path / f'propagate_{random_name(8)}.json'
+            store_json(config_path, config)
+
+            # Submit propagate job
+            try:
+                propagate_job.submit(config, {})
+            except Exception as e:
+                print(f'Error submitting propagate job: {str(e)}')
+                import traceback
+                traceback.print_exc()
+
     def _publish_scene_clicked(self):
 
         try:
@@ -1578,6 +1299,9 @@ class ProjectBrowser(QtWidgets.QWidget):
 
             # Then publish (handle export operations)
             self._publish_scene()
+
+            # Submit propagate job if auto-propagate is enabled
+            self._submit_propagate_job()
 
             # Hide export spinner and flash export success
             # Use QTimer to ensure proper sequencing after publish completes
@@ -1613,17 +1337,20 @@ class ProjectBrowser(QtWidgets.QWidget):
         if self._context is None:
             return
 
-        # Set the frame range based on workspace
-        match self._context:
-            case ShotContext(_, sequence_name, shot_name, _):
-                frame_range = api.config.get_frame_range(sequence_name, shot_name)
+        # Set the frame range based on entity type
+        entity_type = get_entity_type(self._context.entity_uri)
+        if entity_type == 'shot':
+            frame_range = get_frame_range(self._context.entity_uri)
+            if frame_range is not None:
                 match mode:
                     case FrameRangeMode.Padded:
                         util.set_block_range(frame_range.full_range())
                     case FrameRangeMode.Full:
                         util.set_block_range(frame_range.play_range())
-            case _:
+            else:
                 util.set_block_range(BlockRange(1001, 1200))
+        else:
+            util.set_block_range(BlockRange(1001, 1200))
 
         # Set the frames per second
         hou.playbar.setRealTime(True)
@@ -1637,7 +1364,7 @@ class ProjectBrowser(QtWidgets.QWidget):
     def _open_export_location(self, context):
         if context is None:
             return
-        export_path = latest_export_path(context)
+        export_path = latest_export_path_from_context(context)
         if export_path is None:
             return
         self._open_location_path(export_path)

@@ -21,11 +21,10 @@ from tumblehead.util.io import (
     load_json,
     store_json
 )
+from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Hython
 from tumblehead.pipe.paths import (
-    next_asset_export_path,
-    next_shot_export_path,
-    next_kit_export_path
+    next_export_path
 )
 
 api = default_client()
@@ -35,26 +34,10 @@ def _error(msg):
     return 1
 
 def _next_export_path(entity):
-    if entity['tag'] == 'asset':
-        return next_asset_export_path(
-            category_name = entity['category_name'],
-            asset_name = entity['asset_name'],
-            department_name = entity['department_name']
-        )
-    elif entity['tag'] == 'shot':
-        return next_shot_export_path(
-            sequence_name = entity['sequence_name'],
-            shot_name = entity['shot_name'],
-            department_name = entity['department_name']
-        )
-    elif entity['tag'] == 'kit':
-        return next_kit_export_path(
-            category_name = entity['category_name'],
-            kit_name = entity['kit_name'],
-            department_name = entity['department_name']
-        )
-    else:
-        return None
+    # Convert entity JSON to Uri and department
+    entity_uri = Uri.parse_unsafe(entity['uri'])
+    department_name = entity['department']
+    return next_export_path(entity_uri, department_name)
 
 SCRIPT_PATH = Path(__file__).parent / 'publish_houdini.py'
 def main(config):
@@ -68,7 +51,7 @@ def main(config):
     hython = Hython()
 
     # Open a temporary directory
-    root_temp_path = fix_path(api.storage.resolve('temp:/'))
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -89,8 +72,8 @@ def main(config):
                 TH_PIPELINE_PATH = path_str(to_windows_path(api.PIPELINE_PATH)),
                 TH_CONFIG_PATH = path_str(to_windows_path(api.CONFIG_PATH)),
                 HOUDINI_PACKAGE_DIR = ';'.join([
-                    path_str(to_windows_path(api.storage.resolve('pipeline:/houdini'))),
-                    path_str(to_windows_path(api.storage.resolve('project:/_pipeline/houdini')))
+                    path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini')))),
+                    path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('project:/_pipeline/houdini'))))
                 ]),
                 OCIO = path_str(to_windows_path(Path(os.environ['OCIO'])))
             )
@@ -107,20 +90,8 @@ def main(config):
 """
 config = {
     'entity': {
-        'tag': 'asset',
-        'category_name': 'string',
-        'asset_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'shot',
-        'sequence_name': 'string',
-        'shot_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'kit',
-        'category_name': 'string',
-        'kit_name': 'string',
-        'department_name': 'string'
+        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
+        'department': 'string'
     },
     'settings': {
         'priority': 'int',
@@ -158,20 +129,8 @@ def _is_valid_config(config):
 
     def _valid_entity(entity):
         if not isinstance(entity, dict): return False
-        if 'tag' not in entity: return False
-        match entity['tag']:
-            case 'asset':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'asset_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'shot':
-                if not _check_str(entity, 'sequence_name'): return False
-                if not _check_str(entity, 'shot_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'kit':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'kit_name'): return False
-                if not _check_str(entity, 'department_name'): return False
+        if not _check_str(entity, 'uri'): return False
+        if not _check_str(entity, 'department'): return False
         return True
     
     def _valid_settings(settings):

@@ -1,5 +1,5 @@
 from qtpy.QtCore import Qt, Signal
-from qtpy.QtGui import QFont, QColor
+from qtpy.QtGui import QFont
 from qtpy.QtWidgets import (
     QWidget,
     QVBoxLayout,

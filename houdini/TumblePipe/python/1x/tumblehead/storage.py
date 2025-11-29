@@ -1,20 +1,14 @@
-WORD_ALPHABET = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.*')
+from tumblehead.util.uri import Uri
 
 class StorageConvention:
 
-    def is_valid_path(self, path):
-        if ':' not in path: return False
-        purpose, resource = path.split(':', 1)
-        if not set(purpose).issubset(WORD_ALPHABET): return False
-        if ':' in resource: return False
-        if not resource.startswith('/'): return False
-        for part in filter(lambda part: len(part) > 0, resource.split('/')[1:]):
-            if not set(part).issubset(WORD_ALPHABET): return False
-        return True
-    
-    def parse_path(self, path):
-        purpose, path = path.split(':', 1)
-        return purpose, path.split('/')[1:]
+    def _normalize_input(self, uri: Uri) -> tuple[str, list[str]] | None:
+        """Convert Uri to (purpose, segments) tuple."""
+        if not isinstance(uri, Uri):
+            raise TypeError(f"Expected Uri, got {type(uri).__name__}")
+        if uri.is_wild():
+            return None  # Cannot resolve wildcard URIs
+        return uri.purpose, uri.segments
 
-    def resolve(self, path):
+    def resolve(self, uri: Uri):
         raise NotImplementedError()

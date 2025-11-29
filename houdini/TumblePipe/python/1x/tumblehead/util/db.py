@@ -279,7 +279,7 @@ def _path_to_uri(root_path, item_path):
     _item_path = item_path.relative_to(root_path)
     _parts = str(_item_path.parent).replace("\\", "/").split("/")
     _parts.append(_item_path.stem)
-    return Uri.parse("/".join(_parts))
+    return Uri.parse_unsafe("/".join(_parts))
 
 
 def _uri_to_path(root_path, item_uri):
@@ -755,7 +755,7 @@ class MongoStore(Store):
         # Build the heirarchy of data
         data = _namespace()
         for result in results:
-            _, parts = Uri.parse(result["uri"]).parts()
+            _, parts = Uri.parse_unsafe(result["uri"]).parts()
             _set(data, parts, result["datum"])
 
         # Get the param values
@@ -788,7 +788,7 @@ class MongoStore(Store):
             raise RuntimeError(f"Failed to delete {uri}")
 
         # Return the URIs of the deleted objects
-        return [Uri.parse(result["uri"]) for result in results]
+        return [Uri.parse_unsafe(result["uri"]) for result in results]
 
     def query(self, uri: Uri, **params):
         # Check if the purpose is defined
@@ -804,7 +804,7 @@ class MongoStore(Store):
         # Query the collection
         collection = self._collection(uri.purpose)
         results = list(collection.find(query))
-        return {Uri.parse(result["uri"]): result["datum"] for result in results}
+        return {Uri.parse_unsafe(result["uri"]): result["datum"] for result in results}
 
     def transact(self, uri: Uri) -> MongoTransaction:
         # Check if the Uri is wild
@@ -838,7 +838,7 @@ class MongoStore(Store):
         # Return the URIs of the entities, filtering out None results
         parsed_uris = []
         for result in results:
-            parsed_uri = Uri.parse(result["uri"])
+            parsed_uri = Uri.parse_unsafe(result["uri"])
             if parsed_uri is not None:
                 parsed_uris.append(parsed_uri)
         return parsed_uris

@@ -21,15 +21,14 @@ from tumblehead.util.io import (
     load_json,
     store_json
 )
-from tumblehead.config import BlockRange
+from tumblehead.util.uri import Uri
+from tumblehead.config.timeline import BlockRange
 from tumblehead.apps.deadline import (
     Deadline,
     Batch,
     Job
 )
 from tumblehead.pipe.paths import (
-    Entity,
-    ShotEntity,
     get_frame_path,
     get_next_frame_path,
     get_aov_frame_path,
@@ -62,20 +61,8 @@ def _error(msg):
 """
 config = {
     'entity': {
-        'tag': 'asset',
-        'category_name': 'string',
-        'asset_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'shot',
-        'sequence_name': 'string',
-        'shot_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'kit',
-        'category_name': 'string',
-        'kit_name': 'string',
-        'department_name': 'string'
+        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
+        'department': 'string'
     },
     'settings': {
         'user_name': 'string',
@@ -110,10 +97,10 @@ def _is_valid_config(config):
 
     def _is_str(datum):
         return isinstance(datum, str)
-    
+
     def _is_int(datum):
         return isinstance(datum, int)
-    
+
     def _is_bool(datum):
         return isinstance(datum, bool)
 
@@ -121,27 +108,15 @@ def _is_valid_config(config):
         if key not in data: return False
         if not value_checker(data[key]): return False
         return True
-    
+
     _check_str = partial(_check, _is_str)
     _check_int = partial(_check, _is_int)
     _check_bool = partial(_check, _is_bool)
 
     def _valid_entity(entity):
         if not isinstance(entity, dict): return False
-        if 'tag' not in entity: return False
-        match entity['tag']:
-            case 'asset':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'asset_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'shot':
-                if not _check_str(entity, 'sequence_name'): return False
-                if not _check_str(entity, 'shot_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'kit':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'kit_name'): return False
-                if not _check_str(entity, 'department_name'): return False
+        if not _check_str(entity, 'uri'): return False
+        if not _check_str(entity, 'department'): return False
         return True
     
     def _valid_settings(settings):
@@ -201,7 +176,8 @@ def _build_partial_render_job(
     logging.debug('Creating partial render task')
 
     # Config
-    entity = Entity.from_json(config['entity'])
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
     priority = config['tasks']['partial_render']['priority']
@@ -232,7 +208,7 @@ def _build_partial_render_job(
 
     # Parameters
     receipt_path = get_next_frame_path(
-        entity,
+        entity_uri,
         render_department_name,
         render_layer_name,
         '####',
@@ -247,7 +223,7 @@ def _build_partial_render_job(
     )
     output_paths = {
         aov_name: get_aov_frame_path(
-            entity,
+            entity_uri,
             render_department_name,
             render_layer_name,
             version_name,
@@ -281,7 +257,8 @@ def _build_partial_render_job(
     # Create the framestack context file
     context_path = receipt_path.parent / 'context.json'
     store_json(context_path, dict(
-        entity = entity.to_json(),
+        entity = str(entity_uri),
+        department = department_name,
         render_layer_name = render_layer_name,
         render_department_name = render_department_name,
         version_name = version_name,
@@ -302,7 +279,8 @@ def _build_full_render_job(
     logging.debug('Creating full render task')
 
     # Config
-    entity = Entity.from_json(config['entity'])
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
@@ -320,7 +298,7 @@ def _build_full_render_job(
     def _receipt_path(version_name):
         if version_name is None:
             output_frame_path = get_next_frame_path(
-                entity,
+                entity_uri,
                 render_department_name,
                 render_layer_name,
                 '####',
@@ -331,7 +309,7 @@ def _build_full_render_job(
             return output_frame_path, version_name
         else:
             output_frame_path = get_frame_path(
-                entity,
+                entity_uri,
                 render_department_name,
                 render_layer_name,
                 version_name,
@@ -358,7 +336,7 @@ def _build_full_render_job(
     )
     output_paths = {
         aov_name: path_str(get_aov_frame_path(
-            entity,
+            entity_uri,
             render_department_name,
             render_layer_name,
             version_name,
@@ -392,7 +370,8 @@ def _build_full_render_job(
     # Create the framestack context file
     context_path = receipt_path.parent / 'context.json'
     store_json(context_path, dict(
-        entity = entity.to_json(),
+        entity = str(entity_uri),
+        department = department_name,
         render_layer_name = render_layer_name,
         render_department_name = render_department_name,
         version_name = version_name,
@@ -426,28 +405,24 @@ def _build_edit_job(
     logging.debug('Creating edit task')
 
     # Config
-    entity = Entity.from_json(config['entity'])
-    assert entity is not None, 'Invalid entity in config'
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    assert entity_uri is not None, 'Invalid entity in config'
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
 
     # Extract entity fields
-    match entity:
-        case ShotEntity(sequence_name, shot_name, _):
-            pass
-        case _:
-            assert False, f'Edit task only supports shot entities: {entity}'
+    if entity_uri.segments[0] != 'shots':
+        assert False, f'Edit task only supports shot entities: {entity_uri}'
 
     # Create single edit task that will resolve AOVs at runtime
-    title = f'edit {entity}'
+    title = f'edit {entity_uri}'
     task = edit_task.build(dict(
         title = title,
         priority = 90,
         pool_name = pool_name,
-        sequence_name = sequence_name,
-        shot_name = shot_name,
+        entity_uri = str(entity_uri),
         first_frame = first_frame,
         last_frame = last_frame,
         purpose = purpose
@@ -465,7 +440,8 @@ def _build_partial_denoise_job(
     logging.debug('Creating partial denoise task')
 
     # Config
-    entity = Entity.from_json(config['entity'])
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
     priority = config['tasks']['partial_render']['priority']
@@ -493,7 +469,7 @@ def _build_partial_denoise_job(
 
     # Parameters
     receipt_path = get_next_frame_path(
-        entity,
+        entity_uri,
         'denoise',
         render_layer_name,
         '####',
@@ -508,7 +484,7 @@ def _build_partial_denoise_job(
     )
     input_paths = {
         aov_name: get_aov_frame_path(
-            entity,
+            entity_uri,
             render_department_name,
             render_layer_name,
             render_version_name,
@@ -521,7 +497,7 @@ def _build_partial_denoise_job(
     }
     output_paths = {
         aov_name: get_aov_frame_path(
-            entity,
+            entity_uri,
             'denoise',
             render_layer_name,
             version_name,
@@ -557,7 +533,8 @@ def _build_partial_denoise_job(
     # Create the framestack context file
     context_path = receipt_path.parent / 'context.json'
     store_json(context_path, dict(
-        entity = entity.to_json(),
+        entity = str(entity_uri),
+        department = department_name,
         render_department_name = 'denoise',
         render_layer_name = render_layer_name,
         version_name = version_name,
@@ -578,7 +555,8 @@ def _build_full_denoise_job(
     logging.debug('Creating denoise task')
 
     # Config parameters
-    entity = Entity.from_json(config['entity'])
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
@@ -598,7 +576,7 @@ def _build_full_denoise_job(
 
     # Parameters
     receipt_path = get_next_frame_path(
-        entity,
+        entity_uri,
         'denoise',
         render_layer_name,
         '####',
@@ -613,7 +591,7 @@ def _build_full_denoise_job(
     )
     input_paths = {
         aov_name: get_aov_frame_path(
-            entity,
+            entity_uri,
             render_department_name,
             render_layer_name,
             render_version_name,
@@ -626,7 +604,7 @@ def _build_full_denoise_job(
     }
     output_paths = {
         aov_name: get_aov_frame_path(
-            entity,
+            entity_uri,
             'denoise',
             render_layer_name,
             version_name,
@@ -662,7 +640,8 @@ def _build_full_denoise_job(
     # Create the framestack context file
     context_path = receipt_path.parent / 'context.json'
     store_json(context_path, dict(
-        entity = entity.to_json(),
+        entity = str(entity_uri),
+        department = department_name,
         render_department_name = 'denoise',
         render_layer_name = render_layer_name,
         version_name = version_name,
@@ -683,7 +662,8 @@ def _build_slapcomp_job(
     logging.debug('Creating slapcomp task')
 
     # Config
-    entity = Entity.from_json(config['entity'])
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
@@ -705,7 +685,7 @@ def _build_slapcomp_job(
     input_paths = {
         layer_name: {
             aov_name: get_aov_frame_path(
-                entity,
+                entity_uri,
                 render_department_name,
                 layer_name,
                 version_name,
@@ -719,7 +699,7 @@ def _build_slapcomp_job(
         for layer_name in layer_names
     }
     receipt_path = get_next_frame_path(
-        entity,
+        entity_uri,
         render_department_name,
         'slapcomp',
         '####',
@@ -733,7 +713,7 @@ def _build_slapcomp_job(
         f'{version_name}'
     )
     output_path = get_frame_path(
-        entity,
+        entity_uri,
         render_department_name,
         'slapcomp',
         version_name,
@@ -764,7 +744,8 @@ def _build_slapcomp_job(
     # Create the framestack context file
     context_path = receipt_path.parent / 'context.json'
     store_json(context_path, dict(
-        entity = entity.to_json(),
+        entity = str(entity_uri),
+        department = department_name,
         render_department_name = render_department_name,
         render_layer_name = 'slapcomp',
         version_name = version_name,
@@ -785,8 +766,8 @@ def _build_layer_mp4_job(
     logging.debug('Creating layer mp4 task')
 
     # Config
-    entity = Entity.from_json(config['entity'])
-    assert entity is not None, 'Invalid entity in config'
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    assert entity_uri is not None, 'Invalid entity in config'
     purpose = config['settings']['purpose']
     priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
@@ -797,12 +778,12 @@ def _build_layer_mp4_job(
 
     # Parameters - use layer-specific paths for individual render layers
     playblast_path = get_layer_playblast_path(
-        entity,
+        entity_uri,
         render_layer_name,
         render_version_name,
         purpose
     )
-    daily_path = get_layer_daily_path(entity, render_layer_name, purpose)
+    daily_path = get_layer_daily_path(entity_uri, render_layer_name, purpose)
     title = (
         f'mp4 layer '
         f'{render_department_name} '
@@ -811,7 +792,7 @@ def _build_layer_mp4_job(
     )
     # Input is the beauty AOV from the render layer
     input_path = get_aov_frame_path(
-        entity,
+        entity_uri,
         render_department_name,
         render_layer_name,
         render_version_name,
@@ -848,8 +829,8 @@ def _build_slapcomp_mp4_job(
     logging.debug('Creating slapcomp mp4 task')
 
     # Config
-    entity = Entity.from_json(config['entity'])
-    assert entity is not None, 'Invalid entity in config'
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    assert entity_uri is not None, 'Invalid entity in config'
     purpose = config['settings']['purpose']
     priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
@@ -858,15 +839,15 @@ def _build_slapcomp_mp4_job(
     step_size = config['settings']['step_size']
 
     # Parameters - use department-level paths for slapcomp
-    playblast_path = get_playblast_path(entity, slapcomp_version_name, purpose)
-    daily_path = get_daily_path(entity, purpose)
+    playblast_path = get_playblast_path(entity_uri, slapcomp_version_name, purpose)
+    daily_path = get_daily_path(entity_uri, purpose)
     title = (
         f'mp4 slapcomp '
         f'{render_department_name} '
         f'{slapcomp_version_name}'
     )
     input_path = get_frame_path(
-        entity,
+        entity_uri,
         render_department_name,
         'slapcomp',
         slapcomp_version_name,
@@ -902,7 +883,7 @@ def _build_partial_notify_job(
     logging.debug('Creating partial notify task')
 
     # Config
-    entity = Entity.from_json(config['entity'])
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
@@ -927,12 +908,12 @@ def _build_partial_notify_job(
         f'{version_name}'
     )
     message = (
-        f'{entity} - '
+        f'{entity_uri} - '
         f'{render_department_name} - '
         f'{version_name}'
     )
     frame_path = get_aov_frame_path(
-        entity,
+        entity_uri,
         render_department_name,
         render_layer_name,
         version_name,
@@ -971,8 +952,8 @@ def _build_slapcomp_notify_job(
     logging.debug('Creating slapcomp notify task')
 
     # Config
-    entity = Entity.from_json(config['entity'])
-    assert entity is not None, 'Invalid entity in config'
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    assert entity_uri is not None, 'Invalid entity in config'
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
@@ -980,7 +961,7 @@ def _build_slapcomp_notify_job(
 
     # Parameters - slapcomp playblast
     video_path = get_playblast_path(
-        entity,
+        entity_uri,
         version_name,
         purpose
     )
@@ -990,7 +971,7 @@ def _build_slapcomp_notify_job(
         f'{version_name}'
     )
     message = (
-        f'{entity} - '
+        f'{entity_uri} - '
         f'{render_department_name}/slapcomp - '
         f'{version_name}'
     )
@@ -1041,7 +1022,7 @@ def submit(
     ) -> int:
 
     # Config
-    entity = Entity.from_json(config['entity'])
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     render_layer_names = config['settings']['render_layer_names']
@@ -1055,7 +1036,7 @@ def submit(
     except: return _error('Could not connect to Deadline')
 
     # Open temporary directory
-    root_temp_path = fix_path(api.storage.resolve('temp:/'))
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -1066,7 +1047,7 @@ def submit(
         batch = Batch(
             f'{project_name} '
             f'{purpose} '
-            f'{entity} '
+            f'{entity_uri} '
             f'{layers_text} '
             f'{user_name} '
             f'{timestamp}'
@@ -1089,6 +1070,7 @@ def submit(
         # PARTIAL RENDER: Create jobs for each layer
         if 'partial_render' in config['tasks']:
             for layer_name in render_layer_names:
+                
                 # Create layer-specific config
                 layer_config = config.copy()
                 layer_config['settings'] = config['settings'].copy()
@@ -1258,7 +1240,7 @@ def submit(
         _add_jobs(batch, jobs, deps)
 
         # Submit
-        farm.submit(batch, api.storage.resolve('export:/other/jobs'))
+        farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))
 
     # Done
     return 0

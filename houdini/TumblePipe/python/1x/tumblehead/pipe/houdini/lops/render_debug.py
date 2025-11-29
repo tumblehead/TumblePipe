@@ -3,17 +3,21 @@ from pathlib import Path
 import hou
 
 from tumblehead.api import default_client
+from tumblehead.util.uri import Uri
+from tumblehead.config.shots import list_render_layers
+from tumblehead.config.department import list_departments
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.lops import (
     build_shot,
     import_render_layer
 )
 from tumblehead.pipe.paths import (
-    get_workfile_context,
-    ShotContext
+    get_workfile_context
 )
 
 api = default_client()
+
+DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/render_debug')
 
 def _clear_dive(dive_node):
     for node in dive_node.children():
@@ -28,36 +32,26 @@ class RenderDebug(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_sequence_names(self):
-        return api.config.list_sequence_names()
-    
-    def list_shot_names(self):
-        sequence_name = self.get_sequence_name()
-        if sequence_name is None: return []
-        return api.config.list_shot_names(sequence_name)
-    
-    def list_render_layer_names(self):
-        sequence_name = self.get_sequence_name()
-        if sequence_name is None: return []
-        shot_name = self.get_shot_name()
-        if shot_name is None: return []
-        return api.config.list_render_layer_names(sequence_name, shot_name)
-    
-    def get_sequence_name(self):
-        sequence_names = self.list_sequence_names()
-        if len(sequence_names) == 0: return None
-        sequence_name = self.parm('sequence').eval()
-        if len(sequence_name) == 0: return sequence_names[0]
-        if sequence_name not in sequence_names: return None
-        return sequence_name
+    def list_shot_uris(self) -> list[Uri]:
+        shot_entities = api.config.list_entities(
+            filter = Uri.parse_unsafe('entity:/shots'),
+            closure = True
+        )
+        return list(shot_entities)
 
-    def get_shot_name(self):
-        shot_names = self.list_shot_names()
-        if len(shot_names) == 0: return None
-        shot_name = self.parm('shot').eval()
-        if len(shot_name) == 0: return shot_names[0]
-        if shot_name not in shot_names: return None
-        return shot_name
+    def list_render_layer_names(self):
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None: return []
+        return list_render_layers(shot_uri)
+    
+    def get_shot_uri(self) -> Uri | None:
+        shot_uris = self.list_shot_uris()
+        if len(shot_uris) == 0: return None
+        shot_uri_raw = self.parm('shot').eval()
+        if len(shot_uri_raw) == 0: return shot_uris[0]
+        shot_uri = Uri.parse_unsafe(shot_uri_raw)
+        if shot_uri not in shot_uris: return None
+        return shot_uri
 
     def get_render_layer_name(self):
         render_layer_names = self.list_render_layer_names()
@@ -67,16 +61,11 @@ class RenderDebug(ns.Node):
         if render_layer_name not in render_layer_names: return None
         return render_layer_name
     
-    def set_sequence_name(self, sequence_name):
-        sequence_names = self.list_sequence_names()
-        if sequence_name not in sequence_names: return
-        self.parm('sequence').set(sequence_name)
-    
-    def set_shot_name(self, shot_name):
-        shot_names = self.list_shot_names()
-        if shot_name not in shot_names: return
-        self.parm('shot').set(shot_name)
-    
+    def set_shot_uri(self, shot_uri: Uri):
+        shot_uris = self.list_shot_uris()
+        if shot_uri not in shot_uris: return
+        self.parm('shot').set(str(shot_uri))
+
     def set_render_layer_name(self, render_layer_name):
         render_layer_names = self.list_render_layer_names()
         if render_layer_name not in render_layer_names: return
@@ -91,15 +80,13 @@ class RenderDebug(ns.Node):
         _clear_dive(dive_node)
 
         # Parameters
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
+        shot_uri = self.get_shot_uri()
         render_layer_name = self.get_render_layer_name()
-        included_shot_departments = api.render.list_included_shot_department_names("render")
+        included_shot_departments = [d.name for d in list_departments('shots') if d.renderable]
 
         # Setup build shot
         shot_node = build_shot.create(dive_node, 'build_shot')
-        shot_node.set_sequence_name(sequence_name)
-        shot_node.set_shot_name(shot_name)
+        shot_node.set_shot_uri(shot_uri)
         shot_node.set_exclude_shot_department_names([])
         shot_node.set_include_procedurals(True)
         shot_node.set_include_downstream_departments(True)
@@ -119,15 +106,14 @@ class RenderDebug(ns.Node):
         # Setup import render layer
         for shot_department_name in included_shot_departments:
             layer_node = import_render_layer.create(render_layer_subnet, f'{shot_department_name}_import')
-            layer_node.set_sequence_name(sequence_name)
-            layer_node.set_shot_name(shot_name)
+            layer_node.set_shot_uri(shot_uri)
             layer_node.set_department_name(shot_department_name)
             layer_node.set_render_layer_name(render_layer_name)
             layer_node.latest()
             layer_node.execute()
             _connect(prev_node, layer_node.native())
             prev_node = layer_node.native()
-        
+
         # Connect last node to subnet output
         _connect(prev_node, render_layer_subnet_output)
         prev_node = render_layer_subnet
@@ -165,17 +151,9 @@ def on_created(raw_node):
     file_path = Path(hou.hipFile.path())
     context = get_workfile_context(file_path)
     if context is None: return
-    
-    # Set the default values
-    match context:
-        case ShotContext(
-            department_name,
-            sequence_name,
-            shot_name,
-            version_name
-            ):
-            node.set_sequence_name(sequence_name)
-            node.set_shot_name(shot_name)
+
+    # Set the default values from context
+    node.set_shot_uri(context.entity_uri)
 
 def execute():
     raw_node = hou.pwd()

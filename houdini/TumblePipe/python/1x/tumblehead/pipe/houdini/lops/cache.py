@@ -3,7 +3,8 @@ from pathlib import Path
 import hou
 
 from tumblehead.api import path_str, default_client
-from tumblehead.config import FrameRange
+from tumblehead.config.timeline import FrameRange
+from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini import util
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.paths import (
@@ -29,9 +30,9 @@ class Cache(ns.Node):
         base_path = '/'.join(file_path.parent.parts[-4:])
         match self.get_location_name():
             case Location.Project:
-                return api.storage.resolve(f'project:/{base_path}/lops_cache')
+                return api.storage.resolve(Uri.parse_unsafe(f'project:/{base_path}/lops_cache'))
             case Location.Proxy:
-                return api.storage.resolve(f'proxy:/{base_path}/lops_cache')
+                return api.storage.resolve(Uri.parse_unsafe(f'proxy:/{base_path}/lops_cache'))
 
     def _next_version_name(self):
         version_names = self.list_version_names()

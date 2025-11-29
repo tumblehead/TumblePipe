@@ -1,11 +1,15 @@
 import hou
 
 from tumblehead.api import default_client
+from tumblehead.util.uri import Uri
+from tumblehead.config.department import list_departments
 from tumblehead.util import result
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.lops import import_asset
 
 api = default_client()
+
+DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/import_assets')
 
 def _clear_scene(dive_node, output_node):
 
@@ -59,62 +63,51 @@ def _update_script(instances):
 class ImportAssets(ns.Node):
     def __init__(self, native):
         super().__init__(native)
-    
-    def list_category_names(self):
-        return [
-            category_name
-            for category_name in api.config.list_category_names()
-            if len(api.config.list_asset_names(category_name)) > 0
-        ]
 
-    def list_asset_names(self, index):
-        category_name = self.get_category_name(index)
-        if category_name is None: return []
+    def list_asset_uris(self, index) -> list[Uri]:
+        all_asset_entities = api.config.list_entities(
+            filter = Uri.parse_unsafe('entity:/assets'),
+            closure = True
+        )
+        all_asset_uris = list(all_asset_entities)
+
+        # Filter out already-selected assets
         count = self.parm('asset_imports').eval()
-        available_asset_names = api.config.list_asset_names(category_name)
-        other_asset_names = set()
+        other_asset_uris = set()
         for other_index in range(1, count + 1):
             if other_index == index: continue
-            other_category_name = self.get_category_name(other_index)
-            if other_category_name is None: continue
-            if other_category_name != category_name: continue
-            other_asset_name = self.parm(f'asset{other_index}').eval()
-            if len(other_asset_name) == 0: continue
-            if other_asset_name not in available_asset_names: continue
-            other_asset_names.add(other_asset_name)
+            other_asset_uri_raw = self.parm(f'asset{other_index}').eval()
+            if len(other_asset_uri_raw) == 0: continue
+            other_asset_uri = Uri.parse_unsafe(other_asset_uri_raw)
+            if other_asset_uri in all_asset_uris:
+                other_asset_uris.add(other_asset_uri)
+
         return [
-            asset_name
-            for asset_name in available_asset_names
-            if asset_name not in other_asset_names
+            asset_uri
+            for asset_uri in all_asset_uris
+            if asset_uri not in other_asset_uris
         ]
-    
+
     def list_department_names(self):
-        asset_department_names = api.config.list_asset_department_names()
-        if len(asset_department_names) == 0: return []
-        default_values = api.config.resolve('defaults:/houdini/lops/import_assets')
+        asset_departments = list_departments('assets')
+        if len(asset_departments) == 0: return []
+        asset_department_names = [dept.name for dept in asset_departments]
+        default_values = api.config.get_properties(DEFAULTS_URI)
         return [
             department_name
             for department_name in default_values['departments']
             if department_name in asset_department_names
         ]
-    
-    def get_category_name(self, index):
-        category_names = self.list_category_names()
-        if len(category_names) == 0: return None
-        category_name = self.parm(f'category{index}').eval()
-        if len(category_name) == 0 or category_name not in category_names:
-            category_name = category_names[0]
-            self.parm(f'category{index}').set(category_name)
-        return category_name
 
-    def get_asset_name(self, index):
-        asset_names = self.list_asset_names(index)
-        if len(asset_names) == 0: return None
-        asset_name = self.parm(f'asset{index}').eval()
-        if len(asset_name) == 0 or asset_name not in asset_names:
-            asset_name = asset_names[0]
-            self.parm(f'asset{index}').set(asset_name)
-        return asset_name
+    def get_asset_uri(self, index) -> Uri | None:
+        asset_uris = self.list_asset_uris(index)
+        if len(asset_uris) == 0: return None
+        asset_uri_raw = self.parm(f'asset{index}').eval()
+        if len(asset_uri_raw) == 0 or Uri.parse_unsafe(asset_uri_raw) not in asset_uris:
+            asset_uri = asset_uris[0]
+            self.parm(f'asset{index}').set(str(asset_uri))
+            return asset_uri
+        return Uri.parse_unsafe(asset_uri_raw)
     
     def get_instances(self, index):
         return self.parm(f'instances{index}').eval()
@@ -132,30 +125,23 @@ class ImportAssets(ns.Node):
             if department_name not in exclude_department_names
         ]
 
-    def get_asset_imports(self):
+    def get_asset_imports(self) -> dict[Uri, int]:
         asset_imports = {}
         count = self.parm('asset_imports').eval()
         for index in range(1, count + 1):
-            category_name = self.get_category_name(index)
-            if category_name is None: continue
-            asset_name = self.get_asset_name(index)
-            if asset_name is None: continue
+            asset_uri = self.get_asset_uri(index)
+            if asset_uri is None: continue
             instances = self.get_instances(index)
-            _insert(asset_imports, [category_name, asset_name], instances)
+            asset_imports[asset_uri] = instances
         return asset_imports
     
     def get_include_layerbreak(self):
         return bool(self.parm('include_layerbreak').eval())
-    
-    def set_category_name(self, index, category_name):
-        category_names = self.list_category_names()
-        if category_name not in category_names: return
-        self.parm(f'category{index}').set(category_name)
-    
-    def set_asset_name(self, index, asset_name):
-        asset_names = self.list_asset_names(index)
-        if asset_name not in asset_names: return
-        self.parm(f'asset{index}').set(asset_name)
+
+    def set_asset_uri(self, index, asset_uri: Uri):
+        asset_uris = self.list_asset_uris(index)
+        if asset_uri not in asset_uris: return
+        self.parm(f'asset{index}').set(str(asset_uri))
     
     def set_instances(self, index, instances):
         self.parm(f'instances{index}').set(instances)
@@ -191,69 +177,68 @@ class ImportAssets(ns.Node):
 
         # Build asset nodes
         script_args = []
-        for category_name, asset_instances in asset_imports.items():
-            for asset_name, instances in asset_instances.items():
-                if instances == 0: continue
+        for asset_uri, instances in asset_imports.items():
+            if instances == 0: continue
 
-                # Import the asset
-                asset_node = import_asset.create(
-                    dive_node,
-                    f'{category_name}_{asset_name}_import'
-                )
-                asset_node.set_category_name(category_name)
-                asset_node.set_asset_name(asset_name)
-                asset_node.set_exclude_department_names(
-                    exclude_department_names
-                )
-                asset_node.set_include_layerbreak(include_layerbreak)
-                asset_node.execute()
+            # Create node name from URI segments
+            uri_name = '_'.join(asset_uri.segments[1:])
 
-                # In the case of one instance
-                if instances == 1:
-                    _connect(asset_node.native(), merge_node)
-                    continue
+            # Import the asset
+            asset_node = import_asset.create(
+                dive_node,
+                f'{uri_name}_import'
+            )
+            asset_node.set_asset_uri(asset_uri)
+            asset_node.set_exclude_department_names(
+                exclude_department_names
+            )
+            asset_node.set_include_layerbreak(include_layerbreak)
+            asset_node.execute()
 
-                # Duplicate the asset
-                duplicate_node = dive_node.createNode(
-                    'duplicate',
-                    f'{category_name}_{asset_name}_duplicate'
-                )
-                duplicate_node.parm('sourceprims').set(
-                    f'/{category_name}'
-                    f'/{asset_name}'
-                )
-                duplicate_node.parm('ncy').set(instances)
-                duplicate_node.parm('duplicatename').set(
-                    '`@srcname``@copy`'
-                )
-                _connect(asset_node.native(), duplicate_node)
+            # In the case of one instance
+            if instances == 1:
+                _connect(asset_node.native(), merge_node)
+                continue
 
-                # Duplicate the metadata
-                duplicate_metadata_node = dive_node.createNode(
-                    'duplicate',
-                    f'{category_name}_{asset_name}_metadata_duplicate'
-                )
-                duplicate_metadata_node.parm('sourceprims').set(
-                    '/METADATA'
-                    '/asset'
-                    f'/{category_name}'
-                    f'/{asset_name}'
-                )
-                duplicate_metadata_node.parm('ncy').set(instances)
-                duplicate_metadata_node.parm('duplicatename').set(
-                    '`@srcname``@copy`'
-                )
-                duplicate_metadata_node.parm('parentprimtype').set('')
-                _connect(duplicate_node, duplicate_metadata_node)
-                _connect(duplicate_metadata_node, merge_node)
+            # Duplicate the asset
+            from tumblehead.pipe.houdini.util import uri_to_prim_path
+            asset_prim_path = uri_to_prim_path(asset_uri)
+            duplicate_node = dive_node.createNode(
+                'duplicate',
+                f'{uri_name}_duplicate'
+            )
+            duplicate_node.parm('sourceprims').set(asset_prim_path)
+            duplicate_node.parm('ncy').set(instances)
+            duplicate_node.parm('duplicatename').set(
+                '`@srcname``@copy`'
+            )
+            _connect(asset_node.native(), duplicate_node)
 
-                # Update the script arguments
-                for index in range(instances):
-                    instance_name = f'{asset_name}{index}'
-                    script_args.append((
-                        f'/METADATA/asset/{category_name}/{instance_name}',
-                        instance_name
-                    ))
+            # Duplicate the metadata
+            from tumblehead.pipe.houdini.util import uri_to_metadata_prim_path
+            asset_metadata_path = uri_to_metadata_prim_path(asset_uri)
+            duplicate_metadata_node = dive_node.createNode(
+                'duplicate',
+                f'{uri_name}_metadata_duplicate'
+            )
+            duplicate_metadata_node.parm('sourceprims').set(asset_metadata_path)
+            duplicate_metadata_node.parm('ncy').set(instances)
+            duplicate_metadata_node.parm('duplicatename').set(
+                '`@srcname``@copy`'
+            )
+            duplicate_metadata_node.parm('parentprimtype').set('')
+            _connect(duplicate_node, duplicate_metadata_node)
+            _connect(duplicate_metadata_node, merge_node)
+
+            # Update the script arguments
+            asset_metadata_base = asset_metadata_path.rsplit('/', 1)[0]  # /METADATA/assets/char
+            base_name = asset_uri.segments[-1]  # Last segment is the asset name
+            for index in range(instances):
+                instance_name = api.naming.get_instance_name(base_name, index)
+                script_args.append((
+                    f'{asset_metadata_base}/{instance_name}',
+                    instance_name
+                ))
 
         # Update the instances names in the metadata
         python_node = dive_node.createNode(

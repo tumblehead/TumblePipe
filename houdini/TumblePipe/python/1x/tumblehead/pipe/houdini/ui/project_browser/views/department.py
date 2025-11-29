@@ -1,4 +1,4 @@
-from qtpy.QtCore import Qt, Signal, QItemSelectionModel
+from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -7,19 +7,13 @@ from qtpy.QtWidgets import (
 )
 from qtpy import QtWidgets
 
-from tumblehead.pipe.paths import (
-    AssetEntity,
-    ShotEntity,
-    KitEntity,
-    Context,
-)
+from tumblehead.pipe.paths import Context
+from tumblehead.config.department import list_departments
 
-from ..constants import AUTO_SETTINGS_DEFAULT, Section, Action
 from ..helpers import (
+    get_entity_type,
     get_timestamp_from_context,
-    latest_asset_context,
-    latest_shot_context,
-    latest_kit_context,
+    latest_context,
     get_user_from_context,
     format_relative_time,
 )
@@ -361,7 +355,6 @@ class DepartmentBrowser(QtWidgets.QWidget):
         """Update the model with latest department contexts while preserving selection"""
         # Preserve current selection state before refresh
         preserved_selection = self._selection
-        preserved_selected_row = self._selected_row
 
         # Check if the entity is valid
         if self._entity is None:
@@ -372,29 +365,21 @@ class DepartmentBrowser(QtWidgets.QWidget):
 
         def _latest_department_contexts():
             try:
-                match self._entity:
-                    case AssetEntity(category_name, asset_name):
-                        department_names = self._api.config.list_asset_department_names()
-                        return [
-                            latest_asset_context(
-                                category_name, asset_name, department_name
-                            )
-                            for department_name in department_names
-                        ]
-                    case ShotEntity(sequence_name, shot_name):
-                        department_names = self._api.config.list_shot_department_names()
-                        return [
-                            latest_shot_context(sequence_name, shot_name, department_name)
-                            for department_name in department_names
-                        ]
-                    case KitEntity(category_name, kit_name):
-                        department_names = self._api.config.list_kit_department_names()
-                        return [
-                            latest_kit_context(category_name, kit_name, department_name)
-                            for department_name in department_names
-                        ]
-                    case None:
-                        return []
+                entity_type = get_entity_type(self._entity)
+                if entity_type == 'asset':
+                    departments = list_departments('assets')
+                    return [
+                        latest_context(self._entity, dept.name)
+                        for dept in departments
+                    ]
+                elif entity_type == 'shot':
+                    departments = list_departments('shots')
+                    return [
+                        latest_context(self._entity, dept.name)
+                        for dept in departments
+                    ]
+                else:
+                    return []
             except Exception as e:
                 raise RuntimeError(f"Failed to get department contexts for {self._entity}: {e}")
 

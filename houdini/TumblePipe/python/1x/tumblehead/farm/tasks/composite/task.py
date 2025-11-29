@@ -18,17 +18,15 @@ from tumblehead.api import (
 from tumblehead.util.io import store_json
 from tumblehead.naming import random_name
 from tumblehead.apps.deadline import Job as Task
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
 
 api = default_client()
 
 """
 config = {
     'entity': {
-        'tag': 'shot',
-        'sequence_name': 'seq010',
-        'shot_name': 'shot0010',
-        'department_name': 'composite'
+        'uri': 'entity:/shots/sequence/shot',
+        'department': 'string'
     },
     'title': 'composite',
     'priority': 50,
@@ -51,6 +49,14 @@ config = {
 
 def _is_valid_config(config):
 
+    def _is_valid_entity(entity):
+        if not isinstance(entity, dict): return False
+        if 'uri' not in entity: return False
+        if not isinstance(entity['uri'], str): return False
+        if 'department' not in entity: return False
+        if not isinstance(entity['department'], str): return False
+        return True
+
     def _is_valid_output_paths(output_paths):
         if not isinstance(output_paths, dict): return False
         for layer_name, output_path in output_paths.items():
@@ -59,7 +65,7 @@ def _is_valid_config(config):
         return True
 
     if 'entity' not in config: return False
-    if not isinstance(config['entity'], dict): return False
+    if not _is_valid_entity(config['entity']): return False
     if 'title' not in config: return False
     if not isinstance(config['title'], str): return False
     if 'priority' not in config: return False

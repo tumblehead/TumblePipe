@@ -1,6 +1,7 @@
 import hou
 
 from tumblehead.api import default_client
+from tumblehead.util.uri import Uri
 from tumblehead.util import result
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.sops import import_rig
@@ -30,87 +31,74 @@ def _insert(data, path, value):
 class ImportRigs(ns.Node):
     def __init__(self, native):
         super().__init__(native)
-    
-    def list_category_names(self):
-        return api.config.list_category_names()
-    
-    def list_asset_names(self, index):
-        category_name = self.get_category_name(index)
-        if category_name is None: return []
+
+    def list_asset_uris(self) -> list[Uri]:
+        asset_entities = api.config.list_entities(
+            filter=Uri.parse_unsafe('entity:/assets'),
+            closure=True
+        )
+        return list(asset_entities)
+
+    def list_available_asset_uris(self, index: int) -> list[Uri]:
+        """List asset URIs excluding those already used by other indices."""
+        all_uris = self.list_asset_uris()
+        if len(all_uris) == 0: return []
         count = self.parm('rig_imports').eval()
-        available_asset_names = api.config.list_asset_names(category_name)
-        other_asset_names = set()
+        used_uris = set()
         for other_index in range(1, count + 1):
             if other_index == index: continue
-            other_category_name = self.get_category_name(other_index)
-            if other_category_name is None: continue
-            if other_category_name != category_name: continue
-            other_asset_name = self.parm(f'asset{other_index}').eval()
-            if len(other_asset_name) == 0: continue
-            if other_asset_name not in available_asset_names: continue
-            other_asset_names.add(other_asset_name)
-        return [
-            asset_name
-            for asset_name in available_asset_names
-            if asset_name not in other_asset_names
-        ]
-    
-    def get_category_name(self, index):
-        category_names = self.list_category_names()
-        if len(category_names) == 0: return None
-        category_name = self.parm(f'category{index}').eval()
-        if len(category_name) == 0 or category_name not in category_names:
-            category_name = category_names[0]
-            self.parm(f'category{index}').set(category_name)
-        return category_name
+            other_uri_raw = self.parm(f'asset{other_index}').eval()
+            if len(other_uri_raw) == 0: continue
+            other_uri = Uri.parse_unsafe(other_uri_raw)
+            if other_uri in all_uris:
+                used_uris.add(other_uri)
+        return [uri for uri in all_uris if uri not in used_uris]
 
-    def get_asset_name(self, index):
-        asset_names = self.list_asset_names(index)
-        if len(asset_names) == 0: return None
-        asset_name = self.parm(f'asset{index}').eval()
-        if len(asset_name) == 0 or asset_name not in asset_names:
-            asset_name = asset_names[0]
-            self.parm(f'asset{index}').set(asset_name)
-        return asset_name
+    def get_asset_uri(self, index: int) -> Uri | None:
+        asset_uris = self.list_available_asset_uris(index)
+        if len(asset_uris) == 0: return None
+        asset_uri_raw = self.parm(f'asset{index}').eval()
+        if len(asset_uri_raw) == 0:
+            asset_uri = asset_uris[0]
+            self.parm(f'asset{index}').set(str(asset_uri))
+            return asset_uri
+        asset_uri = Uri.parse_unsafe(asset_uri_raw)
+        if asset_uri not in self.list_asset_uris():
+            asset_uri = asset_uris[0]
+            self.parm(f'asset{index}').set(str(asset_uri))
+        return asset_uri
 
-    def get_instances(self, index):
+    def get_instances(self, index: int) -> int:
         return self.parm(f'instances{index}').eval()
 
-    def get_rig_imports(self):
+    def get_rig_imports(self) -> dict[Uri, int]:
+        """Returns {asset_uri: instances} for all rig imports."""
         rig_imports = {}
         count = self.parm('rig_imports').eval()
         for index in range(1, count + 1):
-            category_name = self.get_category_name(index)
-            if category_name is None: continue
-            asset_name = self.get_asset_name(index)
-            if asset_name is None: continue
+            asset_uri = self.get_asset_uri(index)
+            if asset_uri is None: continue
             instances = self.get_instances(index)
-            _insert(rig_imports, [category_name, asset_name], instances)
+            rig_imports[asset_uri] = instances
         return rig_imports
 
-    def set_category_name(self, index, category_name):
-        category_names = self.list_category_names()
-        if category_name not in category_names: return
-        self.parm(f'category{index}').set(category_name)
-    
-    def set_asset_name(self, index, asset_name):
-        asset_names = self.list_asset_names(index)
-        if asset_name not in asset_names: return
-        self.parm(f'asset{index}').set(asset_name)
-    
-    def set_instances(self, index, instances):
+    def set_asset_uri(self, index: int, asset_uri: Uri):
+        asset_uris = self.list_asset_uris()
+        if asset_uri not in asset_uris: return
+        self.parm(f'asset{index}').set(str(asset_uri))
+
+    def set_instances(self, index: int, instances: int):
         self.parm(f'instances{index}').set(instances)
-    
-    def set_rig_imports(self, rig_imports):
+
+    def set_rig_imports(self, rig_imports: dict[Uri, int]):
+        """Set rig imports from {asset_uri: instances} dict."""
         self.parm('rig_imports').set(0)
-        for category_name, asset_instances in rig_imports.items():
-            for asset_name, instances in asset_instances.items():
-                if instances == 0: continue
-                index = self.parm('rig_imports').eval() + 1
-                self.parm('rig_imports').set(index)
-                self.set_category_name(index, category_name)
-                self.set_asset_name(index, asset_name)
-                self.set_instances(index, instances)
+        for asset_uri, instances in rig_imports.items():
+            if instances == 0: continue
+            index = self.parm('rig_imports').eval() + 1
+            self.parm('rig_imports').set(index)
+            self.set_asset_uri(index, asset_uri)
+            self.set_instances(index, instances)
     
     def execute(self):
 
@@ -125,23 +113,24 @@ class ImportRigs(ns.Node):
 
         # Build asset nodes
         prev_node = None
-        for category_name, rig_instances in rig_imports.items():
-            for asset_name, instances in rig_instances.items():
-                if instances == 0: continue
+        for asset_uri, instances in rig_imports.items():
+            if instances == 0: continue
 
-                # Import the rig
-                rig_node = import_rig.create(dive_node, f'{category_name}_{asset_name}_import')
-                rig_node.set_category_name(category_name)
-                rig_node.set_asset_name(asset_name)
-                rig_node.set_instances(instances)
-                rig_node.latest()
-                rig_node.execute()
+            # Create node name from URI segments
+            uri_name = '_'.join(asset_uri.segments[1:])
 
-                # Connect the rig
-                if prev_node is not None:
-                    _connect(prev_node, rig_node.native())
-                prev_node = rig_node.native()
-        
+            # Import the rig
+            rig_node = import_rig.create(dive_node, f'{uri_name}_import')
+            rig_node.set_asset_uri(asset_uri)
+            rig_node.set_instances(instances)
+            rig_node.latest()
+            rig_node.execute()
+
+            # Connect the rig
+            if prev_node is not None:
+                _connect(prev_node, rig_node.native())
+            prev_node = rig_node.native()
+
         # Connect to output
         if prev_node is not None:
             _connect(prev_node, output_node)

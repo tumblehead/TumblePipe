@@ -10,8 +10,9 @@ from tumblehead.api import (
     get_user_name,
     default_client
 )
-from tumblehead.config import FrameRange
+from tumblehead.config.timeline import FrameRange
 from tumblehead.util.io import store_json
+from tumblehead.util.uri import Uri
 from tumblehead.apps.deadline import Deadline
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.houdini.util as util
@@ -31,9 +32,10 @@ class LookdevStudio(ns.Node):
         except: return []
         pool_names = deadline.list_pools()
         if len(pool_names) == 0: return []
-        default_values = api.config.resolve(
-            'defaults:/houdini/lops/submit_render'
-        )
+        defaults_uri = Uri.parse_unsafe('defaults:/houdini/lops/submit_render')
+        default_values = api.config.get_properties(defaults_uri)
+        if default_values is None: return []
+        if 'pools' not in default_values: return []
         return [
             pool_name
             for pool_name in default_values['pools']
@@ -99,7 +101,7 @@ class LookdevStudio(ns.Node):
         aov_names = self.get_aov_names()
 
         # Open temporary directory
-        root_temp_path = fix_path(api.storage.resolve('temp:/'))
+        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)

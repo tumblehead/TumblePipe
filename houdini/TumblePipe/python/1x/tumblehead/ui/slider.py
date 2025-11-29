@@ -1,4 +1,3 @@
-from typing import Optional
 
 from qtpy.QtCore import (
     Qt,

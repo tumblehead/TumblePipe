@@ -8,16 +8,11 @@ from hou import qt as hqt
 from tumblehead.api import get_user_name
 from tumblehead.util.io import load_json
 import tumblehead.pipe.context as ctx
-from tumblehead.pipe.paths import (
-    AssetContext,
-    ShotContext,
-    KitContext,
-)
 
 from ..constants import Location, FrameRangeMode
 from ..helpers import (
     file_path_from_context,
-    latest_export_path,
+    latest_export_path_from_context,
 )
 from ..utils.animations import SpinnerManager
 
@@ -283,31 +278,14 @@ class DetailsView(QtWidgets.QWidget):
                     return dict()
                 if context_data is None:
                     return dict()
-                match context:
-                    case AssetContext(_, category_name, asset_name, _):
-                        return ctx.find_output(
-                            context_data,
-                            context="asset",
-                            category=category_name,
-                            asset=asset_name,
-                        )
-                    case ShotContext(_, sequence_name, shot_name, _):
-                        return ctx.find_output(
-                            context_data,
-                            context="shot",
-                            sequence=sequence_name,
-                            shot=shot_name,
-                        )
-                    case KitContext(_, category_name, kit_name, _):
-                        return ctx.find_output(
-                            context_data,
-                            context="kit",
-                            category=category_name,
-                            kit=kit_name,
-                        )
+                result = ctx.find_output(
+                    context_data,
+                    entity=str(context.entity_uri),
+                )
+                return result if result is not None else dict()
 
             def _get_context_path(context):
-                export_path = latest_export_path(context)
+                export_path = latest_export_path_from_context(context)
                 if export_path is None:
                     return None
                 context_path = export_path / "context.json"

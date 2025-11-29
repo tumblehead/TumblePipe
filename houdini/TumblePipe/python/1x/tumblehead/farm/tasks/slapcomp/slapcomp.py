@@ -12,16 +12,14 @@ if tumblehead_packages_path not in sys.path:
 
 from tumblehead.api import (
     path_str,
-    fix_path,
     to_wsl_path,
-    to_windows_path,
     default_client
 )
 from tumblehead.util.io import (
     load_json,
     store_json
 )
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
 from tumblehead.apps import exr
 
 api = default_client()

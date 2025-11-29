@@ -2,6 +2,7 @@ import hou
 
 from tumblehead.api import default_client
 from tumblehead.util.io import load_json, store_json
+from tumblehead.util.uri import Uri
 import tumblehead.pipe.houdini.nodes as ns
 
 api = default_client()
@@ -11,7 +12,7 @@ class RenderSettings(ns.Node):
         super().__init__(native)
 
     def list_preset_paths(self):
-        preset_path = api.storage.resolve('preset:/houdini/lops/render_settings')
+        preset_path = api.storage.resolve(Uri.parse_unsafe('preset:/houdini/lops/render_settings'))
         return {
             preset_path.stem: preset_path
             for preset_path in preset_path.glob('*.json')

@@ -10,23 +10,27 @@ from tumblehead.api import (
     get_user_name,
     default_client
 )
+from tumblehead.util.uri import Uri
 from tumblehead.util.io import (
     load_json,
     store_json
 )
-from tumblehead.config import FrameRange
+from tumblehead.config.timeline import FrameRange, get_frame_range
+from tumblehead.config.department import list_departments
+from tumblehead.config.shots import list_render_layers
 from tumblehead.apps.deadline import Deadline
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.context as ctx
 from tumblehead.pipe.paths import (
     latest_render_layer_export_path,
-    ShotEntity
+    load_entity_context
 )
 
 api = default_client()
 
-def _entity_from_context_json():
+DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/submit_render')
 
+def _entity_from_context_json():
     # Path to current workfile
     file_path = Path(hou.hipFile.path())
     if not file_path.exists(): return None
@@ -34,16 +38,17 @@ def _entity_from_context_json():
     # Look for context.json in the workfile directory
     context_json_path = file_path.parent / "context.json"
     if not context_json_path.exists(): return None
-    context_data = load_json(context_json_path)
-    if context_data is None: return None
 
-    # Parse the loaded context
-    if context_data.get('entity') != 'shot': return None
-    return ShotEntity(
-        sequence_name = context_data['sequence'],
-        shot_name = context_data['shot'],
-        department_name = context_data['department']
-    )
+    # Load context using shared helper
+    context = load_entity_context(context_json_path)
+    if context is None: return None
+
+    # Verify it's a shot entity
+    if context.entity_uri.purpose != 'entity': return None
+    if len(context.entity_uri.segments) < 1: return None
+    if context.entity_uri.segments[0] != 'shots': return None
+
+    return context
 
 def _get_output(node, index):
     connections = node.outputConnectors()
@@ -71,18 +76,18 @@ class SubmitRender(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_sequence_names(self):
-        return api.config.list_sequence_names()
-    
-    def list_shot_names(self):
-        sequence_name = self.get_sequence_name()
-        if sequence_name is None: return []
-        return api.config.list_shot_names(sequence_name)
-    
+    def list_shot_uris(self) -> list[Uri]:
+        shot_entities = api.config.list_entities(
+            filter = Uri.parse_unsafe('entity:/shots'),
+            closure = True
+        )
+        return list(shot_entities)
+
     def list_shot_department_names(self):
-        shot_department_names = api.config.list_shot_department_names()
-        if len(shot_department_names) == 0: return []
-        default_values = api.config.resolve('defaults:/houdini/lops/submit_render')
+        shot_departments = list_departments('shots')
+        if len(shot_departments) == 0: return []
+        shot_department_names = [dept.name for dept in shot_departments]
+        default_values = api.config.get_properties(DEFAULTS_URI)
         return [
             department_name
             for department_name in default_values['departments']['shot']
@@ -90,19 +95,14 @@ class SubmitRender(ns.Node):
         ]
 
     def list_render_layer_names(self):
-        sequence_name = self.get_sequence_name()
-        if sequence_name is None: return []
-        shot_name = self.get_shot_name()
-        if shot_name is None: return []
-        render_layer_names = api.config.list_render_layer_names(sequence_name, shot_name)
-        return render_layer_names
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None: return []
+        return list_render_layers(shot_uri)
     
     def list_render_department_names(self):
-        render_department_names = api.config.list_render_department_names()
+        render_department_names = [dept.name for dept in list_departments('render')]
         if len(render_department_names) == 0: return
-        default_values = api.config.resolve(
-            'defaults:/houdini/lops/submit_render'
-        )
+        default_values = api.config.get_properties(DEFAULTS_URI)
         return [
             department_name
             for department_name in default_values['departments']['render']
@@ -114,9 +114,7 @@ class SubmitRender(ns.Node):
         except: return []
         pool_names = deadline.list_pools()
         if len(pool_names) == 0: return []
-        default_values = api.config.resolve(
-            'defaults:/houdini/lops/submit_render'
-        )
+        default_values = api.config.get_properties(DEFAULTS_URI)
         return [
             pool_name
             for pool_name in default_values['pools']
@@ -124,12 +122,11 @@ class SubmitRender(ns.Node):
         ]
     
     def list_aov_names(self, render_layer_name):
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None: return []
         department_name = self.get_shot_department_name()
         export_path = latest_render_layer_export_path(
-            sequence_name,
-            shot_name,
+            shot_uri,
             department_name,
             render_layer_name
         )
@@ -138,7 +135,6 @@ class SubmitRender(ns.Node):
         context_data = load_json(context_path)
         if context_data is None: return []
         layer_info = ctx.find_output(context_data,
-            context = 'render_layer',
             render_layer = render_layer_name
         )
         if layer_info is None: return []
@@ -147,53 +143,34 @@ class SubmitRender(ns.Node):
     def get_entity_source(self):
         return self.parm('entity_source').eval()
 
-    def get_sequence_name(self):
+    def get_shot_uri(self) -> Uri | None:
         entity_source = self.get_entity_source()
         match entity_source:
             case 'from_context':
-                entity_data = _entity_from_context_json()
-                if entity_data is not None:
-                    return entity_data.sequence_name
+                context = _entity_from_context_json()
+                if context is not None:
+                    return context.entity_uri
             case 'from_settings':
                 pass
             case _:
                 raise AssertionError(f'Unknown entity source token: {entity_source}')
 
         # Fall back to settings
-        sequence_names = self.list_sequence_names()
-        if len(sequence_names) == 0: return None
-        sequence_name = self.parm('sequence').eval()
-        if len(sequence_name) == 0: return sequence_names[0]
-        if sequence_name not in sequence_names: return None
-        return sequence_name
-
-    def get_shot_name(self):
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                entity_data = _entity_from_context_json()
-                if entity_data is not None:
-                    return entity_data.shot_name
-            case 'from_settings':
-                pass
-            case _:
-                raise AssertionError(f'Unknown entity source token: {entity_source}')
-
-        # Fall back to settings
-        shot_names = self.list_shot_names()
-        if len(shot_names) == 0: return None
-        shot_name = self.parm('shot').eval()
-        if len(shot_name) == 0: return shot_names[0]
-        if shot_name not in shot_names: return None
-        return shot_name
+        shot_uris = self.list_shot_uris()
+        if len(shot_uris) == 0: return None
+        shot_uri_raw = self.parm('shot').eval()
+        if len(shot_uri_raw) == 0: return shot_uris[0]
+        shot_uri = Uri.parse_unsafe(shot_uri_raw)
+        if shot_uri not in shot_uris: return None
+        return shot_uri
 
     def get_shot_department_name(self):
         entity_source = self.get_entity_source()
         match entity_source:
             case 'from_context':
-                entity_data = _entity_from_context_json()
-                if entity_data is not None:
-                    return entity_data.department_name
+                context = _entity_from_context_json()
+                if context is not None:
+                    return context.department_name
             case 'from_settings':
                 pass
             case _:
@@ -237,12 +214,9 @@ class SubmitRender(ns.Node):
         frame_range_source = self.get_frame_range_source()
         match frame_range_source:
             case 'from_config':
-                sequence_name = self.get_sequence_name()
-                shot_name = self.get_shot_name()
-                frame_range = api.config.get_frame_range(
-                    sequence_name,
-                    shot_name
-                )
+                shot_uri = self.get_shot_uri()
+                if shot_uri is None: return None
+                frame_range = get_frame_range(shot_uri)
                 return frame_range
             case 'from_settings':
                 return FrameRange(
@@ -318,16 +292,11 @@ class SubmitRender(ns.Node):
         valid_sources = ['from_context', 'from_settings']
         if entity_source not in valid_sources: return
         self.parm('entity_source').set(entity_source)
-    
-    def set_sequence_name(self, sequence_name):
-        sequence_names = self.list_sequence_names()
-        if sequence_name not in sequence_names: return
-        self.parm('sequence').set(sequence_name)
-    
-    def set_shot_name(self, shot_name):
-        shot_names = self.list_shot_names()
-        if shot_name not in shot_names: return
-        self.parm('shot').set(shot_name)
+
+    def set_shot_uri(self, shot_uri: Uri):
+        shot_uris = self.list_shot_uris()
+        if shot_uri not in shot_uris: return
+        self.parm('shot').set(str(shot_uri))
 
     def set_shot_department_name(self, shot_department_name):
         shot_department_names = self.list_shot_department_names()
@@ -381,16 +350,14 @@ class SubmitRender(ns.Node):
     def build_preview(self):
 
         # Parameters
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
+        shot_uri = self.get_shot_uri()
         render_layer_name = self.get_render_layer_name()
         if render_layer_name == 'all':
             render_layer_names = self.list_render_layer_names()
             render_layer_name = render_layer_names[0]
 
-        # Set the preview parameters
-        self.parm('preview_sequence').set(sequence_name)
-        self.parm('preview_shot').set(shot_name)
+        # Set the preview parameters using URI path
+        self.parm('preview_shot').set(str(shot_uri))
         self.parm('preview_render_layer').set(render_layer_name)
 
         # Create the preview null node
@@ -423,12 +390,9 @@ class SubmitRender(ns.Node):
 
     def _submit(self, stage_render_job):
 
-        # Get the entity
-        entity = ShotEntity(
-            self.get_sequence_name(),
-            self.get_shot_name(),
-            self.get_shot_department_name()
-        )
+        # Get shot information
+        shot_uri = self.get_shot_uri()
+        shot_department_name = self.get_shot_department_name()
 
         # Get render layer names to process
         render_layer_names = self.get_render_layer_names()
@@ -491,7 +455,7 @@ class SubmitRender(ns.Node):
             )
 
         # Open temporary directory
-        root_temp_path = fix_path(api.storage.resolve('temp:/'))
+        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
@@ -512,7 +476,10 @@ class SubmitRender(ns.Node):
 
             # Submit the job
             stage_render_job.submit(dict(
-                entity = entity.to_json(),
+                entity = dict(
+                    uri = str(shot_uri),
+                    department = shot_department_name
+                ),
                 settings = dict(
                     user_name = user_name,
                     purpose = 'render',
@@ -544,6 +511,25 @@ class SubmitRender(ns.Node):
         )
         native.setComment(new_comment)
         native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+
+        # Show success message
+        tasks_text = []
+        if 'stage' in tasks:
+            tasks_text.append('Stage')
+        if 'partial_render' in tasks:
+            tasks_text.append('Partial Render')
+        if 'full_render' in tasks:
+            tasks_text.append('Full Render')
+
+        hou.ui.displayMessage(
+            f"Render job submitted to farm\n\n"
+            f"Shot: {shot_uri}\n"
+            f"Department: {shot_department_name}\n"
+            f"Render Layers: {layers_text}\n"
+            f"Samples: {samples}\n"
+            f"Tasks: {', '.join(tasks_text)}",
+            title="Render Submitted"
+        )
     
 def create(scene, name):
     node_type = ns.find_node_type('submit_render', 'Lop')

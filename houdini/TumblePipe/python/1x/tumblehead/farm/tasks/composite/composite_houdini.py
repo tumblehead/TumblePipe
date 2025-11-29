@@ -15,9 +15,9 @@ from tumblehead.util.io import (
     load_json,
     store_json
 )
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
+from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini import util
-from tumblehead.pipe.paths import ShotEntity
 from tumblehead.apps.deadline import log_progress
 
 api = default_client()
@@ -79,14 +79,12 @@ def main(
     # HACK: Make sure the graph is cooked
 
     # Get render layer names
-    entity = ShotEntity.from_json(entity_json)
-    render_layer_names = api.config.list_render_layer_names(
-        entity.sequence_name,
-        entity.shot_name
-    )
+    entity_uri = Uri.parse_unsafe(entity_json['uri'])
+    properties = api.config.get_properties(entity_uri)
+    render_layer_names = properties.get('render_layers', [])
 
     # Open a temporary directory
-    root_temp_path = to_windows_path(api.storage.resolve('temp:/'))
+    root_temp_path = to_windows_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -177,10 +175,8 @@ def main(
 """
 config = {
     'entity': {
-        'tag': 'shot',
-        'sequence_name': 'seq0010',
-        'shot_name': 'shot0010',
-        'department_name': 'composite'
+        'uri': 'entity:/shots/sequence/shot',
+        'department': 'string'
     },
     'first_frame': 1,
     'last_frame': 100,

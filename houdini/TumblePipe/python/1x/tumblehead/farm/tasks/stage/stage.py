@@ -21,7 +21,7 @@ from tumblehead.util.io import (
     load_json,
     store_json
 )
-from tumblehead.pipe.paths import Entity
+from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Hython
 from tumblehead.farm.jobs.houdini.render import job as render_job
 
@@ -35,7 +35,8 @@ SCRIPT_PATH = Path(__file__).parent / 'stage_houdini.py'
 def main(config):
 
     # Get config data
-    entity = Entity.from_json(config['entity'])
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    department_name = config['entity']['department']
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
@@ -52,7 +53,7 @@ def main(config):
     hython = Hython()
 
     # Open a temporary directory
-    root_temp_path = fix_path(api.storage.resolve('temp:/'))
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -66,12 +67,17 @@ def main(config):
         # Store stage config
         config_path = temp_path / 'config.json'
         store_json(config_path, dict(
-            entity = entity.to_json(),
-            first_frame = first_frame,
-            last_frame = last_frame,
-            render_layer_names = render_layer_names,
-            render_department_name = render_department_name,
-            render_settings_path = path_str(render_settings_path),
+            entity = dict(
+                uri = str(entity_uri),
+                department = department_name
+            ),
+            settings = dict(
+                first_frame = first_frame,
+                last_frame = last_frame,
+                render_layer_names = render_layer_names,
+                render_department_name = render_department_name,
+                render_settings_path = path_str(render_settings_path)
+            ),
             output_path = path_str(to_windows_path(stage_path))
         ))
     
@@ -87,8 +93,8 @@ def main(config):
                 TH_PROJECT_PATH = path_str(to_windows_path(api.PROJECT_PATH)),
                 TH_PIPELINE_PATH = path_str(to_windows_path(api.PIPELINE_PATH)),
                 HOUDINI_PACKAGE_DIR = ';'.join([
-                    path_str(to_windows_path(api.storage.resolve('pipeline:/houdini'))),
-                    path_str(to_windows_path(api.storage.resolve('project:/_pipeline/houdini')))
+                    path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini')))),
+                    path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('project:/_pipeline/houdini'))))
                 ]),
                 OCIO = path_str(to_windows_path(Path(os.environ['OCIO'])))
             )
@@ -106,7 +112,10 @@ def main(config):
         tasks = config['tasks'].copy()
         tasks.pop('stage')
         render_job.submit(dict(
-            entity = entity.to_json(),
+            entity = dict(
+                uri = str(entity_uri),
+                department = department_name
+            ),
             settings = dict(
                 user_name = user_name,
                 purpose = purpose,
@@ -133,20 +142,8 @@ def main(config):
 """
 config = {
     'entity': {
-        'tag': 'asset',
-        'category_name': 'string',
-        'asset_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'shot',
-        'sequence_name': 'string',
-        'shot_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'kit',
-        'category_name': 'string',
-        'kit_name': 'string',
-        'department_name': 'string'
+        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
+        'department': 'string'
     },
     'settings': {
         'user_name': 'string',
@@ -202,20 +199,8 @@ def _is_valid_config(config):
 
     def _valid_entity(entity):
         if not isinstance(entity, dict): return False
-        if 'tag' not in entity: return False
-        match entity['tag']:
-            case 'asset':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'asset_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'shot':
-                if not _check_str(entity, 'sequence_name'): return False
-                if not _check_str(entity, 'shot_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'kit':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'kit_name'): return False
-                if not _check_str(entity, 'department_name'): return False
+        if not _check_str(entity, 'uri'): return False
+        if not _check_str(entity, 'department'): return False
         return True
     
     def _valid_settings(settings):

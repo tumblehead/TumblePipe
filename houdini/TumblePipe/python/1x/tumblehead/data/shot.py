@@ -78,7 +78,7 @@ class Shot:
             'sequence': shot.sequence,
             'shot': shot.shot,
             'version': shot.version,
-            'frame_range': shot.frame_range,
+            'frame_range': shot.timeline,
             'divisions': [
                 Division.to_json(division)
                 for division in shot.divisions
@@ -103,6 +103,6 @@ class Shot:
             'sequence', self.sequence,
             'shot', self.shot,
             'version', self.version,
-            'frame_range', self.frame_range,
+            'frame_range', self.timeline,
             'divisions', hash(tuple(self.divisions))
         ))

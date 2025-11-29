@@ -14,7 +14,8 @@ from tumblehead.util.io import (
     load_json,
     store_json
 )
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
+from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini import util
 from tumblehead.apps.deadline import log_progress
 from tumblehead.apps import exr
@@ -77,8 +78,8 @@ def _create_render_node(parent, name, target):
 
 def _set_file_node(file_node, file_path, aov_name):
     file_node.parm('filename').set(path_str(file_path))
-    file_node.parm('aovs').set(0)
-    file_node.parm('addaovs').pressButton()
+    file_node.parm('aovs').set(1)
+    file_node.parm('aov1').set(aov_name)
     file_node.parm('type1').set(2)
 
 def main(
@@ -142,7 +143,7 @@ def main(
         for frame_index in render_range
     }
 
-    root_temp_path = to_windows_path(api.storage.resolve('temp:/'))
+    root_temp_path = to_windows_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -159,6 +160,7 @@ def main(
 
             # Set the input and output parameters
             source_file_path = _fix_frames_pattern(aov_path)
+            print(f'  Source file pattern: {source_file_path}')
             _set_file_node(source_file_node, source_file_path, aov_name)
             render_node.parm('copoutput').set(path_str(temp_frames_path))
             render_node.parm('aov1').set(aov_name)
@@ -178,7 +180,40 @@ def main(
                 output_frame_paths[frame_index][aov_name] = output_frame_path
                 render_node.parm('f1').set(frame_index)
                 render_node.parm('f2').set(frame_index)
-                render_node.parm('execute').pressButton()
+
+                # Check if source file exists for this frame
+                source_frame_path = _get_frame_path(source_file_path, frame_index)
+                if not source_frame_path.exists():
+                    print(f'  WARNING: Source file missing: {source_frame_path}')
+                else:
+                    print(f'  Processing frame {frame_index}: {source_frame_path}')
+
+                # Try to render with error capture
+                try:
+                    # Force cook the denoise node to check for errors before render
+                    denoise_node.cook(force=True, frame_range=(frame_index, frame_index))
+                    errors = denoise_node.errors()
+                    warnings = denoise_node.warnings()
+                    if errors:
+                        print(f'  Denoise node errors: {errors}')
+                    if warnings:
+                        print(f'  Denoise node warnings: {warnings}')
+
+                    render_node.parm('execute').pressButton()
+                except Exception as e:
+                    print(f'  ERROR: Render failed for AOV {aov_name} frame {frame_index}')
+                    print(f'  Exception: {type(e).__name__}: {e}')
+                    # Try to get more diagnostic info
+                    try:
+                        errors = denoise_node.errors()
+                        if errors:
+                            print(f'  Denoise node errors: {errors}')
+                        src_errors = source_file_node.errors()
+                        if src_errors:
+                            print(f'  Source file node errors: {src_errors}')
+                    except:
+                        pass
+                    raise
             
             # DWAB compress and copy to the output path
             output_frames_path.parent.mkdir(parents = True, exist_ok = True)

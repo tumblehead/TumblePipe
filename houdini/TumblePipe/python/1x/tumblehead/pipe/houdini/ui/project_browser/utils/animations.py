@@ -1,6 +1,6 @@
-from qtpy.QtCore import QObject, QPropertyAnimation, QEasingCurve, QTimer, Qt, QPointF
-from qtpy.QtWidgets import QGraphicsOpacityEffect, QWidget, QApplication
-from qtpy.QtGui import QPalette, QColor, QPainterPath
+from qtpy.QtCore import QObject, QPropertyAnimation, QEasingCurve
+from qtpy.QtWidgets import QGraphicsOpacityEffect
+from qtpy.QtGui import QColor
 import math
 
 
@@ -104,7 +104,7 @@ class BorderSpinnerAnimation(QObject):
             self._animation.start()
 
 
-        except Exception as e:
+        except Exception:
             pass  # Silently handle border spinner start errors
 
     def stop_border_spinner(self, widget):
@@ -121,7 +121,7 @@ class BorderSpinnerAnimation(QObject):
             widget.update()
 
 
-        except Exception as e:
+        except Exception:
             pass  # Silently handle border spinner stop errors
 
     def _setup_spinner_painting(self, widget):
@@ -217,7 +217,7 @@ class FlashAnimation(QObject):
             self._animation.start()
 
 
-        except Exception as e:
+        except Exception:
             pass  # Silently handle green overlay flash errors
 
 

@@ -10,7 +10,9 @@ if tumblehead_packages_path not in sys.path:
     sys.path.append(str(tumblehead_packages_path))
 
 from tumblehead.api import path_str, fix_path, to_windows_path, default_client
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
+from tumblehead.config.shots import list_render_layers
+from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Houdini
 
 api = default_client()
@@ -25,8 +27,7 @@ def _error(msg):
 EXPORT_SCRIPT_PATH = Path(__file__).parent / 'export_houdini.py'
 
 def main(
-    sequence_name: str,
-    shot_name: str,
+    shot_uri: Uri,
     render_department_name: str,
     render_layer_name: str,
     render_range: BlockRange
@@ -46,7 +47,7 @@ def main(
     houdini = Houdini(houdini_version)
 
     # Export
-    root_temp_path = fix_path(api.storage.resolve('temp:/'))
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -59,8 +60,7 @@ def main(
         houdini.run(
             to_windows_path(EXPORT_SCRIPT_PATH),
             [
-                sequence_name,
-                shot_name,
+                str(shot_uri),
                 render_department_name,
                 render_layer_name,
                 str(render_range.first_frame),
@@ -88,26 +88,20 @@ def main(
 def cli():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('sequence_name', type=str)
-    parser.add_argument('shot_name', type=str)
+    parser.add_argument('entity_uri', type=str)
     parser.add_argument('render_department_name', type=str)
     parser.add_argument('render_layer_name', type=str)
     parser.add_argument('first_frame', type=int)
     parser.add_argument('last_frame', type=int)
     args = parser.parse_args()
-    
-    # Check sequence code
-    sequence_names = api.config.list_sequence_names()
-    sequence_name = args.sequence_name
-    if sequence_name not in sequence_names:
-        return _error(f'Invalid sequence code: {sequence_name}')
 
-    # Check shot code
-    shot_names = api.config.list_shot_names(sequence_name)
-    shot_name = args.shot_name
-    if shot_name not in shot_names:
-        return _error(f'Invalid shot code: {shot_name}')
-    
+    # Parse and validate entity URI
+    shot_uri = Uri.parse_unsafe(args.entity_uri)
+    if shot_uri.purpose != 'entity':
+        return _error(f'Invalid entity URI: {shot_uri}')
+    if shot_uri.segments[0] != 'shots':
+        return _error(f'Invalid entity type: {shot_uri.segments[0]} (expected shots)')
+
     # Check render department name
     render_department_name = args.render_department_name
     render_department_names = api.config.list_render_department_names()
@@ -119,10 +113,10 @@ def cli():
 
     # Check render layer name
     render_layer_name = args.render_layer_name
-    render_layer_names = api.config.list_render_layer_names(sequence_name, shot_name)
+    render_layer_names = list_render_layers(shot_uri)
     if render_layer_name not in render_layer_names:
         return _error(f'Invalid layer name: {render_layer_name}')
-    
+
     # Check render range
     first_frame = args.first_frame
     last_frame = args.last_frame
@@ -132,8 +126,7 @@ def cli():
 
     # Run main
     return main(
-        sequence_name,
-        shot_name,
+        shot_uri,
         render_department_name,
         render_layer_name,
         render_range

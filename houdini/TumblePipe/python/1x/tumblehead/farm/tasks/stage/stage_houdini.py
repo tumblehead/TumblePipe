@@ -8,16 +8,14 @@ from tumblehead.api import (
     path_str,
     default_client
 )
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
+from tumblehead.config.department import list_departments
 from tumblehead.util.io import load_json
+from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini import util
 from tumblehead.pipe.houdini.lops import (
     build_shot,
     import_render_layer
-)
-from tumblehead.pipe.paths import (
-    Entity,
-    ShotEntity
 )
 
 api = default_client()
@@ -85,8 +83,7 @@ def _get_render_settings_script(render_settings_path: Path) -> str:
     )
 
 def main(
-    sequence_name: str,
-    shot_name: str,
+    shot_uri: Uri,
     render_range: BlockRange,
     render_layer_names: list[str],
     render_department_name: str,
@@ -99,14 +96,13 @@ def main(
     scene_node = hou.node('/stage')
 
     # Config
-    included_department_names = api.render.list_included_shot_department_names(
-        render_department_name
-    )
+    included_department_names = [
+        d.name for d in list_departments('shots') if d.renderable
+    ]
 
     # Create build shot node
     shot_node = build_shot.create(scene_node, '__build_shot')
-    shot_node.set_sequence_name(sequence_name)
-    shot_node.set_shot_name(shot_name)
+    shot_node.set_shot_uri(shot_uri)
     shot_node.set_include_procedurals(True)
     shot_node.set_include_downstream_departments(True)
     shot_node.execute()
@@ -133,8 +129,7 @@ def main(
                 render_layer_subnet,
                 included_department_name
             )
-            layer_node.set_sequence_name(sequence_name)
-            layer_node.set_shot_name(shot_name)
+            layer_node.set_shot_uri(shot_uri)
             layer_node.set_department_name(included_department_name)
             layer_node.set_render_layer_name(render_layer_name)
             layer_node.latest()
@@ -204,26 +199,16 @@ def main(
 """
 config = {
     'entity': {
-        'tag': 'asset',
-        'category_name': 'string',
-        'asset_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'shot',
-        'sequence_name': 'string',
-        'shot_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'kit',
-        'category_name': 'string',
-        'kit_name': 'string',
-        'department_name': 'string'
+        'uri': 'entity:/shots/sequence/shot',
+        'department': 'string'
     },
-    'first_frame': 'int',
-    'last_frame': 'int',
-    'render_layer_names': ['string'],
-    'render_department_name': 'string',
-    'render_settings_path': 'path/to/render_settings.json',
+    'settings': {
+        'first_frame': 'int',
+        'last_frame': 'int',
+        'render_layer_names': ['string'],
+        'render_department_name': 'string',
+        'render_settings_path': 'path/to/render_settings.json'
+    },
     'output_path': 'path/to/stage.usd'
 }
 """
@@ -246,31 +231,25 @@ def _is_valid_config(config):
 
     def _valid_entity(entity):
         if not isinstance(entity, dict): return False
-        if 'tag' not in entity: return False
-        match entity['tag']:
-            case 'asset':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'asset_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'shot':
-                if not _check_str(entity, 'sequence_name'): return False
-                if not _check_str(entity, 'shot_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'kit':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'kit_name'): return False
-                if not _check_str(entity, 'department_name'): return False
+        if not _check_str(entity, 'uri'): return False
+        if not _check_str(entity, 'department'): return False
         return True
     
+    def _valid_settings(settings):
+        if not isinstance(settings, dict): return False
+        if not _check_int(settings, 'first_frame'): return False
+        if not _check_int(settings, 'last_frame'): return False
+        if 'render_layer_names' not in settings: return False
+        if not isinstance(settings['render_layer_names'], list): return False
+        if not _check_str(settings, 'render_department_name'): return False
+        if not _check_str(settings, 'render_settings_path'): return False
+        return True
+
     if not isinstance(config, dict): return False
     if 'entity' not in config: return False
     if not _valid_entity(config['entity']): return False
-    if not _check_int(config, 'first_frame'): return False
-    if not _check_int(config, 'last_frame'): return False
-    if 'render_layer_names' not in config: return False
-    if not isinstance(config['render_layer_names'], list): return False
-    if not _check_str(config, 'render_department_name'): return False
-    if not _check_str(config, 'render_settings_path'): return False
+    if 'settings' not in config: return False
+    if not _valid_settings(config['settings']): return False
     if not _check_str(config, 'output_path'): return False
     return True
 
@@ -294,24 +273,24 @@ def cli():
     print(json.dumps(config, indent=4))
 
     # Get the entity
-    entity = Entity.from_json(config['entity'])
-    if not isinstance(entity, ShotEntity):
-        return _error(f'Invalid entity: {entity}')
-    
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    if entity_uri.segments[0] != 'shots':
+        return _error(f'Invalid entity: {entity_uri}')
+
     # Get the parameters
+    settings = config['settings']
     render_range = BlockRange(
-        config['first_frame'],
-        config['last_frame']
+        settings['first_frame'],
+        settings['last_frame']
     )
-    render_layer_names = config['render_layer_names']
-    render_department_name = config['render_department_name']
-    render_settings_path = Path(config['render_settings_path'])
+    render_layer_names = settings['render_layer_names']
+    render_department_name = settings['render_department_name']
+    render_settings_path = Path(settings['render_settings_path'])
     output_path = Path(config['output_path'])
 
     # Run main
     return main(
-        entity.sequence_name,
-        entity.shot_name,
+        entity_uri,
         render_range,
         render_layer_names,
         render_department_name,

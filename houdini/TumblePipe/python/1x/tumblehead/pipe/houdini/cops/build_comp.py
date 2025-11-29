@@ -12,8 +12,11 @@ from tumblehead.api import (
     to_windows_path,
     default_client
 )
-from tumblehead.config import FrameRange
-from tumblehead.util.io import store_json, load_json
+from tumblehead.config.timeline import FrameRange, get_frame_range
+from tumblehead.config.department import list_departments
+from tumblehead.config.shots import list_render_layers
+from tumblehead.util.io import store_json
+from tumblehead.util.uri import Uri
 from tumblehead.apps.deadline import Deadline
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.houdini.util as util
@@ -22,14 +25,14 @@ from tumblehead.pipe.paths import (
     get_render_context,
     get_workfile_context,
     get_next_frame_path,
-    entity_from_context,
-    ShotEntity
+    load_entity_context
 )
 
 api = default_client()
 
+DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/cops/build_comp')
+
 def _entity_from_context_json():
-    
     # Path to current workfile
     file_path = Path(hou.hipFile.path())
     if not file_path.exists(): return None
@@ -37,16 +40,17 @@ def _entity_from_context_json():
     # Look for context.json in the workfile directory
     context_json_path = file_path.parent / "context.json"
     if not context_json_path.exists(): return None
-    context_data = load_json(context_json_path)
-    if context_data is None: return None
 
-    # Parse the loaded context
-    if context_data.get('entity') != 'shot': return None
-    return ShotEntity(
-        sequence_name = context_data['sequence'],
-        shot_name = context_data['shot'],
-        department_name = context_data['department']
-    )
+    # Load context using shared helper
+    context = load_entity_context(context_json_path)
+    if context is None: return None
+
+    # Verify it's a shot entity
+    if context.entity_uri.purpose != 'entity': return None
+    if len(context.entity_uri.segments) < 1: return None
+    if context.entity_uri.segments[0] != 'shots': return None
+
+    return context
 
 def _set(data, value, *path_steps):
     data = data.setdefault(path_steps[0], dict())
@@ -201,38 +205,37 @@ class BuildComp(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_sequence_names(self):
-        return api.config.list_sequence_names()
-    
-    def list_shot_names(self):
-        sequence_name = self.get_sequence_name()
-        if sequence_name is None: return []
-        return api.config.list_shot_names(sequence_name)
-    
+    def list_shot_uris(self) -> list[Uri]:
+        shot_entities = api.config.list_entities(
+            filter = Uri.parse_unsafe('entity:/shots'),
+            closure = True
+        )
+        return list(shot_entities)
+
     def list_render_layer_names(self):
-        sequence_name = self.get_sequence_name()
-        if sequence_name is None: return []
-        shot_name = self.get_shot_name()
-        if shot_name is None: return []
-        render_layer_names = api.config.list_render_layer_names(sequence_name, shot_name)
-        return render_layer_names
-    
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None: return []
+        return list_render_layers(shot_uri)
+
     def list_render_department_names(self):
-        render_department_names = api.config.list_render_department_names()
+        render_department_names = list_departments('shots')
         if not render_department_names: return []
-        default_values = api.config.resolve('defaults:/houdini/cops/build_comp')
+        default_values = api.config.get_properties(DEFAULTS_URI)
         return [
             department_name
             for department_name in default_values['departments']
             if department_name in render_department_names
         ]
-    
+
     def list_pool_names(self):
         try: deadline = Deadline()
         except: return []
         pool_names = deadline.list_pools()
         if len(pool_names) == 0: return []
-        default_values = api.config.resolve('defaults:/houdini/lops/submit_render')
+        submit_render_defaults_uri = Uri.parse_unsafe('defaults:/houdini/lops/submit_render')
+        default_values = api.config.get_properties(submit_render_defaults_uri)
+        if default_values is None: return []
+        if 'pools' not in default_values: return []
         return [
             pool_name
             for pool_name in default_values['pools']
@@ -242,37 +245,21 @@ class BuildComp(ns.Node):
     def get_entity_source(self):
         return self.parm('entity_source').eval()
 
-    def get_sequence_name(self):
+    def get_shot_uri(self) -> Uri | None:
         entity_source = self.get_entity_source()
         match entity_source:
             case 'from_context':
-                entity_data = _entity_from_context_json()
-                if entity_data is None: return None
-                return entity_data.sequence_name
+                context = _entity_from_context_json()
+                if context is None: return None
+                return context.entity_uri
             case 'from_settings':
-                sequence_names = self.list_sequence_names()
-                if len(sequence_names) == 0: return None
-                sequence_name = self.parm('sequence').eval()
-                if len(sequence_name) == 0: return sequence_names[0]
-                if sequence_name not in sequence_names: return None
-                return sequence_name
-            case _:
-                raise AssertionError(f'Unknown entity source token: {entity_source}')
-
-    def get_shot_name(self):
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                entity_data = _entity_from_context_json()
-                if entity_data is None: return None
-                return entity_data.shot_name
-            case 'from_settings':
-                shot_names = self.list_shot_names()
-                if len(shot_names) == 0: return None
-                shot_name = self.parm('shot').eval()
-                if len(shot_name) == 0: return shot_names[0]
-                if shot_name not in shot_names: return None
-                return shot_name
+                shot_uris = self.list_shot_uris()
+                if len(shot_uris) == 0: return None
+                shot_uri_raw = self.parm('shot').eval()
+                if len(shot_uri_raw) == 0: return shot_uris[0]
+                shot_uri = Uri.parse_unsafe(shot_uri_raw)
+                if shot_uri not in shot_uris: return None
+                return shot_uri
             case _:
                 raise AssertionError(f'Unknown entity source token: {entity_source}')
     
@@ -309,17 +296,14 @@ class BuildComp(ns.Node):
     
     def get_frame_range_source(self):
         return self.parm('frame_range').eval()
-    
+
     def get_frame_range(self):
         frame_range_source = self.get_frame_range_source()
         match frame_range_source:
             case 'from_config':
-                sequence_name = self.get_sequence_name()
-                shot_name = self.get_shot_name()
-                frame_range = api.config.get_frame_range(
-                    sequence_name,
-                    shot_name
-                )
+                shot_uri = self.get_shot_uri()
+                if shot_uri is None: return None
+                frame_range = get_frame_range(shot_uri)
                 return frame_range
             case 'from_settings':
                 return FrameRange(
@@ -360,15 +344,10 @@ class BuildComp(ns.Node):
             self.parm('specific_framesz').eval()
         )
     
-    def set_sequence_name(self, sequence_name):
-        sequence_names = self.list_sequence_names()
-        if sequence_name not in sequence_names: return
-        self.parm('sequence').set(sequence_name)
-    
-    def set_shot_name(self, shot_name):
-        shot_names = self.list_shot_names()
-        if shot_name not in shot_names: return
-        self.parm('shot').set(shot_name)
+    def set_shot_uri(self, shot_uri: Uri):
+        shot_uris = self.list_shot_uris()
+        if shot_uri not in shot_uris: return
+        self.parm('shot').set(str(shot_uri))
 
     def set_entity_source(self, entity_source):
         valid_sources = ['from_context', 'from_settings']
@@ -427,8 +406,7 @@ class BuildComp(ns.Node):
     def _resolve_aovs(
         self,
         source_name,
-        sequence_name,
-        shot_name,
+        shot_uri,
         resolution_name,
         render_department_names
         ):
@@ -498,8 +476,7 @@ class BuildComp(ns.Node):
         match source_name:
             case Source.Render:
                 render_context = get_render_context(
-                    sequence_name,
-                    shot_name,
+                    shot_uri,
                     purpose = Source.Render
                 )
                 if render_context is None: return None
@@ -508,8 +485,7 @@ class BuildComp(ns.Node):
                 return aovs, types
             case Source.Proxy:
                 render = get_render(
-                    sequence_name,
-                    shot_name,
+                    shot_uri,
                     resolution_name,
                     purpose = Source.Proxy
                 )
@@ -877,12 +853,12 @@ class BuildComp(ns.Node):
         dive_node = context.node('dive')
 
         # Parameters
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None: return
         source_name = self.get_source_name()
         resolution_name = self.get_proxy_resolution()
         scale = _scale(resolution_name)
-        render_layer_names = api.config.list_render_layer_names(sequence_name, shot_name)
+        render_layer_names = list_render_layers(shot_uri)
 
         # Find the ordered list of render department names
         render_department_names = self.list_render_department_names()
@@ -894,8 +870,7 @@ class BuildComp(ns.Node):
         # Get render data
         aov_context, aov_types = self._resolve_aovs(
             source_name,
-            sequence_name,
-            shot_name,
+            shot_uri,
             resolution_name,
             render_department_names
         )
@@ -1025,10 +1000,10 @@ class BuildComp(ns.Node):
     def _build(self):
 
         # Parameters
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
-        render_layer_names = api.config.list_render_layer_names(sequence_name, shot_name)
-        frame_range = api.config.get_frame_range(sequence_name, shot_name)
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None: return
+        render_layer_names = list_render_layers(shot_uri)
+        frame_range = get_frame_range(shot_uri)
 
         # Find the ordered list of render department names
         render_department_names = self.list_render_department_names()
@@ -1051,8 +1026,7 @@ class BuildComp(ns.Node):
         # Get render data
         aov_context, aov_types = self._resolve_aovs(
             Source.Render,
-            sequence_name,
-            shot_name,
+            shot_uri,
             Resolution.Full,
             render_department_names
         )
@@ -1243,7 +1217,12 @@ class BuildComp(ns.Node):
         workfile_path = Path(hou.hipFile.path())
         context = get_workfile_context(workfile_path)
         assert context is not None, 'Invalid workfile path'
-        entity = entity_from_context(context)
+
+        # Convert context to entity_json for farm submission
+        entity_json = {
+            'uri': str(context.entity_uri),
+            'department': context.department_name
+        }
 
         # Prepare settings
         user_name = get_user_name()
@@ -1277,7 +1256,7 @@ class BuildComp(ns.Node):
             )
         
         # Open temporary directory
-        root_temp_path = fix_path(api.storage.resolve('temp:/'))
+        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
@@ -1302,7 +1281,7 @@ class BuildComp(ns.Node):
 
                     # Submit the job
                     composite_job.submit(dict(
-                        entity = entity.to_json(),
+                        entity = entity_json,
                         settings = dict(
                             user_name = user_name,
                             purpose = 'render',
@@ -1328,17 +1307,14 @@ class BuildComp(ns.Node):
         render_node = context.node('render')
 
         # Parameters
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
-        render_layer_names = api.config.list_render_layer_names(
-            sequence_name,
-            shot_name
-        )
-        frame_range = api.config.get_frame_range(sequence_name, shot_name)
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None: return
+        render_layer_names = list_render_layers(shot_uri)
+        frame_range = get_frame_range(shot_uri)
         render_range = frame_range.full_range()
         
         # Render the composite
-        root_temp_path = to_windows_path(api.storage.resolve('temp:/'))
+        root_temp_path = to_windows_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(
             dir = path_str(root_temp_path),
@@ -1356,10 +1332,7 @@ class BuildComp(ns.Node):
                     f'{render_layer_name}.$F4.exr'
                 )
                 output_frames_path = get_next_frame_path(
-                    ShotEntity(
-                        sequence_name,
-                        shot_name
-                    ),
+                    shot_uri,
                     'composite',
                     render_layer_name,
                     '$F4'
@@ -1385,8 +1358,7 @@ class BuildComp(ns.Node):
                 # Write context data to the output
                 output_context_path = output_frames_path.parent / 'context.json'
                 store_json(output_context_path, dict(
-                    sequence_name = sequence_name,
-                    shot_name = shot_name,
+                    entity = str(shot_uri),
                     render_layer_name = render_layer_name,
                     first_frame = render_range.first_frame,
                     last_frame = render_range.last_frame,

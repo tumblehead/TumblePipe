@@ -21,6 +21,7 @@ from tumblehead.api import (
     to_windows_path,
     default_client
 )
+from tumblehead.util.uri import Uri
 from tumblehead.apps import mp4, wsl
 from tumblehead.apps.houdini import IConvert
 from tumblehead.util.io import load_json
@@ -67,7 +68,7 @@ def _post(
     ) -> int:
 
     # Load discord config
-    discord_config_path = api.storage.resolve('config:/discord_info.json')
+    discord_config_path = api.storage.resolve(Uri.parse_unsafe('config:/discord_info.json'))
     discord_config = load_json(discord_config_path)
     if discord_config is None:
         return _error(f'Discord config not found: {path_str(discord_config_path)}')
@@ -219,7 +220,7 @@ def _post_mp4(
         return _error(f'MP4 not found: {path_str(mp4_path)}')
     
     # Fix the size if the mp4 is too large
-    root_temp_path = to_wsl_path(api.storage.resolve('temp:/'))
+    root_temp_path = to_wsl_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -317,12 +318,12 @@ def _exr_to_jpeg_bytes(path: Path) -> bytes:
     )
     
     # Create temporary JPEG file
-    root_temp_path = to_wsl_path(api.storage.resolve('temp:/'))
+    root_temp_path = to_wsl_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
         temp_jpeg_path = temp_path / 'temp.jpg'
-        
+
         # Convert EXR to JPEG using iconvert (same as exr.to_jpeg)
         iconvert = IConvert()
         result = iconvert.run(
@@ -352,12 +353,12 @@ def _post_panorama(
     ) -> int:
 
     # Create temporary directory for panorama EXR
-    root_temp_path = to_wsl_path(api.storage.resolve('temp:/'))
+    root_temp_path = to_wsl_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
         panorama_exr_path = temp_path / 'panorama.exr'
-        
+
         # Create panorama EXR using oiiotool
         result = _create_panorama_exr(image_paths, panorama_exr_path, scale=0.5)
         if result != 0:

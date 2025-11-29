@@ -3,73 +3,75 @@ from pathlib import Path
 import hou
 
 from tumblehead.api import path_str, default_client
+from tumblehead.util.uri import Uri
+from tumblehead.config.department import list_departments
+from tumblehead.config.shots import list_render_layers
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.paths import (
     list_version_paths,
     get_workfile_context,
-    ShotContext
+    get_render_layer_export_file_path
 )
 
 api = default_client()
+
+DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/import_render_layer')
 
 class ImportRenderLayer(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_sequence_names(self):
-        return api.config.list_sequence_names()
-    
-    def list_shot_names(self):
-        sequence_name = self.get_sequence_name()
-        if sequence_name is None: return []
-        return api.config.list_shot_names(sequence_name)
-    
+    def list_shot_uris(self) -> list[Uri]:
+        shot_entities = api.config.list_entities(
+            filter = Uri.parse_unsafe('entity:/shots'),
+            closure = True
+        )
+        return list(shot_entities)
+
     def list_department_names(self):
-        shot_department_names = api.config.list_shot_department_names()
-        if len(shot_department_names) == 0: return []
-        default_values = api.config.resolve('defaults:/houdini/lops/import_render_layer')
+        shot_departments = list_departments('shots')
+        if len(shot_departments) == 0: return []
+        shot_department_names = [dept.name for dept in shot_departments]
+        default_values = api.config.get_properties(DEFAULTS_URI)
         return [
             department_name
             for department_name in default_values['departments']
             if department_name in shot_department_names
         ]
-    
+
     def list_render_layer_names(self):
-        sequence_name = self.get_sequence_name()
-        if sequence_name is None: return []
-        shot_name = self.get_shot_name()
-        if shot_name is None: return []
-        return api.config.list_render_layer_names(sequence_name, shot_name)
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None: return []
+        return list_render_layers(shot_uri)
     
     def list_version_names(self):
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None: return []
         department_name = self.get_department_name()
+        if department_name is None: return []
         render_layer_name = self.get_render_layer_name()
-        layer_path = api.storage.resolve(
-            f'export:/shots/{sequence_name}/{shot_name}/render_layers'
-            f'/{department_name}/{render_layer_name}'
+        if render_layer_name is None: return []
+        export_uri = (
+            Uri.parse_unsafe('export:/') /
+            shot_uri.segments /
+            'render_layers' /
+            department_name /
+            render_layer_name
         )
+        layer_path = api.storage.resolve(export_uri)
         if not layer_path.exists(): return []
         version_paths = list_version_paths(layer_path)
         version_names = [path.name for path in version_paths]
         return version_names
-    
-    def get_sequence_name(self):
-        sequence_names = self.list_sequence_names()
-        if len(sequence_names) == 0: return None
-        sequence_name = self.parm('sequence').eval()
-        if len(sequence_name) == 0: return sequence_names[0]
-        if sequence_name not in sequence_names: return None
-        return sequence_name
 
-    def get_shot_name(self):
-        shot_names = self.list_shot_names()
-        if len(shot_names) == 0: return None
-        shot_name = self.parm('shot').eval()
-        if len(shot_name) == 0: return shot_names[0]
-        if shot_name not in shot_names: return None
-        return shot_name
+    def get_shot_uri(self) -> Uri | None:
+        shot_uris = self.list_shot_uris()
+        if len(shot_uris) == 0: return None
+        shot_uri_raw = self.parm('shot').eval()
+        if len(shot_uri_raw) == 0: return shot_uris[0]
+        shot_uri = Uri.parse_unsafe(shot_uri_raw)
+        if shot_uri not in shot_uris: return None
+        return shot_uri
     
     def get_department_name(self):
         department_names = self.list_department_names()
@@ -95,16 +97,11 @@ class ImportRenderLayer(ns.Node):
         if version_name == 'latest': return version_names[-1]
         if version_name not in version_names: return None
         return version_name
-    
-    def set_sequence_name(self, sequence_name):
-        sequence_names = self.list_sequence_names()
-        if sequence_name not in sequence_names: return
-        self.parm('sequence').set(sequence_name)
-    
-    def set_shot_name(self, shot_name):
-        shot_names = self.list_shot_names()
-        if shot_name not in shot_names: return
-        self.parm('shot').set(shot_name)
+
+    def set_shot_uri(self, shot_uri: Uri):
+        shot_uris = self.list_shot_uris()
+        if shot_uri not in shot_uris: return
+        self.parm('shot').set(str(shot_uri))
     
     def set_department_name(self, department_name):
         department_names = self.list_department_names()
@@ -129,26 +126,31 @@ class ImportRenderLayer(ns.Node):
     def execute(self):
 
         # Parameters
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
+        shot_uri = self.get_shot_uri()
         department_name = self.get_department_name()
         render_layer_name = self.get_render_layer_name()
         version_name = self.get_version_name()
 
-        # Paths
-        version_path = api.storage.resolve(
-            f'export:/shots/{sequence_name}/{shot_name}/render_layers'
-            f'/{department_name}/{render_layer_name}/{version_name}'
+        # Check parameters
+        if shot_uri is None: return
+        if department_name is None: return
+        if render_layer_name is None: return
+        if version_name is None: return
+
+        # Get input file path
+        input_file_path = get_render_layer_export_file_path(
+            shot_uri,
+            department_name,
+            render_layer_name,
+            version_name
         )
-        input_file_name = f'{sequence_name}_{shot_name}_{department_name}_{render_layer_name}_{version_name}.usd'
-        input_file_path = version_path / input_file_name
 
         # Import layer file
         self.parm('import_enable1').set(1 if input_file_path.exists() else 0)
         self.parm('import_filepath1').set(path_str(input_file_path))
 
         # Update the version label on the node UI
-        self.parm('version_label').set(f'v{version_name}')
+        self.parm('version_label').set(version_name)
 
 def create(scene, name):
     node_type = ns.find_node_type('import_render_layer', 'Lop')
@@ -178,17 +180,9 @@ def on_created(raw_node):
     file_path = Path(hou.hipFile.path())
     context = get_workfile_context(file_path)
     if context is None: return
-    
-    # Set the default values
-    match context:
-        case ShotContext(
-            department_name,
-            sequence_name,
-            shot_name,
-            version_name
-            ):
-            node.set_sequence_name(sequence_name)
-            node.set_shot_name(shot_name)
+
+    # Set the default values from context
+    node.set_shot_uri(context.entity_uri)
 
 def execute():
     raw_node = hou.pwd()

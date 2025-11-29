@@ -4,50 +4,39 @@ import hou
 
 from tumblehead.api import default_client
 from tumblehead.pipe.paths import (
-    get_workfile_context,
-    AssetContext
+    get_workfile_context
 )
+from tumblehead.util.uri import Uri
 import tumblehead.pipe.houdini.nodes as ns
 
 api = default_client()
 
+DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/create_model')
+
 class CreateModel(ns.Node):
     def __init__(self, native):
         super().__init__(native)
-    
-    def list_category_names(self):
-        return api.config.list_category_names()
 
-    def list_asset_names(self):
-        category_name = self.get_category_name()
-        if category_name is None: return []
-        return api.config.list_asset_names(category_name)
+    def list_asset_uris(self) -> list[Uri]:
+        asset_entities = api.config.list_entities(
+            filter = Uri.parse_unsafe('entity:/assets'),
+            closure = True
+        )
+        return list(asset_entities)
 
-    def get_category_name(self):
-        category_names = self.list_category_names()
-        if len(category_names) == 0: return None
-        category_name = self.parm('category').eval()
-        if len(category_name) == 0: return category_names[0]
-        if category_name not in category_names: return None
-        return category_name
+    def get_asset_uri(self) -> Uri | None:
+        asset_uris = self.list_asset_uris()
+        if len(asset_uris) == 0: return None
+        asset_uri_raw = self.parm('asset').eval()
+        if len(asset_uri_raw) == 0: return asset_uris[0]
+        asset_uri = Uri.parse_unsafe(asset_uri_raw)
+        if asset_uri not in asset_uris: return None
+        return asset_uri
 
-    def get_asset_name(self):
-        asset_names = self.list_asset_names()
-        if len(asset_names) == 0: return None
-        asset_name = self.parm('asset').eval()
-        if len(asset_name) == 0: return asset_names[0]
-        if asset_name not in asset_names: return None
-        return asset_name
-
-    def set_category_name(self, category_name):
-        category_names = self.list_category_names()
-        if category_name not in category_names: return
-        self.parm('category').set(category_name)
-
-    def set_asset_name(self, asset_name):
-        asset_names = self.list_asset_names()
-        if asset_name not in asset_names: return
-        self.parm('asset').set(asset_name)
+    def set_asset_uri(self, asset_uri: Uri):
+        asset_uris = self.list_asset_uris()
+        if asset_uri not in asset_uris: return
+        self.parm('asset').set(str(asset_uri))
 
 def create(scene, name):
     node_type = ns.find_node_type('create_model', 'Lop')
@@ -77,17 +66,9 @@ def on_created(raw_node):
     file_path = Path(hou.hipFile.path())
     context = get_workfile_context(file_path)
     if context is None: return
-    
-    # Set the default values
-    match context:
-        case AssetContext(
-            department_name,
-            category_name,
-            asset_name,
-            version_name
-            ):
-            node.set_category_name(category_name)
-            node.set_asset_name(asset_name)
+
+    # Set the default values from context
+    node.set_asset_uri(context.entity_uri)
 
 def _get_materials(geo, outputnode):
     materials = []
@@ -117,7 +98,7 @@ def fill_materials(node):
     if materials:
         import loputils
         node.parm("materials").set(len(materials))
-        inputnode = node.node("input")
+        node.node("input")
         lopnode = node.node("sopimport")
         pathprefix = node.evalParm("pathprefix")
         if not pathprefix.endswith("/"):

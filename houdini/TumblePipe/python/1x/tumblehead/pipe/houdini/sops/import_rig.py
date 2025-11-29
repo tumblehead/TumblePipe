@@ -1,6 +1,7 @@
 import hou
 
 from tumblehead.api import path_str, default_client
+from tumblehead.util.uri import Uri
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.sops import rename_packed
 from tumblehead.pipe.paths import list_version_paths
@@ -21,40 +22,31 @@ def _clear_scene(dive_node, output_node):
 class ImportRig(ns.Node):
     def __init__(self, native):
         super().__init__(native)
-    
-    def list_category_names(self):
-        return api.config.list_category_names()
 
-    def list_asset_names(self):
-        category_name = self.get_category_name()
-        if category_name is None: return []
-        return api.config.list_asset_names(category_name)
+    def list_asset_uris(self) -> list[Uri]:
+        asset_entities = api.config.list_entities(
+            filter=Uri.parse_unsafe('entity:/assets'),
+            closure=True
+        )
+        return list(asset_entities)
 
     def list_version_names(self):
-        category_name = self.get_category_name()
-        if category_name is None: return []
-        asset_name = self.get_asset_name()
-        if asset_name is None: return []
-        asset_path = api.storage.resolve(f'export:/assets/{category_name}/{asset_name}/rig')
+        asset_uri = self.get_asset_uri()
+        if asset_uri is None: return []
+        export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / 'rig'
+        asset_path = api.storage.resolve(export_uri)
         version_paths = list_version_paths(asset_path)
         version_names = [version_path.name for version_path in version_paths]
         return version_names
 
-    def get_category_name(self):
-        category_names = self.list_category_names()
-        if len(category_names) == 0: return None
-        category_name = self.parm('category').eval()
-        if len(category_name) == 0: return category_names[0]
-        if category_name not in category_names: return None
-        return category_name
-
-    def get_asset_name(self):
-        asset_names = self.list_asset_names()
-        if len(asset_names) == 0: return None
-        asset_name = self.parm('asset').eval()
-        if len(asset_name) == 0: return asset_names[0]
-        if asset_name not in asset_names: return None
-        return asset_name
+    def get_asset_uri(self) -> Uri | None:
+        asset_uris = self.list_asset_uris()
+        if len(asset_uris) == 0: return None
+        asset_uri_raw = self.parm('asset').eval()
+        if len(asset_uri_raw) == 0: return asset_uris[0]
+        asset_uri = Uri.parse_unsafe(asset_uri_raw)
+        if asset_uri not in asset_uris: return None
+        return asset_uri
 
     def get_version_name(self):
         version_names = self.list_version_names()
@@ -63,19 +55,14 @@ class ImportRig(ns.Node):
         if len(version_name) == 0: return version_names[-1]
         if version_name not in version_names: return None
         return version_name
-    
+
     def get_instances(self):
         return self.parm('instances').eval()
 
-    def set_category_name(self, category_name):
-        category_names = self.list_category_names()
-        if category_name not in category_names: return
-        self.parm('category').set(category_name)
-
-    def set_asset_name(self, asset_name):
-        asset_names = self.list_asset_names()
-        if asset_name not in asset_names: return
-        self.parm('asset').set(asset_name)
+    def set_asset_uri(self, asset_uri: Uri):
+        asset_uris = self.list_asset_uris()
+        if asset_uri not in asset_uris: return
+        self.parm('asset').set(str(asset_uri))
 
     def set_version_name(self, version_name):
         version_names = self.list_version_names()
@@ -103,14 +90,20 @@ class ImportRig(ns.Node):
         _clear_scene(dive_node, output_node)
 
         # Parameters
-        category_name = self.get_category_name()
-        asset_name = self.get_asset_name()
+        asset_uri = self.get_asset_uri()
+        if asset_uri is None:
+            bypass_node.parm('input').set(0)
+            return
         version_name = self.get_version_name()
         instances = self.get_instances()
 
+        # Create filename from URI segments
+        uri_name = '_'.join(asset_uri.segments[1:])
+
         # Paths
-        version_path = api.storage.resolve(f'export:/assets/{category_name}/{asset_name}/rig/{version_name}')
-        file_path = version_path / f'{category_name}_{asset_name}_rig_{version_name}.bgeo.sc'
+        export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / 'rig' / version_name
+        version_path = api.storage.resolve(export_uri)
+        file_path = version_path / f'{uri_name}_rig_{version_name}.bgeo.sc'
         if not file_path.exists():
             bypass_node.parm('input').set(0)
             return
@@ -122,20 +115,23 @@ class ImportRig(ns.Node):
         # Create instances
         prev_node = dive_node.indirectInputs()[0]
         source_node = dive_node.indirectInputs()[1]
+        base_name = asset_uri.segments[-1]  # Last segment is the asset name
+        prim_base_path = '/'.join(asset_uri.segments[1:])  # e.g., "char/hero"
+        prim_parent_path = '/'.join(asset_uri.segments[1:-1])  # e.g., "char"
         for instance_index in range(instances):
             anchor_node = source_node
-            instance_name = asset_name if instances == 1 else f'{asset_name}{instance_index}'
+            instance_name = base_name if instances == 1 else f'{base_name}{instance_index}'
 
             # Rename the packed primitives if necessary
             if instances > 1:
-                rename_node = rename_packed.create(dive_node, f'{category_name}_{instance_name}_rename')
-                rename_node.set_from_path(f'/{category_name}/{asset_name}/*')
-                rename_node.set_to_path(f'/{category_name}/{instance_name}/*')
+                rename_node = rename_packed.create(dive_node, f'{uri_name}_{instance_name}_rename')
+                rename_node.set_from_path(f'/{prim_base_path}/*')
+                rename_node.set_to_path(f'/{prim_parent_path}/{instance_name}/*')
                 rename_node.native().setInput(0, anchor_node)
                 anchor_node = rename_node.native()
 
             # Create the add character to scene node
-            add_node = dive_node.createNode('apex::sceneaddcharacter', f'{category_name}_{instance_name}_add')
+            add_node = dive_node.createNode('apex::sceneaddcharacter', f'{uri_name}_{instance_name}_add')
             add_node.parm('charactername').deleteAllKeyframes()
             add_node.parm('charactername').set(instance_name)
 

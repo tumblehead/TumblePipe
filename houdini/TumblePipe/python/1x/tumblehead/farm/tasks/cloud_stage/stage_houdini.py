@@ -8,17 +8,15 @@ from tumblehead.api import (
     path_str,
     default_client
 )
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
+from tumblehead.config.department import list_departments
 from tumblehead.util.io import load_json
+from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini import util
 from tumblehead.pipe.houdini.lops import (
     build_shot,
     import_render_layer,
     archive
-)
-from tumblehead.pipe.paths import (
-    Entity,
-    ShotEntity
 )
 
 api = default_client()
@@ -86,8 +84,7 @@ def _get_render_settings_script(render_settings_path: Path) -> str:
     )
 
 def main(
-    sequence_name: str,
-    shot_name: str,
+    shot_uri: Uri,
     render_range: BlockRange,
     render_layer_name: str,
     render_department_name: str,
@@ -95,19 +92,18 @@ def main(
     output_path: Path
     ) -> int:
     _headline('Stage Shot')
-    
+
     # Prepare scene
     scene_node = hou.node('/stage')
 
     # Config
-    included_department_names = api.render.list_included_shot_department_names(
-        render_department_name
-    )
+    included_department_names = [
+        d.name for d in list_departments('shots') if d.renderable
+    ]
 
     # Create build shot node
     shot_node = build_shot.create(scene_node, '__build_shot')
-    shot_node.set_sequence_name(sequence_name)
-    shot_node.set_shot_name(shot_name)
+    shot_node.set_shot_uri(shot_uri)
     shot_node.set_include_procedurals(True)
     shot_node.set_include_downstream_departments(True)
     shot_node.execute()
@@ -131,8 +127,7 @@ def main(
             render_layer_subnet,
             included_department_name
         )
-        layer_node.set_sequence_name(sequence_name)
-        layer_node.set_shot_name(shot_name)
+        layer_node.set_shot_uri(shot_uri)
         layer_node.set_department_name(included_department_name)
         layer_node.set_render_layer_name(render_layer_name)
         layer_node.latest()
@@ -199,20 +194,8 @@ def main(
 """
 config = {
     'entity': {
-        'tag': 'asset',
-        'category_name': 'string',
-        'asset_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'shot',
-        'sequence_name': 'string',
-        'shot_name': 'string',
-        'department_name': 'string'
-    } | {
-        'tag': 'kit',
-        'category_name': 'string',
-        'kit_name': 'string',
-        'department_name': 'string'
+        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
+        'department': 'string'
     },
     'first_frame': 'int',
     'last_frame': 'int',
@@ -241,20 +224,8 @@ def _is_valid_config(config):
 
     def _valid_entity(entity):
         if not isinstance(entity, dict): return False
-        if 'tag' not in entity: return False
-        match entity['tag']:
-            case 'asset':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'asset_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'shot':
-                if not _check_str(entity, 'sequence_name'): return False
-                if not _check_str(entity, 'shot_name'): return False
-                if not _check_str(entity, 'department_name'): return False
-            case 'kit':
-                if not _check_str(entity, 'category_name'): return False
-                if not _check_str(entity, 'kit_name'): return False
-                if not _check_str(entity, 'department_name'): return False
+        if not _check_str(entity, 'uri'): return False
+        if not _check_str(entity, 'department'): return False
         return True
     
     if not isinstance(config, dict): return False
@@ -288,10 +259,10 @@ def cli():
     print(json.dumps(config, indent=4))
 
     # Get the entity
-    entity = Entity.from_json(config['entity'])
-    if not isinstance(entity, ShotEntity):
-        return _error(f'Invalid entity: {entity}')
-    
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    if entity_uri.segments[0] != 'shots':
+        return _error(f'Invalid entity: {entity_uri}')
+
     # Get the parameters
     render_range = BlockRange(
         config['first_frame'],
@@ -304,8 +275,7 @@ def cli():
 
     # Run main
     return main(
-        entity.sequence_name,
-        entity.shot_name,
+        entity_uri,
         render_range,
         render_layer_name,
         render_department_name,

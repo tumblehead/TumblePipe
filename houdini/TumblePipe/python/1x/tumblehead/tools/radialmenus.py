@@ -10,6 +10,7 @@ import loputils # type: ignore
 
 from tumblehead.api import default_client, fix_path, get_user_name
 from tumblehead.util.io import load_json
+from tumblehead.util.uri import Uri
 from tumblehead.tools import utils
 
 import radialmenu
@@ -219,7 +220,7 @@ def build_menu_radial(node: hou.Node) -> dict:
 #region get_favorite_path
 def get_favorites_path() -> Path:
     user = get_user_name()
-    FAVORITES_PATH = fix_path(api.storage.resolve("temp:/") /f"{user}_faves.json")
+    FAVORITES_PATH = fix_path(api.storage.resolve(Uri.parse_unsafe("temp:/")) /f"{user}_faves.json")
     return FAVORITES_PATH
 
 #region clear favorits

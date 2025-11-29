@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
-WORD_ALPHABET = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_')
+from tumblehead.util.uri import Uri
+from tumblehead.api import default_client
+
+api = default_client()
 
 @dataclass(frozen=True)
 class BlockRange:
@@ -126,125 +129,22 @@ class FrameRange:
         if self.step_size != other.step_size: return False
         return True
 
-class ConfigConvention:
-    def list_sequence_names(self):
-        raise NotImplementedError()
-    
-    def list_shot_names(self, sequence_name):
-        raise NotImplementedError()
-    
-    def list_category_names(self):
-        raise NotImplementedError()
-    
-    def list_asset_names(self, category_name):
-        raise NotImplementedError()
+def get_frame_range(uri: Uri) -> FrameRange | None:
+    properties = api.config.get_properties(uri)
+    if properties is None: return None
+    if 'frame_start' not in properties: return None
+    if 'frame_end' not in properties: return None
+    if 'roll_start' not in properties: return None
+    if 'roll_end' not in properties: return None
+    return FrameRange(
+        properties['frame_start'],
+        properties['frame_end'],
+        properties['roll_start'],
+        properties['roll_end']
+    )
 
-    def get_asset_animatable(self, category_name, asset_name):
-        raise NotImplementedError()
-
-    def list_kit_category_names(self):
-        raise NotImplementedError()
-
-    def list_kit_names(self):
-        raise NotImplementedError()
-    
-    def list_asset_department_names(self):
-        raise NotImplementedError()
-    
-    def list_shot_department_names(self):
-        raise NotImplementedError()
-    
-    def list_kit_department_names(self):
-        raise NotImplementedError()
-    
-    def list_render_department_names(self):
-        raise NotImplementedError()
-    
-    def list_render_layer_names(self, sequence_name, shot_name):
-        raise NotImplementedError()
-    
-    def get_frame_range(self, sequence_name, shot_name) -> FrameRange:
-        raise NotImplementedError()
-    
-    def list_asset_procedural_names(self, category, asset):
-        raise NotImplementedError()
-
-    def list_kit_procedural_names(self, category, kit):
-        raise NotImplementedError()
-    
-    def list_shot_asset_procedural_names(
-        self,
-        sequence_name,
-        shot_name,
-        category,
-        asset
-        ):
-        raise NotImplementedError()
-    
-    def list_shot_kit_procedural_names(
-        self,
-        sequence_name,
-        shot_name,
-        category,
-        kit
-        ):
-        raise NotImplementedError()
-    
-    def add_sequence_name(self, sequence_name):
-        raise NotImplementedError()
-
-    def add_shot_name(self, sequence_name, shot_name):
-        raise NotImplementedError()
-    
-    def add_category_name(self, category_name):
-        raise NotImplementedError()
-    
-    def add_asset_name(self, category_name, asset_name):
-        raise NotImplementedError()
-    
-    def add_kit_category_name(self, kit_category_name):
-        raise NotImplementedError()
-    
-    def add_kit_name(self, kit_category_name, kit_name):
-        raise NotImplementedError()
-    
-    def remove_sequence_name(self, sequence_name):
-        raise NotImplementedError()
-    
-    def remove_shot_name(self, sequence_name, shot_name):
-        raise NotImplementedError()
-    
-    def remove_category_name(self, category_name):
-        raise NotImplementedError()
-    
-    def remove_asset_name(self, category_name, asset_name):
-        raise NotImplementedError()
-    
-    def remove_kit_category_name(self, kit_category_name):
-        raise NotImplementedError()
-    
-    def remove_kit_name(self, kit_category_name, kit_name):
-        raise NotImplementedError()
-    
-    def get_fps(self):
-        raise NotImplementedError()
-
-    def get_shot_fps(self, sequence_name, shot_name):
-        raise NotImplementedError()
-
-    def is_valid_path(self, path):
-        if ':' not in path: return False
-        purpose, resource = path.split(':', 1)
-        if not set(purpose).issubset(WORD_ALPHABET): return False
-        if ':' in resource: return False
-        if not resource.startswith('/'): return False
-        for part in filter(lambda part: len(part) > 0, resource.split('/')[1:]):
-            if not set(part).issubset(WORD_ALPHABET): return False
-        return True
-    
-    def parse_path(self, path):
-        purpose, path = path.split(':', 1)
-        return purpose, path.split('/')[1:]
-    
-    def resolve(self, path):
-        raise NotImplementedError()
+def get_fps() -> int | None:
+    properties = api.config.get_properties(Uri.parse_unsafe('config:/project'))
+    if properties is None: return None
+    if 'fps' not in properties: return None
+    return int(properties['fps'])

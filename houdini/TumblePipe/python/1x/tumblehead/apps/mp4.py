@@ -9,7 +9,8 @@ from tumblehead.api import (
     to_wsl_path,
     default_client
 )
-from tumblehead.config import BlockRange
+from tumblehead.util.uri import Uri
+from tumblehead.config.timeline import BlockRange
 from tumblehead.apps import wsl
 
 api = default_client()
@@ -47,7 +48,7 @@ def from_jpg(
         raise ValueError(f'Missing frames: {missing_frame_indices}')
 
     # Open temporary workspace
-    base_temp_path = fix_path(api.storage.resolve('temp:/'))
+    base_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     base_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
         temp_dir_path = Path(temp_dir)
@@ -121,7 +122,7 @@ def scale(
         )
     
     # Open temporary workspace
-    base_temp_path = fix_path(api.storage.resolve('temp:/'))
+    base_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     base_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
         temp_dir_path = Path(temp_dir)

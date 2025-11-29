@@ -5,7 +5,10 @@ import shutil
 import hou
 
 from tumblehead.api import path_str, fix_path, default_client
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange, get_frame_range
+from tumblehead.config.shots import list_render_layers
+from tumblehead.config.department import list_departments
+from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini.lops import (
     build_shot,
     import_render_layer
@@ -26,8 +29,7 @@ def _connect(node1, node2):
     node2.setInput(port, node1)
 
 def main(
-    sequence_name: str,
-    shot_name: str,
+    shot_uri: Uri,
     render_department_name: str,
     render_layer_name: str,
     render_range: BlockRange,
@@ -35,8 +37,7 @@ def main(
     ) -> int:
 
     _headline('Parameters')
-    print(f'Sequence code: {sequence_name}')
-    print(f'Shot code: {shot_name}')
+    print(f'Shot URI: {shot_uri}')
     print(f'Render department name: {render_department_name}')
     print(f'Render layer name: {render_layer_name}')
     print(f'Render range: {render_range}')
@@ -46,15 +47,14 @@ def main(
     context = hou.node('/stage')
 
     # Config
-    included_asset_departments = api.render.list_included_asset_department_names(render_department_name)
-    included_kit_departments = api.render.list_included_kit_department_names(render_department_name)
-    included_shot_departments = api.render.list_included_shot_department_names(render_department_name)
+    included_asset_departments = [d.name for d in list_departments('assets') if d.renderable]
+    included_kit_departments = []  # Kits no longer supported
+    included_shot_departments = [d.name for d in list_departments('shots') if d.renderable]
     shot_department_name = included_shot_departments[-1]
 
     # Setup build shot
     shot_node = build_shot.create(context, 'build_shot')
-    shot_node.set_sequence_name(sequence_name)
-    shot_node.set_shot_name(shot_name)
+    shot_node.set_shot_uri(shot_uri)
     shot_node.set_asset_department_names(included_asset_departments)
     shot_node.set_kit_department_names(included_kit_departments)
     shot_node.set_shot_department_names(included_shot_departments)
@@ -63,8 +63,7 @@ def main(
 
     # Setup import render layer
     layer_node = import_render_layer.create(context, 'import_render_layer')
-    layer_node.set_sequence_name(sequence_name)
-    layer_node.set_shot_name(shot_name)
+    layer_node.set_shot_uri(shot_uri)
     layer_node.set_department_name(shot_department_name)
     layer_node.set_render_layer_name(render_layer_name)
     layer_node.latest()
@@ -81,7 +80,7 @@ def main(
     _connect(prev_node, export_node)
 
     # Export
-    root_temp_path = fix_path(api.storage.resolve('temp:/'))
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -112,8 +111,7 @@ def cli():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('script_path', type=str)
-    parser.add_argument('sequence_name', type=str)
-    parser.add_argument('shot_name', type=str)
+    parser.add_argument('entity_uri', type=str)
     parser.add_argument('render_department_name', type=str)
     parser.add_argument('render_layer_name', type=str)
     parser.add_argument('first_frame', type=int)
@@ -121,17 +119,12 @@ def cli():
     parser.add_argument('output_stage_path', type=str)
     args = parser.parse_args()
 
-    # Get the sequence code
-    sequence_names = api.config.list_sequence_names()
-    sequence_name = args.sequence_name
-    if sequence_name not in sequence_names:
-        return _error(f'Invalid sequence name: {sequence_name}')
-
-    # Get the shot code
-    shot_names = api.config.list_shot_names(sequence_name)
-    shot_name = args.shot_name
-    if shot_name not in shot_names:
-        return _error(f'Invalid shot name: {shot_name}')
+    # Parse and validate entity URI
+    shot_uri = Uri.parse_unsafe(args.entity_uri)
+    if shot_uri.purpose != 'entity':
+        return _error(f'Invalid entity URI: {shot_uri}')
+    if shot_uri.segments[0] != 'shots':
+        return _error(f'Invalid entity type: {shot_uri.segments[0]} (expected shots)')
 
     # Check the render department name
     render_department_names = api.config.list_render_department_names()
@@ -141,18 +134,18 @@ def cli():
             f'Invalid render department name: '
             f'{render_department_name}'
         )
-    
+
     # Check the render layer name
     render_layer_name = args.render_layer_name
-    render_layer_names = api.config.list_render_layer_names(sequence_name, shot_name)
+    render_layer_names = list_render_layers(shot_uri)
     if render_layer_name not in render_layer_names:
         return _error(
             f'Invalid render layer name: '
             f'{render_layer_name}'
         )
-    
+
     # Check the render range
-    frame_range = api.config.get_frame_range(sequence_name, shot_name)
+    frame_range = get_frame_range(shot_uri)
     render_range = BlockRange(args.first_frame, args.last_frame)
     if render_range not in frame_range:
         return _error(
@@ -164,11 +157,10 @@ def cli():
 
     # Check the output stage path
     output_stage_path = Path(args.output_stage_path)
-    
+
     # Run the main function
     return main(
-        sequence_name,
-        shot_name,
+        shot_uri,
         render_department_name,
         render_layer_name,
         render_range,

@@ -6,7 +6,7 @@ from tumblehead.api import (
     path_str,
     default_client
 )
-from tumblehead.config import FrameRange
+from tumblehead.config.timeline import FrameRange
 import tumblehead.pipe.houdini.nodes as ns
 
 api = default_client()

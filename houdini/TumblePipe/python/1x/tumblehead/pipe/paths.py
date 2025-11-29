@@ -1,10 +1,12 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 from pathlib import Path
 
 from tumblehead.api import default_client
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
+from tumblehead.config.groups import find_group
 from tumblehead.util.io import load_json
+from tumblehead.util.uri import Uri
 
 api = default_client()
 
@@ -37,119 +39,6 @@ def get_next_version_path(path: Path) -> Path:
     version_name = version_paths[-1].name
     next_version_name = get_next_version_name(version_name)
     return path / next_version_name
-
-###############################################################################
-# Entities
-###############################################################################
-@dataclass(frozen=True)
-class Entity:
-
-    @staticmethod
-    def from_json(data: dict) -> Optional['Entity']:
-        match data.get('tag'):
-            case 'shot': return ShotEntity.from_json(data)
-            case 'kit': return KitEntity.from_json(data)
-            case 'asset': return AssetEntity.from_json(data)
-        return None
-
-@dataclass(frozen=True)
-class ShotEntity(Entity):
-    sequence_name: str
-    shot_name: str
-    department_name: Optional[str] = field(default = None)
-
-    def __str__(self) -> str:
-        return (
-            f'shot:/'
-            f'{self.sequence_name}/'
-            f'{self.shot_name}/'
-            f'{self.department_name}'
-        )
-
-    @staticmethod
-    def from_json(data: dict) -> Optional['ShotEntity']:
-        assert data.get('tag') == 'shot'
-        assert data.get('sequence_name') is not None
-        assert data.get('shot_name') is not None
-        return ShotEntity(
-            sequence_name = data.get('sequence_name'),
-            shot_name = data.get('shot_name'),
-            department_name = data.get('department_name')
-        )
-
-    def to_json(self) -> dict:
-        return dict(
-            tag = 'shot',
-            sequence_name = self.sequence_name,
-            shot_name = self.shot_name,
-            department_name = self.department_name
-        )
-
-@dataclass(frozen=True)
-class KitEntity(Entity):
-    category_name: str
-    kit_name: str
-    department_name: Optional[str] = field(default = None)
-
-    def __str__(self) -> str:
-        return (
-            f'kit:/'
-            f'{self.category_name}/'
-            f'{self.kit_name}/'
-            f'{self.department_name}'
-        )
-
-    @staticmethod
-    def from_json(data: dict) -> Optional['KitEntity']:
-        assert data.get('tag') == 'kit'
-        assert data.get('category_name') is not None
-        assert data.get('kit_name') is not None
-        return KitEntity(
-            category_name = data.get('category_name'),
-            kit_name = data.get('kit_name'),
-            department_name = data.get('department_name')
-        )
-    
-    def to_json(self) -> dict:
-        return dict(
-            tag = 'kit',
-            category_name = self.category_name,
-            kit_name = self.kit_name,
-            department_name = self.department_name
-        )
-
-@dataclass(frozen=True)
-class AssetEntity(Entity):
-    category_name: str
-    asset_name: str
-    department_name: Optional[str] = field(default = None)
-
-    def __str__(self) -> str:
-        return (
-            f'asset:/'
-            f'{self.category_name}/'
-            f'{self.asset_name}/'
-            f'{self.department_name}'
-        )
-
-    @staticmethod
-    def from_json(data: dict) -> Optional['AssetEntity']:
-        assert data.get('tag') == 'asset'
-        assert data.get('category_name') is not None
-        assert data.get('asset_name') is not None
-        return AssetEntity(
-            category_name = data.get('category_name'),
-            asset_name = data.get('asset_name'),
-            department_name = data.get('department_name')
-        )
-
-    def to_json(self) -> dict:
-        return dict(
-            tag = 'asset',
-            category_name = self.category_name,
-            asset_name = self.asset_name,
-            department_name = self.department_name
-        )
 
 ###############################################################################
 # Render Paths
@@ -584,21 +473,6 @@ class RenderContext:
         min_render_department: Optional[str] = None,
         aov_filter: Optional[callable] = None
         ) -> dict[str, dict[str, tuple[str, str, AOV, str]]]:
-        """Resolve the latest version of each layer/AOV across shot and render departments.
-
-        Returns a dict structure: result[layer_name][aov_name] = (render_dept, version, aov, shot_dept)
-        where the AOV is selected using hierarchical comparison: shot dept > render dept > version.
-
-        Args:
-            shot_department_priority: Shot department names in priority order (e.g., light < render < composite)
-            render_department_priority: Render department names in priority order (e.g., render < denoise < composite)
-            min_shot_department: Minimum shot department to consider (inclusive)
-            min_render_department: Minimum render department to consider (inclusive)
-            aov_filter: Optional function to filter which AOVs to include. Takes aov_name, returns bool.
-
-        Returns:
-            Nested dict mapping layer_name -> aov_name -> (render_dept, version, aov, shot_dept)
-        """
         latest_aovs = {}
 
         # Helper to get department priority index, returns -1 if not in list
@@ -657,7 +531,7 @@ class RenderContext:
                         # Get shot department from layer context
                         context_path = layer.path / 'context.json'
                         context = load_json(context_path)
-                        curr_shot_dept = context.get('entity', {}).get('department_name') if context else None
+                        curr_shot_dept = context.get('department') if context else None
                         curr_shot_idx = get_dept_priority(curr_shot_dept, shot_department_priority) if curr_shot_dept else -1
                         curr_render_idx = get_dept_priority(render_department_name, render_department_priority)
 
@@ -695,7 +569,7 @@ class RenderContext:
         return latest_aovs
 
 def get_frame_path(
-    entity: Entity,
+    entity_uri: Uri,
     render_department_name: str,
     render_layer_name: str,
     version_name: str,
@@ -703,225 +577,81 @@ def get_frame_path(
     suffix: str = 'exr',
     purpose: str = 'render'
     ) -> Path:
-    match entity:
-        case ShotEntity(sequence_name, shot_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'shots/'
-                f'{sequence_name}/'
-                f'{shot_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}/'
-                f'{version_name}'
-            )
-            frame_name = (
-                f'{sequence_name}_'
-                f'{shot_name}_'
-                f'{render_layer_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return render_path / frame_name
-        case KitEntity(category_name, kit_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'kits/'
-                f'{category_name}/'
-                f'{kit_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}/'
-                f'{version_name}'
-            )
-            frame_name = (
-                f'{category_name}_'
-                f'{kit_name}_'
-                f'{render_layer_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return render_path / frame_name
-        case AssetEntity(category_name, asset_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'assets/'
-                f'{category_name}/'
-                f'{asset_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}/'
-                f'{version_name}'
-            )
-            frame_name = (
-                f'{category_name}_'
-                f'{asset_name}_'
-                f'{render_layer_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return render_path / frame_name
-        case _:
-            assert False, f'Invalid entity: {entity}'
+    render_uri = (
+        Uri.parse_unsafe(f'{purpose}:/render') /
+        entity_uri.segments /
+        render_department_name /
+        render_layer_name /
+        version_name
+    )
+    render_path = api.storage.resolve(render_uri)
+    frame_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            render_layer_name,
+            version_name
+        ]),
+        frame_pattern,
+        suffix
+    ])
+    return render_path / frame_name
 
 def get_next_frame_path(
-    entity: Entity,
+    entity_uri: Uri,
     render_department_name: str,
     render_layer_name: str,
     frame_pattern: str,
     suffix: str = 'exr',
     purpose: str = 'render'
     ) -> Path:
-    match entity:
-        case ShotEntity(sequence_name, shot_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'shots/'
-                f'{sequence_name}/'
-                f'{shot_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}'
-            )
-            version_path = get_next_version_path(render_path)
-            version_name = version_path.name
-            frame_name = (
-                f'{sequence_name}_'
-                f'{shot_name}_'
-                f'{render_layer_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return version_path / frame_name
-        case KitEntity(category_name, kit_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'kits/'
-                f'{category_name}/'
-                f'{kit_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}'
-            )
-            version_path = get_next_version_path(render_path)
-            version_name = version_path.name
-            frame_name = (
-                f'{category_name}_'
-                f'{kit_name}_'
-                f'{render_layer_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return version_path / frame_name
-        case AssetEntity(category_name, asset_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'assets/'
-                f'{category_name}/'
-                f'{asset_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}'
-            )
-            version_path = get_next_version_path(render_path)
-            version_name = version_path.name
-            frame_name = (
-                f'{category_name}_'
-                f'{asset_name}_'
-                f'{render_layer_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return version_path / frame_name
-        case _:
-            assert False, f'Invalid entity: {entity}'
+    render_uri = (
+        Uri.parse_unsafe(f'{purpose}:/render') /
+        entity_uri.segments /
+        render_department_name /
+        render_layer_name
+    )
+    render_path = api.storage.resolve(render_uri)
+    version_path = get_next_version_path(render_path)
+    version_name = version_path.name
+    frame_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            render_layer_name,
+            version_name
+        ]),
+        frame_pattern,
+        suffix
+    ])
+    return version_path / frame_name
 
 def get_latest_frame_path(
-    entity: Entity,
+    entity_uri: Uri,
     render_department_name: str,
     render_layer_name: str,
     frame_pattern: str,
     suffix: str = 'exr',
     purpose: str = 'render'
     ) -> Optional[Path]:
-    match entity:
-        case ShotEntity(sequence_name, shot_name, department_name):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'shots/'
-                f'{sequence_name}/'
-                f'{shot_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}'
-            )
-            version_path = get_latest_version_path(render_path)
-            if version_path is None: return None
-            version_name = version_path.name
-            frame_name = (
-                f'{sequence_name}_'
-                f'{shot_name}_'
-                f'{render_layer_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return version_path / frame_name
-        case KitEntity(category_name, kit_name, department_name):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'kits/'
-                f'{category_name}/'
-                f'{kit_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}'
-            )
-            version_path = get_latest_version_path(render_path)
-            if version_path is None: return None
-            version_name = version_path.name
-            frame_name = (
-                f'{category_name}_'
-                f'{kit_name}_'
-                f'{render_layer_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return version_path / frame_name
-        case AssetEntity(category_name, asset_name, department_name):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'assets/'
-                f'{category_name}/'
-                f'{asset_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}'
-            )
-            version_path = get_latest_version_path(render_path)
-            if version_path is None: return None
-            version_name = version_path.name
-            frame_name = (
-                f'{category_name}_'
-                f'{asset_name}_'
-                f'{render_layer_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return version_path / frame_name
-        case _:
-            assert False, f'Invalid entity: {entity}'
+    render_uri = (
+        Uri.parse_unsafe(f'{purpose}:/render') /
+        entity_uri.segments /
+        render_department_name /
+        render_layer_name
+    )
+    render_path = api.storage.resolve(render_uri)
+    version_path = get_latest_version_path(render_path)
+    if version_path is None: return None
+    version_name = version_path.name
+    frame_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            render_layer_name,
+            version_name
+        ]),
+        frame_pattern,
+        suffix
+    ])
+    return version_path / frame_name
 
-def get_aov_frame_uri(
-    entity: Entity,
+def get_aov_frame_path(
+    entity_uri: Uri,
     render_department_name: str,
     render_layer_name: str,
     version_name: str,
@@ -929,159 +659,29 @@ def get_aov_frame_uri(
     frame_pattern: str,
     suffix: str = 'exr',
     purpose: str = 'render'   
-    ) -> str:
-    match entity:
-        case ShotEntity(sequence_name, shot_name, _):
-            render_path = (
-                f'{purpose}:/'
-                'render/'
-                'shots/'
-                f'{sequence_name}/'
-                f'{shot_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}/'
-                f'{version_name}/'
-                f'{aov_name}'
-            )
-            frame_name = (
-                f'{sequence_name}_'
-                f'{shot_name}_'
-                f'{render_layer_name}_'
-                f'{aov_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return f'{render_path}/{frame_name}'
-        case KitEntity(category_name, kit_name, _):
-            render_path = (
-                f'{purpose}:/'
-                'render/'
-                'kits/'
-                f'{category_name}/'
-                f'{kit_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}/'
-                f'{version_name}/'
-                f'{aov_name}'
-            )
-            frame_name = (
-                f'{category_name}_'
-                f'{kit_name}_'
-                f'{render_layer_name}_'
-                f'{aov_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return f'{render_path}/{frame_name}'
-        case AssetEntity(category_name, asset_name, _):
-            render_path = (
-                f'{purpose}:/'
-                'render/'
-                'assets/'
-                f'{category_name}/'
-                f'{asset_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}/'
-                f'{version_name}/'
-                f'{aov_name}'
-            )
-            frame_name = (
-                f'{category_name}_'
-                f'{asset_name}_'
-                f'{render_layer_name}_'
-                f'{aov_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return f'{render_path}/{frame_name}'
-        case _:
-            assert False, f'Invalid entity: {entity}'
-
-def get_aov_frame_path(
-    entity: Entity,
-    render_department_name: str,
-    render_layer_name: str,
-    version_name: str,
-    aov_name: str,
-    frame_pattern: str,
-    suffix: str = 'exr',
-    purpose: str = 'render'
     ) -> Path:
-    match entity:
-        case ShotEntity(sequence_name, shot_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'shots/'
-                f'{sequence_name}/'
-                f'{shot_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}/'
-                f'{version_name}/'
-                f'{aov_name}'
-            )
-            frame_name = (
-                f'{sequence_name}_'
-                f'{shot_name}_'
-                f'{render_layer_name}_'
-                f'{aov_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return render_path / frame_name
-        case KitEntity(category_name, kit_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'kits/'
-                f'{category_name}/'
-                f'{kit_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}/'
-                f'{version_name}/'
-                f'{aov_name}'
-            )
-            frame_name = (
-                f'{category_name}_'
-                f'{kit_name}_'
-                f'{render_layer_name}_'
-                f'{aov_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return render_path / frame_name
-        case AssetEntity(category_name, asset_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'assets/'
-                f'{category_name}/'
-                f'{asset_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}/'
-                f'{version_name}/'
-                f'{aov_name}'
-            )
-            frame_name = (
-                f'{category_name}_'
-                f'{asset_name}_'
-                f'{render_layer_name}_'
-                f'{aov_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return render_path / frame_name
-        case _:
-            assert False, f'Invalid entity: {entity}'
+    render_uri = (
+        Uri.parse_unsafe(f'{purpose}:/render') /
+        entity_uri.segments /
+        render_department_name /
+        render_layer_name /
+        version_name /
+        aov_name
+    )
+    render_path = api.storage.resolve(render_uri)
+    frame_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            render_layer_name,
+            aov_name,
+            version_name
+        ]),
+        frame_pattern,
+        suffix
+    ])
+    return render_path / frame_name
 
 def get_next_aov_frame_path(
-    entity: Entity,
+    entity_uri: Uri,
     render_department_name: str,
     render_layer_name: str,
     aov_name: str,
@@ -1089,78 +689,28 @@ def get_next_aov_frame_path(
     suffix: str = 'exr',
     purpose: str = 'render'
     ) -> Path:
-    match entity:
-        case ShotEntity(sequence_name, shot_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'shots/'
-                f'{sequence_name}/'
-                f'{shot_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}'
-            )
-            version_path = get_next_version_path(render_path)
-            version_name = version_path.name
-            frame_name = (
-                f'{sequence_name}_'
-                f'{shot_name}_'
-                f'{render_layer_name}_'
-                f'{aov_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return version_path / aov_name / frame_name
-        case KitEntity(category_name, kit_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'kits/'
-                f'{category_name}/'
-                f'{kit_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}'
-            )
-            version_path = get_next_version_path(render_path)
-            version_name = version_path.name
-            frame_name = (
-                f'{category_name}_'
-                f'{kit_name}_'
-                f'{render_layer_name}_'
-                f'{aov_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return version_path / aov_name / frame_name
-        case AssetEntity(category_name, asset_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'assets/'
-                f'{category_name}/'
-                f'{asset_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}'
-            )
-            version_path = get_next_version_path(render_path)
-            version_name = version_path.name
-            frame_name = (
-                f'{category_name}_'
-                f'{asset_name}_'
-                f'{render_layer_name}_'
-                f'{aov_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return version_path / aov_name / frame_name
-        case _:
-            assert False, f'Invalid entity: {entity}'
+    render_uri = (
+        Uri.parse_unsafe(f'{purpose}:/render') /
+        entity_uri.segments /
+        render_department_name /
+        render_layer_name
+    )
+    render_path = api.storage.resolve(render_uri)
+    version_path = get_next_version_path(render_path)
+    version_name = version_path.name
+    frame_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            render_layer_name,
+            aov_name,
+            version_name
+        ]),
+        frame_pattern,
+        suffix
+    ])
+    return version_path / aov_name / frame_name
 
 def get_latest_aov_frame_path(
-    entity: Entity,
+    entity_uri: Uri,
     render_department_name: str,
     render_layer_name: str,
     aov_name: str,
@@ -1168,216 +718,70 @@ def get_latest_aov_frame_path(
     suffix: str = 'exr',
     purpose: str = 'render'
     ) -> Optional[Path]:
-    match entity:
-        case ShotEntity(sequence_name, shot_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'shots/'
-                f'{sequence_name}/'
-                f'{shot_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}'
-            )
-            version_path = get_latest_version_path(render_path)
-            if version_path is None: return None
-            version_name = version_path.name
-            frame_name = (
-                f'{sequence_name}_'
-                f'{shot_name}_'
-                f'{render_layer_name}_'
-                f'{aov_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return version_path / aov_name / frame_name
-        case KitEntity(category_name, kit_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'kits/'
-                f'{category_name}/'
-                f'{kit_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}'
-            )
-            version_path = get_latest_version_path(render_path)
-            if version_path is None: return None
-            version_name = version_path.name
-            frame_name = (
-                f'{category_name}_'
-                f'{kit_name}_'
-                f'{render_layer_name}_'
-                f'{aov_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return version_path / aov_name / frame_name
-        case AssetEntity(category_name, asset_name, _):
-            render_path = api.storage.resolve(
-                f'{purpose}:/'
-                'render/'
-                'assets/'
-                f'{category_name}/'
-                f'{asset_name}/'
-                f'{render_department_name}/'
-                f'{render_layer_name}'
-            )
-            version_path = get_latest_version_path(render_path)
-            if version_path is None: return None
-            version_name = version_path.name
-            frame_name = (
-                f'{category_name}_'
-                f'{asset_name}_'
-                f'{render_layer_name}_'
-                f'{aov_name}_'
-                f'{version_name}.'
-                f'{frame_pattern}.'
-                f'{suffix}'
-            )
-            return version_path / aov_name / frame_name
-        case _:
-            assert False, f'Invalid entity: {entity}'
+    render_uri = (
+        Uri.parse_unsafe(f'{purpose}:/render') /
+        entity_uri.segments /
+        render_department_name /
+        render_layer_name
+    )
+    render_path = api.storage.resolve(render_uri)
+    version_path = get_latest_version_path(render_path)
+    if version_path is None: return None
+    version_name = version_path.name
+    frame_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            render_layer_name,
+            aov_name,
+            version_name
+        ]),
+        frame_pattern,
+        suffix
+    ])
+    return version_path / aov_name / frame_name
 
 def get_layer_playblast_path(
-    entity: Entity,
+    entity_uri: Uri,
+    department_name: str,
     render_layer_name: str,
     version_name: str,
     purpose: str = 'render'
     ) -> Path:
-    match entity:
-        case ShotEntity(sequence_name, shot_name, department_name):
-            assert department_name is not None
-            return api.storage.resolve(
-                f'{purpose}:/'
-                'playblast/'
-                'shots/'
-                f'{sequence_name}/'
-                f'{shot_name}/'
-                f'{department_name}/'
-                f'{render_layer_name}/'
-                f'{version_name}.mp4'
-            )
-        case KitEntity(category_name, kit_name, department_name):
-            assert department_name is not None
-            return api.storage.resolve(
-                f'{purpose}:/'
-                'playblast/'
-                'kits/'
-                f'{category_name}/'
-                f'{kit_name}/'
-                f'{department_name}/'
-                f'{render_layer_name}/'
-                f'{version_name}.mp4'
-            )
-        case AssetEntity(category_name, asset_name, department_name):
-            assert department_name is not None
-            return api.storage.resolve(
-                f'{purpose}:/'
-                'playblast/'
-                'assets/'
-                f'{category_name}/'
-                f'{asset_name}/'
-                f'{department_name}/'
-                f'{render_layer_name}/'
-                f'{version_name}.mp4'
-            )
-        case _:
-            assert False, f'Invalid entity: {entity}'
+    playblast_uri = (
+        Uri.parse_unsafe(f'{purpose}:/playblast') /
+        entity_uri.segments /
+        department_name /
+        render_layer_name
+    )
+    playblast_path = api.storage.resolve(playblast_uri)
+    return playblast_path / f'{version_name}.mp4'
 
 def get_playblast_path(
-    entity: Entity,
+    entity_uri: Uri,
+    department_name: str,
     version_name: str,
     purpose: str = 'render'
     ) -> Path:
-    match entity:
-        case ShotEntity(sequence_name, shot_name, department_name):
-            assert department_name is not None
-            return api.storage.resolve(
-                f'{purpose}:/'
-                'playblast/'
-                'shots/'
-                f'{sequence_name}/'
-                f'{shot_name}/'
-                f'{department_name}/'
-                f'{version_name}.mp4'
-            )
-        case KitEntity(category_name, kit_name, department_name):
-            assert department_name is not None
-            return api.storage.resolve(
-                f'{purpose}:/'
-                'playblast/'
-                'kits/'
-                f'{category_name}/'
-                f'{kit_name}/'
-                f'{department_name}/'
-                f'{version_name}.mp4'
-            )
-        case AssetEntity(category_name, asset_name, department_name):
-            assert department_name is not None
-            return api.storage.resolve(
-                f'{purpose}:/'
-                'playblast/'
-                'assets/'
-                f'{category_name}/'
-                f'{asset_name}/'
-                f'{department_name}/'
-                f'{version_name}.mp4'
-            )
-        case _:
-            assert False, f'Invalid entity: {entity}'
+    playblast_uri = (
+        Uri.parse_unsafe(f'{purpose}:/playblast') /
+        entity_uri.segments /
+        department_name
+    )
+    playblast_path = api.storage.resolve(playblast_uri)
+    return playblast_path / f'{version_name}.mp4'
 
 def get_next_layer_playblast_path(
-    entity: Entity,
+    entity_uri: Uri,
+    department_name: str,
     render_layer_name: str,
     purpose: str = 'render'
     ) -> Path:
-
-    def _layer_playblast_path(
-        entity: Entity,
-        render_layer_name: str,
-        purpose: str
-        ) -> Path:
-        match entity:
-            case ShotEntity(sequence_name, shot_name, department_name):
-                assert department_name is not None
-                return api.storage.resolve(
-                    f'{purpose}:/'
-                    'playblast/'
-                    'shots/'
-                    f'{sequence_name}/'
-                    f'{shot_name}/'
-                    f'{department_name}/'
-                    f'{render_layer_name}'
-                )
-            case KitEntity(category_name, kit_name, department_name):
-                assert department_name is not None
-                return api.storage.resolve(
-                    f'{purpose}:/'
-                    'playblast/'
-                    'kits/'
-                    f'{category_name}/'
-                    f'{kit_name}/'
-                    f'{department_name}/'
-                    f'{render_layer_name}'
-                )
-            case AssetEntity(category_name, asset_name, department_name):
-                assert department_name is not None
-                return api.storage.resolve(
-                    f'{purpose}:/'
-                    'playblast/'
-                    'assets/'
-                    f'{category_name}/'
-                    f'{asset_name}/'
-                    f'{department_name}/'
-                    f'{render_layer_name}'
-                )
-            case _:
-                assert False, f'Invalid entity: {entity}'
-
-    playblast_path = _layer_playblast_path(entity, render_layer_name, purpose)
+    playblast_uri = (
+        Uri.parse_unsafe(f'{purpose}:/playblast') /
+        entity_uri.segments /
+        department_name /
+        render_layer_name
+    )
+    playblast_path = api.storage.resolve(playblast_uri)
     version_names = list(filter(
         api.naming.is_valid_version_name,
         map(
@@ -1392,49 +796,16 @@ def get_next_layer_playblast_path(
     return playblast_path / f'{next_version_name}.mp4'
 
 def get_next_playblast_path(
-    entity: Entity,
+    entity_uri: Uri,
+    department_name: str,
     purpose: str = 'render'
     ) -> Path:
-
-    def _playblast_path(
-        entity: Entity,
-        purpose: str
-        ) -> Path:
-        match entity:
-            case ShotEntity(sequence_name, shot_name, department_name):
-                assert department_name is not None
-                return api.storage.resolve(
-                    f'{purpose}:/'
-                    'playblast/'
-                    'shots/'
-                    f'{sequence_name}/'
-                    f'{shot_name}/'
-                    f'{department_name}'
-                )
-            case KitEntity(category_name, kit_name, department_name):
-                assert department_name is not None
-                return api.storage.resolve(
-                    f'{purpose}:/'
-                    'playblast/'
-                    'kits/'
-                    f'{category_name}/'
-                    f'{kit_name}/'
-                    f'{department_name}'
-                )
-            case AssetEntity(category_name, asset_name, department_name):
-                assert department_name is not None
-                return api.storage.resolve(
-                    f'{purpose}:/'
-                    'playblast/'
-                    'assets/'
-                    f'{category_name}/'
-                    f'{asset_name}/'
-                    f'{department_name}'
-                )
-            case _:
-                assert False, f'Invalid entity: {entity}'
-
-    playblast_path = _playblast_path(entity, purpose)
+    playblast_uri = (
+        Uri.parse_unsafe(f'{purpose}:/playblast') /
+        entity_uri.segments /
+        department_name
+    )
+    playblast_path = api.storage.resolve(playblast_uri)
     version_names = list(filter(
         api.naming.is_valid_version_name,
         map(
@@ -1449,54 +820,18 @@ def get_next_playblast_path(
     return playblast_path / f'{next_version_name}.mp4'
 
 def get_latest_layer_playblast_path(
-    entity: Entity,
+    entity_uri: Uri,
+    department_name: str,
     render_layer_name: str,
     purpose: str = 'render'
     ) -> Optional[Path]:
-
-    def _layer_playblast_path(
-        entity: Entity,
-        render_layer_name: str,
-        purpose: str
-        ) -> Path:
-        match entity:
-            case ShotEntity(sequence_name, shot_name, department_name):
-                assert department_name is not None
-                return api.storage.resolve(
-                    f'{purpose}:/'
-                    'playblast/'
-                    'shots/'
-                    f'{sequence_name}/'
-                    f'{shot_name}/'
-                    f'{department_name}/'
-                    f'{render_layer_name}'
-                )
-            case KitEntity(category_name, kit_name, department_name):
-                assert department_name is not None
-                return api.storage.resolve(
-                    f'{purpose}:/'
-                    'playblast/'
-                    'kits/'
-                    f'{category_name}/'
-                    f'{kit_name}/'
-                    f'{department_name}/'
-                    f'{render_layer_name}'
-                )
-            case AssetEntity(category_name, asset_name, department_name):
-                assert department_name is not None
-                return api.storage.resolve(
-                    f'{purpose}:/'
-                    'playblast/'
-                    'assets/'
-                    f'{category_name}/'
-                    f'{asset_name}/'
-                    f'{department_name}/'
-                    f'{render_layer_name}'
-                )
-            case _:
-                assert False, f'Invalid entity: {entity}'
-
-    playblast_path = _layer_playblast_path(entity, render_layer_name, purpose)
+    playblast_uri = (
+        Uri.parse_unsafe(f'{purpose}:/playblast') /
+        entity_uri.segments /
+        department_name /
+        render_layer_name
+    )
+    playblast_path = api.storage.resolve(playblast_uri)
     version_names = list(filter(
         api.naming.is_valid_version_name,
         map(
@@ -1510,49 +845,16 @@ def get_latest_layer_playblast_path(
     return playblast_path / f'{latest_version_name}.mp4'
 
 def get_latest_playblast_path(
-    entity: Entity,
+    entity_uri: Uri,
+    department_name: str,
     purpose: str = 'render'
     ) -> Optional[Path]:
-
-    def _playblast_path(
-        entity: Entity,
-        purpose: str
-        ) -> Path:
-        match entity:
-            case ShotEntity(sequence_name, shot_name, department_name):
-                assert department_name is not None
-                return api.storage.resolve(
-                    f'{purpose}:/'
-                    'playblast/'
-                    'shots/'
-                    f'{sequence_name}/'
-                    f'{shot_name}/'
-                    f'{department_name}'
-                )
-            case KitEntity(category_name, kit_name, department_name):
-                assert department_name is not None
-                return api.storage.resolve(
-                    f'{purpose}:/'
-                    'playblast/'
-                    'kits/'
-                    f'{category_name}/'
-                    f'{kit_name}/'
-                    f'{department_name}'
-                )
-            case AssetEntity(category_name, asset_name, department_name):
-                assert department_name is not None
-                return api.storage.resolve(
-                    f'{purpose}:/'
-                    'playblast/'
-                    'assets/'
-                    f'{category_name}/'
-                    f'{asset_name}/'
-                    f'{department_name}'
-                )
-            case _:
-                assert False, f'Invalid entity: {entity}'
-
-    playblast_path = _playblast_path(entity, purpose)
+    playblast_uri = (
+        Uri.parse_unsafe(f'{purpose}:/playblast') /
+        entity_uri.segments /
+        department_name
+    )
+    playblast_path = api.storage.resolve(playblast_uri)
     version_names = list(filter(
         api.naming.is_valid_version_name,
         map(
@@ -1566,104 +868,65 @@ def get_latest_playblast_path(
     return playblast_path / f'{latest_version_name}.mp4'
 
 def get_layer_daily_path(
-    entity: Entity,
+    entity_uri: Uri,
+    department_name: str,
     render_layer_name: str,
     purpose: str = 'render'
     ) -> Path:
-    match entity:
-        case ShotEntity(sequence_name, shot_name, department_name):
-            assert department_name is not None
-            return api.storage.resolve(
-                f'{purpose}:/'
-                'daily/'
-                'shots/'
-                f'{department_name}/'
-                f'{render_layer_name}/'
-                f'{sequence_name}_{shot_name}_{render_layer_name}.mp4'
-            )
-        case KitEntity(category_name, kit_name, department_name):
-            assert department_name is not None
-            return api.storage.resolve(
-                f'{purpose}:/'
-                'daily/'
-                'kits/'
-                f'{department_name}/'
-                f'{render_layer_name}/'
-                f'{category_name}_{kit_name}_{render_layer_name}.mp4'
-            )
-        case AssetEntity(category_name, asset_name, department_name):
-            assert department_name is not None
-            return api.storage.resolve(
-                f'{purpose}:/'
-                'daily/'
-                'assets/'
-                f'{department_name}/'
-                f'{render_layer_name}/'
-                f'{category_name}_{asset_name}_{render_layer_name}.mp4'
-            )
-        case _:
-            assert False, f'Invalid entity: {entity}'
+    daily_uri = (
+        Uri.parse_unsafe(f'{purpose}:/daily') /
+        entity_uri.segments[0] /
+        department_name /
+        render_layer_name
+    )
+    daily_path = api.storage.resolve(daily_uri)
+    daily_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            render_layer_name
+        ]),
+        'mp4'
+    ])
+    return daily_path / daily_name
 
 def get_daily_path(
-    entity: Entity,
+    entity_uri: Uri,
+    department_name: str,
     purpose: str = 'render'
     ) -> Path:
-    match entity:
-        case ShotEntity(sequence_name, shot_name, department_name):
-            assert department_name is not None
-            return api.storage.resolve(
-                f'{purpose}:/'
-                'daily/'
-                'shots/'
-                f'{department_name}/'
-                f'{sequence_name}_{shot_name}.mp4'
-            )
-        case KitEntity(category_name, kit_name, department_name):
-            assert department_name is not None
-            return api.storage.resolve(
-                f'{purpose}:/'
-                'daily/'
-                'kits/'
-                f'{department_name}/'
-                f'{category_name}_{kit_name}.mp4'
-            )
-        case AssetEntity(category_name, asset_name, department_name):
-            assert department_name is not None
-            return api.storage.resolve(
-                f'{purpose}:/'
-                'daily/'
-                'assets/'
-                f'{department_name}/'
-                f'{category_name}_{asset_name}.mp4'
-            )
-        case _:
-            assert False, f'Invalid entity: {entity}'
+    daily_uri = (
+        Uri.parse_unsafe(f'{purpose}:/daily') /
+        entity_uri.segments[0] /
+        department_name
+    )
+    daily_path = api.storage.resolve(daily_uri)
+    daily_name = '.'.join([
+        '_'.join(entity_uri.segments[1:]),
+        'mp4'
+    ])
+    return daily_path / daily_name
 
 def get_render(
-    sequence_name: str,
-    shot_name: str,
+    entity_uri: Uri,
     render_department_name: str,
     suffix: str = 'exr',
     purpose: str = 'render'
     ) -> Optional[Render]:
 
     # Get the render path
-    render_department_path = api.storage.resolve(
-        f'{purpose}:/'
-        'render/'
-        'shots/'
-        f'{sequence_name}/'
-        f'{shot_name}/'
-        f'{render_department_name}'
+    render_uri = (
+        Uri.parse_unsafe(f'{purpose}:/render') /
+        entity_uri.segments /
+        render_department_name
     )
+    render_department_path = api.storage.resolve(render_uri)
     if not render_department_path.exists(): return None
     
     # Collect render layers
     render_layers = dict()
-    render_layer_names = api.config.list_render_layer_names(
-        sequence_name,
-        shot_name
-    )
+    properties = api.config.get_properties(entity_uri)
+    if 'render_layers' not in properties:
+        raise ValueError('Invalid shot entity, "render_layer" property missing')
+    render_layer_names = properties['render_layers']
     render_layer_names.append('slapcomp')
     for render_layer_path in render_department_path.iterdir():
         render_layer_name = render_layer_path.name
@@ -1678,10 +941,7 @@ def get_render(
                 if aov_path.suffix != '': continue
                 aov_name = aov_path.name
                 aov_frame_path = get_aov_frame_path(
-                    ShotEntity(
-                        sequence_name,
-                        shot_name
-                    ),
+                    entity_uri,
                     render_department_name,
                     render_layer_name,
                     version_name,
@@ -1698,10 +958,7 @@ def get_render(
 
             # Collect frames
             layer_frame_path = get_frame_path(
-                ShotEntity(
-                    sequence_name,
-                    shot_name
-                ),
+                entity_uri,
                 render_department_name,
                 render_layer_name,
                 version_name,
@@ -1727,8 +984,7 @@ def get_render(
     )
 
 def get_render_context(
-    sequence_name: str,
-    shot_name: str,
+    entity_uri: Uri,
     suffix: str = 'exr',
     purpose: str = 'render'
     ) -> RenderContext:
@@ -1736,8 +992,7 @@ def get_render_context(
     render_department_names = api.config.list_render_department_names()
     for department_name in render_department_names:
         render = get_render(
-            sequence_name,
-            shot_name,
+            entity_uri,
             department_name,
             suffix,
             purpose
@@ -1750,29 +1005,30 @@ def get_render_context(
 # Workspace Paths
 ###############################################################################
 def _valid_file_path_version_name(file_path: Path) -> bool:
-    return api.naming.is_valid_version_name(file_path.stem.split('_')[-1])
+    return api.naming.is_valid_version_name(file_path.stem.rsplit('_', 1)[-1])
 
 def _get_file_path_version_code(file_path: Path) -> bool:
-    return api.naming.get_version_code(file_path.stem.split('_')[-1])
+    return api.naming.get_version_code(file_path.stem.rsplit('_', 1)[-1])
 
-def list_asset_hip_file_paths(
-    category_name: str,
-    asset_name: str,
+def list_hip_file_paths(
+    entity_uri: Uri,
     department_name: str
     ) -> list[Path]:
-    workspace_path = api.storage.resolve(
-        f'assets:/'
-        f'{category_name}/'
-        f'{asset_name}/'
-        f'{department_name}'
+    group = find_group(entity_uri.segments[0], entity_uri)
+    workfile_uri = entity_uri if group is None else group.uri
+    workspace_uri = (
+        Uri.parse_unsafe('project:/') /
+        workfile_uri.segments /
+        department_name
     )
-    hip_file_name_pattern = (
-        f'{category_name}_'
-        f'{asset_name}_'
-        f'{department_name}_'
-        '*.'
+    workspace_path = api.storage.resolve(workspace_uri)
+    hip_file_name_pattern = '.'.join([
+        '_'.join(workfile_uri.segments[1:] + [
+            department_name,
+            '*'
+        ]),
         'hip'
-    )
+    ])
     hip_file_paths = list(sorted(
         filter(
             _valid_file_path_version_name,
@@ -1782,141 +1038,47 @@ def list_asset_hip_file_paths(
     ))
     return hip_file_paths
 
-def list_shot_hip_file_paths(
-    sequence_name: str,
-    shot_name: str,
-    department_name: str
-    ) -> list[Path]:
-    workspace_path = api.storage.resolve(
-        f'shots:/'
-        f'{sequence_name}/'
-        f'{shot_name}/'
-        f'{department_name}'
-    )
-    hip_file_name_pattern = (
-        f'{sequence_name}_'
-        f'{shot_name}_'
-        f'{department_name}_'
-        '*.'
-        'hip'
-    )
-    hip_file_paths = list(sorted(
-        filter(
-            _valid_file_path_version_name,
-            workspace_path.glob(hip_file_name_pattern)
-        ),
-        key = _get_file_path_version_code
-    ))
-    return hip_file_paths
-
-def list_kit_hip_file_paths(
-    category_name: str,
-    kit_name: str,
-    department_name: str
-    ) -> list[Path]:
-    workspace_path = api.storage.resolve(
-        f'kits:/'
-        f'{category_name}/'
-        f'{kit_name}/'
-        f'{department_name}'
-    )
-    hip_file_name_pattern = (
-        f'{category_name}_'
-        f'{kit_name}_'
-        f'{department_name}_'
-        '*.'
-        'hip'
-    )
-    hip_file_paths = list(sorted(
-        filter(
-            _valid_file_path_version_name,
-            workspace_path.glob(hip_file_name_pattern)
-        ),
-        key = _get_file_path_version_code
-    ))
-    return hip_file_paths
-
-def get_asset_hip_file_path(
-    category_name: str,
-    asset_name: str,
+def get_hip_file_path(
+    entity_uri: Uri,
     department_name: str,
     version_name: str
     ) -> Path:
-    workspace_path = api.storage.resolve(
-        f'assets:/'
-        f'{category_name}/'
-        f'{asset_name}/'
-        f'{department_name}'
+    group = find_group(entity_uri.segments[0], entity_uri)
+    workfile_uri = entity_uri if group is None else group.uri
+    workspace_uri = (
+        Uri.parse_unsafe('project:/') /
+        workfile_uri.segments /
+        department_name
     )
-    hip_file_name = (
-        f'{category_name}_'
-        f'{asset_name}_'
-        f'{department_name}_'
-        f'{version_name}.'
+    workspace_path = api.storage.resolve(workspace_uri)
+    hip_file_name = '.'.join([
+        '_'.join(workfile_uri.segments[1:] + [
+            department_name,
+            version_name
+        ]),
         'hip'
-    )
+    ])
     return workspace_path / hip_file_name
 
-def get_shot_hip_file_path(
-    sequence_name: str,
-    shot_name: str,
-    department_name: str,
-    version_name: str
-    ) -> Path:
-    workspace_path = api.storage.resolve(
-        f'shots:/'
-        f'{sequence_name}/'
-        f'{shot_name}/'
-        f'{department_name}'
-    )
-    hip_file_name = (
-        f'{sequence_name}_'
-        f'{shot_name}_'
-        f'{department_name}_'
-        f'{version_name}.'
-        'hip'
-    )
-    return workspace_path / hip_file_name
-
-def get_kit_hip_file_path(
-    category_name: str,
-    kit_name: str,
-    department_name: str,
-    version_name: str
-    ) -> Path:
-    workspace_path = api.storage.resolve(
-        f'kits:/'
-        f'{category_name}/'
-        f'{kit_name}/'
-        f'{department_name}'
-    )
-    hip_file_name = (
-        f'{category_name}_'
-        f'{kit_name}_'
-        f'{department_name}_'
-        f'{version_name}.'
-        'hip'
-    )
-    return workspace_path / hip_file_name
-
-def latest_asset_hip_file_path(
-    category_name: str,
-    asset_name: str,
+def latest_hip_file_path(
+    entity_uri: Uri,
     department_name: str
     ) -> Optional[Path]:
-    workspace_path = api.storage.resolve(
-        f'assets:/'
-        f'{category_name}/'
-        f'{asset_name}/'
-        f'{department_name}'
+    group = find_group(entity_uri.segments[0], entity_uri)
+    workfile_uri = entity_uri if group is None else group.uri
+    workspace_uri = (
+        Uri.parse_unsafe('project:/') /
+        workfile_uri.segments /
+        department_name
     )
-    hip_file_name_pattern = (
-        f'{category_name}_'
-        f'{asset_name}_'
-        f'{department_name}_'
-        '*.'
+    workspace_path = api.storage.resolve(workspace_uri)
+    hip_file_name_pattern = '.'.join([
+        '_'.join(workfile_uri.segments[1:] + [
+            department_name,
+            '*'
+        ]),
         'hip'
-    )
+    ])
     hip_file_paths = list(sorted(
         filter(
             _valid_file_path_version_name,
@@ -1927,80 +1089,25 @@ def latest_asset_hip_file_path(
     if len(hip_file_paths) == 0: return None
     return hip_file_paths[-1]
 
-def latest_shot_hip_file_path(
-    sequence_name: str,
-    shot_name: str,
-    department_name: str
-    ) -> Optional[Path]:
-    workspace_path = api.storage.resolve(
-        f'shots:/'
-        f'{sequence_name}/'
-        f'{shot_name}/'
-        f'{department_name}'
-    )
-    hip_file_name_pattern = (
-        f'{sequence_name}_'
-        f'{shot_name}_'
-        f'{department_name}_'
-        '*.'
-        'hip'
-    )
-    hip_file_paths = list(sorted(
-        filter(
-            _valid_file_path_version_name,
-            workspace_path.glob(hip_file_name_pattern)
-        ),
-        key = _get_file_path_version_code
-    ))
-    if len(hip_file_paths) == 0: return None
-    return hip_file_paths[-1]
-
-def latest_kit_hip_file_path(
-    category_name: str,
-    kit_name: str,
-    department_name: str
-    ) -> Optional[Path]:
-    workspace_path = api.storage.resolve(
-        f'kits:/'
-        f'{category_name}/'
-        f'{kit_name}/'
-        f'{department_name}'
-    )
-    hip_file_name_pattern = (
-        f'{category_name}_'
-        f'{kit_name}_'
-        f'{department_name}_'
-        '*.'
-        'hip'
-    )
-    hip_file_paths = list(sorted(
-        filter(
-            _valid_file_path_version_name,
-            workspace_path.glob(hip_file_name_pattern)
-        ),
-        key = _get_file_path_version_code
-    ))
-    if len(hip_file_paths) == 0: return None
-    return hip_file_paths[-1]
-
-def next_asset_hip_file_path(
-    category_name: str,
-    asset_name: str,
+def next_hip_file_path(
+    entity_uri: Uri,
     department_name: str
     ) -> Path:
-    workspace_path = api.storage.resolve(
-        f'assets:/'
-        f'{category_name}/'
-        f'{asset_name}/'
-        f'{department_name}'
+    group = find_group(entity_uri.segments[0], entity_uri)
+    workfile_uri = entity_uri if group is None else group.uri
+    workspace_uri = (
+        Uri.parse_unsafe('project:/') /
+        workfile_uri.segments /
+        department_name
     )
-    hip_file_name_pattern = (
-        f'{category_name}_'
-        f'{asset_name}_'
-        f'{department_name}_'
-        '*.'
+    workspace_path = api.storage.resolve(workspace_uri)
+    hip_file_name_pattern = '.'.join([
+        '_'.join(workfile_uri.segments[1:] + [
+            department_name,
+            '*'
+        ]),
         'hip'
-    )
+    ])
     version_codes = list(sorted(map(
         _get_file_path_version_code,
         filter(
@@ -2014,137 +1121,40 @@ def next_asset_hip_file_path(
     hip_file_name = hip_file_name_pattern.replace('*', next_version_name)
     return workspace_path / hip_file_name
 
-def next_shot_hip_file_path(
-    sequence_name: str,
-    shot_name: str,
+@dataclass(frozen=True)
+class Context:
+    entity_uri: Uri
     department_name: str
-    ) -> Path:
-    workspace_path = api.storage.resolve(
-        f'shots:/'
-        f'{sequence_name}/'
-        f'{shot_name}/'
-        f'{department_name}'
-    )
-    hip_file_name_pattern = (
-        f'{sequence_name}_'
-        f'{shot_name}_'
-        f'{department_name}_'
-        '*.'
-        'hip'
-    )
-    version_codes = list(sorted(map(
-        _get_file_path_version_code,
-        filter(
-            _valid_file_path_version_name,
-            workspace_path.glob(hip_file_name_pattern))
+    version_name: str | None = None
+
+def load_entity_context(context_json_path: Path) -> Optional[Context]:
+    """
+    Load entity context from a context.json file.
+
+    Returns Context with entity_uri from the 'entity' field,
+    department_name from 'department' field, and version_name
+    from 'version' field (or empty string if not present).
+    """
+    context_data = load_json(context_json_path)
+    if context_data is None:
+        return None
+
+    entity_str = context_data.get('entity')
+    if not entity_str:
+        return None
+
+    try:
+        entity_uri = Uri.parse_unsafe(entity_str)
+        department_name = context_data.get('department', '')
+        version_name = context_data.get('version', '')
+
+        return Context(
+            entity_uri=entity_uri,
+            department_name=department_name,
+            version_name=version_name
         )
-    ))
-    latest_version_code = 0 if len(version_codes) == 0 else version_codes[-1]
-    next_version_code = latest_version_code + 1
-    next_version_name = api.naming.get_version_name(next_version_code)
-    hip_file_name = hip_file_name_pattern.replace('*', next_version_name)
-    return workspace_path / hip_file_name
-
-def next_kit_hip_file_path(
-    category_name: str,
-    kit_name: str,
-    department_name: str
-    ) -> Path:
-    workspace_path = api.storage.resolve(
-        f'kits:/'
-        f'{category_name}/'
-        f'{kit_name}/'
-        f'{department_name}'
-    )
-    hip_file_name_pattern = (
-        f'{category_name}_'
-        f'{kit_name}_'
-        f'{department_name}_'
-        '*.'
-        'hip'
-    )
-    version_codes = list(sorted(map(
-        _get_file_path_version_code,
-        filter(
-            _valid_file_path_version_name,
-            workspace_path.glob(hip_file_name_pattern))
-        )
-    ))
-    latest_version_code = 0 if len(version_codes) == 0 else version_codes[-1]
-    next_version_code = latest_version_code + 1
-    next_version_name = api.naming.get_version_name(next_version_code)
-    hip_file_name = hip_file_name_pattern.replace('*', next_version_name)
-    return workspace_path / hip_file_name
-
-def latest_hip_file_path(entity: Entity):
-    match entity:
-        case AssetEntity(category_name, asset_name, department_name):
-            return latest_asset_hip_file_path(
-                category_name = category_name,
-                asset_name = asset_name,
-                department_name = department_name
-            )
-        case ShotEntity(sequence_name, shot_name, department_name):
-            return latest_shot_hip_file_path(
-                sequence_name = sequence_name,
-                shot_name = shot_name,
-                department_name = department_name
-            )
-        case KitEntity(category_name, kit_name, department_name):
-            return latest_kit_hip_file_path(
-                category_name = category_name,
-                kit_name = kit_name,
-                department_name = department_name
-            )
-        case _:
-            return None
-
-def next_hip_file_path(entity: Entity):
-    match entity:
-        case AssetEntity(category_name, asset_name, department_name):
-            return next_asset_hip_file_path(
-                category_name = category_name,
-                asset_name = asset_name,
-                department_name = department_name
-            )
-        case ShotEntity(sequence_name, shot_name, department_name):
-            return next_shot_hip_file_path(
-                sequence_name = sequence_name,
-                shot_name = shot_name,
-                department_name = department_name
-            )
-        case KitEntity(category_name, kit_name, department_name):
-            return next_kit_hip_file_path(
-                category_name = category_name,
-                kit_name = kit_name,
-                department_name = department_name
-            )
-        case _:
-            return None
-
-@dataclass(frozen=True)
-class Context: pass
-
-@dataclass(frozen=True)
-class ShotContext(Context):
-    department_name: str
-    sequence_name: str
-    shot_name: str
-    version_name: str
-
-@dataclass(frozen=True)
-class KitContext(Context):
-    department_name: str
-    category_name: str
-    kit_name: str
-    version_name: str
-
-@dataclass(frozen=True)
-class AssetContext(Context):
-    department_name: str
-    category_name: str
-    asset_name: str
-    version_name: str
+    except:
+        return None
 
 def get_workfile_context(hip_file_path: Path) -> Optional[Context]:
 
@@ -2154,268 +1164,196 @@ def get_workfile_context(hip_file_path: Path) -> Optional[Context]:
     version_name = hip_file_name.rsplit('_', 1)[-1]
     if not api.naming.is_valid_version_name(version_name): return None
 
-    # Parse the path
-    workspace, *path = hip_file_path.parent.parts[-4:]
-    match workspace:
-        case 'assets':
-            category_name, asset_name, department_name = path
-            return AssetContext(
-                department_name = department_name,
-                category_name = category_name,
-                asset_name = asset_name,
-                version_name = version_name
-            )
-        case 'shots':
-            sequence_name, shot_name, department_name = path
-            return ShotContext(
-                department_name = department_name,
-                sequence_name = sequence_name,
-                shot_name = shot_name,
-                version_name = version_name
-            )
-        case 'kits':
-            category_name, kit_name, department_name = path
-            return KitContext(
-                department_name = department_name,
-                category_name = category_name,
-                kit_name = kit_name,
-                version_name = version_name
-            )
-        case _:
-            return None
+    # Read the workfile context
+    context_path = hip_file_path.parent / 'context.json'
+    context_data = load_json(context_path)
+    if context_data is None: return None
 
-def entity_from_context(context: Context) -> Entity:
-    match context:
-        case ShotContext(
-            department_name,
-            sequence_name,
-            shot_name,
-            _version_name
-            ):
-            return ShotEntity(
-                sequence_name,
-                shot_name,
-                department_name
-            )
-        case KitContext(
-            department_name,
-            category_name,
-            kit_name,
-            _version_name
-            ):
-            return KitEntity(
-                category_name,
-                kit_name,
-                department_name
-            )
-        case AssetContext(
-            department_name,
-            category_name,
-            asset_name,
-            _version_name
-            ):
-            return AssetEntity(
-                category_name,
-                asset_name,
-                department_name
-            )
-        case _:
-            assert False, f'Invalid context: {context}'
+    # Handle both old and new context.json formats
+    entity_str = context_data['entity']
+    if ':' in entity_str:
+        # New format: full URI (e.g., "entity:/shots/seq/shot")
+        entity_uri = Uri.parse_unsafe(entity_str)
+    else:
+        # Old format: just entity type ("shot" or "asset")
+        # Reconstruct URI from file path structure
+        # Path: project/shots/seq/shot/dept/file.hip or project/assets/cat/asset/dept/file.hip
+        dept_path = hip_file_path.parent
+        entity_path = dept_path.parent
+        parent_path = entity_path.parent
+        context_path = parent_path.parent
+        entity_uri = Uri.parse_unsafe(f'entity:/{context_path.name}/{parent_path.name}/{entity_path.name}')
+
+    department_name = context_data['department']
+
+    # Return context
+    return Context(
+        entity_uri = entity_uri,
+        department_name = department_name,
+        version_name = version_name
+    )
 
 ###############################################################################
 # Export Paths
 ###############################################################################
-def get_asset_export_path(
-    category_name: str,
-    asset_name: str,
+def get_export_path(
+    entity_uri: Uri,
     department_name: str,
     version_name: str
     ) -> Path:
-    return api.storage.resolve(
-        'export:/'
-        'assets/'
-        f'{category_name}/'
-        f'{asset_name}/'
-        f'{department_name}/'
-        f'{version_name}'
+    export_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        department_name /
+        version_name
     )
-
-def get_shot_export_path(
-    sequence_name: str,
-    shot_name: str,
-    department_name: str,
-    version_name: str
-    ) -> Path:
-    return api.storage.resolve(
-        'export:/'
-        'shots/'
-        f'{sequence_name}/'
-        f'{shot_name}/'
-        f'{department_name}/'
-        f'{version_name}'
-    )
-
-def get_kit_export_path(
-    category_name: str,
-    kit_name: str,
-    department_name: str,
-    version_name: str
-    ) -> Path:
-    return api.storage.resolve(
-        'export:/'
-        'kits/'
-        f'{category_name}/'
-        f'{kit_name}/'
-        f'{department_name}/'
-        f'{version_name}'
-    )
+    return api.storage.resolve(export_uri)
 
 def get_render_layer_export_path(
-    sequence_name: str,
-    shot_name: str,
+    entity_uri: Uri,
     department_name: str,
     render_layer_name: str,
     version_name: str
     ) -> Path:
-    return api.storage.resolve(
-        'export:/'
-        'shots/'
-        f'{sequence_name}/'
-        f'{shot_name}/'
-        'render_layers/'
-        f'{department_name}/'
-        f'{render_layer_name}/'
-        f'{version_name}'
+    export_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        'render_layers' /
+        department_name /
+        render_layer_name /
+        version_name
     )
+    return api.storage.resolve(export_uri)
 
-def get_asset_export_file_path(
-    category_name: str,
-    asset_name: str,
+def get_export_file_path(
+    entity_uri: Uri,
     department_name: str,
     version_name: str
     ) -> Path:
-    version_path = get_asset_export_path(
-        category_name,
-        asset_name,
+    version_path = get_export_path(
+        entity_uri,
         department_name,
         version_name
     )
-    usd_file_name = (
-        f'{category_name}_'
-        f'{asset_name}_'
-        f'{department_name}_'
-        f'{version_name}.'
+    usd_file_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            department_name,
+            version_name
+        ]),
         'usd'
-    )
+    ])
     return version_path / usd_file_name
 
-def get_kit_export_file_path(
-    category_name: str,
-    kit_name: str,
-    department_name: str,
-    version_name: str
-    ) -> Path:
-    version_path = get_kit_export_path(
-        category_name,
-        kit_name,
-        department_name,
-        version_name
-    )
-    usd_file_name = (
-        f'{category_name}_'
-        f'{kit_name}_'
-        f'{department_name}_'
-        f'{version_name}.'
-        'usd'
-    )
-    return version_path / usd_file_name
-
-def latest_asset_export_path(
-    category_name: str,
-    asset_name: str,
+def latest_export_path(
+    entity_uri: Uri,
     department_name: str
     ) -> Optional[Path]:
-    export_path = api.storage.resolve(
-        'export:/'
-        'assets/'
-        f'{category_name}/'
-        f'{asset_name}/'
-        f'{department_name}'
+    export_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        department_name
     )
-    version_paths = list_version_paths(export_path)
-    if len(version_paths) == 0: return None
-    latest_version_path = version_paths[-1]
-    return latest_version_path
-
-def latest_shot_export_path(
-    sequence_name: str,
-    shot_name: str,
-    department_name: str
-    ) -> Optional[Path]:
-    export_path = api.storage.resolve(
-        'export:/'
-        'shots/'
-        f'{sequence_name}/'
-        f'{shot_name}/'
-        f'{department_name}'
-    )
-    version_paths = list_version_paths(export_path)
-    if len(version_paths) == 0: return None
-    latest_version_path = version_paths[-1]
-    return latest_version_path
-
-def latest_kit_export_path(
-    category_name: str,
-    kit_name: str,
-    department_name: str
-    ) -> Optional[Path]:
-    export_path = api.storage.resolve(
-        'export:/'
-        'kits/'
-        f'{category_name}/'
-        f'{kit_name}/'
-        f'{department_name}'
-    )
+    export_path = api.storage.resolve(export_uri)
     version_paths = list_version_paths(export_path)
     if len(version_paths) == 0: return None
     latest_version_path = version_paths[-1]
     return latest_version_path
 
 def latest_render_layer_export_path(
-    sequence_name: str,
-    shot_name: str,
+    entity_uri: Uri,
     department_name: str,
     render_layer_name: str
     ) -> Optional[Path]:
-    export_path = api.storage.resolve(
-        'export:/'
-        'shots/'
-        f'{sequence_name}/'
-        f'{shot_name}'
-        '/render_layers/'
-        f'{department_name}/'
-        f'{render_layer_name}'
+    export_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        'render_layers' /
+        department_name /
+        render_layer_name
     )
+    export_path = api.storage.resolve(export_uri)
     version_paths = list_version_paths(export_path)
     if len(version_paths) == 0: return None
     latest_version_path = version_paths[-1]
     return latest_version_path
 
-def latest_asset_export_file_path(
-    category_name: str,
-    asset_name: str,
+def get_render_layer_export_file_path(
+    entity_uri: Uri,
+    department_name: str,
+    render_layer_name: str,
+    version_name: str
+    ) -> Path:
+    version_path = get_render_layer_export_path(
+        entity_uri,
+        department_name,
+        render_layer_name,
+        version_name
+    )
+    usd_file_name = '_'.join(entity_uri.segments[1:] + [
+        department_name,
+        render_layer_name,
+        version_name
+    ]) + '.usd'
+    return version_path / usd_file_name
+
+def next_render_layer_export_file_path(
+    entity_uri: Uri,
+    department_name: str,
+    render_layer_name: str
+    ) -> Path:
+    export_path = latest_render_layer_export_path(
+        entity_uri,
+        department_name,
+        render_layer_name
+    )
+    if export_path is None:
+        export_path = get_render_layer_export_path(
+            entity_uri,
+            department_name,
+            render_layer_name,
+            'v0000'
+        )
+    next_version_path = get_next_version_path(export_path)
+    version_name = next_version_path.name
+    usd_file_name = '_'.join(entity_uri.segments[1:] + [
+        department_name,
+        render_layer_name,
+        version_name
+    ]) + '.usd'
+    return next_version_path / usd_file_name
+
+def latest_render_layer_export_file_path(
+    entity_uri: Uri,
+    department_name: str,
+    render_layer_name: str
+    ) -> Optional[Path]:
+    export_path = latest_render_layer_export_path(
+        entity_uri,
+        department_name,
+        render_layer_name
+    )
+    if export_path is None: return None
+    version_name = export_path.name
+    usd_file_name = '_'.join(entity_uri.segments[1:] + [
+        department_name,
+        render_layer_name,
+        version_name
+    ]) + '.usd'
+    return export_path / usd_file_name
+
+def latest_export_file_path(
+    entity_uri: Uri,
     department_name: str
     ) -> Optional[Path]:
-    usd_file_name_pattern = (
-        f'{category_name}_'
-        f'{asset_name}_'
-        f'{department_name}_'
-        '*.'
+    usd_file_name_pattern = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            department_name,
+            '*'
+        ]),
         'usd'
-    )
-    latest_version_path = latest_asset_export_path(
-        category_name,
-        asset_name,
+    ])
+    latest_version_path = latest_export_path(
+        entity_uri,
         department_name
     )
     if latest_version_path is None: return None
@@ -2423,108 +1361,126 @@ def latest_asset_export_file_path(
     usd_file_name = usd_file_name_pattern.replace('*', version_name)
     return latest_version_path / usd_file_name
 
-def latest_kit_export_file_path(
-    category_name: str,
-    kit_name: str,
+def next_export_path(
+    entity_uri: Uri,
     department_name: str
-    ) -> Optional[Path]:
-    usd_file_name_pattern = (
-        f'{category_name}_'
-        f'{kit_name}_'
-        f'{department_name}_'
-        '*.'
-        'usd'
-    )
-    latest_version_path = latest_kit_export_path(
-        category_name,
-        kit_name,
+    ) -> Path:
+    export_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
         department_name
+    )
+    export_path = api.storage.resolve(export_uri)
+    return get_next_version_path(export_path)
+
+def next_export_file_path(
+    entity_uri: Uri,
+    department_name: str
+    ) -> Path:
+    usd_file_name_pattern = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            department_name,
+            '*'
+        ]),
+        'usd'
+    ])
+    version_path = next_export_path(
+        entity_uri,
+        department_name
+    )
+    version_name = version_path.name
+    usd_file_name = usd_file_name_pattern.replace('*', version_name)
+    return version_path / usd_file_name
+
+###############################################################################
+# Staged Paths
+###############################################################################
+def get_staged_path(
+    entity_uri: Uri,
+    version_name: str
+    ) -> Path:
+    staged_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        '_staged' /
+        version_name
+    )
+    return api.storage.resolve(staged_uri)
+
+def get_staged_file_path(
+    entity_uri: Uri,
+    version_name: str
+    ) -> Path:
+    version_path = get_staged_path(
+        entity_uri,
+        version_name
+    )
+    usd_file_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            version_name
+        ]),
+        'usda'
+    ])
+    return version_path / usd_file_name
+
+def latest_staged_path(
+    entity_uri: Uri
+    ) -> Optional[Path]:
+    staged_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        '_staged'
+    )
+    staged_path = api.storage.resolve(staged_uri)
+    version_paths = list_version_paths(staged_path)
+    if len(version_paths) == 0: return None
+    latest_version_path = version_paths[-1]
+    return latest_version_path
+
+def latest_staged_file_path(
+    entity_uri: Uri
+    ) -> Optional[Path]:
+    usd_file_name_pattern = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            '*'
+        ]),
+        'usda'
+    ])
+    latest_version_path = latest_staged_path(
+        entity_uri
     )
     if latest_version_path is None: return None
     version_name = latest_version_path.name
     usd_file_name = usd_file_name_pattern.replace('*', version_name)
     return latest_version_path / usd_file_name
 
-def next_asset_export_path(
-    category_name: str,
-    asset_name: str,
-    department_name: str
+def next_staged_path(
+    entity_uri: Uri
     ) -> Path:
-    export_path = api.storage.resolve(
-        'export:/'
-        'assets/'
-        f'{category_name}/'
-        f'{asset_name}/'
-        f'{department_name}'
+    staged_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        '_staged'
     )
-    return get_next_version_path(export_path)
+    staged_path = api.storage.resolve(staged_uri)
+    return get_next_version_path(staged_path)
 
-def next_shot_export_path(
-    sequence_name: str,
-    shot_name: str,
-    department_name: str
+def next_staged_file_path(
+    entity_uri: Uri
     ) -> Path:
-    export_path = api.storage.resolve(
-        'export:/'
-        'shots/'
-        f'{sequence_name}/'
-        f'{shot_name}/'
-        f'{department_name}'
-    )
-    return get_next_version_path(export_path)
-
-def next_kit_export_path(
-    category_name: str,
-    kit_name: str,
-    department_name: str
-    ) -> Path:
-    export_path = api.storage.resolve(
-        'export:/'
-        'kits/'
-        f'{category_name}/'
-        f'{kit_name}/'
-        f'{department_name}'
-    )
-    return get_next_version_path(export_path)
-
-def next_asset_export_file_path(
-    category_name: str,
-    asset_name: str,
-    department_name: str
-    ) -> Path:
-    usd_file_name_pattern = (
-        f'{category_name}_'
-        f'{asset_name}_'
-        f'{department_name}_'
-        '*.'
-        'usd'
-    )
-    version_path = next_asset_export_path(
-        category_name,
-        asset_name,
-        department_name
+    usd_file_name_pattern = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            '*'
+        ]),
+        'usda'
+    ])
+    version_path = next_staged_path(
+        entity_uri
     )
     version_name = version_path.name
     usd_file_name = usd_file_name_pattern.replace('*', version_name)
     return version_path / usd_file_name
 
-def next_kit_export_file_path(
-    category_name: str,
-    kit_name: str,
-    department_name: str
-    ) -> Path:
-    usd_file_name_pattern = (
-        f'{category_name}_'
-        f'{kit_name}_'
-        f'{department_name}_'
-        '*.'
-        'usd'
-    )
-    version_path = next_kit_export_path(
-        category_name,
-        kit_name,
-        department_name
-    )
-    version_name = version_path.name
-    usd_file_name = usd_file_name_pattern.replace('*', version_name)
-    return version_path / usd_file_name
+def get_rig_export_path(asset_uri: Uri) -> Path:
+    export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / 'rig'
+    return api.storage.resolve(export_uri)

@@ -18,7 +18,8 @@ from tumblehead.api import (
     default_client
 )
 from tumblehead.util.io import load_json
-from tumblehead.config import BlockRange
+from tumblehead.util.uri import Uri
+from tumblehead.config.timeline import BlockRange, get_fps
 from tumblehead.apps import exr, mp4
 
 api = default_client()
@@ -68,7 +69,7 @@ def main(
         return 0
     
     # Open a temporary directory
-    root_temp_path = fix_path(api.storage.resolve('temp:/'))
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -89,7 +90,7 @@ def main(
         mp4.from_jpg(
             to_wsl_path(temp_input_path),
             render_range,
-            api.config.get_fps(),
+            get_fps(),
             temp_output_path
         )
 

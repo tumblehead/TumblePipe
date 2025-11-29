@@ -18,7 +18,7 @@ from tumblehead.api import (
 from tumblehead.util.io import store_json
 from tumblehead.naming import random_name
 from tumblehead.apps.deadline import Job as Task
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
 
 api = default_client()
 

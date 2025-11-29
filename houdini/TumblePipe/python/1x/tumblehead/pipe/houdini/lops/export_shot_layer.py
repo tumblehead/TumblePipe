@@ -6,40 +6,25 @@ import json
 
 import hou
 
-from tumblehead.api import get_user_name, path_str, default_client
-from tumblehead.util.io import store_json, load_json
+from tumblehead.api import get_user_name, path_str, fix_path, default_client
+from tumblehead.util.io import store_json
+from tumblehead.util.uri import Uri
+from tumblehead.config.department import list_departments
+from tumblehead.config.timeline import FrameRange, get_frame_range, get_fps
+from tumblehead.config.groups import is_group_uri, get_group
 from tumblehead.apps.deadline import Deadline
-from tumblehead.config import FrameRange
-from tumblehead.pipe.houdini import util
-from tumblehead.pipe.houdini.lops import import_shot_layer
+from tumblehead.pipe.houdini.lops import submit_render
 import tumblehead.pipe.houdini.nodes as ns
+from tumblehead.pipe.houdini import util
 from tumblehead.pipe.paths import (
-    get_next_version_path,
-    latest_shot_export_path,
-    ShotEntity
+    latest_export_path,
+    next_export_path,
+    get_workfile_context
 )
 
 api = default_client()
 
-def _entity_from_context_json():
-
-    # Path to current workfilw
-    file_path = Path(hou.hipFile.path())
-    if not file_path.exists(): return None
-
-    # Look for context.json in the workfile directory
-    context_json_path = file_path.parent / "context.json"
-    if not context_json_path.exists(): return None
-    context_data = load_json(context_json_path)
-    if context_data is None: return None
-
-    # Parse the loaded context
-    if context_data.get('entity') != 'shot': return None
-    return ShotEntity(
-        sequence_name = context_data['sequence'],
-        shot_name = context_data['shot'],
-        department_name = context_data['department']
-    )
+DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/export_shot_layer')
 
 def _clear_dive(dive_node):
     for node in dive_node.children():
@@ -131,86 +116,78 @@ class ExportShotLayer(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_sequence_names(self):
-        return api.config.list_sequence_names()
-    
-    def list_shot_names(self):
-        sequence_name = self.get_sequence_name()
-        if sequence_name is None: return []
-        return api.config.list_shot_names(sequence_name)
-    
-    def list_department_names(self):
-        shot_department_names = api.config.list_shot_department_names()
-        if len(shot_department_names) == 0: return []
-        default_values = api.config.resolve('defaults:/houdini/lops/export_shot_layer')
+    def list_shot_uris(self) -> list[Uri]:
+        shot_entities = api.config.list_entities(
+            filter = Uri.parse_unsafe('entity:/shots'),
+            closure = True
+        )
+        return list(shot_entities)
+
+    def list_department_names(self) -> list[str]:
+        shot_departments = list_departments('shots')
+        if len(shot_departments) == 0: return []
+        shot_department_names = [dept.name for dept in shot_departments]
+        default_values = api.config.get_properties(DEFAULTS_URI)
         return [
             department_name
             for department_name in default_values['departments']
             if department_name in shot_department_names
         ]
-    
-    def list_downstream_department_names(self):
-        shot_department_names = api.config.list_shot_department_names()
-        if len(shot_department_names) == 0: return []
+
+    def list_downstream_department_names(self) -> list[str]:
+        shot_departments = list_departments('shots')
+        if len(shot_departments) == 0: return []
+        shot_department_names = [dept.name for dept in shot_departments]
         department_name = self.get_department_name()
         if department_name is None: return []
         if department_name not in shot_department_names: return []
         department_index = shot_department_names.index(department_name)
         return shot_department_names[department_index + 1:]
 
-    def list_pool_names(self):
+    def list_pool_names(self) -> list[str]:
         try: deadline = Deadline()
         except: return []
         pool_names = deadline.list_pools()
         if len(pool_names) == 0: return []
-        default_values = api.config.resolve('defaults:/houdini/lops/submit_render')
+        default_values = api.config.get_properties(submit_render.DEFAULTS_URI)
+        if default_values is None: return []
+        if 'pools' not in default_values: return []
         return [
             pool_name
             for pool_name in default_values['pools']
             if pool_name in pool_names
         ]
     
-    def get_entity_source(self):
+    def get_entity_source(self) -> str:
         return self.parm('entity_source').eval()
 
-    def get_sequence_name(self):
+    def get_shot_uri(self) -> Uri | None:
         entity_source = self.get_entity_source()
         match entity_source:
             case 'from_context':
-                entity_data = _entity_from_context_json()
-                return entity_data.sequence_name
+                file_path = Path(hou.hipFile.path())
+                context = get_workfile_context(file_path)
+                if context is None: return None
+                return context.entity_uri
             case 'from_settings':
-                sequence_names = self.list_sequence_names()
-                if len(sequence_names) == 0: return None
-                sequence_name = self.parm('sequence').eval()
-                if len(sequence_name) == 0: return sequence_names[0]
-                if sequence_name not in sequence_names: return None
-                return sequence_name
+                shot_uris = self.list_shot_uris()
+                if len(shot_uris) == 0: return None
+                shot_uri_raw = self.parm('shot').eval()
+                if len(shot_uri_raw) == 0: return shot_uris[0]
+                shot_uri = Uri.parse_unsafe(shot_uri_raw)
+                if shot_uri not in shot_uris: return None
+                return shot_uri
             case _:
                 raise AssertionError(f'Unknown entity source token: {entity_source}')
 
-    def get_shot_name(self):
+    def get_department_name(self) -> str | None:
         entity_source = self.get_entity_source()
         match entity_source:
             case 'from_context':
-                entity_data = _entity_from_context_json()
-                return entity_data.shot_name
-            case 'from_settings':
-                shot_names = self.list_shot_names()
-                if len(shot_names) == 0: return None
-                shot_name = self.parm('shot').eval()
-                if len(shot_name) == 0: return shot_names[0]
-                if shot_name not in shot_names: return None
-                return shot_name
-            case _:
-                raise AssertionError(f'Unknown entity source token: {entity_source}')
-
-    def get_department_name(self):
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                entity_data = _entity_from_context_json()
-                return entity_data.department_name
+                file_path = Path(hou.hipFile.path())
+                context = get_workfile_context(file_path)
+                if context is None: return None
+                return context.department_name
             case 'from_settings':
                 department_names = self.list_department_names()
                 if len(department_names) == 0: return None
@@ -221,35 +198,36 @@ class ExportShotLayer(ns.Node):
             case _:
                 raise AssertionError(f'Unknown entity source token: {entity_source}')
 
-    def get_downstream_department_names(self):
+    def get_downstream_department_names(self) -> list[str]:
         department_names = self.list_downstream_department_names()
         if len(department_names) == 0: return []
-        default_values = api.config.resolve('defaults:/houdini/lops/export_shot_layer')
+        default_values = api.config.get_properties(DEFAULTS_URI)
         selected_department_names = list(filter(len, self.parm('export_departments').eval().split(' ')))
         if len(selected_department_names) == 0: return default_values.get('downstream_departments', [])
         selected_department_names.sort(key = department_names.index)
         return selected_department_names
     
-    def get_pool_name(self):
+    def get_pool_name(self) -> str | None:
         pool_names = self.list_pool_names()
         if len(pool_names) == 0: return None
         pool_name = self.parm('export_pool').eval()
         if pool_name == '': return pool_names[0]
         return pool_name
 
-    def get_priority(self):
+    def get_priority(self) -> int:
         return self.parm('export_priority').eval()
 
-    def get_frame_range_source(self):
+    def get_frame_range_source(self) -> str:
         return self.parm('frame_range').eval()
 
-    def get_frame_range(self):
+    def get_frame_range(self) -> tuple[FrameRange, int] | None:
         frame_range_source = self.get_frame_range_source()
         match frame_range_source:
             case 'from_context':
-                sequence_name = self.get_sequence_name()
-                shot_name = self.get_shot_name()
-                frame_range = api.config.get_frame_range(sequence_name, shot_name)
+                shot_uri = self.get_shot_uri()
+                if shot_uri is None: return None
+                frame_range = get_frame_range(shot_uri)
+                if frame_range is None: return None
                 return frame_range, 1
             case 'from_settings':
                 return FrameRange(
@@ -261,22 +239,17 @@ class ExportShotLayer(ns.Node):
             case _:
                 assert False, f'Unknown frame range token: {frame_range_source}'
     
-    def set_entity_source(self, entity_source):
+    def set_entity_source(self, entity_source: str):
         valid_sources = ['from_context', 'from_settings']
         if entity_source not in valid_sources: return
         self.parm('entity_source').set(entity_source)
     
-    def set_sequence_name(self, sequence_name):
-        sequence_names = self.list_sequence_names()
-        if sequence_name not in sequence_names: return
-        self.parm('sequence').set(sequence_name)
+    def set_shot_uri(self, shot_uri: Uri):
+        shot_uris = self.list_shot_uris()
+        if shot_uri not in shot_uris: return
+        self.parm('shot').set(str(shot_uri))
     
-    def set_shot_name(self, shot_name):
-        shot_names = self.list_shot_names()
-        if shot_name not in shot_names: return
-        self.parm('shot').set(shot_name)
-    
-    def set_department_name(self, department_name):
+    def set_department_name(self, department_name: str):
         department_names = self.list_department_names()
         if department_name not in department_names: return
         self.parm('department').set(department_name)
@@ -285,15 +258,21 @@ class ExportShotLayer(ns.Node):
         return self.parm('export_type').eval()
     
     def execute(self, force_local=False):
-        if force_local:
-            return self._export_local()
+        if force_local: return self._export_local()
         export_type = self.get_export_type()
         match export_type:
             case 'local': return self._export_local()
             case 'farm': return self._export_farm()
             case _: assert False, f'Unknown export type: {export_type}'
     
-    def _export_local(self):
+    def _do_export(
+        self,
+        shot_uri,
+        department_name,
+        frame_offset,
+        frame_range,
+        step
+        ):
 
         # Nodes
         native = self.native()
@@ -302,24 +281,13 @@ class ExportShotLayer(ns.Node):
         _clear_dive(dive_node)
 
         # Parameters
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
-        department_name = self.get_department_name()
-        frame_range, step = self.get_frame_range()
         render_range = frame_range.full_range()
         user_name = get_user_name()
         timestamp = dt.datetime.now()
-        fps = api.config.get_fps()
+        fps = get_fps()
 
         # Paths
-        export_path = api.storage.resolve(
-            'export:'
-            '/shots'
-            f'/{sequence_name}'
-            f'/{shot_name}'
-            f'/{department_name}'
-        )
-        version_path = get_next_version_path(export_path)
+        version_path = next_export_path(shot_uri, department_name)
         version_name = version_path.name
 
         # Prepare for stage scrape
@@ -329,29 +297,24 @@ class ExportShotLayer(ns.Node):
         assets = dict()
         asset_inputs = set()
         for asset_metadata in util.list_assets(root):
-            asset_path = (
-                f'/{asset_metadata["category"]}'
-                f'/{asset_metadata["instance"]}'
-            )
-            assets[asset_path] = asset_metadata
+            asset_uri = Uri.parse_unsafe(asset_metadata['uri'])
+            asset_path = util.uri_to_prim_path(asset_uri)
+            instance_name = asset_metadata['instance']
+            asset_instance_path = f'{asset_path.rsplit("/", 1)[0]}/{instance_name}'
+            assets[asset_instance_path] = asset_metadata
             asset_inputs.update(set(map(json.dumps, asset_metadata['inputs'])))
-        
-        # Scrape stage for kits
-        kits = list()
-        kit_inputs = set()
-        for kit_metadata in util.list_kits(root):
-            kits.append(kit_metadata)
-            kit_inputs.update(set(map(json.dumps, kit_metadata['inputs'])))
-        
+
         # Set fps
         self.parm('set_metadata_fps').set(fps)
-        
-        # Cache the stage
-        with TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+
+        # Export the stage
+        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
 
-            # Set cache file path
-            cache_path = temp_path / f'{sequence_name}_{shot_name}_{version_name}.usd'
+            # Cache the stage
+            cache_path = temp_path / f'{version_name}.usd'
             self.parm('cache_file').set(path_str(cache_path))
             self.parm('cache_f1').set(render_range.first_frame)
             self.parm('cache_f2').set(render_range.last_frame)
@@ -361,74 +324,59 @@ class ExportShotLayer(ns.Node):
             self.parm('bypass_input').set(1)
 
             # Export changes to assets
-            # First, group assets by (category, asset) to handle bundling
             asset_groups = dict()
             for asset_path, asset_metadata in assets.items():
-                category_name = asset_metadata['category']
-                asset_name = asset_metadata['asset']
+                asset_uri = Uri.parse_unsafe(asset_metadata['uri'])
                 instance_name = asset_metadata['instance']
-                asset_key = (category_name, asset_name)
-                if asset_key not in asset_groups:
-                    asset_groups[asset_key] = []
-                asset_groups[asset_key].append((asset_path, instance_name))
+                if asset_uri not in asset_groups:
+                    asset_groups[asset_uri] = []
+                asset_groups[asset_uri].append((asset_path, instance_name))
 
             # Export each asset group
             parameter_assets = set()
-            for (category_name, asset_name), instances in asset_groups.items():
+            for asset_uri, instances in asset_groups.items():
 
                 # Check if asset is animatable
-                animatable = api.config.get_asset_animatable(category_name, asset_name)
+                properties = api.config.get_properties(asset_uri)
+                if properties['animatable']:
 
-                if animatable:
                     # Animatable assets: export each instance separately
                     for asset_path, instance_name in instances:
-                        output_file_name = (
-                            f'asset_'
-                            f'{category_name}_'
-                            f'{asset_name}_'
-                            f'{instance_name}_'
-                            f'{department_name}_'
-                            f'{version_name}.usd'
-                        )
+                        output_file_name = '.'.join([
+                            '_'.join(asset_uri.segments + [
+                                instance_name,
+                                department_name,
+                                version_name
+                            ]),
+                            'usd'
+                        ])
                         output_file_path = temp_path / output_file_name
                         _export_prim(dive_node, asset_path, render_range, step, output_file_path)
                         parameter_assets.add(json.dumps(dict(
-                            category = category_name,
-                            asset = asset_name,
+                            asset = str(asset_uri),
                             instance = instance_name
                         )))
                 else:
+
                     # Non-animatable assets: bundle all instances into one file
-                    output_file_name = (
-                        f'asset_'
-                        f'{category_name}_'
-                        f'{asset_name}_'
-                        f'{department_name}_'
-                        f'{version_name}.usd'
-                    )
+                    output_file_name = '.'.join([
+                        '_'.join(asset_uri.segments + [
+                            department_name,
+                            version_name
+                        ]),
+                        'usd'
+                    ])
                     output_file_path = temp_path / output_file_name
-                    # Export all instance paths together into one bundled file
                     instance_paths = [asset_path for asset_path, _ in instances]
                     _export_prims(dive_node, instance_paths, render_range, step, output_file_path)
 
                     # Still track all instances in metadata
                     for asset_path, instance_name in instances:
                         parameter_assets.add(json.dumps(dict(
-                            category = category_name,
-                            asset = asset_name,
+                            asset = str(asset_uri),
                             instance = instance_name
                         )))
-            
-            # Find all kits
-            parameter_kits = set()
-            for kit_metadata in kits:
-                category_name = kit_metadata['category']
-                kit_name = kit_metadata['kit']
-                parameter_kits.add(json.dumps(dict(
-                    category = category_name,
-                    kit = kit_name
-                )))
-            
+
             # Export changes to cameras
             _export_prim(dive_node, '/cameras', render_range, step, temp_path / f'cameras_{version_name}.usd')
 
@@ -452,37 +400,34 @@ class ExportShotLayer(ns.Node):
             context = dict(
                 inputs = list(map(json.loads, asset_inputs)),
                 outputs = [dict(
-                    context = 'shot',
-                    sequence = sequence_name,
-                    shot = shot_name,
+                    entity = str(shot_uri),
                     department = department_name,
                     version = version_name,
                     timestamp = timestamp.isoformat(),
                     user = user_name,
                     parameters = dict(
-                        assets = list(map(json.loads, parameter_assets)),
-                        kits = list(map(json.loads, parameter_kits))
+                        assets = list(map(json.loads, parameter_assets))
                     )
                 )]
             )
             store_json(context_path, context)
 
-            # Copy all files to output path
+            # Copy all files to output path (skip cache file)
             version_path.mkdir(parents=True, exist_ok=True)
             for temp_item_path in temp_path.iterdir():
                 if temp_item_path.name == 'stage': continue
-                if temp_item_path.name == cache_path.name: continue
+                if temp_item_path == cache_path: continue
                 output_item_path = version_path / temp_item_path.name
                 if temp_item_path.is_file():
                     shutil.copy(temp_item_path, output_item_path)
                 if temp_item_path.is_dir():
                     shutil.copytree(temp_item_path, output_item_path)
-            
+
             # Clear the cache
             self.parm('cache_loadfromdisk').set(0)
             self.parm('bypass_input').set(0)
             self.parm('cache_file').set('')
-            
+        
         # Layout the created nodes
         dive_node.layoutChildren()
 
@@ -495,48 +440,81 @@ class ExportShotLayer(ns.Node):
         )
         native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
-    def _export_farm(self):
-        """Submit export job to farm"""
-        # Import job module
-        try:
-            from tumblehead.farm.jobs.houdini.publish import job as publish_job
-        except ImportError as e:
-            hou.ui.displayMessage(
-                f"Failed to import publish job module: {str(e)}",
-                severity=hou.severityType.Error
+    def _export_local(self):
+
+        # Paramaters
+        shot_uri = self.get_shot_uri()
+        department_name = self.get_department_name()
+        frame_range, step = self.get_frame_range()
+
+        # Check parameters
+        if shot_uri is None: return
+        if department_name is None: return
+
+        # Check if we're in a group context
+        if is_group_uri(shot_uri):
+
+            # Get group parameters
+            group = get_group(shot_uri)
+            if group is None: return
+
+            # Export to each member shot
+            frame_offset = 0
+            for member_uri in group.members:
+
+                # Get member's original frame range
+                member_frame_range = get_frame_range(member_uri)
+                if member_frame_range is None: return
+
+                # Export this member
+                self._do_export(
+                    member_uri,
+                    department_name,
+                    frame_offset,
+                    member_frame_range,
+                    step
+                )
+
+                # Update the frame offset
+                frame_offset += len(member_frame_range)
+
+        else:
+
+            # Export single shot
+            self._do_export(
+                shot_uri,
+                department_name,
+                0,
+                frame_range,
+                step
             )
-            return
+
+    def _export_farm(self):
         
         # Get parameters
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
+        shot_uri = self.get_shot_uri()
         department_name = self.get_department_name()
-        
-        if not all([sequence_name, shot_name, department_name]):
-            hou.ui.displayMessage(
-                "Missing required parameters (sequence, shot, or department)",
-                severity=hou.severityType.Error
-            )
-            return
-        
         frame_range, _step = self.get_frame_range()
-        
+
         # Get farm parameters
         downstream_deps = self.get_downstream_department_names()
         pool_name = self.get_pool_name()
         priority = self.get_priority()
+
+        # Check parameters
+        if shot_uri is None: return
+        if department_name is None: return
+        if downstream_deps is None: return
+        if pool_name is None: return
+        if priority is None: return
         
         # Build config
         config = {
-            'entity': {
-                'tag': 'shot',
-                'sequence_name': sequence_name,
-                'shot_name': shot_name,
-                'department_name': department_name
-            },
             'settings': {
                 'priority': priority,
                 'pool_name': pool_name,
+                'entity_uri': str(shot_uri),
+                'department_name': department_name,
                 'first_frame': frame_range.full_range().first_frame,
                 'last_frame': frame_range.full_range().last_frame
             },
@@ -548,49 +526,45 @@ class ExportShotLayer(ns.Node):
         }
         
         # Submit to farm
-        try:
-            publish_job.submit(config, {})
-            
-            # Update node comment
-            native = self.native()
-            timestamp = dt.datetime.now()
-            user_name = get_user_name()
-            native.setComment(
-                f'farm export submitted: \n'
-                f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
-                f'by {user_name}\n'
-                f'downstream: {", ".join(downstream_deps) if downstream_deps else "None"}'
-            )
-            native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
-            
-            # Show success message
-            downstream_msg = f"\nDownstream: {', '.join(downstream_deps)}" if downstream_deps else ""
-            hou.ui.displayMessage(
-                f"Export job submitted to farm\n"
-                f"Department: {department_name}"
-                f"{downstream_msg}",
-                title="Farm Export Submitted"
-            )
-            
+        from tumblehead.farm.jobs.houdini.publish import job as publish_job
+        try: publish_job.submit(config, {})
         except Exception as e:
             hou.ui.displayMessage(
                 f"Failed to submit farm job: {str(e)}",
                 severity=hou.severityType.Error
             )
             return
+            
+        # Update node comment
+        native = self.native()
+        timestamp = dt.datetime.now()
+        user_name = get_user_name()
+        native.setComment(
+            f'farm export submitted: \n'
+            f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
+            f'by {user_name}\n'
+            f'downstream: {", ".join(downstream_deps) if downstream_deps else "None"}'
+        )
+        native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+        
+        # Show success message
+        downstream_msg = f"\nDownstream: {', '.join(downstream_deps)}" if downstream_deps else ""
+        hou.ui.displayMessage(
+            f"Export job submitted to farm\n"
+            f"Department: {department_name}"
+            f"{downstream_msg}",
+            title="Farm Export Submitted"
+        )
 
     def open_location(self):
-        sequence_name = self.get_sequence_name()
-        shot_name = self.get_shot_name()
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None: return
         department_name = self.get_department_name()
-        export_path = latest_shot_export_path(
-            sequence_name,
-            shot_name,
-            department_name
-        )
+        if department_name is None: return
+        export_path = latest_export_path(shot_uri, department_name)
         if export_path is None: return
         if not export_path.exists(): return
-        hou.ui.showInFileBrowser(f'{path_str(export_path)}/')
+        hou.ui.showInFileBrowser(f'{path_str(export_path)}')
 
 def create(scene, name):
     node_type = ns.find_node_type('export_shot_layer', 'Lop')
@@ -608,9 +582,12 @@ def on_created(raw_node):
     # Set node style
     set_style(raw_node)
 
-    # Change entity source to settings if we have no context
-    entity = _entity_from_context_json()
-    if entity is not None: return
+    # Check if workfile context exists
+    file_path = Path(hou.hipFile.path())
+    context = get_workfile_context(file_path)
+    if context is not None: return  # Context exists → keep 'from_context'
+
+    # No context → change entity source to settings
     node = ExportShotLayer(raw_node)
     node.set_entity_source('from_settings')
 

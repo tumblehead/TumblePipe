@@ -1,9 +1,7 @@
-from typing import Optional
 
 from qtpy.QtCore import (
     Qt,
-    Signal,
-    QSize
+    Signal
 )
 from qtpy.QtGui import (
     QColor,
@@ -12,7 +10,6 @@ from qtpy.QtGui import (
 )
 from qtpy.QtWidgets import (
     QWidget,
-    QSizePolicy,
     QHBoxLayout,
     QLabel,
     QMenu

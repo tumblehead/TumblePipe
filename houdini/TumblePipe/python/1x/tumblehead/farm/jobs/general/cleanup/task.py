@@ -62,7 +62,7 @@ def main():
 def cli():
     import argparse
     parser = argparse.ArgumentParser()
-    args = parser.parse_args()
+    parser.parse_args()
     return main()
 
 if __name__ == '__main__':

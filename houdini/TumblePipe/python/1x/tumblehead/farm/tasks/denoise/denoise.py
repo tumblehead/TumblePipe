@@ -21,7 +21,8 @@ from tumblehead.util.io import (
     load_json,
     store_json
 )
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
+from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Hython
 
 api = default_client()
@@ -87,7 +88,7 @@ def main(
     hython = Hython()
 
     # Open a temporary directory
-    root_temp_path = fix_path(api.storage.resolve('temp:/'))
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -121,8 +122,8 @@ def main(
                 TH_PROJECT_PATH = path_str(to_windows_path(api.PROJECT_PATH)),
                 TH_PIPELINE_PATH = path_str(to_windows_path(api.PIPELINE_PATH)),
                 HOUDINI_PACKAGE_DIR = ';'.join([
-                    path_str(to_windows_path(api.storage.resolve('pipeline:/houdini'))),
-                    path_str(to_windows_path(api.storage.resolve('project:/_pipeline/houdini')))
+                    path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini')))),
+                    path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('project:/_pipeline/houdini'))))
                 ]),
                 OCIO = path_str(to_windows_path(Path(os.environ['OCIO'])))
             )

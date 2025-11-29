@@ -2,7 +2,7 @@ from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QBrush
 from qtpy import QtWidgets
 
-from ..helpers import path_from_entity, entity_from_path
+from ..helpers import entity_uri_from_path
 from ..models import _create_workspace_model
 
 
@@ -199,8 +199,8 @@ class WorkspaceBrowser(QtWidgets.QWidget):
                 # Invalid path, skip styling
                 pass
 
-        # Convert selection entity to path
-        selection_path = path_from_entity(selection) if selection is not None else None
+        # Convert selection Uri to path
+        selection_path = list(selection.segments) if selection is not None else None
         selection_index = self._index_path(selection_path) if selection_path else None
 
         # Check if the index path is the same (avoid unnecessary work)
@@ -243,7 +243,7 @@ class WorkspaceBrowser(QtWidgets.QWidget):
             name_path = self._name_path(self._selection)
             if name_path is None:
                 return None
-            return entity_from_path(name_path)
+            return entity_uri_from_path(name_path)
         except (IndexError, AttributeError, ValueError):
             # Selection index is invalid (likely due to model recreation)
             # Clear invalid selection and return None
@@ -309,27 +309,20 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         create_entry_action = None
         remove_entry_action = None
         match name_path:
-            case ["Assets"]:
+            case ["assets"]:
                 create_entry_action = menu.addAction("Create Category")
-            case ["Assets", _]:
+            case ["assets", _]:
                 remove_entry_action = menu.addAction("Remove Category")
                 create_entry_action = menu.addAction("Create Asset")
-            case ["Assets", _, _]:
+            case ["assets", _, _]:
                 remove_entry_action = menu.addAction("Remove Asset")
-            case ["Shots"]:
+            case ["shots"]:
                 create_entry_action = menu.addAction("Create Sequence")
-            case ["Shots", _]:
+            case ["shots", _]:
                 remove_entry_action = menu.addAction("Remove Sequence")
                 create_entry_action = menu.addAction("Create Shot")
-            case ["Shots", _, _]:
+            case ["shots", _, _]:
                 remove_entry_action = menu.addAction("Remove Shot")
-            case ["Kits"]:
-                create_entry_action = menu.addAction("Create Category")
-            case ["Kits", _]:
-                remove_entry_action = menu.addAction("Remove Category")
-                create_entry_action = menu.addAction("Create Kit")
-            case ["Kits", _, _]:
-                remove_entry_action = menu.addAction("Remove Kit")
             case _:
                 pass
 

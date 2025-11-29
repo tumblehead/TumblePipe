@@ -4,13 +4,17 @@ import datetime as dt
 import hou
 
 from tumblehead.api import get_user_name, path_str, default_client
-from tumblehead.util.io import store_json, load_json
+from tumblehead.util.uri import Uri
+from tumblehead.util.io import store_json
+from tumblehead.config.department import list_departments
+from tumblehead.config.groups import is_group_uri, get_group
 from tumblehead.apps.deadline import Deadline
-from tumblehead.config import FrameRange
+from tumblehead.config.timeline import FrameRange, get_fps
+from tumblehead.pipe.houdini.lops import submit_render
 from tumblehead.pipe.paths import (
-    next_asset_export_file_path,
-    latest_asset_export_path,
-    AssetEntity
+    next_export_file_path,
+    latest_export_path,
+    get_workfile_context
 )
 from tumblehead.pipe.houdini.lops import set_kinds
 import tumblehead.pipe.houdini.nodes as ns
@@ -18,42 +22,25 @@ from tumblehead.pipe.houdini import util
 
 api = default_client()
 
-def _entity_from_context_json():
+DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/export_asset_layer')
 
-    # Path to current workfile
-    file_path = Path(hou.hipFile.path())
-    if not file_path.exists(): return None
-
-    # Look for context.json in the workfile directory
-    context_json_path = file_path.parent / "context.json"
-    if not context_json_path.exists(): return None
-    context_data = load_json(context_json_path)
-    if context_data is None: return None
-
-    # Parse the loaded context
-    if context_data['entity'] != 'asset': return None
-    return AssetEntity(
-        category_name = context_data['category'],
-        asset_name = context_data['asset'],
-        department_name = context_data['department']
-    )
 
 class ExportAssetLayer(ns.Node):
     def __init__(self, native):
         super().__init__(native)
-    
-    def list_category_names(self):
-        return api.config.list_category_names()
 
-    def list_asset_names(self):
-        category_name = self.get_category_name()
-        if category_name is None: return []
-        return api.config.list_asset_names(category_name)
+    def list_asset_uris(self) -> list[Uri]:
+        asset_entities = api.config.list_entities(
+            filter = Uri.parse_unsafe('entity:/assets'),
+            closure = True
+        )
+        return list(asset_entities)
 
     def list_department_names(self):
-        asset_department_names = api.config.list_asset_department_names()
-        if len(asset_department_names) == 0: return []
-        default_values = api.config.resolve('defaults:/houdini/lops/export_asset_layer')
+        asset_departments = list_departments('assets')
+        if len(asset_departments) == 0: return []
+        asset_department_names = [dept.name for dept in asset_departments]
+        default_values = api.config.get_properties(DEFAULTS_URI)
         return [
             department_name
             for department_name in default_values['departments']
@@ -61,8 +48,9 @@ class ExportAssetLayer(ns.Node):
         ]
 
     def list_downstream_department_names(self):
-        asset_department_names = api.config.list_asset_department_names()
-        if len(asset_department_names) == 0: return []
+        asset_departments = list_departments('assets')
+        if len(asset_departments) == 0: return []
+        asset_department_names = [dept.name for dept in asset_departments]
         department_name = self.get_department_name()
         if department_name is None: return []
         if department_name not in asset_department_names: return []
@@ -74,7 +62,9 @@ class ExportAssetLayer(ns.Node):
         except: return []
         pool_names = deadline.list_pools()
         if len(pool_names) == 0: return []
-        default_values = api.config.resolve('defaults:/houdini/lops/submit_render')
+        default_values = api.config.get_properties(submit_render.DEFAULTS_URI)
+        if default_values is None: return []
+        if 'pools' not in default_values: return []
         return [
             pool_name
             for pool_name in default_values['pools']
@@ -84,44 +74,33 @@ class ExportAssetLayer(ns.Node):
     def get_entity_source(self):
         return self.parm('entity_source').eval()
 
-    def get_category_name(self):
+    def get_asset_uri(self) -> Uri | None:
         entity_source = self.get_entity_source()
         match entity_source:
             case 'from_context':
-                entity_data = _entity_from_context_json()
-                return entity_data.category_name
+                file_path = Path(hou.hipFile.path())
+                context = get_workfile_context(file_path)
+                if context is None: return None
+                return context.entity_uri
             case 'from_settings':
-                category_names = self.list_category_names()
-                if len(category_names) == 0: return None
-                category_name = self.parm('category').eval()
-                if len(category_name) == 0: return category_names[0]
-                if category_name not in category_names: return None
-                return category_name
+                asset_uris = self.list_asset_uris()
+                if len(asset_uris) == 0: return None
+                asset_uri_raw = self.parm('asset').eval()
+                if len(asset_uri_raw) == 0: return asset_uris[0]
+                asset_uri = Uri.parse_unsafe(asset_uri_raw)
+                if asset_uri not in asset_uris: return None
+                return asset_uri
             case _:
                 raise AssertionError(f'Unknown entity source setting "{entity_source}"')
 
-    def get_asset_name(self):
+    def get_department_name(self) -> str | None:
         entity_source = self.get_entity_source()
         match entity_source:
             case 'from_context':
-                entity_data = _entity_from_context_json()
-                return entity_data.asset_name
-            case 'from_settings':
-                asset_names = self.list_asset_names()
-                if len(asset_names) == 0: return None
-                asset_name = self.parm('asset').eval()
-                if len(asset_name) == 0: return asset_names[0]
-                if asset_name not in asset_names: return None
-                return asset_name
-            case _:
-                raise AssertionError(f'Unknown entity source setting "{entity_source}"')
-
-    def get_department_name(self):
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                entity_data = _entity_from_context_json()
-                return entity_data.department_name
+                file_path = Path(hou.hipFile.path())
+                context = get_workfile_context(file_path)
+                if context is None: return None
+                return context.department_name
             case 'from_settings':
                 department_names = self.list_department_names()
                 if len(department_names) == 0: return None
@@ -135,9 +114,11 @@ class ExportAssetLayer(ns.Node):
     def get_downstream_department_names(self):
         department_names = self.list_downstream_department_names()
         if len(department_names) == 0: return []
-        default_values = api.config.resolve('defaults:/houdini/lops/export_asset_layer')
+        default_values = api.config.get_properties(DEFAULTS_URI)
         selected_department_names = list(filter(len, self.parm('export_departments').eval().split(' ')))
-        if len(selected_department_names) == 0: return default_values.get('downstream_departments', [])
+        if len(selected_department_names) == 0:
+            if default_values is None: return []
+            return default_values.get('downstream_departments', [])
         selected_department_names.sort(key = department_names.index)
         return selected_department_names
     
@@ -177,16 +158,11 @@ class ExportAssetLayer(ns.Node):
         if entity_source not in valid_sources: return
         self.parm('entity_source').set(entity_source)
 
-    def set_category_name(self, category_name):
-        category_names = self.list_category_names()
-        if category_name not in category_names: return
-        self.parm('category').set(category_name)
+    def set_asset_uri(self, asset_uri: Uri):
+        asset_uris = self.list_asset_uris()
+        if asset_uri not in asset_uris: return
+        self.parm('asset').set(str(asset_uri))
 
-    def set_asset_name(self, asset_name):
-        asset_names = self.list_asset_names()
-        if asset_name not in asset_names: return
-        self.parm('asset').set(asset_name)
-    
     def set_department_name(self, department_name):
         department_names = self.list_department_names()
         if department_name not in department_names: return
@@ -204,36 +180,42 @@ class ExportAssetLayer(ns.Node):
             case 'farm': return self._export_farm()
             case _: assert False, f'Unknown export type: {export_type}'
     
-    def _export_local(self):
+    def _do_export_to_asset(self, kinds_node, asset_uri: Uri, department_name: str,
+                             frame_range: FrameRange, frame_step: int):
+        """Core export logic for a single asset
 
-        # Nodes
-        native = self.native()
-        kinds_node = set_kinds.SetKinds(native.node('kinds'))
+        Args:
+            kinds_node: Kinds helper node
+            asset_uri: Asset URI
+            department_name: Department name
+            frame_range: Frame range
+            frame_step: Frame step size
 
-        # Parameters
-        category_name = self.get_category_name()
-        asset_name = self.get_asset_name()
-        department_name = self.get_department_name()
-        frame_range, frame_step = self.get_frame_range()
+        Returns:
+            Tuple of (version_name, timestamp, user_name)
+        """
+        # Additional parameters
         render_range = frame_range.full_range()
         timestamp = dt.datetime.now()
         user_name = get_user_name()
-        fps = api.config.get_fps()
+        fps = get_fps()
 
         # Isolate the asset
-        self.parm('isolated_asset_srcprimpath1').set(f'/{category_name}/{asset_name}')
-        self.parm('isolated_asset_dstprimpath1').set(f'/{category_name}')
+        from tumblehead.pipe.houdini.util import uri_to_prim_path, uri_to_parent_prim_path
+        asset_prim_path = uri_to_prim_path(asset_uri)
+        parent_prim_path = uri_to_parent_prim_path(asset_uri)
+        self.parm('isolated_asset_srcprimpath1').set(asset_prim_path)
+        self.parm('isolated_asset_dstprimpath1').set(parent_prim_path)
 
         # Set kinds
-        kinds_node.set_category_name(category_name)
-        kinds_node.set_item_name(asset_name)
+        kinds_node.set_prim_path(asset_prim_path)
         kinds_node.execute()
 
         # Set fps
         self.parm('set_metadata_fps').set(fps)
 
         # Prepare asset department export
-        file_path = next_asset_export_file_path(category_name, asset_name, department_name)
+        file_path = next_export_file_path(asset_uri, department_name)
         version_path = file_path.parent
         version_name = version_path.name
         self.parm('export_lopoutput').set(path_str(file_path))
@@ -250,10 +232,8 @@ class ExportAssetLayer(ns.Node):
         context_data = dict(
             inputs = [],
             outputs = [dict(
-                context = 'asset',
-                category = category_name,
-                asset = asset_name,
-                layer = department_name,
+                entity = str(asset_uri),
+                department = department_name,
                 version = version_name,
                 timestamp = timestamp.isoformat(),
                 user = user_name,
@@ -262,14 +242,92 @@ class ExportAssetLayer(ns.Node):
         )
         store_json(context_path, context_data)
 
-        # Update node comment
-        native.setComment(
-            'last export: '
-            f'{version_name} \n'
-            f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
-            f'by {user_name}'
-        )
-        native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+        return version_name, timestamp, user_name
+
+    def _export_local(self):
+
+        # Nodes
+        native = self.native()
+        kinds_node = set_kinds.SetKinds(native.node('kinds'))
+
+        # Parameters
+        asset_uri = self.get_asset_uri()
+        department_name = self.get_department_name()
+        frame_range_result = self.get_frame_range()
+
+        # Check parameters
+        if asset_uri is None: return
+        if department_name is None: return
+        if frame_range_result is None: return
+
+        frame_range, frame_step = frame_range_result
+
+        # Check if we're exporting to a group
+        if is_group_uri(asset_uri):
+            # Group export - export to each member asset
+            group = get_group(asset_uri)
+            if group is None:
+                hou.ui.displayMessage(
+                    f"Group not found: {asset_uri}",
+                    severity=hou.severityType.Error
+                )
+                return
+
+            # Export to each member asset
+            exported_members = []
+            last_timestamp = None
+            last_user_name = None
+
+            for member_uri in group.members:
+                try:
+                    # Export this member
+                    version_name, timestamp, user_name = self._do_export_to_asset(
+                        kinds_node,
+                        member_uri,
+                        department_name,
+                        frame_range,
+                        frame_step
+                    )
+
+                    # Track for comment
+                    last_timestamp = timestamp
+                    last_user_name = user_name
+
+                    # Add to exported members list for display
+                    exported_members.append(f"{member_uri} ({version_name})")
+                except Exception as e:
+                    # Skip failed members but log the error
+                    print(f"Failed to export member {member_uri}: {e}")
+                    pass
+
+            # Update node comment
+            if last_timestamp and last_user_name:
+                native.setComment(
+                    f'group export: {asset_uri.segments[-1]}\n'
+                    f'{last_timestamp.strftime("%Y-%m-%d %H:%M:%S")}\n'
+                    f'by {last_user_name}\n'
+                    f'members: {", ".join(exported_members)}'
+                )
+                native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+
+        else:
+            # Individual asset export
+            version_name, timestamp, user_name = self._do_export_to_asset(
+                kinds_node,
+                asset_uri,
+                department_name,
+                frame_range,
+                frame_step
+            )
+
+            # Update node comment
+            native.setComment(
+                'last export: '
+                f'{version_name} \n'
+                f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
+                f'by {user_name}'
+            )
+            native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
     def _export_farm(self):
         """Submit export job to farm"""
@@ -282,91 +340,150 @@ class ExportAssetLayer(ns.Node):
                 severity=hou.severityType.Error
             )
             return
-        
+
         # Get parameters
-        category_name = self.get_category_name()
-        asset_name = self.get_asset_name()
+        asset_uri = self.get_asset_uri()
         department_name = self.get_department_name()
-        
-        if not all([category_name, asset_name, department_name]):
+
+        if not all([asset_uri, department_name]):
             hou.ui.displayMessage(
-                "Missing required parameters (category, asset, or department)",
+                "Missing required parameters (asset or department)",
                 severity=hou.severityType.Error
             )
             return
-        
-        frame_range, _step = self.get_frame_range()
-        
+
+        frame_range_result = self.get_frame_range()
+        if frame_range_result is None: return
+        frame_range, _step = frame_range_result
+
         # Get farm parameters
         downstream_deps = self.get_downstream_department_names()
         pool_name = self.get_pool_name()
         priority = self.get_priority()
-        
-        # Build config
-        config = {
-            'entity': {
-                'tag': 'asset',
-                'category_name': category_name,
-                'asset_name': asset_name,
-                'department_name': department_name
-            },
-            'settings': {
-                'priority': priority,
-                'pool_name': pool_name,
-                'first_frame': frame_range.full_range().first_frame,
-                'last_frame': frame_range.full_range().last_frame
-            },
-            'tasks': {
-                'publish': {
-                    'downstream_departments': downstream_deps
-                }
-            }
-        }
-        
-        # Submit to farm
-        try:
-            publish_job.submit(config, {})
-            
+
+        # Check if we're submitting a group
+        if is_group_uri(asset_uri):
+            # Group farm submission - submit job for each member
+            group = get_group(asset_uri)
+            if group is None:
+                hou.ui.displayMessage(
+                    f"Group not found: {asset_uri}",
+                    severity=hou.severityType.Error
+                )
+                return
+
+            submitted_members = []
+            for member_uri in group.members:
+                try:
+                    # Build config for this member
+                    config = {
+                        'settings': {
+                            'priority': priority,
+                            'pool_name': pool_name,
+                            'entity_uri': str(member_uri),
+                            'department_name': department_name,
+                            'first_frame': frame_range.full_range().first_frame,
+                            'last_frame': frame_range.full_range().last_frame
+                        },
+                        'tasks': {
+                            'publish': {
+                                'downstream_departments': downstream_deps
+                            }
+                        }
+                    }
+
+                    # Submit to farm
+                    publish_job.submit(config, {})
+
+                    # Track submitted members
+                    submitted_members.append(str(member_uri))
+                except Exception as e:
+                    print(f"Failed to submit member {member_uri}: {e}")
+                    pass
+
             # Update node comment
             native = self.native()
             timestamp = dt.datetime.now()
             user_name = get_user_name()
             native.setComment(
-                f'farm export submitted: \n'
-                f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
+                f'group farm export: {asset_uri.segments[-1]}\n'
+                f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")}\n'
                 f'by {user_name}\n'
-                f'downstream: {", ".join(downstream_deps) if downstream_deps else "None"}'
+                f'downstream: {", ".join(downstream_deps) if downstream_deps else "None"}\n'
+                f'members: {", ".join(submitted_members)}'
             )
             native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
-            
+
             # Show success message
             downstream_msg = f"\nDownstream: {', '.join(downstream_deps)}" if downstream_deps else ""
             hou.ui.displayMessage(
-                f"Export job submitted to farm\n"
+                f"Group export jobs submitted to farm\n"
                 f"Department: {department_name}"
-                f"{downstream_msg}",
-                title="Farm Export Submitted"
+                f"{downstream_msg}\n"
+                f"Members: {', '.join(submitted_members)}",
+                title="Group Farm Export Submitted"
             )
-            
-        except Exception as e:
-            hou.ui.displayMessage(
-                f"Failed to submit farm job: {str(e)}",
-                severity=hou.severityType.Error
-            )
-            return
+
+        else:
+            # Individual asset farm submission
+            # Build config
+            config = {
+                'settings': {
+                    'priority': priority,
+                    'pool_name': pool_name,
+                    'entity_uri': str(asset_uri),
+                    'department_name': department_name,
+                    'first_frame': frame_range.full_range().first_frame,
+                    'last_frame': frame_range.full_range().last_frame
+                },
+                'tasks': {
+                    'publish': {
+                        'downstream_departments': downstream_deps
+                    }
+                }
+            }
+
+            # Submit to farm
+            try:
+                publish_job.submit(config, {})
+
+                # Update node comment
+                native = self.native()
+                timestamp = dt.datetime.now()
+                user_name = get_user_name()
+                native.setComment(
+                    f'farm export submitted: \n'
+                    f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
+                    f'by {user_name}\n'
+                    f'downstream: {", ".join(downstream_deps) if downstream_deps else "None"}'
+                )
+                native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+
+                # Show success message
+                downstream_msg = f"\nDownstream: {', '.join(downstream_deps)}" if downstream_deps else ""
+                hou.ui.displayMessage(
+                    f"Export job submitted to farm\n"
+                    f"Department: {department_name}"
+                    f"{downstream_msg}",
+                    title="Farm Export Submitted"
+                )
+
+            except Exception as e:
+                hou.ui.displayMessage(
+                    f"Failed to submit farm job: {str(e)}",
+                    severity=hou.severityType.Error
+                )
+                return
         
     def open_location(self):
-        category_name = self.get_category_name() 
-        asset_name = self.get_asset_name()
+        asset_uri = self.get_asset_uri()
+        if asset_uri is None: return
         department_name = self.get_department_name()
-        export_path = latest_asset_export_path(
-            category_name,
-            asset_name,
-            department_name
-        )
+        if department_name is None: return
+        export_path = latest_export_path(asset_uri, department_name)
         if export_path is None: return
         if not export_path.exists(): return
-        hou.ui.showInFileBrowser(f'{path_str(export_path)}/')
+        hou.ui.showInFileBrowser(f'{path_str(export_path)}')
 
 def create(scene, name):
     node_type = ns.find_node_type('export_asset_layer', 'Lop')
@@ -384,9 +501,12 @@ def on_created(raw_node):
     # Set node style
     set_style(raw_node)
 
-    # Change entity source to settings if we have no context
-    entity = _entity_from_context_json()
-    if entity is not None: return
+    # Check if workfile context exists
+    file_path = Path(hou.hipFile.path())
+    context = get_workfile_context(file_path)
+    if context is not None: return  # Context exists → keep 'from_context'
+
+    # No context → change entity source to settings
     node = ExportAssetLayer(raw_node)
     node.set_entity_source('from_settings')
 

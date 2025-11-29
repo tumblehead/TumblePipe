@@ -9,172 +9,100 @@ import hou
 from tumblehead.api import get_user_name
 from tumblehead.util.io import store_json
 from tumblehead.pipe.paths import (
-    list_asset_hip_file_paths,
-    list_shot_hip_file_paths,
-    list_kit_hip_file_paths,
-    get_asset_hip_file_path,
-    get_shot_hip_file_path,
-    get_kit_hip_file_path,
-    latest_asset_hip_file_path,
-    latest_shot_hip_file_path,
-    latest_kit_hip_file_path,
-    next_asset_hip_file_path,
-    next_shot_hip_file_path,
-    next_kit_hip_file_path,
-    latest_asset_export_path,
-    latest_shot_export_path,
-    latest_kit_export_path,
-    AssetEntity,
-    ShotEntity,
-    KitEntity,
-    AssetContext,
-    ShotContext,
-    KitContext,
+    list_hip_file_paths,
+    get_hip_file_path,
+    latest_hip_file_path,
+    next_hip_file_path,
+    latest_export_path,
+    Context
 )
-
-from .constants import Section
-
-
-def latest_asset_context(category_name, asset_name, department_name):
-    file_path = latest_asset_hip_file_path(category_name, asset_name, department_name)
-    version_name = None if file_path is None else file_path.stem.rsplit("_", 1)[-1]
-    return AssetContext(department_name, category_name, asset_name, version_name)
+from tumblehead.util.uri import Uri
 
 
-def latest_shot_context(sequence_name, shot_name, department_name):
-    file_path = latest_shot_hip_file_path(sequence_name, shot_name, department_name)
-    version_name = None if file_path is None else file_path.stem.rsplit("_", 1)[-1]
-    return ShotContext(department_name, sequence_name, shot_name, version_name)
+
+def get_entity_type(entity_uri: Uri) -> str | None:
+    """Get entity type from URI ('asset' or 'shot')."""
+    if entity_uri is None: return None
+    if entity_uri.purpose != 'entity': return None
+    if len(entity_uri.segments) < 1: return None
+    context = entity_uri.segments[0]
+    if context == 'assets': return 'asset'
+    if context == 'shots': return 'shot'
+    return None
 
 
-def latest_kit_context(category_name, kit_name, department_name):
-    file_path = latest_kit_hip_file_path(category_name, kit_name, department_name)
-    version_name = None if file_path is None else file_path.stem.rsplit("_", 1)[-1]
-    return KitContext(department_name, category_name, kit_name, version_name)
-
-
-def next_file_path(context):
-    match context:
-        case AssetContext(department_name, category_name, asset_name, _):
-            return next_asset_hip_file_path(category_name, asset_name, department_name)
-        case ShotContext(department_name, sequence_name, shot_name, _):
-            return next_shot_hip_file_path(sequence_name, shot_name, department_name)
-        case KitContext(department_name, category_name, kit_name, _):
-            return next_kit_hip_file_path(category_name, kit_name, department_name)
-    assert False, f"Invalid context: {context}"
-
-
-def latest_file_path(context):
-    match context:
-        case AssetContext(department_name, category_name, asset_name, _):
-            return latest_asset_hip_file_path(
-                category_name, asset_name, department_name
-            )
-        case ShotContext(department_name, sequence_name, shot_name, _):
-            return latest_shot_hip_file_path(sequence_name, shot_name, department_name)
-        case KitContext(department_name, category_name, kit_name, _):
-            return latest_kit_hip_file_path(category_name, kit_name, department_name)
-    assert False, f"Invalid context: {context}"
-
-
-def list_file_paths(context):
-    match context:
-        case AssetContext(department_name, category_name, asset_name, _):
-            return list_asset_hip_file_paths(category_name, asset_name, department_name)
-        case ShotContext(department_name, sequence_name, shot_name, _):
-            return list_shot_hip_file_paths(sequence_name, shot_name, department_name)
-        case KitContext(department_name, category_name, kit_name, _):
-            return list_kit_hip_file_paths(category_name, kit_name, department_name)
-    assert False, f"Invalid context: {context}"
-
-
-def latest_export_path(context):
-    match context:
-        case AssetContext(department_name, category_name, asset_name, _):
-            return latest_asset_export_path(category_name, asset_name, department_name)
-        case ShotContext(department_name, sequence_name, shot_name, _):
-            return latest_shot_export_path(sequence_name, shot_name, department_name)
-        case KitContext(department_name, category_name, kit_name, _):
-            return latest_kit_export_path(category_name, kit_name, department_name)
-    assert False, f"Invalid context: {context}"
-
-
-def entity_from_path(path):
+def entity_uri_from_path(path: list[str]) -> Uri | None:
+    """Convert legacy path list to entity Uri."""
     match path:
-        case None:
-            return None
-        case ["Assets", category_name, asset_name, *_]:
-            return AssetEntity(category_name, asset_name)
-        case ["Shots", sequence_name, shot_name, *_]:
-            return ShotEntity(sequence_name, shot_name)
-        case ["Kits", category_name, kit_name, *_]:
-            return KitEntity(category_name, kit_name)
-    assert False, f"Invalid path: {path}"
-
-
-def entity_from_context(context):
-    match context:
-        case None:
-            return None
-        case AssetContext(_, category_name, asset_name, _):
-            return AssetEntity(category_name, asset_name)
-        case ShotContext(_, sequence_name, shot_name, _):
-            return ShotEntity(sequence_name, shot_name)
-        case KitContext(_, category_name, kit_name, _):
-            return KitEntity(category_name, kit_name)
-    assert False, f"Invalid context: {context}"
-
-
-def path_from_context(context):
-    match context:
-        case None:
-            return None
-        case AssetContext(_, category_name, asset_name, _):
-            return ["Assets", category_name, asset_name]
-        case ShotContext(_, sequence_name, shot_name, _):
-            return ["Shots", sequence_name, shot_name]
-        case KitContext(_, category_name, kit_name, _):
-            return ["Kits", category_name, kit_name]
-    assert False, f"Invalid context: {context}"
-
-
-def path_from_entity(entity):
-    match entity:
-        case None:
-            return None
-        case AssetEntity(category_name, asset_name):
-            return ["Assets", category_name, asset_name]
-        case ShotEntity(sequence_name, shot_name):
-            return ["Shots", sequence_name, shot_name]
-        case KitEntity(category_name, kit_name):
-            return ["Kits", category_name, kit_name]
-    assert False, f"Invalid entity: {entity}"
-
-
-def file_path_from_context(context):
-    match context:
-        case None:
-            return None
-        case AssetContext(department_name, category_name, asset_name, version_name):
-            file_path = get_asset_hip_file_path(
-                category_name, asset_name, department_name, version_name
-            )
-        case ShotContext(department_name, sequence_name, shot_name, version_name):
-            file_path = get_shot_hip_file_path(
-                sequence_name, shot_name, department_name, version_name
-            )
-        case KitContext(department_name, category_name, kit_name, version_name):
-            file_path = get_kit_hip_file_path(
-                category_name, kit_name, department_name, version_name
-            )
+        case ["assets", category, asset, *_]:
+            return Uri.parse_unsafe(f'entity:/assets/{category}/{asset}')
+        case ["shots", sequence, shot, *_]:
+            return Uri.parse_unsafe(f'entity:/shots/{sequence}/{shot}')
         case _:
-            assert False, f"Invalid context: {context}"
+            return None
+
+
+def context_from_selection(entity_uri: Uri, department_name: str, version_name: str = None) -> Context:
+    """Create Context from entity Uri and department info."""
+    return Context(
+        entity_uri=entity_uri,
+        department_name=department_name,
+        version_name=version_name
+    )
+
+
+def latest_context(entity_uri: Uri, department_name: str) -> Context:
+    """Get latest context for any entity type. Returns paths.Context directly."""
+    file_path = latest_hip_file_path(entity_uri, department_name)
+    version_name = None if file_path is None else file_path.stem.rsplit("_", 1)[-1]
+    return Context(
+        entity_uri=entity_uri,
+        department_name=department_name,
+        version_name=version_name
+    )
+
+
+def next_file_path(context: Context):
+    """Get next file path for a context."""
+    return next_hip_file_path(context.entity_uri, context.department_name)
+
+
+def latest_file_path(context: Context):
+    """Get latest file path for a context."""
+    return latest_hip_file_path(context.entity_uri, context.department_name)
+
+
+def list_file_paths(context: Context):
+    """List all file paths for a context."""
+    return list_hip_file_paths(context.entity_uri, context.department_name)
+
+
+def latest_export_path_from_context(context: Context):
+    """Get latest export path for a context."""
+    return latest_export_path(context.entity_uri, context.department_name)
+
+
+def path_from_context(context: Context):
+    """Get path list from context (for workspace selection)."""
+    if context is None:
+        return None
+    return list(context.entity_uri.segments)
+
+
+def file_path_from_context(context: Context):
+    """Get the hip file path for a context."""
+    if context is None:
+        return None
+    if context.version_name is None:
+        return None
+    file_path = get_hip_file_path(context.entity_uri, context.department_name, context.version_name)
     if not file_path.exists():
         return None
     return file_path
 
 
-def get_timestamp_from_context(context):
+def get_timestamp_from_context(context: Context):
+    """Get file modification timestamp for a context."""
     file_path = file_path_from_context(context)
     if file_path is None:
         return None
@@ -182,6 +110,7 @@ def get_timestamp_from_context(context):
 
 
 def save_context(target_path, prev_context, next_context):
+    """Save version context metadata."""
     def _get_version_name(context):
         if context is None:
             return "v0000"
@@ -205,42 +134,24 @@ def save_context(target_path, prev_context, next_context):
     )
 
 
-def save_entity_context(target_path, context):
+def save_entity_context(target_path, context: Context):
+    """Save entity context metadata."""
     entity_context_path = target_path / "context.json"
-    match context:
-        case AssetContext(department_name, category_name, asset_name, _version_name):
-            context_data = dict(
-                entity='asset',
-                category=category_name,
-                asset=asset_name,
-                department=department_name,
-                timestamp=dt.datetime.now().isoformat(),
-                user=get_user_name(),
-            )
-        case ShotContext(department_name, sequence_name, shot_name, _version_name):
-            context_data = dict(
-                entity='shot',
-                sequence=sequence_name,
-                shot=shot_name,
-                department=department_name,
-                timestamp=dt.datetime.now().isoformat(),
-                user=get_user_name(),
-            )
-        case KitContext(department_name, category_name, kit_name, _version_name):
-            context_data = dict(
-                entity='kit',
-                category=category_name,
-                kit=kit_name,
-                department=department_name,
-                timestamp=dt.datetime.now().isoformat(),
-                user=get_user_name(),
-            )
-        case _:
-            return
+
+    if context is None:
+        return
+
+    context_data = dict(
+        entity=str(context.entity_uri),
+        department=context.department_name,
+        timestamp=dt.datetime.now().isoformat(),
+        user=get_user_name(),
+    )
+
     store_json(entity_context_path, context_data)
 
 
-def get_user_from_context(context):
+def get_user_from_context(context: Context):
     """Get the username who saved the workfile for the given context.
 
     Returns:
@@ -251,12 +162,10 @@ def get_user_from_context(context):
     if context is None or context.version_name is None:
         return None
 
-    # Get the directory path for this context
     file_path = file_path_from_context(context)
     if file_path is None:
         return None
 
-    # Look for the context JSON file
     context_dir = file_path.parent / "_context"
     context_file = context_dir / f"{context.version_name}.json"
 
@@ -286,7 +195,6 @@ def format_relative_time(timestamp):
     now = dt.datetime.now()
     diff = now - timestamp
 
-    # Handle negative differences (future times)
     if diff.total_seconds() < 0:
         return "in the future"
 
@@ -320,6 +228,7 @@ def format_relative_time(timestamp):
 
 
 def load_module(module_path: Path, module_name: str):
+    """Dynamically load a Python module from file path."""
     spec = spec_from_file_location(module_name, module_path)
     module = module_from_spec(spec)
     sys.modules[module_name] = module

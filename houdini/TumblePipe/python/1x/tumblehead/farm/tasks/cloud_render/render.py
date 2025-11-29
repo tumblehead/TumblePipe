@@ -1,5 +1,4 @@
 from tempfile import TemporaryDirectory
-from typing import Optional
 from pathlib import Path
 import logging
 import tarfile
@@ -25,7 +24,8 @@ from tumblehead.util.io import (
     load_json,
     store_json
 )
-from tumblehead.config import BlockRange
+from tumblehead.config.timeline import BlockRange
+from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Husk, ITileStitch
 from tumblehead.apps import exr
 
@@ -72,7 +72,7 @@ def main(
     itilestitch = ITileStitch()
 
     # Open a temporary directory
-    root_temp_path = fix_path(api.storage.resolve('temp:/'))
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
