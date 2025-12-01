@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import string
 
-NAME_ALPHABET = set(string.ascii_letters + string.digits + '_')
+NAME_ALPHABET = set(string.ascii_letters + string.digits + '_-.')
 
 def _valid_name(name: str) -> bool:
     return set(name).issubset(NAME_ALPHABET)

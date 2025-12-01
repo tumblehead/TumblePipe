@@ -29,7 +29,7 @@ config = {
     'entity_uri': 'entity:/shots/sequence/shot',
     'first_frame': 1,
     'last_frame': 100,
-    'purpose': 'render'  # optional
+    'purpose': 'render'
 }
 """
 

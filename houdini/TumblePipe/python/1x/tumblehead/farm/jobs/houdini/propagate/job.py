@@ -170,7 +170,7 @@ def submit(
     if entity_type == 'asset':
         affected_shots = graph.find_shots_referencing_asset(
             dependency_graph,
-            entity_uri  # Pass URI directly
+            entity_uri
         )
     elif entity_type == 'shot':
         affected_shots = [entity_uri]
@@ -192,7 +192,7 @@ def submit(
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
-        logging.info(f'Temporary directory: {temp_path}')
+        logging.debug(f'Temporary directory: {temp_path}')
 
         # Batch
         batch = Batch(
@@ -226,7 +226,7 @@ def submit(
             # Find workfile - REQUIRED for publish
             workfile_path = latest_hip_file_path(dept_entity_uri, dept_name)
             if workfile_path is None or not workfile_path.exists():
-                continue  # Skip departments without workfiles
+                continue
 
             logging.info(f'Found workfile for {dept_entity_uri}: {workfile_path}')
 
@@ -239,7 +239,7 @@ def submit(
                 'entity': config['entity'].copy(),
                 'settings': config['settings'].copy(),
                 'tasks': {'publish': {}},
-                'workfile_path': path_str(workfile_dest)  # REQUIRED field
+                'workfile_path': path_str(workfile_dest)
             }
             publish_config['entity']['department_name'] = dept_name
             publish_config['settings']['priority'] = priority + 5
@@ -250,9 +250,9 @@ def submit(
             # If department is not independent, it depends on all previous publish jobs
             dept = dept_map.get(dept_name)
             if dept and not dept.independent:
-                job_deps = publish_job_names.copy()  # Depend on all previous publish jobs
+                job_deps = publish_job_names.copy()
             else:
-                job_deps = []  # Independent, can run in parallel
+                job_deps = []
 
             _add_job(job_name, publish_job, job_deps)
             publish_job_names.append(job_name)

@@ -92,7 +92,7 @@ def _run_task(
         frame_range = get_frame_range(task.entity_uri)
         render_range = frame_range.full_range()
         task_args = [
-            str(task.entity_uri),  # entity_uri
+            str(task.entity_uri),
             shot_department_name,
             render_department_name,
             pool_name,

@@ -982,7 +982,7 @@ class BuildComp(ns.Node):
             
             # Get all LPE names including beauty
             lpe_names = list(aov_nodes_by_type[AOVType.LPE].keys())
-            if lpe_names:  # Only update if we have LPEs
+            if lpe_names:
                 # Update the grade subnet with current LPEs
                 self._update_grade_subnet(
                     grade_subnet, 

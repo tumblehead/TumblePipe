@@ -229,7 +229,7 @@ class GroupEditorWidget(QtWidgets.QWidget):
     """Widget for editing a single group"""
 
     from qtpy.QtCore import Signal
-    group_saved = Signal(str)  # Emits group name when saved
+    group_saved = Signal(str)
     group_cancelled = Signal()
 
     def __init__(self, api, parent=None):

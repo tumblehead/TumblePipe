@@ -91,10 +91,10 @@ class BorderSpinnerAnimation(QObject):
 
             # Create position animation
             self._animation = QPropertyAnimation(widget, b"spinner_position")
-            self._animation.setDuration(1800)  # 1.8 second loop
+            self._animation.setDuration(1800)
             self._animation.setStartValue(0.0)
             self._animation.setEndValue(1.0)
-            self._animation.setLoopCount(-1)  # Infinite loop
+            self._animation.setLoopCount(-1)
             self._animation.setEasingCurve(QEasingCurve.Linear)
 
             # Override widget's paintEvent to draw spinner
@@ -105,7 +105,7 @@ class BorderSpinnerAnimation(QObject):
 
 
         except Exception:
-            pass  # Silently handle border spinner start errors
+            pass
 
     def stop_border_spinner(self, widget):
         """Stop border spinner animation on a panel widget"""
@@ -122,7 +122,7 @@ class BorderSpinnerAnimation(QObject):
 
 
         except Exception:
-            pass  # Silently handle border spinner stop errors
+            pass
 
     def _setup_spinner_painting(self, widget):
         """Setup custom painting for spinner on widget"""
@@ -160,8 +160,8 @@ class BorderSpinnerAnimation(QObject):
         current_index = int(position * (path_length - 1))
 
         # Draw spinner segment (multiple points for visibility)
-        segment_length = 12  # Length of spinner segment in path points
-        spinner_color = QColor(74, 144, 226)  # Blue color
+        segment_length = 12
+        spinner_color = QColor(74, 144, 226)
 
         painter.setPen(QPen(spinner_color, 3))
 
@@ -198,10 +198,10 @@ class FlashAnimation(QObject):
             # Create smooth fade animation
             self._animation = QPropertyAnimation(opacity_effect, b"opacity")
             self._animation.setDuration(duration)
-            self._animation.setStartValue(0.0)  # Start transparent
-            self._animation.setKeyValueAt(0.1, 0.8)  # Quick fade in to visible
-            self._animation.setKeyValueAt(0.3, 0.6)  # Hold visible briefly
-            self._animation.setKeyValueAt(1.0, 0.0)  # Smooth fade out
+            self._animation.setStartValue(0.0)
+            self._animation.setKeyValueAt(0.1, 0.8)
+            self._animation.setKeyValueAt(0.3, 0.6)
+            self._animation.setKeyValueAt(1.0, 0.0)
             self._animation.setEasingCurve(QEasingCurve.OutCubic)
 
             # Clean up when animation finishes
@@ -218,7 +218,7 @@ class FlashAnimation(QObject):
 
 
         except Exception:
-            pass  # Silently handle green overlay flash errors
+            pass
 
 
 class SpinnerManager(QObject):

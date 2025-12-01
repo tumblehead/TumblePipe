@@ -25,6 +25,11 @@ from tumblehead.util.uri import Uri
 from tumblehead.apps import mp4, wsl
 from tumblehead.apps.houdini import IConvert
 from tumblehead.util.io import load_json
+from tumblehead.config.discord import (
+    get_token as get_discord_token,
+    get_user_discord_id,
+    get_channel_id as get_discord_channel_id
+)
 
 api = default_client()
 
@@ -67,19 +72,18 @@ def _post(
     callback
     ) -> int:
 
-    # Load discord config
-    discord_config_path = api.storage.resolve(Uri.parse_unsafe('config:/discord_info.json'))
-    discord_config = load_json(discord_config_path)
-    if discord_config is None:
-        return _error(f'Discord config not found: {path_str(discord_config_path)}')
+    # Get discord token
+    token = get_discord_token()
+    if token is None:
+        return _error('Discord token not found in config')
 
     # Find the user to notify
-    user_id = discord_config['users'].get(user_name.lower())
+    user_id = get_user_discord_id(user_name)
     if user_id is None:
         return _error(f'User not found in discord config: {user_name}')
 
     # Find the channel to post to
-    channel_id = discord_config['channels'].get(channel_name.lower())
+    channel_id = get_discord_channel_id(channel_name)
     if channel_id is None:
         return _error(f'Channel not found in discord config: {channel_name}')
 
@@ -95,16 +99,16 @@ def _post(
         if user is None: return
         await callback(channel, user)
         await client.close()
-    
+
     try:
 
         # Run the client
-        client.run(discord_config['token'])
+        client.run(token)
 
         # Done
         print('Success')
         return 0
-    
+
     except Exception as e:
         return _error(f'Failed to post mp4 to discord: {e}')
 

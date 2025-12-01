@@ -63,6 +63,15 @@ from tumblehead.config.shots import (
     list_render_layers
 )
 
+from tumblehead.config.discord import (
+    get_token as get_discord_token,
+    get_user_discord_id,
+    get_channel_id as get_discord_channel_id,
+    get_channel_for_department as get_discord_channel_for_department,
+    list_users as list_discord_users,
+    list_channels as list_discord_channels
+)
+
 __all__ = [
     # Core classes
     'Entity',
@@ -95,4 +104,11 @@ __all__ = [
     'list_procedural_names',
     # Shots
     'list_render_layers',
+    # Discord
+    'get_discord_token',
+    'get_user_discord_id',
+    'get_discord_channel_id',
+    'get_discord_channel_for_department',
+    'list_discord_users',
+    'list_discord_channels',
 ]

@@ -51,16 +51,16 @@ class VersionTableModel(QAbstractTableModel):
 
         elif role == Qt.FontRole:
             font = QFont()
-            font.setPointSize(8)  # Reduce font size for all columns
+            font.setPointSize(8)
             return font
 
         elif role == Qt.ForegroundRole:
             if index.column() in [self.COLUMN_DATE, self.COLUMN_TIME]:
-                return QBrush("#919191")  # Gray color for timestamps
+                return QBrush("#919191")
             elif index.column() == self.COLUMN_VERSION and (
                 context.version_name is None or context.version_name == "v0000"
             ):
-                return QBrush("#616161")  # Darker gray for v0000
+                return QBrush("#616161")
 
         elif role == Qt.UserRole:
             # Return the full context for click handling

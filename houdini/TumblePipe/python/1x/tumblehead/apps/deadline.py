@@ -390,7 +390,7 @@ class Deadline:
         assert not job_path.exists(), f'Job path already exists: {job_path}'
         job_path.mkdir(parents = True)
         job_data_path = job_path / 'data'
-        logging.info(f'Creating job path: {job_path}')
+        logging.debug(f'Creating job path: {job_path}')
 
         # Job creation order
         job_ids = dict()

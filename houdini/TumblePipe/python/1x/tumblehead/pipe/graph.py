@@ -43,8 +43,8 @@ class Node:
     """Represents an entity in the dependency graph (version-agnostic)."""
     entity_uri: Uri
     department_name: Optional[str]
-    dependencies: list['Node'] = field(default_factory=list)  # What I use
-    references: list['Node'] = field(default_factory=list)    # What uses me
+    dependencies: list['Node'] = field(default_factory=list)
+    references: list['Node'] = field(default_factory=list)
 
 
 @dataclass
@@ -98,22 +98,22 @@ def _iter_all_entities(api):
         # entity is Entity(uri, properties) from new API
         # Extract department from URI path
         path_segments = [s for s in entity.uri.path.split('/') if s]
-        if len(path_segments) >= 4:  # assets/category/asset/department
+        if len(path_segments) >= 4:
             department_name = path_segments[3]
             base_uri = Uri.parse_unsafe(f'entity:/assets/{path_segments[1]}/{path_segments[2]}')
             yield base_uri, department_name
-        elif len(path_segments) == 3:  # assets/category/asset (no department)
+        elif len(path_segments) == 3:
             yield entity.uri, None
 
     # Iterate all shot entities (sequence/shot/department)
     for entity in api.config.list_entities(Uri.parse_unsafe('entity:/shots/*/*/*'), closure=True):
         # Extract department from URI path
         path_segments = [s for s in entity.uri.path.split('/') if s]
-        if len(path_segments) >= 4:  # shots/sequence/shot/department
+        if len(path_segments) >= 4:
             department_name = path_segments[3]
             base_uri = Uri.parse_unsafe(f'entity:/shots/{path_segments[1]}/{path_segments[2]}')
             yield base_uri, department_name
-        elif len(path_segments) == 3:  # shots/sequence/shot (no department)
+        elif len(path_segments) == 3:
             yield entity.uri, None
 
 

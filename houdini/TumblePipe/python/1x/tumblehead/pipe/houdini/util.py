@@ -166,7 +166,7 @@ def uri_to_prim_path(uri: Uri) -> str:
     Returns:
         USD prim path string
     """
-    segments = uri.segments[1:]  # Omit first segment (assets/shots)
+    segments = uri.segments[1:]
     return '/' + '/'.join(segments) if segments else '/'
 
 
@@ -208,7 +208,7 @@ def uri_to_parent_prim_path(uri: Uri) -> str:
     Returns:
         USD prim path for the parent level
     """
-    if len(uri.segments) < 3:  # Need at least: entity_type/parent/name
+    if len(uri.segments) < 3:
         return '/'
-    parent_segments = uri.segments[1:-1]  # Everything except entity_type and last
+    parent_segments = uri.segments[1:-1]
     return '/' + '/'.join(parent_segments)

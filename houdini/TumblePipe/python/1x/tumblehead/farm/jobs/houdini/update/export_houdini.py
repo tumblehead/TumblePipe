@@ -48,7 +48,7 @@ def main(
 
     # Config
     included_asset_departments = [d.name for d in list_departments('assets') if d.renderable]
-    included_kit_departments = []  # Kits no longer supported
+    included_kit_departments = []
     included_shot_departments = [d.name for d in list_departments('shots') if d.renderable]
     shot_department_name = included_shot_departments[-1]
 

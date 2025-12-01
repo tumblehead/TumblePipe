@@ -40,7 +40,7 @@ config = {
             'downstream_departments': ['list']
         }
     },
-    'workfile_path': 'string'  # Required: path to bundled workfile
+    'workfile_path': 'string'
 }
 """
 

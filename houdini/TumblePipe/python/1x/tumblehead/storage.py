@@ -7,7 +7,7 @@ class StorageConvention:
         if not isinstance(uri, Uri):
             raise TypeError(f"Expected Uri, got {type(uri).__name__}")
         if uri.is_wild():
-            return None  # Cannot resolve wildcard URIs
+            return None
         return uri.purpose, uri.segments
 
     def resolve(self, uri: Uri):

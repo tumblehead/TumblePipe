@@ -55,8 +55,8 @@ def _merge_rgba(
         'oiiotool',
         path_str(to_wsl_path(beauty_path)),
         path_str(to_wsl_path(alpha_path)),
-        '--chappend',  # Append alpha channel to RGB
-        '--chnames', 'R,G,B,A',  # Name the channels properly
+        '--chappend',
+        '--chnames', 'R,G,B,A',
         '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
         '-o', path_str(to_wsl_path(output_path))
     ]

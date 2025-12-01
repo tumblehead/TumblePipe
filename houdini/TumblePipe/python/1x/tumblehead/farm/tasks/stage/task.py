@@ -160,7 +160,7 @@ def build(config, paths, staging_path):
 
     # Parameters
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
-    entity_display = entity_uri.display_name()  # category/asset or sequence/shot
+    entity_display = entity_uri.display_name()
     title = f"stage {entity_display}"
     render_range = BlockRange(first_frame, last_frame)
 

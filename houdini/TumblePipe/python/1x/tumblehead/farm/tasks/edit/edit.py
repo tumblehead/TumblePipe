@@ -163,7 +163,7 @@ def main(shot_uri: Uri, purpose: str, render_range: BlockRange):
             print(f'Sync {layer_name}/{aov_name} from {render_department_name}/{aov_version_name}')
 
             # Build output path using URI segments for hierarchy
-            uri_path_segments = shot_uri.segments[1:]  # Skip 'shots'
+            uri_path_segments = shot_uri.segments[1:]
             uri_name = '_'.join(uri_path_segments)
             output_path = (
                 api.storage.resolve(Uri.parse_unsafe('edit:/')) /
@@ -201,7 +201,7 @@ def main(shot_uri: Uri, purpose: str, render_range: BlockRange):
 """
 config = {
     'entity_uri': 'entity:/shots/sequence/shot',
-    'purpose': 'render'  # optional
+    'purpose': 'render'
 }
 """
 

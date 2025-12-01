@@ -59,18 +59,18 @@ class DepartmentTableModel(QAbstractTableModel):
 
         elif role == Qt.FontRole:
             font = QFont()
-            font.setPointSize(8)  # Reduce font size for all columns
+            font.setPointSize(8)
             if index.column() == self.COLUMN_DEPARTMENT:
                 font.setBold(True)
             return font
 
         elif role == Qt.ForegroundRole:
             if index.column() == self.COLUMN_RELATIVE_TIME:
-                return QBrush("#919191")  # Gray color for timestamps
+                return QBrush("#919191")
             elif index.column() == self.COLUMN_VERSION and (
                 context.version_name is None or context.version_name == "v0000"
             ):
-                return QBrush("#616161")  # Darker gray for v0000
+                return QBrush("#616161")
 
         elif role == Qt.UserRole:
             # Return the full context for click handling
@@ -90,11 +90,11 @@ class DepartmentTableModel(QAbstractTableModel):
 
             if is_selected:
                 if is_overwritten:
-                    return QBrush(QColor("#b01c3c"))  # Red for overwritten
+                    return QBrush(QColor("#b01c3c"))
                 else:
-                    return QBrush(QColor("#5e4a8a"))  # Purple for confirmed selection
+                    return QBrush(QColor("#5e4a8a"))
             else:
-                return QBrush(QColor("#3a3a3a"))  # Default gray background
+                return QBrush(QColor("#3a3a3a"))
 
         return None
 

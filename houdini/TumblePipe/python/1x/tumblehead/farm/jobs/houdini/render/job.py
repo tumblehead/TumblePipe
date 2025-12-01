@@ -1040,7 +1040,7 @@ def submit(
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
-        logging.info(f'Temporary directory: {temp_path}')
+        logging.debug(f'Temporary directory: {temp_path}')
 
         # Batch and jobs
         layers_text = f"[{', '.join(render_layer_names)}]"

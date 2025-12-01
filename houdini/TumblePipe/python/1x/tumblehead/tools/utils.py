@@ -87,7 +87,7 @@ def log_recent_node_type(node: hou.Node):
         data = [entry for entry in data if entry["type"] != node_data["type"]]
             
         data.insert(0, node_data)
-        data = data[:MAX_RECENTS]  # keep only latest N
+        data = data[:MAX_RECENTS]
 
         with open(RECENT_NODES_PATH, "w") as f:
             json.dump(data, f, indent=4)
@@ -396,7 +396,7 @@ def add_note(items: list[hou.NetworkMovableItem]) -> None:
         note_offset = hou.Vector2(-4, -.5)
         note_color = hou.Color(0,0,0)
         note_size = hou.Vector2(3, 1)
-        text_color = hou.Color(.839,.839,.839) # This is the almost white swatch
+        text_color = hou.Color(.839,.839,.839)
         text_size = .3
         
         note = network.createStickyNote()
@@ -408,7 +408,7 @@ def add_note(items: list[hou.NetworkMovableItem]) -> None:
         note.setTextSize(text_size)
         note.setSelected(True)
         note.setDrawBackground(False)
-        hou.ui.waitUntil(lambda: False)  # UI refresh trick       
+        hou.ui.waitUntil(lambda: False)       
 
 #region copy_image
 def copy_image(image_path: str) -> str:
@@ -454,7 +454,7 @@ def thumbnail(node: hou.Node):
 
     # Set flipbook settings 
     flipbook_options = scene_viewer.flipbookSettings()
-    flipbook_options.output(thumbnail_path)  # Empty means send to MPlay
+    flipbook_options.output(thumbnail_path)
     flipbook_options.frameRange((hou.frame(), hou.frame()))
     flipbook_options.resolution((int(thumbnail_resolution[0]), int(thumbnail_resolution[1])))
     scene_viewer.flipbook(scene_viewer.curViewport(), flipbook_options)
@@ -510,7 +510,7 @@ def edit_comment(node: hou.Node):
     
 #region create recipe
 def create_recipe(recipe: str, **kwargs):
-    selection = hou.selectedItems() # selection prior to recipe
+    selection = hou.selectedItems()
     node_data = hou.data.applyTabToolRecipe(name = recipe, kwargs = kwargs)
     if not node_data: return
     central_node = node_data["objects"]["central_node"]
