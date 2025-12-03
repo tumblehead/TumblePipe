@@ -210,7 +210,7 @@ class BuildComp(ns.Node):
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return list(shot_entities)
+        return [entity.uri for entity in shot_entities]
 
     def list_render_layer_names(self):
         shot_uri = self.get_shot_uri()

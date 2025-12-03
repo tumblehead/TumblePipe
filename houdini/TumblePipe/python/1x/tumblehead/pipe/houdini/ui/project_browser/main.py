@@ -9,6 +9,7 @@ from hou import qt as hqt
 
 from tumblehead.api import is_dev, path_str, default_client
 from tumblehead.config.timeline import BlockRange, get_frame_range
+from tumblehead.config.groups import get_group
 from tumblehead.util.uri import Uri
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.ui.util import (
@@ -18,6 +19,7 @@ from tumblehead.pipe.houdini.ui.util import (
 from tumblehead.pipe.houdini import util
 from tumblehead.pipe.houdini.lops import (
     build_shot,
+    import_shot,
     export_asset_layer,
     export_shot_layer,
     export_render_layer,
@@ -39,10 +41,8 @@ from .helpers import (
     save_context,
     save_entity_context,
     load_module,
-    path_from_context,
     file_path_from_context,
     latest_export_path_from_context,
-    entity_uri_from_path,
     get_entity_type,
 )
 from .views import WorkspaceBrowser, DepartmentBrowser, DetailsView, VersionView, SettingsView
@@ -57,7 +57,7 @@ class ProjectBrowser(QtWidgets.QWidget):
 
         # Members
         self._context = None
-        self._selected_workspace = None
+        self._selected_entity = None  # Uri | None - the selected entity
         self._selected_department = None
         self._auto_settings = AUTO_SETTINGS_DEFAULT.copy()
 
@@ -106,6 +106,17 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._manage_groups_button.clicked.connect(self._open_group_manager)
         workspace_header_layout.addWidget(self._manage_groups_button)
 
+        # Create the database editor button
+        self._database_editor_button = QtWidgets.QPushButton()
+        self._database_editor_button.setIcon(hqt.Icon("SOP_file"))
+        self._database_editor_button.setToolTip("Open Database Editor")
+        self._database_editor_button.setMaximumWidth(30)
+        self._database_editor_button.clicked.connect(self._open_database_editor)
+        workspace_header_layout.addWidget(self._database_editor_button)
+
+        # Database editor window reference
+        self._database_window = None
+
         layout.addWidget(workspace_header_widget, 0, 0)
 
         # Create the workspace browser
@@ -141,8 +152,12 @@ class ProjectBrowser(QtWidgets.QWidget):
         # Connect the signals
         self._workspace_browser.selection_changed.connect(self._workspace_changed)
         self._workspace_browser.open_location.connect(self._workspace_open_path)
-        self._workspace_browser.create_entry.connect(self._create_entry)
+        self._workspace_browser.create_entry.connect(self._create_batch_entry)
+        self._workspace_browser.create_batch_entry.connect(self._create_batch_entry)
         self._workspace_browser.remove_entry.connect(self._remove_entry)
+        self._workspace_browser.create_group.connect(self._create_group)
+        self._workspace_browser.edit_group.connect(self._edit_group)
+        self._workspace_browser.delete_group.connect(self._delete_group)
         self._department_browser.selection_changed.connect(self._department_changed)
         self._department_browser.open_location.connect(self._department_open_location)
         self._department_browser.reload_scene.connect(self._department_reload_scene)
@@ -207,7 +222,7 @@ class ProjectBrowser(QtWidgets.QWidget):
             # Preserve current state (using detected context if available)
             # Store both the context and individual selections for robustness
             self._preserved_context = current_context
-            self._preserved_workspace = self._selected_workspace
+            self._preserved_entity = self._selected_entity
             self._preserved_department = self._selected_department
             self._preserved_tab_index = self._tabbed_view.currentIndex()
 
@@ -319,7 +334,7 @@ class ProjectBrowser(QtWidgets.QWidget):
                         self._version_view.select(self._preserved_context.version_name)
 
                     # Update internal state
-                    self._selected_workspace = path_from_context(self._preserved_context)
+                    self._selected_entity = self._preserved_context.entity_uri
                     self._selected_department = (self._preserved_context.department_name, self._preserved_context.version_name)
                     self._context = self._preserved_context
                 except Exception as e:
@@ -416,23 +431,132 @@ class ProjectBrowser(QtWidgets.QWidget):
         # (groups may have changed, affecting workfile paths)
         self.refresh()
 
+    def _create_group(self, name_path):
+        """Open group editor dialog to create a new group
+
+        Args:
+            name_path: Path list like ["groups"] or ["groups", "shots"]
+        """
+        from tumblehead.pipe.houdini.ui.project_browser.dialogs import GroupEditorDialog
+
+        # Determine context from name_path if available
+        context = None
+        if len(name_path) >= 2:
+            context = name_path[1]  # "shots" or "assets"
+
+        dialog = GroupEditorDialog(api, group=None, context=context, parent=self)
+        if dialog.exec_():
+            # Refresh workspace browser after dialog closes
+            self.refresh()
+
+    def _edit_group(self, name_path):
+        """Open group editor dialog for the specified group
+
+        Args:
+            name_path: Path list like ["groups", "shots", "group_name"]
+        """
+        from tumblehead.pipe.houdini.ui.project_browser.dialogs import GroupEditorDialog
+        from tumblehead.config.groups import list_groups
+
+        if len(name_path) < 3:
+            return
+
+        context = name_path[1]  # "shots" or "assets"
+        group_name = name_path[2]
+
+        # Find the group
+        groups = list_groups(context)
+        group = next((g for g in groups if g.name == group_name), None)
+        if group is None:
+            hou.ui.displayMessage(
+                f"Group '{group_name}' not found.",
+                severity=hou.severityType.Error
+            )
+            return
+
+        dialog = GroupEditorDialog(api, group=group, parent=self)
+        if dialog.exec_():
+            # Refresh workspace browser after dialog closes
+            self.refresh()
+
+    def _delete_group(self, name_path):
+        """Delete a group after user confirmation
+
+        Args:
+            name_path: Path list like ["groups", "shots", "group_name"]
+        """
+        from tumblehead.config.groups import remove_group
+
+        if len(name_path) < 3:
+            return
+
+        context = name_path[1]  # "shots" or "assets"
+        group_name = name_path[2]
+        group_uri = Uri.parse_unsafe(f'groups:/{context}/{group_name}')
+
+        # Confirm deletion
+        result = QtWidgets.QMessageBox.question(
+            self,
+            "Delete Group",
+            f"Are you sure you want to delete the group '{group_name}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+        )
+        if result != QtWidgets.QMessageBox.Yes:
+            return
+
+        # Delete the group
+        try:
+            remove_group(group_uri)
+        except Exception as e:
+            hou.ui.displayMessage(
+                f"Error deleting group: {str(e)}",
+                severity=hou.severityType.Error
+            )
+            return
+
+        # Refresh workspace browser
+        self.refresh()
+
+    def _open_database_editor(self):
+        """Open or focus the database editor window (non-modal)"""
+        if self._database_window is None or not self._database_window.isVisible():
+            from .windows import DatabaseWindow
+            self._database_window = DatabaseWindow(api, parent=self)
+            self._database_window.data_changed.connect(self._on_database_changed)
+            self._database_window.window_closed.connect(self._on_database_window_closed)
+            self._database_window.show()
+        else:
+            self._database_window.raise_()
+            self._database_window.activateWindow()
+
+    def _on_database_changed(self, uri):
+        """Handle data changes from database editor"""
+        purpose = uri.purpose
+        if purpose == 'entity':
+            self._workspace_browser.refresh()
+        elif purpose == 'departments':
+            self._department_browser.refresh()
+        elif purpose in ('config', 'schemas'):
+            self.refresh()
+
+    def _on_database_window_closed(self):
+        """Handle database window closure"""
+        self._database_window = None
+
     def _selection(self):
-        if self._selected_workspace is None:
+        if self._selected_entity is None:
             return None
         if self._selected_department is None:
             return None
         department_name, version_name = self._selected_department
-        entity_uri = entity_uri_from_path(self._selected_workspace)
-        if entity_uri is None:
-            return None
         return Context(
-            entity_uri=entity_uri,
+            entity_uri=self._selected_entity,
             department_name=department_name,
             version_name=version_name,
         )
 
     def _select(self, context):
-        self._selected_workspace = path_from_context(context)
+        self._selected_entity = context.entity_uri
         self._selected_department = (context.department_name, context.version_name)
 
     def _update_ui_from_context(self, context):
@@ -460,24 +584,20 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._version_view.select(context.version_name)
 
 
-    def _workspace_changed(self, selected_path):
+    def _workspace_changed(self, entity_uri):
         """Handle workspace selection changes with validation"""
         try:
-            self._selected_workspace = selected_path
-
-            # Convert path to entity Uri with validation
-            selected_entity_uri = None
-            if selected_path is not None and len(selected_path) >= 3:  # Need at least ["Assets/Shots/Kits", "category", "item"]
-                selected_entity_uri = entity_uri_from_path(selected_path)
+            # Store Uri directly (workspace browser now emits Uri)
+            self._selected_entity = entity_uri
 
             # Update department browser with new entity
-            self._department_browser.set_entity(selected_entity_uri)
+            self._department_browser.set_entity(entity_uri)
 
             # If we have a current context, try to maintain department selection
             if self._context is not None:
                 try:
-                    current_path = path_from_context(self._context)
-                    if selected_path == current_path and self._context.department_name:
+                    # Compare URIs directly
+                    if entity_uri == self._context.entity_uri and self._context.department_name:
                         self._department_browser.select(self._context.department_name)
                 except Exception as e:
                     raise RuntimeError(f"Error maintaining department selection: {e}")
@@ -496,47 +616,17 @@ class ProjectBrowser(QtWidgets.QWidget):
                 location_path = api.storage.resolve(Uri.parse_unsafe(f"shots:/{uri}"))
         location_path.mkdir(parents=True, exist_ok=True)
         self._open_location_path(location_path)
-    
-    def _create_entry(self, selected_path):
-        def _create_entity(entity_type: str, parent_path: str):
-            """Create a new entity under the given parent path.
 
-            Args:
-                entity_type: 'assets' or 'shots'
-                parent_path: The parent path (empty string for root level)
-            """
-            # Prompt for entity name
-            entity_name, accepted = QtWidgets.QInputDialog.getText(
-                self, "Add Entity", "Enter the entity name:"
-            )
-            if not accepted:
-                return
-            if len(entity_name) == 0:
-                return
-
-            # Create the entity URI
-            if len(parent_path) == 0:
-                entity_uri = Uri.parse_unsafe(f'entity:/{entity_type}/{entity_name}')
-            else:
-                entity_uri = Uri.parse_unsafe(f'entity:/{entity_type}/{parent_path}/{entity_name}')
-
-            # Add the entity
-            api.config.add_entity(entity_uri)
-
-            # Update the UI
-            self.refresh()
-
-        # Handle empty selection
+    def _create_batch_entry(self, selected_path):
+        """Open batch entity creation dialog"""
         if len(selected_path) == 0:
             return
 
-        # Extract entity type and parent path
-        entity_type = selected_path[0]  # 'assets' or 'shots'
-        parent_path = '/'.join(selected_path[1:])  # empty string if at root
+        from .dialogs import BatchEntityDialog
+        dialog = BatchEntityDialog(api, selected_path, parent=self)
+        dialog.entities_created.connect(lambda _: self.refresh())
+        dialog.exec_()
 
-        # Create the entity
-        _create_entity(entity_type, parent_path)
-    
     def _remove_entry(self, selected_path):
         def _remove_entity(entity_uri: Uri):
             """Remove an entity after user confirmation."""
@@ -581,14 +671,11 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._auto_settings[Section.Shot][Action.Refresh] = enabled
         
     def _department_open_location(self, context):
-        if self._selected_workspace is None:
-            return
-        entity_uri = entity_uri_from_path(self._selected_workspace)
-        if entity_uri is None:
+        if self._selected_entity is None:
             return
         department_name = context.department_name
-        entity_type = entity_uri.segments[0]
-        entity_path = '/'.join(entity_uri.segments[1:])
+        entity_type = self._selected_entity.segments[0]
+        entity_path = '/'.join(self._selected_entity.segments[1:])
         match entity_type:
             case "assets":
                 location_path = api.storage.resolve(Uri.parse_unsafe(
@@ -602,7 +689,7 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._open_location_path(location_path)
         
     def _department_reload_scene(self, _context):
-        if self._selected_workspace is None:
+        if self._selected_entity is None:
             return
         self._open_scene(True)
         # Note: No need to handle return value - this is a reload, state remains the same
@@ -614,15 +701,12 @@ class ProjectBrowser(QtWidgets.QWidget):
             context: Context containing the department to create new version in
         """
         # Build the target context without modifying state yet
-        if self._selected_workspace is None:
+        if self._selected_entity is None:
             return
 
         department_name = context.department_name
-        entity_uri = entity_uri_from_path(self._selected_workspace)
-        if entity_uri is None:
-            return
         selected_context = Context(
-            entity_uri=entity_uri,
+            entity_uri=self._selected_entity,
             department_name=department_name,
             version_name=None  # Creating new version
         )
@@ -639,6 +723,8 @@ class ProjectBrowser(QtWidgets.QWidget):
 
         # Update context from saved file
         self._context = get_workfile_context(file_path)
+        if self._context is None:
+            self._context = selected_context
         save_context(file_path.parent, None, self._context)
         save_entity_context(file_path.parent, self._context)
         self._update_scene()
@@ -653,15 +739,12 @@ class ProjectBrowser(QtWidgets.QWidget):
             context: Context containing the department to create new version in
         """
         # Build the target context without modifying state yet
-        if self._selected_workspace is None:
+        if self._selected_entity is None:
             return
 
         department_name = context.department_name
-        entity_uri = entity_uri_from_path(self._selected_workspace)
-        if entity_uri is None:
-            return
         selected_context = Context(
-            entity_uri=entity_uri,
+            entity_uri=self._selected_entity,
             department_name=department_name,
             version_name=None  # Creating new version
         )
@@ -679,6 +762,8 @@ class ProjectBrowser(QtWidgets.QWidget):
 
         # Update context from saved file
         self._context = get_workfile_context(file_path)
+        if self._context is None:
+            self._context = selected_context
         save_context(file_path.parent, None, self._context)
         save_entity_context(file_path.parent, self._context)
         self._initialize_scene()
@@ -707,40 +792,38 @@ class ProjectBrowser(QtWidgets.QWidget):
                     ignore_load_warnings=True,
                 )
                 context = get_workfile_context(file_path)
-                assert context is not None, (
-                    f"Failed to get context from file path: {file_path}"
-                )
+                if context is None:
+                    context = selected_context
+                    save_entity_context(file_path.parent, context)
                 self._context = context
                 save_entity_context(file_path.parent, self._context)
             else:
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 hou.hipFile.clear(suppress_save_prompt=True)
                 hou.hipFile.save(path_str(file_path))
-                context = get_workfile_context(file_path)
-                assert context is not None, (
-                    f"Failed to get context from file path: {file_path}"
-                )
-                self._context = context
+                self._context = selected_context
                 save_context(file_path.parent, None, self._context)
                 save_entity_context(file_path.parent, self._context)
                 self._initialize_scene()
 
-            # Find a build shot node
+            # Find a build shot or import shot node
             build_shot_nodes = list(
                 map(build_shot.BuildShot, ns.list_by_node_type("build_shot", "Lop"))
             )
+            import_shot_nodes = list(
+                map(import_shot.ImportShot, ns.list_by_node_type("import_shot", "Lop"))
+            )
             if len(build_shot_nodes) > 0:
-                build_shot_node = build_shot_nodes[0]
-                build_shot_node.setDisplayFlag(True)
+                build_shot_nodes[0].setDisplayFlag(True)
+            elif len(import_shot_nodes) > 0:
+                import_shot_nodes[0].native().setDisplayFlag(True)
 
             # Update the dependencies
             self._update_scene()
 
             # Update the details and versions view
-            entity_uri = self._context.entity_uri
-            self._workspace_browser.select(entity_uri)
-            self._department_browser.set_entity(entity_uri)
-            # Department selection is handled by confirm_selection() in _open_scene() - don't call select() here
+            # Don't change workspace/department selection - keep showing selected entity
+            # The workfile context might be a group, but UI should reflect user's selection
             self._details_view.set_context(self._context)
             self._version_view.set_context(self._context)
             self._version_view.select(self._context.version_name)
@@ -764,15 +847,12 @@ class ProjectBrowser(QtWidgets.QWidget):
         """
         # Construct target context based on whether we're switching departments
         if new_department is not None:
-            # Construct target context directly from workspace + new_department
-            if self._selected_workspace is None:
+            # Construct target context directly from entity + new_department
+            if self._selected_entity is None:
                 return False
             department_name, version_name = new_department
-            entity_uri = entity_uri_from_path(self._selected_workspace)
-            if entity_uri is None:
-                return False
             selected_context = Context(
-                entity_uri=entity_uri,
+                entity_uri=self._selected_entity,
                 department_name=department_name,
                 version_name=version_name,
             )
@@ -922,6 +1002,14 @@ class ProjectBrowser(QtWidgets.QWidget):
         elif entity_type == 'shot':
             if self._auto_settings[Section.Shot][Action.Refresh]:
                 self._refresh_scene()
+        elif entity_type == 'group':
+            group_context = self._context.entity_uri.segments[0]
+            if group_context == 'assets':
+                if self._auto_settings[Section.Asset][Action.Refresh]:
+                    self._refresh_scene()
+            elif group_context == 'shots':
+                if self._auto_settings[Section.Shot][Action.Refresh]:
+                    self._refresh_scene()
 
         # Set the frame range
         self._set_frame_range(FrameRangeMode.Padded)
@@ -934,6 +1022,11 @@ class ProjectBrowser(QtWidgets.QWidget):
         # Find shot build nodes
         build_shot_nodes = list(
             map(build_shot.BuildShot, ns.list_by_node_type("build_shot", "Lop"))
+        )
+
+        # Find import shot nodes
+        import_shot_nodes = list(
+            map(import_shot.ImportShot, ns.list_by_node_type("import_shot", "Lop"))
         )
 
         # Find import asset nodes
@@ -982,6 +1075,12 @@ class ProjectBrowser(QtWidgets.QWidget):
             if not build_shot_node.is_valid():
                 continue
             build_shot_node.execute()
+
+        # Import latest shot stages
+        for import_shot_node in import_shot_nodes:
+            if not import_shot_node.is_valid():
+                continue
+            import_shot_node.execute()
 
         # Import latest assets
         for import_assets_node in import_assets_nodes:
@@ -1043,14 +1142,22 @@ class ProjectBrowser(QtWidgets.QWidget):
                 f"config:/templates/assets/{department_name}/template.py"
             ))
             template = load_module(template_path, template_name)
-            template.create(scene_node, self._context.entity_uri)
+            template.create(scene_node, self._context.entity_uri, department_name)
         elif entity_type == 'shot':
             template_name = f"{uri_name}_{department_name}_template"
             template_path = api.storage.resolve(Uri.parse_unsafe(
                 f"config:/templates/shots/{department_name}/template.py"
             ))
             template = load_module(template_path, template_name)
-            template.create(scene_node, self._context.entity_uri)
+            template.create(scene_node, self._context.entity_uri, department_name)
+        elif entity_type == 'group':
+            group_context = self._context.entity_uri.segments[0]
+            template_name = f"{uri_name}_{department_name}_template"
+            template_path = api.storage.resolve(Uri.parse_unsafe(
+                f"config:/templates/{group_context}/{department_name}/template.py"
+            ))
+            template = load_module(template_path, template_name)
+            template.create(scene_node, self._context.entity_uri, department_name)
 
         # Layout the scene
         scene_node.layoutChildren()
@@ -1236,7 +1343,51 @@ class ProjectBrowser(QtWidgets.QWidget):
                     build_shot_node.path()
                 ]
                 build_shot_node.set_include_procedurals(include_procedurals)
-        
+
+        elif entity_type == 'group':
+            # Get group members
+            group = get_group(self._context.entity_uri)
+            if group is None:
+                hou.ui.displayMessage(
+                    "Could not find group configuration.",
+                    severity=hou.severityType.Warning,
+                )
+                return
+
+            member_uris = set(group.members)
+
+            # Filter function: export node's shot_uri must be a group member
+            def _is_group_export_correct(node):
+                if node.get_department_name() != department_name:
+                    return False
+                shot_uri = node.get_shot_uri()
+                return shot_uri in member_uris
+
+            # Find all export nodes for group members
+            group_export_nodes = list(
+                filter(
+                    _is_group_export_correct,
+                    map(
+                        export_shot_layer.ExportShotLayer,
+                        ns.list_by_node_type("export_shot_layer", "Lop"),
+                    ),
+                )
+            )
+
+            # Check if we have any export nodes
+            if len(group_export_nodes) == 0:
+                if ignore_missing_export:
+                    return
+                hou.ui.displayMessage(
+                    "No export nodes found for the group members.",
+                    severity=hou.severityType.Warning,
+                )
+                return
+
+            # Execute all export nodes (one per member)
+            for export_node in group_export_nodes:
+                export_node.execute()
+
     def _submit_propagate_job(self):
         if self._context is None:
             return

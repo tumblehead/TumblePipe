@@ -261,6 +261,11 @@ class DetailsView(QtWidgets.QWidget):
         def _set_workspace_details():
             # Get the workspace details
             file_path = file_path_from_context(self._context)
+            if file_path is None:
+                self.workspace_version_label.setText("-")
+                self.workspace_timestamp_label.setText("-")
+                self.workspace_user_label.setText("-")
+                return
             version_name = file_path.stem.split("_")[-1]
             timestamp = dt.datetime.fromtimestamp(file_path.stat().st_mtime)
             user_name = get_user_name()

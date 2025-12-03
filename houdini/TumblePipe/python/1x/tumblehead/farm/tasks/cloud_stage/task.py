@@ -143,8 +143,8 @@ def build(config, paths, staging_path):
 
     # Parameters
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
-    entity_display = entity_uri.display_name()
-    title = f"cloud_stage {entity_display}"
+    department_name = config['entity']['department']
+    title = f"cloud_stage {entity_uri} {department_name}"
     render_range = BlockRange(first_frame, last_frame)
 
     # Task context

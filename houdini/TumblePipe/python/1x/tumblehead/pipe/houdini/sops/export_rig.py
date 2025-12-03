@@ -30,7 +30,7 @@ class ExportRig(ns.Node):
             filter = Uri.parse_unsafe('entity:/assets'),
             closure = True
         )
-        return list(asset_entities)
+        return [entity.uri for entity in asset_entities]
 
     def get_asset_uri(self) -> Uri | None:
         asset_uris = self.list_asset_uris()

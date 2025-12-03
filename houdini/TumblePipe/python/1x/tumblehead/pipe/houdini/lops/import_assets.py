@@ -69,7 +69,7 @@ class ImportAssets(ns.Node):
             filter = Uri.parse_unsafe('entity:/assets'),
             closure = True
         )
-        all_asset_uris = list(all_asset_entities)
+        all_asset_uris = [entity.uri for entity in all_asset_entities]
 
         # Filter out already-selected assets
         count = self.parm('asset_imports').eval()

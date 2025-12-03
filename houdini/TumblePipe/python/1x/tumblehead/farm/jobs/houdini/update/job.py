@@ -141,6 +141,8 @@ def _create_publish_job(
     )
 
     frame_range = get_frame_range(entity_uri)
+    if frame_range is None:
+        raise ValueError(f"Cannot get frame range for entity: {entity_uri}. Ensure the entity has frame_start, frame_end, roll_start, roll_end properties configured.")
     render_range = frame_range.full_range()
 
     output_path = next_export_path(entity_uri, department_name)

@@ -37,7 +37,7 @@ class ImportRigs(ns.Node):
             filter=Uri.parse_unsafe('entity:/assets'),
             closure=True
         )
-        return list(asset_entities)
+        return [entity.uri for entity in asset_entities]
 
     def list_available_asset_uris(self, index: int) -> list[Uri]:
         """List asset URIs excluding those already used by other indices."""

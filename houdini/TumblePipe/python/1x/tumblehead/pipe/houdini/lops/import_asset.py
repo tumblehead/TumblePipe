@@ -35,7 +35,7 @@ class ImportAsset(ns.Node):
             filter = Uri.parse_unsafe('entity:/assets'),
             closure = True
         )
-        return list(asset_entities)
+        return [entity.uri for entity in asset_entities]
 
     def list_department_names(self):
         asset_departments = list_departments('assets')

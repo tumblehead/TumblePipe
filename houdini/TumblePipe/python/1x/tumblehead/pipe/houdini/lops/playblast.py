@@ -41,13 +41,14 @@ class Playblast(ns.Node):
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return list(shot_entities)
+        return [entity.uri for entity in shot_entities]
 
     def list_department_names(self):
         shot_departments = list_departments('shots')
         if len(shot_departments) == 0: return []
         shot_department_names = [dept.name for dept in shot_departments]
         default_values = api.config.get_properties(DEFAULTS_URI)
+        if default_values is None: return shot_department_names
         return [
             department_name
             for department_name in default_values['departments']
@@ -131,7 +132,12 @@ class Playblast(ns.Node):
         camera_names = self.list_camera_names()
         if camera_name not in camera_names: return
         self.parm('camera').set(camera_name)
-    
+
+    def set_entity_source(self, entity_source):
+        valid_sources = ['from_context', 'from_settings']
+        if entity_source not in valid_sources: return
+        self.parm('entity_source').set(entity_source)
+
     def export(self):
         
         # Find nodes

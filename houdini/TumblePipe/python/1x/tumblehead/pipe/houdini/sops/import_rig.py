@@ -28,7 +28,7 @@ class ImportRig(ns.Node):
             filter=Uri.parse_unsafe('entity:/assets'),
             closure=True
         )
-        return list(asset_entities)
+        return [entity.uri for entity in asset_entities]
 
     def list_version_names(self):
         asset_uri = self.get_asset_uri()
@@ -95,6 +95,9 @@ class ImportRig(ns.Node):
             bypass_node.parm('input').set(0)
             return
         version_name = self.get_version_name()
+        if version_name is None:
+            bypass_node.parm('input').set(0)
+            return
         instances = self.get_instances()
 
         # Create filename from URI segments

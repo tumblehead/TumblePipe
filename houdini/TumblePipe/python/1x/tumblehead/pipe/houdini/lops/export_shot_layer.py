@@ -11,7 +11,6 @@ from tumblehead.util.io import store_json
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
 from tumblehead.config.timeline import FrameRange, get_frame_range, get_fps
-from tumblehead.config.groups import is_group_uri, get_group
 from tumblehead.apps.deadline import Deadline
 from tumblehead.pipe.houdini.lops import submit_render
 import tumblehead.pipe.houdini.nodes as ns
@@ -121,7 +120,7 @@ class ExportShotLayer(ns.Node):
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return list(shot_entities)
+        return [entity.uri for entity in shot_entities]
 
     def list_department_names(self) -> list[str]:
         shot_departments = list_departments('shots')
@@ -451,43 +450,14 @@ class ExportShotLayer(ns.Node):
         if shot_uri is None: return
         if department_name is None: return
 
-        # Check if we're in a group context
-        if is_group_uri(shot_uri):
-
-            # Get group parameters
-            group = get_group(shot_uri)
-            if group is None: return
-
-            # Export to each member shot
-            frame_offset = 0
-            for member_uri in group.members:
-
-                # Get member's original frame range
-                member_frame_range = get_frame_range(member_uri)
-                if member_frame_range is None: return
-
-                # Export this member
-                self._do_export(
-                    member_uri,
-                    department_name,
-                    frame_offset,
-                    member_frame_range,
-                    step
-                )
-
-                # Update the frame offset
-                frame_offset += len(member_frame_range)
-
-        else:
-
-            # Export single shot
-            self._do_export(
-                shot_uri,
-                department_name,
-                0,
-                frame_range,
-                step
-            )
+        # Export single shot
+        self._do_export(
+            shot_uri,
+            department_name,
+            0,
+            frame_range,
+            step
+        )
 
     def _export_farm(self):
         

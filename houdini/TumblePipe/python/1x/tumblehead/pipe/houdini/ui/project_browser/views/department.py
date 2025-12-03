@@ -9,6 +9,7 @@ from qtpy import QtWidgets
 
 from tumblehead.pipe.paths import Context
 from tumblehead.config.department import list_departments
+from tumblehead.config.groups import get_group
 
 from ..helpers import (
     get_entity_type,
@@ -377,6 +378,14 @@ class DepartmentBrowser(QtWidgets.QWidget):
                     return [
                         latest_context(self._entity, dept.name)
                         for dept in departments
+                    ]
+                elif entity_type == 'group':
+                    group = get_group(self._entity)
+                    if group is None:
+                        return []
+                    return [
+                        latest_context(self._entity, dept_name)
+                        for dept_name in group.departments
                     ]
                 else:
                     return []

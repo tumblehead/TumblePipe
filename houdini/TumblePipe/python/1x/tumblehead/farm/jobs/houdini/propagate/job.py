@@ -20,6 +20,7 @@ from tumblehead.api import (
 from tumblehead.util.io import load_json
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
+from tumblehead.config.groups import get_group
 from tumblehead.pipe.paths import next_staged_path, latest_hip_file_path
 from tumblehead.apps.deadline import (
     Deadline,
@@ -155,19 +156,30 @@ def submit(
     timestamp = dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
 
     # Scan dependency graph
-    logging.info('Scanning dependency graph...')
+    logging.debug('Scanning dependency graph...')
     dependency_graph = graph.scan(api)
 
     # Find dependent departments to republish
-    logging.info('Finding dependent departments...')
-    # Get entity type from URI segments
-    entity_type = 'asset' if entity_uri.segments[0] == 'assets' else 'shot' if entity_uri.segments[0] == 'shots' else None
-    dependent_departments = _find_dependent_departments(department_name, entity_type)
+    logging.debug('Finding dependent departments...')
+    # Get entity type from URI - handle groups specially
+    if entity_uri.purpose == 'groups':
+        entity_type = 'group'
+    elif entity_uri.segments[0] == 'assets':
+        entity_type = 'asset'
+    elif entity_uri.segments[0] == 'shots':
+        entity_type = 'shot'
+    else:
+        entity_type = None
+    dependent_departments = _find_dependent_departments(department_name, entity_type if entity_type != 'group' else 'shot')
 
     # Find affected shots
-    logging.info('Finding affected shots...')
+    logging.debug('Finding affected shots...')
     affected_shots = []
-    if entity_type == 'asset':
+    if entity_type == 'group':
+        group = get_group(entity_uri)
+        if group:
+            affected_shots = list(group.members)
+    elif entity_type == 'asset':
         affected_shots = graph.find_shots_referencing_asset(
             dependency_graph,
             entity_uri
@@ -177,11 +189,11 @@ def submit(
 
     # Check if there's anything to do
     if not dependent_departments and not affected_shots:
-        logging.info('No propagation needed')
+        logging.debug('No propagation needed')
         return 0
 
-    logging.info(f'Found {len(dependent_departments)} dependent departments')
-    logging.info(f'Found {len(affected_shots)} affected shots')
+    logging.debug(f'Found {len(dependent_departments)} dependent departments')
+    logging.debug(f'Found {len(affected_shots)} affected shots')
 
     # Get deadline ready
     try: farm = Deadline()
@@ -213,49 +225,67 @@ def submit(
         # Add publish jobs for dependent departments
         publish_job_names = []
 
-        # Get department list to check independence
-        departments = list_departments(f'{entity_type}s')
+        # Get department list to check independence (use 'shots' for groups)
+        dept_category = 'shots' if entity_type == 'group' else f'{entity_type}s'
+        departments = list_departments(dept_category)
         dept_map = {d.name: d for d in departments}
 
-        for dept_name in dependent_departments:
-            job_name = f'publish_{entity_type}_{dept_name}'
-
-            # The entity URI is the same, just working on a different department
-            dept_entity_uri = entity_uri
-
-            # Find workfile - REQUIRED for publish
-            workfile_path = latest_hip_file_path(dept_entity_uri, dept_name)
+        # Helper to create a publish job for a given entity URI and department
+        def _create_publish_job_for_entity(target_uri, dept_name, job_name_suffix=''):
+            workfile_path = latest_hip_file_path(target_uri, dept_name)
             if workfile_path is None or not workfile_path.exists():
-                continue
+                return None
 
-            logging.info(f'Found workfile for {dept_entity_uri}: {workfile_path}')
+            logging.debug(f'Found workfile for {target_uri}: {workfile_path}')
 
-            # Bundle workfile with job
             workfile_dest = Path('workfiles') / f'{dept_name}_{workfile_path.name}'
             paths[workfile_path] = workfile_dest
 
-            # Create config for publish job
             publish_config = {
-                'entity': config['entity'].copy(),
+                'entity': {'uri': str(target_uri), 'department': dept_name},
                 'settings': config['settings'].copy(),
                 'tasks': {'publish': {}},
                 'workfile_path': path_str(workfile_dest)
             }
-            publish_config['entity']['department_name'] = dept_name
             publish_config['settings']['priority'] = priority + 5
 
-            # Build publish job
-            publish_job = publish_task.build(publish_config, paths, temp_path)
+            return publish_task.build(publish_config, paths, temp_path)
 
-            # If department is not independent, it depends on all previous publish jobs
-            dept = dept_map.get(dept_name)
-            if dept and not dept.independent:
-                job_deps = publish_job_names.copy()
+        for dept_name in dependent_departments:
+            if entity_type == 'group':
+                # For groups: check if dept has group workfile, else split to members
+                group_workfile = latest_hip_file_path(entity_uri, dept_name)
+                if group_workfile and group_workfile.exists():
+                    # Department has group workfile - create 1 job for group
+                    job_name = f'publish_group_{dept_name}'
+                    publish_job = _create_publish_job_for_entity(entity_uri, dept_name)
+                    if publish_job:
+                        dept = dept_map.get(dept_name)
+                        job_deps = publish_job_names.copy() if (dept and not dept.independent) else []
+                        _add_job(job_name, publish_job, job_deps)
+                        publish_job_names.append(job_name)
+                else:
+                    # Department doesn't have group workfile - split into member shots
+                    group = get_group(entity_uri)
+                    if group:
+                        for member_uri in group.members:
+                            member_name = '_'.join(member_uri.segments[1:])
+                            job_name = f'publish_shot_{member_name}_{dept_name}'
+                            publish_job = _create_publish_job_for_entity(member_uri, dept_name)
+                            if publish_job:
+                                dept = dept_map.get(dept_name)
+                                job_deps = publish_job_names.copy() if (dept and not dept.independent) else []
+                                _add_job(job_name, publish_job, job_deps)
+                                publish_job_names.append(job_name)
             else:
-                job_deps = []
-
-            _add_job(job_name, publish_job, job_deps)
-            publish_job_names.append(job_name)
+                # Non-group: existing logic
+                job_name = f'publish_{entity_type}_{dept_name}'
+                publish_job = _create_publish_job_for_entity(entity_uri, dept_name)
+                if publish_job:
+                    dept = dept_map.get(dept_name)
+                    job_deps = publish_job_names.copy() if (dept and not dept.independent) else []
+                    _add_job(job_name, publish_job, job_deps)
+                    publish_job_names.append(job_name)
 
         # Add build jobs for affected shots
         build_job_names = []
@@ -305,7 +335,7 @@ def submit(
         farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))
 
     # Done
-    logging.info(f'Submitted propagate batch with {len(jobs)} jobs')
+    logging.debug(f'Submitted propagate batch with {len(jobs)} jobs')
     return 0
 
 def cli():

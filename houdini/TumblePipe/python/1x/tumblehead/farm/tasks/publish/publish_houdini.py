@@ -6,12 +6,15 @@ import hou
 from tumblehead.api import path_str, default_client
 from tumblehead.util.io import load_json
 from tumblehead.util.uri import Uri
+from tumblehead.config.groups import get_group
 from tumblehead.pipe.paths import (
-    next_hip_file_path
+    next_hip_file_path,
+    Context
 )
 from tumblehead.pipe.houdini import nodes as ns
 from tumblehead.pipe.houdini.lops import (
     build_shot,
+    import_shot,
     import_assets,
     import_asset_layer,
     import_shot_layer,
@@ -25,6 +28,10 @@ from tumblehead.pipe.houdini.sops import (
 )
 from tumblehead.pipe.houdini.cops import (
     build_comp
+)
+from tumblehead.pipe.houdini.ui.project_browser.helpers import (
+    save_context,
+    save_entity_context,
 )
 
 api = default_client()
@@ -43,6 +50,12 @@ def _update():
     build_shot_nodes = list(map(
         build_shot.BuildShot,
         ns.list_by_node_type('build_shot', 'Lop')
+    ))
+
+    # Find import shot nodes
+    import_shot_nodes = list(map(
+        import_shot.ImportShot,
+        ns.list_by_node_type('import_shot', 'Lop')
     ))
 
     # Find build comp nodes
@@ -86,7 +99,13 @@ def _update():
         if not build_shot_node.is_valid(): continue
         build_shot_node.execute()
         print(f'Updated {build_shot_node.path()}')
-    
+
+    # Import latest shot stages
+    for import_shot_node in import_shot_nodes:
+        if not import_shot_node.is_valid(): continue
+        import_shot_node.execute()
+        print(f'Updated {import_shot_node.path()}')
+
     # Import latest comp builds
     for build_comp_node in build_comp_nodes:
         if not build_comp_node.is_valid(): continue
@@ -204,7 +223,23 @@ def _publish(entity_uri: Uri, department_name: str):
             print(f'Published {render_layer_export_node.path()}')
 
     # Get entity type from URI
-    if entity_uri.segments[0] == 'assets':
+    if entity_uri.purpose == 'groups':
+        # Expand group to member shots/assets
+        group = get_group(entity_uri)
+        if group is None:
+            return _error(f'Group not found: {entity_uri}')
+        for member_uri in group.members:
+            if member_uri.segments[0] == 'shots':
+                _publish_shot(
+                    shot_uri = member_uri,
+                    department_name = department_name
+                )
+            elif member_uri.segments[0] == 'assets':
+                _publish_asset(
+                    asset_uri = member_uri,
+                    department_name = department_name
+                )
+    elif entity_uri.segments[0] == 'assets':
         _publish_asset(
             asset_uri = entity_uri,
             department_name = department_name
@@ -221,7 +256,22 @@ def _save(entity_uri: Uri, department_name: str):
     # Get next hip file path using Uri
     hip_file_path = next_hip_file_path(entity_uri, department_name)
 
+    # Save the hip file
     hou.hipFile.save(path_str(hip_file_path))
+
+    # Extract version name from file path (e.g., "entity_animation_v0005.hip" -> "v0005")
+    version_name = hip_file_path.stem.rsplit('_', 1)[-1]
+
+    # Construct context from known parameters
+    context = Context(
+        entity_uri=entity_uri,
+        department_name=department_name,
+        version_name=version_name
+    )
+
+    # Save context metadata (user, timestamp, version info)
+    save_context(hip_file_path.parent, None, context)
+    save_entity_context(hip_file_path.parent, context)
 
 def _load_workfile(bundled_path: Path, force_reload: bool = True) -> bool:
     """Load bundled workfile. Returns True if successful."""
@@ -280,7 +330,11 @@ def main(config) -> int:
     # Build list of all entity URIs + department names to process (main + downstream)
     downstream_entity_pairs = [(entity_uri, department_name)]
 
-    if entity_uri.segments[0] == 'shots' or entity_uri.segments[0] == 'assets':
+    if entity_uri.purpose == 'groups':
+        # Groups are expanded in _publish, just process as-is
+        for dept_name in downstream_departments:
+            downstream_entity_pairs.append((entity_uri, dept_name))
+    elif entity_uri.segments[0] in ('shots', 'assets'):
         for dept_name in downstream_departments:
             downstream_entity_pairs.append((entity_uri, dept_name))
     else:

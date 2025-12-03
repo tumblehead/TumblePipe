@@ -1,6 +1,29 @@
 from qtpy.QtGui import QStandardItemModel, QStandardItem
 
 from tumblehead.util.uri import Uri
+from tumblehead.config.groups import list_groups
+
+
+def _ensure_top_level_items(model):
+    """Ensure assets, shots, and groups top-level items always exist in consistent order"""
+    root_item = model.invisibleRootItem()
+
+    # Build map of existing items using takeRow to preserve ownership
+    existing = {}
+    while root_item.rowCount() > 0:
+        item = root_item.takeRow(0)[0]
+        if item:
+            existing[item.text()] = item
+
+    # Required order: assets, shots, groups
+    for name in ['assets', 'shots', 'groups']:
+        if name in existing:
+            root_item.appendRow(existing[name])
+        else:
+            item = QStandardItem(name)
+            item.setEditable(False)
+            item.setSelectable(False)
+            root_item.appendRow(item)
 
 
 def _build_tree_from_uris(root_item, uris, start_segment_index):
@@ -58,27 +81,33 @@ def _create_workspace_model(api):
     all_uris = []
 
     # Get asset entities
-    asset_uris = api.config.list_entities(Uri.parse_unsafe('entity:/assets'), closure=True)
-    all_uris.extend(asset_uris)
+    asset_entities = api.config.list_entities(Uri.parse_unsafe('entity:/assets'), closure=True)
+    all_uris.extend([entity.uri for entity in asset_entities])
 
     # Get shot entities
-    shot_uris = api.config.list_entities(Uri.parse_unsafe('entity:/shots'), closure=True)
-    all_uris.extend(shot_uris)
+    shot_entities = api.config.list_entities(Uri.parse_unsafe('entity:/shots'), closure=True)
+    all_uris.extend([entity.uri for entity in shot_entities])
 
-    # Get group URIs
+    # Get group URIs - transform to display under 'groups' top-level item
     try:
-        shot_groups = api.config.list_groups('shots')
-        asset_groups = api.config.list_groups('assets')
+        shot_groups = list_groups('shots')
+        asset_groups = list_groups('assets')
         all_groups = shot_groups + asset_groups
         for group in all_groups:
-            all_uris.append(group.uri)
-    except AttributeError:
-        # list_groups not available in this config
+            # Transform group URI to have 'groups' as first segment for tree display
+            # e.g., groups:/shots/test -> display:/groups/shots/test
+            tree_uri = Uri.parse_unsafe(f"display:/groups/{'/'.join(group.uri.segments)}")
+            all_uris.append(tree_uri)
+    except Exception:
+        # Groups module not available or no groups defined
         pass
 
     # Build tree from segment 0 (includes 'assets', 'shots', 'groups' as top-level items)
     # Uri.segments strips leading '/' so entity:/assets/CHAR/Baby has segments ['assets', 'CHAR', 'Baby']
     _build_tree_from_uris(model.invisibleRootItem(), all_uris, 0)
+
+    # Ensure required top-level items always exist (even when empty)
+    _ensure_top_level_items(model)
 
     # Done
     return model

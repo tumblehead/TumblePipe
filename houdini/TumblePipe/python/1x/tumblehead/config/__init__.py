@@ -8,8 +8,11 @@ class Entity:
     uri: Uri
     properties: dict
 
+# Import Schema types for interface
+from tumblehead.config.schema import Schema, FieldDefinition
+
 class ConfigConvention:
-    def add_entity(self, uri: Uri, properties: dict):
+    def add_entity(self, uri: Uri, properties: dict, schema_uri: Uri):
         raise NotImplementedError()
 
     def remove_entity(self, uri: Uri):
@@ -22,6 +25,18 @@ class ConfigConvention:
         raise NotImplementedError()
 
     def list_entities(self, filter: Uri | None = None, closure: bool = False) -> list[Entity]:
+        raise NotImplementedError()
+
+    def get_schema(self, schema_uri: Uri) -> Schema | None:
+        raise NotImplementedError()
+
+    def list_schemas(self, parent_uri: Uri | None = None) -> list[Schema]:
+        raise NotImplementedError()
+
+    def get_entity_schema(self, entity_uri: Uri) -> Schema | None:
+        raise NotImplementedError()
+
+    def get_child_schemas(self, schema_uri: Uri) -> list[Schema]:
         raise NotImplementedError()
 
 # Export submodule classes for convenience
@@ -72,10 +87,22 @@ from tumblehead.config.discord import (
     list_channels as list_discord_channels
 )
 
+from tumblehead.config.schema import (
+    validate_properties,
+    apply_defaults,
+    schema_from_properties
+)
+
 __all__ = [
     # Core classes
     'Entity',
     'ConfigConvention',
+    # Schema
+    'Schema',
+    'FieldDefinition',
+    'validate_properties',
+    'apply_defaults',
+    'schema_from_properties',
     # Timeline
     'BlockRange',
     'FrameRange',

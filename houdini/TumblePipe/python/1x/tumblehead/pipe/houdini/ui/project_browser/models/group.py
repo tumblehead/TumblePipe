@@ -2,6 +2,7 @@ from qtpy.QtGui import QStandardItemModel, QStandardItem
 from qtpy.QtCore import Qt
 
 from tumblehead.util.uri import Uri
+from tumblehead.config.groups import list_groups as _list_groups
 
 
 class GroupListModel(QStandardItemModel):
@@ -14,22 +15,22 @@ class GroupListModel(QStandardItemModel):
     def load_groups(self):
         """Load all groups from configuration"""
         self.clear()
-        groups = self.api.config.list_groups()
+        shot_groups = _list_groups('shots')
+        asset_groups = _list_groups('assets')
+        groups = shot_groups + asset_groups
 
         for group in groups:
             item = QStandardItem(group.name)
             item.setData(group, Qt.UserRole)
 
-            # Add metadata as tooltip
             member_count = len(group.members)
             dept_count = len(group.departments)
 
-            # Derive entity type from root Uri
             entity_type = "unknown"
             if group.root:
                 purpose, parts = group.root.parts()
                 if purpose == "entity" and len(parts) > 0:
-                    entity_type = parts[0]  # 'shots' or 'assets'
+                    entity_type = parts[0]
 
             tooltip = (
                 f"Name: {group.name}\n"
@@ -49,12 +50,11 @@ class GroupListModel(QStandardItemModel):
         member_count = len(group.members)
         dept_count = len(group.departments)
 
-        # Derive entity type from root Uri
         entity_type = "unknown"
         if group.root:
             purpose, parts = group.root.parts()
             if purpose == "entity" and len(parts) > 0:
-                entity_type = parts[0]  # 'shots' or 'assets'
+                entity_type = parts[0]
 
         tooltip = (
             f"Name: {group.name}\n"
@@ -83,21 +83,14 @@ class GroupListModel(QStandardItemModel):
 
 
 class AvailableEntitiesModel(QStandardItemModel):
-    """Model for available entities (not in any group)"""
+    """Model for available entities (not in any group) - displays as tree"""
 
     def __init__(self, api, parent=None):
         super().__init__(parent)
         self.api = api
 
     def load_entities(self, entity_type, assigned_entities, current_group_members=None):
-        """Load available entities based on type (backward compatibility wrapper)
-
-        Args:
-            entity_type: 'shot' or 'asset'
-            assigned_entities: Set of entity URI strings already in other groups
-            current_group_members: Set of entity URI strings in current group being edited
-        """
-        # Convert entity_type to root_uri for backward compatibility
+        """Load available entities based on type (backward compatibility wrapper)"""
         if entity_type == 'shot':
             root_uri_str = 'entity:/shots'
         elif entity_type == 'asset':
@@ -108,13 +101,7 @@ class AvailableEntitiesModel(QStandardItemModel):
         self.load_entities_from_uri(root_uri_str, assigned_entities, current_group_members)
 
     def load_entities_from_uri(self, root_uri_str, assigned_entities, current_group_members=None):
-        """Load available entities based on root URI
-
-        Args:
-            root_uri_str: Root URI string (e.g., "entity:/shots", "entity:/shots/010", "entity:/assets/characters")
-            assigned_entities: Set of entity URI strings already in other groups
-            current_group_members: Set of entity URI strings in current group being edited
-        """
+        """Load available entities as tree structure based on root URI"""
         self.clear()
 
         if current_group_members is None:
@@ -125,120 +112,187 @@ class AvailableEntitiesModel(QStandardItemModel):
             if not root_uri:
                 return
 
-            # Get all entities under this root URI with closure=True
-            uris = self.api.config.list_entities(root_uri, closure=True)
+            entities = self.api.config.list_entities(root_uri, closure=True)
+            uris = [entity.uri for entity in entities]
+
+            grouped = {}
 
             for uri in uris:
-                # Skip None URIs (failed to parse)
                 if uri is None:
                     continue
 
                 try:
-                    parts = uri.parts()[1]  # Get tuple of parts
+                    parts = uri.parts()[1]
                 except (AttributeError, TypeError, IndexError):
-                    # Skip URIs that fail to parse correctly
                     continue
 
-                # Only show leaf entities (shots/assets, not sequences/categories)
-                # Shots: entity:/shots/sequence/shot (3 parts)
-                # Assets: entity:/assets/category/asset (3 parts)
                 if len(parts) != 3:
                     continue
 
-                entity_type = parts[0]  # 'shots' or 'assets'
-                parent_name = parts[1]  # sequence or category
-                entity_name = parts[2]  # shot or asset
+                entity_type = parts[0]
+                parent_name = parts[1]
+                entity_name = parts[2]
+                uri_str = str(uri)
 
-                # Create display text and entity string directly from URI
-                if entity_type == 'shots':
-                    display_text = f"{parent_name}/{entity_name}"
-                    entity_string = str(uri)
-                elif entity_type == 'assets':
-                    display_text = f"{parent_name}/{entity_name}"
-                    entity_string = str(uri)
-                else:
+                if uri_str in current_group_members:
                     continue
 
-                # Skip if in current group members (already on right side)
-                if entity_string in current_group_members:
+                if uri_str in assigned_entities:
                     continue
 
-                # Create item
-                item = QStandardItem(display_text)
-                item.setData(entity_string, Qt.UserRole)
+                if parent_name not in grouped:
+                    grouped[parent_name] = []
+                grouped[parent_name].append((entity_name, uri_str))
 
-                # Disable if in another group
-                if entity_string in assigned_entities:
-                    item.setEnabled(False)
-                    item.setForeground(Qt.gray)
-                    item.setText(f"{display_text} (in another group)")
+            for parent_name in sorted(grouped.keys()):
+                parent_item = QStandardItem(parent_name)
+                parent_item.setSelectable(True)
+                parent_item.setEditable(False)
 
-                self.appendRow(item)
+                for entity_name, uri_str in sorted(grouped[parent_name], key=lambda x: x[0]):
+                    child_item = QStandardItem(entity_name)
+                    child_item.setData(uri_str, Qt.UserRole)
+                    child_item.setEditable(False)
+                    parent_item.appendRow(child_item)
+
+                self.appendRow(parent_item)
 
         except Exception as e:
             print(f"Error loading entities from URI '{root_uri_str}': {e}")
 
 
 class GroupMembersModel(QStandardItemModel):
-    """Model for current group members"""
+    """Model for current group members - displays as tree"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
     def load_members(self, member_entities):
-        """Load member entities into the model
-
-        Args:
-            member_entities: List of entity URI strings or Entity objects
-        """
+        """Load member entities into the model as tree structure"""
         self.clear()
 
+        grouped = {}
+
         for entity in member_entities:
-            self.add_member(entity)
+            uri_str = entity if isinstance(entity, str) else str(entity)
 
-    def add_member(self, entity):
-        """Add a member to the model
+            parent_name = None
+            entity_name = None
 
-        Args:
-            entity: Entity URI string
-        """
-        # Convert string to display text
-        entity_string = entity if isinstance(entity, str) else str(entity)
+            if 'entity:/shots/' in uri_str:
+                parts = uri_str.replace('entity:/shots/', '').split('/')
+                if len(parts) >= 2:
+                    parent_name = parts[0]
+                    entity_name = parts[1]
+            elif 'entity:/assets/' in uri_str:
+                parts = uri_str.replace('entity:/assets/', '').split('/')
+                if len(parts) >= 2:
+                    parent_name = parts[0]
+                    entity_name = parts[1]
 
-        # Parse display text from URI
-        if 'entity:/shots/' in entity_string:
-            parts = entity_string.replace('entity:/shots/', '').split('/')
-            display_text = f"{parts[0]}/{parts[1]}"
-        elif 'entity:/assets/' in entity_string:
-            parts = entity_string.replace('entity:/assets/', '').split('/')
-            display_text = f"{parts[0]}/{parts[1]}"
-        else:
-            display_text = entity_string
+            if parent_name and entity_name:
+                if parent_name not in grouped:
+                    grouped[parent_name] = []
+                grouped[parent_name].append((entity_name, uri_str))
 
-        item = QStandardItem(display_text)
-        item.setData(entity_string, Qt.UserRole)
-        self.appendRow(item)
+        for parent_name in sorted(grouped.keys()):
+            parent_item = QStandardItem(parent_name)
+            parent_item.setSelectable(True)
+            parent_item.setEditable(False)
 
-    def remove_members(self, indexes):
-        """Remove members at given indexes
+            for entity_name, uri_str in sorted(grouped[parent_name], key=lambda x: x[0]):
+                child_item = QStandardItem(entity_name)
+                child_item.setData(uri_str, Qt.UserRole)
+                child_item.setEditable(False)
+                parent_item.appendRow(child_item)
 
-        Args:
-            indexes: List of QModelIndex objects to remove
-        """
-        # Sort by row in reverse order to avoid index shifting
-        rows = sorted([index.row() for index in indexes], reverse=True)
-        for row in rows:
-            self.removeRow(row)
+            self.appendRow(parent_item)
 
-    def get_member_entities(self):
-        """Get list of entity URI strings for all members
+    def add_member(self, uri_str):
+        """Add a member to the model, maintaining tree structure"""
+        parent_name = None
+        entity_name = None
 
-        Returns:
-            List of entity URI strings
-        """
-        entities = []
+        if 'entity:/shots/' in uri_str:
+            parts = uri_str.replace('entity:/shots/', '').split('/')
+            if len(parts) >= 2:
+                parent_name = parts[0]
+                entity_name = parts[1]
+        elif 'entity:/assets/' in uri_str:
+            parts = uri_str.replace('entity:/assets/', '').split('/')
+            if len(parts) >= 2:
+                parent_name = parts[0]
+                entity_name = parts[1]
+
+        if not parent_name or not entity_name:
+            return
+
+        parent_item = None
         for row in range(self.rowCount()):
             item = self.item(row)
-            entity_string = item.data(Qt.UserRole)
-            entities.append(entity_string)
+            if item.text() == parent_name:
+                parent_item = item
+                break
+
+        if parent_item is None:
+            parent_item = QStandardItem(parent_name)
+            parent_item.setSelectable(True)
+            parent_item.setEditable(False)
+
+            inserted = False
+            for row in range(self.rowCount()):
+                if self.item(row).text() > parent_name:
+                    self.insertRow(row, parent_item)
+                    inserted = True
+                    break
+            if not inserted:
+                self.appendRow(parent_item)
+
+        child_item = QStandardItem(entity_name)
+        child_item.setData(uri_str, Qt.UserRole)
+        child_item.setEditable(False)
+
+        inserted = False
+        for row in range(parent_item.rowCount()):
+            if parent_item.child(row).text() > entity_name:
+                parent_item.insertRow(row, child_item)
+                inserted = True
+                break
+        if not inserted:
+            parent_item.appendRow(child_item)
+
+    def remove_members(self, indexes):
+        """Remove members at given indexes, cleaning up empty parents"""
+        items_to_remove = []
+        for index in indexes:
+            item = self.itemFromIndex(index)
+            if item and item.data(Qt.UserRole):
+                items_to_remove.append((index.parent(), index.row(), item.data(Qt.UserRole)))
+
+        items_to_remove.sort(key=lambda x: x[1], reverse=True)
+
+        parents_to_check = set()
+
+        for parent_index, row, uri_str in items_to_remove:
+            if parent_index.isValid():
+                parent_item = self.itemFromIndex(parent_index)
+                if parent_item:
+                    parent_item.removeRow(row)
+                    parents_to_check.add(parent_index)
+
+        for parent_index in parents_to_check:
+            parent_item = self.itemFromIndex(parent_index)
+            if parent_item and parent_item.rowCount() == 0:
+                self.removeRow(parent_index.row())
+
+    def get_member_entities(self):
+        """Get list of entity URI strings for all members (leaf nodes only)"""
+        entities = []
+        for row in range(self.rowCount()):
+            parent_item = self.item(row)
+            for child_row in range(parent_item.rowCount()):
+                child_item = parent_item.child(child_row)
+                uri_str = child_item.data(Qt.UserRole)
+                if uri_str:
+                    entities.append(uri_str)
         return entities

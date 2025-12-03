@@ -57,7 +57,8 @@ def set_renderable(context: str, name: str, renderable: bool):
 
 def list_departments(context: str) -> list[Department]:
     departments_data = api.config.cache.get('departments', {})
-    context_data = departments_data.get(context, {}).get('children', {})
+    root_children = departments_data.get('children', {})
+    context_data = root_children.get(context, {}).get('children', {})
     return [
         Department(
             name = dept_name,

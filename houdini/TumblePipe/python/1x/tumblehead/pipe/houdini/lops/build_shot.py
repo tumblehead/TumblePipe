@@ -72,16 +72,6 @@ def _entity_from_context_json():
 
     return context
 
-def _get_group_context():
-    """Check if current workfile is part of a group context"""
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-    # Check if context URI is a group (entity:/groups/...)
-    if context and len(context.entity_uri.segments) > 0 and context.entity_uri.segments[0] == 'groups':
-        return context
-    return None
-
-
 def _resolve_versions_strict(shot_uri: Uri):
     assert False, 'Not implemented'
 
@@ -160,7 +150,7 @@ class BuildShot(ns.Node):
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return list(shot_entities)
+        return [entity.uri for entity in shot_entities]
 
     def list_asset_department_names(self):
         departments = list_departments('assets')
@@ -235,13 +225,33 @@ class BuildShot(ns.Node):
             for shot_department_name in shot_department_names
             if shot_department_name not in exclude_shot_department_names
         ]
-    
+
+    def list_department_names(self) -> list[str]:
+        shot_departments = list_departments('shots')
+        return [dept.name for dept in shot_departments]
+
+    def get_department_name(self) -> str | None:
+        entity_source = self.get_entity_source()
+        match entity_source:
+            case 'from_context':
+                context = _context_from_workfile()
+                if context is None: return None
+                return context.department_name
+            case 'from_settings':
+                department_names = self.list_department_names()
+                if len(department_names) == 0: return None
+                department_name = self.parm('department').eval()
+                if len(department_name) == 0: return department_names[0]
+                if department_name not in department_names: return None
+                return department_name
+            case _:
+                raise AssertionError(f'Unknown entity source token: {entity_source}')
+
     def get_downstream_shot_department_names(self):
         shot_department_names = self.list_shot_department_names()
         if len(shot_department_names) == 0: return []
-        context = _context_from_workfile()
-        if context is None: return []
-        department_name = context.department_name
+        department_name = self.get_department_name()
+        if department_name is None: return []
         if department_name not in shot_department_names: return []
         shot_department_index = shot_department_names.index(department_name)
         return shot_department_names[shot_department_index + 1:]
@@ -282,6 +292,11 @@ class BuildShot(ns.Node):
         shot_uris = self.list_shot_uris()
         if shot_uri not in shot_uris: return
         self.parm('shot').set(str(shot_uri))
+
+    def set_department_name(self, department_name: str):
+        department_names = self.list_department_names()
+        if department_name not in department_names: return
+        self.parm('department').set(department_name)
 
     def set_mode(self, mode):
         match mode:
@@ -325,364 +340,6 @@ class BuildShot(ns.Node):
     def set_include_procedurals(self, include_procedurals):
         self.parm('include_procedurals').set(int(include_procedurals))
 
-    def _execute_group_build(self, group_context, dive_node, output_node):
-        """Execute group build - loads all member shots with frame offsets"""
-
-        # Step 1: Get group and validate members
-        # Extract group name from context URI (entity:/groups/{context}/{name})
-        group_name = group_context.entity_uri.segments[-1] if len(group_context.entity_uri.segments) > 0 else None
-        if not group_name:
-            hou.ui.displayMessage(
-                "Invalid group context URI",
-                severity=hou.severityType.Error
-            )
-            return
-
-        # Get group context (shots or assets) from URI
-        group_type_context = group_context.entity_uri.segments[1] if len(group_context.entity_uri.segments) > 1 else 'shots'
-
-        groups = api.config.list_groups(group_type_context)
-        group = next((g for g in groups if g.uri.segments[-1] == group_name), None)
-        if not group:
-            hou.ui.displayMessage(
-                f"Group '{group_name}' not found in configuration",
-                severity=hou.severityType.Error
-            )
-            return
-
-        # Filter members to shot members only by checking URI pattern
-        shot_member_uris = []
-        for member_uri in group.members:
-            # Check if this is a shot (entity:/shots/...)
-            if len(member_uri.segments) >= 3 and member_uri.segments[0] == 'shots':
-                shot_member_uris.append(member_uri)
-
-        if not shot_member_uris:
-            hou.ui.displayMessage(
-                f"Group '{group_name}' has no shot members",
-                severity=hou.severityType.Error
-            )
-            return
-
-        # Get parameters
-        include_asset_departments = self.get_asset_department_names()
-        include_shot_departments = self.get_shot_department_names()
-        downstream_shot_departments = self.get_downstream_shot_department_names()
-
-        if len(include_asset_departments) == 0: return
-        if len(include_shot_departments) == 0: return
-
-        # Only resolve assets from upstream departments (exclude downstream)
-        upstream_shot_departments = [
-            dept for dept in include_shot_departments
-            if dept not in downstream_shot_departments
-        ]
-
-        # Set group FPS
-        self.parm('shot_fps').set(get_fps())
-
-        # Step 2: Resolve dependencies for each member
-        hou.ui.setStatusMessage("Resolving group member dependencies...")
-
-        g = graph.scan(api)
-        all_assets = {}  # {asset_uri: set(all instances across members)}
-        member_contexts = {}  # {member_uri: resolved_context}
-
-        for idx, member_uri in enumerate(shot_member_uris, 1):
-            hou.ui.setStatusMessage(
-                f"Resolving member {idx}/{len(shot_member_uris)}: "
-                f"{member_uri.display_name()}..."
-            )
-
-            member_context = graph.resolve_shot_build(
-                g,
-                api,
-                member_uri,
-                upstream_shot_departments,
-                include_asset_departments
-            )
-            member_contexts[member_uri] = member_context
-
-            # Merge assets - collect all instances across all members
-            for asset_key, instances in member_context['assets'].items():
-                if asset_key not in all_assets:
-                    all_assets[asset_key] = set()
-                all_assets[asset_key].update(instances)
-
-        # Update scene without updating the viewport
-        with util.update_mode(hou.updateMode.Manual):
-
-            # Collection nodes
-            merge_node = _ensure_node(dive_node, 'merge', 'merge')
-            merge_node.parm('mergestyle').set('separate')
-
-            # Set group frame range - calculate total frames across all members
-            total_frames = 0
-            for member_uri in shot_member_uris:
-                member_frame_range = get_frame_range(member_uri)
-                if member_frame_range:
-                    total_frames += len(member_frame_range.full_range())
-            if total_frames > 0:
-                group_frame_range = FrameRange(
-                    start_frame=0,
-                    end_frame=total_frames - 1,
-                    start_roll=0,
-                    end_roll=0
-                )
-                util.set_frame_range(group_frame_range)
-
-            # Step 3: Load shared asset layers (same as individual shot build)
-            hou.ui.setStatusMessage("Loading asset layers...")
-
-            for asset_uri, instance_names in all_assets.items():
-                uri_name = '_'.join(asset_uri.segments[1:])
-
-                # Prepare
-                prev_node = None
-
-                # Load asset department layers
-                for dept in list_departments('assets'):
-                    asset_department = dept.name
-                    if asset_department not in include_asset_departments: continue
-
-                    # Find latest asset layer across all members
-                    # Use first member's context to find asset layer path
-                    # (asset layers should be same across members)
-                    resolved_layer_path = None
-                    for member_context in member_contexts.values():
-                        resolved_layer_path = _get(
-                            member_context,
-                            'asset_layers',
-                            asset_department,
-                            asset_uri
-                        )
-                        if resolved_layer_path is not None:
-                            break
-
-                    if resolved_layer_path is None: continue
-
-                    # Load asset department
-                    version_name = resolved_layer_path.name
-                    asset_layer_node = import_asset_layer.create(
-                        dive_node, (
-                            'asset'
-                            f'_{uri_name}'
-                            f'_{asset_department}'
-                            '_import'
-                        )
-                    )
-                    asset_layer_node.set_asset_uri(asset_uri)
-                    asset_layer_node.set_department_name(asset_department)
-                    asset_layer_node.set_version_name(version_name)
-                    asset_layer_node.set_include_layerbreak(False)
-                    asset_layer_node.execute()
-
-                    # Connect to previous node
-                    if prev_node is not None:
-                        _connect(prev_node, asset_layer_node.native())
-                    prev_node = asset_layer_node.native()
-
-                # Handle asset duplication (same logic as individual shots)
-                instances = len(instance_names)
-                properties = api.config.get_properties(asset_uri)
-                animatable = properties.get('animatable', False) if properties else False
-
-                if instances > 1:
-                    # Create duplicate subnet (same as individual shot build)
-                    duplicate_subnet = dive_node.createNode('subnet', f'{uri_name}_duplicate')
-                    duplicate_subnet.node('output0').destroy()
-                    duplicate_subnet_input = duplicate_subnet.indirectInputs()[0]
-                    duplicate_subnet_output = duplicate_subnet.createNode('output', 'output')
-                    _connect(prev_node, duplicate_subnet)
-                    prev_node = duplicate_subnet_input
-
-                    # Duplicate asset
-                    from tumblehead.pipe.houdini.util import uri_to_prim_path
-                    asset_prim_path = uri_to_prim_path(asset_uri)
-                    duplicate_node = duplicate_subnet.createNode('duplicate', 'asset_duplicate')
-                    duplicate_node.parm('sourceprims').set(asset_prim_path)
-                    duplicate_node.parm('ncy').set(instances)
-                    duplicate_node.parm('duplicatename').set('`@srcname``@copy`')
-                    duplicate_node.parm('makeinstances').set(int(not animatable))
-                    _connect(prev_node, duplicate_node)
-                    prev_node = duplicate_node
-
-                    # Duplicate metadata
-                    from tumblehead.pipe.houdini.util import uri_to_metadata_prim_path
-                    asset_metadata_path = uri_to_metadata_prim_path(asset_uri)
-                    duplicate_metadata_node = duplicate_subnet.createNode('duplicate', 'metadata_duplicate')
-                    duplicate_metadata_node.parm('sourceprims').set(asset_metadata_path)
-                    duplicate_metadata_node.parm('ncy').set(instances)
-                    duplicate_metadata_node.parm('duplicatename').set('`@srcname``@copy`')
-                    duplicate_metadata_node.parm('parentprimtype').set('')
-                    _connect(prev_node, duplicate_metadata_node)
-                    prev_node = duplicate_metadata_node
-
-                    # Update metadata instance names
-                    python_node = duplicate_subnet.createNode('pythonscript', 'metadata_update')
-                    asset_metadata_base = asset_metadata_path.rsplit('/', 1)[0]  # /METADATA/assets/char
-                    python_node.parm('python').set('\n'.join(_update_script([
-                        (f'{asset_metadata_base}/{instance_name}', instance_name)
-                        for instance_name in instance_names
-                    ])))
-                    _connect(prev_node, python_node)
-                    prev_node = python_node
-
-                    # Connect last node to output
-                    _connect(prev_node, duplicate_subnet_output)
-                    prev_node = duplicate_subnet
-
-                    # Layout duplicate subnet
-                    duplicate_subnet.layoutChildren()
-
-                # Step 4: Load member shot layers with timeshift
-                anchor_node = prev_node
-
-                # For each member shot, load its shot layers with frame offset
-                for member_idx, member_uri in enumerate(shot_member_uris):
-                    hou.ui.setStatusMessage(
-                        f"Loading member {member_idx+1}/{len(shot_member_uris)}: "
-                        f"{member_uri}..."
-                    )
-
-                    member_context = member_contexts[member_uri]
-
-                    # Calculate member's frame offset in group timeline
-                    # Offset is the sum of all previous members' frame ranges
-                    member_offset_start = 0
-                    for prev_member_uri in shot_member_uris[:member_idx]:
-                        prev_frame_range = get_frame_range(prev_member_uri)
-                        if prev_frame_range:
-                            member_offset_start += len(prev_frame_range.full_range())
-
-                    member_frame_range = get_frame_range(member_uri)
-                    member_offset_end = member_offset_start + len(member_frame_range.full_range()) - 1
-
-                    # Calculate timeshift offset
-                    # Example: member frames 1001-1050, group frames 0-49
-                    # offset = -1001 + 0 = -1001
-                    timeshift_offset = -member_frame_range.start_frame + member_offset_start
-
-                    # Create subnet for this member's shot layers
-                    member_uri_name = '_'.join(member_uri.segments[1:])
-                    member_subnet = dive_node.createNode(
-                        'subnet',
-                        f'member_{member_uri_name}_{uri_name}'
-                    )
-                    member_subnet.node('output0').destroy()
-                    member_input = member_subnet.indirectInputs()[0]
-                    member_output = member_subnet.createNode('output', 'output')
-                    _connect(anchor_node, member_subnet)
-
-                    prev_member_node = member_input
-
-                    # Prepare
-                    upstream_department_nodes = []
-                    downstream_department_nodes = []
-
-                    # Load shot department layers for this member
-                    for dept in list_departments('shots'):
-                        shot_department = dept.name
-                        if shot_department not in include_shot_departments: continue
-
-                        # Check if the shot department layer is available for this member
-                        layer_lookup = _get(
-                            member_context,
-                            'shot_layers',
-                            shot_department
-                        )
-                        if layer_lookup is None: continue
-                        resolved_layer_path, layer_assets = layer_lookup
-
-                        # Check if this asset is in the layer
-                        if asset_uri not in layer_assets: continue
-
-                        # For non-animatable, check if any instance exists
-                        if not animatable:
-                            has_instances = any(
-                                inst in layer_assets[asset_uri]
-                                for inst in instance_names
-                            )
-                            if not has_instances: continue
-
-                        version_name = resolved_layer_path.name
-
-                        # Load shot layer
-                        member_shot_layer_node = import_shot_layer.create(
-                            member_subnet, (
-                                f'member_{member_uri_name}'
-                                f'_asset_{uri_name}'
-                                f'_{shot_department}'
-                            )
-                        )
-                        member_shot_layer_node.set_shot_uri(member_uri)
-                        member_shot_layer_node.set_department_name(shot_department)
-                        member_shot_layer_node.set_version_name(version_name)
-                        member_shot_layer_node.set_stage_type('asset')
-                        member_shot_layer_node.set_asset_uri(asset_uri)
-                        if animatable and instance_names:
-                            # For animatable, set first instance
-                            # (assuming one instance per animatable asset per member)
-                            member_shot_layer_node.set_instance_name(list(instance_names)[0])
-                        member_shot_layer_node.set_include_layerbreak(False)
-                        member_shot_layer_node.execute()
-
-                        # Store department nodes
-                        if shot_department in downstream_shot_departments:
-                            downstream_department_nodes.append(member_shot_layer_node.native())
-                        else:
-                            upstream_department_nodes.append(member_shot_layer_node.native())
-
-                    # Connect upstream department nodes
-                    for upstream_department_node in upstream_department_nodes:
-                        _connect(prev_member_node, upstream_department_node)
-                        prev_member_node = upstream_department_node
-
-                    # Connect downstream department nodes with switch
-                    if len(downstream_department_nodes) > 0:
-                        downstream_switch_node = member_subnet.createNode('switch', 'downstream_switch')
-                        downstream_switch_node.parm('input').setExpression(
-                            f'ch("{self.parm("include_downstream_departments").path()}")'
-                        )
-                        _connect(prev_member_node, downstream_switch_node)
-
-                        for downstream_department_node in downstream_department_nodes:
-                            _connect(prev_member_node, downstream_department_node)
-                            prev_member_node = downstream_department_node
-
-                        _connect(prev_member_node, downstream_switch_node)
-                        prev_member_node = downstream_switch_node
-
-                    # Add timeshift node to convert member timeline to group timeline
-                    timeshift_node = member_subnet.createNode('timeshift', 'group_offset')
-                    timeshift_node.parm('offset').set(timeshift_offset)
-                    timeshift_node.setComment(
-                        f'Offset member timeline to group timeline\n'
-                        f'Member range: {member_frame_range.start_frame}-{member_frame_range.end_frame}\n'
-                        f'Group offset: {member_offset_start}-{member_offset_end}\n'
-                        f'Timeshift: {timeshift_offset}'
-                    )
-                    timeshift_node.setGenericFlag(hou.nodeFlag.DisplayComment, True)
-                    _connect(prev_member_node, timeshift_node)
-                    prev_member_node = timeshift_node
-
-                    # Connect to member output
-                    _connect(prev_member_node, member_output)
-                    member_subnet.layoutChildren()
-
-                    # Connect member subnet to merge (not to anchor for next member)
-                    _connect(member_subnet, merge_node)
-
-                # Continue to next asset (don't connect to merge here, members already connected)
-
-            # Step 5: Connect merge to output
-            _connect(merge_node, output_node)
-
-            # Layout nodes
-            dive_node.layoutChildren()
-
-        hou.ui.setStatusMessage("Group build complete!")
-
     def execute(self):
 
         # Clear scene
@@ -690,17 +347,6 @@ class BuildShot(ns.Node):
         dive_node = context.node('dive')
         output_node = dive_node.node('output')
         _clear_scene(dive_node, output_node)
-
-        # Check if we're in a group context
-        group_context = _get_group_context()
-
-        if group_context:
-            # GROUP BUILD IMPLEMENTATION
-            return self._execute_group_build(
-                group_context,
-                dive_node,
-                output_node
-            )
 
         # Parameters
         shot_uri = self.get_shot_uri()

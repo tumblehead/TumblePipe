@@ -7,7 +7,6 @@ from tumblehead.api import get_user_name, path_str, default_client
 from tumblehead.util.io import store_json
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
-from tumblehead.config.groups import is_group_uri, get_group
 from tumblehead.config.timeline import FrameRange, get_frame_range
 from tumblehead.config.shots import list_render_layers
 from tumblehead.pipe.houdini import util
@@ -53,7 +52,7 @@ class ExportRenderLayer(ns.Node):
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return list(shot_entities)
+        return [entity.uri for entity in shot_entities]
 
     def list_department_names(self):
         shot_departments = list_departments('shots')
@@ -222,7 +221,7 @@ class ExportRenderLayer(ns.Node):
         return version_name, timestamp, user_name
 
     def execute(self):
-        """Main export method - handles both individual shots and group exports"""
+        """Main export method"""
 
         # Nodes
         native = self.native()
@@ -242,82 +241,24 @@ class ExportRenderLayer(ns.Node):
 
         frame_range, frame_step = frame_range_result
 
-        # Check if we're exporting to a group
-        if is_group_uri(shot_uri):
-            # Group export - split to member shots
-            group = get_group(shot_uri)
-            if group is None:
-                hou.ui.displayMessage(
-                    f"Group not found: {shot_uri}",
-                    severity=hou.severityType.Error
-                )
-                return
+        # Export single shot
+        version_name, timestamp, user_name = self._do_export_to_shot(
+            stage_node,
+            shot_uri,
+            department_name,
+            render_layer_name,
+            frame_range,
+            frame_step
+        )
 
-            # Export to each member shot
-            exported_members = []
-            last_timestamp = None
-            last_user_name = None
-
-            for member_uri in group.members:
-                try:
-                    # Get member's original frame range
-                    member_frame_range = get_frame_range(member_uri)
-                    if member_frame_range is None:
-                        continue
-
-                    # Set Houdini timeline to member's timeline for correct frame cooking
-                    util.set_frame_range(member_frame_range)
-
-                    # Export this member
-                    version_name, timestamp, user_name = self._do_export_to_shot(
-                        stage_node,
-                        member_uri,
-                        department_name,
-                        render_layer_name,
-                        member_frame_range,
-                        frame_step
-                    )
-
-                    # Track for comment
-                    last_timestamp = timestamp
-                    last_user_name = user_name
-
-                    # Add to exported members list for display
-                    exported_members.append(f"{member_uri} ({version_name})")
-                except Exception as e:
-                    # Skip failed members but log the error
-                    print(f"Failed to export member {member_uri}: {e}")
-                    pass
-
-            # Update node comment
-            if last_timestamp and last_user_name:
-                native.setComment(
-                    f'group export: {shot_uri.segments[-1]}\n'
-                    f'{last_timestamp.strftime("%Y-%m-%d %H:%M:%S")}\n'
-                    f'by {last_user_name}\n'
-                    f'members: {", ".join(exported_members)}'
-                )
-                native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
-
-        else:
-            # Individual shot export
-            version_name, timestamp, user_name = self._do_export_to_shot(
-                stage_node,
-                shot_uri,
-                department_name,
-                render_layer_name,
-                frame_range,
-                frame_step
-            )
-
-            # Update node comment
-            native.setComment(
-                'last export: '
-                f'{version_name} \n'
-                f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
-                f'by {user_name}'
-            )
-            native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+        # Update node comment
+        native.setComment(
+            'last export: '
+            f'{version_name} \n'
+            f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
+            f'by {user_name}'
+        )
+        native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
     def open_location(self):
         shot_uri = self.get_shot_uri()

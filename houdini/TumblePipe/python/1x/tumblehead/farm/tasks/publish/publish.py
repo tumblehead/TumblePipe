@@ -79,8 +79,9 @@ def main(config):
             )
         )
 
-    # Check if the export was generated
-    if not export_path.exists():
+    # Check if the export was generated (skip for groups - they export individual members)
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    if entity_uri.purpose != 'groups' and not export_path.exists():
         return _error(f'Export not found: {export_path}')
 
     # Done

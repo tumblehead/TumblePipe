@@ -7,7 +7,6 @@ from tumblehead.api import get_user_name, path_str, default_client
 from tumblehead.util.uri import Uri
 from tumblehead.util.io import store_json
 from tumblehead.config.department import list_departments
-from tumblehead.config.groups import is_group_uri, get_group
 from tumblehead.apps.deadline import Deadline
 from tumblehead.config.timeline import FrameRange, get_fps
 from tumblehead.pipe.houdini.lops import submit_render
@@ -34,7 +33,7 @@ class ExportAssetLayer(ns.Node):
             filter = Uri.parse_unsafe('entity:/assets'),
             closure = True
         )
-        return list(asset_entities)
+        return [entity.uri for entity in asset_entities]
 
     def list_department_names(self):
         asset_departments = list_departments('assets')
@@ -262,72 +261,23 @@ class ExportAssetLayer(ns.Node):
 
         frame_range, frame_step = frame_range_result
 
-        # Check if we're exporting to a group
-        if is_group_uri(asset_uri):
-            # Group export - export to each member asset
-            group = get_group(asset_uri)
-            if group is None:
-                hou.ui.displayMessage(
-                    f"Group not found: {asset_uri}",
-                    severity=hou.severityType.Error
-                )
-                return
+        # Export single asset
+        version_name, timestamp, user_name = self._do_export_to_asset(
+            kinds_node,
+            asset_uri,
+            department_name,
+            frame_range,
+            frame_step
+        )
 
-            # Export to each member asset
-            exported_members = []
-            last_timestamp = None
-            last_user_name = None
-
-            for member_uri in group.members:
-                try:
-                    # Export this member
-                    version_name, timestamp, user_name = self._do_export_to_asset(
-                        kinds_node,
-                        member_uri,
-                        department_name,
-                        frame_range,
-                        frame_step
-                    )
-
-                    # Track for comment
-                    last_timestamp = timestamp
-                    last_user_name = user_name
-
-                    # Add to exported members list for display
-                    exported_members.append(f"{member_uri} ({version_name})")
-                except Exception as e:
-                    # Skip failed members but log the error
-                    print(f"Failed to export member {member_uri}: {e}")
-                    pass
-
-            # Update node comment
-            if last_timestamp and last_user_name:
-                native.setComment(
-                    f'group export: {asset_uri.segments[-1]}\n'
-                    f'{last_timestamp.strftime("%Y-%m-%d %H:%M:%S")}\n'
-                    f'by {last_user_name}\n'
-                    f'members: {", ".join(exported_members)}'
-                )
-                native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
-
-        else:
-            # Individual asset export
-            version_name, timestamp, user_name = self._do_export_to_asset(
-                kinds_node,
-                asset_uri,
-                department_name,
-                frame_range,
-                frame_step
-            )
-
-            # Update node comment
-            native.setComment(
-                'last export: '
-                f'{version_name} \n'
-                f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
-                f'by {user_name}'
-            )
-            native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+        # Update node comment
+        native.setComment(
+            'last export: '
+            f'{version_name} \n'
+            f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
+            f'by {user_name}'
+        )
+        native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
     def _export_farm(self):
         """Submit export job to farm"""
@@ -361,119 +311,54 @@ class ExportAssetLayer(ns.Node):
         pool_name = self.get_pool_name()
         priority = self.get_priority()
 
-        # Check if we're submitting a group
-        if is_group_uri(asset_uri):
-            # Group farm submission - submit job for each member
-            group = get_group(asset_uri)
-            if group is None:
-                hou.ui.displayMessage(
-                    f"Group not found: {asset_uri}",
-                    severity=hou.severityType.Error
-                )
-                return
+        # Build config
+        config = {
+            'settings': {
+                'priority': priority,
+                'pool_name': pool_name,
+                'entity_uri': str(asset_uri),
+                'department_name': department_name,
+                'first_frame': frame_range.full_range().first_frame,
+                'last_frame': frame_range.full_range().last_frame
+            },
+            'tasks': {
+                'publish': {
+                    'downstream_departments': downstream_deps
+                }
+            }
+        }
 
-            submitted_members = []
-            for member_uri in group.members:
-                try:
-                    # Build config for this member
-                    config = {
-                        'settings': {
-                            'priority': priority,
-                            'pool_name': pool_name,
-                            'entity_uri': str(member_uri),
-                            'department_name': department_name,
-                            'first_frame': frame_range.full_range().first_frame,
-                            'last_frame': frame_range.full_range().last_frame
-                        },
-                        'tasks': {
-                            'publish': {
-                                'downstream_departments': downstream_deps
-                            }
-                        }
-                    }
-
-                    # Submit to farm
-                    publish_job.submit(config, {})
-
-                    # Track submitted members
-                    submitted_members.append(str(member_uri))
-                except Exception as e:
-                    print(f"Failed to submit member {member_uri}: {e}")
-                    pass
+        # Submit to farm
+        try:
+            publish_job.submit(config, {})
 
             # Update node comment
             native = self.native()
             timestamp = dt.datetime.now()
             user_name = get_user_name()
             native.setComment(
-                f'group farm export: {asset_uri.segments[-1]}\n'
-                f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")}\n'
+                f'farm export submitted: \n'
+                f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
                 f'by {user_name}\n'
-                f'downstream: {", ".join(downstream_deps) if downstream_deps else "None"}\n'
-                f'members: {", ".join(submitted_members)}'
+                f'downstream: {", ".join(downstream_deps) if downstream_deps else "None"}'
             )
             native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
             # Show success message
             downstream_msg = f"\nDownstream: {', '.join(downstream_deps)}" if downstream_deps else ""
             hou.ui.displayMessage(
-                f"Group export jobs submitted to farm\n"
+                f"Export job submitted to farm\n"
                 f"Department: {department_name}"
-                f"{downstream_msg}\n"
-                f"Members: {', '.join(submitted_members)}",
-                title="Group Farm Export Submitted"
+                f"{downstream_msg}",
+                title="Farm Export Submitted"
             )
 
-        else:
-            # Individual asset farm submission
-            # Build config
-            config = {
-                'settings': {
-                    'priority': priority,
-                    'pool_name': pool_name,
-                    'entity_uri': str(asset_uri),
-                    'department_name': department_name,
-                    'first_frame': frame_range.full_range().first_frame,
-                    'last_frame': frame_range.full_range().last_frame
-                },
-                'tasks': {
-                    'publish': {
-                        'downstream_departments': downstream_deps
-                    }
-                }
-            }
-
-            # Submit to farm
-            try:
-                publish_job.submit(config, {})
-
-                # Update node comment
-                native = self.native()
-                timestamp = dt.datetime.now()
-                user_name = get_user_name()
-                native.setComment(
-                    f'farm export submitted: \n'
-                    f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")} \n'
-                    f'by {user_name}\n'
-                    f'downstream: {", ".join(downstream_deps) if downstream_deps else "None"}'
-                )
-                native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
-
-                # Show success message
-                downstream_msg = f"\nDownstream: {', '.join(downstream_deps)}" if downstream_deps else ""
-                hou.ui.displayMessage(
-                    f"Export job submitted to farm\n"
-                    f"Department: {department_name}"
-                    f"{downstream_msg}",
-                    title="Farm Export Submitted"
-                )
-
-            except Exception as e:
-                hou.ui.displayMessage(
-                    f"Failed to submit farm job: {str(e)}",
-                    severity=hou.severityType.Error
-                )
-                return
+        except Exception as e:
+            hou.ui.displayMessage(
+                f"Failed to submit farm job: {str(e)}",
+                severity=hou.severityType.Error
+            )
+            return
         
     def open_location(self):
         asset_uri = self.get_asset_uri()

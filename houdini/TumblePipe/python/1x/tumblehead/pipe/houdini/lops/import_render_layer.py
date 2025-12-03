@@ -26,7 +26,7 @@ class ImportRenderLayer(ns.Node):
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return list(shot_entities)
+        return [entity.uri for entity in shot_entities]
 
     def list_department_names(self):
         shot_departments = list_departments('shots')

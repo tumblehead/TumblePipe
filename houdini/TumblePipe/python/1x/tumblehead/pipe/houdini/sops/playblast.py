@@ -10,7 +10,6 @@ from tumblehead.apps import mp4
 from tumblehead.config.timeline import get_frame_range, get_fps
 from tumblehead.pipe.houdini import util
 from tumblehead.pipe.houdini import nodes as ns
-from tumblehead.pipe.houdini.lops import animate
 from tumblehead.pipe.paths import (
     get_next_playblast_path,
     get_latest_playblast_path,
@@ -45,11 +44,19 @@ class Playblast(ns.Node):
         if len(shot_departments) == 0: return []
         shot_department_names = [dept.name for dept in shot_departments]
         default_values = api.config.get_properties(DEFAULTS_URI)
+        if default_values is None: return shot_department_names
         return [
             department_name
             for department_name in default_values['departments']
             if department_name in shot_department_names
         ]
+
+    def list_shot_uris(self) -> list[Uri]:
+        shot_entities = api.config.list_entities(
+            filter=Uri.parse_unsafe('entity:/shots'),
+            closure=True
+        )
+        return [entity.uri for entity in shot_entities]
 
     def list_camera_paths(self):
         root = self._get_stage_root()
@@ -87,7 +94,39 @@ class Playblast(ns.Node):
         camera_names = self.list_camera_names()
         if camera_name not in camera_names: return
         self.parm('camera').set(camera_name)
-    
+
+    def get_entity_source(self):
+        return self.parm('entity_source').eval()
+
+    def get_shot_uri(self) -> Uri | None:
+        entity_source = self.get_entity_source()
+        match entity_source:
+            case 'from_context':
+                file_path = Path(hou.hipFile.path())
+                context = get_workfile_context(file_path)
+                if context is None: return None
+                return context.entity_uri
+            case 'from_settings':
+                shot_uris = self.list_shot_uris()
+                if len(shot_uris) == 0: return None
+                shot_uri_raw = self.parm('shot').eval()
+                if len(shot_uri_raw) == 0: return shot_uris[0]
+                shot_uri = Uri.parse_unsafe(shot_uri_raw)
+                if shot_uri not in shot_uris: return None
+                return shot_uri
+            case _:
+                raise AssertionError(f'Unknown entity source token: {entity_source}')
+
+    def set_shot_uri(self, shot_uri: Uri):
+        shot_uris = self.list_shot_uris()
+        if shot_uri not in shot_uris: return
+        self.parm('shot').set(str(shot_uri))
+
+    def set_entity_source(self, entity_source):
+        valid_sources = ['from_context', 'from_settings']
+        if entity_source not in valid_sources: return
+        self.parm('entity_source').set(entity_source)
+
     def playblast(self):
 
         # Find nodes
@@ -96,12 +135,9 @@ class Playblast(ns.Node):
         camera_node = objects_node.node('camera')
         playblast_node = context.node('playblast')
         render_node = playblast_node.node('render')
-        raw_animate_node = context.node('../../../../')
-        assert raw_animate_node.type().name().startswith('th::animate'), 'Parent node is not an animate node'
-        animate_node = animate.Animate(raw_animate_node)
 
         # Parameters and paths
-        shot_uri = animate_node.get_shot_uri()
+        shot_uri = self.get_shot_uri()
         department_name = self.get_department_names()
         camera_path = self.get_camera_path()
         frame_range = get_frame_range(shot_uri)
@@ -144,14 +180,8 @@ class Playblast(ns.Node):
     
     def view_latest(self):
 
-        # Find nodes
-        context = self.native()
-        raw_animate_node = context.node('../../../../')
-        assert raw_animate_node.type().name().startswith('th::animate'), 'Parent node is not an animate node'
-        animate_node = animate.Animate(raw_animate_node)
-
         # Parameters and paths
-        shot_uri = animate_node.get_shot_uri()
+        shot_uri = self.get_shot_uri()
         department_name = self.get_department_names()
         output_playblast_path = get_latest_playblast_path(shot_uri, department_name)
 
@@ -169,14 +199,8 @@ class Playblast(ns.Node):
 
     def open_location(self):
 
-        # Find nodes
-        context = self.native()
-        raw_animate_node = context.node('../../../../')
-        assert raw_animate_node.type().name().startswith('th::animate'), 'Parent node is not an animate node'
-        animate_node = animate.Animate(raw_animate_node)
-
         # Parameters and paths
-        shot_uri = animate_node.get_shot_uri()
+        shot_uri = self.get_shot_uri()
         department_name = self.get_department_names()
         output_playblast_path = get_latest_playblast_path(shot_uri, department_name)
         output_path = output_playblast_path.parent

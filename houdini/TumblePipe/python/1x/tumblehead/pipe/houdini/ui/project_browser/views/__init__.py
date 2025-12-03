@@ -3,6 +3,8 @@ from .department import DepartmentBrowser, DepartmentButtonSurface
 from .version import VersionView, VersionButtonSurface
 from .details import DetailsView
 from .settings import SettingsView
+from .json_editor import JsonView
+from .database_uri_view import DatabaseUriView
 
 __all__ = [
     'WorkspaceBrowser',
@@ -11,5 +13,7 @@ __all__ = [
     'VersionView',
     'VersionButtonSurface',
     'DetailsView',
-    'SettingsView'
+    'SettingsView',
+    'JsonView',
+    'DatabaseUriView'
 ]

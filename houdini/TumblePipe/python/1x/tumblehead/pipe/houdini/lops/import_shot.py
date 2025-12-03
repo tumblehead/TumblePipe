@@ -27,16 +27,6 @@ def _context_from_workfile():
     if len(context.entity_uri) != 4: return None
     return context
 
-def _get_group_context():
-    """Check if current workfile is part of a group context"""
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-    if context is None: return None
-    # Check if entity_uri is a group (entity:/groups/...)
-    if str(context.entity_uri).startswith('entity:/groups/'):
-        return context
-    return None
-
 def _entity_from_context_json():
     # Path to current workfile
     file_path = Path(hou.hipFile.path())
@@ -116,7 +106,7 @@ class ImportShot(ns.Node):
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return list(shot_entities)
+        return [entity.uri for entity in shot_entities]
 
     def list_asset_department_names(self):
         asset_departments = list_departments('assets')
@@ -140,7 +130,28 @@ class ImportShot(ns.Node):
             for shot_department_name in default_values['departments']['shot']
             if shot_department_name in shot_department_names
         ]
-    
+
+    def list_department_names(self) -> list[str]:
+        shot_departments = list_departments('shots')
+        return [dept.name for dept in shot_departments]
+
+    def get_department_name(self) -> str | None:
+        entity_source = self.get_entity_source()
+        match entity_source:
+            case 'from_context':
+                context = _context_from_workfile()
+                if context is None: return None
+                return context.department_name
+            case 'from_settings':
+                department_names = self.list_department_names()
+                if len(department_names) == 0: return None
+                department_name = self.parm('department').eval()
+                if len(department_name) == 0: return department_names[0]
+                if department_name not in department_names: return None
+                return department_name
+            case _:
+                raise AssertionError(f'Unknown entity source token: {entity_source}')
+
     def get_entity_source(self):
         return self.parm('entity_source').eval()
 
@@ -250,7 +261,10 @@ class ImportShot(ns.Node):
             for department_name in exclude_shot_department_names
             if department_name in shot_department_names
         ]))
-    
+
+    def set_department_name(self, department_name: str):
+        self.parm('department').set(department_name)
+
     def set_frame_range_source(self, frame_range_source):
         match frame_range_source:
             case 'from_config': self.parm('frame_range').set('from_config')
@@ -270,189 +284,7 @@ class ImportShot(ns.Node):
     def set_include_procedurals(self, include_procedurals):
         self.parm('include_procedurals').set(int(include_procedurals))
 
-    def _execute_group_import(self, group_context):
-        """Execute group import - loads all member staged files with frame offsets"""
-
-        # Get group and filter to shot members only
-        # Extract group name from context URI (entity:/groups/{context}/{name})
-        group_name = group_context.entity_uri.segments[-1] if len(group_context.entity_uri.segments) > 0 else None
-        if not group_name:
-            print("Error: Invalid group context URI")
-            return
-
-        # Get group context (shots or assets) from URI
-        group_type_context = group_context.entity_uri.segments[1] if len(group_context.entity_uri.segments) > 1 else 'shots'
-
-        groups = api.config.list_groups(group_type_context)
-        group = next((g for g in groups if g.uri.segments[-1] == group_name), None)
-        if not group:
-            print(f"Error: Group '{group_name}' not found in configuration")
-            return
-
-        # Filter to shot members only
-        shot_members = []
-        for member_uri in group.members:
-            # Check if member_uri is a shot (entity:/shots/...)
-            if str(member_uri).startswith('entity:/shots/'):
-                shot_members.append(member_uri)
-
-        if not shot_members:
-            print(f"Warning: Group '{group_name}' has no shot members")
-            return
-
-        # Get nodes
-        context = self.native()
-        dive_node = context.node('dive')
-        output_node = context.node('output')
-
-        if dive_node is None or output_node is None:
-            print("Error: Required nodes 'dive' or 'output' not found")
-            return
-
-        # Clear existing nodes in dive
-        for child in dive_node.children():
-            child.destroy()
-
-        # Create merge node for all member imports
-        merge_node = dive_node.createNode('merge', 'merge_members')
-        merge_node.setComment(f'Merge all member shots for group: {group_name}')
-
-        # Track previous node for connections
-        prev_node = None
-
-        # Process each member shot
-        for member_index, member_uri in enumerate(shot_members):
-
-            # Get staged file path for this member (member_uri is already the shot URI)
-            staged_file_path = latest_staged_path(member_uri)
-
-            if staged_file_path is None or not staged_file_path.exists():
-                print(f"Warning: No staged file found for {member_uri}")
-                continue
-
-            # Calculate member's frame offset in group timeline
-            # Offset is the sum of all previous members' frame ranges
-            member_offset_start = 0
-            for prev_member_uri in shot_members[:member_index]:
-                prev_frame_range = get_frame_range(prev_member_uri)
-                if prev_frame_range:
-                    member_offset_start += len(prev_frame_range.full_range())
-
-            # Get member's original frame range
-            member_frame_range = get_frame_range(member_uri)
-            member_offset_end = member_offset_start + len(member_frame_range.full_range()) - 1
-
-            # Create node name and prim path from URI segments
-            member_uri_name = '_'.join(member_uri.segments[1:])
-            member_prim_path = '/'.join(member_uri.segments[1:])
-
-            # Calculate timeshift offset
-            # Formula: offset = -member_start_frame + member_group_offset_start
-            # This converts member's timeline (e.g., 1001-1050) to group timeline (e.g., 0-49)
-            timeshift_offset = -member_frame_range.start_frame + member_offset_start
-
-            # Create subnet for this member
-            member_subnet_name = f'member_{member_uri_name}'
-            member_subnet = dive_node.createNode('subnet', member_subnet_name)
-            member_subnet.setComment(
-                f'Member: {member_uri}\n'
-                f'Original range: {member_frame_range.start_frame}-{member_frame_range.end_frame}\n'
-                f'Group range: {member_offset_start}-{member_offset_end}'
-            )
-
-            # Create import node inside subnet
-            import_node = member_subnet.createNode('sublayer', 'import_staged')
-            import_node.parm('filepath1').set(path_str(staged_file_path))
-            import_node.setComment(f'Staged file for {member_uri}')
-
-            # Create mute node for excluded departments
-            mute_node = member_subnet.createNode('muteprims', 'mute_excluded')
-            mute_node.setInput(0, import_node)
-
-            # Build mute paths based on excluded departments for this member
-            mute_paths = []
-
-            # Mute excluded shot departments (using URI path for USD prim paths)
-            for dept in self.get_exclude_shot_department_names():
-                mute_paths.append(f'*/shots/{member_prim_path}/{dept}/*')
-
-            # Mute excluded asset departments (all assets)
-            for dept in self.get_exclude_asset_department_names():
-                mute_paths.append(f'*/assets/*/{dept}/*')
-
-            # Set mute paths parameter (space-separated)
-            mute_node.parm('mutepaths').set(' '.join(mute_paths))
-
-            # Create timeshift node to offset member timeline to group timeline
-            timeshift_node = member_subnet.createNode('timeshift', 'group_offset')
-            timeshift_node.setInput(0, mute_node)
-            timeshift_node.parm('offset').set(timeshift_offset)
-            timeshift_node.setComment(
-                f'Offset member timeline to group timeline\n'
-                f'Member range: {member_frame_range.start_frame}-{member_frame_range.end_frame}\n'
-                f'Group offset: {member_offset_start}-{member_offset_end}\n'
-                f'Timeshift: {timeshift_offset}'
-            )
-
-            # Create metadata node for this member
-            metadata_node = member_subnet.createNode('pythonscript', 'metadata')
-            metadata_node.setInput(0, timeshift_node)
-
-            # Generate metadata script
-            version_name = staged_file_path.parent.name
-            metadata_script = _set_shot_metadata_script(
-                member_uri,
-                member_frame_range,
-                get_fps(),
-                version_name
-            )
-            metadata_node.parm('python').set(metadata_script)
-
-            # Create subnet output
-            subnet_output = member_subnet.createNode('output', 'output0')
-            subnet_output.setInput(0, metadata_node)
-            subnet_output.setDisplayFlag(True)
-            subnet_output.setRenderFlag(True)
-
-            # Layout nodes in subnet
-            member_subnet.layoutChildren()
-
-            # Connect member subnet to merge node
-            merge_node.setInput(member_index, member_subnet)
-
-            # Track for final connection
-            prev_node = merge_node
-
-        # Connect merge to dive output
-        if prev_node is not None:
-            output_node.setInput(0, prev_node)
-
-        # Layout nodes
-        dive_node.layoutChildren()
-
-        # Set group frame range - calculate total frames across all members
-        total_frames = 0
-        for member_uri in shot_members:
-            member_frame_range = get_frame_range(member_uri)
-            if member_frame_range:
-                total_frames += len(member_frame_range.full_range())
-        if total_frames > 0:
-            group_frame_range = FrameRange(
-                start_frame=0,
-                end_frame=total_frames - 1,
-                start_roll=0,
-                end_roll=0
-            )
-            util.set_frame_range(group_frame_range)
-
     def execute(self):
-
-        # Check if we're in a group context
-        group_context = _get_group_context()
-
-        if group_context:
-            # GROUP IMPORT IMPLEMENTATION
-            return self._execute_group_import(group_context)
 
         # Get nodes
         context = self.native()

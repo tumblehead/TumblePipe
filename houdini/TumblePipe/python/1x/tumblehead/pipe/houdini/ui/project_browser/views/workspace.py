@@ -10,7 +10,11 @@ class WorkspaceBrowser(QtWidgets.QWidget):
     selection_changed = Signal(object)
     open_location = Signal(object)
     create_entry = Signal(object)
+    create_batch_entry = Signal(object)
     remove_entry = Signal(object)
+    create_group = Signal(object)
+    edit_group = Signal(object)
+    delete_group = Signal(object)
 
     def __init__(self, api, parent=None):
         super().__init__(parent)
@@ -200,41 +204,58 @@ class WorkspaceBrowser(QtWidgets.QWidget):
                 pass
 
         # Convert selection Uri to path
-        selection_path = list(selection.segments) if selection is not None else None
+        if selection is not None:
+            if selection.purpose == 'groups':
+                selection_path = ['groups'] + list(selection.segments)
+            else:
+                selection_path = list(selection.segments)
+        else:
+            selection_path = None
         selection_index = self._index_path(selection_path) if selection_path else None
 
         # Check if the index path is the same (avoid unnecessary work)
         if selection_index == self._selection:
             return
 
-        # Clear the old selection (both visual and Qt selection)
-        if self._selection is not None:
-            try:
-                _set_style(self._selection, cleared_brush, cleared_brush)
-            except (IndexError, AttributeError):
-                # Old selection is invalid, just clear the reference
+        # Block signals during programmatic selection change to prevent
+        # _selection_changed from firing and emitting None to main.py
+        selection_model = self.tree_view.selectionModel()
+        if selection_model is not None:
+            selection_model.blockSignals(True)
+
+        try:
+            # Clear the old selection (both visual and Qt selection)
+            if self._selection is not None:
+                try:
+                    _set_style(self._selection, cleared_brush, cleared_brush)
+                except (IndexError, AttributeError):
+                    # Old selection is invalid, just clear the reference
+                    pass
+
+            # Always clear Qt selection when changing
+            self._clear_qt_selection()
+
+            # Set the new selection (both visual styling and Qt selection)
+            if selection_index is not None:
+                # Set visual styling
+                _set_style(selection_index, parent_brush, child_brush)
+
+                # Set Qt selection state
+                qt_selection_success = self._set_qt_selection(selection_index)
+                if not qt_selection_success:
+                    # Qt selection failed, but we can still keep the visual styling
+                    pass
+            else:
+                # selection_index is None, ensure Qt selection is cleared
+                # (already cleared above, but this makes intent explicit)
                 pass
 
-        # Always clear Qt selection when changing
-        self._clear_qt_selection()
-
-        # Set the new selection (both visual styling and Qt selection)
-        if selection_index is not None:
-            # Set visual styling
-            _set_style(selection_index, parent_brush, child_brush)
-
-            # Set Qt selection state
-            qt_selection_success = self._set_qt_selection(selection_index)
-            if not qt_selection_success:
-                # Qt selection failed, but we can still keep the visual styling
-                pass
-        else:
-            # selection_index is None, ensure Qt selection is cleared
-            # (already cleared above, but this makes intent explicit)
-            pass
-
-        # Update the current selection
-        self._selection = selection_index
+            # Update the current selection
+            self._selection = selection_index
+        finally:
+            # Re-enable signals
+            if selection_model is not None:
+                selection_model.blockSignals(False)
 
     def get_selection(self):
         if self._selection is None:
@@ -279,8 +300,9 @@ class WorkspaceBrowser(QtWidgets.QWidget):
             else:
                 name_path = None
 
-            # Emit the selection changed signal
-            self.selection_changed.emit(name_path)
+            # Convert path to Uri and emit
+            entity_uri = entity_uri_from_path(name_path) if name_path else None
+            self.selection_changed.emit(entity_uri)
         except Exception as e:
             raise RuntimeError(f"Error in workspace selection change: {e}")
 
@@ -295,7 +317,6 @@ class WorkspaceBrowser(QtWidgets.QWidget):
             self.tree_view.expand(index)
 
     def _right_clicked(self, point):
-        # Get item at point
         index = self.tree_view.indexAt(point)
         if not index.isValid():
             return
@@ -303,37 +324,40 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         item = model.itemFromIndex(index)
         name_path = self._get_path(item)
 
-        # Build the menu
         menu = QtWidgets.QMenu()
-        open_location_action = menu.addAction("Open Location")
-        create_entry_action = None
-        remove_entry_action = None
-        match name_path:
-            case ["assets"]:
-                create_entry_action = menu.addAction("Create Category")
-            case ["assets", _]:
-                remove_entry_action = menu.addAction("Remove Category")
-                create_entry_action = menu.addAction("Create Asset")
-            case ["assets", _, _]:
-                remove_entry_action = menu.addAction("Remove Asset")
-            case ["shots"]:
-                create_entry_action = menu.addAction("Create Sequence")
-            case ["shots", _]:
-                remove_entry_action = menu.addAction("Remove Sequence")
-                create_entry_action = menu.addAction("Create Shot")
-            case ["shots", _, _]:
-                remove_entry_action = menu.addAction("Remove Shot")
-            case _:
-                pass
 
-        # Execute the menu
+        if len(name_path) >= 1 and name_path[0] == "groups":
+            if len(name_path) <= 2:
+                new_group_action = menu.addAction("New Group")
+                selected_action = menu.exec_(self.tree_view.mapToGlobal(point))
+                if selected_action == new_group_action:
+                    self.create_group.emit(name_path)
+            else:
+                edit_group_action = menu.addAction("Edit Group")
+                delete_group_action = menu.addAction("Delete Group")
+                selected_action = menu.exec_(self.tree_view.mapToGlobal(point))
+                if selected_action is None:
+                    return
+                if selected_action == edit_group_action:
+                    self.edit_group.emit(name_path)
+                elif selected_action == delete_group_action:
+                    self.delete_group.emit(name_path)
+            return
+
+        open_location_action = menu.addAction("Open Location")
+        create_batch_action = menu.addAction("Add Entity")
+
+        remove_entry_action = None
+        if len(name_path) > 1:
+            remove_entry_action = menu.addAction("Remove Entity")
+
         selected_action = menu.exec_(self.tree_view.mapToGlobal(point))
         if selected_action is None:
             return
         if selected_action == open_location_action:
             return self.open_location.emit(name_path)
-        if selected_action == create_entry_action:
-            return self.create_entry.emit(name_path)
+        if selected_action == create_batch_action:
+            return self.create_batch_entry.emit(name_path)
         if selected_action == remove_entry_action:
             return self.remove_entry.emit(name_path)
 

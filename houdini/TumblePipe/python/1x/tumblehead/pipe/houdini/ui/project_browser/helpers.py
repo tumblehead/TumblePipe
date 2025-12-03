@@ -21,8 +21,10 @@ from tumblehead.util.uri import Uri
 
 
 def get_entity_type(entity_uri: Uri) -> str | None:
-    """Get entity type from URI ('asset' or 'shot')."""
+    """Get entity type from URI ('asset', 'shot', or 'group')."""
     if entity_uri is None: return None
+    if entity_uri.purpose == 'groups':
+        return 'group'
     if entity_uri.purpose != 'entity': return None
     if len(entity_uri.segments) < 1: return None
     context = entity_uri.segments[0]
@@ -38,6 +40,8 @@ def entity_uri_from_path(path: list[str]) -> Uri | None:
             return Uri.parse_unsafe(f'entity:/assets/{category}/{asset}')
         case ["shots", sequence, shot, *_]:
             return Uri.parse_unsafe(f'entity:/shots/{sequence}/{shot}')
+        case ["groups", context, group_name, *_]:
+            return Uri.parse_unsafe(f'groups:/{context}/{group_name}')
         case _:
             return None
 
@@ -80,13 +84,6 @@ def list_file_paths(context: Context):
 def latest_export_path_from_context(context: Context):
     """Get latest export path for a context."""
     return latest_export_path(context.entity_uri, context.department_name)
-
-
-def path_from_context(context: Context):
-    """Get path list from context (for workspace selection)."""
-    if context is None:
-        return None
-    return list(context.entity_uri.segments)
 
 
 def file_path_from_context(context: Context):
