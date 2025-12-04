@@ -53,6 +53,7 @@ class BatchEntityDialog(QtWidgets.QDialog):
         self._model = BatchEntityTableModel()
         if self._selected_schema is not None:
             self._model.set_schema(self._selected_schema)
+        self._model.dataChanged.connect(lambda *_: self._update_status())
 
         # Setup UI
         self.setWindowTitle("Add Entities")

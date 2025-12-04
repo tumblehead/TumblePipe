@@ -205,7 +205,7 @@ class ExportRenderLayer(ns.Node):
         context = dict(
             inputs = [],
             outputs = [dict(
-                entity = str(shot_uri),
+                uri = str(shot_uri),
                 department = department_name,
                 render_layer = render_layer_name,
                 version = version_name,

@@ -139,7 +139,7 @@ def save_entity_context(target_path, context: Context):
         return
 
     context_data = dict(
-        entity=str(context.entity_uri),
+        uri=str(context.entity_uri),
         department=context.department_name,
         timestamp=dt.datetime.now().isoformat(),
         user=get_user_name(),

@@ -79,7 +79,7 @@ class ImportShotLayer(ns.Node):
         context_data = load_json(context_path)
         layer_info = ctx.find_output(
             context_data,
-            entity = str(shot_uri),
+            uri = str(shot_uri),
             department = department_name
         )
         if layer_info is None: return dict()

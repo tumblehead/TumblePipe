@@ -172,9 +172,12 @@ class DatabaseWindow(QMainWindow):
         self._json_view.set_value(value)
         self._update_buttons()
 
+        # Store URI before refresh (refresh may trigger selection changes that set self._uri to None)
+        saved_uri = self._uri
+
         self._uri_view.refresh()
 
-        self.data_changed.emit(self._uri)
+        self.data_changed.emit(saved_uri)
 
     def closeEvent(self, event):
         if self._uri is not None and self._json_view.has_change():

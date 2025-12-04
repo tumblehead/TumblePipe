@@ -1199,12 +1199,12 @@ def load_entity_context(context_json_path: Path) -> Optional[Context]:
     if context_data is None:
         return None
 
-    entity_str = context_data.get('entity')
-    if not entity_str:
+    uri_str = context_data.get('uri')
+    if not uri_str:
         return None
 
     try:
-        entity_uri = Uri.parse_unsafe(entity_str)
+        entity_uri = Uri.parse_unsafe(uri_str)
         department_name = context_data.get('department', '')
         version_name = context_data.get('version', '')
 
@@ -1229,25 +1229,8 @@ def get_workfile_context(hip_file_path: Path) -> Optional[Context]:
     context_data = load_json(context_path)
     if context_data is None: return None
 
-    # Handle both old and new context.json formats
-    entity_str = context_data['entity']
-    if ':' in entity_str:
-        # New format: full URI (e.g., "entity:/shots/seq/shot" or "groups:/shots/test")
-        entity_uri = Uri.parse_unsafe(entity_str)
-    else:
-        # Old format: just entity type ("shot" or "asset")
-        # Reconstruct URI from file path structure
-        # Path: project/shots/seq/shot/dept/file.hip or project/assets/cat/asset/dept/file.hip
-        # Group path: project/groups/shots/test/dept/file.hip
-        dept_path = hip_file_path.parent
-        entity_path = dept_path.parent
-        parent_path = entity_path.parent
-        context_path = parent_path.parent
-        if context_path.name == 'groups':
-            # Group path structure: groups/context/group_name/dept/file.hip
-            entity_uri = Uri.parse_unsafe(f'groups:/{parent_path.name}/{entity_path.name}')
-        else:
-            entity_uri = Uri.parse_unsafe(f'entity:/{context_path.name}/{parent_path.name}/{entity_path.name}')
+    # Read entity URI from context
+    entity_uri = Uri.parse_unsafe(context_data['uri'])
 
     department_name = context_data['department']
 

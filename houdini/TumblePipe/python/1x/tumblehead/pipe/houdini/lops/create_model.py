@@ -24,14 +24,36 @@ class CreateModel(ns.Node):
         )
         return [entity.uri for entity in asset_entities]
 
+    def get_entity_source(self):
+        parm = self.parm('entity_source')
+        if parm is None: return 'from_settings'
+        return parm.eval()
+
+    def set_entity_source(self, entity_source):
+        valid_sources = ['from_context', 'from_settings']
+        if entity_source not in valid_sources: return
+        self.parm('entity_source').set(entity_source)
+
     def get_asset_uri(self) -> Uri | None:
-        asset_uris = self.list_asset_uris()
-        if len(asset_uris) == 0: return None
-        asset_uri_raw = self.parm('asset').eval()
-        if len(asset_uri_raw) == 0: return asset_uris[0]
-        asset_uri = Uri.parse_unsafe(asset_uri_raw)
-        if asset_uri not in asset_uris: return None
-        return asset_uri
+        entity_source = self.get_entity_source()
+        match entity_source:
+            case 'from_context':
+                file_path = Path(hou.hipFile.path())
+                context = get_workfile_context(file_path)
+                if context is None: return None
+                # Verify it's an asset entity
+                if context.entity_uri.segments[0] != 'assets': return None
+                return context.entity_uri
+            case 'from_settings':
+                asset_uris = self.list_asset_uris()
+                if len(asset_uris) == 0: return None
+                asset_uri_raw = self.parm('asset').eval()
+                if len(asset_uri_raw) == 0: return asset_uris[0]
+                asset_uri = Uri.parse_unsafe(asset_uri_raw)
+                if asset_uri not in asset_uris: return None
+                return asset_uri
+            case _:
+                raise AssertionError(f'Unknown entity source: {entity_source}')
 
     def set_asset_uri(self, asset_uri: Uri):
         asset_uris = self.list_asset_uris()
@@ -62,10 +84,14 @@ def on_created(raw_node):
     if raw_node_type != node_type: return
     node = CreateModel(raw_node)
 
-    # Parse scene file path
+    # Parse scene file path and check for valid asset context
     file_path = Path(hou.hipFile.path())
     context = get_workfile_context(file_path)
-    if context is None: return
+
+    # If no valid asset context, switch to from_settings
+    if context is None or context.entity_uri.segments[0] != 'assets':
+        node.parm('entity_source').set('from_settings')
+        return
 
     # Set the default values from context
     node.set_asset_uri(context.entity_uri)

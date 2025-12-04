@@ -55,6 +55,14 @@ def set_renderable(context: str, name: str, renderable: bool):
     properties['renderable'] = renderable
     api.config.set_properties(department_uri, properties)
 
+def is_renderable(context: str, name: str) -> bool:
+    """Check if a department is renderable."""
+    department_uri = DEPARTMENTS_URI / context / name
+    properties = api.config.get_properties(department_uri)
+    if properties is None:
+        raise KeyError(f'Department not found: {department_uri}')
+    return properties['renderable']
+
 def list_departments(context: str) -> list[Department]:
     departments_data = api.config.cache.get('departments', {})
     root_children = departments_data.get('children', {})

@@ -23,6 +23,7 @@ from tumblehead.util.io import (
 )
 from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Hython
+from tumblehead.config.department import is_renderable
 from tumblehead.pipe.paths import (
     next_export_path
 )
@@ -32,6 +33,70 @@ api = default_client()
 def _error(msg):
     logging.error(msg)
     return 1
+
+
+def _get_entity_type(entity_uri: Uri) -> str | None:
+    """Get entity type from URI ('shot' or 'asset')."""
+    if entity_uri.purpose != 'entity':
+        return None
+    if len(entity_uri.segments) < 1:
+        return None
+    context = entity_uri.segments[0]
+    if context == 'shots':
+        return 'shot'
+    if context == 'assets':
+        return 'asset'
+    return None
+
+
+def _get_asset_uri(entity_uri: Uri) -> Uri | None:
+    """
+    Get asset URI (without department) from entity URI.
+
+    For entity:/assets/CHAR/Steen -> returns entity:/assets/CHAR/Steen
+    """
+    if _get_entity_type(entity_uri) != 'asset':
+        return None
+    # Asset URIs have format: entity:/assets/category/asset
+    if len(entity_uri.segments) < 3:
+        return None
+    return Uri.parse_unsafe(f'entity:/assets/{entity_uri.segments[1]}/{entity_uri.segments[2]}')
+
+
+def _trigger_asset_build(entity_uri: Uri, settings: dict):
+    """
+    Trigger asset build job after successful renderable department publish.
+
+    Args:
+        entity_uri: The asset entity URI
+        settings: Settings from config containing priority and pool_name
+    """
+    try:
+        from tumblehead.farm.jobs.houdini.build import job as build_job
+
+        # Get asset base URI (without department)
+        asset_uri = _get_asset_uri(entity_uri)
+        if asset_uri is None:
+            logging.warning(f'Cannot determine asset URI from: {entity_uri}')
+            return
+
+        # Submit asset build job
+        build_config = {
+            'entity_uri': str(asset_uri),
+            'priority': settings.get('priority', 50),
+            'pool_name': settings.get('pool_name', 'general')
+        }
+
+        logging.info(f'Triggering asset build for: {asset_uri}')
+        result = build_job.submit(build_config)
+        if result != 0:
+            logging.warning(f'Asset build job submission returned non-zero: {result}')
+        else:
+            logging.info(f'Asset build job submitted successfully for: {asset_uri}')
+
+    except Exception as e:
+        logging.warning(f'Failed to trigger asset build: {e}')
+
 
 def _next_export_path(entity):
     # Convert entity JSON to Uri and department
@@ -81,8 +146,15 @@ def main(config):
 
     # Check if the export was generated (skip for groups - they export individual members)
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    department_name = config['entity']['department']
     if entity_uri.purpose != 'groups' and not export_path.exists():
         return _error(f'Export not found: {export_path}')
+
+    # Auto-trigger asset build if this is a renderable asset department
+    entity_type = _get_entity_type(entity_uri)
+    if entity_type == 'asset' and is_renderable('assets', department_name):
+        logging.info(f'Renderable asset department published: {department_name}')
+        _trigger_asset_build(entity_uri, config.get('settings', {}))
 
     # Done
     print('Success')

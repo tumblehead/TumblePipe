@@ -231,7 +231,7 @@ class ImportAssets(ns.Node):
             _connect(duplicate_metadata_node, merge_node)
 
             # Update the script arguments
-            asset_metadata_base = asset_metadata_path.rsplit('/', 1)[0]  # /METADATA/assets/char
+            asset_metadata_base = asset_metadata_path.rsplit('/', 1)[0]  # /_METADATA/_assets/_char
             base_name = asset_uri.segments[-1]  # Last segment is the asset name
             for index in range(instances):
                 instance_name = api.naming.get_instance_name(base_name, index)

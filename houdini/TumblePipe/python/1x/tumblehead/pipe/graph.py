@@ -73,7 +73,7 @@ def get_latest_version(api, entity_uri: Uri, department_name: Optional[str]) -> 
 
 def entity_from_dict(data: dict) -> Optional[tuple[Uri, Optional[str]]]:
     """Create (entity_uri, department_name) tuple from context.json input/output dict."""
-    entity_str = data.get('entity')
+    entity_str = data.get('uri')
     if not entity_str:
         return None
 
@@ -319,7 +319,7 @@ def resolve_shot_build(
 
             layer_info = ctx.find_output(
                 context_data,
-                entity=str(shot_uri),
+                uri=str(shot_uri),
                 department=department_name
             )
 
@@ -373,4 +373,45 @@ def resolve_shot_build(
         assets=assets,
         shot_layers=shot_layer_paths,
         asset_layers=asset_layer_paths
+    )
+
+
+def resolve_asset_build(
+    graph: Graph,
+    api,
+    asset_uri: Uri,
+    asset_departments: list[str]
+) -> dict:
+    """
+    Resolve all versions needed to build a staged asset.
+
+    Finds latest versions for each stageable asset department
+    (e.g., lookdev, model) in the specified order.
+
+    Args:
+        graph: Scanned dependency graph
+        api: API client
+        asset_uri: Asset URI to build (e.g., entity:/assets/CHAR/Steen)
+        asset_departments: List of department names in priority order
+                          (stronger layers first, e.g., ['lookdev', 'model'])
+
+    Returns: {
+        'asset_uri': asset_uri,
+        'department_layers': {dept_name: version_path}
+    }
+    """
+    if not graph.scanned:
+        raise ValueError("Graph not scanned")
+
+    # Find latest version for each department
+    department_layers = {}
+    for department_name in asset_departments:
+        latest_version_path = latest_export_path(asset_uri, department_name)
+        if latest_version_path is None:
+            continue
+        department_layers[department_name] = latest_version_path
+
+    return dict(
+        asset_uri=asset_uri,
+        department_layers=department_layers
     )

@@ -21,7 +21,7 @@ from tumblehead.util.io import load_json
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
 from tumblehead.config.groups import get_group
-from tumblehead.pipe.paths import next_staged_path, latest_hip_file_path
+from tumblehead.pipe.paths import next_staged_path, next_staged_file_path, latest_hip_file_path
 from tumblehead.apps.deadline import (
     Deadline,
     Batch,
@@ -171,6 +171,8 @@ def submit(
     else:
         entity_type = None
     dependent_departments = _find_dependent_departments(department_name, entity_type if entity_type != 'group' else 'shot')
+    # Include the current department at the start so it gets a publish task too
+    departments_to_publish = [department_name] + dependent_departments
 
     # Find affected shots
     logging.debug('Finding affected shots...')
@@ -251,7 +253,7 @@ def submit(
 
             return publish_task.build(publish_config, paths, temp_path)
 
-        for dept_name in dependent_departments:
+        for dept_name in departments_to_publish:
             if entity_type == 'group':
                 # For groups: check if dept has group workfile, else split to members
                 group_workfile = latest_hip_file_path(entity_uri, dept_name)
@@ -298,7 +300,7 @@ def submit(
                 'priority': priority,
                 'pool_name': pool_name,
                 'entity_uri': str(shot_uri),
-                'output_path': path_str(next_staged_path(shot_uri))
+                'output_path': path_str(next_staged_file_path(shot_uri))
             }
             build_job = build_task.build(build_config, paths, temp_path)
 

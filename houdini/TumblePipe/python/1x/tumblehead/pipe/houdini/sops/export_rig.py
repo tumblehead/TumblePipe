@@ -73,7 +73,7 @@ class ExportRig(ns.Node):
         context = dict(
             inputs = [],
             outputs = [dict(
-                entity = str(asset_uri),
+                uri = str(asset_uri),
                 department = 'rig',
                 version = version_name,
                 timestamp = timestamp,

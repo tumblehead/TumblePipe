@@ -11,7 +11,7 @@ import tumblehead.pipe.houdini.util as util
 from tumblehead.pipe.paths import (
     get_workfile_context,
     load_entity_context,
-    latest_staged_path
+    latest_staged_file_path
 )
 
 api = default_client()
@@ -54,7 +54,7 @@ def _indent(lines):
 def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name):
     """Generate Python script to set shot metadata in USD stage."""
 
-    # Generate metadata prim path (keeps all segments: /METADATA/shots/seq/shot)
+    # Generate metadata prim path (keeps all segments: /_METADATA/_shots/_seq/_shot)
     from tumblehead.pipe.houdini.util import uri_to_metadata_prim_path
     metadata_prim_path = uri_to_metadata_prim_path(shot_uri)
 
@@ -298,7 +298,7 @@ class ImportShot(ns.Node):
         if shot_uri is None: return
 
         # Get staged file path
-        staged_file_path = latest_staged_path(shot_uri)
+        staged_file_path = latest_staged_file_path(shot_uri)
         if staged_file_path is None: return
         if not staged_file_path.exists(): return
 

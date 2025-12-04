@@ -33,7 +33,6 @@ from tumblehead.pipe.houdini.cops import build_comp
 from tumblehead.pipe.paths import get_workfile_context, Context
 from tumblehead.util.io import store_json
 from tumblehead.naming import random_name
-import tumblehead.farm.jobs.houdini.propagate.job as propagate_job
 
 from .constants import AUTO_SETTINGS_DEFAULT, Section, Action, Location, FrameRangeMode
 from .helpers import (
@@ -98,14 +97,6 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._global_refresh_button.clicked.connect(self._global_refresh)
         workspace_header_layout.addWidget(self._global_refresh_button)
 
-        # Create the manage groups button
-        self._manage_groups_button = QtWidgets.QPushButton()
-        self._manage_groups_button.setIcon(hqt.Icon("BUTTONS_list_info"))
-        self._manage_groups_button.setToolTip("Manage entity groups")
-        self._manage_groups_button.setMaximumWidth(30)
-        self._manage_groups_button.clicked.connect(self._open_group_manager)
-        workspace_header_layout.addWidget(self._manage_groups_button)
-
         # Create the database editor button
         self._database_editor_button = QtWidgets.QPushButton()
         self._database_editor_button.setIcon(hqt.Icon("SOP_file"))
@@ -113,6 +104,14 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._database_editor_button.setMaximumWidth(30)
         self._database_editor_button.clicked.connect(self._open_database_editor)
         workspace_header_layout.addWidget(self._database_editor_button)
+
+        # Create the rebuild nodes button
+        self._rebuild_nodes_button = QtWidgets.QPushButton()
+        self._rebuild_nodes_button.setIcon(hqt.Icon("SHELF_push"))
+        self._rebuild_nodes_button.setToolTip("Rebuild all TH nodes in scene")
+        self._rebuild_nodes_button.setMaximumWidth(30)
+        self._rebuild_nodes_button.clicked.connect(self._rebuild_selected_nodes)
+        workspace_header_layout.addWidget(self._rebuild_nodes_button)
 
         # Database editor window reference
         self._database_window = None
@@ -420,17 +419,6 @@ class ProjectBrowser(QtWidgets.QWidget):
         from qtpy.QtCore import QTimer
         QTimer.singleShot(600, lambda: self._hide_refresh_spinner())
 
-    def _open_group_manager(self):
-        """Open the entity groups manager dialog"""
-        from tumblehead.pipe.houdini.ui.project_browser.dialogs import GroupManagerDialog
-
-        dialog = GroupManagerDialog(api, parent=self)
-        dialog.exec_()
-
-        # Refresh workspace browser after dialog closes
-        # (groups may have changed, affecting workfile paths)
-        self.refresh()
-
     def _create_group(self, name_path):
         """Open group editor dialog to create a new group
 
@@ -531,6 +519,8 @@ class ProjectBrowser(QtWidgets.QWidget):
 
     def _on_database_changed(self, uri):
         """Handle data changes from database editor"""
+        if uri is None:
+            return
         purpose = uri.purpose
         if purpose == 'entity':
             self._workspace_browser.refresh()
@@ -542,6 +532,11 @@ class ProjectBrowser(QtWidgets.QWidget):
     def _on_database_window_closed(self):
         """Handle database window closure"""
         self._database_window = None
+
+    def _rebuild_selected_nodes(self):
+        """Rebuild selected TH nodes in place, preserving settings and connections."""
+        from tumblehead.pipe.houdini.tools.rebuild_nodes import rebuild_nodes
+        rebuild_nodes()
 
     def _selection(self):
         if self._selected_entity is None:
@@ -1388,88 +1383,64 @@ class ProjectBrowser(QtWidgets.QWidget):
             for export_node in group_export_nodes:
                 export_node.execute()
 
-    def _submit_propagate_job(self):
-        if self._context is None:
-            return
-
-        if not self._settings_view.get_auto_propagate_enabled():
-            return
-
-        # Get propagation settings
-        priority = self._settings_view.get_propagation_priority()
-        pool_name = self._settings_view.get_propagation_pool()
-
-        # Create entity dict from context
-        entity_dict = {
-            'uri': str(self._context.entity_uri),
-            'department': self._context.department_name
-        }
-
-        # Get frame range for job
-        frame_range = BlockRange(1, 1)
-        entity_type = get_entity_type(self._context.entity_uri)
-        if entity_type == 'shot':
-            shot_frame_range = get_frame_range(self._context.entity_uri)
-            if shot_frame_range is not None:
-                frame_range = shot_frame_range.full_range()
-
-        config = {
-            'entity': entity_dict,
-            'settings': {
-                'priority': priority,
-                'pool_name': pool_name,
-                'first_frame': frame_range.first_frame,
-                'last_frame': frame_range.last_frame
-            }
-        }
-
-        # Create temp directory for config
-        import tempfile
-        from tumblehead.api import fix_path
-        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
-        root_temp_path.mkdir(parents=True, exist_ok=True)
-
-        with tempfile.TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-            temp_path = Path(temp_dir)
-            config_path = temp_path / f'propagate_{random_name(8)}.json'
-            store_json(config_path, config)
-
-            # Submit propagate job
-            try:
-                propagate_job.submit(config, {})
-            except Exception as e:
-                print(f'Error submitting propagate job: {str(e)}')
-                import traceback
-                traceback.print_exc()
-
     def _publish_scene_clicked(self):
+        from .dialogs import ProcessDialog
+        from .utils.process_executor import collect_publish_tasks
+
+        # Check if we have a valid context
+        if self._context is None:
+            hou.ui.displayMessage(
+                "No context available for publishing.",
+                severity=hou.severityType.Warning
+            )
+            return
 
         try:
-            # Save scene first (this already handles workfile spinner show/hide/flash)
-            self._save_scene()
+            # Collect tasks for current context (read-only scan, no save yet)
+            tasks = collect_publish_tasks(self._context)
 
-            # Then publish (handle export operations)
-            self._publish_scene()
+            if len(tasks) == 0:
+                hou.ui.displayMessage(
+                    "No export nodes found for the current context.",
+                    severity=hou.severityType.Warning
+                )
+                return
 
-            # Submit propagate job if auto-propagate is enabled
-            self._submit_propagate_job()
-
-            # Hide export spinner and flash export success
-            # Use QTimer to ensure proper sequencing after publish completes
-            from qtpy.QtCore import QTimer
-            QTimer.singleShot(100, lambda: self._details_view.hide_export_spinner())
-            QTimer.singleShot(200, lambda: self._details_view.flash_export_success())
-
+            # Show process dialog with save as pre-execute callback
+            # Save will only happen when user clicks Execute
+            dialog = ProcessDialog(
+                title="Publish",
+                tasks=tasks,
+                current_department=self._context.department_name,
+                pre_execute_callback=self._save_scene,
+                parent=self
+            )
+            dialog.process_completed.connect(self._on_publish_completed)
+            dialog.exec_()
 
         except Exception as e:
             import traceback
             print(f"Error during publish: {str(e)}")
             print("Full traceback:")
             traceback.print_exc()
-            # Hide spinners on error
-            self._details_view.hide_workfile_spinner()
-            self._details_view.hide_export_spinner()
             hou.ui.displayMessage(f"Error during publish: {str(e)}", severity=hou.severityType.Error)
+
+    def _on_publish_completed(self, results: dict):
+        """Handle completion of publish process dialog"""
+        completed = results.get('completed', [])
+        failed = results.get('failed', [])
+
+        if completed:
+            # Flash export success in details view
+            self._details_view.flash_export_success()
+
+        if failed:
+            # Show error summary
+            error_count = len(failed)
+            hou.ui.displayMessage(
+                f"{error_count} task(s) failed during publish. Check the process dialog for details.",
+                severity=hou.severityType.Warning
+            )
         
     def _open_scene_info(self):
         pass

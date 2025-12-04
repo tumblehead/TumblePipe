@@ -460,7 +460,7 @@ class BuildShot(ns.Node):
 
                     # Update metadata instance names
                     python_node = duplicate_subnet.createNode('pythonscript', 'metadata_update')
-                    asset_metadata_base = asset_metadata_path.rsplit('/', 1)[0]  # /METADATA/assets/char
+                    asset_metadata_base = asset_metadata_path.rsplit('/', 1)[0]  # /_METADATA/_assets/_char
                     python_node.parm('python').set('\n'.join(_update_script([
                         (f'{asset_metadata_base}/{instance_name}', instance_name)
                         for instance_name in instance_names

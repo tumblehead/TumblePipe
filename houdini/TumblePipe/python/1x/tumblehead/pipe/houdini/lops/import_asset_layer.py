@@ -6,6 +6,7 @@ from tumblehead.api import path_str, default_client
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
 import tumblehead.pipe.houdini.nodes as ns
+from tumblehead.pipe.houdini.util import uri_to_metadata_prim_path
 from tumblehead.pipe.paths import (
     list_version_paths,
     get_export_file_path,
@@ -195,7 +196,7 @@ class ImportAssetLayer(ns.Node):
         if version_name is None: return
 
         # Set metadata script
-        metadata_prim_path = '/'.join(['', 'METADATA'] + asset_uri.segments)
+        metadata_prim_path = uri_to_metadata_prim_path(asset_uri)
         self.parm('metaprim_primpath').set(metadata_prim_path)
         script = _set_metadata_script(asset_uri, department_name, version_name, metadata_prim_path)
         self.parm('metadata_python').set('\n'.join(script))
@@ -223,7 +224,7 @@ def on_created(raw_node):
 
     # Set node style
     set_style(raw_node)
-    
+
     # Context
     raw_node_type = raw_node.type()
     if raw_node_type is None: return

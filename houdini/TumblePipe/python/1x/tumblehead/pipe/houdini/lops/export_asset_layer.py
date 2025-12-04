@@ -231,7 +231,7 @@ class ExportAssetLayer(ns.Node):
         context_data = dict(
             inputs = [],
             outputs = [dict(
-                entity = str(asset_uri),
+                uri = str(asset_uri),
                 department = department_name,
                 version = version_name,
                 timestamp = timestamp.isoformat(),

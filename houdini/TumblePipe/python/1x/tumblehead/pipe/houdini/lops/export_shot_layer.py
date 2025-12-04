@@ -7,9 +7,10 @@ import json
 import hou
 
 from tumblehead.api import get_user_name, path_str, fix_path, default_client
-from tumblehead.util.io import store_json
+from tumblehead.util.io import store_json, store_text
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
+from tumblehead.pipe.usd import generate_usda_content
 from tumblehead.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblehead.apps.deadline import Deadline
 from tumblehead.pipe.houdini.lops import submit_render
@@ -65,6 +66,60 @@ def _export_prim(dive_node, prim_path, render_range, step, file_path):
     export_node.parm('f3').set(step)
     export_node.parm('lopoutput').set(path_str(file_path))
     export_node.parm('execute').pressButton()
+
+def _create_combined_layer_usda(
+    version_path: Path,
+    shot_uri: Uri,
+    department_name: str,
+    version_name: str,
+    fps: float,
+    frame_range: 'FrameRange'
+):
+    """
+    Create a combined .usda file that references all exported USD files.
+
+    This creates a single entry point file like 010_010_layout_v0013.usda that
+    sublayers all the stage components (cameras, lights, volumes, etc.) and
+    asset instance files.
+    """
+    # Collect all .usd files in the version directory
+    usd_files = list(version_path.glob('*.usd'))
+    if not usd_files:
+        return
+
+    # Define ordering for stage component files (these should come first)
+    stage_component_order = ['cameras', 'lights', 'volumes', 'collections', 'render', 'scene']
+
+    def get_sort_key(file_path: Path):
+        name = file_path.stem.lower()
+        # Check if this is a stage component file
+        for idx, component in enumerate(stage_component_order):
+            if name.startswith(component):
+                return (0, idx, name)  # Stage components first, in defined order
+        # Asset instance files come after stage components
+        return (1, 0, name)  # Sort alphabetically within asset files
+
+    # Sort files
+    sorted_files = sorted(usd_files, key=get_sort_key)
+
+    # Generate combined usda filename: {shot}_{department}_{version}.usda
+    shot_name = '_'.join(shot_uri.segments)
+    combined_filename = f'{shot_name}_{department_name}_{version_name}.usda'
+    combined_path = version_path / combined_filename
+
+    # Generate USDA content with timing metadata
+    render_range_obj = frame_range.full_range()
+    usda_content = generate_usda_content(
+        layer_paths=sorted_files,
+        output_path=combined_path,
+        fps=fps,
+        start_frame=render_range_obj.first_frame,
+        end_frame=render_range_obj.last_frame
+    )
+
+    # Write the combined file
+    store_text(combined_path, usda_content)
+
 
 def _export_prims(dive_node, prim_paths, render_range, step, file_path):
     """Export multiple prims to a single bundled USD file"""
@@ -399,7 +454,7 @@ class ExportShotLayer(ns.Node):
             context = dict(
                 inputs = list(map(json.loads, asset_inputs)),
                 outputs = [dict(
-                    entity = str(shot_uri),
+                    uri = str(shot_uri),
                     department = department_name,
                     version = version_name,
                     timestamp = timestamp.isoformat(),
@@ -421,6 +476,16 @@ class ExportShotLayer(ns.Node):
                     shutil.copy(temp_item_path, output_item_path)
                 if temp_item_path.is_dir():
                     shutil.copytree(temp_item_path, output_item_path)
+
+            # Create combined .usda file for this export
+            _create_combined_layer_usda(
+                version_path=version_path,
+                shot_uri=shot_uri,
+                department_name=department_name,
+                version_name=version_name,
+                fps=fps,
+                frame_range=frame_range
+            )
 
             # Clear the cache
             self.parm('cache_loadfromdisk').set(0)

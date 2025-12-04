@@ -285,7 +285,7 @@ class DetailsView(QtWidgets.QWidget):
                     return dict()
                 result = ctx.find_output(
                     context_data,
-                    entity=str(context.entity_uri),
+                    uri=str(context.entity_uri),
                 )
                 return result if result is not None else dict()
 
@@ -375,9 +375,7 @@ class DetailsView(QtWidgets.QWidget):
     def _publish(self):
         if self._context is None:
             return
-        # Show spinners immediately when publish button is clicked
-        self.show_workfile_spinner("Saving...")
-        self.show_export_spinner("Publishing...")
+        # Don't show spinners - dialog handles progress feedback
         self.publish_scene.emit()
 
     def _scene_info(self):

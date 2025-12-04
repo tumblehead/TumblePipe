@@ -132,7 +132,7 @@ def is_render_var(prim):
     return prim.GetTypeName() == 'RenderVar'
 
 def list_assets(root):
-    metadata_root = root.GetPrimAtPath('/METADATA')
+    metadata_root = root.GetPrimAtPath('/_METADATA')
     if not metadata_root.IsValid(): return []
     return list(map(get_metadata, iter_scene(metadata_root, is_asset)))
 
@@ -152,6 +152,12 @@ def list_render_vars(prim):
 # USD Prim Path Helpers
 ###############################################################################
 
+def _sanitize_prim_segment(segment: str) -> str:
+    """Always prefix with underscore for consistent metadata prim naming."""
+    if not segment:
+        return segment
+    return f'_{segment}'
+
 def uri_to_prim_path(uri: Uri) -> str:
     """
     Convert entity URI to USD prim path by omitting first segment.
@@ -166,7 +172,7 @@ def uri_to_prim_path(uri: Uri) -> str:
     Returns:
         USD prim path string
     """
-    segments = uri.segments[1:]
+    segments = [_sanitize_prim_segment(s) for s in uri.segments[1:]]
     return '/' + '/'.join(segments) if segments else '/'
 
 
@@ -175,8 +181,8 @@ def uri_to_metadata_prim_path(uri: Uri) -> str:
     Convert entity URI to USD metadata prim path, keeping all segments.
 
     Examples:
-        entity:/shots/seq010/shot0010 -> /METADATA/shots/seq010/shot0010
-        entity:/assets/char/mom -> /METADATA/assets/char/mom
+        entity:/shots/seq010/shot0010 -> /_METADATA/_shots/_seq010/_shot0010
+        entity:/assets/char/mom -> /_METADATA/_assets/_char/_mom
 
     Args:
         uri: Entity URI
@@ -185,10 +191,11 @@ def uri_to_metadata_prim_path(uri: Uri) -> str:
         USD metadata prim path string
     """
     if len(uri.segments) == 0:
-        return '/METADATA'
+        return '/_METADATA'
 
-    # Build path: /METADATA/{all_segments}
-    path_segments = ['', 'METADATA'] + uri.segments
+    # Build path: /_METADATA/{all_segments}
+    sanitized_segments = [_sanitize_prim_segment(s) for s in uri.segments]
+    path_segments = ['', '_METADATA'] + sanitized_segments
     return '/'.join(path_segments)
 
 
@@ -210,5 +217,5 @@ def uri_to_parent_prim_path(uri: Uri) -> str:
     """
     if len(uri.segments) < 3:
         return '/'
-    parent_segments = uri.segments[1:-1]
+    parent_segments = [_sanitize_prim_segment(s) for s in uri.segments[1:-1]]
     return '/' + '/'.join(parent_segments)

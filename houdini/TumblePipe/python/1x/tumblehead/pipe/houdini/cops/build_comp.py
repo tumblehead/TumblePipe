@@ -1358,7 +1358,7 @@ class BuildComp(ns.Node):
                 # Write context data to the output
                 output_context_path = output_frames_path.parent / 'context.json'
                 store_json(output_context_path, dict(
-                    entity = str(shot_uri),
+                    uri = str(shot_uri),
                     render_layer_name = render_layer_name,
                     first_frame = render_range.first_frame,
                     last_frame = render_range.last_frame,
