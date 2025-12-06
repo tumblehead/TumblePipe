@@ -46,7 +46,7 @@ config = {
         'user_name': 'string',
         'purpose': 'string',
         'pool_name': 'string',
-        'render_layer_name': 'string',
+        'variant_name': 'string',
         'render_department_name': 'string',
         'render_settings_path': 'string',
         'tile_count': 'int',
@@ -107,7 +107,7 @@ def _is_valid_config(config):
         if not _check_str(settings, 'user_name'): return False
         if not _check_str(settings, 'purpose'): return False
         if not _check_str(settings, 'pool_name'): return False
-        if not _check_str(settings, 'render_layer_name'): return False
+        if not _check_str(settings, 'variant_name'): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
         if not _check_int(settings, 'tile_count'): return False
@@ -193,7 +193,7 @@ def submit(
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
     channel_name = config['tasks']['export']['channel_name']
-    render_layer_name = config['settings']['render_layer_name']
+    variant_name = config['settings']['variant_name']
 
     # Parameters
     project_name = get_project_name()
@@ -215,7 +215,7 @@ def submit(
             f'{project_name} '
             f'{purpose} '
             f'{entity_uri} '
-            f'{render_layer_name} '
+            f'{variant_name} '
             f'{user_name} '
             f'{timestamp}'
         )

@@ -7,11 +7,40 @@ from tumblehead.pipe.paths import (
     get_workfile_context
 )
 from tumblehead.util.uri import Uri
+from tumblehead.pipe.houdini.util import uri_to_metadata_prim_path
 import tumblehead.pipe.houdini.nodes as ns
 
 api = default_client()
 
 DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/create_model')
+
+
+def _metadata_script(asset_uri: Uri) -> str:
+    """Generate Python script for creating asset metadata prim."""
+    metadata_prim_path = uri_to_metadata_prim_path(asset_uri)
+    entity_name = asset_uri.segments[-1]
+
+    script = f'''import hou
+
+from tumblehead.pipe.houdini import util
+
+node = hou.pwd()
+stage = node.editableStage()
+
+# Create metadata prim
+metadata_path = "{metadata_prim_path}"
+prim = stage.DefinePrim(metadata_path, "Scope")
+
+# Set metadata
+metadata = {{
+    'uri': '{str(asset_uri)}',
+    'instance': '{entity_name}',
+    'inputs': []
+}}
+util.set_metadata(prim, metadata)
+'''
+    return script
+
 
 class CreateModel(ns.Node):
     def __init__(self, native):
@@ -60,6 +89,19 @@ class CreateModel(ns.Node):
         if asset_uri not in asset_uris: return
         self.parm('asset').set(str(asset_uri))
 
+    def get_metadata_content(self) -> str:
+        """Get metadata script content."""
+        asset_uri = self.get_asset_uri()
+        if asset_uri is None:
+            return ''
+        return _metadata_script(asset_uri)
+
+    def execute(self):
+        """Execute node - generate and set metadata script."""
+        script = self.get_metadata_content()
+        self.parm('metadata_python').set(script)
+
+
 def create(scene, name):
     node_type = ns.find_node_type('create_model', 'Lop')
     assert node_type is not None, 'Could not find create_model node type'
@@ -95,6 +137,12 @@ def on_created(raw_node):
 
     # Set the default values from context
     node.set_asset_uri(context.entity_uri)
+
+def execute():
+    """Execute node from HDA callback."""
+    raw_node = hou.pwd()
+    node = CreateModel(raw_node)
+    node.execute()
 
 def _get_materials(geo, outputnode):
     materials = []

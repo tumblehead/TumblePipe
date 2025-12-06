@@ -311,9 +311,9 @@ def submit(
         # Add notification job
         notify_msg = f'Propagated {entity_uri}'
         if dependent_departments:
-            notify_msg += f' → {len(dependent_departments)} departments'
+            notify_msg += f' -> {len(dependent_departments)} departments'
         if affected_shots:
-            notify_msg += f' → {len(affected_shots)} shots'
+            notify_msg += f' -> {len(affected_shots)} shots'
 
         notify_job = notify_task.build(dict(
             title = f'notify propagate {entity_uri}',

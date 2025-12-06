@@ -113,6 +113,36 @@ def add_metadata_input(metadata, input_datum):
     input_data.add(json.dumps(input_datum))
     metadata['inputs'] = list(map(json.loads, input_data))
 
+def get_source_department(inputs: list[dict], department_order: list[str]) -> str | None:
+    """
+    Find the source department (first shot department) from inputs array.
+
+    Extracts all shot department entries from inputs and returns the one
+    that appears earliest in the pipeline department order.
+
+    Args:
+        inputs: List of input dicts with 'uri' and 'department' keys
+        department_order: List of department names in pipeline order
+
+    Returns:
+        The source department name, or None if no shot entries found
+    """
+    # Extract shot department entries (URIs starting with entity:/shots/)
+    shot_depts = [
+        inp['department'] for inp in inputs
+        if inp.get('uri', '').startswith('entity:/shots/')
+    ]
+    if not shot_depts:
+        return None
+
+    # Return the one earliest in pipeline order
+    for dept in department_order:
+        if dept in shot_depts:
+            return dept
+
+    # Fallback to first shot department found
+    return shot_depts[0]
+
 def remove_metadata(prim):
     prim.ClearMetadata('customData')
 
@@ -121,6 +151,13 @@ def is_asset(prim):
     if metadata is None: return False
     uri = Uri.parse_unsafe(metadata['uri'])
     return uri.segments[0] == 'assets' if len(uri.segments) > 0 else False
+
+def is_shot(prim):
+    """Check if a prim contains shot metadata."""
+    metadata = get_metadata(prim)
+    if metadata is None: return False
+    uri = Uri.parse_unsafe(metadata['uri'])
+    return uri.segments[0] == 'shots' if len(uri.segments) > 0 else False
 
 def is_camera(prim):
     return prim.GetTypeName() == 'Camera'
@@ -136,6 +173,12 @@ def list_assets(root):
     if not metadata_root.IsValid(): return []
     return list(map(get_metadata, iter_scene(metadata_root, is_asset)))
 
+def list_shots(root):
+    """List all shot metadata dicts in the stage."""
+    metadata_root = root.GetPrimAtPath('/_METADATA')
+    if not metadata_root.IsValid(): return []
+    return list(map(get_metadata, iter_scene(metadata_root, is_shot)))
+
 def list_cameras(prim):
     def _get_path(prim): return str(prim.GetPath())
     return list(map(_get_path, iter_scene(prim, is_camera)))
@@ -147,6 +190,38 @@ def list_lights(prim):
 def list_render_vars(prim):
     def _get_path(prim): return str(prim.GetPath())
     return list(map(_get_path, iter_scene(prim, is_render_var)))
+
+def get_frame_range_from_stage(stage) -> FrameRange | None:
+    """Extract frame range from USD stage shot metadata.
+
+    Returns first shot's frame range, or None if no shots found.
+    """
+    if stage is None: return None
+    root = stage.GetPseudoRoot()
+    shots = list_shots(root)
+    if len(shots) == 0: return None
+
+    shot = shots[0]  # Use first shot found
+    return FrameRange(
+        shot['start_frame'],
+        shot['end_frame'],
+        shot['start_roll'],
+        shot['end_roll']
+    )
+
+def get_selected_lop_node():
+    """Get the currently selected LOP node, if any."""
+    selected = hou.selectedNodes()
+    for node in selected:
+        if node.type().category().name() != 'Lop':
+            continue
+        try:
+            stage = node.stage()
+            if stage is not None:
+                return node
+        except:
+            continue
+    return None
 
 ###############################################################################
 # USD Prim Path Helpers
@@ -172,7 +247,7 @@ def uri_to_prim_path(uri: Uri) -> str:
     Returns:
         USD prim path string
     """
-    segments = [_sanitize_prim_segment(s) for s in uri.segments[1:]]
+    segments = uri.segments[1:]
     return '/' + '/'.join(segments) if segments else '/'
 
 
@@ -217,5 +292,5 @@ def uri_to_parent_prim_path(uri: Uri) -> str:
     """
     if len(uri.segments) < 3:
         return '/'
-    parent_segments = [_sanitize_prim_segment(s) for s in uri.segments[1:-1]]
+    parent_segments = uri.segments[1:-1]
     return '/' + '/'.join(parent_segments)

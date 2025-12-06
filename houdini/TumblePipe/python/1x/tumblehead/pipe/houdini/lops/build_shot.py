@@ -7,16 +7,14 @@ from tumblehead.util.uri import Uri
 from tumblehead.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblehead.config.department import list_departments
 from tumblehead.config.procedurals import list_procedural_names
+from tumblehead.config.variants import list_variants, DEFAULT_VARIANT
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.houdini.util as util
 from tumblehead.pipe.paths import (
     get_workfile_context,
     load_entity_context
 )
-from tumblehead.pipe.houdini.lops import (
-    import_asset_layer,
-    import_shot_layer
-)
+from tumblehead.pipe.houdini.lops import import_layer
 from tumblehead.pipe import graph
 
 class Mode:
@@ -123,13 +121,9 @@ class BuildShot(ns.Node):
         if shot_uri is None: return None
         match self.get_mode():
             case Mode.Latest:
-                shot_departments = self.get_shot_department_names()
-                downstream_shot_departments = self.get_downstream_shot_department_names()
-                # Only resolve assets from upstream departments (exclude downstream)
-                upstream_shot_departments = [
-                    dept for dept in shot_departments
-                    if dept not in downstream_shot_departments
-                ]
+                # Get departments strictly before current (exclusive)
+                # This ensures we don't include our own previous exports
+                upstream_shot_departments = self.get_upstream_shot_department_names()
                 asset_departments = self.get_asset_department_names()
 
                 # Scan dependency graph and resolve versions
@@ -255,6 +249,51 @@ class BuildShot(ns.Node):
         if department_name not in shot_department_names: return []
         shot_department_index = shot_department_names.index(department_name)
         return shot_department_names[shot_department_index + 1:]
+
+    def get_upstream_shot_department_names(self):
+        """Get shot departments strictly BEFORE current department (exclusive).
+
+        For dependency resolution, we want assets from departments that came
+        before us in the pipeline, NOT including our own previous exports.
+        """
+        shot_department_names = self.list_shot_department_names()
+        if len(shot_department_names) == 0: return []
+        department_name = self.get_department_name()
+        if department_name is None: return []
+        if department_name not in shot_department_names: return []
+        shot_department_index = shot_department_names.index(department_name)
+        return shot_department_names[:shot_department_index]
+
+    # -------------------------------------------------------------------------
+    # Variant Methods
+    # -------------------------------------------------------------------------
+    def list_shot_variant_names(self) -> list[str]:
+        """List variants available for the current shot."""
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None:
+            return [DEFAULT_VARIANT]
+        return list_variants(shot_uri)
+
+    def list_asset_variant_names(self, asset_uri: Uri) -> list[str]:
+        """List variants available for a specific asset."""
+        return list_variants(asset_uri)
+
+    def get_shot_variant_name(self) -> str:
+        """Get the selected shot variant name."""
+        variant_names = self.list_shot_variant_names()
+        variant_name = self.parm('shot_variant').eval()
+        if len(variant_name) == 0:
+            return DEFAULT_VARIANT
+        if variant_name not in variant_names:
+            return DEFAULT_VARIANT
+        return variant_name
+
+    def set_shot_variant_name(self, variant_name: str):
+        """Set the shot variant name."""
+        variant_names = self.list_shot_variant_names()
+        if variant_name not in variant_names:
+            return
+        self.parm('shot_variant').set(variant_name)
 
     def get_frame_range_source(self):
         return self.parm('frame_range').eval()
@@ -402,7 +441,7 @@ class BuildShot(ns.Node):
 
                     # Load asset department
                     version_name = resolved_layer_path.name
-                    asset_layer_node = import_asset_layer.create(
+                    asset_layer_node = import_layer.create(
                         dive_node, (
                             'asset'
                             f'_{uri_name}'
@@ -410,9 +449,10 @@ class BuildShot(ns.Node):
                             '_import'
                         )
                     )
-                    asset_layer_node.set_asset_uri(asset_uri)
+                    asset_layer_node.set_entity_uri(asset_uri)
                     asset_layer_node.set_department_name(asset_department)
                     asset_layer_node.set_version_name(version_name)
+                    asset_layer_node.set_stage_type('asset')
                     asset_layer_node.set_include_layerbreak(False)
                     asset_layer_node.execute()
 
@@ -514,7 +554,7 @@ class BuildShot(ns.Node):
                         version_name = resolved_layer_path.name
 
                         # Load shot layer once for all instances (bundled file)
-                        asset_shot_layer_node = import_shot_layer.create(
+                        asset_shot_layer_node = import_layer.create(
                             dive_node, (
                                 'asset'
                                 f'_{uri_name}'
@@ -522,11 +562,11 @@ class BuildShot(ns.Node):
                                 '_bundled'
                             )
                         )
-                        asset_shot_layer_node.set_shot_uri(shot_uri)
+                        asset_shot_layer_node.set_entity_uri(shot_uri)
                         asset_shot_layer_node.set_department_name(shot_department)
                         asset_shot_layer_node.set_version_name(version_name)
                         asset_shot_layer_node.set_stage_type('asset')
-                        asset_shot_layer_node.set_asset_uri(asset_uri)
+                        asset_shot_layer_node.set_layer_asset_uri(asset_uri)
                         # Don't set instance_name for non-animatable assets (list will be empty)
                         asset_shot_layer_node.set_include_layerbreak(False)
                         asset_shot_layer_node.execute()
@@ -594,7 +634,7 @@ class BuildShot(ns.Node):
                             version_name = resolved_layer_path.name
 
                             # Load shot layer
-                            asset_shot_layer_node = import_shot_layer.create(
+                            asset_shot_layer_node = import_layer.create(
                                 dive_node, (
                                     'asset'
                                     f'_{uri_name}'
@@ -602,11 +642,11 @@ class BuildShot(ns.Node):
                                     f'_{shot_department}'
                                 )
                             )
-                            asset_shot_layer_node.set_shot_uri(shot_uri)
+                            asset_shot_layer_node.set_entity_uri(shot_uri)
                             asset_shot_layer_node.set_department_name(shot_department)
                             asset_shot_layer_node.set_version_name(version_name)
                             asset_shot_layer_node.set_stage_type('asset')
-                            asset_shot_layer_node.set_asset_uri(asset_uri)
+                            asset_shot_layer_node.set_layer_asset_uri(asset_uri)
                             asset_shot_layer_node.set_instance_name(instance_name)
                             asset_shot_layer_node.set_include_layerbreak(False)
                             asset_shot_layer_node.execute()
@@ -698,83 +738,17 @@ class BuildShot(ns.Node):
                 department_subnet_output = department_subnet.createNode('output', 'output')
                 prev_node = department_subnet_input
 
-                # Load cameras layer
-                cameras_shot_layer_node = import_shot_layer.create(department_subnet, 'cameras_import')
-                cameras_shot_layer_node.set_shot_uri(shot_uri)
-                cameras_shot_layer_node.set_department_name(shot_department)
-                cameras_shot_layer_node.set_version_name(version_name)
-                cameras_shot_layer_node.set_stage_type('cameras')
-                cameras_shot_layer_node.set_include_layerbreak(False)
-                cameras_shot_layer_node.execute()
+                # Load department layer
+                layer_node = import_layer.create(department_subnet, 'layer_import')
+                layer_node.set_entity_uri(shot_uri)
+                layer_node.set_department_name(shot_department)
+                layer_node.set_version_name(version_name)
+                layer_node.set_include_layerbreak(False)
+                layer_node.execute()
 
-                # Connect cameras layer node
-                _connect(prev_node, cameras_shot_layer_node.native())
-                prev_node = cameras_shot_layer_node.native()
-
-                # Load lights layer
-                lights_shot_layer_node = import_shot_layer.create(department_subnet, 'lights_import')
-                lights_shot_layer_node.set_shot_uri(shot_uri)
-                lights_shot_layer_node.set_department_name(shot_department)
-                lights_shot_layer_node.set_version_name(version_name)
-                lights_shot_layer_node.set_stage_type('lights')
-                lights_shot_layer_node.set_include_layerbreak(False)
-                lights_shot_layer_node.execute()
-
-                # Connect lights layer node
-                _connect(prev_node, lights_shot_layer_node.native())
-                prev_node = lights_shot_layer_node.native()
-
-                # Load volumes layer
-                volumes_shot_layer_node = import_shot_layer.create(department_subnet, 'volumes_import')
-                volumes_shot_layer_node.set_shot_uri(shot_uri)
-                volumes_shot_layer_node.set_department_name(shot_department)
-                volumes_shot_layer_node.set_version_name(version_name)
-                volumes_shot_layer_node.set_stage_type('volumes')
-                volumes_shot_layer_node.set_include_layerbreak(False)
-                volumes_shot_layer_node.execute()
-
-                # Connect volumes layer node
-                _connect(prev_node, volumes_shot_layer_node.native())
-                prev_node = volumes_shot_layer_node.native()
-
-                # Load collections layer
-                collections_shot_layer_node = import_shot_layer.create(department_subnet, 'collections_import')
-                collections_shot_layer_node.set_shot_uri(shot_uri)
-                collections_shot_layer_node.set_department_name(shot_department)
-                collections_shot_layer_node.set_version_name(version_name)
-                collections_shot_layer_node.set_stage_type('collections')
-                collections_shot_layer_node.set_include_layerbreak(False)
-                collections_shot_layer_node.execute()
-
-                # Connect collections layer node
-                _connect(prev_node, collections_shot_layer_node.native())
-                prev_node = collections_shot_layer_node.native()
-
-                # Load render layer
-                render_shot_layer_node = import_shot_layer.create(department_subnet, 'render_import')
-                render_shot_layer_node.set_shot_uri(shot_uri)
-                render_shot_layer_node.set_department_name(shot_department)
-                render_shot_layer_node.set_version_name(version_name)
-                render_shot_layer_node.set_stage_type('render')
-                render_shot_layer_node.set_include_layerbreak(False)
-                render_shot_layer_node.execute()
-
-                # Connect render layer node
-                _connect(prev_node, render_shot_layer_node.native())
-                prev_node = render_shot_layer_node.native()
-
-                # Load scene layer
-                scene_shot_layer_node = import_shot_layer.create(department_subnet, 'scene_import')
-                scene_shot_layer_node.set_shot_uri(shot_uri)
-                scene_shot_layer_node.set_department_name(shot_department)
-                scene_shot_layer_node.set_version_name(version_name)
-                scene_shot_layer_node.set_stage_type('scene')
-                scene_shot_layer_node.set_include_layerbreak(False)
-                scene_shot_layer_node.execute()
-
-                # Connect scene layer node
-                _connect(prev_node, scene_shot_layer_node.native())
-                prev_node = scene_shot_layer_node.native()
+                # Connect layer node
+                _connect(prev_node, layer_node.native())
+                prev_node = layer_node.native()
 
                 # Connect last node to output
                 _connect(prev_node, department_subnet_output)
@@ -834,11 +808,17 @@ def on_created(raw_node):
     # Set node style
     set_style(raw_node)
 
+    node = BuildShot(raw_node)
+
     # Change entity source to settings if we have no context
     entity = _entity_from_context_json()
-    if entity is not None: return
-    node = BuildShot(raw_node)
-    node.parm('entity_source').set('from_settings')
+    if entity is None:
+        node.parm('entity_source').set('from_settings')
+
+    # Always set default shot (ensures department menu works correctly)
+    shot_uris = node.list_shot_uris()
+    if shot_uris:
+        node.set_shot_uri(shot_uris[0])
 
 def execute():
     raw_node = hou.pwd()

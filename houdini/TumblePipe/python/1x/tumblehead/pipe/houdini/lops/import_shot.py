@@ -3,6 +3,7 @@ from pathlib import Path
 import hou
 
 from tumblehead.api import default_client, path_str
+from tumblehead.util.io import load_json
 from tumblehead.util.uri import Uri
 from tumblehead.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblehead.config.department import list_departments
@@ -11,7 +12,10 @@ import tumblehead.pipe.houdini.util as util
 from tumblehead.pipe.paths import (
     get_workfile_context,
     load_entity_context,
-    latest_staged_file_path
+    current_staged_file_path,
+    get_latest_staged_file_path,
+    get_staged_file_path,
+    list_version_paths
 )
 
 api = default_client()
@@ -51,7 +55,7 @@ def _indent(lines):
     """Indent lines of code by 4 spaces."""
     return [f"    {line}" for line in lines]
 
-def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name):
+def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
     """Generate Python script to set shot metadata in USD stage."""
 
     # Generate metadata prim path (keeps all segments: /_METADATA/_shots/_seq/_shot)
@@ -91,6 +95,26 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name):
         "",
         "util.set_metadata(prim, metadata)",
     ]
+
+    # Add asset metadata prims
+    for asset_info in assets:
+        asset_uri_str = asset_info['asset']
+        asset_uri = Uri.parse_unsafe(asset_uri_str)
+        asset_prim_path = uri_to_metadata_prim_path(asset_uri)
+        asset_name = asset_uri.segments[-1]
+        # Propagate inputs from staged context.json to preserve composition history
+        asset_inputs = asset_info.get('inputs', [])
+
+        content.extend([
+            "",
+            f"# Asset: {asset_uri_str}",
+            f"asset_prim = stage.DefinePrim('{asset_prim_path}', 'Scope')",
+            f"util.set_metadata(asset_prim, {{",
+            f"    'uri': '{asset_uri_str}',",
+            f"    'instance': '{asset_name}',",
+            f"    'inputs': {asset_inputs!r}",
+            f"}})",
+        ])
 
     footer = ["", "update(root)"]
 
@@ -134,6 +158,30 @@ class ImportShot(ns.Node):
     def list_department_names(self) -> list[str]:
         shot_departments = list_departments('shots')
         return [dept.name for dept in shot_departments]
+
+    def list_version_names(self) -> list[str]:
+        """List available staged versions including 'latest' and 'current'."""
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None:
+            return ['latest', 'current']
+
+        # Get staged directory
+        staged_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_staged'
+        staged_path = api.storage.resolve(staged_uri)
+
+        # Get versioned directories (v0001, v0002, etc.)
+        version_paths = list_version_paths(staged_path)
+        version_names = [vp.name for vp in version_paths]
+
+        # Add special options at the beginning
+        return ['latest', 'current'] + version_names
+
+    def get_version_name(self) -> str:
+        """Get selected version name. Default is 'latest'."""
+        version_name = self.parm('version').eval()
+        if len(version_name) == 0:
+            return 'latest'  # Default to latest
+        return version_name
 
     def get_department_name(self) -> str | None:
         entity_source = self.get_entity_source()
@@ -295,12 +343,33 @@ class ImportShot(ns.Node):
 
         # Get parameters
         shot_uri = self.get_shot_uri()
-        if shot_uri is None: return
+        if shot_uri is None:
+            raise ValueError("No shot selected. Check entity source and shot parameter.")
 
-        # Get staged file path
-        staged_file_path = latest_staged_file_path(shot_uri)
-        if staged_file_path is None: return
-        if not staged_file_path.exists(): return
+        # Get staged file path based on version selection
+        version_name = self.get_version_name()
+
+        if version_name == 'latest':
+            # Use _staged/latest/ directory
+            staged_file_path = get_latest_staged_file_path(shot_uri)
+        elif version_name == 'current':
+            # Use highest numbered version (previous default behavior)
+            staged_file_path = current_staged_file_path(shot_uri)
+        else:
+            # Use specific version
+            staged_file_path = get_staged_file_path(shot_uri, version_name)
+
+        if staged_file_path is None:
+            raise FileNotFoundError(f"No staged build found for {shot_uri}")
+        if not staged_file_path.exists():
+            raise FileNotFoundError(f"Staged file not found: {staged_file_path}")
+
+        # Read context.json for asset information
+        context_path = staged_file_path.parent / 'context.json'
+        context_data = load_json(context_path) if context_path.exists() else None
+        assets = []
+        if context_data is not None:
+            assets = context_data.get('parameters', {}).get('assets', [])
 
         # Set import node filepath
         import_node.parm('filepath1').set(path_str(staged_file_path))
@@ -336,7 +405,8 @@ class ImportShot(ns.Node):
                 shot_uri,
                 frame_range,
                 get_fps(),
-                version_name
+                version_name,
+                assets
             )
 
             # Set the script on the metadata pythonscript node
@@ -358,11 +428,17 @@ def on_created(raw_node):
     # Set node style
     set_style(raw_node)
 
+    node = ImportShot(raw_node)
+
     # Change entity source to settings if we have no context
     entity = _entity_from_context_json()
-    if entity is not None: return
-    node = ImportShot(raw_node)
-    node.parm('entity_source').set('from_settings')
+    if entity is None:
+        node.parm('entity_source').set('from_settings')
+
+    # Always set default shot (ensures department menu works correctly)
+    shot_uris = node.list_shot_uris()
+    if shot_uris:
+        node.set_shot_uri(shot_uris[0])
 
 def execute():
     raw_node = hou.pwd()

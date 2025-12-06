@@ -6,12 +6,12 @@ import hou
 
 from tumblehead.api import path_str, fix_path, default_client
 from tumblehead.config.timeline import BlockRange, get_frame_range
-from tumblehead.config.shots import list_render_layers
+from tumblehead.config.variants import list_variants
 from tumblehead.config.department import list_departments
 from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini.lops import (
     build_shot,
-    import_render_layer
+    import_variant
 )
 
 api = default_client()
@@ -31,7 +31,7 @@ def _connect(node1, node2):
 def main(
     shot_uri: Uri,
     render_department_name: str,
-    render_layer_name: str,
+    variant_name: str,
     render_range: BlockRange,
     output_stage_path: Path
     ) -> int:
@@ -39,7 +39,7 @@ def main(
     _headline('Parameters')
     print(f'Shot URI: {shot_uri}')
     print(f'Render department name: {render_department_name}')
-    print(f'Render layer name: {render_layer_name}')
+    print(f'Render layer name: {variant_name}')
     print(f'Render range: {render_range}')
     print(f'Output stage path: {output_stage_path}')
 
@@ -62,10 +62,10 @@ def main(
     prev_node = shot_node.native()
 
     # Setup import render layer
-    layer_node = import_render_layer.create(context, 'import_render_layer')
-    layer_node.set_shot_uri(shot_uri)
+    layer_node = import_variant.create(context, 'import_variant')
+    layer_node.set_entity_uri(shot_uri)
     layer_node.set_department_name(shot_department_name)
-    layer_node.set_render_layer_name(render_layer_name)
+    layer_node.set_variant_name(variant_name)
     layer_node.latest()
     layer_node.execute()
     _connect(prev_node, layer_node.native())
@@ -113,7 +113,7 @@ def cli():
     parser.add_argument('script_path', type=str)
     parser.add_argument('entity_uri', type=str)
     parser.add_argument('render_department_name', type=str)
-    parser.add_argument('render_layer_name', type=str)
+    parser.add_argument('variant_name', type=str)
     parser.add_argument('first_frame', type=int)
     parser.add_argument('last_frame', type=int)
     parser.add_argument('output_stage_path', type=str)
@@ -136,12 +136,12 @@ def cli():
         )
 
     # Check the render layer name
-    render_layer_name = args.render_layer_name
-    render_layer_names = list_render_layers(shot_uri)
-    if render_layer_name not in render_layer_names:
+    variant_name = args.variant_name
+    variant_names = list_variants(shot_uri)
+    if variant_name not in variant_names:
         return _error(
             f'Invalid render layer name: '
-            f'{render_layer_name}'
+            f'{variant_name}'
         )
 
     # Check the render range
@@ -162,7 +162,7 @@ def cli():
     return main(
         shot_uri,
         render_department_name,
-        render_layer_name,
+        variant_name,
         render_range,
         output_stage_path
     )

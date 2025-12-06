@@ -477,8 +477,12 @@ class DatabaseUriView(QTreeView):
     def refresh(self):
         """Refresh the URI tree from adapter"""
         current_uri = self.get_selected()
-        self._model.clear_all()
-        self._load_from_adapter()
+        self._selecting = True
+        try:
+            self._model.clear_all()
+            self._load_from_adapter()
+        finally:
+            self._selecting = False
         if current_uri:
             self.set_selected(current_uri)
 

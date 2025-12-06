@@ -33,7 +33,7 @@ config = {
         'user_name': 'string',
         'purpose': 'string',
         'pool_name': 'string',
-        'render_layer_names': ['string'],
+        'variant_names': ['string'],
         'render_department_name': 'string',
         'render_settings_path': 'string',
         'tile_count': 'int',
@@ -92,8 +92,8 @@ def _is_valid_config(config):
         if not _check_str(settings, 'user_name'): return False
         if not _check_str(settings, 'purpose'): return False
         if not _check_str(settings, 'pool_name'): return False
-        if 'render_layer_names' not in settings: return False
-        if not isinstance(settings['render_layer_names'], list): return False
+        if 'variant_names' not in settings: return False
+        if not isinstance(settings['variant_names'], list): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
         if not _check_int(settings, 'tile_count'): return False

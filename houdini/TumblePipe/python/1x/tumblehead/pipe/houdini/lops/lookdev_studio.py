@@ -138,7 +138,7 @@ class LookdevStudio(ns.Node):
                 .relative_to(temp_path)
             )
             store_json(render_settings_path, dict(
-                layer_names = ['main'],
+                variant_names = ['main'],
                 aov_names = aov_names,
                 overrides = dict()
             ))
@@ -150,7 +150,7 @@ class LookdevStudio(ns.Node):
                     user_name = get_user_name(),
                     purpose = 'turntable',
                     pool_name = pool_name,
-                    render_layer_name = 'main',
+                    variant_name = 'main',
                     render_department_name = 'render',
                     render_settings_path = path_str(
                         relative_render_settings_path

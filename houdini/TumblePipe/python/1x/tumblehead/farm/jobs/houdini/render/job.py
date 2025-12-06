@@ -68,7 +68,7 @@ config = {
         'user_name': 'string',
         'purpose': 'string',
         'pool_name': 'string',
-        'render_layer_names': ['string'],
+        'variant_names': ['string'],
         'render_department_name': 'string',
         'render_settings_path': 'string',
         'input_path': 'string',
@@ -124,8 +124,8 @@ def _is_valid_config(config):
         if not _check_str(settings, 'user_name'): return False
         if not _check_str(settings, 'purpose'): return False
         if not _check_str(settings, 'pool_name'): return False
-        if 'render_layer_names' not in settings: return False
-        if not isinstance(settings['render_layer_names'], list): return False
+        if 'variant_names' not in settings: return False
+        if not isinstance(settings['variant_names'], list): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
         if not _check_str(settings, 'input_path'): return False
@@ -181,7 +181,7 @@ def _build_partial_render_job(
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
     priority = config['tasks']['partial_render']['priority']
-    render_layer_name = config['settings']['render_layer_name']
+    variant_name = config['settings']['variant_name']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     input_path = Path(config['settings']['input_path'])
@@ -210,7 +210,7 @@ def _build_partial_render_job(
     receipt_path = get_next_frame_path(
         entity_uri,
         render_department_name,
-        render_layer_name,
+        variant_name,
         '####',
         'json',
         purpose
@@ -218,14 +218,14 @@ def _build_partial_render_job(
     version_name = receipt_path.parent.name
     title = (
         'partial render '
-        f'{render_layer_name} '
+        f'{variant_name} '
         f'{version_name}'
     )
     output_paths = {
         aov_name: get_aov_frame_path(
             entity_uri,
             render_department_name,
-            render_layer_name,
+            variant_name,
             version_name,
             aov_name,
             '####',
@@ -259,7 +259,7 @@ def _build_partial_render_job(
     store_json(context_path, dict(
         entity = str(entity_uri),
         department = department_name,
-        render_layer_name = render_layer_name,
+        variant = variant_name,
         render_department_name = render_department_name,
         version_name = version_name,
         first_frame = first_frame,
@@ -284,7 +284,7 @@ def _build_full_render_job(
     purpose = config['settings']['purpose']
     priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
-    render_layer_name = config['settings']['render_layer_name']
+    variant_name = config['settings']['variant_name']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     input_path = Path(config['settings']['input_path'])
@@ -300,7 +300,7 @@ def _build_full_render_job(
             output_frame_path = get_next_frame_path(
                 entity_uri,
                 render_department_name,
-                render_layer_name,
+                variant_name,
                 '####',
                 'json',
                 purpose
@@ -311,7 +311,7 @@ def _build_full_render_job(
             output_frame_path = get_frame_path(
                 entity_uri,
                 render_department_name,
-                render_layer_name,
+                variant_name,
                 version_name,
                 '####',
                 'json',
@@ -331,14 +331,14 @@ def _build_full_render_job(
     receipt_path, version_name = _receipt_path(version_name)
     title = (
         f'full render '
-        f'{render_layer_name} '
+        f'{variant_name} '
         f'{version_name}'
     )
     output_paths = {
         aov_name: path_str(get_aov_frame_path(
             entity_uri,
             render_department_name,
-            render_layer_name,
+            variant_name,
             version_name,
             aov_name,
             '####',
@@ -372,7 +372,7 @@ def _build_full_render_job(
     store_json(context_path, dict(
         entity = str(entity_uri),
         department = department_name,
-        render_layer_name = render_layer_name,
+        variant = variant_name,
         render_department_name = render_department_name,
         version_name = version_name,
         first_frame = first_frame,
@@ -445,7 +445,7 @@ def _build_partial_denoise_job(
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
     priority = config['tasks']['partial_render']['priority']
-    render_layer_name = config['settings']['render_layer_name']
+    variant_name = config['settings']['variant_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
@@ -471,7 +471,7 @@ def _build_partial_denoise_job(
     receipt_path = get_next_frame_path(
         entity_uri,
         'denoise',
-        render_layer_name,
+        variant_name,
         '####',
         'json',
         purpose
@@ -479,14 +479,14 @@ def _build_partial_denoise_job(
     version_name = receipt_path.parent.name
     title = (
         f'partial denoise '
-        f'{render_layer_name} '
+        f'{variant_name} '
         f'{version_name}'
     )
     input_paths = {
         aov_name: get_aov_frame_path(
             entity_uri,
             render_department_name,
-            render_layer_name,
+            variant_name,
             render_version_name,
             aov_name,
             '####',
@@ -499,7 +499,7 @@ def _build_partial_denoise_job(
         aov_name: get_aov_frame_path(
             entity_uri,
             'denoise',
-            render_layer_name,
+            variant_name,
             version_name,
             aov_name,
             '####',
@@ -536,7 +536,7 @@ def _build_partial_denoise_job(
         entity = str(entity_uri),
         department = department_name,
         render_department_name = 'denoise',
-        render_layer_name = render_layer_name,
+        variant = variant_name,
         version_name = version_name,
         first_frame = first_frame,
         last_frame = last_frame,
@@ -560,7 +560,7 @@ def _build_full_denoise_job(
     purpose = config['settings']['purpose']
     priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
-    render_layer_name = config['settings']['render_layer_name']
+    variant_name = config['settings']['variant_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
@@ -578,7 +578,7 @@ def _build_full_denoise_job(
     receipt_path = get_next_frame_path(
         entity_uri,
         'denoise',
-        render_layer_name,
+        variant_name,
         '####',
         'json',
         purpose
@@ -586,14 +586,14 @@ def _build_full_denoise_job(
     version_name = receipt_path.parent.name
     title = (
         f'full denoise '
-        f'{render_layer_name} '
+        f'{variant_name} '
         f'{version_name}'
     )
     input_paths = {
         aov_name: get_aov_frame_path(
             entity_uri,
             render_department_name,
-            render_layer_name,
+            variant_name,
             render_version_name,
             aov_name,
             '####',
@@ -606,7 +606,7 @@ def _build_full_denoise_job(
         aov_name: get_aov_frame_path(
             entity_uri,
             'denoise',
-            render_layer_name,
+            variant_name,
             version_name,
             aov_name,
             '####',
@@ -643,7 +643,7 @@ def _build_full_denoise_job(
         entity = str(entity_uri),
         department = department_name,
         render_department_name = 'denoise',
-        render_layer_name = render_layer_name,
+        variant = variant_name,
         version_name = version_name,
         first_frame = first_frame,
         last_frame = last_frame,
@@ -747,7 +747,7 @@ def _build_slapcomp_job(
         entity = str(entity_uri),
         department = department_name,
         render_department_name = render_department_name,
-        render_layer_name = 'slapcomp',
+        variant = 'slapcomp',
         version_name = version_name,
         first_frame = first_frame,
         last_frame = last_frame,
@@ -771,7 +771,7 @@ def _build_layer_mp4_job(
     purpose = config['settings']['purpose']
     priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
-    render_layer_name = config['settings']['render_layer_name']
+    variant_name = config['settings']['variant_name']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
@@ -779,22 +779,22 @@ def _build_layer_mp4_job(
     # Parameters - use layer-specific paths for individual render layers
     playblast_path = get_layer_playblast_path(
         entity_uri,
-        render_layer_name,
+        variant_name,
         render_version_name,
         purpose
     )
-    daily_path = get_layer_daily_path(entity_uri, render_layer_name, purpose)
+    daily_path = get_layer_daily_path(entity_uri, variant_name, purpose)
     title = (
         f'mp4 layer '
         f'{render_department_name} '
-        f'{render_layer_name} '
+        f'{variant_name} '
         f'{render_version_name}'
     )
     # Input is the beauty AOV from the render layer
     input_path = get_aov_frame_path(
         entity_uri,
         render_department_name,
-        render_layer_name,
+        variant_name,
         render_version_name,
         'beauty',
         '####',
@@ -887,7 +887,7 @@ def _build_partial_notify_job(
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    render_layer_name = config['settings']['render_layer_name']
+    variant_name = config['settings']['variant_name']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
@@ -915,7 +915,7 @@ def _build_partial_notify_job(
     frame_path = get_aov_frame_path(
         entity_uri,
         render_department_name,
-        render_layer_name,
+        variant_name,
         version_name,
         'beauty',
         '####',
@@ -1025,7 +1025,7 @@ def submit(
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
-    render_layer_names = config['settings']['render_layer_names']
+    variant_names = config['settings']['variant_names']
 
     # Parameters
     project_name = get_project_name()
@@ -1043,7 +1043,7 @@ def submit(
         logging.debug(f'Temporary directory: {temp_path}')
 
         # Batch and jobs
-        layers_text = f"[{', '.join(render_layer_names)}]"
+        layers_text = f"[{', '.join(variant_names)}]"
         batch = Batch(
             f'{project_name} '
             f'{purpose} '
@@ -1069,12 +1069,12 @@ def submit(
 
         # PARTIAL RENDER: Create jobs for each layer
         if 'partial_render' in config['tasks']:
-            for layer_name in render_layer_names:
+            for layer_name in variant_names:
                 
                 # Create layer-specific config
                 layer_config = config.copy()
                 layer_config['settings'] = config['settings'].copy()
-                layer_config['settings']['render_layer_name'] = layer_name
+                layer_config['settings']['variant_name'] = layer_name
 
                 # Build partial render job for this layer
                 render_result = _build_partial_render_job(layer_config, paths, temp_path)
@@ -1111,11 +1111,11 @@ def submit(
 
         # FULL RENDER: Create jobs for each layer
         if 'full_render' in config['tasks']:
-            for layer_name in render_layer_names:
+            for layer_name in variant_names:
                 # Create layer-specific config
                 layer_config = config.copy()
                 layer_config['settings'] = config['settings'].copy()
-                layer_config['settings']['render_layer_name'] = layer_name
+                layer_config['settings']['variant_name'] = layer_name
 
                 # Build full render job for this layer
                 render_result = _build_full_render_job(
@@ -1166,7 +1166,7 @@ def submit(
             # CROSS-LAYER JOBS: Create once, depend on all layer jobs
             if config['tasks']['full_render']['denoise']:
                 # Collect all denoise job names
-                all_denoise_jobs = [f'full_denoise_{ln}' for ln in render_layer_names]
+                all_denoise_jobs = [f'full_denoise_{ln}' for ln in variant_names]
 
                 # Edit job depends on all denoise jobs
                 edit_job = _build_edit_job(config, temp_path)
@@ -1174,7 +1174,7 @@ def submit(
 
                 # Slapcomp depends on all denoise jobs
                 # Use version from first layer (all should have same version number)
-                first_layer = render_layer_names[0]
+                first_layer = variant_names[0]
                 slapcomp_result = _build_slapcomp_job(
                     config,
                     temp_path,
@@ -1202,14 +1202,14 @@ def submit(
                 _add_job('slapcomp_notify', slapcomp_notify_job, ['slapcomp_mp4'])
             else:
                 # Collect all render job names
-                all_render_jobs = [f'full_render_{ln}' for ln in render_layer_names]
+                all_render_jobs = [f'full_render_{ln}' for ln in variant_names]
 
                 # Edit job depends on all render jobs
                 edit_job = _build_edit_job(config, temp_path)
                 _add_job('edit', edit_job, all_render_jobs)
 
                 # Slapcomp depends on all render jobs
-                first_layer = render_layer_names[0]
+                first_layer = variant_names[0]
                 slapcomp_result = _build_slapcomp_job(
                     config,
                     temp_path,

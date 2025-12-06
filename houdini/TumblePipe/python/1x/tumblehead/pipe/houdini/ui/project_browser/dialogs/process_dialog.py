@@ -123,15 +123,16 @@ class ProcessDialog(QtWidgets.QDialog):
 
         button_layout.addStretch()
 
-        # Cancel/Execute buttons
+        # Execute/Cancel buttons
+        self._execute_button = QtWidgets.QPushButton("Execute")
+        self._execute_button.setDefault(True)
+        self._execute_button.setStyleSheet("background-color: #4A90E2; color: white;")
+        self._execute_button.clicked.connect(self._on_execute_clicked)
+        button_layout.addWidget(self._execute_button)
+
         self._cancel_button = QtWidgets.QPushButton("Cancel")
         self._cancel_button.clicked.connect(self._on_cancel_clicked)
         button_layout.addWidget(self._cancel_button)
-
-        self._execute_button = QtWidgets.QPushButton("Execute")
-        self._execute_button.setDefault(True)
-        self._execute_button.clicked.connect(self._on_execute_clicked)
-        button_layout.addWidget(self._execute_button)
 
         layout.addLayout(button_layout)
 
@@ -262,13 +263,22 @@ class ProcessDialog(QtWidgets.QDialog):
                 self._status_label.setText(f"Running: {task.description}")
                 break
 
+        # Force UI repaint
+        QtWidgets.QApplication.processEvents()
+
     def _on_task_completed(self, task_id: str):
         """Handle task completed signal"""
         self._model.update_task_status(task_id, TaskStatus.COMPLETED)
 
+        # Force UI repaint
+        QtWidgets.QApplication.processEvents()
+
     def _on_task_failed(self, task_id: str, error: str):
         """Handle task failed signal"""
         self._model.update_task_status(task_id, TaskStatus.FAILED, error)
+
+        # Force UI repaint
+        QtWidgets.QApplication.processEvents()
 
     def _on_all_completed(self):
         """Handle all tasks completed signal"""
@@ -401,7 +411,7 @@ class ProcessDialog(QtWidgets.QDialog):
         """Open the output location for a completed task"""
         import hou
         from tumblehead.api import path_str
-        from tumblehead.pipe.paths import latest_export_path, latest_staged_path
+        from tumblehead.pipe.paths import latest_export_path, current_staged_path
 
         try:
             if task.task_type == 'export':
@@ -409,7 +419,7 @@ class ProcessDialog(QtWidgets.QDialog):
                 location_path = latest_export_path(task.uri, task.department)
             elif task.task_type == 'build':
                 # Open staged (build) directory
-                location_path = latest_staged_path(task.uri)
+                location_path = current_staged_path(task.uri)
             else:
                 return
 

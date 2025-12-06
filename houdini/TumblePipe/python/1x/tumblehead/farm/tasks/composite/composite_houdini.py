@@ -78,10 +78,10 @@ def main(
     render_node.parm('execute').pressButton()
     # HACK: Make sure the graph is cooked
 
-    # Get render layer names
+    # Get variant names
     entity_uri = Uri.parse_unsafe(entity_json['uri'])
     properties = api.config.get_properties(entity_uri)
-    render_layer_names = properties.get('render_layers', [])
+    variant_names = properties.get('variants', [])
 
     # Open a temporary directory
     root_temp_path = to_windows_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
@@ -95,8 +95,8 @@ def main(
         for layer_name in layer_names:
             _headline(f'Rendering layer: {layer_name}')
 
-            # Set the dive node output port to select the render layer
-            layer_index = render_layer_names.index(layer_name)
+            # Set the dive node output port to select the variant
+            layer_index = variant_names.index(layer_name)
             render_node.parm('port1').set(layer_index + 1)
 
             # Set the output path for this layer

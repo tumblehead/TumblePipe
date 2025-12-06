@@ -384,7 +384,7 @@ def _diff_tree(from_value: JsonRoot, to_value: JsonRoot) -> JsonRoot:
         if type(from_value) != type(to_value):
             return dict(change=True, value=None)
         if _is_basic(from_value):
-            return dict(change=from_value == to_value, value=None)
+            return dict(change=from_value != to_value, value=None)
         if isinstance(from_value, list):
             return _visit_list(from_value, to_value)
         if isinstance(from_value, dict):

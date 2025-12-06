@@ -19,14 +19,14 @@ from tumblehead.pipe.houdini.ui.util import (
 from tumblehead.pipe.houdini import util
 from tumblehead.pipe.houdini.lops import (
     build_shot,
+    create_model,
     import_shot,
-    export_asset_layer,
-    export_shot_layer,
-    export_render_layer,
+    import_asset,
+    export_layer,
+    export_variant,
     import_assets,
-    import_asset_layer,
-    import_shot_layer,
-    import_render_layer,
+    import_layer,
+    import_variant,
 )
 from tumblehead.pipe.houdini.sops import export_rig, import_rigs
 from tumblehead.pipe.houdini.cops import build_comp
@@ -1014,6 +1014,11 @@ class ProjectBrowser(QtWidgets.QWidget):
         stage.parm("rendergallerysource").set("$HIP/galleries/rendergallery.db")
 
     def _refresh_scene(self):
+        # Find create model nodes
+        create_model_nodes = list(
+            map(create_model.CreateModel, ns.list_by_node_type("create_model", "Lop"))
+        )
+
         # Find shot build nodes
         build_shot_nodes = list(
             map(build_shot.BuildShot, ns.list_by_node_type("build_shot", "Lop"))
@@ -1024,34 +1029,33 @@ class ProjectBrowser(QtWidgets.QWidget):
             map(import_shot.ImportShot, ns.list_by_node_type("import_shot", "Lop"))
         )
 
-        # Find import asset nodes
+        # Find import assets nodes (multiple assets)
         import_assets_nodes = list(
             map(
                 import_assets.ImportAssets, ns.list_by_node_type("import_assets", "Lop")
             )
         )
 
-        # Find the import asset layer nodes
-        import_asset_layer_nodes = list(
+        # Find import asset nodes (single asset)
+        import_asset_nodes = list(
             map(
-                import_asset_layer.ImportAssetLayer,
-                ns.list_by_node_type("import_asset_layer", "Lop"),
+                import_asset.ImportAsset, ns.list_by_node_type("import_asset", "Lop")
             )
         )
 
-        # Find the import shot layer nodes
-        import_shot_layer_nodes = list(
+        # Find the import variant nodes
+        import_variant_nodes = list(
             map(
-                import_shot_layer.ImportShotLayer,
-                ns.list_by_node_type("import_shot_layer", "Lop"),
+                import_variant.ImportVariant,
+                ns.list_by_node_type("import_variant", "Lop"),
             )
         )
 
-        # Find the import render layer nodes
-        import_render_layer_nodes = list(
+        # Find the import layer nodes (unified)
+        import_layer_nodes = list(
             map(
-                import_render_layer.ImportRenderLayer,
-                ns.list_by_node_type("import_render_layer", "Lop"),
+                import_layer.ImportLayer,
+                ns.list_by_node_type("import_layer", "Lop"),
             )
         )
 
@@ -1065,6 +1069,12 @@ class ProjectBrowser(QtWidgets.QWidget):
             map(build_comp.BuildComp, ns.list_by_node_type("build_comp", "Cop"))
         )
 
+        # Execute create model nodes (generates metadata)
+        for create_model_node in create_model_nodes:
+            if not create_model_node.is_valid():
+                continue
+            create_model_node.execute()
+
         # Import latest shot builds
         for build_shot_node in build_shot_nodes:
             if not build_shot_node.is_valid():
@@ -1077,31 +1087,28 @@ class ProjectBrowser(QtWidgets.QWidget):
                 continue
             import_shot_node.execute()
 
-        # Import latest assets
+        # Import assets (multiple)
         for import_assets_node in import_assets_nodes:
             if not import_assets_node.is_valid():
                 continue
             import_assets_node.execute()
 
-        # Import latest asset layers
-        for import_node in import_asset_layer_nodes:
+        # Import assets (single)
+        for import_asset_node in import_asset_nodes:
+            if not import_asset_node.is_valid():
+                continue
+            import_asset_node.execute()
+
+        # Import variants
+        for import_node in import_variant_nodes:
             if not import_node.is_valid():
                 continue
-            import_node.latest()
             import_node.execute()
 
-        # Import latest shot layers
-        for import_node in import_shot_layer_nodes:
+        # Import layers
+        for import_node in import_layer_nodes:
             if not import_node.is_valid():
                 continue
-            import_node.latest()
-            import_node.execute()
-
-        # Import latest render layers
-        for import_node in import_render_layer_nodes:
-            if not import_node.is_valid():
-                continue
-            import_node.latest()
             import_node.execute()
 
         # Import latest rigs
@@ -1170,7 +1177,7 @@ class ProjectBrowser(QtWidgets.QWidget):
                 return False
             if node.get_department_name() != department_name:
                 return False
-            if node.get_asset_uri() != self._context.entity_uri:
+            if node.get_entity_uri() != self._context.entity_uri:
                 return False
             return True
 
@@ -1188,12 +1195,12 @@ class ProjectBrowser(QtWidgets.QWidget):
                 return False
             if node.get_department_name() != department_name:
                 return False
-            shot_uri = node.get_shot_uri()
-            if shot_uri != self._context.entity_uri:
+            entity_uri = node.get_entity_uri()
+            if entity_uri != self._context.entity_uri:
                 return False
             return True
 
-        def _is_render_layer_export_correct(node):
+        def _is_variant_export_correct(node):
             if entity_type != 'shot':
                 return False
             if node.get_department_name() != department_name:
@@ -1244,8 +1251,8 @@ class ProjectBrowser(QtWidgets.QWidget):
                 filter(
                     _is_asset_export_correct,
                     map(
-                        export_asset_layer.ExportAssetLayer,
-                        ns.list_by_node_type("export_asset_layer", "Lop"),
+                        export_layer.ExportLayer,
+                        ns.list_by_node_type("export_layer", "Lop"),
                     ),
                 )
             )
@@ -1291,17 +1298,17 @@ class ProjectBrowser(QtWidgets.QWidget):
                 filter(
                     _is_shot_export_correct,
                     map(
-                        export_shot_layer.ExportShotLayer,
-                        ns.list_by_node_type("export_shot_layer", "Lop"),
+                        export_layer.ExportLayer,
+                        ns.list_by_node_type("export_layer", "Lop"),
                     ),
                 )
             )
-            render_layer_export_nodes = list(
+            variant_export_nodes = list(
                 filter(
-                    _is_render_layer_export_correct,
+                    _is_variant_export_correct,
                     map(
-                        export_render_layer.ExportRenderLayer,
-                        ns.list_by_node_type("export_render_layer", "Lop"),
+                        export_variant.ExportVariant,
+                        ns.list_by_node_type("export_variant", "Lop"),
                     ),
                 )
             )
@@ -1328,9 +1335,9 @@ class ProjectBrowser(QtWidgets.QWidget):
             shot_export_node = shot_export_nodes[0]
             shot_export_node.execute()
 
-            # Export the render layers
-            for render_layer_export_node in render_layer_export_nodes:
-                render_layer_export_node.execute()
+            # Export the variants
+            for variant_export_node in variant_export_nodes:
+                variant_export_node.execute()
 
             # Re-enable procedurals
             for build_shot_node in build_shot_nodes:
@@ -1351,20 +1358,20 @@ class ProjectBrowser(QtWidgets.QWidget):
 
             member_uris = set(group.members)
 
-            # Filter function: export node's shot_uri must be a group member
+            # Filter function: export node's entity_uri must be a group member
             def _is_group_export_correct(node):
                 if node.get_department_name() != department_name:
                     return False
-                shot_uri = node.get_shot_uri()
-                return shot_uri in member_uris
+                entity_uri = node.get_entity_uri()
+                return entity_uri in member_uris
 
             # Find all export nodes for group members
             group_export_nodes = list(
                 filter(
                     _is_group_export_correct,
                     map(
-                        export_shot_layer.ExportShotLayer,
-                        ns.list_by_node_type("export_shot_layer", "Lop"),
+                        export_layer.ExportLayer,
+                        ns.list_by_node_type("export_layer", "Lop"),
                     ),
                 )
             )
@@ -1455,26 +1462,40 @@ class ProjectBrowser(QtWidgets.QWidget):
                 self._open_texture_location(self._context)
         
     def _set_frame_range(self, mode):
-        # Check if we have a valid workspace and department
-        if self._context is None:
-            return
+        """Set frame range from USD stage metadata or fallback to config."""
+        frame_range = None
 
-        # Set the frame range based on entity type
-        entity_type = get_entity_type(self._context.entity_uri)
-        if entity_type == 'shot':
-            frame_range = get_frame_range(self._context.entity_uri)
-            if frame_range is not None:
-                match mode:
-                    case FrameRangeMode.Padded:
-                        util.set_block_range(frame_range.full_range())
-                    case FrameRangeMode.Full:
-                        util.set_block_range(frame_range.play_range())
-            else:
-                util.set_block_range(BlockRange(1001, 1200))
+        # Priority 1: Try selected LOP node's stage
+        selected_node = util.get_selected_lop_node()
+        if selected_node is not None:
+            try:
+                stage = selected_node.stage()
+                frame_range = util.get_frame_range_from_stage(stage)
+            except Exception as e:
+                print(f"Warning: Could not get frame range from stage: {e}")
+
+        # Priority 2: Fallback to config
+        if frame_range is None and self._context is not None:
+            entity_type = get_entity_type(self._context.entity_uri)
+            if entity_type == 'group':
+                # Use first group member's frame range
+                group = get_group(self._context.entity_uri)
+                if group is not None and len(group.members) > 0:
+                    first_member = group.members[0]
+                    frame_range = get_frame_range(first_member)
+            elif entity_type == 'shot':
+                frame_range = get_frame_range(self._context.entity_uri)
+
+        # Apply frame range
+        if frame_range is not None:
+            match mode:
+                case FrameRangeMode.Padded:
+                    util.set_block_range(frame_range.full_range())
+                case FrameRangeMode.Full:
+                    util.set_block_range(frame_range.play_range())
         else:
             util.set_block_range(BlockRange(1001, 1200))
 
-        # Set the frames per second
         hou.playbar.setRealTime(True)
         
     def _open_workspace_location(self, context):

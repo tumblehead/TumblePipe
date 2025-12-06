@@ -40,7 +40,7 @@ def main(config):
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    render_layer_names = config['settings']['render_layer_names']
+    variant_names = config['settings']['variant_names']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     tile_count = config['settings']['tile_count']
@@ -74,7 +74,7 @@ def main(config):
             settings = dict(
                 first_frame = first_frame,
                 last_frame = last_frame,
-                render_layer_names = render_layer_names,
+                variant_names = variant_names,
                 render_department_name = render_department_name,
                 render_settings_path = path_str(render_settings_path)
             ),
@@ -120,7 +120,7 @@ def main(config):
                 user_name = user_name,
                 purpose = purpose,
                 pool_name = pool_name,
-                render_layer_names = render_layer_names,
+                variant_names = variant_names,
                 render_department_name = render_department_name,
                 render_settings_path = path_str(render_settings_path),
                 input_path = path_str(relative_stage_path),
@@ -149,7 +149,7 @@ config = {
         'user_name': 'string',
         'purpose': 'string',
         'pool_name': 'string',
-        'render_layer_names': ['string'],
+        'variant_names': ['string'],
         'render_department_name': 'string',
         'render_settings_path': 'string',
         'tile_count': 'int',
@@ -208,8 +208,8 @@ def _is_valid_config(config):
         if not _check_str(settings, 'user_name'): return False
         if not _check_str(settings, 'purpose'): return False
         if not _check_str(settings, 'pool_name'): return False
-        if 'render_layer_names' not in settings: return False
-        if not isinstance(settings['render_layer_names'], list): return False
+        if 'variant_names' not in settings: return False
+        if not isinstance(settings['variant_names'], list): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
         if not _check_int(settings, 'tile_count'): return False

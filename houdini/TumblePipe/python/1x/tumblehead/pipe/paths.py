@@ -1257,41 +1257,6 @@ def get_export_path(
     )
     return api.storage.resolve(export_uri)
 
-def get_render_layer_export_path(
-    entity_uri: Uri,
-    department_name: str,
-    render_layer_name: str,
-    version_name: str
-    ) -> Path:
-    export_uri = (
-        Uri.parse_unsafe('export:/') /
-        entity_uri.segments /
-        'render_layers' /
-        department_name /
-        render_layer_name /
-        version_name
-    )
-    return api.storage.resolve(export_uri)
-
-def get_export_file_path(
-    entity_uri: Uri,
-    department_name: str,
-    version_name: str
-    ) -> Path:
-    version_path = get_export_path(
-        entity_uri,
-        department_name,
-        version_name
-    )
-    usd_file_name = '.'.join([
-        '_'.join(entity_uri.segments[1:] + [
-            department_name,
-            version_name
-        ]),
-        'usd'
-    ])
-    return version_path / usd_file_name
-
 def latest_export_path(
     entity_uri: Uri,
     department_name: str
@@ -1306,88 +1271,6 @@ def latest_export_path(
     if len(version_paths) == 0: return None
     latest_version_path = version_paths[-1]
     return latest_version_path
-
-def latest_render_layer_export_path(
-    entity_uri: Uri,
-    department_name: str,
-    render_layer_name: str
-    ) -> Optional[Path]:
-    export_uri = (
-        Uri.parse_unsafe('export:/') /
-        entity_uri.segments /
-        'render_layers' /
-        department_name /
-        render_layer_name
-    )
-    export_path = api.storage.resolve(export_uri)
-    version_paths = list_version_paths(export_path)
-    if len(version_paths) == 0: return None
-    latest_version_path = version_paths[-1]
-    return latest_version_path
-
-def get_render_layer_export_file_path(
-    entity_uri: Uri,
-    department_name: str,
-    render_layer_name: str,
-    version_name: str
-    ) -> Path:
-    version_path = get_render_layer_export_path(
-        entity_uri,
-        department_name,
-        render_layer_name,
-        version_name
-    )
-    usd_file_name = '_'.join(entity_uri.segments[1:] + [
-        department_name,
-        render_layer_name,
-        version_name
-    ]) + '.usd'
-    return version_path / usd_file_name
-
-def next_render_layer_export_file_path(
-    entity_uri: Uri,
-    department_name: str,
-    render_layer_name: str
-    ) -> Path:
-    export_path = latest_render_layer_export_path(
-        entity_uri,
-        department_name,
-        render_layer_name
-    )
-    if export_path is None:
-        export_path = get_render_layer_export_path(
-            entity_uri,
-            department_name,
-            render_layer_name,
-            'v0000'
-        )
-    next_version_path = get_next_version_path(export_path)
-    version_name = next_version_path.name
-    usd_file_name = '_'.join(entity_uri.segments[1:] + [
-        department_name,
-        render_layer_name,
-        version_name
-    ]) + '.usd'
-    return next_version_path / usd_file_name
-
-def latest_render_layer_export_file_path(
-    entity_uri: Uri,
-    department_name: str,
-    render_layer_name: str
-    ) -> Optional[Path]:
-    export_path = latest_render_layer_export_path(
-        entity_uri,
-        department_name,
-        render_layer_name
-    )
-    if export_path is None: return None
-    version_name = export_path.name
-    usd_file_name = '_'.join(entity_uri.segments[1:] + [
-        department_name,
-        render_layer_name,
-        version_name
-    ]) + '.usd'
-    return export_path / usd_file_name
 
 def latest_export_file_path(
     entity_uri: Uri,
@@ -1440,6 +1323,156 @@ def next_export_file_path(
     usd_file_name = usd_file_name_pattern.replace('*', version_name)
     return version_path / usd_file_name
 
+def get_export_uri(entity_uri: Uri, department_name: str) -> Uri:
+    """Get export URI for entity and department.
+
+    Returns the URI (not resolved path) for use in import modules.
+    """
+    return Uri.parse_unsafe('export:/') / entity_uri.segments / department_name
+
+def get_layer_file_name(
+    entity_uri: Uri,
+    department_name: str,
+    version_name: str
+    ) -> str:
+    """Get layer filename (.usd).
+
+    Returns the filename for department layer exports.
+    """
+    entity_name = '_'.join(entity_uri.segments)
+    return f'{entity_name}_{department_name}_{version_name}.usd'
+
+###############################################################################
+# Variant Export Paths
+###############################################################################
+def get_variant_export_path(
+    entity_uri: Uri,
+    variant_name: str,
+    department_name: str,
+    version_name: str
+    ) -> Path:
+    """Get export path for a variant.
+
+    Path structure: export:/{entity}/variants/{variant}/{department}/{version}/
+    """
+    export_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        'variants' /
+        variant_name /
+        department_name /
+        version_name
+    )
+    return api.storage.resolve(export_uri)
+
+
+def get_variant_export_file_path(
+    entity_uri: Uri,
+    variant_name: str,
+    department_name: str,
+    version_name: str
+    ) -> Path:
+    """Get the USD file path for a variant export."""
+    version_path = get_variant_export_path(
+        entity_uri,
+        variant_name,
+        department_name,
+        version_name
+    )
+    usd_file_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            variant_name,
+            department_name,
+            version_name
+        ]),
+        'usd'
+    ])
+    return version_path / usd_file_name
+
+
+def latest_variant_export_path(
+    entity_uri: Uri,
+    variant_name: str,
+    department_name: str
+    ) -> Optional[Path]:
+    """Get the latest version path for a variant export."""
+    export_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        'variants' /
+        variant_name /
+        department_name
+    )
+    export_path = api.storage.resolve(export_uri)
+    version_paths = list_version_paths(export_path)
+    if len(version_paths) == 0: return None
+    return version_paths[-1]
+
+
+def latest_variant_export_file_path(
+    entity_uri: Uri,
+    variant_name: str,
+    department_name: str
+    ) -> Optional[Path]:
+    """Get the latest USD file path for a variant export."""
+    latest_path = latest_variant_export_path(
+        entity_uri,
+        variant_name,
+        department_name
+    )
+    if latest_path is None: return None
+    version_name = latest_path.name
+    usd_file_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            variant_name,
+            department_name,
+            version_name
+        ]),
+        'usd'
+    ])
+    return latest_path / usd_file_name
+
+
+def next_variant_export_path(
+    entity_uri: Uri,
+    variant_name: str,
+    department_name: str
+    ) -> Path:
+    """Get the next version path for a variant export."""
+    export_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        'variants' /
+        variant_name /
+        department_name
+    )
+    export_path = api.storage.resolve(export_uri)
+    return get_next_version_path(export_path)
+
+
+def next_variant_export_file_path(
+    entity_uri: Uri,
+    variant_name: str,
+    department_name: str
+    ) -> Path:
+    """Get the next USD file path for a variant export."""
+    version_path = next_variant_export_path(
+        entity_uri,
+        variant_name,
+        department_name
+    )
+    version_name = version_path.name
+    usd_file_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + [
+            variant_name,
+            department_name,
+            version_name
+        ]),
+        'usd'
+    ])
+    return version_path / usd_file_name
+
+
 ###############################################################################
 # Staged Paths
 ###############################################################################
@@ -1471,9 +1504,10 @@ def get_staged_file_path(
     ])
     return version_path / usd_file_name
 
-def latest_staged_path(
+def current_staged_path(
     entity_uri: Uri
     ) -> Optional[Path]:
+    """Get path to the highest numbered staged version directory."""
     staged_uri = (
         Uri.parse_unsafe('export:/') /
         entity_uri.segments /
@@ -1482,25 +1516,26 @@ def latest_staged_path(
     staged_path = api.storage.resolve(staged_uri)
     version_paths = list_version_paths(staged_path)
     if len(version_paths) == 0: return None
-    latest_version_path = version_paths[-1]
-    return latest_version_path
+    current_version_path = version_paths[-1]
+    return current_version_path
 
-def latest_staged_file_path(
+def current_staged_file_path(
     entity_uri: Uri
     ) -> Optional[Path]:
+    """Get path to the highest numbered staged .usda file."""
     usd_file_name_pattern = '.'.join([
         '_'.join(entity_uri.segments[1:] + [
             '*'
         ]),
         'usda'
     ])
-    latest_version_path = latest_staged_path(
+    current_version_path = current_staged_path(
         entity_uri
     )
-    if latest_version_path is None: return None
-    version_name = latest_version_path.name
+    if current_version_path is None: return None
+    version_name = current_version_path.name
     usd_file_name = usd_file_name_pattern.replace('*', version_name)
-    return latest_version_path / usd_file_name
+    return current_version_path / usd_file_name
 
 def next_staged_path(
     entity_uri: Uri
@@ -1527,6 +1562,25 @@ def next_staged_file_path(
     )
     version_name = version_path.name
     usd_file_name = usd_file_name_pattern.replace('*', version_name)
+    return version_path / usd_file_name
+
+def get_latest_staged_path(entity_uri: Uri) -> Path:
+    """Get path to the 'latest' staged directory."""
+    staged_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        '_staged' /
+        'latest'
+    )
+    return api.storage.resolve(staged_uri)
+
+def get_latest_staged_file_path(entity_uri: Uri) -> Path:
+    """Get path to the 'latest' staged .usda file."""
+    version_path = get_latest_staged_path(entity_uri)
+    usd_file_name = '.'.join([
+        '_'.join(entity_uri.segments[1:] + ['latest']),
+        'usda'
+    ])
     return version_path / usd_file_name
 
 def get_rig_export_path(asset_uri: Uri) -> Path:

@@ -17,12 +17,12 @@ from tumblehead.util.io import (
 )
 from tumblehead.config.timeline import FrameRange, get_frame_range
 from tumblehead.config.department import list_departments
-from tumblehead.config.shots import list_render_layers
+from tumblehead.config.variants import list_variants
 from tumblehead.apps.deadline import Deadline
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.context as ctx
 from tumblehead.pipe.paths import (
-    latest_render_layer_export_path,
+    latest_variant_export_path,
     load_entity_context
 )
 
@@ -94,10 +94,10 @@ class SubmitRender(ns.Node):
             if department_name in shot_department_names
         ]
 
-    def list_render_layer_names(self):
+    def list_variant_names(self):
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return []
-        return list_render_layers(shot_uri)
+        return list_variants(shot_uri)
     
     def list_render_department_names(self):
         render_department_names = [dept.name for dept in list_departments('render')]
@@ -121,21 +121,21 @@ class SubmitRender(ns.Node):
             if pool_name in pool_names
         ]
     
-    def list_aov_names(self, render_layer_name):
+    def list_aov_names(self, variant_name):
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return []
         department_name = self.get_shot_department_name()
-        export_path = latest_render_layer_export_path(
+        export_path = latest_variant_export_path(
             shot_uri,
             department_name,
-            render_layer_name
+            variant_name
         )
         if export_path is None: return []
         context_path = export_path / 'context.json'
         context_data = load_json(context_path)
         if context_data is None: return []
         layer_info = ctx.find_output(context_data,
-            render_layer = render_layer_name
+            variant = variant_name
         )
         if layer_info is None: return []
         return layer_info['parameters']['aov_names']
@@ -184,20 +184,20 @@ class SubmitRender(ns.Node):
         if shot_department_name not in shot_department_names: return None
         return shot_department_name
 
-    def get_render_layer_name(self):
-        render_layer_names = self.list_render_layer_names()
-        if len(render_layer_names) == 0: return None
-        render_layer_name = self.parm('render_layer').eval()
-        if len(render_layer_name) == 0: return render_layer_names[0]
-        if render_layer_name == 'all': return 'all'
-        if render_layer_name not in render_layer_names: return None
-        return render_layer_name
+    def get_variant_name(self):
+        variant_names = self.list_variant_names()
+        if len(variant_names) == 0: return None
+        variant_name = self.parm('variant').eval()
+        if len(variant_name) == 0: return variant_names[0]
+        if variant_name == 'all': return 'all'
+        if variant_name not in variant_names: return None
+        return variant_name
 
-    def get_render_layer_names(self):
-        render_layer_name = self.get_render_layer_name()
-        if render_layer_name is None: return []
-        if render_layer_name != 'all': return [render_layer_name]
-        return self.list_render_layer_names()
+    def get_variant_names(self):
+        variant_name = self.get_variant_name()
+        if variant_name is None: return []
+        if variant_name != 'all': return [variant_name]
+        return self.list_variant_names()
 
     def get_render_department_name(self):
         render_department_names = self.list_render_department_names()
@@ -303,10 +303,10 @@ class SubmitRender(ns.Node):
         if shot_department_name not in shot_department_names: return
         self.parm('shot_department').set(shot_department_name)
     
-    def set_render_layer_name(self, render_layer_name):
-        render_layer_names = self.list_render_layer_names()
-        if render_layer_name not in render_layer_names: return
-        self.parm('render_layer').set(render_layer_name)
+    def set_variant_name(self, variant_name):
+        variant_names = self.list_variant_names()
+        if variant_name not in variant_names: return
+        self.parm('variant').set(variant_name)
     
     def set_render_department_name(self, render_department_name):
         render_department_names = self.list_render_department_names()
@@ -351,14 +351,14 @@ class SubmitRender(ns.Node):
 
         # Parameters
         shot_uri = self.get_shot_uri()
-        render_layer_name = self.get_render_layer_name()
-        if render_layer_name == 'all':
-            render_layer_names = self.list_render_layer_names()
-            render_layer_name = render_layer_names[0]
+        variant_name = self.get_variant_name()
+        if variant_name == 'all':
+            variant_names = self.list_variant_names()
+            variant_name = variant_names[0]
 
         # Set the preview parameters using URI path
         self.parm('preview_shot').set(str(shot_uri))
-        self.parm('preview_render_layer').set(render_layer_name)
+        self.parm('preview_variant').set(variant_name)
 
         # Create the preview null node
         preview_node = _ensure_preview_node(self.native())
@@ -394,10 +394,10 @@ class SubmitRender(ns.Node):
         shot_uri = self.get_shot_uri()
         shot_department_name = self.get_shot_department_name()
 
-        # Get render layer names to process
-        render_layer_names = self.get_render_layer_names()
-        if len(render_layer_names) == 0:
-            raise ValueError("No render layers to submit")
+        # Get variant names to process
+        variant_names = self.get_variant_names()
+        if len(variant_names) == 0:
+            raise ValueError("No variants to submit")
 
         # Prepare common settings
         user_name = get_user_name()
@@ -413,10 +413,10 @@ class SubmitRender(ns.Node):
         batch_size = self.get_batch_size()
         timestamp = dt.datetime.now()
 
-        # Collect AOVs for all render layers
+        # Collect AOVs for all variants
         all_aov_names = []
-        for render_layer_name in render_layer_names:
-            layer_aov_names = self.list_aov_names(render_layer_name)
+        for variant_name in variant_names:
+            layer_aov_names = self.list_aov_names(variant_name)
             all_aov_names.extend(layer_aov_names)
 
         # Remove duplicates while preserving order
@@ -467,7 +467,7 @@ class SubmitRender(ns.Node):
                 .relative_to(temp_path)
             )
             store_json(render_settings_path, dict(
-                layer_names = render_layer_names,
+                variant_names = variant_names,
                 aov_names = aov_names,
                 overrides = {
                     'karma:global:pathtracedsamples': samples
@@ -484,7 +484,7 @@ class SubmitRender(ns.Node):
                     user_name = user_name,
                     purpose = 'render',
                     pool_name = pool_name,
-                    render_layer_names = render_layer_names,
+                    variant_names = variant_names,
                     render_department_name = render_department_name,
                     render_settings_path = path_str(
                         relative_render_settings_path
@@ -502,10 +502,10 @@ class SubmitRender(ns.Node):
 
         # Update node comment
         native = self.native()
-        layers_text = ', '.join(render_layer_names)
+        variants_text = ', '.join(variant_names)
         new_comment = (
             f'{user_name} submitted:\n'
-            f'{layers_text}\n'
+            f'{variants_text}\n'
             f'{samples} samples\n'
             f'{timestamp.strftime("%Y-%m-%d %H:%M")}\n'
         )
@@ -525,7 +525,7 @@ class SubmitRender(ns.Node):
             f"Render job submitted to farm\n\n"
             f"Shot: {shot_uri}\n"
             f"Department: {shot_department_name}\n"
-            f"Render Layers: {layers_text}\n"
+            f"Variants: {variants_text}\n"
             f"Samples: {samples}\n"
             f"Tasks: {', '.join(tasks_text)}",
             title="Render Submitted"

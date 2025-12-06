@@ -22,10 +22,44 @@ if tumblehead_packages_path not in sys.path:
 
 from tumblehead.util.io import load_json
 from tumblehead.util.uri import Uri
+from tumblehead.config.variants import DEFAULT_VARIANT
+from tumblehead.config.department import list_departments
 from tumblehead.pipe.paths import (
-    latest_export_path
+    latest_export_path,
+    latest_variant_export_path
 )
 import tumblehead.pipe.context as ctx
+
+
+def get_source_department(inputs: list[dict], department_order: list[str]) -> str | None:
+    """
+    Find the source department (first shot department) from inputs array.
+
+    Extracts all shot department entries from inputs and returns the one
+    that appears earliest in the pipeline department order.
+
+    Args:
+        inputs: List of input dicts with 'uri' and 'department' keys
+        department_order: List of department names in pipeline order
+
+    Returns:
+        The source department name, or None if no shot entries found
+    """
+    # Extract shot department entries (URIs starting with entity:/shots/)
+    shot_depts = [
+        inp['department'] for inp in inputs
+        if inp.get('uri', '').startswith('entity:/shots/')
+    ]
+    if not shot_depts:
+        return None
+
+    # Return the one earliest in pipeline order
+    for dept in department_order:
+        if dept in shot_depts:
+            return dept
+
+    # Fallback to first shot department found
+    return shot_depts[0]
 
 
 def _get_entity_type(entity_uri: Uri) -> Optional[str]:
@@ -278,12 +312,26 @@ def find_shots_referencing_asset(graph: Graph, asset_uri: Uri) -> list[Uri]:
 
 # === Resolution ===
 
+def _get_latest_export_path(entity_uri: Uri, variant_name: str, department_name: str) -> Optional[Path]:
+    """Get latest export path, considering variant."""
+    if variant_name == DEFAULT_VARIANT:
+        return latest_export_path(entity_uri, department_name)
+    else:
+        # Try variant path first, fall back to default
+        variant_path = latest_variant_export_path(entity_uri, variant_name, department_name)
+        if variant_path is not None:
+            return variant_path
+        return latest_export_path(entity_uri, department_name)
+
+
 def resolve_shot_build(
     graph: Graph,
     api,
     shot_uri: Uri,
     shot_departments: list[str],
-    asset_departments: list[str]
+    asset_departments: list[str],
+    shot_variant: str = DEFAULT_VARIANT,
+    asset_variants: Optional[dict] = None
 ) -> dict:
     """
     Resolve all versions needed to build a shot.
@@ -291,23 +339,43 @@ def resolve_shot_build(
     Replaces _resolve_versions_latest() in build.py/build_shot.py.
     Uses graph to find entities, then looks up latest versions.
 
+    Args:
+        graph: Scanned dependency graph
+        api: API client
+        shot_uri: Shot URI to build
+        shot_departments: List of shot department names
+        asset_departments: List of asset department names
+        shot_variant: Variant name for shot layers (default: 'default')
+        asset_variants: Optional dict mapping asset_uri to variant_name for per-asset variants
+
     Returns: {
         'assets': {asset_uri: set(instance_names)},
         'shot_layers': {dept: (version_path, {asset_uri: set(instances)})},
-        'asset_layers': {dept: {asset_uri: version_path}}
+        'asset_layers': {dept: {asset_uri: version_path}},
+        'shot_variant': str,
+        'asset_variants': {asset_uri: variant_name}
     }
     """
     if not graph.scanned:
         raise ValueError("Graph not scanned")
 
+    if asset_variants is None:
+        asset_variants = {}
+
+    # Get department order for determining source
+    all_shot_departments = [d.name for d in list_departments('shots')]
+
     # Helper: Find latest shot layer paths and extract assets
-    def _latest_shot_layer_paths(shot_departments):
+    def _latest_shot_layer_paths(shot_departments, variant_name):
         layer_data = dict()
         shot_assets = dict()
+        asset_inputs = dict()  # Track inputs per asset for staged output
 
+        # First pass: collect all assets and their sources from each department
+        dept_asset_data = {}  # {dept: [(asset_uri, instance, inputs), ...]}
         for department_name in shot_departments:
-            # Find latest layer version
-            latest_version_path = latest_export_path(shot_uri, department_name)
+            # Find latest layer version (with variant support)
+            latest_version_path = _get_latest_export_path(shot_uri, variant_name, department_name)
             if latest_version_path is None:
                 continue
 
@@ -326,12 +394,49 @@ def resolve_shot_build(
             if layer_info is None:
                 continue
 
-            # Find assets in layer
-            layer_assets = dict()
-            for asset_datum in layer_info['parameters']['assets']:
+            # Collect assets with their inputs
+            dept_asset_data[department_name] = []
+            for asset_datum in layer_info['parameters'].get('assets', []):
                 asset_uri = Uri.parse_unsafe(asset_datum['asset'])
                 instance_name = asset_datum['instance']
+                inputs = asset_datum.get('inputs', [])
+                dept_asset_data[department_name].append((asset_uri, instance_name, inputs, latest_version_path))
 
+        # Determine which assets exist in each source department (for validation)
+        source_dept_assets = {}  # {dept: set(asset_uri)}
+        for dept, assets in dept_asset_data.items():
+            source_dept_assets[dept] = {asset_uri for asset_uri, _, _, _ in assets}
+
+        # Second pass: filter assets by source department
+        for department_name, assets in dept_asset_data.items():
+            layer_assets = dict()
+            latest_version_path = None
+
+            for asset_uri, instance_name, inputs, version_path in assets:
+                latest_version_path = version_path
+
+                # Determine source department from inputs
+                source_dept = get_source_department(inputs, all_shot_departments)
+
+                # Backwards compatibility: if no source, use first dept that has it
+                if source_dept is None:
+                    # Find first department in order that has this asset
+                    for dept in all_shot_departments:
+                        if dept in source_dept_assets and asset_uri in source_dept_assets[dept]:
+                            source_dept = dept
+                            break
+
+                # Skip if source department is not in our resolution list
+                if source_dept not in shot_departments:
+                    continue
+
+                # Verify source department still has this asset
+                if source_dept not in source_dept_assets:
+                    continue
+                if asset_uri not in source_dept_assets[source_dept]:
+                    continue
+
+                # Include the asset
                 if asset_uri not in shot_assets:
                     shot_assets[asset_uri] = set()
                 if asset_uri not in layer_assets:
@@ -340,20 +445,28 @@ def resolve_shot_build(
                 shot_assets[asset_uri].add(instance_name)
                 layer_assets[asset_uri].add(instance_name)
 
-            # Store layer data
-            layer_data[department_name] = (latest_version_path, layer_assets)
+                # Track inputs for this asset (use first occurrence)
+                if asset_uri not in asset_inputs:
+                    asset_inputs[asset_uri] = inputs
 
-        return layer_data, shot_assets
+            # Store layer data
+            if latest_version_path is not None:
+                layer_data[department_name] = (latest_version_path, layer_assets)
+
+        return layer_data, shot_assets, asset_inputs
 
 
     # Helper: Find latest asset layer paths
-    def _latest_asset_layer_paths(assets, asset_departments):
+    def _latest_asset_layer_paths(assets, asset_departments, asset_variants):
         layer_data = dict()
 
         for asset_uri in assets.keys():
+            # Get variant for this asset (default if not specified)
+            asset_variant = asset_variants.get(asset_uri, DEFAULT_VARIANT)
+
             for department_name in asset_departments:
-                # Find latest layer version
-                latest_version_path = latest_export_path(asset_uri, department_name)
+                # Find latest layer version (with variant support)
+                latest_version_path = _get_latest_export_path(asset_uri, asset_variant, department_name)
                 if latest_version_path is None:
                     continue
 
@@ -365,14 +478,17 @@ def resolve_shot_build(
         return layer_data
 
     # Find latest paths
-    shot_layer_paths, assets = _latest_shot_layer_paths(shot_departments)
-    asset_layer_paths = _latest_asset_layer_paths(assets, asset_departments)
+    shot_layer_paths, assets, asset_inputs = _latest_shot_layer_paths(shot_departments, shot_variant)
+    asset_layer_paths = _latest_asset_layer_paths(assets, asset_departments, asset_variants)
 
     # Done
     return dict(
         assets=assets,
+        asset_inputs=asset_inputs,  # Track inputs per asset for staged output
         shot_layers=shot_layer_paths,
-        asset_layers=asset_layer_paths
+        asset_layers=asset_layer_paths,
+        shot_variant=shot_variant,
+        asset_variants=asset_variants
     )
 
 
@@ -380,7 +496,8 @@ def resolve_asset_build(
     graph: Graph,
     api,
     asset_uri: Uri,
-    asset_departments: list[str]
+    asset_departments: list[str],
+    variant_name: str = DEFAULT_VARIANT
 ) -> dict:
     """
     Resolve all versions needed to build a staged asset.
@@ -394,24 +511,27 @@ def resolve_asset_build(
         asset_uri: Asset URI to build (e.g., entity:/assets/CHAR/Steen)
         asset_departments: List of department names in priority order
                           (stronger layers first, e.g., ['lookdev', 'model'])
+        variant_name: Variant name to use (default: 'default')
 
     Returns: {
         'asset_uri': asset_uri,
+        'variant': variant_name,
         'department_layers': {dept_name: version_path}
     }
     """
     if not graph.scanned:
         raise ValueError("Graph not scanned")
 
-    # Find latest version for each department
+    # Find latest version for each department (with variant support)
     department_layers = {}
     for department_name in asset_departments:
-        latest_version_path = latest_export_path(asset_uri, department_name)
+        latest_version_path = _get_latest_export_path(asset_uri, variant_name, department_name)
         if latest_version_path is None:
             continue
         department_layers[department_name] = latest_version_path
 
     return dict(
         asset_uri=asset_uri,
+        variant=variant_name,
         department_layers=department_layers
     )

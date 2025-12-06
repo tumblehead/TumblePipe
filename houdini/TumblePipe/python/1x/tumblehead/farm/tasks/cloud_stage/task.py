@@ -34,7 +34,7 @@ config = {
         'purpose': 'string',
         'priority': 'int',
         'pool_name': 'string',
-        'render_layer_name': 'string',
+        'variant_name': 'string',
         'render_department_name': 'string',
         'render_settings_path': 'string',
         'tile_count': 'int',
@@ -87,7 +87,7 @@ def _is_valid_config(config):
         if not _check_str(settings, 'purpose'): return False
         if not _check_int(settings, 'priority'): return False
         if not _check_str(settings, 'pool_name'): return False
-        if not _check_str(settings, 'render_layer_name'): return False
+        if not _check_str(settings, 'variant_name'): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
         if not _check_int(settings, 'tile_count'): return False

@@ -48,7 +48,7 @@ def main(config):
     purpose = config['settings']['purpose']
     priority = config['settings']['priority']
     pool_name = config['settings']['pool_name']
-    render_layer_name = config['settings']['render_layer_name']
+    variant_name = config['settings']['variant_name']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     tile_count = config['settings']['tile_count']
@@ -80,7 +80,7 @@ def main(config):
             department = department_name,
             first_frame = first_frame,
             last_frame = last_frame,
-            render_layer_name = render_layer_name,
+            variant_name = variant_name,
             render_department_name = render_department_name,
             render_settings_path = path_str(render_settings_path),
             output_path = path_str(to_windows_path(stage_path))
@@ -130,7 +130,7 @@ def main(config):
                 purpose = purpose,
                 priority = priority,
                 pool_name = pool_name,
-                render_layer_name = render_layer_name,
+                variant_name = variant_name,
                 render_department_name = render_department_name,
                 render_settings_path = path_str(render_settings_path),
                 archive_path = path_str(relative_archive_path),
@@ -162,7 +162,7 @@ config = {
         'purpose': 'string',
         'priority': 'int',
         'pool_name': 'string',
-        'render_layer_name': 'string',
+        'variant_name': 'string',
         'render_department_name': 'string',
         'render_settings_path': 'string',
         'tile_count': 'int',
@@ -215,7 +215,7 @@ def _is_valid_config(config):
         if not _check_str(settings, 'purpose'): return False
         if not _check_int(settings, 'priority'): return False
         if not _check_str(settings, 'pool_name'): return False
-        if not _check_str(settings, 'render_layer_name'): return False
+        if not _check_str(settings, 'variant_name'): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
         if not _check_int(settings, 'tile_count'): return False

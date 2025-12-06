@@ -11,7 +11,7 @@ if tumblehead_packages_path not in sys.path:
 
 from tumblehead.api import path_str, fix_path, to_windows_path, default_client
 from tumblehead.config.timeline import BlockRange
-from tumblehead.config.shots import list_render_layers
+from tumblehead.config.variants import list_variants
 from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Houdini
 
@@ -29,7 +29,7 @@ EXPORT_SCRIPT_PATH = Path(__file__).parent / 'export_houdini.py'
 def main(
     shot_uri: Uri,
     render_department_name: str,
-    render_layer_name: str,
+    variant_name: str,
     render_range: BlockRange
     ) -> int:
 
@@ -62,7 +62,7 @@ def main(
             [
                 str(shot_uri),
                 render_department_name,
-                render_layer_name,
+                variant_name,
                 str(render_range.first_frame),
                 str(render_range.last_frame),
                 path_str(temp_stage_path)
@@ -90,7 +90,7 @@ def cli():
     parser = argparse.ArgumentParser()
     parser.add_argument('entity_uri', type=str)
     parser.add_argument('render_department_name', type=str)
-    parser.add_argument('render_layer_name', type=str)
+    parser.add_argument('variant_name', type=str)
     parser.add_argument('first_frame', type=int)
     parser.add_argument('last_frame', type=int)
     args = parser.parse_args()
@@ -112,10 +112,10 @@ def cli():
         )
 
     # Check render layer name
-    render_layer_name = args.render_layer_name
-    render_layer_names = list_render_layers(shot_uri)
-    if render_layer_name not in render_layer_names:
-        return _error(f'Invalid layer name: {render_layer_name}')
+    variant_name = args.variant_name
+    variant_names = list_variants(shot_uri)
+    if variant_name not in variant_names:
+        return _error(f'Invalid layer name: {variant_name}')
 
     # Check render range
     first_frame = args.first_frame
@@ -128,7 +128,7 @@ def cli():
     return main(
         shot_uri,
         render_department_name,
-        render_layer_name,
+        variant_name,
         render_range
     )
 

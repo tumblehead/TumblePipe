@@ -74,8 +74,13 @@ from tumblehead.config.procedurals import (
     list_procedural_names
 )
 
-from tumblehead.config.shots import (
-    list_render_layers
+from tumblehead.config.variants import (
+    DEFAULT_VARIANT,
+    list_variants,
+    add_variant,
+    remove_variant,
+    has_variant,
+    get_entity_type
 )
 
 from tumblehead.config.discord import (
@@ -129,8 +134,13 @@ __all__ = [
     'find_group',
     # Procedurals
     'list_procedural_names',
-    # Shots
-    'list_render_layers',
+    # Variants
+    'DEFAULT_VARIANT',
+    'list_variants',
+    'add_variant',
+    'remove_variant',
+    'has_variant',
+    'get_entity_type',
     # Discord
     'get_discord_token',
     'get_user_discord_id',

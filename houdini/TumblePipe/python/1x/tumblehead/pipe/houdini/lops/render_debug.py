@@ -4,12 +4,12 @@ import hou
 
 from tumblehead.api import default_client
 from tumblehead.util.uri import Uri
-from tumblehead.config.shots import list_render_layers
+from tumblehead.config.variants import list_variants
 from tumblehead.config.department import list_departments
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.lops import (
     build_shot,
-    import_render_layer
+    import_variant
 )
 from tumblehead.pipe.paths import (
     get_workfile_context
@@ -39,10 +39,10 @@ class RenderDebug(ns.Node):
         )
         return [entity.uri for entity in shot_entities]
 
-    def list_render_layer_names(self):
+    def list_variant_names(self):
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return []
-        return list_render_layers(shot_uri)
+        return list_variants(shot_uri)
     
     def get_shot_uri(self) -> Uri | None:
         shot_uris = self.list_shot_uris()
@@ -53,23 +53,23 @@ class RenderDebug(ns.Node):
         if shot_uri not in shot_uris: return None
         return shot_uri
 
-    def get_render_layer_name(self):
-        render_layer_names = self.list_render_layer_names()
-        if len(render_layer_names) == 0: return None
-        render_layer_name = self.parm('render_layer').eval()
-        if len(render_layer_name) == 0: return render_layer_names[0]
-        if render_layer_name not in render_layer_names: return None
-        return render_layer_name
+    def get_variant_name(self):
+        variant_names = self.list_variant_names()
+        if len(variant_names) == 0: return None
+        variant_name = self.parm('variant').eval()
+        if len(variant_name) == 0: return variant_names[0]
+        if variant_name not in variant_names: return None
+        return variant_name
     
     def set_shot_uri(self, shot_uri: Uri):
         shot_uris = self.list_shot_uris()
         if shot_uri not in shot_uris: return
         self.parm('shot').set(str(shot_uri))
 
-    def set_render_layer_name(self, render_layer_name):
-        render_layer_names = self.list_render_layer_names()
-        if render_layer_name not in render_layer_names: return
-        self.parm('render_layer').set(render_layer_name)
+    def set_variant_name(self, variant_name):
+        variant_names = self.list_variant_names()
+        if variant_name not in variant_names: return
+        self.parm('variant').set(variant_name)
 
     def execute(self):
 
@@ -81,7 +81,7 @@ class RenderDebug(ns.Node):
 
         # Parameters
         shot_uri = self.get_shot_uri()
-        render_layer_name = self.get_render_layer_name()
+        variant_name = self.get_variant_name()
         included_shot_departments = [d.name for d in list_departments('shots') if d.renderable]
 
         # Setup build shot
@@ -93,37 +93,37 @@ class RenderDebug(ns.Node):
         shot_node.execute()
         prev_node = shot_node.native()
 
-        # Prepare import render layers
-        render_layer_subnet = dive_node.createNode('subnet', 'import_render_layer')
-        render_layer_subnet.node('output0').destroy()
-        render_layer_subnet_input = render_layer_subnet.indirectInputs()[0]
-        render_layer_subnet_output = render_layer_subnet.createNode('output', 'output')
+        # Prepare import variants
+        variant_subnet = dive_node.createNode('subnet', 'import_variant')
+        variant_subnet.node('output0').destroy()
+        variant_subnet_input = variant_subnet.indirectInputs()[0]
+        variant_subnet_output = variant_subnet.createNode('output', 'output')
 
         # Connect build shot to subnet
-        _connect(prev_node, render_layer_subnet)
-        prev_node = render_layer_subnet_input
+        _connect(prev_node, variant_subnet)
+        prev_node = variant_subnet_input
 
-        # Setup import render layer
+        # Setup import variant
         for shot_department_name in included_shot_departments:
-            layer_node = import_render_layer.create(render_layer_subnet, f'{shot_department_name}_import')
-            layer_node.set_shot_uri(shot_uri)
+            layer_node = import_variant.create(variant_subnet, f'{shot_department_name}_import')
+            layer_node.set_entity_uri(shot_uri)
             layer_node.set_department_name(shot_department_name)
-            layer_node.set_render_layer_name(render_layer_name)
+            layer_node.set_variant_name(variant_name)
             layer_node.latest()
             layer_node.execute()
             _connect(prev_node, layer_node.native())
             prev_node = layer_node.native()
 
         # Connect last node to subnet output
-        _connect(prev_node, render_layer_subnet_output)
-        prev_node = render_layer_subnet
+        _connect(prev_node, variant_subnet_output)
+        prev_node = variant_subnet
 
         # Connect output node
         _connect(prev_node, output_node)
 
         # Layout nodes
         dive_node.layoutChildren()
-        render_layer_subnet.layoutChildren()
+        variant_subnet.layoutChildren()
 
 def create(scene, name):
     node_type = ns.find_node_type('render_debug', 'Lop')

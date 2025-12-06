@@ -8,18 +8,18 @@ from tumblehead.util.io import store_json
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
 from tumblehead.config.timeline import FrameRange, get_frame_range
-from tumblehead.config.shots import list_render_layers
+from tumblehead.config.variants import list_variants
 from tumblehead.pipe.houdini import util
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.paths import (
-    latest_render_layer_export_path,
-    next_render_layer_export_file_path,
+    latest_variant_export_path,
+    next_variant_export_file_path,
     get_workfile_context
 )
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/export_render_layer')
+DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/export_variant')
 
 def _sort_aov_names(aov_names):
     beauty = None
@@ -43,7 +43,7 @@ def _sort_aov_names(aov_names):
     result += other
     return result
 
-class ExportRenderLayer(ns.Node):
+class ExportVariant(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
@@ -65,11 +65,11 @@ class ExportRenderLayer(ns.Node):
             if department_name in shot_department_names
         ]
 
-    def list_render_layer_names(self):
+    def list_variant_names(self):
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return []
-        return list_render_layers(shot_uri)
-    
+        return list_variants(shot_uri)
+
     def get_entity_source(self):
         return self.parm('entity_source').eval()
 
@@ -84,9 +84,9 @@ class ExportRenderLayer(ns.Node):
             case 'from_settings':
                 shot_uris = self.list_shot_uris()
                 if len(shot_uris) == 0: return None
-                shot_uri_raw = self.parm('shot').eval()
-                if len(shot_uri_raw) == 0: return shot_uris[0]
-                shot_uri = Uri.parse_unsafe(shot_uri_raw)
+                entity_uri_raw = self.parm('entity').eval()
+                if len(entity_uri_raw) == 0: return shot_uris[0]
+                shot_uri = Uri.parse_unsafe(entity_uri_raw)
                 if shot_uri not in shot_uris: return None
                 return shot_uri
             case _:
@@ -109,18 +109,18 @@ class ExportRenderLayer(ns.Node):
                 return department_name
             case _:
                 raise AssertionError(f'Unknown entity source token: {entity_source}')
-    
-    def get_render_layer_name(self):
-        render_layer_names = self.list_render_layer_names()
-        if len(render_layer_names) == 0: return None
-        render_layer_name = self.parm('layer').eval()
-        if len(render_layer_name) == 0: return render_layer_names[0]
-        if render_layer_name not in render_layer_names: return None
-        return render_layer_name
-    
+
+    def get_variant_name(self):
+        variant_names = self.list_variant_names()
+        if len(variant_names) == 0: return None
+        variant_name = self.parm('variant').eval()
+        if len(variant_name) == 0: return variant_names[0]
+        if variant_name not in variant_names: return None
+        return variant_name
+
     def get_frame_range_source(self):
         return self.parm('frame_range').eval()
-    
+
     def get_frame_range(self):
         frame_range_source = self.get_frame_range_source()
         match frame_range_source:
@@ -144,30 +144,30 @@ class ExportRenderLayer(ns.Node):
         if entity_source not in valid_sources: return
         self.parm('entity_source').set(entity_source)
 
-    def set_shot_uri(self, shot_uri: Uri):
-        shot_uris = self.list_shot_uris()
-        if shot_uri not in shot_uris: return
-        self.parm('shot').set(str(shot_uri))
-    
+    def set_entity_uri(self, entity_uri: Uri):
+        entity_uris = self.list_shot_uris()
+        if entity_uri not in entity_uris: return
+        self.parm('entity').set(str(entity_uri))
+
     def set_department_name(self, department_name):
         department_names = self.list_department_names()
         if department_name not in department_names: return
         self.parm('department').set(department_name)
-    
-    def set_layer_name(self, layer_name):
-        layer_names = self.list_render_layer_names()
-        if layer_name not in layer_names: return
-        self.parm('layer').set(layer_name)
+
+    def set_variant_name(self, variant_name):
+        variant_names = self.list_variant_names()
+        if variant_name not in variant_names: return
+        self.parm('variant').set(variant_name)
 
     def _do_export_to_shot(self, stage_node, shot_uri: Uri, department_name,
-                            render_layer_name, frame_range, frame_step):
+                            variant_name, frame_range, frame_step):
         """Core export logic for a single shot
 
         Args:
             stage_node: Stage input node
             shot_uri: Shot URI
             department_name: Department name
-            render_layer_name: Render layer name
+            variant_name: Variant name
             frame_range: Frame range for this shot
             frame_step: Frame step size
 
@@ -185,10 +185,10 @@ class ExportRenderLayer(ns.Node):
             aov_names.append(aov_path.rsplit('/', 1)[-1].lower())
 
         # Get export file path
-        file_path = next_render_layer_export_file_path(
+        file_path = next_variant_export_file_path(
             shot_uri,
-            department_name,
-            render_layer_name
+            variant_name,
+            department_name
         )
         version_path = file_path.parent
         version_name = version_path.name
@@ -207,7 +207,7 @@ class ExportRenderLayer(ns.Node):
             outputs = [dict(
                 uri = str(shot_uri),
                 department = department_name,
-                render_layer = render_layer_name,
+                variant = variant_name,
                 version = version_name,
                 timestamp = timestamp.isoformat(),
                 user = user_name,
@@ -230,13 +230,13 @@ class ExportRenderLayer(ns.Node):
         # Parameters
         shot_uri = self.get_shot_uri()
         department_name = self.get_department_name()
-        render_layer_name = self.get_render_layer_name()
+        variant_name = self.get_variant_name()
         frame_range_result = self.get_frame_range()
 
         # Check parameters
         if shot_uri is None: return
         if department_name is None: return
-        if render_layer_name is None: return
+        if variant_name is None: return
         if frame_range_result is None: return
 
         frame_range, frame_step = frame_range_result
@@ -246,7 +246,7 @@ class ExportRenderLayer(ns.Node):
             stage_node,
             shot_uri,
             department_name,
-            render_layer_name,
+            variant_name,
             frame_range,
             frame_step
         )
@@ -265,25 +265,25 @@ class ExportRenderLayer(ns.Node):
         if shot_uri is None: return
         department_name = self.get_department_name()
         if department_name is None: return
-        render_layer_name = self.get_render_layer_name()
-        if render_layer_name is None: return
+        variant_name = self.get_variant_name()
+        if variant_name is None: return
 
         # Find latest version
-        export_path = latest_render_layer_export_path(
+        export_path = latest_variant_export_path(
             shot_uri,
-            department_name,
-            render_layer_name
+            variant_name,
+            department_name
         )
         if export_path is None: return
         if not export_path.exists(): return
         hou.ui.showInFileBrowser(f'{path_str(export_path)}')
 
 def create(scene, name):
-    node_type = ns.find_node_type('export_render_layer', 'Lop')
-    assert node_type is not None, 'Could not find export_render_layer node type'
+    node_type = ns.find_node_type('export_variant', 'Lop')
+    assert node_type is not None, 'Could not find export_variant node type'
     native = scene.node(name)
-    if native is not None: return ExportRenderLayer(native)
-    return ExportRenderLayer(scene.createNode(node_type.name(), name))
+    if native is not None: return ExportVariant(native)
+    return ExportVariant(scene.createNode(node_type.name(), name))
 
 def set_style(raw_node):
     raw_node.setColor(ns.COLOR_NODE_DEFAULT)
@@ -294,21 +294,26 @@ def on_created(raw_node):
     # Set node style
     set_style(raw_node)
 
+    node = ExportVariant(raw_node)
+
     # Check if workfile context exists
     file_path = Path(hou.hipFile.path())
     context = get_workfile_context(file_path)
-    if context is not None: return  # Context exists → keep 'from_context'
+    if context is None:
+        # No context -> change entity source to settings
+        node.set_entity_source('from_settings')
 
-    # No context → change entity source to settings
-    node = ExportRenderLayer(raw_node)
-    node.set_entity_source('from_settings')
+    # Always set default entity (ensures department menu works correctly)
+    entity_uris = node.list_shot_uris()
+    if entity_uris:
+        node.set_entity_uri(entity_uris[0])
 
 def execute():
     raw_node = hou.pwd()
-    node = ExportRenderLayer(raw_node)
+    node = ExportVariant(raw_node)
     node.execute()
 
 def open_location():
     raw_node = hou.pwd()
-    node = ExportRenderLayer(raw_node)
+    node = ExportVariant(raw_node)
     node.open_location()

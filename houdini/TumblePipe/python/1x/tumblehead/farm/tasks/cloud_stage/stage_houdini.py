@@ -15,7 +15,7 @@ from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini import util
 from tumblehead.pipe.houdini.lops import (
     build_shot,
-    import_render_layer,
+    import_variant,
     archive
 )
 
@@ -86,7 +86,7 @@ def _get_render_settings_script(render_settings_path: Path) -> str:
 def main(
     shot_uri: Uri,
     render_range: BlockRange,
-    render_layer_name: str,
+    variant_name: str,
     render_department_name: str,
     render_settings_path: Path,
     output_path: Path
@@ -109,35 +109,35 @@ def main(
     shot_node.execute()
     prev_node = shot_node.native()
 
-    # Prepare import render layers
-    render_layer_subnet = scene_node.createNode('subnet', '__render_layers')
-    render_layer_subnet.node('output0').destroy()
-    render_layer_subnet_input = render_layer_subnet.indirectInputs()[0]
-    render_layer_subnet_output = render_layer_subnet.createNode(
+    # Prepare import variants
+    variant_subnet = scene_node.createNode('subnet', '__variants')
+    variant_subnet.node('output0').destroy()
+    variant_subnet_input = variant_subnet.indirectInputs()[0]
+    variant_subnet_output = variant_subnet.createNode(
         'output', 'output'
     )
 
     # Connect build shot to subnet
-    _connect(prev_node, render_layer_subnet)
-    prev_node = render_layer_subnet_input
+    _connect(prev_node, variant_subnet)
+    prev_node = variant_subnet_input
 
-    # Setup render layers node
+    # Setup variant nodes
     for included_department_name in included_department_names:
-        layer_node = import_render_layer.create(
-            render_layer_subnet,
+        layer_node = import_variant.create(
+            variant_subnet,
             included_department_name
         )
-        layer_node.set_shot_uri(shot_uri)
+        layer_node.set_entity_uri(shot_uri)
         layer_node.set_department_name(included_department_name)
-        layer_node.set_render_layer_name(render_layer_name)
+        layer_node.set_variant_name(variant_name)
         layer_node.latest()
         layer_node.execute()
         _connect(prev_node, layer_node.native())
         prev_node = layer_node.native()
-    
+
     # Connect last node to subnet output
-    _connect(prev_node, render_layer_subnet_output)
-    prev_node = render_layer_subnet
+    _connect(prev_node, variant_subnet_output)
+    prev_node = variant_subnet
 
     # Setup edit render settings
     edit_render_settings_node = scene_node.createNode(
@@ -199,7 +199,7 @@ config = {
     },
     'first_frame': 'int',
     'last_frame': 'int',
-    'render_layer_name': 'string',
+    'variant_name': 'string',
     'render_department_name': 'string',
     'render_settings_path': 'path/to/render_settings.json',
     'output_path': 'path/to/stage.usd'
@@ -233,7 +233,7 @@ def _is_valid_config(config):
     if not _valid_entity(config['entity']): return False
     if not _check_int(config, 'first_frame'): return False
     if not _check_int(config, 'last_frame'): return False
-    if not _check_str(config, 'render_layer_name'): return False
+    if not _check_str(config, 'variant_name'): return False
     if not _check_str(config, 'render_department_name'): return False
     if not _check_str(config, 'render_settings_path'): return False
     if not _check_str(config, 'output_path'): return False
@@ -268,7 +268,7 @@ def cli():
         config['first_frame'],
         config['last_frame']
     )
-    render_layer_name = config['render_layer_name']
+    variant_name = config['variant_name']
     render_department_name = config['render_department_name']
     render_settings_path = Path(config['render_settings_path'])
     output_path = Path(config['output_path'])
@@ -277,7 +277,7 @@ def cli():
     return main(
         entity_uri,
         render_range,
-        render_layer_name,
+        variant_name,
         render_department_name,
         render_settings_path,
         output_path

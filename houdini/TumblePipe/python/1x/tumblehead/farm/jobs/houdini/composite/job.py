@@ -24,7 +24,7 @@ from tumblehead.util.io import (
 from tumblehead.util.uri import Uri
 from tumblehead.config.timeline import BlockRange
 from tumblehead.config.department import list_departments
-from tumblehead.config.shots import list_render_layers
+from tumblehead.config.variants import list_variants
 from tumblehead.apps.deadline import (
     Deadline,
     Batch,
@@ -251,7 +251,7 @@ def _build_partial_composite_job(
         store_json(context_path, dict(
             entity = str(entity_uri),
         department = department_name,
-            render_layer_name = layer_name,
+            variant = layer_name,
             render_department_name = 'composite',
             version_name = version_name,
             first_frame = first_frame,
@@ -367,7 +367,7 @@ def _build_full_composite_job(
         store_json(context_path, dict(
             entity = str(entity_uri),
         department = department_name,
-            render_layer_name = layer_name,
+            variant = layer_name,
             render_department_name = 'composite',
             version_name = version_name,
             first_frame = first_frame,
@@ -463,12 +463,12 @@ def _build_slapcomp_job(
     )
 
     # Build input_paths from resolved AOVs in correct layer order
-    # Get render layer names in order (background to foreground)
-    render_layer_names = list_render_layers(entity_uri)
+    # Get variant names in order (background to foreground)
+    variant_names = list_variants(entity_uri)
 
-    # Build ordered input_paths dict using render layer order
+    # Build ordered input_paths dict using variant order
     input_paths = {}
-    for layer_name in render_layer_names:
+    for layer_name in variant_names:
         if layer_name not in latest_aovs:
             continue
         layer_aovs = latest_aovs[layer_name]
@@ -530,7 +530,7 @@ def _build_slapcomp_job(
     store_json(context_path, dict(
         entity = str(entity_uri),
         render_department_name = 'composite',
-        render_layer_name = 'slapcomp',
+        variant = 'slapcomp',
         version_name = slapcomp_version_name,
         first_frame = first_frame,
         last_frame = last_frame,

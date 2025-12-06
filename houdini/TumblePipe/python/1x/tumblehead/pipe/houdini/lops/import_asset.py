@@ -1,30 +1,66 @@
+from pathlib import Path
+
 import hou
 
-from tumblehead.api import default_client
+from tumblehead.api import default_client, path_str
 from tumblehead.util.uri import Uri
+from tumblehead.util.io import load_json
 from tumblehead.config.department import list_departments
 from tumblehead.util import result
 import tumblehead.pipe.houdini.nodes as ns
-from tumblehead.pipe.houdini.lops import import_asset_layer
+from tumblehead.pipe.houdini.util import uri_to_metadata_prim_path
+from tumblehead.pipe.paths import (
+    get_workfile_context,
+    get_latest_staged_file_path,
+    get_staged_file_path,
+    current_staged_file_path,
+    list_version_paths
+)
 
 api = default_client()
 
 DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/import_asset')
 
-def _clear_scene(dive_node, output_node):
+def _metadata_script(
+    asset_uri: Uri,
+    shot_uri: Uri | None = None,
+    shot_department: str | None = None
+) -> str:
+    """
+    Generate Python script for creating asset metadata prim.
 
-    # Clear output connections
-    for input in output_node.inputConnections():
-        output_node.setInput(input.inputIndex(), None)
+    If shot_uri and shot_department are provided, adds a shot department
+    entry to the inputs array to track which department introduced this asset.
+    """
+    metadata_prim_path = uri_to_metadata_prim_path(asset_uri)
+    entity_name = asset_uri.segments[-1]
 
-    # Delete all nodes other than inputs and outputs
-    for node in dive_node.children():
-        if node.name() == output_node.name(): continue
-        node.destroy()
+    # Build initial inputs list
+    inputs_str = '[]'
+    if shot_uri is not None and shot_department is not None:
+        # Add shot department entry to track source
+        inputs_str = f"[{{'uri': '{str(shot_uri)}', 'department': '{shot_department}', 'version': 'initial'}}]"
 
-def _connect(node1, node2):
-    port = len(node2.inputs())
-    node2.setInput(port, node1)
+    script = f'''import hou
+
+from tumblehead.pipe.houdini import util
+
+node = hou.pwd()
+stage = node.editableStage()
+
+# Create metadata prim
+metadata_path = "{metadata_prim_path}"
+prim = stage.DefinePrim(metadata_path, "Scope")
+
+# Set metadata
+metadata = {{
+    'uri': '{str(asset_uri)}',
+    'instance': '{entity_name}',
+    'inputs': {inputs_str}
+}}
+util.set_metadata(prim, metadata)
+'''
+    return script
 
 class ImportAsset(ns.Node):
     def __init__(self, native):
@@ -47,6 +83,30 @@ class ImportAsset(ns.Node):
             for department_name in default_values['departments']
             if department_name in asset_department_names
         ]
+
+    def list_version_names(self) -> list[str]:
+        """List available staged versions including 'latest' and 'current'."""
+        asset_uri = self.get_asset_uri()
+        if asset_uri is None:
+            return ['latest', 'current']
+
+        # Get staged directory
+        staged_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / '_staged'
+        staged_path = api.storage.resolve(staged_uri)
+
+        # Get versioned directories (v0001, v0002, etc.)
+        version_paths = list_version_paths(staged_path)
+        version_names = [vp.name for vp in version_paths]
+
+        # Add special options at the beginning
+        return ['latest', 'current'] + version_names
+
+    def get_version_name(self) -> str:
+        """Get selected version name. Default is 'latest'."""
+        version_name = self.parm('version').eval()
+        if len(version_name) == 0:
+            return 'latest'  # Default to latest
+        return version_name
 
     def get_asset_uri(self) -> Uri | None:
         asset_uris = self.list_asset_uris()
@@ -88,50 +148,46 @@ class ImportAsset(ns.Node):
 
     def set_include_layerbreak(self, include_layerbreak):
         self.parm('include_layerbreak').set(int(include_layerbreak))
-    
+
     def execute(self):
-
-        # Clear scene
-        context = self.native()
-        dive_node = context.node('dive')
-        switch_node = context.node('switch')
-        output_node = dive_node.node('output')
-        _clear_scene(dive_node, output_node)
-
-        # Parameters
         asset_uri = self.get_asset_uri()
-        department_names = self.get_department_names()
-        include_layerbreak = self.get_include_layerbreak()
+        if asset_uri is None:
+            return result.Value(None)
 
-        # Check parameters
-        if asset_uri is None: return result.Value(None)
+        # Get staged file path based on version selection
+        version_name = self.get_version_name()
+        if version_name == 'latest':
+            staged_file_path = get_latest_staged_file_path(asset_uri)
+        elif version_name == 'current':
+            staged_file_path = current_staged_file_path(asset_uri)
+        else:
+            staged_file_path = get_staged_file_path(asset_uri, version_name)
 
-        # Create node name from URI segments
-        uri_name = '_'.join(asset_uri.segments[1:])
+        if staged_file_path is None:
+            raise FileNotFoundError(f"No staged build found for {asset_uri}")
+        if not staged_file_path.exists():
+            raise FileNotFoundError(f"Staged file not found: {staged_file_path}")
 
-        # Build asset layer nodes
-        prev_node = None
-        for department_name in department_names:
-            layer_node = import_asset_layer.create(dive_node, f'{uri_name}_{department_name}')
-            layer_node.set_asset_uri(asset_uri)
-            layer_node.set_department_name(department_name)
-            layer_node.set_include_layerbreak(False)
-            layer_node.latest()
-            layer_node.execute()
-            if prev_node is not None:
-                _connect(prev_node, layer_node.native())
-            prev_node = layer_node.native()
+        # Set import node filepath
+        self.parm('import_filepath1').set(path_str(staged_file_path))
 
-        # Connect to output
-        _connect(prev_node, output_node)
+        # Update version label
+        self.parm('version_label').set(version_name)
 
-        # Enable or disable layerbreak
-        switch_node.parm('input').set(1 if include_layerbreak else 0)
+        # Get shot context if we're in a shot workfile
+        shot_uri = None
+        shot_department = None
+        file_path = Path(hou.hipFile.path())
+        workfile_context = get_workfile_context(file_path)
+        if workfile_context is not None:
+            if str(workfile_context.entity_uri).startswith('entity:/shots/'):
+                shot_uri = workfile_context.entity_uri
+                shot_department = workfile_context.department_name
 
-        # Layout the nodes
-        dive_node.layoutChildren()
+        # Generate and set metadata script
+        script = _metadata_script(asset_uri, shot_uri, shot_department)
+        self.parm('metadata_python').set(script)
 
-        # Done
         return result.Value(None)
 
 def create(scene, name):

@@ -14,11 +14,10 @@ from tumblehead.api import default_client
 from tumblehead.util.uri import Uri
 from tumblehead.config.groups import get_group
 from tumblehead.config.department import list_departments
-from tumblehead.pipe.paths import latest_export_path, latest_staged_path, Context
+from tumblehead.pipe.paths import latest_export_path, current_staged_path, Context
 from tumblehead.pipe.houdini.lops import (
-    export_asset_layer,
-    export_shot_layer,
-    export_render_layer,
+    export_layer,
+    export_variant,
 )
 from tumblehead.pipe.houdini.sops import export_rig
 import tumblehead.pipe.houdini.nodes as ns
@@ -226,53 +225,55 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
     member_uris = set(group.members)
 
     def _is_group_export_correct(node):
+        entity_uri = node.get_entity_uri()
+        if entity_uri is None:
+            return False
         dept = node.get_department_name()
         if dept not in departments:
             return False
-        shot_uri = node.get_shot_uri()
-        return shot_uri in member_uris
+        return entity_uri in member_uris
 
     # Find all export nodes for group members across all departments
     group_export_nodes = list(
         filter(
             _is_group_export_correct,
             map(
-                export_shot_layer.ExportShotLayer,
-                ns.list_by_node_type("export_shot_layer", "Lop"),
+                export_layer.ExportLayer,
+                ns.list_by_node_type("export_layer", "Lop"),
             ),
         )
     )
 
-    # Group export nodes by shot URI to organize tasks properly
-    exports_by_shot: dict[str, list] = {}
+    # Group export nodes by entity URI to organize tasks properly
+    exports_by_entity: dict[str, list] = {}
     for export_node in group_export_nodes:
-        shot_uri = export_node.get_shot_uri()
-        uri_str = str(shot_uri)
-        if uri_str not in exports_by_shot:
-            exports_by_shot[uri_str] = []
-        exports_by_shot[uri_str].append(export_node)
+        entity_uri = export_node.get_entity_uri()
+        uri_str = str(entity_uri)
+        if uri_str not in exports_by_entity:
+            exports_by_entity[uri_str] = []
+        exports_by_entity[uri_str].append(export_node)
 
     # Sort departments for consistent ordering
     dept_order = {dept: i for i, dept in enumerate(departments)}
 
-    # For each shot: add export tasks, then build task
-    for uri_str in sorted(exports_by_shot.keys()):
-        shot_exports = exports_by_shot[uri_str]
+    # For each entity: add export tasks, then build task
+    for uri_str in sorted(exports_by_entity.keys()):
+        entity_exports = exports_by_entity[uri_str]
         # Sort by department order
-        shot_exports.sort(key=lambda n: dept_order.get(n.get_department_name(), 999))
+        entity_exports.sort(key=lambda n: dept_order.get(n.get_department_name(), 999))
 
-        shot_uri = shot_exports[0].get_shot_uri()
+        entity_uri = entity_exports[0].get_entity_uri()
 
-        # Add export tasks for this shot
-        for export_node in shot_exports:
+        # Add export tasks for this entity
+        for export_node in entity_exports:
             dept = export_node.get_department_name()
-            export_path = latest_export_path(shot_uri, dept)
+            export_path = latest_export_path(entity_uri, dept)
             version = _get_version_from_path(export_path)
             node_ref = export_node
 
             task = ProcessTask(
                 id=str(uuid.uuid4()),
-                uri=shot_uri,
+                uri=entity_uri,
                 department=dept,
                 task_type='export',
                 description=f"Export ({dept})",
@@ -282,8 +283,8 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
             )
             tasks.append(task)
 
-        # Add build task for this shot (after all exports)
-        build_task = _create_build_task(shot_uri)
+        # Add build task for this entity (after all exports)
+        build_task = _create_build_task(entity_uri)
         tasks.append(build_task)
 
     return tasks
@@ -295,19 +296,19 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
     shot_uri = context.entity_uri
 
     def _is_shot_export_correct(node):
-        dept = node.get_department_name()
-        if dept not in departments:
+        entity_uri = node.get_entity_uri()
+        if entity_uri != shot_uri:
             return False
-        node_shot_uri = node.get_shot_uri()
-        return node_shot_uri == shot_uri
+        dept = node.get_department_name()
+        return dept in departments
 
     # Find export nodes for the shot across all departments
     shot_export_nodes = list(
         filter(
             _is_shot_export_correct,
             map(
-                export_shot_layer.ExportShotLayer,
-                ns.list_by_node_type("export_shot_layer", "Lop"),
+                export_layer.ExportLayer,
+                ns.list_by_node_type("export_layer", "Lop"),
             ),
         )
     )
@@ -336,27 +337,27 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
         )
         tasks.append(task)
 
-    # Also collect render layer export nodes
-    def _is_render_layer_export_correct(node):
+    # Also collect variant export nodes
+    def _is_variant_export_correct(node):
         dept = node.get_department_name()
         if dept not in departments:
             return False
         node_shot_uri = node.get_shot_uri()
         return node_shot_uri == shot_uri
 
-    render_export_nodes = list(
+    variant_export_nodes = list(
         filter(
-            _is_render_layer_export_correct,
+            _is_variant_export_correct,
             map(
-                export_render_layer.ExportRenderLayer,
-                ns.list_by_node_type("export_render_layer", "Lop"),
+                export_variant.ExportVariant,
+                ns.list_by_node_type("export_variant", "Lop"),
             ),
         )
     )
 
-    for export_node in render_export_nodes:
+    for export_node in variant_export_nodes:
         dept = export_node.get_department_name()
-        layer_name = getattr(export_node, 'get_render_layer_name', lambda: 'render')()
+        variant_name = getattr(export_node, 'get_variant_name', lambda: 'default')()
 
         node_ref = export_node
 
@@ -365,7 +366,7 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
             uri=shot_uri,
             department=dept,
             task_type='export',
-            description=f"Export render layer: {layer_name}",
+            description=f"Export variant: {variant_name}",
             current_version=None,
             execute_local=lambda n=node_ref: n.execute(force_local=True) if hasattr(n, 'execute') else None,
             execute_farm=lambda n=node_ref: n._export_farm() if hasattr(n, '_export_farm') else None,
@@ -373,7 +374,7 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
         tasks.append(task)
 
     # Add build task for this shot (after all exports)
-    if shot_export_nodes or render_export_nodes:
+    if shot_export_nodes or variant_export_nodes:
         build_task = _create_build_task(shot_uri)
         tasks.append(build_task)
 
@@ -385,18 +386,18 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
     tasks = []
 
     def _is_asset_export_correct(node):
-        dept = node.get_department_name()
-        if dept not in departments:
+        entity_uri = node.get_entity_uri()
+        if entity_uri != context.entity_uri:
             return False
-        asset_uri = node.get_asset_uri()
-        return asset_uri == context.entity_uri
+        dept = node.get_department_name()
+        return dept in departments
 
     asset_export_nodes = list(
         filter(
             _is_asset_export_correct,
             map(
-                export_asset_layer.ExportAssetLayer,
-                ns.list_by_node_type("export_asset_layer", "Lop"),
+                export_layer.ExportLayer,
+                ns.list_by_node_type("export_layer", "Lop"),
             ),
         )
     )
@@ -406,7 +407,7 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
     asset_export_nodes.sort(key=lambda n: dept_order.get(n.get_department_name(), 999))
 
     for export_node in asset_export_nodes:
-        asset_uri = export_node.get_asset_uri()
+        asset_uri = export_node.get_entity_uri()
         dept = export_node.get_department_name()
 
         export_path = latest_export_path(asset_uri, dept)
@@ -490,7 +491,7 @@ def _uri_name(uri: Uri) -> str:
 def _get_build_version(shot_uri: Uri) -> str | None:
     """Get the current build version for a shot"""
     try:
-        build_path = latest_staged_path(shot_uri)
+        build_path = current_staged_path(shot_uri)
         return _get_version_from_path(build_path)
     except Exception:
         return None

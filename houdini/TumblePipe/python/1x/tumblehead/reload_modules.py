@@ -17,11 +17,9 @@ def reload_all():
     """Reload all tumblehead.pipe.houdini.lops modules"""
 
     modules_to_reload = [
-        'tumblehead.pipe.houdini.lops.export_shot_layer',
-        'tumblehead.pipe.houdini.lops.export_asset_layer',
+        'tumblehead.pipe.houdini.lops.export_layer',
         'tumblehead.pipe.houdini.lops.export_kit_layer',
-        'tumblehead.pipe.houdini.lops.import_shot_layer',
-        'tumblehead.pipe.houdini.lops.import_asset_layer',
+        'tumblehead.pipe.houdini.lops.import_layer',
         'tumblehead.pipe.houdini.lops.import_kit_layer',
         'tumblehead.pipe.houdini.lops.build_shot',
     ]
@@ -34,9 +32,9 @@ def reload_all():
         if module_name in sys.modules:
             try:
                 importlib.reload(sys.modules[module_name])
-                print(f"✓ Reloaded: {module_name}")
+                print(f"[OK] Reloaded: {module_name}")
             except Exception as e:
-                print(f"✗ Failed to reload {module_name}: {e}")
+                print(f"[FAIL] Failed to reload {module_name}: {e}")
         else:
             print(f"  Skipped: {module_name} (not loaded)")
 

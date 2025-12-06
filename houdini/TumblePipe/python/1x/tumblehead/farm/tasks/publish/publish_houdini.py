@@ -16,12 +16,10 @@ from tumblehead.pipe.houdini.lops import (
     build_shot,
     import_shot,
     import_assets,
-    import_asset_layer,
-    import_shot_layer,
-    import_render_layer,
-    export_asset_layer,
-    export_shot_layer,
-    export_render_layer
+    import_layer,
+    import_variant,
+    export_layer,
+    export_variant
 )
 from tumblehead.pipe.houdini.sops import (
     import_rigs
@@ -70,22 +68,16 @@ def _update():
         ns.list_by_node_type('import_assets', 'Lop')
     ))
 
-    # Find the import asset layer nodes
-    import_asset_layer_nodes = list(map(
-        import_asset_layer.ImportAssetLayer,
-        ns.list_by_node_type('import_asset_layer', 'Lop')
+    # Find the import variant nodes
+    import_variant_nodes = list(map(
+        import_variant.ImportVariant,
+        ns.list_by_node_type('import_variant', 'Lop')
     ))
 
-    # Find the import shot layer nodes
-    import_shot_layer_nodes = list(map(
-        import_shot_layer.ImportShotLayer,
-        ns.list_by_node_type('import_shot_layer', 'Lop')
-    ))
-
-    # Find the import render layer nodes
-    import_render_layer_nodes = list(map(
-        import_render_layer.ImportRenderLayer,
-        ns.list_by_node_type('import_render_layer', 'Lop')
+    # Find the import layer nodes (unified)
+    import_layer_nodes = list(map(
+        import_layer.ImportLayer,
+        ns.list_by_node_type('import_layer', 'Lop')
     ))
 
     # Find the import rigs nodes
@@ -118,27 +110,20 @@ def _update():
         import_assets_node.execute()
         print(f'Updated {import_assets_node.path()}')
 
-    # Import latest asset layers
-    for import_node in import_asset_layer_nodes:
+    # Import latest variants
+    for import_node in import_variant_nodes:
         if not import_node.is_valid(): continue
         import_node.latest()
         import_node.execute()
         print(f'Updated {import_node.path()}')
 
-    # Import latest shot layers
-    for import_node in import_shot_layer_nodes:
+    # Import latest layers (unified)
+    for import_node in import_layer_nodes:
         if not import_node.is_valid(): continue
         import_node.latest()
         import_node.execute()
         print(f'Updated {import_node.path()}')
-    
-    # Import latest render layers
-    for import_node in import_render_layer_nodes:
-        if not import_node.is_valid(): continue
-        import_node.latest()
-        import_node.execute()
-        print(f'Updated {import_node.path()}')
-    
+
     # Import latest rigs
     for import_node in import_rigs_nodes:
         if not import_node.is_valid(): continue
@@ -152,17 +137,17 @@ def _publish(entity_uri: Uri, department_name: str):
         department_name: str
         ):
 
-        def _is_asset_export_correct(node):
+        def _is_export_correct(node):
             if node.get_department_name() != department_name: return False
-            if node.get_asset_uri() != asset_uri: return False
+            if node.get_entity_uri() != asset_uri: return False
             return True
 
         # Find the export nodes
         export_nodes = list(filter(
-            _is_asset_export_correct,
+            _is_export_correct,
             map(
-                export_asset_layer.ExportAssetLayer,
-                ns.list_by_node_type('export_asset_layer', 'Lop')
+                export_layer.ExportLayer,
+                ns.list_by_node_type('export_layer', 'Lop')
             )
         ))
 
@@ -183,10 +168,10 @@ def _publish(entity_uri: Uri, department_name: str):
 
         def _is_shot_export_correct(node):
             if node.get_department_name() != department_name: return False
-            if node.get_shot_uri() != shot_uri: return False
+            if node.get_entity_uri() != shot_uri: return False
             return True
 
-        def _is_render_layer_export_correct(node):
+        def _is_variant_export_correct(node):
             if node.get_department_name() != department_name: return False
             if node.get_shot_uri() != shot_uri: return False
             return True
@@ -195,15 +180,16 @@ def _publish(entity_uri: Uri, department_name: str):
         shot_export_nodes = list(filter(
             _is_shot_export_correct,
             map(
-                export_shot_layer.ExportShotLayer,
-                ns.list_by_node_type('export_shot_layer', 'Lop')
+                export_layer.ExportLayer,
+                ns.list_by_node_type('export_layer', 'Lop')
             )
         ))
-        render_layer_export_nodes = list(filter(
-            _is_render_layer_export_correct,
+
+        variant_export_nodes = list(filter(
+            _is_variant_export_correct,
             map(
-                export_render_layer.ExportRenderLayer,
-                ns.list_by_node_type('export_render_layer', 'Lop')
+                export_variant.ExportVariant,
+                ns.list_by_node_type('export_variant', 'Lop')
             )
         ))
 
@@ -217,10 +203,10 @@ def _publish(entity_uri: Uri, department_name: str):
         shot_export_node.execute(force_local=True)
         print(f'Published {shot_export_node.path()}')
 
-        # Export the render layers
-        for render_layer_export_node in render_layer_export_nodes:
-            render_layer_export_node.execute()
-            print(f'Published {render_layer_export_node.path()}')
+        # Export the variants
+        for variant_export_node in variant_export_nodes:
+            variant_export_node.execute()
+            print(f'Published {variant_export_node.path()}')
 
     # Get entity type from URI
     if entity_uri.purpose == 'groups':

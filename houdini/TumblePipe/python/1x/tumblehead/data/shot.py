@@ -69,7 +69,7 @@ class Shot:
     version: str
     frame_range: tuple[int, int]
     scene_layers: list[str]
-    render_layers: list[str]
+    variants: list[str]  # Renamed from render_layers
     divisions: list[Division]
 
     @staticmethod
@@ -78,7 +78,9 @@ class Shot:
             'sequence': shot.sequence,
             'shot': shot.shot,
             'version': shot.version,
-            'frame_range': shot.timeline,
+            'frame_range': shot.frame_range,
+            'scene_layers': shot.scene_layers,
+            'variants': shot.variants,
             'divisions': [
                 Division.to_json(division)
                 for division in shot.divisions
@@ -92,6 +94,8 @@ class Shot:
             shot = data['shot'],
             version = data['version'],
             frame_range = data['frame_range'],
+            scene_layers = data.get('scene_layers', []),
+            variants = data.get('variants', []),
             divisions = [
                 Division.from_json(division)
                 for division in data['divisions']
@@ -103,6 +107,8 @@ class Shot:
             'sequence', self.sequence,
             'shot', self.shot,
             'version', self.version,
-            'frame_range', self.timeline,
+            'frame_range', self.frame_range,
+            'scene_layers', tuple(self.scene_layers),
+            'variants', tuple(self.variants),
             'divisions', hash(tuple(self.divisions))
         ))
