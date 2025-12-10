@@ -81,9 +81,9 @@ def list_file_paths(context: Context):
     return list_hip_file_paths(context.entity_uri, context.department_name)
 
 
-def latest_export_path_from_context(context: Context):
+def latest_export_path_from_context(context: Context, variant_name: str = 'default'):
     """Get latest export path for a context."""
-    return latest_export_path(context.entity_uri, context.department_name)
+    return latest_export_path(context.entity_uri, variant_name, context.department_name)
 
 
 def file_path_from_context(context: Context):

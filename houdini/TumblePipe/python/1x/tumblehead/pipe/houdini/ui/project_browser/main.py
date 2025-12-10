@@ -8,7 +8,7 @@ import hou
 from hou import qt as hqt
 
 from tumblehead.api import is_dev, path_str, default_client
-from tumblehead.config.timeline import BlockRange, get_frame_range
+from tumblehead.config.timeline import BlockRange, get_frame_range, get_fps
 from tumblehead.config.groups import get_group
 from tumblehead.util.uri import Uri
 import tumblehead.pipe.houdini.nodes as ns
@@ -23,10 +23,9 @@ from tumblehead.pipe.houdini.lops import (
     import_shot,
     import_asset,
     export_layer,
-    export_variant,
     import_assets,
     import_layer,
-    import_variant,
+    layer_split,
 )
 from tumblehead.pipe.houdini.sops import export_rig, import_rigs
 from tumblehead.pipe.houdini.cops import build_comp
@@ -105,16 +104,34 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._database_editor_button.clicked.connect(self._open_database_editor)
         workspace_header_layout.addWidget(self._database_editor_button)
 
-        # Create the rebuild nodes button
-        self._rebuild_nodes_button = QtWidgets.QPushButton()
-        self._rebuild_nodes_button.setIcon(hqt.Icon("SHELF_push"))
-        self._rebuild_nodes_button.setToolTip("Rebuild all TH nodes in scene")
-        self._rebuild_nodes_button.setMaximumWidth(30)
-        self._rebuild_nodes_button.clicked.connect(self._rebuild_selected_nodes)
-        workspace_header_layout.addWidget(self._rebuild_nodes_button)
+        # Create the scene description editor button
+        self._scene_editor_button = QtWidgets.QPushButton()
+        self._scene_editor_button.setIcon(hqt.Icon("LOP_sceneimport"))
+        self._scene_editor_button.setToolTip("Open Scene Description Editor")
+        self._scene_editor_button.setMaximumWidth(30)
+        self._scene_editor_button.clicked.connect(self._open_scene_editor)
+        workspace_header_layout.addWidget(self._scene_editor_button)
 
-        # Database editor window reference
+        # Create the group editor button
+        self._group_editor_button = QtWidgets.QPushButton()
+        self._group_editor_button.setIcon(hqt.Icon("OBJ_subnet"))
+        self._group_editor_button.setToolTip("Open Group Editor")
+        self._group_editor_button.setMaximumWidth(30)
+        self._group_editor_button.clicked.connect(self._open_group_editor)
+        workspace_header_layout.addWidget(self._group_editor_button)
+
+        # Create the submit jobs button
+        self._submit_jobs_button = QtWidgets.QPushButton()
+        self._submit_jobs_button.setIcon(hqt.Icon("NETWORKS_rop"))
+        self._submit_jobs_button.setToolTip("Submit Jobs to Farm")
+        self._submit_jobs_button.setMaximumWidth(30)
+        self._submit_jobs_button.clicked.connect(self._open_job_submission)
+        workspace_header_layout.addWidget(self._submit_jobs_button)
+
+        # Window references
         self._database_window = None
+        self._scene_window = None
+        self._group_window = None
 
         layout.addWidget(workspace_header_widget, 0, 0)
 
@@ -122,10 +139,19 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._workspace_browser = WorkspaceBrowser(api)
         layout.addWidget(self._workspace_browser, 1, 0)
 
+        # Create the department header
+        department_header_widget = QtWidgets.QWidget()
+        department_header_layout = QtWidgets.QHBoxLayout()
+        department_header_layout.setContentsMargins(0, 0, 0, 0)
+        department_header_layout.setSpacing(5)
+        department_header_widget.setLayout(department_header_layout)
+
         # Create the department label
         department_label = QtWidgets.QLabel("Department")
         department_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(department_label, 0, 1)
+        department_header_layout.addWidget(department_label)
+
+        layout.addWidget(department_header_widget, 0, 1)
 
         # Create the department browser
         self._department_browser = DepartmentBrowser(api)
@@ -157,6 +183,7 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._workspace_browser.create_group.connect(self._create_group)
         self._workspace_browser.edit_group.connect(self._edit_group)
         self._workspace_browser.delete_group.connect(self._delete_group)
+        self._workspace_browser.edit_scene_for_entity.connect(self._edit_scene_for_entity)
         self._department_browser.selection_changed.connect(self._department_changed)
         self._department_browser.open_location.connect(self._department_open_location)
         self._department_browser.reload_scene.connect(self._department_reload_scene)
@@ -505,6 +532,18 @@ class ProjectBrowser(QtWidgets.QWidget):
         # Refresh workspace browser
         self.refresh()
 
+    def _edit_scene_for_entity(self, entity_uri):
+        """Open scene editor for the entity's scene assignment
+
+        Args:
+            entity_uri: The entity URI (shot/sequence) to edit scene for
+        """
+        # Open or focus the scene editor
+        self._open_scene_editor()
+
+        # If the scene window is open, we could optionally select the entity's scene
+        # For now, just opening the editor is sufficient
+
     def _open_database_editor(self):
         """Open or focus the database editor window (non-modal)"""
         if self._database_window is None or not self._database_window.isVisible():
@@ -516,6 +555,53 @@ class ProjectBrowser(QtWidgets.QWidget):
         else:
             self._database_window.raise_()
             self._database_window.activateWindow()
+
+    def _open_job_submission(self):
+        """Open the job submission dialog"""
+        from .dialogs import JobSubmissionDialog
+        dialog = JobSubmissionDialog(parent=self)
+        dialog.exec_()
+
+    def _open_scene_editor(self):
+        """Open or focus the scene description editor window (non-modal)"""
+        if self._scene_window is None or not self._scene_window.isVisible():
+            from .windows import SceneDescriptionWindow
+            self._scene_window = SceneDescriptionWindow(api, parent=self)
+            self._scene_window.data_changed.connect(self._on_scene_changed)
+            self._scene_window.window_closed.connect(self._on_scene_window_closed)
+            self._scene_window.show()
+        else:
+            self._scene_window.raise_()
+            self._scene_window.activateWindow()
+
+    def _on_scene_changed(self, uri):
+        """Handle data changes from scene description editor"""
+        # Refresh workspace browser to show any changes
+        self._workspace_browser.refresh()
+
+    def _on_scene_window_closed(self):
+        """Handle scene description window closure"""
+        self._scene_window = None
+
+    def _open_group_editor(self):
+        """Open or focus the group editor window (non-modal)"""
+        if self._group_window is None or not self._group_window.isVisible():
+            from .windows import GroupDescriptionWindow
+            self._group_window = GroupDescriptionWindow(api, parent=self)
+            self._group_window.data_changed.connect(self._on_group_changed)
+            self._group_window.window_closed.connect(self._on_group_window_closed)
+            self._group_window.show()
+        else:
+            self._group_window.raise_()
+            self._group_window.activateWindow()
+
+    def _on_group_changed(self, uri):
+        """Handle data changes from group editor"""
+        self._workspace_browser.refresh()
+
+    def _on_group_window_closed(self):
+        """Handle group window closure"""
+        self._group_window = None
 
     def _on_database_changed(self, uri):
         """Handle data changes from database editor"""
@@ -532,11 +618,6 @@ class ProjectBrowser(QtWidgets.QWidget):
     def _on_database_window_closed(self):
         """Handle database window closure"""
         self._database_window = None
-
-    def _rebuild_selected_nodes(self):
-        """Rebuild selected TH nodes in place, preserving settings and connections."""
-        from tumblehead.pipe.houdini.tools.rebuild_nodes import rebuild_nodes
-        rebuild_nodes()
 
     def _selection(self):
         if self._selected_entity is None:
@@ -1043,14 +1124,6 @@ class ProjectBrowser(QtWidgets.QWidget):
             )
         )
 
-        # Find the import variant nodes
-        import_variant_nodes = list(
-            map(
-                import_variant.ImportVariant,
-                ns.list_by_node_type("import_variant", "Lop"),
-            )
-        )
-
         # Find the import layer nodes (unified)
         import_layer_nodes = list(
             map(
@@ -1098,12 +1171,6 @@ class ProjectBrowser(QtWidgets.QWidget):
             if not import_asset_node.is_valid():
                 continue
             import_asset_node.execute()
-
-        # Import variants
-        for import_node in import_variant_nodes:
-            if not import_node.is_valid():
-                continue
-            import_node.execute()
 
         # Import layers
         for import_node in import_layer_nodes:
@@ -1200,16 +1267,6 @@ class ProjectBrowser(QtWidgets.QWidget):
                 return False
             return True
 
-        def _is_variant_export_correct(node):
-            if entity_type != 'shot':
-                return False
-            if node.get_department_name() != department_name:
-                return False
-            shot_uri = node.get_shot_uri()
-            if shot_uri != self._context.entity_uri:
-                return False
-            return True
-
         # Find the export node with the correct workspace and department
         if entity_type == 'asset' and department_name == 'rig':
             # Find the export nodes
@@ -1246,6 +1303,27 @@ class ProjectBrowser(QtWidgets.QWidget):
             rig_export_node.execute()
 
         elif entity_type == 'asset':
+            # Execute layer_split nodes first (shared content)
+            def _is_asset_split_correct(node):
+                if node.get_department_name() != department_name:
+                    return False
+                if node.get_entity_uri() != self._context.entity_uri:
+                    return False
+                return True
+
+            asset_split_nodes = list(
+                filter(
+                    _is_asset_split_correct,
+                    map(
+                        layer_split.LayerSplit,
+                        ns.list_by_node_type("layer_split", "Lop"),
+                    ),
+                )
+            )
+            for split_node in asset_split_nodes:
+                split_node.execute()
+                print(f'Exported shared layer: {split_node.path()}')
+
             # Find the export nodes
             asset_export_nodes = list(
                 filter(
@@ -1293,6 +1371,27 @@ class ProjectBrowser(QtWidgets.QWidget):
             for build_shot_node in build_shot_nodes:
                 build_shot_node.set_include_procedurals(False)
 
+            # Execute layer_split nodes first (shared content)
+            def _is_shot_split_correct(node):
+                if node.get_department_name() != department_name:
+                    return False
+                if node.get_entity_uri() != self._context.entity_uri:
+                    return False
+                return True
+
+            shot_split_nodes = list(
+                filter(
+                    _is_shot_split_correct,
+                    map(
+                        layer_split.LayerSplit,
+                        ns.list_by_node_type("layer_split", "Lop"),
+                    ),
+                )
+            )
+            for split_node in shot_split_nodes:
+                split_node.execute()
+                print(f'Exported shared layer: {split_node.path()}')
+
             # Find the export nodes
             shot_export_nodes = list(
                 filter(
@@ -1300,15 +1399,6 @@ class ProjectBrowser(QtWidgets.QWidget):
                     map(
                         export_layer.ExportLayer,
                         ns.list_by_node_type("export_layer", "Lop"),
-                    ),
-                )
-            )
-            variant_export_nodes = list(
-                filter(
-                    _is_variant_export_correct,
-                    map(
-                        export_variant.ExportVariant,
-                        ns.list_by_node_type("export_variant", "Lop"),
                     ),
                 )
             )
@@ -1335,10 +1425,6 @@ class ProjectBrowser(QtWidgets.QWidget):
             shot_export_node = shot_export_nodes[0]
             shot_export_node.execute()
 
-            # Export the variants
-            for variant_export_node in variant_export_nodes:
-                variant_export_node.execute()
-
             # Re-enable procedurals
             for build_shot_node in build_shot_nodes:
                 include_procedurals = build_node_include_procedurals[
@@ -1357,6 +1443,27 @@ class ProjectBrowser(QtWidgets.QWidget):
                 return
 
             member_uris = set(group.members)
+
+            # Filter function for split nodes: entity_uri must be a group member
+            def _is_group_split_correct(node):
+                if node.get_department_name() != department_name:
+                    return False
+                entity_uri = node.get_entity_uri()
+                return entity_uri in member_uris
+
+            # Execute layer_split nodes first (shared content)
+            group_split_nodes = list(
+                filter(
+                    _is_group_split_correct,
+                    map(
+                        layer_split.LayerSplit,
+                        ns.list_by_node_type("layer_split", "Lop"),
+                    ),
+                )
+            )
+            for split_node in group_split_nodes:
+                split_node.execute()
+                print(f'Exported shared layer: {split_node.path()}')
 
             # Filter function: export node's entity_uri must be a group member
             def _is_group_export_correct(node):
@@ -1474,7 +1581,17 @@ class ProjectBrowser(QtWidgets.QWidget):
             except Exception as e:
                 print(f"Warning: Could not get frame range from stage: {e}")
 
-        # Priority 2: Fallback to config
+        # Priority 2: Try display-flagged LOP node's stage
+        if frame_range is None:
+            display_node = util.get_display_flag_lop_node()
+            if display_node is not None:
+                try:
+                    stage = display_node.stage()
+                    frame_range = util.get_frame_range_from_stage(stage)
+                except Exception as e:
+                    print(f"Warning: Could not get frame range from display node: {e}")
+
+        # Priority 3: Fallback to config
         if frame_range is None and self._context is not None:
             entity_type = get_entity_type(self._context.entity_uri)
             if entity_type == 'group':
@@ -1495,6 +1612,11 @@ class ProjectBrowser(QtWidgets.QWidget):
                     util.set_block_range(frame_range.play_range())
         else:
             util.set_block_range(BlockRange(1001, 1200))
+
+        # Set FPS from project config
+        fps = get_fps()
+        if fps is not None:
+            util.set_fps(fps)
 
         hou.playbar.setRealTime(True)
         

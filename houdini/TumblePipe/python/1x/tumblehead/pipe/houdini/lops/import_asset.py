@@ -6,6 +6,7 @@ from tumblehead.api import default_client, path_str
 from tumblehead.util.uri import Uri
 from tumblehead.util.io import load_json
 from tumblehead.config.department import list_departments
+from tumblehead.config.variants import list_variants
 from tumblehead.util import result
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.util import uri_to_metadata_prim_path
@@ -100,6 +101,32 @@ class ImportAsset(ns.Node):
 
         # Add special options at the beginning
         return ['latest', 'current'] + version_names
+
+    def list_variant_names(self) -> list[str]:
+        """List available variant names for current entity."""
+        asset_uri = self.get_asset_uri()
+        if asset_uri is None:
+            return ['default']
+        variants = list_variants(asset_uri)
+        if not variants:
+            return ['default']
+        # Ensure 'default' is always first
+        if 'default' in variants:
+            variants.remove('default')
+            variants.insert(0, 'default')
+        return variants
+
+    def get_variant_name(self) -> str:
+        """Get selected variant name, defaults to 'default'."""
+        variant_names = self.list_variant_names()
+        variant_name = self.parm('variant').eval()
+        if not variant_name or variant_name not in variant_names:
+            return 'default'
+        return variant_name
+
+    def set_variant_name(self, variant_name: str):
+        """Set variant name."""
+        self.parm('variant').set(variant_name)
 
     def get_version_name(self) -> str:
         """Get selected version name. Default is 'latest'."""

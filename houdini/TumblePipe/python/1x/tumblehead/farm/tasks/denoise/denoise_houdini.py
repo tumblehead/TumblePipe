@@ -14,7 +14,7 @@ from tumblehead.util.io import (
     load_json,
     store_json
 )
-from tumblehead.config.timeline import BlockRange
+from tumblehead.config.timeline import BlockRange, get_fps
 from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini import util
 from tumblehead.apps.deadline import log_progress
@@ -114,8 +114,11 @@ def main(
         if aov_name in input_paths: continue
         return _error(f'No output path given for {aov_name}')
 
-    # Set the playback range
+    # Set the playback range and FPS
     util.set_block_range(render_range)
+    fps = get_fps()
+    if fps is not None:
+        util.set_fps(fps)
 
     # Create denoising network
     scene = hou.node('/stage')

@@ -26,7 +26,7 @@ from tumblehead.config.variants import DEFAULT_VARIANT
 from tumblehead.config.department import list_departments
 from tumblehead.pipe.paths import (
     latest_export_path,
-    latest_variant_export_path
+    get_layer_file_name
 )
 import tumblehead.pipe.context as ctx
 
@@ -96,13 +96,13 @@ def entity_key(entity_uri: Uri, department_name: Optional[str]) -> str:
     return f'{entity_uri.path}{dept_suffix}'
 
 
-def get_latest_version(api, entity_uri: Uri, department_name: Optional[str]) -> Optional[Path]:
+def get_latest_version(api, entity_uri: Uri, variant_name: str, department_name: Optional[str]) -> Optional[Path]:
     """
     Look up latest version path for entity.
 
     Uses latest_export_path() with Uri.
     """
-    return latest_export_path(entity_uri, department_name)
+    return latest_export_path(entity_uri, variant_name, department_name)
 
 
 def entity_from_dict(data: dict) -> Optional[tuple[Uri, Optional[str]]]:
@@ -161,8 +161,8 @@ def scan(api) -> Graph:
 
     # Scan all entities
     for entity_uri, department_name in _iter_all_entities(api):
-        # Get latest version path
-        latest_path = get_latest_version(api, entity_uri, department_name)
+        # Get latest version path (scan with default variant)
+        latest_path = get_latest_version(api, entity_uri, DEFAULT_VARIANT, department_name)
         if latest_path is None:
             continue
 
@@ -313,15 +313,8 @@ def find_shots_referencing_asset(graph: Graph, asset_uri: Uri) -> list[Uri]:
 # === Resolution ===
 
 def _get_latest_export_path(entity_uri: Uri, variant_name: str, department_name: str) -> Optional[Path]:
-    """Get latest export path, considering variant."""
-    if variant_name == DEFAULT_VARIANT:
-        return latest_export_path(entity_uri, department_name)
-    else:
-        # Try variant path first, fall back to default
-        variant_path = latest_variant_export_path(entity_uri, variant_name, department_name)
-        if variant_path is not None:
-            return variant_path
-        return latest_export_path(entity_uri, department_name)
+    """Get latest export path for entity/variant/department."""
+    return latest_export_path(entity_uri, variant_name, department_name)
 
 
 def resolve_shot_build(
@@ -481,12 +474,23 @@ def resolve_shot_build(
     shot_layer_paths, assets, asset_inputs = _latest_shot_layer_paths(shot_departments, shot_variant)
     asset_layer_paths = _latest_asset_layer_paths(assets, asset_departments, asset_variants)
 
+    # Find root department layer (if it exists)
+    root_layer = None
+    root_version_path = latest_export_path(shot_uri, shot_variant, 'root')
+    if root_version_path is not None:
+        version_name = root_version_path.name
+        layer_file_name = get_layer_file_name(shot_uri, shot_variant, 'root', version_name)
+        root_layer_path = root_version_path / layer_file_name
+        if root_layer_path.exists():
+            root_layer = root_layer_path
+
     # Done
     return dict(
         assets=assets,
         asset_inputs=asset_inputs,  # Track inputs per asset for staged output
         shot_layers=shot_layer_paths,
         asset_layers=asset_layer_paths,
+        root_layer=root_layer,  # Root department layer (base sublayer)
         shot_variant=shot_variant,
         asset_variants=asset_variants
     )

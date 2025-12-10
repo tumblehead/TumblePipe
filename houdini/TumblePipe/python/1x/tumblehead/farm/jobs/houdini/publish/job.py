@@ -18,6 +18,7 @@ from tumblehead.api import (
     default_client
 )
 from tumblehead.util.io import load_json
+from tumblehead.util.uri import Uri
 from tumblehead.apps.deadline import (
     Deadline,
     Batch,

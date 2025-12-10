@@ -21,6 +21,7 @@ def reload_all():
         'tumblehead.pipe.houdini.lops.export_kit_layer',
         'tumblehead.pipe.houdini.lops.import_layer',
         'tumblehead.pipe.houdini.lops.import_kit_layer',
+        'tumblehead.pipe.houdini.lops.layer_split',
         'tumblehead.pipe.houdini.lops.build_shot',
     ]
 

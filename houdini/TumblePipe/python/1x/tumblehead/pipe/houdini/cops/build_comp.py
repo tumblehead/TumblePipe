@@ -12,7 +12,7 @@ from tumblehead.api import (
     to_windows_path,
     default_client
 )
-from tumblehead.config.timeline import FrameRange, get_frame_range
+from tumblehead.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblehead.config.department import list_departments
 from tumblehead.config.variants import list_variants
 from tumblehead.util.io import store_json
@@ -1032,8 +1032,11 @@ class BuildComp(ns.Node):
         )
         if aov_context is None: return
 
-        # Set frame range and playback
+        # Set frame range, FPS, and playback
         util.set_frame_range(frame_range)
+        fps = get_fps()
+        if fps is not None:
+            util.set_fps(fps)
 
         # Build render layer comps
         layer_nodes = dict()

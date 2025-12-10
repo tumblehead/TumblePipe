@@ -8,6 +8,7 @@ from tumblehead.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblehead.config.department import list_departments
 from tumblehead.config.procedurals import list_procedural_names
 from tumblehead.config.variants import list_variants, DEFAULT_VARIANT
+from tumblehead.config.scene import get_scene
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.houdini.util as util
 from tumblehead.pipe.paths import (
@@ -126,6 +127,13 @@ class BuildShot(ns.Node):
                 upstream_shot_departments = self.get_upstream_shot_department_names()
                 asset_departments = self.get_asset_department_names()
 
+                # Get asset variants from scene configuration
+                scene = get_scene(shot_uri)
+                asset_variants = {}
+                for asset_uri_str, entry in scene.assets.items():
+                    asset_uri = Uri.parse_unsafe(asset_uri_str)
+                    asset_variants[asset_uri] = entry.variant
+
                 # Scan dependency graph and resolve versions
                 g = graph.scan(api)
                 version_names = graph.resolve_shot_build(
@@ -133,7 +141,8 @@ class BuildShot(ns.Node):
                     api,
                     shot_uri,
                     upstream_shot_departments,
-                    asset_departments
+                    asset_departments,
+                    asset_variants=asset_variants
                 )
             case Mode.Strict:
                 version_names = _resolve_versions_strict(shot_uri)
@@ -415,8 +424,11 @@ class BuildShot(ns.Node):
             merge_node = _ensure_node(dive_node, 'merge', 'merge')
             merge_node.parm('mergestyle').set('separate')
 
-            # Set frame range
+            # Set frame range and FPS
             util.set_frame_range(frame_range)
+            fps = get_fps()
+            if fps is not None:
+                util.set_fps(fps)
 
             # Load assets
             for asset_uri, instance_names in scene_context['assets'].items():

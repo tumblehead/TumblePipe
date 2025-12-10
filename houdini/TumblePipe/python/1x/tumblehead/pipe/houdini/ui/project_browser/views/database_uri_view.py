@@ -93,6 +93,15 @@ def _uri_lookup(model: QStandardItemModel, uri: Uri):
     return item
 
 
+def _collect_descendants(item):
+    """Recursively collect all descendant labels from an entity."""
+    descendants = []
+    for label, child in item._items.items():
+        descendants.append(label)
+        descendants.extend(_collect_descendants(child))
+    return descendants
+
+
 @dataclass(frozen=True)
 class PurposeOp:
     pass
@@ -444,7 +453,7 @@ class DatabaseUriView(QTreeView):
     def __init__(self, adapter, parent=None):
         super().__init__(parent)
 
-        self.setSelectionMode(QTreeView.SingleSelection)
+        self.setSelectionMode(QTreeView.ExtendedSelection)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.setAlternatingRowColors(True)
 
@@ -514,11 +523,12 @@ class DatabaseUriView(QTreeView):
         super().selectionChanged(selected, _deselected)
         if self._selecting:
             return
-        if not selected.indexes():
+        indexes = self.selectedIndexes()
+        if not indexes:
             self.selected.emit(None)
             return
-        index = selected.indexes()[0]
-        item = self._model.itemFromIndex(index)
+        # Emit the first selected entity's URI for the JSON editor
+        item = self._model.itemFromIndex(indexes[0])
         self.selected.emit(item.uri())
 
     def _on_item_added(self, uri):
@@ -551,3 +561,53 @@ class DatabaseUriView(QTreeView):
             else self._model.itemFromIndex(index)
         )
         target._on_context_menu(self.mapToGlobal(position))
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Delete:
+            self._delete_selected_items()
+            return
+        super().keyPressEvent(event)
+
+    def _delete_selected_items(self):
+        # Get all selected items, filter to entities only (UriPathItem)
+        indexes = self.selectedIndexes()
+        items = []
+        for index in indexes:
+            item = self._model.itemFromIndex(index)
+            if isinstance(item, UriPathItem):
+                items.append(item)
+
+        if not items:
+            return
+
+        # Build confirmation message showing selected items and their descendants
+        lines = []
+        total_count = 0
+        for item in items:
+            descendants = _collect_descendants(item)
+            total_count += 1 + len(descendants)
+            if descendants:
+                lines.append(f"  • {item._label} (and {len(descendants)} children)")
+            else:
+                lines.append(f"  • {item._label}")
+
+        if total_count == 1:
+            message = f'Are you sure you want to remove the entity "{items[0]._label}"?'
+        else:
+            listing = "\n".join(lines)
+            message = f"Are you sure you want to remove {total_count} entities?\n\n{listing}"
+
+        ok = QMessageBox.question(
+            self,
+            "Remove Entities" if total_count > 1 else "Remove Entity",
+            message,
+        )
+        if ok != QMessageBox.Yes:
+            return
+
+        # Delete items (collect info first to avoid issues during deletion)
+        deletions = [(item.parent(), item._label) for item in items]
+        for parent, label in deletions:
+            parent._remove_entity(label)
+
+        self.clearSelection()

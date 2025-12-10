@@ -1,6 +1,7 @@
 from .button import ButtonSurface, ButtonHost, State
 from .table import RowHoverTableView, DepartmentItemDelegate, VersionItemDelegate
 from .spinner import SpinnerOverlay
+from .job_submission_delegate import JobSubmissionDelegate
 
 __all__ = [
     'ButtonSurface',
@@ -9,5 +10,6 @@ __all__ = [
     'RowHoverTableView',
     'DepartmentItemDelegate',
     'VersionItemDelegate',
-    'SpinnerOverlay'
+    'SpinnerOverlay',
+    'JobSubmissionDelegate',
 ]

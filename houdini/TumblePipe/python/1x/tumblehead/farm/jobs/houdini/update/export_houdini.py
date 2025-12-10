@@ -11,7 +11,7 @@ from tumblehead.config.department import list_departments
 from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini.lops import (
     build_shot,
-    import_variant
+    import_layer
 )
 
 api = default_client()
@@ -62,11 +62,11 @@ def main(
     prev_node = shot_node.native()
 
     # Setup import render layer
-    layer_node = import_variant.create(context, 'import_variant')
+    layer_node = import_layer.create(context, 'import_layer')
     layer_node.set_entity_uri(shot_uri)
     layer_node.set_department_name(shot_department_name)
     layer_node.set_variant_name(variant_name)
-    layer_node.latest()
+    layer_node.set_version_name('current')
     layer_node.execute()
     _connect(prev_node, layer_node.native())
     prev_node = layer_node.native()

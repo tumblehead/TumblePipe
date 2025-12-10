@@ -5,6 +5,7 @@ from .details import DetailsView
 from .settings import SettingsView
 from .json_editor import JsonView
 from .database_uri_view import DatabaseUriView
+from .scene_entity_view import SceneEntityView
 
 __all__ = [
     'WorkspaceBrowser',
@@ -15,5 +16,6 @@ __all__ = [
     'DetailsView',
     'SettingsView',
     'JsonView',
-    'DatabaseUriView'
+    'DatabaseUriView',
+    'SceneEntityView',
 ]

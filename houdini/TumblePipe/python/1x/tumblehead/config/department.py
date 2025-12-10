@@ -13,13 +13,15 @@ class Department:
     independent: bool
     publishable: bool
     renderable: bool
+    generated: bool = False  # True for Python-generated departments (not Houdini-exportable)
 
 def add_department(
     context: str,
     name: str,
     independent: bool = False,
     publishable: bool = True,
-    renderable: bool = False
+    renderable: bool = False,
+    generated: bool = False
     ):
     department_uri = DEPARTMENTS_URI / context / name
     properties = api.config.get_properties(department_uri)
@@ -27,7 +29,8 @@ def add_department(
     api.config.set_properties(department_uri, dict(
         independent = independent,
         publishable = publishable,
-        renderable = renderable
+        renderable = renderable,
+        generated = generated
     ))
 
 def remove_department(context: str, name: str):
@@ -63,16 +66,44 @@ def is_renderable(context: str, name: str) -> bool:
         raise KeyError(f'Department not found: {department_uri}')
     return properties['renderable']
 
-def list_departments(context: str) -> list[Department]:
+def set_generated(context: str, name: str, generated: bool):
+    """Set whether a department is generated (Python-only, not Houdini-exportable)."""
+    department_uri = DEPARTMENTS_URI / context / name
+    properties = api.config.get_properties(department_uri)
+    if properties is None: return
+    properties['generated'] = generated
+    api.config.set_properties(department_uri, properties)
+
+def is_generated(context: str, name: str) -> bool:
+    """Check if a department is generated (Python-only, not Houdini-exportable)."""
+    department_uri = DEPARTMENTS_URI / context / name
+    properties = api.config.get_properties(department_uri)
+    if properties is None:
+        raise KeyError(f'Department not found: {department_uri}')
+    return properties.get('generated', False)
+
+def list_departments(context: str, include_generated: bool = True) -> list[Department]:
+    """
+    List departments for a context (shots or assets).
+
+    Args:
+        context: 'shots' or 'assets'
+        include_generated: If False, excludes Python-generated departments
+                          (useful for Houdini export menus)
+    """
     departments_data = api.config.cache.get('departments', {})
     root_children = departments_data.get('children', {})
     context_data = root_children.get(context, {}).get('children', {})
-    return [
+    departments = [
         Department(
             name = dept_name,
             independent = dept_data['properties']['independent'],
             publishable = dept_data['properties']['publishable'],
-            renderable = dept_data['properties']['renderable']
+            renderable = dept_data['properties']['renderable'],
+            generated = dept_data['properties'].get('generated', False)
         )
         for dept_name, dept_data in context_data.items()
     ]
+    if not include_generated:
+        departments = [d for d in departments if not d.generated]
+    return departments

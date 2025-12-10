@@ -11,9 +11,18 @@ Custom variants layer on top of default during resolution.
 from tumblehead.api import default_client
 from tumblehead.util.uri import Uri
 
+DEFAULT_VARIANT = 'default'
+
 api = default_client()
 
-DEFAULT_VARIANT = 'default'
+
+def refresh_cache():
+    """Refresh the variants module's config cache from disk.
+
+    Call this before list_variants() if you need to see changes
+    made by other processes (e.g., Database Editor).
+    """
+    api.config.refresh_cache('entity')
 
 
 def list_variants(entity_uri: Uri) -> list[str]:

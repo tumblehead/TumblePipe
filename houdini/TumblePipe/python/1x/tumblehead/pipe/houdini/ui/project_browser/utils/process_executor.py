@@ -15,10 +15,7 @@ from tumblehead.util.uri import Uri
 from tumblehead.config.groups import get_group
 from tumblehead.config.department import list_departments
 from tumblehead.pipe.paths import latest_export_path, current_staged_path, Context
-from tumblehead.pipe.houdini.lops import (
-    export_layer,
-    export_variant,
-)
+from tumblehead.pipe.houdini.lops import export_layer, layer_split
 from tumblehead.pipe.houdini.sops import export_rig
 import tumblehead.pipe.houdini.nodes as ns
 
@@ -107,6 +104,8 @@ class ProcessExecutor(QObject):
         # Variables to store captured output (for error reporting)
         captured_stdout = ''
         captured_stderr = ''
+        stdout_capture = None
+        stderr_capture = None
 
         try:
             if self._mode == 'local':
@@ -114,9 +113,6 @@ class ProcessExecutor(QObject):
                     # Capture stdout/stderr during local execution to keep console clean
                     with _capture_output() as (stdout_capture, stderr_capture):
                         task.execute_local()
-                    # Store captured output in case we need it for error reporting
-                    captured_stdout = stdout_capture.getvalue()
-                    captured_stderr = stderr_capture.getvalue()
                 else:
                     raise RuntimeError("No local executor defined for task")
             else:  # farm
@@ -133,6 +129,12 @@ class ProcessExecutor(QObject):
             task.status = TaskStatus.FAILED
             # Capture full traceback for debugging
             error_msg = traceback.format_exc()
+
+            # Retrieve captured output (must do this before StringIO objects are gone)
+            if stdout_capture is not None:
+                captured_stdout = stdout_capture.getvalue()
+            if stderr_capture is not None:
+                captured_stderr = stderr_capture.getvalue()
 
             # For local mode, include captured output in error message
             if self._mode == 'local' and (captured_stdout or captured_stderr):
@@ -224,6 +226,44 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
 
     member_uris = set(group.members)
 
+    # Filter function for layer_split nodes
+    def _is_group_split_correct(node):
+        entity_uri = node.get_entity_uri()
+        if entity_uri is None:
+            return False
+        dept = node.get_department_name()
+        if dept not in departments:
+            return False
+        return entity_uri in member_uris
+
+    # Find and add layer_split tasks first (shared content)
+    group_split_nodes = list(
+        filter(
+            _is_group_split_correct,
+            map(
+                layer_split.LayerSplit,
+                ns.list_by_node_type("layer_split", "Lop"),
+            ),
+        )
+    )
+
+    for split_node in group_split_nodes:
+        entity_uri = split_node.get_entity_uri()
+        dept = split_node.get_department_name()
+        node_ref = split_node
+
+        task = ProcessTask(
+            id=str(uuid.uuid4()),
+            uri=entity_uri,
+            department=dept,
+            task_type='export_shared',
+            description=f"Export Shared ({dept})",
+            current_version=None,
+            execute_local=lambda n=node_ref: n.execute(),
+            execute_farm=None,  # layer_split is local-only
+        )
+        tasks.append(task)
+
     def _is_group_export_correct(node):
         entity_uri = node.get_entity_uri()
         if entity_uri is None:
@@ -267,7 +307,8 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
         # Add export tasks for this entity
         for export_node in entity_exports:
             dept = export_node.get_department_name()
-            export_path = latest_export_path(entity_uri, dept)
+            variant = export_node.get_variant_name()
+            export_path = latest_export_path(entity_uri, variant, dept)
             version = _get_version_from_path(export_path)
             node_ref = export_node
 
@@ -295,6 +336,41 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
     tasks = []
     shot_uri = context.entity_uri
 
+    # Filter function for layer_split nodes
+    def _is_shot_split_correct(node):
+        entity_uri = node.get_entity_uri()
+        if entity_uri != shot_uri:
+            return False
+        dept = node.get_department_name()
+        return dept in departments
+
+    # Find and add layer_split tasks first (shared content)
+    shot_split_nodes = list(
+        filter(
+            _is_shot_split_correct,
+            map(
+                layer_split.LayerSplit,
+                ns.list_by_node_type("layer_split", "Lop"),
+            ),
+        )
+    )
+
+    for split_node in shot_split_nodes:
+        dept = split_node.get_department_name()
+        node_ref = split_node
+
+        task = ProcessTask(
+            id=str(uuid.uuid4()),
+            uri=shot_uri,
+            department=dept,
+            task_type='export_shared',
+            description=f"Export Shared ({dept})",
+            current_version=None,
+            execute_local=lambda n=node_ref: n.execute(),
+            execute_farm=None,  # layer_split is local-only
+        )
+        tasks.append(task)
+
     def _is_shot_export_correct(node):
         entity_uri = node.get_entity_uri()
         if entity_uri != shot_uri:
@@ -319,8 +395,9 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
 
     for export_node in shot_export_nodes:
         dept = export_node.get_department_name()
+        variant = export_node.get_variant_name()
 
-        export_path = latest_export_path(shot_uri, dept)
+        export_path = latest_export_path(shot_uri, variant, dept)
         version = _get_version_from_path(export_path)
 
         node_ref = export_node
@@ -337,44 +414,8 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
         )
         tasks.append(task)
 
-    # Also collect variant export nodes
-    def _is_variant_export_correct(node):
-        dept = node.get_department_name()
-        if dept not in departments:
-            return False
-        node_shot_uri = node.get_shot_uri()
-        return node_shot_uri == shot_uri
-
-    variant_export_nodes = list(
-        filter(
-            _is_variant_export_correct,
-            map(
-                export_variant.ExportVariant,
-                ns.list_by_node_type("export_variant", "Lop"),
-            ),
-        )
-    )
-
-    for export_node in variant_export_nodes:
-        dept = export_node.get_department_name()
-        variant_name = getattr(export_node, 'get_variant_name', lambda: 'default')()
-
-        node_ref = export_node
-
-        task = ProcessTask(
-            id=str(uuid.uuid4()),
-            uri=shot_uri,
-            department=dept,
-            task_type='export',
-            description=f"Export variant: {variant_name}",
-            current_version=None,
-            execute_local=lambda n=node_ref: n.execute(force_local=True) if hasattr(n, 'execute') else None,
-            execute_farm=lambda n=node_ref: n._export_farm() if hasattr(n, '_export_farm') else None,
-        )
-        tasks.append(task)
-
     # Add build task for this shot (after all exports)
-    if shot_export_nodes or variant_export_nodes:
+    if shot_export_nodes:
         build_task = _create_build_task(shot_uri)
         tasks.append(build_task)
 
@@ -384,6 +425,42 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
 def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> list[ProcessTask]:
     """Collect publish tasks for a single asset across all specified departments"""
     tasks = []
+    asset_uri = context.entity_uri
+
+    # Filter function for layer_split nodes
+    def _is_asset_split_correct(node):
+        entity_uri = node.get_entity_uri()
+        if entity_uri != asset_uri:
+            return False
+        dept = node.get_department_name()
+        return dept in departments
+
+    # Find and add layer_split tasks first (shared content)
+    asset_split_nodes = list(
+        filter(
+            _is_asset_split_correct,
+            map(
+                layer_split.LayerSplit,
+                ns.list_by_node_type("layer_split", "Lop"),
+            ),
+        )
+    )
+
+    for split_node in asset_split_nodes:
+        dept = split_node.get_department_name()
+        node_ref = split_node
+
+        task = ProcessTask(
+            id=str(uuid.uuid4()),
+            uri=asset_uri,
+            department=dept,
+            task_type='export_shared',
+            description=f"Export Shared ({dept})",
+            current_version=None,
+            execute_local=lambda n=node_ref: n.execute(),
+            execute_farm=None,  # layer_split is local-only
+        )
+        tasks.append(task)
 
     def _is_asset_export_correct(node):
         entity_uri = node.get_entity_uri()
@@ -409,8 +486,9 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
     for export_node in asset_export_nodes:
         asset_uri = export_node.get_entity_uri()
         dept = export_node.get_department_name()
+        variant = export_node.get_variant_name()
 
-        export_path = latest_export_path(asset_uri, dept)
+        export_path = latest_export_path(asset_uri, variant, dept)
         version = _get_version_from_path(export_path)
 
         node_ref = export_node
@@ -457,7 +535,8 @@ def _collect_rig_publish_tasks(context: Context) -> list[ProcessTask]:
     for export_node in rig_export_nodes:
         asset_uri = export_node.get_asset_uri()
 
-        export_path = latest_export_path(asset_uri, 'rig')
+        # Rig exports use 'default' variant
+        export_path = latest_export_path(asset_uri, 'default', 'rig')
         version = _get_version_from_path(export_path)
 
         node_ref = export_node
@@ -504,7 +583,7 @@ def _create_build_task(shot_uri: Uri) -> ProcessTask:
     return ProcessTask(
         id=str(uuid.uuid4()),
         uri=shot_uri,
-        department='build',
+        department='staged',
         task_type='build',
         description="Build USD",
         current_version=version,
@@ -524,6 +603,9 @@ def _execute_build_local(entity_uri: Uri):
     from tumblehead.config.timeline import get_frame_range
     from tumblehead.farm.tasks.build import build as build_task
 
+    # Determine entity type for validation
+    entity_type = get_entity_type(entity_uri)
+
     # Get the output file path for the build (includes .usda filename)
     output_path = next_staged_file_path(entity_uri)
 
@@ -531,8 +613,15 @@ def _execute_build_local(entity_uri: Uri):
     frame_range = get_frame_range(entity_uri)
     render_range = frame_range.full_range() if frame_range is not None else None
 
-    # Determine entity type for validation
-    entity_type = get_entity_type(entity_uri)
+    # Print diagnostic info (will be captured and shown on error)
+    print('=' * 40)
+    print('Build Task Debug Info')
+    print('=' * 40)
+    print(f'Entity URI: {entity_uri}')
+    print(f'Entity type: {entity_type}')
+    print(f'Output path: {output_path}')
+    print(f'Frame range: {render_range}')
+    print('=' * 40)
 
     if entity_type == 'shot':
         # Shots REQUIRE frame range

@@ -15,7 +15,9 @@ from tumblehead.pipe.paths import (
     get_workfile_context,
     latest_export_path,
     get_export_uri,
-    get_layer_file_name
+    get_layer_file_name,
+    list_variant_names as list_entity_variants,
+    latest_shared_export_file_path
 )
 
 api = default_client()
@@ -59,18 +61,21 @@ def _metadata_update_script(
         asset_uri = Uri.parse_unsafe(asset_uri_str)
         prim_path = uri_to_metadata_prim_path(asset_uri)
 
+        instance_name = asset_uri.segments[-1] if asset_uri.segments else ''
         content.extend([
             f"# Asset: {asset_uri_str}",
             f"prim = root.GetPrimAtPath('{prim_path}')",
-            "if prim.IsValid():",
-            "    metadata = util.get_metadata(prim)",
-            "    if metadata is not None:",
-            "        util.add_metadata_input(metadata, {",
-            f"            'uri': '{str(entity_uri)}',",
-            f"            'department': '{department_name}',",
-            f"            'version': '{version_name}',",
-            "        })",
-            "        util.set_metadata(prim, metadata)",
+            "if not prim.IsValid():",
+            f"    prim = stage.DefinePrim('{prim_path}', 'Scope')",
+            f"    util.set_metadata(prim, {{'uri': '{asset_uri_str}', 'instance': '{instance_name}', 'inputs': []}})",
+            "metadata = util.get_metadata(prim)",
+            "if metadata is not None:",
+            "    util.add_metadata_input(metadata, {",
+            f"        'uri': '{str(entity_uri)}',",
+            f"        'department': '{department_name}',",
+            f"        'version': '{version_name}',",
+            "    })",
+            "    util.set_metadata(prim, metadata)",
             "",
         ])
 
@@ -141,16 +146,34 @@ class ImportLayer(ns.Node):
             ]
         return department_names
 
+    def list_variant_names(self) -> list[str]:
+        """List available variant names for current entity.
+
+        Returns existing variants from disk, or ['default'] if none exist.
+        """
+        entity_uri = self.get_entity_uri()
+        if entity_uri is None:
+            return ['default']
+        variants = list_entity_variants(entity_uri)
+        if not variants:
+            return ['default']
+        # Ensure 'default' is always first
+        if 'default' in variants:
+            variants.remove('default')
+            variants.insert(0, 'default')
+        return variants
+
     def list_version_names(self) -> list[str]:
         entity_uri = self.get_entity_uri()
         if entity_uri is None:
             return ['current']
+        variant_name = self.get_variant_name()
         department_name = self.get_department_name()
         if department_name is None:
             return ['current']
 
-        # Get export path (default/non-variant path)
-        export_uri = get_export_uri(entity_uri, department_name)
+        # Get export path with variant
+        export_uri = get_export_uri(entity_uri, variant_name, department_name)
         export_path = api.storage.resolve(export_uri)
         version_paths = list(filter(
             _valid_version_path,
@@ -198,6 +221,14 @@ class ImportLayer(ns.Node):
             return None
         return department_name
 
+    def get_variant_name(self) -> str:
+        """Get selected variant name, defaults to 'default'."""
+        variant_names = self.list_variant_names()
+        variant_name = self.parm('variant').eval()
+        if not variant_name or variant_name not in variant_names:
+            return 'default'
+        return variant_name
+
     def get_version_name(self) -> str | None:
         version_names = self.list_version_names()
         if len(version_names) == 0:
@@ -232,6 +263,10 @@ class ImportLayer(ns.Node):
             return
         self.parm('department').set(department_name)
 
+    def set_variant_name(self, variant_name: str):
+        """Set variant name."""
+        self.parm('variant').set(variant_name)
+
     def set_version_name(self, version_name: str):
         version_names = self.list_version_names()
         if version_name not in version_names:
@@ -254,16 +289,18 @@ class ImportLayer(ns.Node):
         if entity_uri is None:
             return None
 
+        variant_name = self.get_variant_name()
         department_name = self.get_department_name()
         if department_name is None:
             return None
 
         # Import layer file (assets + cameras, lights, volumes, etc. all in one)
-        return get_layer_file_name(entity_uri, department_name, version_name)
+        return get_layer_file_name(entity_uri, variant_name, department_name, version_name)
 
     def _import_layer(self):
         """Unified import method for both assets and shots."""
         entity_uri = self.get_entity_uri()
+        variant_name = self.get_variant_name()
         department_name = self.get_department_name()
         version_name = self.get_version_name()
 
@@ -274,23 +311,33 @@ class ImportLayer(ns.Node):
         if version_name is None:
             return
 
-        # Get version path
-        export_uri = get_export_uri(entity_uri, department_name) / version_name
-        version_path = api.storage.resolve(export_uri)
-
         # Get layer file name
         layer_file_name = self._get_layer_file_name()
         if layer_file_name is None:
             self.parm('import_enable1').set(0)
+            self.parm('import_enable2').set(0)
+            self.parm('bypass_input').set(0)
             return
 
-        file_path = version_path / layer_file_name
+        # Import shared layer (index 1)
+        shared_file_path = latest_shared_export_file_path(entity_uri, department_name)
+        shared_exists = shared_file_path is not None and shared_file_path.exists()
+        self.parm('import_enable1').set(1 if shared_exists else 0)
+        if shared_exists:
+            self.parm('import_filepath1').set(path_str(shared_file_path))
 
-        # Import layer file
-        file_exists = file_path.exists()
-        self.parm('import_enable1').set(1 if file_exists else 0)
-        self.parm('import_filepath1').set(path_str(file_path))
-        self.parm('bypass_input').set(1 if file_exists else 0)
+        # Get version path for variant layer
+        export_uri = get_export_uri(entity_uri, variant_name, department_name) / version_name
+        version_path = api.storage.resolve(export_uri)
+        variant_file_path = version_path / layer_file_name
+
+        # Import variant layer (index 2)
+        variant_exists = variant_file_path.exists()
+        self.parm('import_enable2').set(1 if variant_exists else 0)
+        self.parm('import_filepath2').set(path_str(variant_file_path))
+
+        # Enable bypass if either layer exists
+        self.parm('bypass_input').set(1 if (shared_exists or variant_exists) else 0)
 
         # Update version label
         self.parm('version_label').set(version_name)
@@ -316,11 +363,12 @@ class ImportLayer(ns.Node):
         entity_uri = self.get_entity_uri()
         if entity_uri is None:
             return
+        variant_name = self.get_variant_name()
         department_name = self.get_department_name()
         if department_name is None:
             return
 
-        export_path = latest_export_path(entity_uri, department_name)
+        export_path = latest_export_path(entity_uri, variant_name, department_name)
         if export_path is None:
             return
         if not export_path.exists():

@@ -41,6 +41,7 @@ class DatabaseWindow(QMainWindow):
         self._adapter = DatabaseAdapter(api)
         self._uri = None
         self._original_properties = None
+        self._inherited_properties = {}
 
         self._build_ui()
 
@@ -59,7 +60,7 @@ class DatabaseWindow(QMainWindow):
         json_layout.setSpacing(0)
         central_widget.addWidget(json_panel)
 
-        self._json_view = JsonView(dict(), self)
+        self._json_view = JsonView(parent=self)
         self._json_view.setEnabled(False)
         self._json_view.change.connect(self._on_json_change)
         json_layout.addWidget(self._json_view)
@@ -103,13 +104,17 @@ class DatabaseWindow(QMainWindow):
             self._json_view.set_value(dict())
             self._json_view.setEnabled(False)
             self._original_properties = None
+            self._inherited_properties = {}
         else:
             if uri.segments:
                 value = self._adapter.lookup_properties(uri)
+                inherited = self._adapter.get_inherited_properties(uri)
             else:
                 value = self._adapter.lookup_root_properties(uri.purpose)
+                inherited = self._adapter.get_root_inherited_properties(uri.purpose)
             self._original_properties = deepcopy(value)
-            self._json_view.set_value(value)
+            self._inherited_properties = inherited
+            self._json_view.set_value(value, inherited_data=inherited)
             self._json_view.setEnabled(True)
 
         self._uri = uri
@@ -122,6 +127,9 @@ class DatabaseWindow(QMainWindow):
         has_change = self._json_view.has_change()
         self._discard_button.setEnabled(has_change)
         self._save_button.setEnabled(has_change)
+        # Update window title with dirty indicator
+        title = "Database Editor *" if has_change else "Database Editor"
+        self.setWindowTitle(title)
 
     def _on_discard_changes(self):
         if self._uri is None:
@@ -166,10 +174,13 @@ class DatabaseWindow(QMainWindow):
 
         if self._uri.segments:
             value = self._adapter.lookup_properties(self._uri)
+            inherited = self._adapter.get_inherited_properties(self._uri)
         else:
             value = self._adapter.lookup_root_properties(self._uri.purpose)
+            inherited = self._adapter.get_root_inherited_properties(self._uri.purpose)
         self._original_properties = deepcopy(value)
-        self._json_view.set_value(value)
+        self._inherited_properties = inherited
+        self._json_view.set_value(value, inherited_data=inherited, preserve_state=True)
         self._update_buttons()
 
         # Store URI before refresh (refresh may trigger selection changes that set self._uri to None)

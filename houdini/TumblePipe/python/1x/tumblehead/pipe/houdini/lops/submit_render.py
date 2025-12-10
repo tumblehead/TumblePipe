@@ -22,7 +22,7 @@ from tumblehead.apps.deadline import Deadline
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.context as ctx
 from tumblehead.pipe.paths import (
-    latest_variant_export_path,
+    latest_export_path,
     load_entity_context
 )
 
@@ -125,10 +125,10 @@ class SubmitRender(ns.Node):
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return []
         department_name = self.get_shot_department_name()
-        export_path = latest_variant_export_path(
+        export_path = latest_export_path(
             shot_uri,
-            department_name,
-            variant_name
+            variant_name,
+            department_name
         )
         if export_path is None: return []
         context_path = export_path / 'context.json'

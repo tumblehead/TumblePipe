@@ -1,4 +1,6 @@
 from pathlib import Path
+import os
+import re
 
 import hou
 
@@ -104,6 +106,8 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
         asset_name = asset_uri.segments[-1]
         # Propagate inputs from staged context.json to preserve composition history
         asset_inputs = asset_info.get('inputs', [])
+        # Get instance count (default 1 if not specified)
+        instances = asset_info.get('instances', 1)
 
         content.extend([
             "",
@@ -112,6 +116,7 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
             f"util.set_metadata(asset_prim, {{",
             f"    'uri': '{asset_uri_str}',",
             f"    'instance': '{asset_name}',",
+            f"    'instances': {instances},",
             f"    'inputs': {asset_inputs!r}",
             f"}})",
         ])
@@ -120,6 +125,78 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
 
     script = header + _indent(content) + footer
     return '\n'.join(script)
+
+def _get_scene_asset_counts(shot_uri: Uri) -> dict[str, int]:
+    """Get asset instance counts from the scene context.json.
+
+    Args:
+        shot_uri: The shot entity URI
+
+    Returns:
+        Dict mapping asset_uri_str -> instance count
+    """
+    from tumblehead.config.scene import get_inherited_scene_ref
+    from tumblehead.pipe.paths import get_scene_latest_path
+
+    # Get scene reference for this shot
+    scene_uri, _ = get_inherited_scene_ref(shot_uri)
+    if scene_uri is None:
+        return {}
+
+    # Get scene latest path and load context.json
+    scene_layer_path = get_scene_latest_path(scene_uri)
+    if scene_layer_path is None:
+        return {}
+
+    scene_context_path = scene_layer_path.parent / 'context.json'
+    if not scene_context_path.exists():
+        return {}
+
+    scene_context = load_json(scene_context_path)
+    if scene_context is None:
+        return {}
+
+    # Get assets from scene context: {uri_str: {"instances": N, "variant": "X"}}
+    assets = scene_context.get('parameters', {}).get('assets', {})
+
+    # Extract instance counts
+    return {uri_str: asset_data['instances'] for uri_str, asset_data in assets.items()}
+
+
+def _parse_staged_sublayers(staged_file_path: Path) -> list[dict]:
+    """Parse staged .usda file and extract sublayer info.
+
+    Returns list of dicts with:
+    - path: absolute Path to the layer file
+    - type: 'shot_department' | 'asset' | 'root'
+    - department: department name (for shot_department type)
+    """
+    sublayers = []
+    staged_dir = staged_file_path.parent
+
+    with open(staged_file_path, 'r') as f:
+        content = f.read()
+
+    # Extract sublayer paths from USDA
+    for match in re.finditer(r'@([^@]+)@', content):
+        rel_path = match.group(1)
+        # Use normpath instead of resolve() to preserve drive letter (avoid UNC paths)
+        abs_path = Path(os.path.normpath(staged_dir / rel_path))
+
+        # Categorize layer
+        if '/root/' in rel_path:
+            sublayers.append({'path': abs_path, 'type': 'root', 'department': 'root'})
+        elif '/_staged/' in rel_path:
+            sublayers.append({'path': abs_path, 'type': 'asset', 'department': None})
+        else:
+            # Shot department layer - extract dept name from path
+            # Pattern: ../../{dept}/v{version}/shots_{seq}_{shot}_{dept}_{version}.usd
+            parts = rel_path.split('/')
+            dept = parts[2] if len(parts) > 2 else None
+            sublayers.append({'path': abs_path, 'type': 'shot_department', 'department': dept})
+
+    return sublayers
+
 
 class ImportShot(ns.Node):
     def __init__(self, native):
@@ -220,66 +297,19 @@ class ImportShot(ns.Node):
                 return shot_uri
             case _:
                 raise AssertionError(f'Unknown entity source: {entity_source}')
-        
-    def get_exclude_asset_department_names(self):
-        return list(filter(len, self.parm('asset_departments').eval().split(' ')))
-
-    def get_exclude_shot_department_names(self):
-        return list(filter(len, self.parm('shot_departments').eval().split(' ')))
-    
-    def get_asset_department_names(self):
-        asset_department_names = self.list_asset_department_names()
-        if len(asset_department_names) == 0: return []
-        exclude_asset_department_names = self.get_exclude_asset_department_names()
-        return [
-            asset_department_name
-            for asset_department_name in asset_department_names
-            if asset_department_name not in exclude_asset_department_names
-        ]
-
-    def get_shot_department_names(self):
-        shot_department_names = self.list_shot_department_names()
-        if len(shot_department_names) == 0: return []
-        exclude_shot_department_names = self.get_exclude_shot_department_names()
-        return [
-            shot_department_name
-            for shot_department_name in shot_department_names
-            if shot_department_name not in exclude_shot_department_names
-        ]
-    
     def get_downstream_shot_department_names(self):
         shot_department_names = self.list_shot_department_names()
         if len(shot_department_names) == 0: return []
-        context = _context_from_workfile()
-        if context is None: return []
-        department_name = context.department_name
+        department_name = self.get_department_name()
+        if department_name is None: return []
         if department_name not in shot_department_names: return []
         shot_department_index = shot_department_names.index(department_name)
         return shot_department_names[shot_department_index + 1:]
 
-    def get_frame_range_source(self):
-        return self.parm('frame_range').eval()
-
     def get_frame_range(self):
-        frame_range_source = self.get_frame_range_source()
-        match frame_range_source:
-            case 'from_config':
-                shot_uri = self.get_shot_uri()
-                if shot_uri is None: return None
-                frame_range = get_frame_range(shot_uri)
-                return frame_range
-            case 'from_settings':
-                return FrameRange(
-                    self.parm('frame_settingsx').eval(),
-                    self.parm('frame_settingsy').eval(),
-                    self.parm('roll_settingsx').eval(),
-                    self.parm('roll_settingsy').eval()
-                )
-            case _:
-                assert False, f'Unknown frame range token: {frame_range_source}'
-    
-    def get_include_downstream_departments(self):
-        return bool(self.parm('include_downstream_departments').eval())
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None: return None
+        return get_frame_range(shot_uri)
             
     def get_include_procedurals(self):
         return bool(self.parm('include_procedurals').eval())
@@ -293,42 +323,10 @@ class ImportShot(ns.Node):
         shot_uris = self.list_shot_uris()
         if shot_uri not in shot_uris: return
         self.parm('shot').set(str(shot_uri))
-    
-    def set_exclude_asset_department_names(self, exclude_asset_department_names):
-        asset_department_names = self.list_asset_department_names()
-        self.parm('asset_departments').set(' '.join([
-            department_name
-            for department_name in exclude_asset_department_names
-            if department_name in asset_department_names
-        ]))
-
-    def set_exclude_shot_department_names(self, exclude_shot_department_names):
-        shot_department_names = self.list_shot_department_names()
-        self.parm('shot_departments').set(' '.join([
-            department_name
-            for department_name in exclude_shot_department_names
-            if department_name in shot_department_names
-        ]))
 
     def set_department_name(self, department_name: str):
         self.parm('department').set(department_name)
 
-    def set_frame_range_source(self, frame_range_source):
-        match frame_range_source:
-            case 'from_config': self.parm('frame_range').set('from_config')
-            case 'from_settings': self.parm('frame_range').set('from_settings')
-            case _: assert False, f'Invalid frame range source {frame_range_source}'
-        self.state.frame_range_source = frame_range_source
-    
-    def set_frame_range(self, frame_range):
-        self.parm('frame_settingsx').set(frame_range.start_frame)
-        self.parm('frame_settingsy').set(frame_range.end_frame)
-        self.parm('roll_settingsx').set(frame_range.start_roll)
-        self.parm('roll_settingsy').set(frame_range.end_roll)
-    
-    def set_include_downstream_departments(self, include_downstream_departments):
-        self.parm('include_downstream_departments').set(int(include_downstream_departments))
-    
     def set_include_procedurals(self, include_procedurals):
         self.parm('include_procedurals').set(int(include_procedurals))
 
@@ -337,7 +335,6 @@ class ImportShot(ns.Node):
         # Get nodes
         context = self.native()
         import_node = context.node('import')
-        mute_node = context.node('mute')
         metadata_node = context.node('metadata')
         context.node('procedurals')
 
@@ -371,30 +368,46 @@ class ImportShot(ns.Node):
         if context_data is not None:
             assets = context_data.get('parameters', {}).get('assets', [])
 
-        # Set import node filepath
-        import_node.parm('filepath1').set(path_str(staged_file_path))
+        # Get scene-level asset counts and merge with shot context
+        scene_asset_counts = _get_scene_asset_counts(shot_uri)
+        for asset_info in assets:
+            asset_uri_str = asset_info.get('asset', '')
+            if asset_uri_str in scene_asset_counts:
+                # Use scene-defined count if available
+                asset_info['instances'] = scene_asset_counts[asset_uri_str]
+            elif 'instances' not in asset_info:
+                asset_info['instances'] = 1
 
-        # Create prim path from URI segments
-        shot_prim_path = '/'.join(shot_uri.segments[1:])
+        # Parse sublayers from staged file
+        sublayers = _parse_staged_sublayers(staged_file_path)
 
-        # Build mutepaths based on excluded departments
-        mute_paths = []
+        # Exclude current department AND downstream departments
+        department_name = self.get_department_name()
+        departments_to_exclude = set(self.get_downstream_shot_department_names())
+        if department_name is not None:
+            departments_to_exclude.add(department_name)
 
-        # Mute excluded shot departments
-        for dept in self.get_exclude_shot_department_names():
-            mute_paths.append(f'*/shots/{shot_prim_path}/{dept}/*')
+        # Filter out excluded layers - don't load them at all
+        layers_to_load = [
+            info for info in sublayers
+            if info['department'] is None or info['department'] not in departments_to_exclude
+        ]
 
-        # Mute excluded asset departments (all assets)
-        for dept in self.get_exclude_asset_department_names():
-            mute_paths.append(f'*/assets/*/{dept}/*')
+        # Configure Sublayer LOP with filtered layers
+        import_node.parm('num_files').set(len(layers_to_load))
 
-        # Set mutepaths parameter (space-separated)
-        mute_node.parm('mutepaths').set(' '.join(mute_paths))
+        for i, info in enumerate(layers_to_load):
+            layer_path = path_str(info['path'])
+            import_node.parm(f'filepath{i+1}').set(layer_path)
+            import_node.parm(f'enable{i+1}').set(1)
 
-        # Set frame range
+        # Set frame range and FPS
         frame_range = self.get_frame_range()
         if frame_range is not None:
             util.set_frame_range(frame_range)
+            fps = get_fps()
+            if fps is not None:
+                util.set_fps(fps)
 
         # Set shot metadata script
         if frame_range is not None and staged_file_path is not None:
@@ -411,6 +424,85 @@ class ImportShot(ns.Node):
 
             # Set the script on the metadata pythonscript node
             metadata_node.parm('python').set(metadata_script)
+
+        # Handle asset duplication for assets with instances > 1
+        self._setup_asset_duplication(context, assets)
+
+    def _setup_asset_duplication(self, context, assets):
+        """Configure duplication for assets with instance count > 1.
+
+        Creates/updates duplicate nodes for each asset that needs multiple instances.
+        The 'duplicates' subnet is part of the HDA template.
+        """
+        from tumblehead.pipe.houdini.util import uri_to_prim_path, uri_to_metadata_prim_path
+        from tumblehead.api import default_client
+
+        api = default_client()
+
+        # Get the duplicates subnet (part of HDA template)
+        duplicates_node = context.node('duplicates')
+
+        # Clear existing duplicate nodes inside the subnet
+        for child in list(duplicates_node.children()):
+            if child.name() not in ('output0',) and not child.name().startswith('input'):
+                child.destroy()
+
+        # Get input and output of duplicates subnet
+        duplicates_input = duplicates_node.indirectInputs()[0] if duplicates_node.indirectInputs() else None
+        duplicates_output = duplicates_node.node('output0')
+
+        prev_node = duplicates_input
+
+        # Create duplicate nodes for each asset with instances > 1
+        for asset_info in assets:
+            instances = asset_info.get('instances', 1)
+            if instances <= 1:
+                continue
+
+            asset_uri_str = asset_info.get('asset', '')
+            if not asset_uri_str:
+                continue
+
+            asset_uri = Uri.parse_unsafe(asset_uri_str)
+            asset_prim_path = uri_to_prim_path(asset_uri)
+            asset_metadata_path = uri_to_metadata_prim_path(asset_uri)
+            asset_name = asset_uri.segments[-1] if asset_uri.segments else 'asset'
+
+            # Check if asset is animatable
+            properties = api.config.get_properties(asset_uri)
+            animatable = properties.get('animatable', False) if properties else False
+
+            # Create asset duplicate node
+            dup_node = duplicates_node.createNode('duplicate', f'{asset_name}_dup')
+            dup_node.parm('sourceprims').set(asset_prim_path)
+            dup_node.parm('ncy').set(instances)
+            dup_node.parm('duplicatename').set('`@srcname``@copy`')
+            dup_node.parm('makeinstances').set(int(not animatable))
+
+            if prev_node:
+                dup_node.setInput(0, prev_node)
+            prev_node = dup_node
+
+            # Create metadata duplicate node
+            meta_dup_node = duplicates_node.createNode('duplicate', f'{asset_name}_meta_dup')
+            meta_dup_node.parm('sourceprims').set(asset_metadata_path)
+            meta_dup_node.parm('ncy').set(instances)
+            meta_dup_node.parm('duplicatename').set('`@srcname``@copy`')
+            meta_dup_node.parm('parentprimtype').set('')
+
+            meta_dup_node.setInput(0, prev_node)
+            prev_node = meta_dup_node
+
+        # Connect last node to output
+        if duplicates_output and prev_node and prev_node != duplicates_input:
+            duplicates_output.setInput(0, prev_node)
+        elif duplicates_output and duplicates_input:
+            # No duplicates needed, connect input directly to output
+            duplicates_output.setInput(0, duplicates_input)
+
+        # Layout the subnet
+        duplicates_node.layoutChildren()
+
 
 def create(scene, name):
     node_type = ns.find_node_type('import_shot', 'Lop')

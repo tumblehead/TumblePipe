@@ -15,6 +15,7 @@ class WorkspaceBrowser(QtWidgets.QWidget):
     create_group = Signal(object)
     edit_group = Signal(object)
     delete_group = Signal(object)
+    edit_scene_for_entity = Signal(object)  # entity_uri - opens scene editor for entity's scene
 
     def __init__(self, api, parent=None):
         super().__init__(parent)
@@ -35,7 +36,7 @@ class WorkspaceBrowser(QtWidgets.QWidget):
 
         # Create the tree view navigation
         self.tree_view = QtWidgets.QTreeView()
-        self.tree_view.setHeaderHidden(True)
+        self.tree_view.setHeaderHidden(False)
         self.tree_view.setMinimumHeight(0)
         layout.addWidget(self.tree_view)
 
@@ -182,25 +183,42 @@ class WorkspaceBrowser(QtWidgets.QWidget):
                 return
 
             try:
-                item = model.item(index_path[0])
-                if item is None:
+                column_count = model.columnCount()
+
+                def set_row_background(parent, row, brush):
+                    """Set background for all columns in a row."""
+                    for col in range(column_count):
+                        if parent is None:
+                            # Top-level item
+                            col_item = model.item(row, col)
+                        else:
+                            # Child item
+                            col_item = parent.child(row, col)
+                        if col_item is not None:
+                            col_item.setBackground(brush)
+
+                # Style first row (top-level)
+                set_row_background(None, index_path[0], parent_brush)
+
+                # Navigate to get the parent for subsequent rows
+                parent_item = model.item(index_path[0])
+                if parent_item is None:
                     return
 
-                item.setBackground(parent_brush)
+                # Style intermediate rows (parent color)
                 for row_index in index_path[1:-1]:
-                    item = item.child(row_index)
-                    if item is None:
+                    set_row_background(parent_item, row_index, parent_brush)
+                    parent_item = parent_item.child(row_index)
+                    if parent_item is None:
                         return
-                    item.setBackground(parent_brush)
 
+                # Style final row (child color)
                 if len(index_path) > 1:
-                    item = item.child(index_path[-1])
-                    if item is not None:
-                        item.setBackground(child_brush)
+                    set_row_background(parent_item, index_path[-1], child_brush)
                 else:
-                    item.setBackground(child_brush)
+                    # Single-level path - re-style with child brush
+                    set_row_background(None, index_path[0], child_brush)
             except (IndexError, AttributeError):
-                # Invalid path, skip styling
                 pass
 
         # Convert selection Uri to path
@@ -283,8 +301,13 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         try:
             # Get the selected item
             indices = item_selection.indexes()
-            if len(indices) == 1:
-                index = indices[0]
+
+            # With multiple columns, we get multiple indices per row
+            # Filter to only column 0 (Name column) which has the entity data
+            name_indices = [idx for idx in indices if idx.column() == 0]
+
+            if len(name_indices) == 1:
+                index = name_indices[0]
                 if index.isValid():
                     model = self.tree_view.model()
                     if model is not None:
@@ -321,9 +344,26 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         if not index.isValid():
             return
         model = self.tree_view.model()
-        item = model.itemFromIndex(index)
+
+        # Get the item from column 0 (Name column) to get the path
+        name_index = model.index(index.row(), 0, index.parent())
+        item = model.itemFromIndex(name_index)
         name_path = self._get_path(item)
 
+        # Check which column was clicked
+        column = index.column()
+
+        # Scene column (1) - show scene assignment menu
+        if column == 1:
+            self._show_scene_context_menu(point, name_path)
+            return
+
+        # Group column (2) - show group membership menu
+        if column == 2:
+            self._show_group_context_menu(point, name_path)
+            return
+
+        # Name column (0) - show standard menu
         menu = QtWidgets.QMenu()
 
         if len(name_path) >= 1 and name_path[0] == "groups":
@@ -360,6 +400,44 @@ class WorkspaceBrowser(QtWidgets.QWidget):
             return self.create_batch_entry.emit(name_path)
         if selected_action == remove_entry_action:
             return self.remove_entry.emit(name_path)
+
+    def _show_scene_context_menu(self, point, name_path):
+        """Show context menu for Scene column."""
+        # Only show for shots (not assets, kits, or groups)
+        if len(name_path) < 2 or name_path[0] != 'shots':
+            return
+
+        entity_uri = entity_uri_from_path(name_path)
+        if entity_uri is None:
+            return
+
+        menu = QtWidgets.QMenu()
+        edit_action = menu.addAction("Edit Scene")
+
+        selected_action = menu.exec_(self.tree_view.mapToGlobal(point))
+        if selected_action == edit_action:
+            self.edit_scene_for_entity.emit(entity_uri)
+
+    def _show_group_context_menu(self, point, name_path):
+        """Show context menu for Group column."""
+        # Only show for entities (shots or assets), not categories or groups
+        if len(name_path) < 2:
+            return
+        if name_path[0] == 'groups':
+            return
+
+        # Build group path for edit_group signal
+        # Format: ["groups", context, group_name] for existing groups
+        # Or just the entity name_path for creating/editing
+        context = name_path[0]  # 'shots' or 'assets'
+        group_path = ['groups', context] + name_path[1:]
+
+        menu = QtWidgets.QMenu()
+        edit_action = menu.addAction("Edit Group")
+
+        selected_action = menu.exec_(self.tree_view.mapToGlobal(point))
+        if selected_action == edit_action:
+            self.edit_group.emit(group_path)
 
     def _get_tree_state(self):
         # Recursive visit function
@@ -426,6 +504,15 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         new_model = _create_workspace_model(self._api)
         self.tree_view.setModel(new_model)
         self.tree_view.setUniformRowHeights(True)
+
+        # Configure column sizing - Name stretches, others are interactive (user can resize)
+        header = self.tree_view.header()
+        header.setStretchLastSection(False)  # Don't stretch Group column
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)  # Name stretches
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)  # Scene - user resizable
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Interactive)  # Group - user resizable
+        header.resizeSection(1, 120)  # Set initial Scene column width
+        header.resizeSection(2, 100)  # Set initial Group column width
 
         # Restore tree expansion state first (before selection)
         if preserved_state:

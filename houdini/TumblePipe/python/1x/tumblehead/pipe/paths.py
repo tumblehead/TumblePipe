@@ -1244,14 +1244,24 @@ def get_workfile_context(hip_file_path: Path) -> Optional[Context]:
 ###############################################################################
 # Export Paths
 ###############################################################################
+# Unified path structure: export:/{entity}/{variant}/{dept}/{version}/
+# All exports include a variant, with "default" as the standard variant name.
+###############################################################################
+
 def get_export_path(
     entity_uri: Uri,
+    variant_name: str,
     department_name: str,
     version_name: str
     ) -> Path:
+    """Get export path for entity/variant/department/version.
+
+    Path structure: export:/{entity}/{variant}/{dept}/{version}/
+    """
     export_uri = (
         Uri.parse_unsafe('export:/') /
         entity_uri.segments /
+        variant_name /
         department_name /
         version_name
     )
@@ -1259,11 +1269,14 @@ def get_export_path(
 
 def latest_export_path(
     entity_uri: Uri,
+    variant_name: str,
     department_name: str
     ) -> Optional[Path]:
+    """Get the latest version path for an export."""
     export_uri = (
         Uri.parse_unsafe('export:/') /
         entity_uri.segments /
+        variant_name /
         department_name
     )
     export_path = api.storage.resolve(export_uri)
@@ -1274,31 +1287,35 @@ def latest_export_path(
 
 def latest_export_file_path(
     entity_uri: Uri,
+    variant_name: str,
     department_name: str
     ) -> Optional[Path]:
-    usd_file_name_pattern = '.'.join([
-        '_'.join(entity_uri.segments[1:] + [
-            department_name,
-            '*'
-        ]),
-        'usd'
-    ])
+    """Get the latest USD file path for an export."""
     latest_version_path = latest_export_path(
         entity_uri,
+        variant_name,
         department_name
     )
     if latest_version_path is None: return None
     version_name = latest_version_path.name
-    usd_file_name = usd_file_name_pattern.replace('*', version_name)
+    usd_file_name = get_layer_file_name(
+        entity_uri,
+        variant_name,
+        department_name,
+        version_name
+    )
     return latest_version_path / usd_file_name
 
 def next_export_path(
     entity_uri: Uri,
+    variant_name: str,
     department_name: str
     ) -> Path:
+    """Get the next version path for an export."""
     export_uri = (
         Uri.parse_unsafe('export:/') /
         entity_uri.segments /
+        variant_name /
         department_name
     )
     export_path = api.storage.resolve(export_uri)
@@ -1306,101 +1323,104 @@ def next_export_path(
 
 def next_export_file_path(
     entity_uri: Uri,
+    variant_name: str,
     department_name: str
     ) -> Path:
-    usd_file_name_pattern = '.'.join([
-        '_'.join(entity_uri.segments[1:] + [
-            department_name,
-            '*'
-        ]),
-        'usd'
-    ])
+    """Get the next USD file path for an export."""
     version_path = next_export_path(
         entity_uri,
+        variant_name,
         department_name
     )
     version_name = version_path.name
-    usd_file_name = usd_file_name_pattern.replace('*', version_name)
-    return version_path / usd_file_name
-
-def get_export_uri(entity_uri: Uri, department_name: str) -> Uri:
-    """Get export URI for entity and department.
-
-    Returns the URI (not resolved path) for use in import modules.
-    """
-    return Uri.parse_unsafe('export:/') / entity_uri.segments / department_name
-
-def get_layer_file_name(
-    entity_uri: Uri,
-    department_name: str,
-    version_name: str
-    ) -> str:
-    """Get layer filename (.usd).
-
-    Returns the filename for department layer exports.
-    """
-    entity_name = '_'.join(entity_uri.segments)
-    return f'{entity_name}_{department_name}_{version_name}.usd'
-
-###############################################################################
-# Variant Export Paths
-###############################################################################
-def get_variant_export_path(
-    entity_uri: Uri,
-    variant_name: str,
-    department_name: str,
-    version_name: str
-    ) -> Path:
-    """Get export path for a variant.
-
-    Path structure: export:/{entity}/variants/{variant}/{department}/{version}/
-    """
-    export_uri = (
-        Uri.parse_unsafe('export:/') /
-        entity_uri.segments /
-        'variants' /
-        variant_name /
-        department_name /
-        version_name
-    )
-    return api.storage.resolve(export_uri)
-
-
-def get_variant_export_file_path(
-    entity_uri: Uri,
-    variant_name: str,
-    department_name: str,
-    version_name: str
-    ) -> Path:
-    """Get the USD file path for a variant export."""
-    version_path = get_variant_export_path(
+    usd_file_name = get_layer_file_name(
         entity_uri,
         variant_name,
         department_name,
         version_name
     )
-    usd_file_name = '.'.join([
-        '_'.join(entity_uri.segments[1:] + [
-            variant_name,
-            department_name,
-            version_name
-        ]),
-        'usd'
-    ])
     return version_path / usd_file_name
 
-
-def latest_variant_export_path(
+def get_export_uri(
     entity_uri: Uri,
     variant_name: str,
     department_name: str
-    ) -> Optional[Path]:
-    """Get the latest version path for a variant export."""
+    ) -> Uri:
+    """Get export URI for entity/variant/department.
+
+    Returns the URI (not resolved path) for use in import modules.
+    """
+    return (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        variant_name /
+        department_name
+    )
+
+def get_layer_file_name(
+    entity_uri: Uri,
+    variant_name: str,
+    department_name: str,
+    version_name: str
+    ) -> str:
+    """Get layer filename (.usd or .usda for root).
+
+    Returns the filename for department layer exports.
+    Root department uses .usda extension for human readability.
+    Filename format: {entity}_{variant}_{dept}_{version}.usd
+    """
+    entity_name = '_'.join(entity_uri.segments)
+    ext = '.usda' if department_name == 'root' else '.usd'
+    return f'{entity_name}_{variant_name}_{department_name}_{version_name}{ext}'
+
+def list_variant_names(entity_uri: Uri) -> list[str]:
+    """List all variant names for an entity.
+
+    Returns list of variant directory names under the entity's export path.
+    Excludes reserved names like '_shared' and '_staged'.
+    """
+    export_uri = Uri.parse_unsafe('export:/') / entity_uri.segments
+    export_path = api.storage.resolve(export_uri)
+    if not export_path.exists(): return []
+    variant_names = [
+        path.name
+        for path in export_path.iterdir()
+        if path.is_dir() and not path.name.startswith('_')
+    ]
+    return sorted(variant_names)
+
+
+###############################################################################
+# Shared Export Paths (for layer_split)
+###############################################################################
+# Shared exports use '_shared' as a reserved variant name
+# Path structure: export:/{entity}/_shared/{dept}/{version}/
+###############################################################################
+
+def get_shared_export_path(
+    entity_uri: Uri,
+    department_name: str,
+    version_name: str
+    ) -> Path:
+    """Get shared export path (_shared variant)."""
     export_uri = (
         Uri.parse_unsafe('export:/') /
         entity_uri.segments /
-        'variants' /
-        variant_name /
+        '_shared' /
+        department_name /
+        version_name
+    )
+    return api.storage.resolve(export_uri)
+
+def latest_shared_export_path(
+    entity_uri: Uri,
+    department_name: str
+    ) -> Optional[Path]:
+    """Get latest shared export version path."""
+    export_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        '_shared' /
         department_name
     )
     export_path = api.storage.resolve(export_uri)
@@ -1408,69 +1428,42 @@ def latest_variant_export_path(
     if len(version_paths) == 0: return None
     return version_paths[-1]
 
-
-def latest_variant_export_file_path(
+def latest_shared_export_file_path(
     entity_uri: Uri,
-    variant_name: str,
     department_name: str
     ) -> Optional[Path]:
-    """Get the latest USD file path for a variant export."""
-    latest_path = latest_variant_export_path(
-        entity_uri,
-        variant_name,
-        department_name
-    )
-    if latest_path is None: return None
-    version_name = latest_path.name
-    usd_file_name = '.'.join([
-        '_'.join(entity_uri.segments[1:] + [
-            variant_name,
-            department_name,
-            version_name
-        ]),
-        'usd'
-    ])
-    return latest_path / usd_file_name
+    """Get latest shared export USD file path."""
+    latest_version_path = latest_shared_export_path(entity_uri, department_name)
+    if latest_version_path is None: return None
+    version_name = latest_version_path.name
+    usd_file_name = get_shared_layer_file_name(entity_uri, department_name, version_name)
+    return latest_version_path / usd_file_name
 
-
-def next_variant_export_path(
+def next_shared_export_path(
     entity_uri: Uri,
-    variant_name: str,
     department_name: str
     ) -> Path:
-    """Get the next version path for a variant export."""
+    """Get next shared export version path."""
     export_uri = (
         Uri.parse_unsafe('export:/') /
         entity_uri.segments /
-        'variants' /
-        variant_name /
+        '_shared' /
         department_name
     )
     export_path = api.storage.resolve(export_uri)
     return get_next_version_path(export_path)
 
-
-def next_variant_export_file_path(
+def get_shared_layer_file_name(
     entity_uri: Uri,
-    variant_name: str,
-    department_name: str
-    ) -> Path:
-    """Get the next USD file path for a variant export."""
-    version_path = next_variant_export_path(
-        entity_uri,
-        variant_name,
-        department_name
-    )
-    version_name = version_path.name
-    usd_file_name = '.'.join([
-        '_'.join(entity_uri.segments[1:] + [
-            variant_name,
-            department_name,
-            version_name
-        ]),
-        'usd'
-    ])
-    return version_path / usd_file_name
+    department_name: str,
+    version_name: str
+    ) -> str:
+    """Get shared layer filename.
+
+    Filename format: {entity}_shared_{dept}_{version}.usd
+    """
+    entity_name = '_'.join(entity_uri.segments)
+    return f'{entity_name}_shared_{department_name}_{version_name}.usd'
 
 
 ###############################################################################
@@ -1582,6 +1575,42 @@ def get_latest_staged_file_path(entity_uri: Uri) -> Path:
         'usda'
     ])
     return version_path / usd_file_name
+
+###############################################################################
+# Scene Staged Paths
+###############################################################################
+def get_scene_staged_path(scene_uri: Uri) -> Path:
+    """Get base staged path for a scene."""
+    staged_uri = (
+        Uri.parse_unsafe('export:/') /
+        'scenes' /
+        scene_uri.segments /
+        '_staged'
+    )
+    return api.storage.resolve(staged_uri)
+
+def next_scene_staged_path(scene_uri: Uri) -> Path:
+    """Get next version directory for scene export."""
+    staged_path = get_scene_staged_path(scene_uri)
+    return get_next_version_path(staged_path)
+
+def get_scene_latest_path(scene_uri: Uri) -> Path:
+    """Get path to scene's latest staged .usda file."""
+    staged_uri = (
+        Uri.parse_unsafe('export:/') /
+        'scenes' /
+        scene_uri.segments /
+        '_staged' /
+        'latest'
+    )
+    staged_path = api.storage.resolve(staged_uri)
+    scene_name = scene_uri.segments[-1]
+    return staged_path / f'{scene_name}_latest.usda'
+
+def get_scene_layer_file_name(scene_uri: Uri, version_name: str) -> str:
+    """Get filename for scene layer (e.g., 'forest_v0001.usda')."""
+    scene_name = scene_uri.segments[-1]
+    return f'{scene_name}_{version_name}.usda'
 
 def get_rig_export_path(asset_uri: Uri) -> Path:
     export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / 'rig'

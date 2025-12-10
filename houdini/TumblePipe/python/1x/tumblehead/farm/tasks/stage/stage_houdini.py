@@ -15,7 +15,7 @@ from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini import util
 from tumblehead.pipe.houdini.lops import (
     build_shot,
-    import_variant
+    import_layer
 )
 
 api = default_client()
@@ -125,17 +125,17 @@ def main(
 
         # Setup variant node for this specific variant
         for included_department_name in included_department_names:
-            variant_node = import_variant.create(
+            layer_node = import_layer.create(
                 variant_subnet,
                 included_department_name
             )
-            variant_node.set_entity_uri(shot_uri)
-            variant_node.set_department_name(included_department_name)
-            variant_node.set_variant_name(variant_name)
-            variant_node.latest()
-            variant_node.execute()
-            _connect(subnet_prev_node, variant_node.native())
-            subnet_prev_node = variant_node.native()
+            layer_node.set_entity_uri(shot_uri)
+            layer_node.set_department_name(included_department_name)
+            layer_node.set_variant_name(variant_name)
+            layer_node.set_version_name('current')
+            layer_node.execute()
+            _connect(subnet_prev_node, layer_node.native())
+            subnet_prev_node = layer_node.native()
 
         # Connect last node to subnet output
         _connect(subnet_prev_node, variant_subnet_output)

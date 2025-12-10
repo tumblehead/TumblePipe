@@ -125,3 +125,23 @@ def find_group(context: str, member: Uri, department: str) -> Group | None:
         if department not in group.departments: continue
         return group
     return None
+
+
+def find_groups_for_entity(entity_uri: Uri) -> list[Group]:
+    """
+    Find all groups that contain an entity (regardless of department).
+
+    Args:
+        entity_uri: The entity URI to search for
+
+    Returns:
+        List of groups containing this entity
+    """
+    if len(entity_uri.segments) < 1:
+        return []
+    context = entity_uri.segments[0]  # 'assets' or 'shots'
+    result = []
+    for group in list_groups(context):
+        if entity_uri in group.members:
+            result.append(group)
+    return result

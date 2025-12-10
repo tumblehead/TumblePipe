@@ -115,9 +115,9 @@ def _is_submissable(entity_uri, department_name):
     if hip_path is None: return False
     return hip_path.exists()
 
-def _is_out_of_date(entity_uri, department_name):
+def _is_out_of_date(entity_uri, variant_name, department_name):
     hip_path = latest_hip_file_path(entity_uri, department_name)
-    export_path = latest_export_path(entity_uri, department_name)
+    export_path = latest_export_path(entity_uri, variant_name, department_name)
     if export_path is None: return True
     if not export_path.exists(): return True
     return hip_path.stat().st_mtime > export_path.stat().st_mtime
@@ -130,6 +130,7 @@ PUBLISH_SCRIPT_PATH = Path(__file__).parent / 'publish.py'
 def _create_publish_job(
     api,
     entity_uri,
+    variant_name,
     department_name,
     pool_name,
     priority
@@ -145,7 +146,7 @@ def _create_publish_job(
         raise ValueError(f"Cannot get frame range for entity: {entity_uri}. Ensure the entity has frame_start, frame_end, roll_start, roll_end properties configured.")
     render_range = frame_range.full_range()
 
-    output_path = next_export_path(entity_uri, department_name)
+    output_path = next_export_path(entity_uri, variant_name, department_name)
     version_name = output_path.name
     job = Job(
         to_wsl_path(PUBLISH_SCRIPT_PATH), None,
@@ -238,9 +239,11 @@ def main(
     for uri in api.config.list_entities(Uri.parse_unsafe('entity:/shots/*/*')):
         prev_job_name = None
         down_stream_changed = False
+        # Use 'default' variant for batch update jobs
+        variant_name = 'default'
         for department_name in department_names:
                 if not _is_submissable(uri, department_name): continue
-                out_of_date = _is_out_of_date(uri, department_name)
+                out_of_date = _is_out_of_date(uri, variant_name, department_name)
                 if not down_stream_changed and not out_of_date: continue
                 # Create job name from URI path segments
                 uri_name = '_'.join(uri.segments[1:])
@@ -248,6 +251,7 @@ def main(
                 job = _create_publish_job(
                     api,
                     uri,
+                    variant_name,
                     department_name,
                     pool_name,
                     priority

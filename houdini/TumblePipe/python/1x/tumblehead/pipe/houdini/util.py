@@ -70,6 +70,13 @@ def set_block_range(block_range: BlockRange):
         block_range.first_frame
     )
 
+def set_fps(fps: int):
+    """Set Houdini session FPS.
+
+    Only affects playback speed - does not modify frame count or move keyframes.
+    """
+    hou.setFps(fps, modify_frame_count=False, preserve_keyframes=True)
+
 class _UpdateModeContext:
     def __init__(self, mode):
         self.mode = mode
@@ -221,6 +228,36 @@ def get_selected_lop_node():
                 return node
         except:
             continue
+    return None
+
+def get_display_flag_lop_node():
+    """Get the LOP node with the display flag set, if any."""
+    try:
+        # Find all LOP networks in the scene
+        lop_networks = hou.nodeType(hou.lopNodeTypeCategory(), "lopnet").instances()
+        for network in lop_networks:
+            display_node = network.displayNode()
+            if display_node is not None:
+                try:
+                    stage = display_node.stage()
+                    if stage is not None:
+                        return display_node
+                except:
+                    continue
+
+        # Also check /stage context directly
+        stage_context = hou.node("/stage")
+        if stage_context is not None:
+            display_node = stage_context.displayNode()
+            if display_node is not None:
+                try:
+                    stage = display_node.stage()
+                    if stage is not None:
+                        return display_node
+                except:
+                    pass
+    except:
+        pass
     return None
 
 ###############################################################################

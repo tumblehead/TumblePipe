@@ -15,7 +15,7 @@ from tumblehead.util.io import (
     load_json,
     store_json
 )
-from tumblehead.config.timeline import BlockRange
+from tumblehead.config.timeline import BlockRange, get_fps
 from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini import util
 from tumblehead.apps.deadline import log_progress
@@ -69,8 +69,11 @@ def main(
     if render_node is None:
         return _error(f'Node not found: {node_path}')
 
-    # Set the playback range
+    # Set the playback range and FPS
     util.set_block_range(render_range)
+    fps = get_fps()
+    if fps is not None:
+        util.set_fps(fps)
 
     # HACK: Make sure the graph is cooked
     render_node.parm('f1').set(render_range.first_frame)

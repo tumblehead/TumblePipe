@@ -41,6 +41,9 @@ class ProcessDialog(QtWidgets.QDialog):
         self._create_ui()
         self._connect_signals()
 
+        # Update mode visibility based on available task callbacks
+        self._update_mode_visibility()
+
         # Apply initial mode filter (Local is default)
         if self._current_department:
             self._model.set_mode_filter(is_local=True, current_department=self._current_department)
@@ -79,9 +82,9 @@ class ProcessDialog(QtWidgets.QDialog):
         layout.addWidget(self._tree_view)
 
         # Execution mode section
-        mode_group = QtWidgets.QGroupBox("Execution Mode")
+        self._mode_group = QtWidgets.QGroupBox("Execution Mode")
         mode_layout = QtWidgets.QHBoxLayout()
-        mode_group.setLayout(mode_layout)
+        self._mode_group.setLayout(mode_layout)
 
         self._local_radio = QtWidgets.QRadioButton("Local")
         self._local_radio.setToolTip("Execute tasks locally in the current Houdini session")
@@ -94,7 +97,7 @@ class ProcessDialog(QtWidgets.QDialog):
         mode_layout.addWidget(self._farm_radio)
         mode_layout.addStretch()
 
-        layout.addWidget(mode_group)
+        layout.addWidget(self._mode_group)
 
         # Status section
         status_frame = QtWidgets.QFrame()
@@ -186,10 +189,42 @@ class ProcessDialog(QtWidgets.QDialog):
             self._status_label.setStyleSheet("color: orange; font-weight: bold;")
             self._execute_button.setEnabled(False)
         else:
-            mode = "locally" if self._local_radio.isChecked() else "on farm"
-            self._status_label.setText(f"Ready to execute {enabled_count} task(s) {mode}")
+            # Only show mode in status if mode group is visible
+            if self._mode_group.isVisible():
+                mode = "locally" if self._local_radio.isChecked() else "on farm"
+                self._status_label.setText(f"Ready to execute {enabled_count} task(s) {mode}")
+            else:
+                self._status_label.setText(f"Ready to execute {enabled_count} task(s)")
             self._status_label.setStyleSheet("color: green; font-weight: bold;")
             self._execute_button.setEnabled(True)
+
+    def _get_available_modes(self) -> tuple[bool, bool]:
+        """Check which execution modes are available based on task callbacks.
+
+        Returns: (has_local, has_farm)
+        """
+        tasks = self._model.get_tasks()
+        has_local = any(t.execute_local is not None for t in tasks)
+        has_farm = any(t.execute_farm is not None for t in tasks)
+        return has_local, has_farm
+
+    def _update_mode_visibility(self):
+        """Show/hide mode radio buttons based on available task callbacks."""
+        has_local, has_farm = self._get_available_modes()
+
+        # Hide individual radio buttons if mode not available
+        self._local_radio.setVisible(has_local)
+        self._farm_radio.setVisible(has_farm)
+
+        # Hide entire group if only one mode available (no choice needed)
+        if has_local and not has_farm:
+            self._mode_group.setVisible(False)
+            self._local_radio.setChecked(True)
+        elif has_farm and not has_local:
+            self._mode_group.setVisible(False)
+            self._farm_radio.setChecked(True)
+        else:
+            self._mode_group.setVisible(True)
 
     def _on_cancel_clicked(self):
         """Handle cancel button click"""
@@ -415,8 +450,8 @@ class ProcessDialog(QtWidgets.QDialog):
 
         try:
             if task.task_type == 'export':
-                # Open export directory
-                location_path = latest_export_path(task.uri, task.department)
+                # Open export directory (using 'default' variant)
+                location_path = latest_export_path(task.uri, 'default', task.department)
             elif task.task_type == 'build':
                 # Open staged (build) directory
                 location_path = current_staged_path(task.uri)

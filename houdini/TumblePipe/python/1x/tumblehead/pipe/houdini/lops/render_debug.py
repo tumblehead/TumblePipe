@@ -9,7 +9,7 @@ from tumblehead.config.department import list_departments
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.lops import (
     build_shot,
-    import_variant
+    import_layer
 )
 from tumblehead.pipe.paths import (
     get_workfile_context
@@ -103,13 +103,13 @@ class RenderDebug(ns.Node):
         _connect(prev_node, variant_subnet)
         prev_node = variant_subnet_input
 
-        # Setup import variant
+        # Setup import layer
         for shot_department_name in included_shot_departments:
-            layer_node = import_variant.create(variant_subnet, f'{shot_department_name}_import')
+            layer_node = import_layer.create(variant_subnet, f'{shot_department_name}_import')
             layer_node.set_entity_uri(shot_uri)
             layer_node.set_department_name(shot_department_name)
             layer_node.set_variant_name(variant_name)
-            layer_node.latest()
+            layer_node.set_version_name('current')
             layer_node.execute()
             _connect(prev_node, layer_node.native())
             prev_node = layer_node.native()

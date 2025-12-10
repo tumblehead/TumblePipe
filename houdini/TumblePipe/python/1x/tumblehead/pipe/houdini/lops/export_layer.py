@@ -10,7 +10,7 @@ from tumblehead.api import get_user_name, path_str, fix_path, default_client
 from tumblehead.util.io import store_json
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
-from tumblehead.config.variants import get_entity_type
+from tumblehead.config.variants import get_entity_type, list_variants
 from tumblehead.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblehead.apps.deadline import Deadline
 from tumblehead.pipe.houdini.lops import submit_render
@@ -26,6 +26,10 @@ from tumblehead.pipe.paths import (
 api = default_client()
 
 DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/export_layer')
+
+class ExportLayerError(Exception):
+    """Raised when export_layer encounters a validation or execution error."""
+    pass
 
 def _clear_dive(dive_node):
     for node in dive_node.children():
@@ -152,7 +156,8 @@ class ExportLayer(ns.Node):
             return []
 
         context_name = 'assets' if entity_type == 'asset' else 'shots'
-        departments = list_departments(context_name)
+        # Exclude generated departments (like 'root') from export menus
+        departments = list_departments(context_name, include_generated=False)
         if len(departments) == 0:
             return []
 
@@ -189,6 +194,16 @@ class ExportLayer(ns.Node):
 
         department_index = department_names.index(department_name)
         return department_names[department_index + 1:]
+
+    def list_variant_names(self) -> list[str]:
+        """List available variant names for current entity.
+
+        Returns variants from entity config, always includes 'default'.
+        """
+        entity_uri = self.get_entity_uri()
+        if entity_uri is None:
+            return ['default']
+        return list_variants(entity_uri)
 
     def list_pool_names(self) -> list[str]:
         try:
@@ -256,6 +271,14 @@ class ExportLayer(ns.Node):
                 return department_name
             case _:
                 raise AssertionError(f'Unknown entity source: {entity_source}')
+
+    def get_variant_name(self) -> str:
+        """Get selected variant name, defaults to 'default'."""
+        variant_names = self.list_variant_names()
+        variant_name = self.parm('variant').eval()
+        if not variant_name or variant_name not in variant_names:
+            return 'default'
+        return variant_name
 
     def get_downstream_department_names(self) -> list[str]:
         department_names = self.list_downstream_department_names()
@@ -332,7 +355,11 @@ class ExportLayer(ns.Node):
         if department_name not in department_names:
             return
         self.parm('department').set(department_name)
-    
+
+    def set_variant_name(self, variant_name: str):
+        """Set variant name."""
+        self.parm('variant').set(variant_name)
+
     def execute(self, force_local: bool = False):
         if force_local:
             return self._export_local()
@@ -353,15 +380,21 @@ class ExportLayer(ns.Node):
 
         # Get parameters
         entity_uri = self.get_entity_uri()
+        variant_name = self.get_variant_name()
         department_name = self.get_department_name()
         frame_range_result = self.get_frame_range()
 
         if entity_uri is None:
-            return
+            raise ExportLayerError("Entity URI is not set. Check 'Entity Source' setting or workfile context.")
         if department_name is None:
-            return
+            raise ExportLayerError(f"Department name is not set for entity: {entity_uri}")
         if frame_range_result is None:
-            return
+            if str(entity_uri).startswith('entity:/assets/'):
+                raise ExportLayerError(
+                    f"Frame range could not be determined for asset: {entity_uri}. "
+                    "Assets don't have frame ranges - use 'Single Frame' or 'Playback Range' instead."
+                )
+            raise ExportLayerError(f"Frame range could not be determined for entity: {entity_uri}")
 
         frame_range, step = frame_range_result
         render_range = frame_range.full_range()
@@ -369,8 +402,8 @@ class ExportLayer(ns.Node):
         timestamp = dt.datetime.now()
         fps = get_fps()
 
-        # Determine version path (always use base export path, not variant path)
-        version_path = next_export_path(entity_uri, department_name)
+        # Determine version path
+        version_path = next_export_path(entity_uri, variant_name, department_name)
         version_name = version_path.name
 
         # Prepare for stage scrape
@@ -442,10 +475,24 @@ class ExportLayer(ns.Node):
                 if stage.GetPrimAtPath(prim_path).IsValid():
                     all_export_prims.append(prim_path)
 
+            # For asset exports, also capture the asset's own root prim (e.g., /CHAR/Moose)
+            # This ensures materials, shaders, and other lookdev content is exported
+            is_asset_export = str(entity_uri).startswith('entity:/assets/')
+            if is_asset_export:
+                asset_prim_path = util.uri_to_prim_path(entity_uri)
+                if stage.GetPrimAtPath(asset_prim_path).IsValid():
+                    all_export_prims.append(asset_prim_path)
+
+            # Validate we have something to export - never silently create empty versions
+            if not all_export_prims:
+                raise ExportLayerError(
+                    f"No exportable content found for {entity_uri} {department_name}. "
+                    "Ensure the stage contains the asset prim, referenced assets, or stage components."
+                )
+
             # Export everything into single file
-            if all_export_prims:
-                layer_file_name = get_layer_file_name(entity_uri, department_name, version_name)
-                _export_prims(export_subnet, all_export_prims, render_range, step, temp_path / layer_file_name)
+            layer_file_name = get_layer_file_name(entity_uri, variant_name, department_name, version_name)
+            _export_prims(export_subnet, all_export_prims, render_range, step, temp_path / layer_file_name)
 
             # Write layer context
             context_path = temp_path / 'context.json'
@@ -453,6 +500,7 @@ class ExportLayer(ns.Node):
                 inputs=list(map(json.loads, asset_inputs)),
                 outputs=[dict(
                     uri=str(entity_uri),
+                    variant=variant_name,
                     department=department_name,
                     version=version_name,
                     timestamp=timestamp.isoformat(),
@@ -495,15 +543,21 @@ class ExportLayer(ns.Node):
 
     def _export_farm(self):
         entity_uri = self.get_entity_uri()
+        variant_name = self.get_variant_name()
         department_name = self.get_department_name()
         frame_range_result = self.get_frame_range()
 
         if entity_uri is None:
-            return
+            raise ExportLayerError("Entity URI is not set. Check 'Entity Source' setting or workfile context.")
         if department_name is None:
-            return
+            raise ExportLayerError(f"Department name is not set for entity: {entity_uri}")
         if frame_range_result is None:
-            return
+            if str(entity_uri).startswith('entity:/assets/'):
+                raise ExportLayerError(
+                    f"Frame range could not be determined for asset: {entity_uri}. "
+                    "Assets don't have frame ranges - use 'Single Frame' or 'Playback Range' instead."
+                )
+            raise ExportLayerError(f"Frame range could not be determined for entity: {entity_uri}")
 
         frame_range, _step = frame_range_result
 
@@ -512,15 +566,16 @@ class ExportLayer(ns.Node):
         priority = self.get_priority()
 
         if pool_name is None:
-            return
+            raise ExportLayerError("No render pool available. Check Deadline configuration.")
         if priority is None:
-            return
+            raise ExportLayerError("Priority is not set for farm export.")
 
         config = {
             'settings': {
                 'priority': priority,
                 'pool_name': pool_name,
                 'entity_uri': str(entity_uri),
+                'variant_name': variant_name,
                 'department_name': department_name,
                 'first_frame': frame_range.full_range().first_frame,
                 'last_frame': frame_range.full_range().last_frame
@@ -564,15 +619,20 @@ class ExportLayer(ns.Node):
     def open_location(self):
         entity_uri = self.get_entity_uri()
         if entity_uri is None:
+            hou.ui.displayMessage("No entity selected.", severity=hou.severityType.Warning)
             return
+        variant_name = self.get_variant_name()
         department_name = self.get_department_name()
         if department_name is None:
+            hou.ui.displayMessage("No department selected.", severity=hou.severityType.Warning)
             return
 
-        export_path = latest_export_path(entity_uri, department_name)
+        export_path = latest_export_path(entity_uri, variant_name, department_name)
         if export_path is None:
+            hou.ui.displayMessage(f"No exports found for {department_name}.", severity=hou.severityType.Warning)
             return
         if not export_path.exists():
+            hou.ui.displayMessage(f"Export path does not exist: {export_path}", severity=hou.severityType.Warning)
             return
         hou.ui.showInFileBrowser(path_str(export_path))
 

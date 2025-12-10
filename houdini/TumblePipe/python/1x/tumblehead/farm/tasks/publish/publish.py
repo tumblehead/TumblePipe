@@ -99,10 +99,11 @@ def _trigger_asset_build(entity_uri: Uri, settings: dict):
 
 
 def _next_export_path(entity):
-    # Convert entity JSON to Uri and department
+    # Convert entity JSON to Uri, variant, and department
     entity_uri = Uri.parse_unsafe(entity['uri'])
+    variant_name = entity.get('variant', 'default')
     department_name = entity['department']
-    return next_export_path(entity_uri, department_name)
+    return next_export_path(entity_uri, variant_name, department_name)
 
 SCRIPT_PATH = Path(__file__).parent / 'publish_houdini.py'
 def main(config):

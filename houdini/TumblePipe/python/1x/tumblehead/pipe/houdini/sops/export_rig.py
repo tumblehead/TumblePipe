@@ -46,7 +46,7 @@ class ExportRig(ns.Node):
         if asset_uri not in asset_uris: return
         self.parm('asset').set(str(asset_uri))
 
-    def execute(self):
+    def execute(self, force_local: bool = False):
 
         # Nodes
         context = self.native()

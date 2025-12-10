@@ -9,7 +9,7 @@ from tumblehead.api import (
     default_client
 )
 from tumblehead.util.io import load_json
-from tumblehead.config.timeline import BlockRange
+from tumblehead.config.timeline import BlockRange, get_fps
 from tumblehead.pipe.houdini import util
 
 api = default_client()
@@ -138,8 +138,11 @@ def main(
     export_node.parm('striplayerbreaks').set(False)
     _connect(prev_node, export_node)
 
-    # Set the frame range
+    # Set the frame range and FPS
     util.set_block_range(render_range)
+    fps = get_fps()
+    if fps is not None:
+        util.set_fps(fps)
 
     # Export the USD stage
     export_node.parm('file').set(path_str(output_path))

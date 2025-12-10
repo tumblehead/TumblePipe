@@ -17,9 +17,8 @@ from tumblehead.pipe.houdini.lops import (
     import_shot,
     import_assets,
     import_layer,
-    import_variant,
     export_layer,
-    export_variant
+    layer_split
 )
 from tumblehead.pipe.houdini.sops import (
     import_rigs
@@ -68,12 +67,6 @@ def _update():
         ns.list_by_node_type('import_assets', 'Lop')
     ))
 
-    # Find the import variant nodes
-    import_variant_nodes = list(map(
-        import_variant.ImportVariant,
-        ns.list_by_node_type('import_variant', 'Lop')
-    ))
-
     # Find the import layer nodes (unified)
     import_layer_nodes = list(map(
         import_layer.ImportLayer,
@@ -110,17 +103,10 @@ def _update():
         import_assets_node.execute()
         print(f'Updated {import_assets_node.path()}')
 
-    # Import latest variants
-    for import_node in import_variant_nodes:
-        if not import_node.is_valid(): continue
-        import_node.latest()
-        import_node.execute()
-        print(f'Updated {import_node.path()}')
-
     # Import latest layers (unified)
     for import_node in import_layer_nodes:
         if not import_node.is_valid(): continue
-        import_node.latest()
+        import_node.set_version_name('current')
         import_node.execute()
         print(f'Updated {import_node.path()}')
 
@@ -136,6 +122,23 @@ def _publish(entity_uri: Uri, department_name: str):
         asset_uri: Uri,
         department_name: str
         ):
+
+        def _is_split_correct(node):
+            if node.get_department_name() != department_name: return False
+            if node.get_entity_uri() != asset_uri: return False
+            return True
+
+        # Execute layer_split nodes first (shared content)
+        split_nodes = list(filter(
+            _is_split_correct,
+            map(
+                layer_split.LayerSplit,
+                ns.list_by_node_type('layer_split', 'Lop')
+            )
+        ))
+        for split_node in split_nodes:
+            split_node.execute()
+            print(f'Exported shared layer: {split_node.path()}')
 
         def _is_export_correct(node):
             if node.get_department_name() != department_name: return False
@@ -166,14 +169,26 @@ def _publish(entity_uri: Uri, department_name: str):
         department_name: str
         ):
 
-        def _is_shot_export_correct(node):
+        def _is_shot_split_correct(node):
             if node.get_department_name() != department_name: return False
             if node.get_entity_uri() != shot_uri: return False
             return True
 
-        def _is_variant_export_correct(node):
+        # Execute layer_split nodes first (shared content)
+        shot_split_nodes = list(filter(
+            _is_shot_split_correct,
+            map(
+                layer_split.LayerSplit,
+                ns.list_by_node_type('layer_split', 'Lop')
+            )
+        ))
+        for split_node in shot_split_nodes:
+            split_node.execute()
+            print(f'Exported shared layer: {split_node.path()}')
+
+        def _is_shot_export_correct(node):
             if node.get_department_name() != department_name: return False
-            if node.get_shot_uri() != shot_uri: return False
+            if node.get_entity_uri() != shot_uri: return False
             return True
 
         # Find the export nodes
@@ -182,14 +197,6 @@ def _publish(entity_uri: Uri, department_name: str):
             map(
                 export_layer.ExportLayer,
                 ns.list_by_node_type('export_layer', 'Lop')
-            )
-        ))
-
-        variant_export_nodes = list(filter(
-            _is_variant_export_correct,
-            map(
-                export_variant.ExportVariant,
-                ns.list_by_node_type('export_variant', 'Lop')
             )
         ))
 
@@ -202,11 +209,6 @@ def _publish(entity_uri: Uri, department_name: str):
         shot_export_node = shot_export_nodes[0]
         shot_export_node.execute(force_local=True)
         print(f'Published {shot_export_node.path()}')
-
-        # Export the variants
-        for variant_export_node in variant_export_nodes:
-            variant_export_node.execute()
-            print(f'Published {variant_export_node.path()}')
 
     # Get entity type from URI
     if entity_uri.purpose == 'groups':

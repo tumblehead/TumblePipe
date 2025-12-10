@@ -4,6 +4,20 @@ from tumblehead.util.io import store_json
 from tumblehead.util.uri import Uri
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Deep merge two dicts. Override values take precedence.
+
+    For nested dicts, merge recursively. For other types, override replaces base.
+    """
+    result = dict(base)
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 class DatabaseAdapter:
     """Adapter providing database_editor compatible interface over ConfigConvention"""
 
@@ -92,6 +106,63 @@ class DatabaseAdapter:
         if data is None:
             return {}
         return data.get('properties', {})
+
+    def get_root_inherited_properties(self, purpose: str) -> dict:
+        """Get inherited properties for a root entity (schema defaults).
+
+        Root entities like entity:/ have their schema at schemas:/{purpose}.
+        """
+        schema_uri = Uri.parse_unsafe(f'schemas:/{purpose}')
+        return self._get_schema_properties(schema_uri)
+
+    def get_inherited_properties(self, uri: Uri) -> dict:
+        """Get properties to compare against (schema defaults + parent inheritance).
+
+        For comparison purposes:
+        - Schema defaults define the baseline structure and field order
+        - Parent inheritance provides inherited property values (render, farm, etc.)
+
+        For a URI like entity:/assets/CHAR/Chair with schema schemas:/entity/assets/category/asset,
+        this returns merged properties from:
+        1. schemas:/entity/assets/category/asset (schema defaults - defines order)
+        2. entity:/ -> entity:/assets -> entity:/assets/CHAR (parent inheritance)
+        """
+        # 1. Start with schema defaults (defines base structure and order)
+        entity_data = self.lookup(uri)
+        if entity_data and entity_data.get('schema'):
+            # Entity has explicit schema - use it
+            schema_uri = Uri.parse_unsafe(entity_data['schema'])
+        else:
+            # No explicit schema - derive from URI path
+            # e.g., entity:/assets -> schemas:/entity/assets
+            schema_uri = Uri.parse_unsafe(f'schemas:/{uri.purpose}/' + '/'.join(uri.segments))
+
+        result = self._get_schema_properties(schema_uri)
+
+        # 2. Merge parent entity inheritance on top
+        if uri.segments:
+            purpose = uri.purpose
+            cache_data = self._config.cache.get(purpose)
+            if cache_data:
+                # Merge root properties
+                result = _deep_merge(result, deepcopy(cache_data.get('properties', {})))
+
+                # Merge from root to parent (stop before last segment)
+                data = cache_data
+                for segment in uri.segments[:-1]:
+                    children = data.get('children', {})
+                    if segment not in children:
+                        break
+                    data = children[segment]
+                    result = _deep_merge(result, data.get('properties', {}))
+
+        return result
+
+    def _get_schema_properties(self, schema_uri: Uri) -> dict:
+        """Get properties from a schema URI with full hierarchy inheritance."""
+        # Use config's get_properties which walks full schema hierarchy
+        props = self._config.get_properties(schema_uri)
+        return props if props else {}
 
     def save_properties(self, uri: Uri, properties: dict) -> None:
         """Save just the properties for a URI, preserving children"""
