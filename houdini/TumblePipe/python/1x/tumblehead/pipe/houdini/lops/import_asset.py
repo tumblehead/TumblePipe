@@ -20,7 +20,6 @@ from tumblehead.pipe.paths import (
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/import_asset')
 
 def _metadata_script(
     asset_uri: Uri,
@@ -75,15 +74,7 @@ class ImportAsset(ns.Node):
         return [entity.uri for entity in asset_entities]
 
     def list_department_names(self):
-        asset_departments = list_departments('assets')
-        if len(asset_departments) == 0: return []
-        asset_department_names = [dept.name for dept in asset_departments]
-        default_values = api.config.get_properties(DEFAULTS_URI)
-        return [
-            department_name
-            for department_name in default_values['departments']
-            if department_name in asset_department_names
-        ]
+        return [d.name for d in list_departments('assets') if d.renderable]
 
     def list_version_names(self) -> list[str]:
         """List available staged versions including 'latest' and 'current'."""
@@ -198,8 +189,9 @@ class ImportAsset(ns.Node):
         # Set import node filepath
         self.parm('import_filepath1').set(path_str(staged_file_path))
 
-        # Update version label
-        self.parm('version_label').set(version_name)
+        # Update version label with resolved folder name
+        resolved_version = staged_file_path.parent.name
+        self.parm('version_label').set(resolved_version)
 
         # Get shot context if we're in a shot workfile
         shot_uri = None

@@ -17,7 +17,6 @@ from tumblehead.pipe.paths import (
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/render_debug')
 
 def _clear_dive(dive_node):
     for node in dive_node.children():

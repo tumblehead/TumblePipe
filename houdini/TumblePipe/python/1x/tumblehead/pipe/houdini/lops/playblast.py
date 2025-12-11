@@ -22,7 +22,6 @@ from tumblehead.pipe.paths import (
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/playblast')
 
 class Playblast(ns.Node):
     def __init__(self, native):
@@ -44,16 +43,7 @@ class Playblast(ns.Node):
         return [entity.uri for entity in shot_entities]
 
     def list_department_names(self):
-        shot_departments = list_departments('shots')
-        if len(shot_departments) == 0: return []
-        shot_department_names = [dept.name for dept in shot_departments]
-        default_values = api.config.get_properties(DEFAULTS_URI)
-        if default_values is None: return shot_department_names
-        return [
-            department_name
-            for department_name in default_values['departments']
-            if department_name in shot_department_names
-        ]
+        return [d.name for d in list_departments('shots') if d.renderable]
 
     def list_camera_paths(self):
         root = self._get_stage_root()

@@ -20,8 +20,6 @@ from tumblehead.pipe.paths import (
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/layer_split')
-
 
 def _save_context_file(export_path: Path, entity_uri: Uri, department_name: str):
     """Save context.json with export metadata."""
@@ -42,7 +40,7 @@ class LayerSplit(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_entity_uris(self) -> list[Uri]:
+    def list_entity_uris(self) -> list[str]:
         shot_entities = api.config.list_entities(
             filter=Uri.parse_unsafe('entity:/shots'),
             closure=True
@@ -51,10 +49,11 @@ class LayerSplit(ns.Node):
             filter=Uri.parse_unsafe('entity:/assets'),
             closure=True
         )
-        return (
+        uris = (
             [entity.uri for entity in shot_entities] +
             [entity.uri for entity in asset_entities]
         )
+        return ['from_context'] + [str(uri) for uri in uris]
 
     def get_entity_type(self) -> str | None:
         entity_uri = self.get_entity_uri()
@@ -71,28 +70,22 @@ class LayerSplit(ns.Node):
         return [dept.name for dept in departments]
 
     def get_entity_uri(self) -> Uri | None:
-        entity_uris = self.list_entity_uris()
-        if len(entity_uris) == 0:
-            return None
-
-        # Check entity source
-        entity_source = self.parm('entity_source').eval()
-        if entity_source == 0:
-            # From context - parse from hip file path
+        entity_uri_raw = self.parm('entity').eval()
+        if entity_uri_raw == 'from_context':
             file_path = Path(hou.hipFile.path())
             context = get_workfile_context(file_path)
             if context is None:
                 return None
             return context.entity_uri
-
-        # From settings - use entity parameter
-        entity_uri_raw = self.parm('entity').eval()
-        if len(entity_uri_raw) == 0:
-            return entity_uris[0]
-        entity_uri = Uri.parse_unsafe(entity_uri_raw)
-        if entity_uri not in entity_uris:
+        # From settings
+        entity_uris = self.list_entity_uris()
+        if len(entity_uris) <= 1:  # Only 'from_context' means no real URIs
             return None
-        return entity_uri
+        if len(entity_uri_raw) == 0:
+            return Uri.parse_unsafe(entity_uris[1])  # Skip 'from_context'
+        if entity_uri_raw not in entity_uris:  # Compare strings
+            return None
+        return Uri.parse_unsafe(entity_uri_raw)
 
     def get_department_name(self) -> str | None:
         department_names = self.list_department_names()
@@ -107,7 +100,7 @@ class LayerSplit(ns.Node):
 
     def set_entity_uri(self, entity_uri: Uri):
         entity_uris = self.list_entity_uris()
-        if entity_uri not in entity_uris:
+        if str(entity_uri) not in entity_uris:  # Compare strings
             return
         self.parm('entity').set(str(entity_uri))
 
@@ -117,15 +110,33 @@ class LayerSplit(ns.Node):
             return
         self.parm('department').set(department_name)
 
-    def set_entity_source(self, source: str):
-        """Set entity source: 'from_context' (0) or 'from_settings' (1)."""
-        if source == 'from_context':
-            self.parm('entity_source').set(0)
-        elif source == 'from_settings':
-            self.parm('entity_source').set(1)
+    def _update_labels(self):
+        """Update label parameters to show resolved values when 'from_context' is selected."""
+        entity_raw = self.parm('entity').eval()
+        if entity_raw == 'from_context':
+            entity_uri = self.get_entity_uri()
+            self.parm('entity_label').set(str(entity_uri) if entity_uri else '')
+        else:
+            self.parm('entity_label').set('')
 
-    def execute(self):
-        """Export the shared layer to _shared path."""
+    def execute(self, force_local: bool = False):
+        """
+        Execute export.
+
+        If force_local=True, executes directly (used by ProcessDialog callbacks).
+        Otherwise, opens the ProcessDialog for task selection and execution.
+        """
+        if force_local:
+            return self._execute()
+        # Open ProcessDialog
+        from tumblehead.pipe.houdini.ui.project_browser.utils.process_executor import (
+            open_process_dialog_for_node
+        )
+        open_process_dialog_for_node(self, dialog_title="Export Shared Layer")
+
+    def _execute(self):
+        """Internal execution - export the shared layer to _shared path."""
+        self._update_labels()
         entity_uri = self.get_entity_uri()
         if entity_uri is None:
             raise ValueError('No valid entity URI')

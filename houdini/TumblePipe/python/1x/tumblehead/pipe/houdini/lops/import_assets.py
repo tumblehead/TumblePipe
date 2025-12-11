@@ -9,7 +9,6 @@ from tumblehead.pipe.houdini.lops import import_asset
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/import_assets')
 
 def _clear_scene(dive_node, output_node):
 
@@ -89,15 +88,7 @@ class ImportAssets(ns.Node):
         ]
 
     def list_department_names(self):
-        asset_departments = list_departments('assets')
-        if len(asset_departments) == 0: return []
-        asset_department_names = [dept.name for dept in asset_departments]
-        default_values = api.config.get_properties(DEFAULTS_URI)
-        return [
-            department_name
-            for department_name in default_values['departments']
-            if department_name in asset_department_names
-        ]
+        return [d.name for d in list_departments('assets') if d.renderable]
 
     def get_asset_uri(self, index) -> Uri | None:
         asset_uris = self.list_asset_uris(index)

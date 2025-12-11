@@ -1,16 +1,19 @@
 from qtpy.QtCore import Qt, QAbstractTableModel, QModelIndex
 from qtpy.QtGui import QFont, QBrush, QColor
 
+from tumblehead.config.groups import find_group
+
 from ..helpers import get_timestamp_from_context, get_user_from_context, format_relative_time
 
 
 class DepartmentTableModel(QAbstractTableModel):
-    """Model for department list with columns: Version, Department, User, Relative Time"""
+    """Model for department list with columns: Version, Group, Department, User, Relative Time"""
 
     COLUMN_VERSION = 0
-    COLUMN_DEPARTMENT = 1
-    COLUMN_USER = 2
-    COLUMN_RELATIVE_TIME = 3
+    COLUMN_GROUP = 1
+    COLUMN_DEPARTMENT = 2
+    COLUMN_USER = 3
+    COLUMN_RELATIVE_TIME = 4
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -18,9 +21,14 @@ class DepartmentTableModel(QAbstractTableModel):
         self._overwrite_context = None
         self._overwrite_index = -1
         self._selected_row = -1
+        self._entity_type = None  # 'asset', 'shot', or 'group'
+
+    def setEntityType(self, entity_type):
+        """Set the entity type for group badge display"""
+        self._entity_type = entity_type
 
     def columnCount(self, parent=QModelIndex()):
-        return 4
+        return 5
 
     def rowCount(self, parent=QModelIndex()):
         return len(self._contexts)
@@ -38,6 +46,15 @@ class DepartmentTableModel(QAbstractTableModel):
         if role == Qt.DisplayRole:
             if index.column() == self.COLUMN_VERSION:
                 return "v0000" if context.version_name is None else context.version_name
+            elif index.column() == self.COLUMN_GROUP:
+                # Only show group badge for individual entities, not groups
+                if self._entity_type in ('asset', 'shot'):
+                    entity_uri = context.entity_uri
+                    context_type = entity_uri.segments[0] if entity_uri.segments else None
+                    if context_type:
+                        group = find_group(context_type, entity_uri, context.department_name)
+                        return group.name if group else ""
+                return ""
             elif index.column() == self.COLUMN_DEPARTMENT:
                 return context.department_name
             elif index.column() == self.COLUMN_USER:
@@ -50,6 +67,8 @@ class DepartmentTableModel(QAbstractTableModel):
         elif role == Qt.TextAlignmentRole:
             if index.column() == self.COLUMN_VERSION:
                 return Qt.AlignRight | Qt.AlignVCenter
+            elif index.column() == self.COLUMN_GROUP:
+                return Qt.AlignCenter | Qt.AlignVCenter
             elif index.column() == self.COLUMN_DEPARTMENT:
                 return Qt.AlignCenter | Qt.AlignVCenter
             elif index.column() == self.COLUMN_USER:
@@ -62,6 +81,8 @@ class DepartmentTableModel(QAbstractTableModel):
             font.setPointSize(8)
             if index.column() == self.COLUMN_DEPARTMENT:
                 font.setBold(True)
+            elif index.column() == self.COLUMN_GROUP:
+                font.setPointSize(7)  # Slightly smaller for badge text
             return font
 
         elif role == Qt.ForegroundRole:

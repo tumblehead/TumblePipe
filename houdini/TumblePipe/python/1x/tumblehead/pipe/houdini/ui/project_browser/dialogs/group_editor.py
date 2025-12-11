@@ -107,9 +107,14 @@ class GroupEditorWidget(QtWidgets.QWidget):
 
         self.available_tree = QtWidgets.QTreeView()
         self.available_tree.setModel(self.available_model)
-        self.available_tree.setHeaderHidden(True)
         self.available_tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.available_tree.setExpandsOnDoubleClick(True)
+
+        # Configure header and columns for Scene column visibility
+        header = self.available_tree.header()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+
         layout.addWidget(self.available_tree)
 
         return panel

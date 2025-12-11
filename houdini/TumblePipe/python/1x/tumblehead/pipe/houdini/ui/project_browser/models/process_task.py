@@ -263,9 +263,18 @@ class ProcessTaskTreeModel(QStandardItemModel):
         self._entity_items: dict[str, QStandardItem] = {}  # uri_str -> entity item
         self._task_items: dict[str, QStandardItem] = {}    # task_id -> task item
         self._updating_checks = False  # Prevent recursive checkbox updates
+        self._initial_enabled_task_ids: set[str] | None = None  # Selective enablement
 
         self.setHorizontalHeaderLabels(self.HEADERS)
         self.itemChanged.connect(self._on_item_changed)
+
+    def set_initial_enabled_task_ids(self, task_ids: set[str] | None):
+        """Set the initial task IDs that should be enabled.
+
+        When set, only these tasks can be enabled by mode filter.
+        When None, mode filter enables all mode-allowed tasks (default behavior).
+        """
+        self._initial_enabled_task_ids = task_ids
 
     def set_tasks(self, tasks: list[ProcessTask]):
         """Build tree from flat task list, grouped by entity URI"""
@@ -409,6 +418,14 @@ class ProcessTaskTreeModel(QStandardItemModel):
         """Get count of enabled tasks"""
         return len([t for t in self._tasks if t.enabled])
 
+    def get_enabled_entity_uris(self) -> set[str]:
+        """Get URIs of entities that have at least one enabled task."""
+        enabled_uris = set()
+        for task in self._tasks:
+            if task.enabled:
+                enabled_uris.add(str(task.uri))
+        return enabled_uris
+
     def set_all_enabled(self, enabled: bool):
         """Enable or disable all tasks"""
         self._updating_checks = True
@@ -463,24 +480,30 @@ class ProcessTaskTreeModel(QStandardItemModel):
 
     def set_mode_filter(self, is_local: bool, current_department: str):
         """
-        Enable/disable tasks based on execution mode.
+        Enable/disable tasks based on execution mode and initial selection.
 
         Local mode: Only current department exports + build tasks are enabled.
         Farm mode: All tasks (including downstream departments) are enabled.
+
+        If initial_enabled_task_ids is set, only those tasks can be enabled.
         """
         self._updating_checks = True
         try:
             for task in self._tasks:
+                # Check if mode allows this task
+                mode_allowed = True
                 if is_local:
                     # Local: Only current department exports + build allowed
                     if task.task_type == 'export' and task.department != current_department:
-                        task.enabled = False
-                    else:
-                        # Enable current dept exports and build tasks
-                        task.enabled = True
-                else:
-                    # Farm: All tasks enabled
-                    task.enabled = True
+                        mode_allowed = False
+
+                # Check if initial selection allows this task
+                initial_allowed = True
+                if self._initial_enabled_task_ids is not None:
+                    initial_allowed = task.id in self._initial_enabled_task_ids
+
+                # Enable only if both mode and initial selection allow
+                task.enabled = mode_allowed and initial_allowed
 
                 # Update UI checkbox for this task
                 task_item = self._task_items.get(task.id)

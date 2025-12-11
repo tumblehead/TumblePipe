@@ -3,6 +3,7 @@ from qtpy.QtCore import Qt
 
 from tumblehead.util.uri import Uri
 from tumblehead.config.groups import list_groups as _list_groups
+from tumblehead.config.scene import get_inherited_scene_ref
 
 
 class GroupListModel(QStandardItemModel):
@@ -103,6 +104,8 @@ class AvailableEntitiesModel(QStandardItemModel):
     def load_entities_from_uri(self, root_uri_str, assigned_entities, current_group_members=None):
         """Load available entities as tree structure based on root URI"""
         self.clear()
+        self.setColumnCount(2)
+        self.setHorizontalHeaderLabels(['Name', 'Scene'])
 
         if current_group_members is None:
             current_group_members = set()
@@ -142,20 +145,31 @@ class AvailableEntitiesModel(QStandardItemModel):
 
                 if parent_name not in grouped:
                     grouped[parent_name] = []
-                grouped[parent_name].append((entity_name, uri_str))
+                grouped[parent_name].append((entity_name, uri_str, entity_type))
 
             for parent_name in sorted(grouped.keys()):
                 parent_item = QStandardItem(parent_name)
                 parent_item.setSelectable(True)
                 parent_item.setEditable(False)
 
-                for entity_name, uri_str in sorted(grouped[parent_name], key=lambda x: x[0]):
+                for entity_name, uri_str, entity_type in sorted(grouped[parent_name], key=lambda x: x[0]):
                     child_item = QStandardItem(entity_name)
                     child_item.setData(uri_str, Qt.UserRole)
                     child_item.setEditable(False)
-                    parent_item.appendRow(child_item)
 
-                self.appendRow(parent_item)
+                    # Look up scene for shots
+                    scene_item = QStandardItem('')
+                    scene_item.setEditable(False)
+                    if entity_type == 'shots':
+                        entity_uri = Uri.parse_unsafe(uri_str)
+                        scene_ref, _ = get_inherited_scene_ref(entity_uri)
+                        if scene_ref and scene_ref.segments:
+                            scene_name = scene_ref.segments[-1]
+                            scene_item.setText(scene_name)
+
+                    parent_item.appendRow([child_item, scene_item])
+
+                self.appendRow([parent_item, QStandardItem('')])
 
         except Exception as e:
             print(f"Error loading entities from URI '{root_uri_str}': {e}")

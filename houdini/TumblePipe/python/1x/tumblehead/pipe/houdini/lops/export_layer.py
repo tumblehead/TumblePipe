@@ -12,8 +12,7 @@ from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
 from tumblehead.config.variants import get_entity_type, list_variants
 from tumblehead.config.timeline import FrameRange, get_frame_range, get_fps
-from tumblehead.apps.deadline import Deadline
-from tumblehead.pipe.houdini.lops import submit_render
+from tumblehead.config.farm import list_pools
 from tumblehead.pipe.houdini import util
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.paths import (
@@ -25,7 +24,6 @@ from tumblehead.pipe.paths import (
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/export_layer')
 
 class ExportLayerError(Exception):
     """Raised when export_layer encounters a validation or execution error."""
@@ -125,7 +123,7 @@ class ExportLayer(ns.Node):
             return None
         return get_entity_type(entity_uri)
 
-    def list_entity_uris(self) -> list[Uri]:
+    def list_entity_uris(self) -> list[str]:
         asset_entities = api.config.list_entities(
             filter=Uri.parse_unsafe('entity:/assets'),
             closure=True
@@ -134,7 +132,8 @@ class ExportLayer(ns.Node):
             filter=Uri.parse_unsafe('entity:/shots'),
             closure=True
         )
-        return [e.uri for e in asset_entities] + [e.uri for e in shot_entities]
+        uris = [e.uri for e in asset_entities] + [e.uri for e in shot_entities]
+        return ['from_context'] + [str(uri) for uri in uris]
 
     def list_asset_uris(self) -> list[Uri]:
         asset_entities = api.config.list_entities(
@@ -153,27 +152,15 @@ class ExportLayer(ns.Node):
     def list_department_names(self) -> list[str]:
         entity_type = self.get_entity_type()
         if entity_type is None:
-            return []
+            return ['from_context']
 
         context_name = 'assets' if entity_type == 'asset' else 'shots'
-        # Exclude generated departments (like 'root') from export menus
-        departments = list_departments(context_name, include_generated=False)
-        if len(departments) == 0:
-            return []
-
-        department_names = [dept.name for dept in departments]
-        default_values = api.config.get_properties(DEFAULTS_URI)
-        if default_values is None:
-            return department_names
-
-        # Filter by configured defaults if available
-        configured_depts = default_values.get('departments', [])
-        if configured_depts:
-            return [
-                name for name in configured_depts
-                if name in department_names
-            ]
-        return department_names
+        # Exclude generated departments and filter to renderable only
+        names = [
+            d.name for d in list_departments(context_name, include_generated=False)
+            if d.renderable
+        ]
+        return ['from_context'] + names
 
     def list_downstream_department_names(self) -> list[str]:
         entity_type = self.get_entity_type()
@@ -206,71 +193,43 @@ class ExportLayer(ns.Node):
         return list_variants(entity_uri)
 
     def list_pool_names(self) -> list[str]:
-        try:
-            deadline = Deadline()
-        except:
-            return []
-        pool_names = deadline.list_pools()
-        if len(pool_names) == 0:
-            return []
-        default_values = api.config.get_properties(submit_render.DEFAULTS_URI)
-        if default_values is None:
-            return []
-        if 'pools' not in default_values:
-            return []
-        return [
-            pool_name
-            for pool_name in default_values['pools']
-            if pool_name in pool_names
-        ]
-
-    def get_entity_source(self) -> str:
-        return self.parm('entity_source').eval()
+        return [pool.name for pool in list_pools()]
 
     def get_entity_uri(self) -> Uri | None:
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                file_path = Path(hou.hipFile.path())
-                context = get_workfile_context(file_path)
-                if context is None:
-                    return None
-                return context.entity_uri
-            case 'from_settings':
-                entity_uris = self.list_entity_uris()
-                if len(entity_uris) == 0:
-                    return None
-                entity_uri_raw = self.parm('entity').eval()
-                if len(entity_uri_raw) == 0:
-                    return entity_uris[0]
-                entity_uri = Uri.parse_unsafe(entity_uri_raw)
-                if entity_uri not in entity_uris:
-                    return None
-                return entity_uri
-            case _:
-                raise AssertionError(f'Unknown entity source: {entity_source}')
+        entity_uri_raw = self.parm('entity').eval()
+        if entity_uri_raw == 'from_context':
+            file_path = Path(hou.hipFile.path())
+            context = get_workfile_context(file_path)
+            if context is None:
+                return None
+            return context.entity_uri
+        # From settings
+        entity_uris = self.list_entity_uris()
+        if len(entity_uris) <= 1:  # Only 'from_context' means no real URIs
+            return None
+        if len(entity_uri_raw) == 0:
+            return Uri.parse_unsafe(entity_uris[1])  # Skip 'from_context'
+        if entity_uri_raw not in entity_uris:  # Compare strings
+            return None
+        return Uri.parse_unsafe(entity_uri_raw)
 
     def get_department_name(self) -> str | None:
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                file_path = Path(hou.hipFile.path())
-                context = get_workfile_context(file_path)
-                if context is None:
-                    return None
-                return context.department_name
-            case 'from_settings':
-                department_names = self.list_department_names()
-                if len(department_names) == 0:
-                    return None
-                department_name = self.parm('department').eval()
-                if len(department_name) == 0:
-                    return department_names[0]
-                if department_name not in department_names:
-                    return None
-                return department_name
-            case _:
-                raise AssertionError(f'Unknown entity source: {entity_source}')
+        department_name = self.parm('department').eval()
+        if department_name == 'from_context':
+            file_path = Path(hou.hipFile.path())
+            context = get_workfile_context(file_path)
+            if context is None:
+                return None
+            return context.department_name
+        # From settings
+        department_names = self.list_department_names()
+        if len(department_names) <= 1:  # Only 'from_context' means no real names
+            return None
+        if len(department_name) == 0:
+            return department_names[1]  # Skip 'from_context'
+        if department_name not in department_names:
+            return None
+        return department_name
 
     def get_variant_name(self) -> str:
         """Get selected variant name, defaults to 'default'."""
@@ -284,12 +243,9 @@ class ExportLayer(ns.Node):
         department_names = self.list_downstream_department_names()
         if len(department_names) == 0:
             return []
-        default_values = api.config.get_properties(DEFAULTS_URI)
         selected = list(filter(len, self.parm('export_departments').eval().split(' ')))
         if len(selected) == 0:
-            if default_values is None:
-                return []
-            return default_values.get('downstream_departments', [])
+            return []
         selected.sort(key=department_names.index)
         return selected
 
@@ -338,15 +294,25 @@ class ExportLayer(ns.Node):
         """Get export type ('local' or 'farm')."""
         return self.parm('export_type').eval()
 
-    def set_entity_source(self, entity_source: str):
-        valid_sources = ['from_context', 'from_settings']
-        if entity_source not in valid_sources:
-            return
-        self.parm('entity_source').set(entity_source)
+    def _update_labels(self):
+        """Update label parameters to show resolved values when 'from_context' is selected."""
+        entity_raw = self.parm('entity').eval()
+        if entity_raw == 'from_context':
+            entity_uri = self.get_entity_uri()
+            self.parm('entity_label').set(str(entity_uri) if entity_uri else '')
+        else:
+            self.parm('entity_label').set('')
+
+        department_raw = self.parm('department').eval()
+        if department_raw == 'from_context':
+            department_name = self.get_department_name()
+            self.parm('department_label').set(department_name if department_name else '')
+        else:
+            self.parm('department_label').set('')
 
     def set_entity_uri(self, entity_uri: Uri):
         entity_uris = self.list_entity_uris()
-        if entity_uri not in entity_uris:
+        if str(entity_uri) not in entity_uris:  # Compare strings
             return
         self.parm('entity').set(str(entity_uri))
 
@@ -361,8 +327,22 @@ class ExportLayer(ns.Node):
         self.parm('variant').set(variant_name)
 
     def execute(self, force_local: bool = False):
+        """
+        Execute export.
+
+        If force_local=True, executes directly (used by ProcessDialog callbacks).
+        Otherwise, opens the ProcessDialog for task selection and execution.
+        """
         if force_local:
-            return self._export_local()
+            return self._execute()
+        # Open ProcessDialog
+        from tumblehead.pipe.houdini.ui.project_browser.utils.process_executor import (
+            open_process_dialog_for_node
+        )
+        open_process_dialog_for_node(self, dialog_title="Export Layer")
+
+    def _execute(self):
+        """Internal execution - called by ProcessDialog callbacks."""
         export_type = self.get_export_type()
         match export_type:
             case 'local':
@@ -654,16 +634,13 @@ def on_created(raw_node):
 
     node = ExportLayer(raw_node)
 
-    # Check if workfile context exists
+    # If no context, set first available entity
     file_path = Path(hou.hipFile.path())
     context = get_workfile_context(file_path)
     if context is None:
-        node.set_entity_source('from_settings')
-
-    # Always set default entity
-    entity_uris = node.list_entity_uris()
-    if entity_uris:
-        node.set_entity_uri(entity_uris[0])
+        entity_uris = node.list_entity_uris()
+        if len(entity_uris) > 1:  # Skip 'from_context'
+            node.set_entity_uri(Uri.parse_unsafe(entity_uris[1]))
 
 def execute():
     raw_node = hou.pwd()

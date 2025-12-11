@@ -209,6 +209,26 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._auto_refresh_timer.timeout.connect(self._global_refresh)
         self._auto_refresh_timer.start(60000)  # 60000 ms = 60 seconds
 
+        # Detect current workfile context on startup and set open context indicator
+        self._detect_and_set_initial_context()
+
+    def _detect_and_set_initial_context(self):
+        """Detect current workfile context from Houdini file and set open context indicator"""
+        try:
+            current_hip_file = hou.hipFile.path()
+            if current_hip_file and not hou.hipFile.isNewFile():
+                current_file_path = Path(current_hip_file)
+                detected_context = get_workfile_context(current_file_path)
+                if detected_context is not None:
+                    self._context = detected_context
+                    # Use QTimer to set open context after workspace browser is fully initialized
+                    QTimer.singleShot(100, lambda: self._workspace_browser.set_open_context(
+                        detected_context.entity_uri
+                    ))
+        except Exception:
+            # If context detection fails, just continue without setting open context
+            pass
+
     def refresh(self):
         self._details_view.refresh()
         self._version_view.refresh()
@@ -335,6 +355,12 @@ class ProjectBrowser(QtWidgets.QWidget):
                     # Verify selection was actually restored
                     current_selection = self._workspace_browser.get_selection()
                     assert current_selection == self._preserved_workspace_selection, f"Workspace selection restoration failed: expected {self._preserved_workspace_selection}, got {current_selection}"
+
+                    # Update internal state and department browser to reflect restored selection
+                    # (select() blocks signals, so _workspace_changed() is not called automatically)
+                    self._selected_entity = self._preserved_workspace_selection
+                    self._department_browser.set_entity(self._preserved_workspace_selection)
+
                 except Exception as e:
                     raise RuntimeError(f"Failed to restore workspace selection: {e}")
 
@@ -363,6 +389,9 @@ class ProjectBrowser(QtWidgets.QWidget):
                     self._selected_entity = self._preserved_context.entity_uri
                     self._selected_department = (self._preserved_context.department_name, self._preserved_context.version_name)
                     self._context = self._preserved_context
+
+                    # Restore open context indicator (purple) in workspace browser
+                    self._workspace_browser.set_open_context(entity_uri)
                 except Exception as e:
                     raise RuntimeError(f"Failed to restore context: {e}")
 
@@ -647,8 +676,9 @@ class ProjectBrowser(QtWidgets.QWidget):
         """
         entity_uri = context.entity_uri
 
-        # Update workspace browser (tree view) - this was often missing!
+        # Update workspace browser - both selection AND open context
         self._workspace_browser.select(entity_uri)
+        self._workspace_browser.set_open_context(entity_uri)
 
         # Update department browser
         self._department_browser.set_entity(entity_uri)
@@ -896,6 +926,10 @@ class ProjectBrowser(QtWidgets.QWidget):
 
             # Update the dependencies
             self._update_scene()
+
+            # Update the workspace browser's open context indicator (purple)
+            # This shows which entity's workfile is currently loaded
+            self._workspace_browser.set_open_context(self._context.entity_uri)
 
             # Update the details and versions view
             # Don't change workspace/department selection - keep showing selected entity

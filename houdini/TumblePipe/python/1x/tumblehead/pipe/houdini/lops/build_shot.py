@@ -24,7 +24,6 @@ class Mode:
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/build_shot')
 
 def _ensure_node(stage, kind, name):
     node = stage.node(name)
@@ -130,8 +129,8 @@ class BuildShot(ns.Node):
                 # Get asset variants from scene configuration
                 scene = get_scene(shot_uri)
                 asset_variants = {}
-                for asset_uri_str, entry in scene.assets.items():
-                    asset_uri = Uri.parse_unsafe(asset_uri_str)
+                for entry in scene.assets:
+                    asset_uri = Uri.parse_unsafe(entry.asset)
                     asset_variants[asset_uri] = entry.variant
 
                 # Scan dependency graph and resolve versions
@@ -148,54 +147,32 @@ class BuildShot(ns.Node):
                 version_names = _resolve_versions_strict(shot_uri)
         return version_names
     
-    def list_shot_uris(self) -> list[Uri]:
+    def list_shot_uris(self) -> list[str]:
         shot_entities = api.config.list_entities(
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return [entity.uri for entity in shot_entities]
+        uris = [entity.uri for entity in shot_entities]
+        return ['from_context'] + [str(uri) for uri in uris]
 
     def list_asset_department_names(self):
-        departments = list_departments('assets')
-        department_names = [d.name for d in departments]
-        if len(department_names) == 0: return []
-        default_values = api.config.get_properties(DEFAULTS_URI)
-        return [
-            asset_department_name
-            for asset_department_name in default_values['departments']['asset']
-            if asset_department_name in department_names
-        ]
+        return [d.name for d in list_departments('assets') if d.renderable]
 
     def list_shot_department_names(self):
-        departments = list_departments('shots')
-        department_names = [d.name for d in departments]
-        default_values = api.config.get_properties(DEFAULTS_URI)
-        return [
-            shot_department_name
-            for shot_department_name in default_values['departments']['shot']
-            if shot_department_name in department_names
-        ]
-    
-    def get_entity_source(self):
-        return self.parm('entity_source').eval()
+        return [d.name for d in list_departments('shots') if d.renderable]
 
     def get_shot_uri(self) -> Uri | None:
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                context = _entity_from_context_json()
-                if context is None: return None
-                return context.entity_uri
-            case 'from_settings':
-                shot_uris = self.list_shot_uris()
-                if len(shot_uris) == 0: return None
-                shot_uri_raw = self.parm('shot').eval()
-                if len(shot_uri_raw) == 0: return shot_uris[0]
-                shot_uri = Uri.parse_unsafe(shot_uri_raw)
-                if shot_uri not in shot_uris: return None
-                return shot_uri
-            case _:
-                raise AssertionError(f'Unknown entity source: {entity_source}')
+        shot_uri_raw = self.parm('shot').eval()
+        if shot_uri_raw == 'from_context':
+            context = _entity_from_context_json()
+            if context is None: return None
+            return context.entity_uri
+        # From settings
+        shot_uris = self.list_shot_uris()
+        if len(shot_uris) <= 1: return None  # Only 'from_context' means no real URIs
+        if len(shot_uri_raw) == 0: return Uri.parse_unsafe(shot_uris[1])  # Skip 'from_context'
+        if shot_uri_raw not in shot_uris: return None  # Compare strings
+        return Uri.parse_unsafe(shot_uri_raw)
 
     def get_mode(self):
         match self.parm('mode').eval():
@@ -231,24 +208,21 @@ class BuildShot(ns.Node):
 
     def list_department_names(self) -> list[str]:
         shot_departments = list_departments('shots')
-        return [dept.name for dept in shot_departments]
+        names = [dept.name for dept in shot_departments]
+        return ['from_context'] + names
 
     def get_department_name(self) -> str | None:
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                context = _context_from_workfile()
-                if context is None: return None
-                return context.department_name
-            case 'from_settings':
-                department_names = self.list_department_names()
-                if len(department_names) == 0: return None
-                department_name = self.parm('department').eval()
-                if len(department_name) == 0: return department_names[0]
-                if department_name not in department_names: return None
-                return department_name
-            case _:
-                raise AssertionError(f'Unknown entity source token: {entity_source}')
+        department_name = self.parm('department').eval()
+        if department_name == 'from_context':
+            context = _context_from_workfile()
+            if context is None: return None
+            return context.department_name
+        # From settings
+        department_names = self.list_department_names()
+        if len(department_names) == 0: return None
+        if len(department_name) == 0: return department_names[0]
+        if department_name not in department_names: return None
+        return department_name
 
     def get_downstream_shot_department_names(self):
         shot_department_names = self.list_shot_department_names()
@@ -330,15 +304,26 @@ class BuildShot(ns.Node):
             
     def get_include_procedurals(self):
         return bool(self.parm('include_procedurals').eval())
-    
-    def set_entity_source(self, entity_source):
-        valid_sources = ['from_context', 'from_settings']
-        if entity_source not in valid_sources: return
-        self.parm('entity_source').set(entity_source)
+
+    def _update_labels(self):
+        """Update label parameters to show resolved values when 'from_context' is selected."""
+        shot_raw = self.parm('shot').eval()
+        if shot_raw == 'from_context':
+            shot_uri = self.get_shot_uri()
+            self.parm('shot_label').set(str(shot_uri) if shot_uri else '')
+        else:
+            self.parm('shot_label').set('')
+
+        department_raw = self.parm('department').eval()
+        if department_raw == 'from_context':
+            department_name = self.get_department_name()
+            self.parm('department_label').set(department_name if department_name else '')
+        else:
+            self.parm('department_label').set('')
 
     def set_shot_uri(self, shot_uri: Uri):
         shot_uris = self.list_shot_uris()
-        if shot_uri not in shot_uris: return
+        if str(shot_uri) not in shot_uris: return  # Compare strings
         self.parm('shot').set(str(shot_uri))
 
     def set_department_name(self, department_name: str):
@@ -822,15 +807,12 @@ def on_created(raw_node):
 
     node = BuildShot(raw_node)
 
-    # Change entity source to settings if we have no context
+    # If no context, set first available shot
     entity = _entity_from_context_json()
     if entity is None:
-        node.parm('entity_source').set('from_settings')
-
-    # Always set default shot (ensures department menu works correctly)
-    shot_uris = node.list_shot_uris()
-    if shot_uris:
-        node.set_shot_uri(shot_uris[0])
+        shot_uris = node.list_shot_uris()
+        if len(shot_uris) > 1:  # Skip 'from_context'
+            node.set_shot_uri(Uri.parse_unsafe(shot_uris[1]))
 
 def execute():
     raw_node = hou.pwd()

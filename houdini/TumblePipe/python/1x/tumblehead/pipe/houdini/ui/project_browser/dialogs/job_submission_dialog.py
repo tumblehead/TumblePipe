@@ -1,5 +1,7 @@
 """Dialog for batch job submission to the render farm."""
 
+import uuid
+
 from qtpy import QtWidgets
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QStandardItemModel, QStandardItem
@@ -7,21 +9,85 @@ from qtpy.QtGui import QStandardItemModel, QStandardItem
 from tumblehead.api import default_client
 from tumblehead.util.uri import Uri
 from tumblehead.config.groups import list_groups, get_group
-from tumblehead.config.timeline import get_frame_range
 
 from tumblehead.pipe.houdini.ui.project_browser.models.job_schemas import (
-    get_submission_schema,
-    ColumnType,
+    create_publish_schema,
+    create_render_schema,
+    get_column_property_map,
 )
 from tumblehead.pipe.houdini.ui.project_browser.models.job_submission_table import (
     JobSubmissionTableModel,
 )
+from tumblehead.pipe.houdini.ui.project_browser.models.process_task import (
+    ProcessTask,
+)
 from tumblehead.pipe.houdini.ui.project_browser.widgets import (
-    RowHoverTableView,
+    CellSelectionTableView,
     JobSubmissionDelegate,
+)
+from tumblehead.pipe.houdini.ui.project_browser.widgets.job_section import (
+    JobSectionWidget,
 )
 
 api = default_client()
+
+
+def _get_nested_property(properties: dict, path: str):
+    """Get a nested property value from a dict using dot notation.
+
+    Args:
+        properties: The properties dict
+        path: Dot-separated path like 'render.pathtracedsamples'
+
+    Returns:
+        The value at the path, or None if not found
+    """
+    parts = path.split('.')
+    value = properties
+    for part in parts:
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    return value
+
+
+def _get_entity_properties_for_section(entity_uri: Uri, section: str) -> dict:
+    """Get mapped entity properties for a section.
+
+    Uses the schema-defined property_path mappings to load entity properties
+    into column values.
+
+    Args:
+        entity_uri: The entity URI
+        section: 'publish' or 'render'
+
+    Returns:
+        Dict mapping column keys to entity property values
+    """
+    try:
+        properties = api.config.get_properties(entity_uri)
+        if properties is None:
+            return {}
+    except Exception:
+        return {}
+
+    # Get the property mapping from the schema (column_key -> property_path)
+    property_map = get_column_property_map(section)
+    result = {}
+
+    # Invert the mapping: we need property_path -> column_key, but get_column_property_map
+    # gives us column_key -> property_path. So we iterate and populate from entity.
+    for col_key, prop_path in property_map.items():
+        value = _get_nested_property(properties, prop_path)
+        if value is not None:
+            result[col_key] = value
+
+    # Add pool choices from entity farm.pools (for combo box filtering)
+    pools = _get_nested_property(properties, 'farm.pools')
+    if pools and isinstance(pools, list):
+        result['_pool_choices'] = pools
+
+    return result
 
 
 class EntityTreeWidget(QtWidgets.QWidget):
@@ -49,17 +115,6 @@ class EntityTreeWidget(QtWidgets.QWidget):
         self._tree_view.setHeaderHidden(True)
         self._tree_view.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         layout.addWidget(self._tree_view)
-
-        # Buttons
-        button_layout = QtWidgets.QHBoxLayout()
-        select_all_btn = QtWidgets.QPushButton("Select All")
-        select_all_btn.clicked.connect(self._select_all)
-        clear_btn = QtWidgets.QPushButton("Clear")
-        clear_btn.clicked.connect(self._clear_selection)
-        button_layout.addWidget(select_all_btn)
-        button_layout.addWidget(clear_btn)
-        button_layout.addStretch()
-        layout.addLayout(button_layout)
 
     def _load_entities(self):
         """Load entities into the tree."""
@@ -396,41 +451,57 @@ class JobSubmissionDialog(QtWidgets.QDialog):
         self._entity_tree = EntityTreeWidget()
         splitter.addWidget(self._entity_tree)
 
-        # Right panel - Configuration table
+        # Right panel - Vertical sections (Publish and Render)
         right_panel = QtWidgets.QWidget()
         right_layout = QtWidgets.QVBoxLayout()
         right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
         right_panel.setLayout(right_layout)
 
-        # Table label
+        # Label
         table_label = QtWidgets.QLabel("Job Configuration")
         table_label.setStyleSheet("font-weight: bold;")
         right_layout.addWidget(table_label)
 
-        # Table model and view
-        self._table_model = JobSubmissionTableModel()
-        self._table_view = RowHoverTableView()
-        self._table_view.setModel(self._table_model)
-        self._table_view.setItemDelegate(JobSubmissionDelegate(self._table_view))
-        self._table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._table_view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        self._table_view.horizontalHeader().setStretchLastSection(True)
-        self._table_view.verticalHeader().setVisible(False)
-        self._table_view.setContextMenuPolicy(Qt.CustomContextMenu)
-        self._table_view.customContextMenuRequested.connect(self._on_table_context_menu)
-        right_layout.addWidget(self._table_view, 1)
+        # Scroll area for sections
+        scroll_area = QtWidgets.QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        scroll_content = QtWidgets.QWidget()
+        scroll_layout = QtWidgets.QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(8)
+
+        # Publish section
+        self._publish_section = JobSectionWidget("Publish", create_publish_schema())
+        scroll_layout.addWidget(self._publish_section)
+
+        # Render section
+        self._render_section = JobSectionWidget("Render", create_render_schema())
+        scroll_layout.addWidget(self._render_section)
+
+        # Add stretch at bottom to push sections to top when collapsed
+        scroll_layout.addStretch()
+        scroll_area.setWidget(scroll_content)
+        right_layout.addWidget(scroll_area, 1)
 
         splitter.addWidget(right_panel)
 
         # Set splitter sizes (30% / 70%)
         splitter.setSizes([300, 700])
 
-        # Status and buttons
+        # Buttons
         bottom_layout = QtWidgets.QHBoxLayout()
 
-        self._status_label = QtWidgets.QLabel("Select entities and configure job settings")
-        self._status_label.setStyleSheet("color: #888;")
-        bottom_layout.addWidget(self._status_label)
+        select_all_btn = QtWidgets.QPushButton("Select All")
+        select_all_btn.clicked.connect(self._entity_tree._select_all)
+        bottom_layout.addWidget(select_all_btn)
+
+        clear_btn = QtWidgets.QPushButton("Clear")
+        clear_btn.clicked.connect(self._entity_tree._clear_selection)
+        bottom_layout.addWidget(clear_btn)
 
         bottom_layout.addStretch()
 
@@ -439,7 +510,7 @@ class JobSubmissionDialog(QtWidgets.QDialog):
         self._submit_btn.setMinimumWidth(120)
         bottom_layout.addWidget(self._submit_btn)
 
-        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn = QtWidgets.QPushButton("Close")
         cancel_btn.clicked.connect(self.reject)
         bottom_layout.addWidget(cancel_btn)
 
@@ -449,222 +520,299 @@ class JobSubmissionDialog(QtWidgets.QDialog):
         """Connect signal handlers."""
         self._entity_tree.selection_changed.connect(self._on_entity_selection_changed)
         self._submit_btn.clicked.connect(self._submit_jobs)
-        self._table_model.dataChanged.connect(self._update_status)
+
+        # Connect section enabled signals
+        self._publish_section.enabled_changed.connect(self._update_status)
+        self._render_section.enabled_changed.connect(self._update_status)
+
+        # Connect model changes to status update
+        self._publish_section.model.dataChanged.connect(self._update_status)
+        self._render_section.model.dataChanged.connect(self._update_status)
 
     def _init_schema(self):
-        """Initialize with submission schema."""
-        schema = get_submission_schema()
-        self._table_model.set_schema(schema)
-
-        # Set column widths
-        for i, col_def in enumerate(schema.columns):
-            self._table_view.setColumnWidth(i + 1, col_def.width)
-
+        """Initialize schemas (already done in setup_ui, just update status)."""
         self._update_status()
 
     def _on_entity_selection_changed(self):
         """Handle entity selection change."""
         selected = self._entity_tree.get_selected_entities()
 
-        # Clear and repopulate table
-        self._table_model.clear_rows()
-        if selected:
-            self._table_model.add_entities(selected)
+        # Set entities on both sections (they stay synchronized)
+        self._publish_section.set_entities(selected)
+        self._render_section.set_entities(selected)
 
-            # Set frame ranges from entity configs
-            self._apply_entity_frame_ranges()
+        # Apply entity properties (frame ranges, farm settings, etc.) as defaults
+        if selected:
+            self._apply_entity_properties()
 
         self._update_status()
 
-    def _apply_entity_frame_ranges(self):
-        """Apply frame ranges from entity timeline configs."""
-        schema = self._table_model.get_schema()
-        if schema is None:
-            return
+    def _apply_entity_properties(self):
+        """Apply entity properties from config to both sections.
 
-        # Check if schema has frame columns
-        has_frame_cols = schema.get_column_by_key('first_frame') is not None
-        if not has_frame_cols:
-            return
+        This loads entity properties (farm settings, render settings, timeline)
+        and applies them as defaults to the table cells. Values from config
+        are shown dimmed; user edits become bold overrides.
+        """
+        # Apply to publish section
+        self._apply_section_entity_properties(self._publish_section, 'publish')
 
-        # Get configs and apply frame ranges
-        configs = self._table_model.get_job_configs()
+        # Apply to render section
+        self._apply_section_entity_properties(self._render_section, 'render')
+
+    def _apply_section_entity_properties(self, section: JobSectionWidget, section_name: str):
+        """Apply entity properties to a specific section.
+
+        Uses the property_path mappings from the column config to automatically
+        load entity properties as default values. All mappings are now driven
+        by config - no hardcoded property handling.
+
+        Args:
+            section: The JobSectionWidget to apply properties to
+            section_name: 'publish' or 'render' for property mapping
+        """
+        model = section.model
+        schema = section.schema
+        configs = section.get_configs()
+
         for i, config in enumerate(configs):
             uri_str = config['entity']['uri']
             try:
                 uri = Uri.parse_unsafe(uri_str)
-                frame_range = get_frame_range(uri)
-                if frame_range:
-                    # Set individual frame columns (don't mark as override - it's from config)
-                    self._table_model.set_cell_override(i, 'pre_roll', frame_range.start_roll, is_override=False)
-                    self._table_model.set_cell_override(i, 'first_frame', frame_range.start_frame, is_override=False)
-                    self._table_model.set_cell_override(i, 'last_frame', frame_range.end_frame, is_override=False)
-                    self._table_model.set_cell_override(i, 'post_roll', frame_range.end_roll, is_override=False)
+
+                # Apply mapped entity properties (all driven by property_path in config)
+                entity_props = _get_entity_properties_for_section(uri, section_name)
+                for col_key, value in entity_props.items():
+                    # Skip internal keys
+                    if col_key.startswith('_'):
+                        continue
+                    # Only apply if column exists in schema
+                    if schema.get_column_by_key(col_key) is not None:
+                        model.set_cell_override(i, col_key, value, is_override=False)
+
             except Exception:
                 pass
 
-    def _on_table_context_menu(self, pos):
-        """Show context menu for table."""
-        index = self._table_view.indexAt(pos)
-        if not index.isValid():
-            return
-
-        col_def = index.data(JobSubmissionTableModel.ROLE_COLUMN_DEF)
-        is_overridden = index.data(JobSubmissionTableModel.ROLE_IS_OVERRIDDEN)
-
-        if col_def is None:
-            return
-
-        menu = QtWidgets.QMenu(self)
-
-        # Reset single cell
-        if is_overridden:
-            reset_action = menu.addAction("Reset to Default")
-            reset_action.triggered.connect(
-                lambda: self._table_model.reset_cell_to_default(index.row(), col_def.key)
-            )
-
-        menu.addSeparator()
-
-        # Bulk operations
-        selected = self._table_view.selectionModel().selectedRows()
-        current_value = index.data(JobSubmissionTableModel.ROLE_RAW_VALUE)
-
-        if len(selected) > 1:
-            apply_action = menu.addAction(f"Apply to Selected ({len(selected)} rows)")
-            apply_action.triggered.connect(
-                lambda: self._table_model.apply_to_selected(
-                    [idx.row() for idx in selected], col_def.key, current_value
-                )
-            )
-
-        apply_all_action = menu.addAction("Apply to All Rows")
-        apply_all_action.triggered.connect(
-            lambda: self._table_model.apply_to_all(col_def.key, current_value)
-        )
-
-        menu.addSeparator()
-
-        reset_col_action = menu.addAction("Reset Column to Defaults")
-        reset_col_action.triggered.connect(
-            lambda: self._table_model.reset_column_to_default(col_def.key)
-        )
-
-        menu.exec_(self._table_view.mapToGlobal(pos))
-
     def _update_status(self):
-        """Update status label and submit button state."""
-        row_count = self._table_model.rowCount()
-        errors = self._table_model.validate_all()
+        """Update submit button state."""
+        # Get entity count from either section (they're synchronized)
+        row_count = self._publish_section.model.rowCount()
+
+        # Check for validation errors in both sections
+        publish_errors = self._publish_section.model.validate_all() if self._publish_section.enabled else []
+        render_errors = self._render_section.model.validate_all() if self._render_section.enabled else []
+        errors = publish_errors + render_errors
 
         if row_count == 0:
-            self._status_label.setText("Select entities to submit")
-            self._status_label.setStyleSheet("color: #888;")
             self._submit_btn.setEnabled(False)
             return
 
-        # Count rows with publish or render checked
-        configs = self._table_model.get_job_configs()
-        publish_count = sum(1 for c in configs if c['settings'].get('publish', False))
-        render_count = sum(1 for c in configs if c['settings'].get('render', False))
-        active_count = sum(1 for c in configs if c['settings'].get('publish', False) or c['settings'].get('render', False))
+        # Check section enabled states
+        publish_enabled = self._publish_section.enabled
+        render_enabled = self._render_section.enabled
+        any_enabled = publish_enabled or render_enabled
 
-        if errors:
-            self._status_label.setText(f"{row_count} entities, {len(errors)} validation errors")
-            self._status_label.setStyleSheet("color: #ff6b6b;")
-            self._submit_btn.setEnabled(False)
-        elif active_count == 0:
-            self._status_label.setText(f"{row_count} entities - check Publish or Render to enable submission")
-            self._status_label.setStyleSheet("color: #888;")
+        if errors or not any_enabled:
             self._submit_btn.setEnabled(False)
         else:
-            parts = []
-            if publish_count > 0:
-                parts.append(f"{publish_count} publish")
-            if render_count > 0:
-                parts.append(f"{render_count} render")
-            self._status_label.setText(f"Ready to submit: {', '.join(parts)}")
-            self._status_label.setStyleSheet("color: #6bff6b;")
             self._submit_btn.setEnabled(True)
 
+    def _get_merged_configs(self) -> list[dict]:
+        """Merge configs from publish and render sections.
+
+        Returns configs in format expected by batch_submit.py:
+        {
+            'entity': {'uri': ..., 'name': ..., 'context': ...},
+            'settings': {
+                'publish': True/False,
+                'render': True/False,
+                # Publish settings (prefixed with 'pub_')
+                'pub_department': ...,
+                'pub_pool': ...,
+                'pub_priority': ...,
+                # Render settings (prefixed with 'render_' for dept/pool/priority)
+                'render_department': ...,
+                'render_pool': ...,
+                'render_priority': ...,
+                'variants': [...],
+                'tile_count': ...,
+                'pre_roll': ...,
+                'first_frame': ...,
+                'last_frame': ...,
+                'post_roll': ...,
+                'batch_size': ...,
+                'denoise': ...,
+            }
+        }
+        """
+        publish_enabled = self._publish_section.enabled
+        render_enabled = self._render_section.enabled
+
+        # Get configs from each section
+        publish_configs = self._publish_section.get_configs() if publish_enabled else []
+        render_configs = self._render_section.get_configs() if render_enabled else []
+
+        # Build a map by URI for merging
+        merged = {}
+
+        for config in publish_configs:
+            uri = config['entity']['uri']
+            if uri not in merged:
+                merged[uri] = {
+                    'entity': config['entity'],
+                    'settings': {
+                        'publish': False,
+                        'render': False,
+                    }
+                }
+            merged[uri]['settings']['publish'] = True
+
+            # Flatten publish settings with 'pub_' prefix
+            pub_settings = config['settings']
+            merged[uri]['settings']['pub_department'] = pub_settings.get('department')
+            merged[uri]['settings']['pub_pool'] = pub_settings.get('pool')
+            merged[uri]['settings']['pub_priority'] = pub_settings.get('priority')
+
+        for config in render_configs:
+            uri = config['entity']['uri']
+            if uri not in merged:
+                merged[uri] = {
+                    'entity': config['entity'],
+                    'settings': {
+                        'publish': False,
+                        'render': False,
+                    }
+                }
+            merged[uri]['settings']['render'] = True
+
+            # Flatten render settings with appropriate prefixes
+            render_settings = config['settings']
+            merged[uri]['settings']['render_department'] = render_settings.get('department')
+            merged[uri]['settings']['render_pool'] = render_settings.get('pool')
+            merged[uri]['settings']['render_priority'] = render_settings.get('priority')
+            # These keep their original names
+            merged[uri]['settings']['variants'] = render_settings.get('variants')
+            merged[uri]['settings']['tile_count'] = render_settings.get('tile_count')
+            merged[uri]['settings']['pre_roll'] = render_settings.get('pre_roll')
+            merged[uri]['settings']['first_frame'] = render_settings.get('first_frame')
+            merged[uri]['settings']['last_frame'] = render_settings.get('last_frame')
+            merged[uri]['settings']['post_roll'] = render_settings.get('post_roll')
+            merged[uri]['settings']['batch_size'] = render_settings.get('batch_size')
+            merged[uri]['settings']['denoise'] = render_settings.get('denoise')
+
+            # Pass through any additional settings (for config-driven columns)
+            # This allows new columns added via config to automatically flow through
+            for key, value in render_settings.items():
+                if key not in merged[uri]['settings']:
+                    merged[uri]['settings'][key] = value
+
+        return list(merged.values())
+
+    def _create_submission_tasks(self, configs: list[dict]) -> list[ProcessTask]:
+        """Convert job configs to ProcessTask objects for the ProcessDialog.
+
+        Args:
+            configs: List of merged job configuration dicts
+
+        Returns:
+            List of ProcessTask objects ready for the ProcessDialog
+        """
+        from tumblehead.farm.jobs.houdini import batch_submit
+
+        tasks = []
+        for config in configs:
+            entity = config['entity']
+            settings = config['settings']
+            uri = Uri.parse_unsafe(entity['uri'])
+
+            # Build description
+            job_types = []
+            departments = []
+            if settings.get('publish'):
+                job_types.append('publish')
+                if settings.get('pub_department'):
+                    departments.append(settings['pub_department'])
+            if settings.get('render'):
+                job_types.append('render')
+                if settings.get('render_department'):
+                    departments.append(settings['render_department'])
+
+            dept_str = ', '.join(set(departments)) if departments else 'N/A'
+            description = f"{'+'.join(job_types)} [{dept_str}]"
+
+            # Create task with farm-only execution
+            # Use default parameter binding to capture config in closure
+            task = ProcessTask(
+                id=str(uuid.uuid4()),
+                uri=uri,
+                department=dept_str,
+                task_type='farm_submit',
+                description=description,
+                execute_local=None,  # No local execution for farm submission
+                execute_farm=lambda c=config: batch_submit.submit_entity_batch(c),
+            )
+            tasks.append(task)
+
+        return tasks
+
+    def _on_submission_completed(self, results: dict):
+        """Handle completion of farm submission.
+
+        Args:
+            results: Dict with 'completed', 'failed', and 'skipped' lists
+        """
+        completed = results.get('completed', [])
+
+        # ProcessDialog already shows error report for failed tasks
+
+        # Emit completion signal with task IDs (not job IDs since batch_submit
+        # returns job IDs internally but we track by task)
+        self.submission_completed.emit(completed)
+
     def _submit_jobs(self):
-        """Submit jobs to the farm."""
-        if not self._table_model.is_valid():
+        """Submit jobs to the farm using the ProcessDialog."""
+        # Validate enabled sections
+        publish_valid = self._publish_section.model.is_valid() if self._publish_section.enabled else True
+        render_valid = self._render_section.model.is_valid() if self._render_section.enabled else True
+
+        if not (publish_valid and render_valid):
             QtWidgets.QMessageBox.warning(
                 self, "Validation Error",
                 "Please fix validation errors before submitting."
             )
             return
 
-        configs = self._table_model.get_job_configs()
+        # Get merged configs from both sections
+        configs = self._get_merged_configs()
 
-        # Filter to only rows with publish or render checked
-        active_configs = [
-            c for c in configs
-            if c['settings'].get('publish', False) or c['settings'].get('render', False)
-        ]
-
-        if not active_configs:
+        if not configs:
             QtWidgets.QMessageBox.warning(
                 self, "No Jobs Selected",
-                "Please check Publish and/or Render for at least one entity."
+                "Please enable Publish and/or Render section and select entities."
             )
-            return
-
-        # Summarize what will be submitted
-        publish_count = sum(1 for c in active_configs if c['settings'].get('publish', False))
-        render_count = sum(1 for c in active_configs if c['settings'].get('render', False))
-        both_count = sum(1 for c in active_configs if c['settings'].get('publish', False) and c['settings'].get('render', False))
-
-        summary_parts = []
-        if publish_count > 0:
-            summary_parts.append(f"{publish_count} publish job(s)")
-        if render_count > 0:
-            summary_parts.append(f"{render_count} render job(s)")
-        if both_count > 0:
-            summary_parts.append(f"({both_count} with both)")
-
-        # Confirm submission
-        reply = QtWidgets.QMessageBox.question(
-            self, "Confirm Submission",
-            f"Submit {', '.join(summary_parts)} to the farm?\n\n"
-            f"One batch will be created per entity.",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
-        )
-
-        if reply != QtWidgets.QMessageBox.Yes:
             return
 
         self.submission_started.emit()
 
-        # TODO: Call batch_submit module to actually submit
-        # For now, show what would be submitted
-        job_ids = []
-        details = []
-        for config in active_configs:
-            uri = config['entity']['uri']
-            settings = config['settings']
-            publish = settings.get('publish', False)
-            render = settings.get('render', False)
-            variants = settings.get('variants', [])
-            dept = settings.get('department', 'N/A')
+        # Create ProcessTask objects for each entity
+        tasks = self._create_submission_tasks(configs)
 
-            job_type = []
-            if publish:
-                job_type.append('publish')
-            if render:
-                job_type.append('render')
+        if not tasks:
+            QtWidgets.QMessageBox.warning(
+                self, "No Jobs",
+                "No jobs to submit."
+            )
+            return
 
-            details.append(f"  - {uri}: {'+'.join(job_type)} [{dept}] variants={variants}")
-            job_ids.append(f"batch_{len(job_ids) + 1}")
+        # Show ProcessDialog for farm submission
+        # Import here to avoid circular imports
+        from .process_dialog import ProcessDialog
 
-        QtWidgets.QMessageBox.information(
-            self, "Jobs Submitted (Mock)",
-            f"Would submit {len(active_configs)} batch(es):\n\n" +
-            "\n".join(details[:10]) +
-            ("\n  ..." if len(details) > 10 else "") +
-            "\n\n(Actual farm submission to be implemented in batch_submit.py)"
+        dialog = ProcessDialog(
+            title="Submit to Farm",
+            tasks=tasks,
+            current_department=None,  # Disable mode filtering (farm-only)
+            parent=self
         )
-
-        self.submission_completed.emit(job_ids)
-        self.accept()
+        dialog.process_completed.connect(self._on_submission_completed)
+        dialog.exec_()

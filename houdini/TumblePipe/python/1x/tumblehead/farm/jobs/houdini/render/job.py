@@ -678,16 +678,16 @@ def _build_slapcomp_job(
         'Render settings not found: '
         f'{render_settings_path}'
     )
-    layer_names = render_settings['layer_names']
+    variant_names = render_settings['variant_names']
     aov_names = render_settings['aov_names']
 
     # Paramaters
     input_paths = {
-        layer_name: {
+        variant_name: {
             aov_name: get_aov_frame_path(
                 entity_uri,
                 render_department_name,
-                layer_name,
+                variant_name,
                 version_name,
                 aov_name,
                 '####',
@@ -696,7 +696,7 @@ def _build_slapcomp_job(
             )
             for aov_name in aov_names
         }
-        for layer_name in layer_names
+        for variant_name in variant_names
     }
     receipt_path = get_next_frame_path(
         entity_uri,

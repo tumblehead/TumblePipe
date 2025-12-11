@@ -18,7 +18,7 @@ from tumblehead.util.io import (
 from tumblehead.config.timeline import FrameRange, get_frame_range
 from tumblehead.config.department import list_departments
 from tumblehead.config.variants import list_variants
-from tumblehead.apps.deadline import Deadline
+from tumblehead.config.farm import list_pools
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.context as ctx
 from tumblehead.pipe.paths import (
@@ -28,7 +28,6 @@ from tumblehead.pipe.paths import (
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/submit_render')
 
 def _entity_from_context_json():
     # Path to current workfile
@@ -76,23 +75,17 @@ class SubmitRender(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_shot_uris(self) -> list[Uri]:
+    def list_shot_uris(self) -> list[str]:
         shot_entities = api.config.list_entities(
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return list(shot_entities)
+        uris = [entity.uri for entity in shot_entities]
+        return ['from_context'] + [str(uri) for uri in uris]
 
-    def list_shot_department_names(self):
-        shot_departments = list_departments('shots')
-        if len(shot_departments) == 0: return []
-        shot_department_names = [dept.name for dept in shot_departments]
-        default_values = api.config.get_properties(DEFAULTS_URI)
-        return [
-            department_name
-            for department_name in default_values['departments']['shot']
-            if department_name in shot_department_names
-        ]
+    def list_shot_department_names(self) -> list[str]:
+        names = [d.name for d in list_departments('shots') if d.renderable]
+        return ['from_context'] + names
 
     def list_variant_names(self):
         shot_uri = self.get_shot_uri()
@@ -100,26 +93,10 @@ class SubmitRender(ns.Node):
         return list_variants(shot_uri)
     
     def list_render_department_names(self):
-        render_department_names = [dept.name for dept in list_departments('render')]
-        if len(render_department_names) == 0: return
-        default_values = api.config.get_properties(DEFAULTS_URI)
-        return [
-            department_name
-            for department_name in default_values['departments']['render']
-            if department_name in render_department_names
-        ]
+        return [d.name for d in list_departments('render') if d.renderable]
 
     def list_pool_names(self):
-        try: deadline = Deadline()
-        except: return []
-        pool_names = deadline.list_pools()
-        if len(pool_names) == 0: return []
-        default_values = api.config.get_properties(DEFAULTS_URI)
-        return [
-            pool_name
-            for pool_name in default_values['pools']
-            if pool_name in pool_names
-        ]
+        return [pool.name for pool in list_pools()]
     
     def list_aov_names(self, variant_name):
         shot_uri = self.get_shot_uri()
@@ -140,47 +117,37 @@ class SubmitRender(ns.Node):
         if layer_info is None: return []
         return layer_info['parameters']['aov_names']
     
-    def get_entity_source(self):
-        return self.parm('entity_source').eval()
-
     def get_shot_uri(self) -> Uri | None:
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                context = _entity_from_context_json()
-                if context is not None:
-                    return context.entity_uri
-            case 'from_settings':
-                pass
-            case _:
-                raise AssertionError(f'Unknown entity source token: {entity_source}')
-
-        # Fall back to settings
-        shot_uris = self.list_shot_uris()
-        if len(shot_uris) == 0: return None
         shot_uri_raw = self.parm('shot').eval()
-        if len(shot_uri_raw) == 0: return shot_uris[0]
-        shot_uri = Uri.parse_unsafe(shot_uri_raw)
-        if shot_uri not in shot_uris: return None
-        return shot_uri
+        if shot_uri_raw == 'from_context':
+            context = _entity_from_context_json()
+            if context is not None:
+                return context.entity_uri
+            # Fall back to first available shot if context not found
+            shot_uris = self.list_shot_uris()
+            if len(shot_uris) <= 1: return None  # Only 'from_context' means no real URIs
+            return Uri.parse_unsafe(shot_uris[1])  # Skip 'from_context'
+        # From settings
+        shot_uris = self.list_shot_uris()
+        if len(shot_uris) <= 1: return None  # Only 'from_context' means no real URIs
+        if len(shot_uri_raw) == 0: return Uri.parse_unsafe(shot_uris[1])  # Skip 'from_context'
+        if shot_uri_raw not in shot_uris: return None  # Compare strings
+        return Uri.parse_unsafe(shot_uri_raw)
 
     def get_shot_department_name(self):
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                context = _entity_from_context_json()
-                if context is not None:
-                    return context.department_name
-            case 'from_settings':
-                pass
-            case _:
-                raise AssertionError(f'Unknown entity source token: {entity_source}')
-
-        # Fall back to settings
-        shot_department_names = self.list_shot_department_names()
-        if len(shot_department_names) == 0: return None
         shot_department_name = self.parm('shot_department').eval()
-        if len(shot_department_name) == 0: return shot_department_names[0]
+        if shot_department_name == 'from_context':
+            context = _entity_from_context_json()
+            if context is not None:
+                return context.department_name
+            # Fall back to first available department if context not found
+            shot_department_names = self.list_shot_department_names()
+            if len(shot_department_names) <= 1: return None  # Only 'from_context' means no real names
+            return shot_department_names[1]  # Skip 'from_context'
+        # From settings
+        shot_department_names = self.list_shot_department_names()
+        if len(shot_department_names) <= 1: return None  # Only 'from_context' means no real names
+        if len(shot_department_name) == 0: return shot_department_names[1]  # Skip 'from_context'
         if shot_department_name not in shot_department_names: return None
         return shot_department_name
 
@@ -288,14 +255,25 @@ class SubmitRender(ns.Node):
     def get_full_denoise(self):
         return bool(self.parm('full_denoise_task').eval())
 
-    def set_entity_source(self, entity_source):
-        valid_sources = ['from_context', 'from_settings']
-        if entity_source not in valid_sources: return
-        self.parm('entity_source').set(entity_source)
+    def _update_labels(self):
+        """Update label parameters to show resolved values when 'from_context' is selected."""
+        shot_raw = self.parm('shot').eval()
+        if shot_raw == 'from_context':
+            shot_uri = self.get_shot_uri()
+            self.parm('shot_label').set(str(shot_uri) if shot_uri else '')
+        else:
+            self.parm('shot_label').set('')
+
+        shot_department_raw = self.parm('shot_department').eval()
+        if shot_department_raw == 'from_context':
+            shot_department_name = self.get_shot_department_name()
+            self.parm('shot_department_label').set(shot_department_name if shot_department_name else '')
+        else:
+            self.parm('shot_department_label').set('')
 
     def set_shot_uri(self, shot_uri: Uri):
         shot_uris = self.list_shot_uris()
-        if shot_uri not in shot_uris: return
+        if str(shot_uri) not in shot_uris: return  # Compare strings
         self.parm('shot').set(str(shot_uri))
 
     def set_shot_department_name(self, shot_department_name):
@@ -547,11 +525,13 @@ def on_created(raw_node):
     # Set node style
     set_style(raw_node)
 
-    # Change entity source to settings if we have no context
+    # If no context, set first available shot
     entity = _entity_from_context_json()
     if entity is not None: return
     node = SubmitRender(raw_node)
-    node.set_entity_source('from_settings')
+    shot_uris = node.list_shot_uris()
+    if len(shot_uris) > 1:  # Skip 'from_context'
+        node.set_shot_uri(Uri.parse_unsafe(shot_uris[1]))
 
 def build_preview():
     raw_node = hou.pwd()

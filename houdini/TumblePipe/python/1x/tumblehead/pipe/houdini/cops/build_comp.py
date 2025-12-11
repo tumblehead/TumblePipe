@@ -15,9 +15,9 @@ from tumblehead.api import (
 from tumblehead.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblehead.config.department import list_departments
 from tumblehead.config.variants import list_variants
+from tumblehead.config.farm import list_pools
 from tumblehead.util.io import store_json
 from tumblehead.util.uri import Uri
-from tumblehead.apps.deadline import Deadline
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.houdini.util as util
 from tumblehead.pipe.paths import (
@@ -30,7 +30,6 @@ from tumblehead.pipe.paths import (
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/cops/build_comp')
 
 def _entity_from_context_json():
     # Path to current workfile
@@ -205,12 +204,13 @@ class BuildComp(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_shot_uris(self) -> list[Uri]:
+    def list_shot_uris(self) -> list[str]:
         shot_entities = api.config.list_entities(
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return [entity.uri for entity in shot_entities]
+        uris = [entity.uri for entity in shot_entities]
+        return ['from_context'] + [str(uri) for uri in uris]
 
     def list_variant_names(self):
         shot_uri = self.get_shot_uri()
@@ -218,50 +218,24 @@ class BuildComp(ns.Node):
         return list_variants(shot_uri)
 
     def list_render_department_names(self):
-        render_department_names = list_departments('shots')
-        if not render_department_names: return []
-        default_values = api.config.get_properties(DEFAULTS_URI)
-        return [
-            department_name
-            for department_name in default_values['departments']
-            if department_name in render_department_names
-        ]
+        # build_comp uses ALL render departments (no renderable filter)
+        return [d.name for d in list_departments('render')]
 
     def list_pool_names(self):
-        try: deadline = Deadline()
-        except: return []
-        pool_names = deadline.list_pools()
-        if len(pool_names) == 0: return []
-        submit_render_defaults_uri = Uri.parse_unsafe('defaults:/houdini/lops/submit_render')
-        default_values = api.config.get_properties(submit_render_defaults_uri)
-        if default_values is None: return []
-        if 'pools' not in default_values: return []
-        return [
-            pool_name
-            for pool_name in default_values['pools']
-            if pool_name in pool_names
-        ]
-
-    def get_entity_source(self):
-        return self.parm('entity_source').eval()
+        return [pool.name for pool in list_pools()]
 
     def get_shot_uri(self) -> Uri | None:
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                context = _entity_from_context_json()
-                if context is None: return None
-                return context.entity_uri
-            case 'from_settings':
-                shot_uris = self.list_shot_uris()
-                if len(shot_uris) == 0: return None
-                shot_uri_raw = self.parm('shot').eval()
-                if len(shot_uri_raw) == 0: return shot_uris[0]
-                shot_uri = Uri.parse_unsafe(shot_uri_raw)
-                if shot_uri not in shot_uris: return None
-                return shot_uri
-            case _:
-                raise AssertionError(f'Unknown entity source token: {entity_source}')
+        shot_uri_raw = self.parm('shot').eval()
+        if shot_uri_raw == 'from_context':
+            context = _entity_from_context_json()
+            if context is None: return None
+            return context.entity_uri
+        # From settings
+        shot_uris = self.list_shot_uris()
+        if len(shot_uris) <= 1: return None  # Only 'from_context' means no real URIs
+        if len(shot_uri_raw) == 0: return Uri.parse_unsafe(shot_uris[1])  # Skip 'from_context'
+        if shot_uri_raw not in shot_uris: return None  # Compare strings
+        return Uri.parse_unsafe(shot_uri_raw)
     
     def get_variant_name(self):
         variant_names = self.list_variant_names()
@@ -346,13 +320,17 @@ class BuildComp(ns.Node):
     
     def set_shot_uri(self, shot_uri: Uri):
         shot_uris = self.list_shot_uris()
-        if shot_uri not in shot_uris: return
+        if str(shot_uri) not in shot_uris: return  # Compare strings
         self.parm('shot').set(str(shot_uri))
 
-    def set_entity_source(self, entity_source):
-        valid_sources = ['from_context', 'from_settings']
-        if entity_source not in valid_sources: return
-        self.parm('entity_source').set(entity_source)
+    def _update_labels(self):
+        """Update label parameters to show resolved values when 'from_context' is selected."""
+        shot_raw = self.parm('shot').eval()
+        if shot_raw == 'from_context':
+            shot_uri = self.get_shot_uri()
+            self.parm('shot_label').set(str(shot_uri) if shot_uri else '')
+        else:
+            self.parm('shot_label').set('')
 
     def set_render_department_name(self, render_department_name):
         department_names = self.list_render_department_names()
@@ -1377,11 +1355,13 @@ def create(scene, name):
 
 def on_created(raw_node):
 
-    # Change entity source to settings if we have no context
+    # If no context, set first available shot
     entity = _entity_from_context_json()
     if entity is not None: return
     node = BuildComp(raw_node)
-    node.set_entity_source('from_settings')
+    shot_uris = node.list_shot_uris()
+    if len(shot_uris) > 1:  # Skip 'from_context'
+        node.set_shot_uri(Uri.parse_unsafe(shot_uris[1]))
 
 def update():
     raw_node = hou.pwd()

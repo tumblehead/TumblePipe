@@ -19,7 +19,6 @@ from tumblehead.pipe.paths import (
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/sops/export_rig')
 
 class ExportRig(ns.Node):
     def __init__(self, native):
@@ -47,7 +46,22 @@ class ExportRig(ns.Node):
         self.parm('asset').set(str(asset_uri))
 
     def execute(self, force_local: bool = False):
+        """
+        Execute export.
 
+        If force_local=True, executes directly (used by ProcessDialog callbacks).
+        Otherwise, opens the ProcessDialog for task selection and execution.
+        """
+        if force_local:
+            return self._execute()
+        # Open ProcessDialog
+        from tumblehead.pipe.houdini.ui.project_browser.utils.process_executor import (
+            open_process_dialog_for_node
+        )
+        open_process_dialog_for_node(self, dialog_title="Export Rig")
+
+    def _execute(self):
+        """Internal execution - export rig geometry."""
         # Nodes
         context = self.native()
         export_node = context.node('export')

@@ -12,8 +12,6 @@ import tumblehead.pipe.houdini.nodes as ns
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/create_model')
-
 
 def _metadata_script(asset_uri: Uri) -> str:
     """Generate Python script for creating asset metadata prim."""
@@ -46,47 +44,33 @@ class CreateModel(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_asset_uris(self) -> list[Uri]:
+    def list_asset_uris(self) -> list[str]:
         asset_entities = api.config.list_entities(
             filter = Uri.parse_unsafe('entity:/assets'),
             closure = True
         )
-        return [entity.uri for entity in asset_entities]
-
-    def get_entity_source(self):
-        parm = self.parm('entity_source')
-        if parm is None: return 'from_settings'
-        return parm.eval()
-
-    def set_entity_source(self, entity_source):
-        valid_sources = ['from_context', 'from_settings']
-        if entity_source not in valid_sources: return
-        self.parm('entity_source').set(entity_source)
+        uris = [entity.uri for entity in asset_entities]
+        return ['from_context'] + [str(uri) for uri in uris]
 
     def get_asset_uri(self) -> Uri | None:
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                file_path = Path(hou.hipFile.path())
-                context = get_workfile_context(file_path)
-                if context is None: return None
-                # Verify it's an asset entity
-                if context.entity_uri.segments[0] != 'assets': return None
-                return context.entity_uri
-            case 'from_settings':
-                asset_uris = self.list_asset_uris()
-                if len(asset_uris) == 0: return None
-                asset_uri_raw = self.parm('asset').eval()
-                if len(asset_uri_raw) == 0: return asset_uris[0]
-                asset_uri = Uri.parse_unsafe(asset_uri_raw)
-                if asset_uri not in asset_uris: return None
-                return asset_uri
-            case _:
-                raise AssertionError(f'Unknown entity source: {entity_source}')
+        asset_uri_raw = self.parm('asset').eval()
+        if asset_uri_raw == 'from_context':
+            file_path = Path(hou.hipFile.path())
+            context = get_workfile_context(file_path)
+            if context is None: return None
+            # Verify it's an asset entity
+            if context.entity_uri.segments[0] != 'assets': return None
+            return context.entity_uri
+        # From settings
+        asset_uris = self.list_asset_uris()
+        if len(asset_uris) <= 1: return None  # Only 'from_context' means no real URIs
+        if len(asset_uri_raw) == 0: return Uri.parse_unsafe(asset_uris[1])  # Skip 'from_context'
+        if asset_uri_raw not in asset_uris: return None  # Compare strings
+        return Uri.parse_unsafe(asset_uri_raw)
 
     def set_asset_uri(self, asset_uri: Uri):
         asset_uris = self.list_asset_uris()
-        if asset_uri not in asset_uris: return
+        if str(asset_uri) not in asset_uris: return  # Compare strings
         self.parm('asset').set(str(asset_uri))
 
     def get_metadata_content(self) -> str:
@@ -96,8 +80,18 @@ class CreateModel(ns.Node):
             return ''
         return _metadata_script(asset_uri)
 
+    def _update_labels(self):
+        """Update label parameters to show resolved values when 'from_context' is selected."""
+        asset_raw = self.parm('asset').eval()
+        if asset_raw == 'from_context':
+            asset_uri = self.get_asset_uri()
+            self.parm('asset_label').set(str(asset_uri) if asset_uri else '')
+        else:
+            self.parm('asset_label').set('')
+
     def execute(self):
         """Execute node - generate and set metadata script."""
+        self._update_labels()
         script = self.get_metadata_content()
         self.parm('metadata_python').set(script)
 
@@ -130,9 +124,11 @@ def on_created(raw_node):
     file_path = Path(hou.hipFile.path())
     context = get_workfile_context(file_path)
 
-    # If no valid asset context, switch to from_settings
+    # If no valid asset context, set first available asset
     if context is None or context.entity_uri.segments[0] != 'assets':
-        node.parm('entity_source').set('from_settings')
+        asset_uris = node.list_asset_uris()
+        if len(asset_uris) > 1:  # Skip 'from_context'
+            node.set_asset_uri(Uri.parse_unsafe(asset_uris[1]))
         return
 
     # Set the default values from context

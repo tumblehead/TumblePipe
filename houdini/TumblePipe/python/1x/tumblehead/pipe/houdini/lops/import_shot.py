@@ -22,7 +22,6 @@ from tumblehead.pipe.paths import (
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/import_shot')
 
 def _context_from_workfile():
     file_path = Path(hou.hipFile.path())
@@ -126,41 +125,63 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
     script = header + _indent(content) + footer
     return '\n'.join(script)
 
-def _get_scene_asset_counts(shot_uri: Uri) -> dict[str, int]:
-    """Get asset instance counts from the scene context.json.
+def _get_scene_assets(shot_uri: Uri) -> list[dict]:
+    """Get current asset data from scene context.json.
+
+    Reads scene reference from root layer's context.json (same source as USD composition).
+    This ensures metadata matches what's actually in the stage and avoids stale cache issues.
 
     Args:
         shot_uri: The shot entity URI
 
     Returns:
-        Dict mapping asset_uri_str -> instance count
+        List of asset dicts with keys: asset, instance, variant, instances, inputs
     """
-    from tumblehead.config.scene import get_inherited_scene_ref
-    from tumblehead.pipe.paths import get_scene_latest_path
+    from tumblehead.pipe.paths import latest_export_path, get_scene_latest_path
+    from tumblehead.config.variants import DEFAULT_VARIANT
 
-    # Get scene reference for this shot
-    scene_uri, _ = get_inherited_scene_ref(shot_uri)
-    if scene_uri is None:
-        return {}
+    # Get root layer to find scene reference (same approach as graph.py Fix 2)
+    root_version_path = latest_export_path(shot_uri, DEFAULT_VARIANT, 'root')
+    if root_version_path is None:
+        return []
 
-    # Get scene latest path and load context.json
+    # Read scene reference from root's context.json
+    root_context_path = root_version_path / 'context.json'
+    root_context_data = load_json(root_context_path)
+    if root_context_data is None:
+        return []
+
+    scene_ref = root_context_data.get('parameters', {}).get('scene')
+    if scene_ref is None:
+        return []
+
+    # Follow scene reference to get current assets
+    scene_uri = Uri.parse_unsafe(scene_ref)
     scene_layer_path = get_scene_latest_path(scene_uri)
     if scene_layer_path is None:
-        return {}
+        return []
 
     scene_context_path = scene_layer_path.parent / 'context.json'
     if not scene_context_path.exists():
-        return {}
+        return []
 
     scene_context = load_json(scene_context_path)
     if scene_context is None:
-        return {}
+        return []
 
-    # Get assets from scene context: {uri_str: {"instances": N, "variant": "X"}}
-    assets = scene_context.get('parameters', {}).get('assets', {})
-
-    # Extract instance counts
-    return {uri_str: asset_data['instances'] for uri_str, asset_data in assets.items()}
+    # Return full asset data with instance names derived from asset URI
+    scene_assets = scene_context.get('parameters', {}).get('assets', [])
+    result = []
+    for asset_data in scene_assets:
+        asset_uri = Uri.parse_unsafe(asset_data['asset'])
+        result.append({
+            'asset': asset_data['asset'],
+            'instance': asset_uri.segments[-1],  # Use asset name as instance
+            'variant': asset_data.get('variant', 'default'),
+            'instances': asset_data.get('instances', 1),
+            'inputs': []  # No composition history for scene-level assets
+        })
+    return result
 
 
 def _parse_staged_sublayers(staged_file_path: Path) -> list[dict]:
@@ -202,39 +223,24 @@ class ImportShot(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_shot_uris(self) -> list[Uri]:
+    def list_shot_uris(self) -> list[str]:
         shot_entities = api.config.list_entities(
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return [entity.uri for entity in shot_entities]
+        uris = [entity.uri for entity in shot_entities]
+        return ['from_context'] + [str(uri) for uri in uris]
 
     def list_asset_department_names(self):
-        asset_departments = list_departments('assets')
-        if len(asset_departments) == 0: return []
-        asset_department_names = [d.name for d in asset_departments]
-        build_shot_defaults_uri = Uri.parse_unsafe('defaults:/houdini/lops/build_shot')
-        default_values = api.config.get_properties(build_shot_defaults_uri)
-        return [
-            asset_department_name
-            for asset_department_name in default_values['departments']['asset']
-            if asset_department_name in asset_department_names
-        ]
+        return [d.name for d in list_departments('assets') if d.renderable]
 
     def list_shot_department_names(self):
-        shot_departments = list_departments('shots')
-        shot_department_names = [d.name for d in shot_departments]
-        build_shot_defaults_uri = Uri.parse_unsafe('defaults:/houdini/lops/build_shot')
-        default_values = api.config.get_properties(build_shot_defaults_uri)
-        return [
-            shot_department_name
-            for shot_department_name in default_values['departments']['shot']
-            if shot_department_name in shot_department_names
-        ]
+        return [d.name for d in list_departments('shots') if d.renderable]
 
     def list_department_names(self) -> list[str]:
         shot_departments = list_departments('shots')
-        return [dept.name for dept in shot_departments]
+        names = [dept.name for dept in shot_departments]
+        return ['from_context'] + names
 
     def list_version_names(self) -> list[str]:
         """List available staged versions including 'latest' and 'current'."""
@@ -261,42 +267,30 @@ class ImportShot(ns.Node):
         return version_name
 
     def get_department_name(self) -> str | None:
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                context = _context_from_workfile()
-                if context is None: return None
-                return context.department_name
-            case 'from_settings':
-                department_names = self.list_department_names()
-                if len(department_names) == 0: return None
-                department_name = self.parm('department').eval()
-                if len(department_name) == 0: return department_names[0]
-                if department_name not in department_names: return None
-                return department_name
-            case _:
-                raise AssertionError(f'Unknown entity source token: {entity_source}')
-
-    def get_entity_source(self):
-        return self.parm('entity_source').eval()
+        department_name = self.parm('department').eval()
+        if department_name == 'from_context':
+            context = _context_from_workfile()
+            if context is None: return None
+            return context.department_name
+        # From settings
+        department_names = self.list_department_names()
+        if len(department_names) == 0: return None
+        if len(department_name) == 0: return department_names[0]
+        if department_name not in department_names: return None
+        return department_name
 
     def get_shot_uri(self) -> Uri | None:
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                context = _entity_from_context_json()
-                if context is None: return None
-                return context.entity_uri
-            case 'from_settings':
-                shot_uris = self.list_shot_uris()
-                if len(shot_uris) == 0: return None
-                shot_uri_raw = self.parm('shot').eval()
-                if len(shot_uri_raw) == 0: return shot_uris[0]
-                shot_uri = Uri.parse_unsafe(shot_uri_raw)
-                if shot_uri not in shot_uris: return None
-                return shot_uri
-            case _:
-                raise AssertionError(f'Unknown entity source: {entity_source}')
+        shot_uri_raw = self.parm('shot').eval()
+        if shot_uri_raw == 'from_context':
+            context = _entity_from_context_json()
+            if context is None: return None
+            return context.entity_uri
+        # From settings
+        shot_uris = self.list_shot_uris()
+        if len(shot_uris) <= 1: return None  # Only 'from_context' means no real URIs
+        if len(shot_uri_raw) == 0: return Uri.parse_unsafe(shot_uris[1])  # Skip 'from_context'
+        if shot_uri_raw not in shot_uris: return None  # Compare strings
+        return Uri.parse_unsafe(shot_uri_raw)
     def get_downstream_shot_department_names(self):
         shot_department_names = self.list_shot_department_names()
         if len(shot_department_names) == 0: return []
@@ -313,15 +307,10 @@ class ImportShot(ns.Node):
             
     def get_include_procedurals(self):
         return bool(self.parm('include_procedurals').eval())
-    
-    def set_entity_source(self, entity_source):
-        valid_sources = ['from_context', 'from_settings']
-        if entity_source not in valid_sources: return
-        self.parm('entity_source').set(entity_source)
 
     def set_shot_uri(self, shot_uri: Uri):
         shot_uris = self.list_shot_uris()
-        if shot_uri not in shot_uris: return
+        if str(shot_uri) not in shot_uris: return  # Compare strings
         self.parm('shot').set(str(shot_uri))
 
     def set_department_name(self, department_name: str):
@@ -330,7 +319,44 @@ class ImportShot(ns.Node):
     def set_include_procedurals(self, include_procedurals):
         self.parm('include_procedurals').set(int(include_procedurals))
 
+    def _update_labels(self):
+        """Update label parameters to show resolved values when 'from_context' is selected."""
+        shot_raw = self.parm('shot').eval()
+        if shot_raw == 'from_context':
+            shot_uri = self.get_shot_uri()
+            self.parm('shot_label').set(str(shot_uri) if shot_uri else '')
+        else:
+            self.parm('shot_label').set('')
+
+        department_raw = self.parm('department').eval()
+        if department_raw == 'from_context':
+            department_name = self.get_department_name()
+            self.parm('department_label').set(department_name if department_name else '')
+        else:
+            self.parm('department_label').set('')
+
+        # Update version label when 'latest' or 'current' is selected
+        version_raw = self.parm('version').eval()
+        if version_raw in ('latest', 'current', ''):
+            shot_uri = self.get_shot_uri()
+            if shot_uri is not None:
+                if version_raw == 'latest' or version_raw == '':
+                    staged_file_path = get_latest_staged_file_path(shot_uri)
+                else:  # 'current'
+                    staged_file_path = current_staged_file_path(shot_uri)
+
+                if staged_file_path is not None:
+                    resolved_version = staged_file_path.parent.name
+                    self.parm('version_label').set(resolved_version)
+                else:
+                    self.parm('version_label').set('')
+            else:
+                self.parm('version_label').set('')
+        else:
+            self.parm('version_label').set('')
+
     def execute(self):
+        self._update_labels()
 
         # Get nodes
         context = self.native()
@@ -361,22 +387,34 @@ class ImportShot(ns.Node):
         if not staged_file_path.exists():
             raise FileNotFoundError(f"Staged file not found: {staged_file_path}")
 
-        # Read context.json for asset information
-        context_path = staged_file_path.parent / 'context.json'
-        context_data = load_json(context_path) if context_path.exists() else None
-        assets = []
-        if context_data is not None:
-            assets = context_data.get('parameters', {}).get('assets', [])
+        # Get assets based on version type
+        if version_name in ('latest', 'current'):
+            # For latest/current: union of scene assets + context.json assets
+            # - Scene assets: what's currently in live scene (USD composition follows latest)
+            # - Context.json: what was built (may have additional assets from department exports)
+            scene_assets = _get_scene_assets(shot_uri)
 
-        # Get scene-level asset counts and merge with shot context
-        scene_asset_counts = _get_scene_asset_counts(shot_uri)
-        for asset_info in assets:
-            asset_uri_str = asset_info.get('asset', '')
-            if asset_uri_str in scene_asset_counts:
-                # Use scene-defined count if available
-                asset_info['instances'] = scene_asset_counts[asset_uri_str]
-            elif 'instances' not in asset_info:
-                asset_info['instances'] = 1
+            # Read context.json for additional assets from department exports
+            context_path = staged_file_path.parent / 'context.json'
+            context_data = load_json(context_path) if context_path.exists() else None
+            context_assets = []
+            if context_data is not None:
+                context_assets = context_data.get('parameters', {}).get('assets', [])
+
+            # Union: start with scene assets, add any from context that aren't already present
+            assets = list(scene_assets)  # Copy scene assets
+            scene_asset_uris = {a['asset'] for a in scene_assets}
+            for ctx_asset in context_assets:
+                if ctx_asset.get('asset') not in scene_asset_uris:
+                    assets.append(ctx_asset)
+        else:
+            # For specific versions: only context.json (frozen state at build time)
+            # USD dependencies are fixed in versioned builds
+            context_path = staged_file_path.parent / 'context.json'
+            context_data = load_json(context_path) if context_path.exists() else None
+            assets = []
+            if context_data is not None:
+                assets = context_data.get('parameters', {}).get('assets', [])
 
         # Parse sublayers from staged file
         sublayers = _parse_staged_sublayers(staged_file_path)
@@ -522,15 +560,12 @@ def on_created(raw_node):
 
     node = ImportShot(raw_node)
 
-    # Change entity source to settings if we have no context
+    # If no context, set first available shot
     entity = _entity_from_context_json()
     if entity is None:
-        node.parm('entity_source').set('from_settings')
-
-    # Always set default shot (ensures department menu works correctly)
-    shot_uris = node.list_shot_uris()
-    if shot_uris:
-        node.set_shot_uri(shot_uris[0])
+        shot_uris = node.list_shot_uris()
+        if shot_uris:
+            node.set_shot_uri(shot_uris[0])
 
 def execute():
     raw_node = hou.pwd()

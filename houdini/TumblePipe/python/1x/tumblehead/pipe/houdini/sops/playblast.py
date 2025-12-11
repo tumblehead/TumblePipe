@@ -21,7 +21,6 @@ from tumblehead.config.department import list_departments
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/sops/playblast')
 
 class Playblast(ns.Node):
     def __init__(self, native):
@@ -40,23 +39,15 @@ class Playblast(ns.Node):
         return stage.GetPseudoRoot()
 
     def list_department_names(self):
-        shot_departments = list_departments('shots')
-        if len(shot_departments) == 0: return []
-        shot_department_names = [dept.name for dept in shot_departments]
-        default_values = api.config.get_properties(DEFAULTS_URI)
-        if default_values is None: return shot_department_names
-        return [
-            department_name
-            for department_name in default_values['departments']
-            if department_name in shot_department_names
-        ]
+        return [d.name for d in list_departments('shots') if d.renderable]
 
-    def list_shot_uris(self) -> list[Uri]:
+    def list_shot_uris(self) -> list[str]:
         shot_entities = api.config.list_entities(
             filter=Uri.parse_unsafe('entity:/shots'),
             closure=True
         )
-        return [entity.uri for entity in shot_entities]
+        uris = [entity.uri for entity in shot_entities]
+        return ['from_context'] + [str(uri) for uri in uris]
 
     def list_camera_paths(self):
         root = self._get_stage_root()
@@ -95,37 +86,33 @@ class Playblast(ns.Node):
         if camera_name not in camera_names: return
         self.parm('camera').set(camera_name)
 
-    def get_entity_source(self):
-        return self.parm('entity_source').eval()
-
     def get_shot_uri(self) -> Uri | None:
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                file_path = Path(hou.hipFile.path())
-                context = get_workfile_context(file_path)
-                if context is None: return None
-                return context.entity_uri
-            case 'from_settings':
-                shot_uris = self.list_shot_uris()
-                if len(shot_uris) == 0: return None
-                shot_uri_raw = self.parm('shot').eval()
-                if len(shot_uri_raw) == 0: return shot_uris[0]
-                shot_uri = Uri.parse_unsafe(shot_uri_raw)
-                if shot_uri not in shot_uris: return None
-                return shot_uri
-            case _:
-                raise AssertionError(f'Unknown entity source token: {entity_source}')
+        shot_uri_raw = self.parm('shot').eval()
+        if shot_uri_raw == 'from_context':
+            file_path = Path(hou.hipFile.path())
+            context = get_workfile_context(file_path)
+            if context is None: return None
+            return context.entity_uri
+        # From settings
+        shot_uris = self.list_shot_uris()
+        if len(shot_uris) <= 1: return None  # Only 'from_context' means no real URIs
+        if len(shot_uri_raw) == 0: return Uri.parse_unsafe(shot_uris[1])  # Skip 'from_context'
+        if shot_uri_raw not in shot_uris: return None  # Compare strings
+        return Uri.parse_unsafe(shot_uri_raw)
 
     def set_shot_uri(self, shot_uri: Uri):
         shot_uris = self.list_shot_uris()
-        if shot_uri not in shot_uris: return
+        if str(shot_uri) not in shot_uris: return  # Compare strings
         self.parm('shot').set(str(shot_uri))
 
-    def set_entity_source(self, entity_source):
-        valid_sources = ['from_context', 'from_settings']
-        if entity_source not in valid_sources: return
-        self.parm('entity_source').set(entity_source)
+    def _update_labels(self):
+        """Update label parameters to show resolved values when 'from_context' is selected."""
+        shot_raw = self.parm('shot').eval()
+        if shot_raw == 'from_context':
+            shot_uri = self.get_shot_uri()
+            self.parm('shot_label').set(str(shot_uri) if shot_uri else '')
+        else:
+            self.parm('shot_label').set('')
 
     def playblast(self):
 

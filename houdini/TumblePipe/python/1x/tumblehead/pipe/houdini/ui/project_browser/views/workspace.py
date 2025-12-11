@@ -22,7 +22,8 @@ class WorkspaceBrowser(QtWidgets.QWidget):
 
         # Members
         self._api = api
-        self._selection = None
+        self._selection = None      # Index path of SELECTED item (Qt handles orange highlight)
+        self._open_context = None   # Index path of OPEN workfile (manual purple brush)
 
         # Settings
         self.setObjectName("WorkspaceBrowser")
@@ -164,71 +165,135 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         # Import QItemSelectionModel flags
         from qtpy.QtCore import QItemSelectionModel
 
-        # Clear existing selection and select the new item
-        selection_model.select(model_index, QItemSelectionModel.ClearAndSelect)
+        # Clear existing selection and select the entire row
+        selection_model.select(model_index, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
 
         # Make sure the selected item is visible
         self.tree_view.scrollTo(model_index)
 
+        # Ensure tree view has focus so selection shows with focused styling
+        self.tree_view.setFocus()
+
         return True
 
-    def select(self, selection):
-        cleared_brush = QBrush(Qt.NoBrush)
+    def _uri_to_path(self, uri):
+        """Convert Uri to name_path list for tree navigation"""
+        if uri is None:
+            return None
+        if uri.purpose == 'groups':
+            return ['groups'] + list(uri.segments)
+        else:
+            return list(uri.segments)
+
+    def _apply_context_styling(self, index_path):
+        """Apply purple brush styling for open context indicator"""
         parent_brush = QBrush("#5e4a8a", Qt.Dense6Pattern)
         child_brush = QBrush("#5e4a8a", Qt.Dense4Pattern)
+        self._apply_brush_styling(index_path, parent_brush, child_brush)
 
-        def _set_style(index_path, parent_brush, child_brush):
-            model = self.tree_view.model()
-            if model is None or not index_path:
+    def _clear_context_styling(self, index_path):
+        """Clear brush styling from a path"""
+        cleared_brush = QBrush(Qt.NoBrush)
+        self._apply_brush_styling(index_path, cleared_brush, cleared_brush)
+
+    def _apply_brush_styling(self, index_path, parent_brush, child_brush):
+        """Apply brush styling to all columns along an index path"""
+        model = self.tree_view.model()
+        if model is None or not index_path:
+            return
+
+        try:
+            column_count = model.columnCount()
+
+            def set_row_background(parent, row, brush):
+                """Set background for all columns in a row."""
+                for col in range(column_count):
+                    if parent is None:
+                        # Top-level item
+                        col_item = model.item(row, col)
+                    else:
+                        # Child item
+                        col_item = parent.child(row, col)
+                    if col_item is not None:
+                        col_item.setBackground(brush)
+
+            # Style first row (top-level)
+            set_row_background(None, index_path[0], parent_brush)
+
+            # Navigate to get the parent for subsequent rows
+            parent_item = model.item(index_path[0])
+            if parent_item is None:
                 return
 
-            try:
-                column_count = model.columnCount()
-
-                def set_row_background(parent, row, brush):
-                    """Set background for all columns in a row."""
-                    for col in range(column_count):
-                        if parent is None:
-                            # Top-level item
-                            col_item = model.item(row, col)
-                        else:
-                            # Child item
-                            col_item = parent.child(row, col)
-                        if col_item is not None:
-                            col_item.setBackground(brush)
-
-                # Style first row (top-level)
-                set_row_background(None, index_path[0], parent_brush)
-
-                # Navigate to get the parent for subsequent rows
-                parent_item = model.item(index_path[0])
+            # Style intermediate rows (parent color)
+            for row_index in index_path[1:-1]:
+                set_row_background(parent_item, row_index, parent_brush)
+                parent_item = parent_item.child(row_index)
                 if parent_item is None:
                     return
 
-                # Style intermediate rows (parent color)
-                for row_index in index_path[1:-1]:
-                    set_row_background(parent_item, row_index, parent_brush)
-                    parent_item = parent_item.child(row_index)
-                    if parent_item is None:
-                        return
+            # Style final row (child color)
+            if len(index_path) > 1:
+                set_row_background(parent_item, index_path[-1], child_brush)
+            else:
+                # Single-level path - re-style with child brush
+                set_row_background(None, index_path[0], child_brush)
+        except (IndexError, AttributeError):
+            pass
 
-                # Style final row (child color)
-                if len(index_path) > 1:
-                    set_row_background(parent_item, index_path[-1], child_brush)
-                else:
-                    # Single-level path - re-style with child brush
-                    set_row_background(None, index_path[0], child_brush)
+    def set_open_context(self, context_uri):
+        """Set the OPEN workfile context (purple highlight)
+
+        This indicates which entity's workfile is currently loaded in Houdini.
+
+        Args:
+            context_uri: Uri of entity with open workfile, or None to clear
+        """
+        # Convert Uri to index path
+        context_path = self._uri_to_path(context_uri)
+        context_index = self._index_path(context_path) if context_path else None
+
+        # Skip if unchanged
+        if context_index == self._open_context:
+            return
+
+        # Clear old context styling
+        if self._open_context is not None:
+            try:
+                self._clear_context_styling(self._open_context)
             except (IndexError, AttributeError):
                 pass
 
+        # Update state
+        self._open_context = context_index
+
+        # Apply new context styling
+        if context_index is not None:
+            self._apply_context_styling(context_index)
+
+    def get_open_context(self):
+        """Get the currently open context as Uri"""
+        if self._open_context is None:
+            return None
+        try:
+            name_path = self._name_path(self._open_context)
+            if name_path is None:
+                return None
+            return entity_uri_from_path(name_path)
+        except (IndexError, AttributeError, ValueError):
+            self._open_context = None
+            return None
+
+    def select(self, selection):
+        """Set the SELECTED entity (Qt handles orange highlight via Houdini theme)
+
+        This is purely for UI navigation - doesn't affect which file is open.
+
+        Args:
+            selection: Uri of entity to select, or None to clear
+        """
         # Convert selection Uri to path
-        if selection is not None:
-            if selection.purpose == 'groups':
-                selection_path = ['groups'] + list(selection.segments)
-            else:
-                selection_path = list(selection.segments)
-        else:
-            selection_path = None
+        selection_path = self._uri_to_path(selection)
         selection_index = self._index_path(selection_path) if selection_path else None
 
         # Check if the index path is the same (avoid unnecessary work)
@@ -242,33 +307,14 @@ class WorkspaceBrowser(QtWidgets.QWidget):
             selection_model.blockSignals(True)
 
         try:
-            # Clear the old selection (both visual and Qt selection)
-            if self._selection is not None:
-                try:
-                    _set_style(self._selection, cleared_brush, cleared_brush)
-                except (IndexError, AttributeError):
-                    # Old selection is invalid, just clear the reference
-                    pass
-
             # Always clear Qt selection when changing
             self._clear_qt_selection()
 
-            # Set the new selection (both visual styling and Qt selection)
+            # Set the new Qt selection (Houdini theme provides orange highlight)
             if selection_index is not None:
-                # Set visual styling
-                _set_style(selection_index, parent_brush, child_brush)
+                self._set_qt_selection(selection_index)
 
-                # Set Qt selection state
-                qt_selection_success = self._set_qt_selection(selection_index)
-                if not qt_selection_success:
-                    # Qt selection failed, but we can still keep the visual styling
-                    pass
-            else:
-                # selection_index is None, ensure Qt selection is cleared
-                # (already cleared above, but this makes intent explicit)
-                pass
-
-            # Update the current selection
+            # Update the current selection state
             self._selection = selection_index
         finally:
             # Re-enable signals
@@ -314,14 +360,20 @@ class WorkspaceBrowser(QtWidgets.QWidget):
                         item = model.itemFromIndex(index)
                         if item is not None:
                             name_path = self._get_path(item)
+                            # Update internal selection state for get_selection()
+                            self._selection = self._index_path(name_path)
                         else:
                             name_path = None
+                            self._selection = None
                     else:
                         name_path = None
+                        self._selection = None
                 else:
                     name_path = None
+                    self._selection = None
             else:
                 name_path = None
+                self._selection = None
 
             # Convert path to Uri and emit
             entity_uri = entity_uri_from_path(name_path) if name_path else None
@@ -480,12 +532,14 @@ class WorkspaceBrowser(QtWidgets.QWidget):
             _visit(item, item_data)
 
     def refresh(self):
-        # Store the current selection (entity-based, more robust than index-based)
+        # Store BOTH states as entity-based URIs (robust to model recreation)
         preserved_selection = self.get_selection()
+        preserved_context = self.get_open_context()
         preserved_state = self._get_tree_state()
 
-        # Clear current selection to prevent issues during model transition
+        # Clear both states during model transition
         self._selection = None
+        self._open_context = None
         self._clear_qt_selection()
 
         # Safely disconnect old model
@@ -522,12 +576,18 @@ class WorkspaceBrowser(QtWidgets.QWidget):
                 # State restoration failed, continue without it
                 pass
 
-        # Restore selection (entity-based restoration is more reliable)
+        # Restore open context first (purple brush)
+        if preserved_context is not None:
+            try:
+                self.set_open_context(preserved_context)
+            except (AttributeError, ValueError):
+                self._open_context = None
+
+        # Restore selection second (Qt handles orange highlight)
         if preserved_selection is not None:
             try:
                 self.select(preserved_selection)
             except (AttributeError, ValueError):
-                # Selection restoration failed, clear selection
                 self._selection = None
 
         # Connect signals for new model

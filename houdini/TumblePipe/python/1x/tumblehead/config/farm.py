@@ -10,6 +10,7 @@ api = default_client()
 FARM_URI = Uri.parse_unsafe('config:/farm')
 POOLS_URI = FARM_URI / 'pools'
 PRIORITIES_URI = FARM_URI / 'priorities'
+ENTITY_ROOT_URI = Uri.parse_unsafe('entity:/')
 
 
 @dataclass(frozen=True)
@@ -25,24 +26,30 @@ class PriorityPreset:
 
 
 def list_pools() -> list[Pool]:
-    """List all available render pools."""
-    farm_data = api.config.cache.get('farm', {})
-    pools_data = farm_data.get('children', {}).get('pools', {})
-    pools_children = pools_data.get('children', {})
-    return [
-        Pool(
-            name=pool_name,
-            description=pool_data.get('properties', {}).get('description', '')
-        )
-        for pool_name, pool_data in pools_children.items()
-    ]
+    """List all available render pools from entity root config."""
+    try:
+        props = api.config.get_properties(ENTITY_ROOT_URI)
+        if props:
+            farm = props.get('farm', {})
+            pools = farm.get('pools', [])
+            if pools:
+                return [Pool(name=p, description='') for p in pools]
+    except Exception:
+        pass
+    # Fallback to default
+    return [Pool(name='general', description='')]
 
 
 def get_default_pool() -> str:
-    """Get the default pool name."""
-    farm_data = api.config.cache.get('farm', {})
-    pools_data = farm_data.get('children', {}).get('pools', {})
-    return pools_data.get('properties', {}).get('default', 'general')
+    """Get the default pool name from entity root config."""
+    try:
+        props = api.config.get_properties(ENTITY_ROOT_URI)
+        if props:
+            farm = props.get('farm', {})
+            return farm.get('default_pool', 'general')
+    except Exception:
+        pass
+    return 'general'
 
 
 def add_pool(name: str, description: str = ''):

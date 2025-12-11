@@ -135,6 +135,12 @@ from tumblehead.config.renderer import (
     get_entity_render_settings
 )
 
+# Global cache management functions from api module
+from tumblehead.api import (
+    refresh_global_cache,
+    reset_default_client
+)
+
 __all__ = [
     # Core classes
     'Entity',
@@ -210,4 +216,7 @@ __all__ = [
     'get_denoise_default',
     'set_renderer_setting',
     'get_entity_render_settings',
+    # Global cache management
+    'refresh_global_cache',
+    'reset_default_client',
 ]

@@ -237,23 +237,47 @@ class JobSubmissionDelegate(QStyledItemDelegate):
             super().setEditorData(editor, index)
 
     def setModelData(self, editor, model, index):
-        """Transfer editor value back to model."""
+        """Transfer editor value back to model.
+
+        If multiple cells are selected in the same column, applies the
+        value to all selected cells.
+        """
         col_type = index.data(JobSubmissionTableModel.ROLE_COLUMN_TYPE)
 
+        # Get the value from the editor
         if col_type == ColumnType.INTEGER:
-            model.setData(index, editor.value())
+            value = editor.value()
         elif col_type == ColumnType.FLOAT:
-            model.setData(index, editor.value())
+            value = editor.value()
         elif col_type == ColumnType.COMBO:
-            model.setData(index, editor.currentText())
+            value = editor.currentText()
         elif col_type == ColumnType.BOOLEAN:
-            model.setData(index, editor.isChecked())
+            value = editor.isChecked()
         elif col_type == ColumnType.STRING:
-            model.setData(index, editor.text())
+            value = editor.text()
         elif col_type == ColumnType.MULTI_SELECT:
-            model.setData(index, editor.get_selected())
+            value = editor.get_selected()
         else:
             super().setModelData(editor, model, index)
+            return
+
+        # Check if multiple cells are selected in the same column
+        table_view = self.parent()
+        if hasattr(table_view, 'get_selected_cells_in_column'):
+            selected_cells = table_view.get_selected_cells_in_column()
+
+            # If multiple cells selected in same column, apply to all
+            if len(selected_cells) > 1:
+                # Get column key from the edited index
+                col_def = index.data(JobSubmissionTableModel.ROLE_COLUMN_DEF)
+                if col_def:
+                    col_key = col_def.key
+                    row_indices = [row for row, col in selected_cells]
+                    model.apply_to_selected(row_indices, col_key, value)
+                    return
+
+        # Single cell edit - use standard setData
+        model.setData(index, value)
 
     def paint(self, painter, option, index):
         """Custom paint with override and validation styling."""
@@ -264,19 +288,26 @@ class JobSubmissionDelegate(QStyledItemDelegate):
         validation_error = index.data(JobSubmissionTableModel.ROLE_VALIDATION_ERROR)
         is_selected = option.state & QStyle.State_Selected
 
-        # Get hover state from table view
+        # Get hover state from table view (cell-level preferred, row-level fallback)
         table_view = self.parent()
-        is_hover_row = False
-        if hasattr(table_view, "get_hover_row"):
+        is_hover_cell = False
+        if hasattr(table_view, "get_hover_index"):
+            # Cell-level hover (CellSelectionTableView)
+            hover_index = table_view.get_hover_index()
+            is_hover_cell = (hover_index.isValid() and
+                            hover_index.row() == index.row() and
+                            hover_index.column() == index.column())
+        elif hasattr(table_view, "get_hover_row"):
+            # Row-level hover fallback (RowHoverTableView)
             hover_row = table_view.get_hover_row()
-            is_hover_row = hover_row == index.row()
+            is_hover_cell = hover_row == index.row()
 
         # Determine background color
         if validation_error:
             bg_color = QColor("#5c1a1a")  # Dark red for validation error
         elif is_selected:
             bg_color = QColor("#5e4a8a")  # Purple for selected
-        elif is_hover_row:
+        elif is_hover_cell:
             bg_color = QColor("#4a4a4a")  # Slightly brighter for hover
         elif is_overridden:
             bg_color = QColor("#1a3d1a")  # Dark green tint for overridden
@@ -287,14 +318,19 @@ class JobSubmissionDelegate(QStyledItemDelegate):
         painter.fillRect(option.rect, bg_color)
 
         # Draw borders
-        painter.setPen(QPen(QColor("#2a2a2a"), 1))
         rect = option.rect
+        painter.setPen(QPen(QColor("#2a2a2a"), 1))
         painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+
+        # Draw selection border for selected cells
+        if is_selected:
+            painter.setPen(QPen(QColor("#7e6aaa"), 2))  # Lighter purple border
+            painter.drawRect(rect.adjusted(1, 1, -1, -1))
 
         # Determine text color
         if validation_error:
             text_color = QColor("#ff6b6b")  # Light red for errors
-        elif is_selected or is_hover_row:
+        elif is_selected or is_hover_cell:
             text_color = QColor("#ffffff")  # White for selected/hovered
         elif is_overridden:
             text_color = QColor("#ffffff")  # White for overridden

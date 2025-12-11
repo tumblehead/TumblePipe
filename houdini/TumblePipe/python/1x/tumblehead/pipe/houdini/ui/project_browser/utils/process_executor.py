@@ -259,7 +259,7 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
             task_type='export_shared',
             description=f"Export Shared ({dept})",
             current_version=None,
-            execute_local=lambda n=node_ref: n.execute(),
+            execute_local=lambda n=node_ref: n.execute(force_local=True),
             execute_farm=None,  # layer_split is local-only
         )
         tasks.append(task)
@@ -366,7 +366,7 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
             task_type='export_shared',
             description=f"Export Shared ({dept})",
             current_version=None,
-            execute_local=lambda n=node_ref: n.execute(),
+            execute_local=lambda n=node_ref: n.execute(force_local=True),
             execute_farm=None,  # layer_split is local-only
         )
         tasks.append(task)
@@ -457,7 +457,7 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
             task_type='export_shared',
             description=f"Export Shared ({dept})",
             current_version=None,
-            execute_local=lambda n=node_ref: n.execute(),
+            execute_local=lambda n=node_ref: n.execute(force_local=True),
             execute_farm=None,  # layer_split is local-only
         )
         tasks.append(task)
@@ -548,8 +548,8 @@ def _collect_rig_publish_tasks(context: Context) -> list[ProcessTask]:
             task_type='export',
             description=f"Export rig: {_uri_name(asset_uri)}",
             current_version=version,
-            execute_local=lambda n=node_ref: n.execute(force_local=True) if hasattr(n, 'execute') else n.execute(),
-            execute_farm=lambda n=node_ref: n._export_farm() if hasattr(n, '_export_farm') else None,
+            execute_local=lambda n=node_ref: n.execute(force_local=True),
+            execute_farm=None,  # export_rig is local-only
         )
         tasks.append(task)
 
@@ -660,3 +660,147 @@ def _collect_build_tasks_for_shots(shot_uris: set[Uri]) -> list[ProcessTask]:
         task = _create_build_task(shot_uri)
         tasks.append(task)
     return tasks
+
+
+def find_upstream_export_nodes(start_node) -> list:
+    """
+    Find upstream export nodes in the node graph.
+
+    Traverses the node graph upstream (depth-first) to find dependent export nodes
+    like LayerSplit that feed into an ExportLayer.
+
+    Args:
+        start_node: The export node to start traversing from
+
+    Returns:
+        List of upstream export nodes in dependency order (upstream first)
+    """
+    visited = set()
+    upstream_exports = []
+
+    def _traverse(node):
+        if node is None:
+            return
+        node_path = node.path()
+        if node_path in visited:
+            return
+        visited.add(node_path)
+
+        # Check inputs first (depth-first, so upstream nodes come first)
+        for input_node in node.inputs():
+            if input_node is not None:
+                _traverse(input_node)
+
+        # Check if this is an export node type
+        node_type_name = node.type().name().lower()
+        if 'export_layer' in node_type_name:
+            upstream_exports.append(export_layer.ExportLayer(node))
+        elif 'layer_split' in node_type_name:
+            upstream_exports.append(layer_split.LayerSplit(node))
+
+    # Start from inputs of start_node (don't include start_node itself)
+    native = start_node.native() if hasattr(start_node, 'native') else start_node
+    for input_node in native.inputs():
+        if input_node is not None:
+            _traverse(input_node)
+
+    return upstream_exports
+
+
+def collect_tasks_for_export_node(
+    export_node,
+    context: Context
+) -> tuple[list[ProcessTask], set[str]]:
+    """
+    Collect all publish tasks with selective enablement for a specific export node.
+
+    Args:
+        export_node: The export node that was clicked
+        context: The current workfile context
+
+    Returns:
+        Tuple of (all_tasks, enabled_task_ids) where enabled_task_ids contains
+        the IDs of tasks that should be enabled (the clicked node + upstream deps)
+    """
+    # Collect all publish tasks for full context
+    all_tasks = collect_publish_tasks(context)
+
+    # Find task IDs to enable (clicked node + upstream dependencies)
+    enabled_task_ids = set()
+
+    # Enable clicked node's task
+    clicked_uri = export_node.get_entity_uri()
+    clicked_dept = export_node.get_department_name()
+
+    # Handle ExportRig which uses get_asset_uri instead of get_entity_uri
+    if clicked_uri is None and hasattr(export_node, 'get_asset_uri'):
+        clicked_uri = export_node.get_asset_uri()
+        clicked_dept = 'rig'
+
+    if clicked_uri is not None:
+        for task in all_tasks:
+            # Enable export task for clicked department
+            if task.uri == clicked_uri and task.department == clicked_dept:
+                enabled_task_ids.add(task.id)
+            # Also enable build task for the same entity
+            elif task.uri == clicked_uri and task.task_type == 'build':
+                enabled_task_ids.add(task.id)
+
+    # Enable upstream dependency tasks (and their build tasks)
+    upstream_nodes = find_upstream_export_nodes(export_node)
+    for upstream_node in upstream_nodes:
+        upstream_uri = upstream_node.get_entity_uri()
+        upstream_dept = upstream_node.get_department_name()
+        for task in all_tasks:
+            if task.uri == upstream_uri and task.department == upstream_dept:
+                enabled_task_ids.add(task.id)
+            elif task.uri == upstream_uri and task.task_type == 'build':
+                enabled_task_ids.add(task.id)
+
+    return all_tasks, enabled_task_ids
+
+
+def open_process_dialog_for_node(export_node, dialog_title: str = "Export") -> None:
+    """
+    Open ProcessDialog for a specific export node with selective enablement.
+
+    Shows all entities (if in a group workfile) but only enables the specific
+    entity whose export button was clicked, plus any upstream dependent export nodes.
+
+    Args:
+        export_node: The export node that triggered the dialog
+        dialog_title: Title for the dialog window
+    """
+    import hou
+    from tumblehead.pipe.paths import get_workfile_context
+    from ..dialogs.process_dialog import ProcessDialog
+
+    file_path = Path(hou.hipFile.path())
+    context = get_workfile_context(file_path)
+    if context is None:
+        hou.ui.displayMessage(
+            "Cannot determine workfile context. Save the file first.",
+            severity=hou.severityType.Error
+        )
+        return
+
+    all_tasks, enabled_task_ids = collect_tasks_for_export_node(export_node, context)
+    if not all_tasks:
+        hou.ui.displayMessage(
+            "No export tasks found for the current context.",
+            severity=hou.severityType.Warning
+        )
+        return
+
+    def save_scene():
+        hou.hipFile.save()
+
+    dialog = ProcessDialog(
+        title=dialog_title,
+        tasks=all_tasks,
+        current_department=context.department_name,
+        pre_execute_callback=save_scene,
+        initial_enabled_task_ids=enabled_task_ids,
+        parent=hou.qt.mainWindow()
+    )
+    dialog.exec_()

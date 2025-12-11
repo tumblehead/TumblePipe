@@ -596,8 +596,8 @@ class SceneEditorPanel(QWidget):
         header.setStretchLastSection(False)
         if header.count() >= 3:
             header.setSectionResizeMode(0, QHeaderView.Stretch)
-            header.setSectionResizeMode(1, QHeaderView.Fixed)
-            header.setSectionResizeMode(2, QHeaderView.Fixed)
+            header.setSectionResizeMode(1, QHeaderView.Interactive)
+            header.setSectionResizeMode(2, QHeaderView.Interactive)
             header.resizeSection(1, 60)
             header.resizeSection(2, 100)
         scene_layout.addWidget(self._scene_tree)
@@ -640,8 +640,8 @@ class SceneEditorPanel(QWidget):
         if header.count() >= 3:
             header.setStretchLastSection(False)
             header.setSectionResizeMode(0, QHeaderView.Stretch)
-            header.setSectionResizeMode(1, QHeaderView.Fixed)
-            header.setSectionResizeMode(2, QHeaderView.Fixed)
+            header.setSectionResizeMode(1, QHeaderView.Interactive)
+            header.setSectionResizeMode(2, QHeaderView.Interactive)
             header.resizeSection(1, 60)
             header.resizeSection(2, 100)
 

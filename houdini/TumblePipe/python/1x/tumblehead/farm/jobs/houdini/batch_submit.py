@@ -4,12 +4,15 @@ This module orchestrates the creation and submission of publish and render jobs
 based on the job submission dialog configuration.
 """
 
+from tempfile import TemporaryDirectory
 from pathlib import Path
 import datetime as dt
 import logging
+import os
 from typing import Optional
 
 from tumblehead.api import (
+    fix_path,
     path_str,
     to_wsl_path,
     to_windows_path,
@@ -17,6 +20,7 @@ from tumblehead.api import (
     default_client
 )
 from tumblehead.util.uri import Uri
+from tumblehead.util.io import store_json
 from tumblehead.config.timeline import get_frame_range
 from tumblehead.config.department import list_departments
 from tumblehead.apps.deadline import (
@@ -28,19 +32,62 @@ from tumblehead.pipe.paths import (
     latest_hip_file_path,
     latest_export_path,
     next_export_path,
-    latest_staged_path
 )
+import tumblehead.farm.tasks.stage.task as stage_task
 
 api = default_client()
 
 # Script paths for farm execution
 PUBLISH_SCRIPT_PATH = Path(__file__).parent / 'update' / 'publish.py'
-STAGE_SCRIPT_PATH = Path(__file__).parent / 'stage_render' / 'stage.py'
+
+# Mapping from column keys to Karma/USD render setting attribute paths
+# These are used to build overrides for render_settings.json
+# Supports both column keys (samples, mblur) and property paths (render.pathtracedsamples)
+RENDER_OVERRIDE_MAP = {
+    # Column keys (from job submission dialog)
+    'samples': 'karma:global:pathtracedsamples',
+    'mblur': 'karma:global:enablemotionblur',
+    'dof': 'karma:global:enabledof',
+    'denoise': 'karma:global:enabledenoising',
+    'diffuse_limit': 'karma:global:diffuselimit',
+    'reflection_limit': 'karma:global:reflectionlimit',
+    'refraction_limit': 'karma:global:refractionlimit',
+    'volume_limit': 'karma:global:volumelimit',
+    'sss_limit': 'karma:global:ssslimit',
+    # Property paths (for backward compatibility)
+    'render.pathtracedsamples': 'karma:global:pathtracedsamples',
+    'render.enablemblur': 'karma:global:enablemotionblur',
+    'render.enabledof': 'karma:global:enabledof',
+    'render.enabledenoising': 'karma:global:enabledenoising',
+    'render.diffuselimit': 'karma:global:diffuselimit',
+    'render.reflectionlimit': 'karma:global:reflectionlimit',
+    'render.refractionlimit': 'karma:global:refractionlimit',
+    'render.volumelimit': 'karma:global:volumelimit',
+    'render.ssslimit': 'karma:global:ssslimit',
+}
 
 
 class BatchSubmitError(Exception):
     """Error during batch submission."""
     pass
+
+
+def _build_render_overrides(settings: dict) -> dict:
+    """Build render overrides dict from job settings.
+
+    Maps settings keys to Karma/USD attribute paths using RENDER_OVERRIDE_MAP.
+
+    Args:
+        settings: Job settings dict from submission dialog
+
+    Returns:
+        Dict mapping USD attribute paths to values
+    """
+    overrides = {}
+    for settings_key, usd_path in RENDER_OVERRIDE_MAP.items():
+        if settings_key in settings:
+            overrides[usd_path] = settings[settings_key]
+    return overrides
 
 
 def _is_submissable(entity_uri: Uri, department_name: str) -> bool:
@@ -108,47 +155,6 @@ def _create_publish_job(
     return job
 
 
-def _create_stage_job(
-    entity_uri: Uri,
-    department_name: str,
-    variants: list[str],
-    pool_name: str,
-    priority: int
-) -> Job:
-    """Create a stage job for rendering preparation."""
-    frame_range = get_frame_range(entity_uri)
-    if frame_range is None:
-        raise BatchSubmitError(
-            f"Cannot get frame range for entity: {entity_uri}. "
-            "Ensure the entity has frame_start, frame_end, roll_start, roll_end properties configured."
-        )
-    render_range = frame_range.full_range()
-
-    # Stage job uses the staging script
-    job = Job(
-        to_wsl_path(STAGE_SCRIPT_PATH), None,
-        str(entity_uri),
-        department_name,
-        ','.join(variants)
-    )
-    job.name = f'stage {entity_uri} {department_name} [{",".join(variants)}]'
-    job.pool = pool_name
-    job.group = 'houdini'
-    job.priority = priority
-    job.start_frame = render_range.first_frame
-    job.end_frame = render_range.last_frame
-    job.step_size = 1
-    job.chunk_size = len(render_range)
-    job.max_frame_time = 30
-    job.env.update(dict(
-        TH_USER=get_user_name(),
-        TH_CONFIG_PATH=path_str(to_wsl_path(api.CONFIG_PATH)),
-        TH_PROJECT_PATH=path_str(to_wsl_path(api.PROJECT_PATH)),
-        TH_PIPELINE_PATH=path_str(to_wsl_path(api.PIPELINE_PATH))
-    ))
-    return job
-
-
 def submit_entity_batch(config: dict) -> list[str]:
     """
     Submit a batch of jobs for a single entity based on configuration.
@@ -156,9 +162,14 @@ def submit_entity_batch(config: dict) -> list[str]:
     Args:
         config: Job configuration dict with keys:
             - entity: {uri, name, context}
-            - settings: {publish, render, variants, department, pool_name, priority,
-                        tile_count, pre_roll, first_frame, last_frame, post_roll,
-                        batch_size, denoise}
+            - settings:
+                - publish: bool - whether to submit publish jobs
+                - render: bool - whether to submit render jobs
+                - Publish section: pub_department, pub_pool, pub_priority
+                - Render section: render_department, variants, render_pool,
+                                  render_priority, tile_count, pre_roll,
+                                  first_frame, last_frame, post_roll,
+                                  batch_size, denoise
 
     Returns:
         List of submitted job IDs
@@ -173,10 +184,17 @@ def submit_entity_batch(config: dict) -> list[str]:
 
     do_publish = settings.get('publish', False)
     do_render = settings.get('render', False)
+
+    # Publish settings
+    pub_department = settings.get('pub_department')
+    pub_pool = settings.get('pub_pool', 'general')
+    pub_priority = settings.get('pub_priority', 50)
+
+    # Render settings
+    render_department = settings.get('render_department')
     variants = settings.get('variants', ['default'])
-    target_department = settings.get('department', 'lighting')
-    pool_name = settings.get('pool_name', 'general')
-    priority = settings.get('priority', 50)
+    render_pool = settings.get('render_pool', 'general')
+    render_priority = settings.get('render_priority', 50)
     tile_count = settings.get('tile_count', 4)
     first_frame = settings.get('first_frame', 1001)
     last_frame = settings.get('last_frame', 1100)
@@ -190,11 +208,19 @@ def submit_entity_batch(config: dict) -> list[str]:
     departments = list_departments(entity_context)
     department_names = [d.name for d in departments]
 
-    if target_department not in department_names:
-        raise BatchSubmitError(f"Invalid department: {target_department}")
+    # Validate publish department
+    if do_publish:
+        if pub_department is None:
+            raise BatchSubmitError("Publish department not specified")
+        if pub_department not in department_names:
+            raise BatchSubmitError(f"Invalid publish department: {pub_department}")
 
-    # Get departments up to and including target
-    department_names = department_names[:department_names.index(target_department) + 1]
+    # Validate render department
+    if do_render:
+        if render_department is None:
+            raise BatchSubmitError("Render department not specified")
+        if render_department not in department_names:
+            raise BatchSubmitError(f"Invalid render department: {render_department}")
 
     # Connect to Deadline
     try:
@@ -223,10 +249,13 @@ def submit_entity_batch(config: dict) -> list[str]:
 
     # Add publish jobs
     if do_publish:
+        # Get departments up to and including publish target
+        pub_dept_names = department_names[:department_names.index(pub_department) + 1]
+
         prev_job_name = None
         # Use 'default' variant for batch publish jobs
         variant_name = 'default'
-        for dept_name in department_names:
+        for dept_name in pub_dept_names:
             if not _is_submissable(entity_uri, dept_name):
                 continue
 
@@ -236,7 +265,7 @@ def submit_entity_batch(config: dict) -> list[str]:
 
             job_name = f'publish_{dept_name}'
             try:
-                job = _create_publish_job(entity_uri, variant_name, dept_name, pool_name, priority)
+                job = _create_publish_job(entity_uri, variant_name, dept_name, pub_pool, pub_priority)
                 jobs[job_name] = job
                 deps[job_name] = [prev_job_name] if prev_job_name else []
                 prev_job_name = job_name
@@ -244,60 +273,92 @@ def submit_entity_batch(config: dict) -> list[str]:
             except BatchSubmitError as e:
                 logging.warning(f"Could not create publish job for {entity_uri}/{dept_name}: {e}")
 
-    # Add stage + render jobs
+    # Helper to finalize and submit batch
+    def _finalize_batch():
+        if not jobs:
+            logging.info(f"No jobs to submit for {entity_uri}")
+            return []
+
+        indices = {}
+        for job_name, job in jobs.items():
+            indices[job_name] = batch.add_job(job)
+
+        for job_name, job_deps in deps.items():
+            for dep_name in job_deps:
+                if dep_name and dep_name in indices:
+                    batch.add_dep(indices[job_name], indices[dep_name])
+
+        # Submit batch
+        jobs_dir = api.storage.resolve(Uri.parse_unsafe('export:/other/jobs'))
+        job_ids = farm.submit(batch, jobs_dir)
+
+        logging.info(f"Submitted batch for {entity_uri}: {len(job_ids)} jobs")
+        return job_ids
+
+    # Add stage + render jobs (requires temp directory for config files)
     if do_render:
         if not variants:
             variants = ['default']
 
-        # Stage job depends on last publish (if any)
-        stage_job_name = 'stage'
-        try:
-            stage_job = _create_stage_job(
-                entity_uri, target_department, variants, pool_name, priority
+        # Create temp directory for staging files (must stay open until submission)
+        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path.mkdir(parents=True, exist_ok=True)
+
+        with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Build render overrides from settings (maps column keys to USD paths)
+            render_overrides = _build_render_overrides(settings)
+
+            # Create render_settings.json
+            render_settings_path = temp_path / 'render_settings.json'
+            store_json(render_settings_path, dict(
+                variant_names=variants,
+                aov_names=[],  # Will be looked up by stage.py from exports
+                overrides=render_overrides
+            ))
+            relative_render_settings_path = render_settings_path.relative_to(temp_path)
+
+            # Build stage config matching what stage.py expects
+            stage_config = dict(
+                entity=dict(
+                    uri=str(entity_uri),
+                    department=render_department
+                ),
+                settings=dict(
+                    user_name=user_name,
+                    purpose='render',
+                    pool_name=render_pool,
+                    variant_names=variants,
+                    render_department_name=render_department,
+                    render_settings_path=path_str(relative_render_settings_path),
+                    tile_count=tile_count,
+                    first_frame=first_frame,
+                    last_frame=last_frame,
+                    step_size=1,  # Default
+                    batch_size=batch_size
+                ),
+                tasks=dict(
+                    stage=dict(priority=render_priority, channel_name='exports'),
+                    full_render=dict(priority=render_priority, denoise=denoise, channel_name='renders')
+                )
             )
-            jobs[stage_job_name] = stage_job
-            deps[stage_job_name] = [last_publish_job_name] if last_publish_job_name else []
-        except BatchSubmitError as e:
-            logging.warning(f"Could not create stage job for {entity_uri}: {e}")
-            stage_job_name = None
 
-        # TODO: Add render jobs per variant
-        # This requires importing and using the render job module:
-        # - partial_render (test frames)
-        # - full_render
-        # - denoise (if enabled)
-        # - mp4
-        # - slapcomp (if multiple variants)
-        # - notify
+            # Build stage job using existing task builder
+            stage_job_name = 'stage'
+            try:
+                paths = {render_settings_path: relative_render_settings_path}
+                stage_job = stage_task.build(stage_config, paths, temp_path)
+                jobs[stage_job_name] = stage_job
+                deps[stage_job_name] = [last_publish_job_name] if last_publish_job_name else []
+            except Exception as e:
+                logging.warning(f"Could not create stage job for {entity_uri}: {e}")
 
-        # For now, log what would be created
-        if stage_job_name:
-            for variant in variants:
-                logging.info(f"Would create render jobs for variant: {variant}")
-                # render_job_name = f'render_{variant}'
-                # ... create render job ...
-                # deps[render_job_name] = [stage_job_name]
+            # Submit within temp directory context (files need to be copied)
+            return _finalize_batch()
 
-    # Add all jobs to batch with dependencies
-    if not jobs:
-        logging.info(f"No jobs to submit for {entity_uri}")
-        return []
-
-    indices = {}
-    for job_name, job in jobs.items():
-        indices[job_name] = batch.add_job(job)
-
-    for job_name, job_deps in deps.items():
-        for dep_name in job_deps:
-            if dep_name and dep_name in indices:
-                batch.add_dep(indices[job_name], indices[dep_name])
-
-    # Submit batch
-    jobs_dir = api.storage.resolve(Uri.parse_unsafe('export:/other/jobs'))
-    job_ids = farm.submit(batch, jobs_dir)
-
-    logging.info(f"Submitted batch for {entity_uri}: {len(job_ids)} jobs")
-    return job_ids
+    # No render jobs - submit directly
+    return _finalize_batch()
 
 
 def submit_all(configs: list[dict]) -> dict[str, list[str]]:

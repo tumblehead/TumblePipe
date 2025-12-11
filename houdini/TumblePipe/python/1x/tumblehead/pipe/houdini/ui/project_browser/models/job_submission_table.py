@@ -197,6 +197,7 @@ class JobSubmissionTableModel(QAbstractTableModel):
         # Entity column is not editable
         if index.column() == self.COLUMN_ENTITY:
             return Qt.ItemIsEnabled | Qt.ItemIsSelectable
+
         return Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsEditable
 
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
@@ -449,7 +450,7 @@ class JobSubmissionTableModel(QAbstractTableModel):
     def get_job_configs(self) -> list[dict]:
         """
         Export model data as job configs ready for submission.
-        Returns list of config dicts per entity.
+        Returns list of config dicts per entity with all column values.
         """
         configs = []
         for row in self._rows:
@@ -461,6 +462,7 @@ class JobSubmissionTableModel(QAbstractTableModel):
                 },
                 'settings': {}
             }
+            # Include all column values
             for col_key, cell in row.cells.items():
                 config['settings'][col_key] = cell.value
             configs.append(config)

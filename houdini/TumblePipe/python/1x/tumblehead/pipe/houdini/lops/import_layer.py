@@ -22,7 +22,6 @@ from tumblehead.pipe.paths import (
 
 api = default_client()
 
-DEFAULTS_URI = Uri.parse_unsafe('defaults:/houdini/lops/import_layer')
 
 def _valid_version_path(path: Path) -> bool:
     context_path = path / 'context.json'
@@ -98,7 +97,7 @@ class ImportLayer(ns.Node):
             return None
         return get_entity_type(entity_uri)
 
-    def list_entity_uris(self) -> list[Uri]:
+    def list_entity_uris(self) -> list[str]:
         asset_entities = api.config.list_entities(
             filter=Uri.parse_unsafe('entity:/assets'),
             closure=True
@@ -107,7 +106,8 @@ class ImportLayer(ns.Node):
             filter=Uri.parse_unsafe('entity:/shots'),
             closure=True
         )
-        return [e.uri for e in asset_entities] + [e.uri for e in shot_entities]
+        uris = [e.uri for e in asset_entities] + [e.uri for e in shot_entities]
+        return ['from_context'] + [str(uri) for uri in uris]
 
     def list_asset_uris(self) -> list[Uri]:
         asset_entities = api.config.list_entities(
@@ -127,24 +127,8 @@ class ImportLayer(ns.Node):
         entity_type = self.get_entity_type()
         if entity_type is None:
             return []
-
         context_name = 'assets' if entity_type == 'asset' else 'shots'
-        departments = list_departments(context_name)
-        if len(departments) == 0:
-            return []
-
-        department_names = [dept.name for dept in departments]
-        default_values = api.config.get_properties(DEFAULTS_URI)
-        if default_values is None:
-            return department_names
-
-        configured_depts = default_values.get('departments', [])
-        if configured_depts:
-            return [
-                name for name in configured_depts
-                if name in department_names
-            ]
-        return department_names
+        return [d.name for d in list_departments(context_name) if d.renderable]
 
     def list_variant_names(self) -> list[str]:
         """List available variant names for current entity.
@@ -184,31 +168,23 @@ class ImportLayer(ns.Node):
         # Add 'current' option at the beginning (resolves to highest numbered version)
         return ['current'] + version_names
 
-    def get_entity_source(self) -> str:
-        return self.parm('entity_source').eval()
-
     def get_entity_uri(self) -> Uri | None:
-        entity_source = self.get_entity_source()
-        match entity_source:
-            case 'from_context':
-                file_path = Path(hou.hipFile.path())
-                context = get_workfile_context(file_path)
-                if context is None:
-                    return None
-                return context.entity_uri
-            case 'from_settings':
-                entity_uris = self.list_entity_uris()
-                if len(entity_uris) == 0:
-                    return None
-                entity_uri_raw = self.parm('entity').eval()
-                if len(entity_uri_raw) == 0:
-                    return entity_uris[0]
-                entity_uri = Uri.parse_unsafe(entity_uri_raw)
-                if entity_uri not in entity_uris:
-                    return None
-                return entity_uri
-            case _:
-                raise AssertionError(f'Unknown entity source: {entity_source}')
+        entity_uri_raw = self.parm('entity').eval()
+        if entity_uri_raw == 'from_context':
+            file_path = Path(hou.hipFile.path())
+            context = get_workfile_context(file_path)
+            if context is None:
+                return None
+            return context.entity_uri
+        # From settings
+        entity_uris = self.list_entity_uris()
+        if len(entity_uris) <= 1:  # Only 'from_context' means no real URIs
+            return None
+        if len(entity_uri_raw) == 0:
+            return Uri.parse_unsafe(entity_uris[1])  # Skip 'from_context'
+        if entity_uri_raw not in entity_uris:  # Compare strings
+            return None
+        return Uri.parse_unsafe(entity_uri_raw)
 
     def get_department_name(self) -> str | None:
         department_names = self.list_department_names()
@@ -245,15 +221,9 @@ class ImportLayer(ns.Node):
     def get_include_layerbreak(self) -> bool:
         return bool(self.parm('include_layerbreak').eval())
 
-    def set_entity_source(self, entity_source: str):
-        valid_sources = ['from_context', 'from_settings']
-        if entity_source not in valid_sources:
-            return
-        self.parm('entity_source').set(entity_source)
-
     def set_entity_uri(self, entity_uri: Uri):
         entity_uris = self.list_entity_uris()
-        if entity_uri not in entity_uris:
+        if str(entity_uri) not in entity_uris:  # Compare strings
             return
         self.parm('entity').set(str(entity_uri))
 
@@ -276,7 +246,17 @@ class ImportLayer(ns.Node):
     def set_include_layerbreak(self, include_layerbreak: bool):
         self.parm('include_layerbreak').set(int(include_layerbreak))
 
+    def _update_labels(self):
+        """Update label parameters to show resolved values when 'from_context' is selected."""
+        entity_raw = self.parm('entity').eval()
+        if entity_raw == 'from_context':
+            entity_uri = self.get_entity_uri()
+            self.parm('entity_label').set(str(entity_uri) if entity_uri else '')
+        else:
+            self.parm('entity_label').set('')
+
     def execute(self):
+        self._update_labels()
         return self._import_layer()
 
     def _get_layer_file_name(self) -> str | None:
@@ -401,16 +381,13 @@ def on_created(raw_node):
         return
     node = ImportLayer(raw_node)
 
-    # Parse scene file path
+    # Parse scene file path - if no context, set first available entity
     file_path = Path(hou.hipFile.path())
     context = get_workfile_context(file_path)
     if context is None:
-        node.set_entity_source('from_settings')
-
-    # Always set default entity
-    entity_uris = node.list_entity_uris()
-    if entity_uris:
-        node.set_entity_uri(entity_uris[0])
+        entity_uris = node.list_entity_uris()
+        if len(entity_uris) > 1:  # Skip 'from_context'
+            node.set_entity_uri(Uri.parse_unsafe(entity_uris[1]))
 
 def execute():
     raw_node = hou.pwd()

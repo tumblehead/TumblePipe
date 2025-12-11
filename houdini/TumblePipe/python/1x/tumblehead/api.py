@@ -3,6 +3,7 @@ import importlib.util
 import platform
 import getpass
 import os
+import threading
 
 def _load_module(path: Path):
     spec = importlib.util.spec_from_file_location(path.stem, path)
@@ -109,8 +110,57 @@ def get_pipeline_path():
 def get_config_path():
     return _env('TH_CONFIG_PATH')
 
+# Module-level singleton instance with thread safety
+_default_client_instance = None
+_default_client_lock = threading.Lock()
+
 def default_client():
-    project_path = _env('TH_PROJECT_PATH')
-    pipeline_path = _env('TH_PIPELINE_PATH')
-    config_path = _env('TH_CONFIG_PATH')
-    return Client(project_path, pipeline_path, config_path)
+    """Return the global shared API client instance.
+
+    Implements thread-safe lazy singleton pattern using double-checked locking.
+    First call creates instance, subsequent calls return the same instance.
+    This ensures all modules share the same cached data.
+
+    To reset the client (e.g., when switching projects), call reset_default_client().
+    """
+    global _default_client_instance
+    if _default_client_instance is None:
+        with _default_client_lock:
+            # Double-check after acquiring lock
+            if _default_client_instance is None:
+                project_path = _env('TH_PROJECT_PATH')
+                pipeline_path = _env('TH_PIPELINE_PATH')
+                config_path = _env('TH_CONFIG_PATH')
+                _default_client_instance = Client(project_path, pipeline_path, config_path)
+    return _default_client_instance
+
+def reset_default_client():
+    """Reset the global client instance.
+
+    Call this when environment variables change (e.g., switching projects)
+    to force creation of a new Client instance on the next default_client() call.
+    """
+    global _default_client_instance
+    with _default_client_lock:
+        _default_client_instance = None
+
+def refresh_global_cache(purpose: str | None = None):
+    """Refresh the global API client's cache from disk.
+
+    Args:
+        purpose: Specific cache purpose to refresh (e.g., 'entity', 'schemas').
+                 If None, refreshes all known cache purposes.
+
+    This is the recommended way to refresh cache data after external changes
+    (e.g., Database Editor modifications in another process).
+    """
+    client = default_client()
+    if purpose is not None:
+        client.config.refresh_cache(purpose)
+    else:
+        # Refresh all known purposes
+        for p in ['entity', 'schemas', 'departments', 'groups', 'config', 'farm', 'scenes', 'defaults']:
+            try:
+                client.config.refresh_cache(p)
+            except Exception:
+                pass  # Some purposes may not exist

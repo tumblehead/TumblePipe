@@ -11,9 +11,9 @@ from tumblehead.api import (
     default_client
 )
 from tumblehead.config.timeline import FrameRange
+from tumblehead.config.farm import list_pools
 from tumblehead.util.io import store_json
 from tumblehead.util.uri import Uri
-from tumblehead.apps.deadline import Deadline
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.houdini.util as util
 from tumblehead.pipe.paths import (
@@ -28,19 +28,7 @@ class LookdevStudio(ns.Node):
         super().__init__(native)
 
     def list_pool_names(self):
-        try: deadline = Deadline()
-        except: return []
-        pool_names = deadline.list_pools()
-        if len(pool_names) == 0: return []
-        defaults_uri = Uri.parse_unsafe('defaults:/houdini/lops/submit_render')
-        default_values = api.config.get_properties(defaults_uri)
-        if default_values is None: return []
-        if 'pools' not in default_values: return []
-        return [
-            pool_name
-            for pool_name in default_values['pools']
-            if pool_name in pool_names
-        ]
+        return [pool.name for pool in list_pools()]
     
     def get_frame_range(self):
         first_frame = self.parm('farm_frame_settingsx').eval()

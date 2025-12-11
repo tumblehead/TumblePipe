@@ -5,6 +5,7 @@ import traceback
 
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
+from tumblehead.api import refresh_global_cache
 
 
 class AsyncRefreshWorker(QThread):
@@ -72,6 +73,9 @@ class AsyncRefreshManager(QObject):
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
             self._worker.wait()
+
+        # Refresh the global cache from disk first to pick up external changes
+        refresh_global_cache()
 
         # Define refresh operations
         operations = []

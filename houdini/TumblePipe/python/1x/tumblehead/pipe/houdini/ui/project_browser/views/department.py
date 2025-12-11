@@ -186,6 +186,7 @@ class DepartmentBrowser(QtWidgets.QWidget):
         # Set column widths to match current layout
         header = self._table_view.horizontalHeader()
         self._table_view.setColumnWidth(DepartmentTableModel.COLUMN_VERSION, 60)
+        self._table_view.setColumnWidth(DepartmentTableModel.COLUMN_GROUP, 80)
         self._table_view.setColumnWidth(DepartmentTableModel.COLUMN_USER, 80)
         self._table_view.setColumnWidth(DepartmentTableModel.COLUMN_RELATIVE_TIME, 70)
         header.setStretchLastSection(False)
@@ -359,6 +360,7 @@ class DepartmentBrowser(QtWidgets.QWidget):
 
         # Check if the entity is valid
         if self._entity is None:
+            self._model.setEntityType(None)
             self._model.setContexts([])
             self._selection = None
             self._selected_row = -1
@@ -367,6 +369,9 @@ class DepartmentBrowser(QtWidgets.QWidget):
         def _latest_department_contexts():
             try:
                 entity_type = get_entity_type(self._entity)
+                # Pass entity type to model for group badge display
+                self._model.setEntityType(entity_type)
+
                 if entity_type == 'asset':
                     departments = list_departments('assets')
                     return [

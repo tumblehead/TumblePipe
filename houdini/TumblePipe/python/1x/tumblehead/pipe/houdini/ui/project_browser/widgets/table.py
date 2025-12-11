@@ -1,6 +1,183 @@
-from qtpy.QtCore import Qt
-from qtpy.QtGui import QColor, QPen
-from qtpy.QtWidgets import QTableView, QStyledItemDelegate, QStyle
+from qtpy.QtCore import Qt, QModelIndex, Signal, QItemSelectionModel, QRect
+from qtpy.QtGui import QColor, QPen, QBrush
+from qtpy.QtWidgets import QTableView, QStyledItemDelegate, QStyle, QAbstractItemView
+
+from ..models.department import DepartmentTableModel
+
+
+class CellSelectionTableView(QTableView):
+    """QTableView with cell-level selection and hover tracking.
+
+    Features:
+    - Single-click selects, double-click edits
+    - Selection restricted to same column only
+    - Shift+click for range selection within column
+    - Ctrl+click to toggle individual cells within column
+    """
+
+    cell_hover_changed = Signal(QModelIndex)
+    selection_column_changed = Signal(int)  # Emitted when selection moves to different column
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMouseTracking(True)
+        self._hover_index = QModelIndex()  # Invalid by default
+        self._selection_column = -1  # Track which column has selection
+
+        # Cell-based selection
+        self.setSelectionBehavior(QAbstractItemView.SelectItems)
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+
+        # Double-click to edit (not single-click)
+        self.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+
+    def mouseMoveEvent(self, event):
+        """Track which cell is being hovered."""
+        index = self.indexAt(event.pos())
+        if index.isValid():
+            if index != self._hover_index:
+                old_index = self._hover_index
+                self._hover_index = index
+
+                # Update old hover cell
+                if old_index.isValid():
+                    self.update(old_index)
+
+                # Update new hover cell
+                self.update(index)
+                self.cell_hover_changed.emit(index)
+        else:
+            self._clear_hover()
+
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        """Clear hover when mouse leaves the view."""
+        self._clear_hover()
+        super().leaveEvent(event)
+
+    def _clear_hover(self):
+        """Clear the hover state."""
+        if self._hover_index.isValid():
+            old_index = self._hover_index
+            self._hover_index = QModelIndex()
+            self.update(old_index)
+            self.cell_hover_changed.emit(QModelIndex())
+
+    def get_hover_index(self):
+        """Get the currently hovered cell index."""
+        return self._hover_index
+
+    def get_hover_row(self):
+        """Compatibility method - returns hover row or -1."""
+        if self._hover_index.isValid():
+            return self._hover_index.row()
+        return -1
+
+    def mousePressEvent(self, event):
+        """Handle mouse press with same-column selection enforcement."""
+        index = self.indexAt(event.pos())
+        if not index.isValid():
+            return super().mousePressEvent(event)
+
+        # Skip entity column (column 0) for selection
+        if index.column() == 0:
+            return super().mousePressEvent(event)
+
+        current_selection = self.selectionModel().selectedIndexes()
+        modifiers = event.modifiers()
+
+        # If we have existing selection and clicking a different column
+        if current_selection:
+            existing_col = current_selection[0].column()
+            if index.column() != existing_col:
+                # Without Ctrl, clear selection and start fresh in new column
+                if not (modifiers & Qt.ControlModifier):
+                    self.clearSelection()
+                    self._selection_column = index.column()
+                    self.selection_column_changed.emit(self._selection_column)
+                else:
+                    # With Ctrl on different column, ignore click for selection purposes
+                    # but still allow focus to move
+                    self.setCurrentIndex(index)
+                    return
+        else:
+            # No existing selection, set the column
+            self._selection_column = index.column()
+            self.selection_column_changed.emit(self._selection_column)
+
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        """Start editing while preserving multi-cell selection."""
+        index = self.indexAt(event.pos())
+        if not index.isValid() or index.column() == 0:
+            return super().mouseDoubleClickEvent(event)
+
+        # Save current selection before edit (Qt clears it by default)
+        saved_selection = list(self.selectionModel().selectedIndexes())
+
+        # Start editing
+        self.edit(index)
+
+        # Restore selection
+        for idx in saved_selection:
+            self.selectionModel().select(idx, QItemSelectionModel.Select)
+
+    def keyPressEvent(self, event):
+        """Handle keyboard navigation."""
+        current = self.currentIndex()
+
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            # Start editing current cell (if not entity column)
+            if current.isValid() and current.column() > 0:
+                # Save selection before edit
+                saved_selection = list(self.selectionModel().selectedIndexes())
+                self.edit(current)
+                # Restore selection
+                for idx in saved_selection:
+                    self.selectionModel().select(idx, QItemSelectionModel.Select)
+                return
+
+        elif event.key() == Qt.Key_Tab:
+            # Move to next editable cell
+            if current.isValid():
+                next_col = current.column() + 1
+                if next_col < self.model().columnCount():
+                    next_index = self.model().index(current.row(), next_col)
+                    self.setCurrentIndex(next_index)
+                    self.clearSelection()
+                    self.selectionModel().select(next_index, QItemSelectionModel.Select)
+                    self._selection_column = next_col
+                    return
+
+        elif event.key() == Qt.Key_Backtab:
+            # Move to previous editable cell
+            if current.isValid():
+                prev_col = current.column() - 1
+                if prev_col > 0:  # Skip entity column
+                    prev_index = self.model().index(current.row(), prev_col)
+                    self.setCurrentIndex(prev_index)
+                    self.clearSelection()
+                    self.selectionModel().select(prev_index, QItemSelectionModel.Select)
+                    self._selection_column = prev_col
+                    return
+
+        super().keyPressEvent(event)
+
+    def get_selection_column(self):
+        """Get the column index of the current selection."""
+        return self._selection_column
+
+    def get_selected_cells_in_column(self):
+        """Get list of (row, col) tuples for selected cells in the current selection column."""
+        selected = self.selectionModel().selectedIndexes()
+        if not selected:
+            return []
+
+        # Filter to only cells in the selection column
+        col = self._selection_column
+        return [(idx.row(), idx.column()) for idx in selected if idx.column() == col]
 
 
 class RowHoverTableView(QTableView):
@@ -117,7 +294,11 @@ class DepartmentItemDelegate(QStyledItemDelegate):
         # Draw the text content
         painter.setPen(text_color)
         text = index.data(Qt.DisplayRole)
-        if text:
+
+        # Special rendering for group column - draw pill badge
+        if index.column() == DepartmentTableModel.COLUMN_GROUP and text:
+            self._draw_group_badge(painter, rect, str(text))
+        elif text:
             text_rect = rect.adjusted(5, 0, -5, 0)  # Add padding
             alignment = index.data(Qt.TextAlignmentRole)
             if alignment is None:
@@ -136,6 +317,28 @@ class DepartmentItemDelegate(QStyledItemDelegate):
             painter.drawText(text_rect, alignment, str(text))
 
         painter.restore()
+
+    def _draw_group_badge(self, painter, rect, text):
+        """Draw a pill-shaped badge with group name"""
+        # Calculate badge size based on text
+        font_metrics = painter.fontMetrics()
+        text_width = font_metrics.horizontalAdvance(text)
+        badge_width = text_width + 12  # padding
+        badge_height = 18
+
+        # Center badge in cell
+        badge_x = rect.x() + (rect.width() - badge_width) // 2
+        badge_y = rect.y() + (rect.height() - badge_height) // 2
+        badge_rect = QRect(badge_x, badge_y, badge_width, badge_height)
+
+        # Draw pill background
+        painter.setBrush(QBrush(QColor("#4a6fa5")))  # Blue-ish color
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(badge_rect, badge_height // 2, badge_height // 2)
+
+        # Draw text
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(badge_rect, Qt.AlignCenter, text)
 
 
 class VersionItemDelegate(QStyledItemDelegate):

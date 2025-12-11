@@ -390,6 +390,7 @@ class Deadline:
         assert not job_path.exists(), f'Job path already exists: {job_path}'
         job_path.mkdir(parents = True)
         job_data_path = job_path / 'data'
+        job_data_path.mkdir(parents=True, exist_ok=True)
         logging.debug(f'Creating job path: {job_path}')
 
         # Job creation order
@@ -445,7 +446,9 @@ class Deadline:
                 str(to_windows_path(job_info_path)),
                 str(to_windows_path(plugin_info_path))
             ]))
-    
+
+        return list(job_ids.values())
+
     def maintenance(self):
         root_path = Path(__file__).parent.parent
         task_path = (

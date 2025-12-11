@@ -26,7 +26,8 @@ from tumblehead.config.variants import DEFAULT_VARIANT
 from tumblehead.config.department import list_departments
 from tumblehead.pipe.paths import (
     latest_export_path,
-    get_layer_file_name
+    get_layer_file_name,
+    get_scene_latest_path
 )
 import tumblehead.pipe.context as ctx
 
@@ -365,7 +366,8 @@ def resolve_shot_build(
         asset_inputs = dict()  # Track inputs per asset for staged output
 
         # First pass: collect all assets and their sources from each department
-        dept_asset_data = {}  # {dept: [(asset_uri, instance, inputs), ...]}
+        dept_asset_data = {}  # {dept: [(asset_uri, instance, inputs, version_path), ...]}
+        dept_version_paths = {}  # {dept: version_path} - track paths separately for layers without assets
         for department_name in shot_departments:
             # Find latest layer version (with variant support)
             latest_version_path = _get_latest_export_path(shot_uri, variant_name, department_name)
@@ -387,6 +389,9 @@ def resolve_shot_build(
             if layer_info is None:
                 continue
 
+            # Store version path for this department (even if no assets)
+            dept_version_paths[department_name] = latest_version_path
+
             # Collect assets with their inputs
             dept_asset_data[department_name] = []
             for asset_datum in layer_info['parameters'].get('assets', []):
@@ -403,10 +408,10 @@ def resolve_shot_build(
         # Second pass: filter assets by source department
         for department_name, assets in dept_asset_data.items():
             layer_assets = dict()
-            latest_version_path = None
+            # Use stored version path (works even if no assets in this department)
+            latest_version_path = dept_version_paths.get(department_name)
 
             for asset_uri, instance_name, inputs, version_path in assets:
-                latest_version_path = version_path
 
                 # Determine source department from inputs
                 source_dept = get_source_department(inputs, all_shot_departments)
@@ -483,6 +488,35 @@ def resolve_shot_build(
         root_layer_path = root_version_path / layer_file_name
         if root_layer_path.exists():
             root_layer = root_layer_path
+
+        # Extract assets by following scene reference in root layer context.json
+        # Root layer context has: {parameters: {scene: "scenes:/..."}}
+        # We follow this reference to get current assets (so scene changes don't require root regeneration)
+        root_context_path = root_version_path / 'context.json'
+        root_context_data = load_json(root_context_path)
+        if root_context_data is not None:
+            scene_ref = root_context_data.get('parameters', {}).get('scene')
+            if scene_ref is not None:
+                # Follow scene reference to get current assets
+                scene_uri = Uri.parse_unsafe(scene_ref)
+                scene_path = get_scene_latest_path(scene_uri)
+                if scene_path is not None:
+                    scene_context_path = scene_path.parent / 'context.json'
+                    scene_context_data = load_json(scene_context_path)
+                    if scene_context_data is not None:
+                        for asset_datum in scene_context_data.get('parameters', {}).get('assets', []):
+                            asset_uri = Uri.parse_unsafe(asset_datum['asset'])
+                            asset_name = asset_uri.segments[-1]  # Use asset name as instance
+                            variant = asset_datum.get('variant', DEFAULT_VARIANT)
+
+                            # Add to assets if not already present
+                            if asset_uri not in assets:
+                                assets[asset_uri] = set()
+                            assets[asset_uri].add(asset_name)
+
+                            # Store variant for this asset
+                            if asset_uri not in asset_variants:
+                                asset_variants[asset_uri] = variant
 
     # Done
     return dict(

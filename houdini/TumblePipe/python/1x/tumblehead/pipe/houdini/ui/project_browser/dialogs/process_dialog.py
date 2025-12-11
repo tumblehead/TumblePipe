@@ -5,7 +5,7 @@ from typing import Callable
 from qtpy import QtWidgets
 from qtpy.QtCore import Qt, Signal
 
-from ..models.process_task import ProcessTask, ProcessTaskTreeModel, TaskStatus, TASK_ROLE, IS_ENTITY_ROLE
+from ..models.process_task import ProcessTask, ProcessTaskTreeModel, TaskStatus, TASK_ROLE, IS_ENTITY_ROLE, ENTITY_URI_ROLE
 from ..utils.process_executor import ProcessExecutor
 
 
@@ -20,6 +20,7 @@ class ProcessDialog(QtWidgets.QDialog):
         tasks: list[ProcessTask],
         current_department: str | None = None,
         pre_execute_callback: Callable[[], None] | None = None,
+        initial_enabled_task_ids: set[str] | None = None,
         parent=None
     ):
         super().__init__(parent)
@@ -29,8 +30,15 @@ class ProcessDialog(QtWidgets.QDialog):
         self._pre_execute_callback = pre_execute_callback
         self._current_department = current_department
 
+        # Apply initial enablement if provided (selective task enabling)
+        if initial_enabled_task_ids is not None:
+            for task in tasks:
+                task.enabled = task.id in initial_enabled_task_ids
+
         # Setup model (tree model groups tasks by entity)
         self._model = ProcessTaskTreeModel()
+        # Set initial enabled task IDs on model BEFORE set_tasks so set_mode_filter respects them
+        self._model.set_initial_enabled_task_ids(initial_enabled_task_ids)
         self._model.set_tasks(tasks)
 
         # Setup UI
@@ -64,7 +72,7 @@ class ProcessDialog(QtWidgets.QDialog):
         self._tree_view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._tree_view.setAlternatingRowColors(True)
         self._tree_view.setExpandsOnDoubleClick(True)
-        self._tree_view.expandAll()  # Start with all entities expanded
+        self._expand_enabled_entities()  # Expand only enabled entities (or all if no selective enablement)
 
         # Enable context menu for "Open Location"
         self._tree_view.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -76,7 +84,7 @@ class ProcessDialog(QtWidgets.QDialog):
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)  # Task
         header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)  # Department
         header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)  # Version
-        header.setSectionResizeMode(3, QtWidgets.QHeaderView.Fixed)  # Status
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)  # Status
         self._tree_view.setColumnWidth(3, 60)  # Status column
 
         layout.addWidget(self._tree_view)
@@ -138,6 +146,32 @@ class ProcessDialog(QtWidgets.QDialog):
         button_layout.addWidget(self._cancel_button)
 
         layout.addLayout(button_layout)
+
+    def _expand_enabled_entities(self):
+        """Expand only entities that have enabled tasks, collapse others.
+
+        If no selective enablement (initial_enabled_task_ids is None), expand all.
+        """
+        # If no selective enablement (Publish button), expand all
+        if self._model._initial_enabled_task_ids is None:
+            self._tree_view.expandAll()
+            return
+
+        # Collapse all first
+        self._tree_view.collapseAll()
+
+        # Get entities with enabled tasks
+        enabled_uris = self._model.get_enabled_entity_uris()
+
+        # Expand only entities with enabled tasks
+        root = self._model.invisibleRootItem()
+        for row in range(root.rowCount()):
+            entity_item = root.child(row, 0)
+            if entity_item:
+                uri_str = entity_item.data(ENTITY_URI_ROLE)
+                if uri_str in enabled_uris:
+                    index = self._model.indexFromItem(entity_item)
+                    self._tree_view.expand(index)
 
     def _connect_signals(self):
         """Connect executor signals to UI updates"""
