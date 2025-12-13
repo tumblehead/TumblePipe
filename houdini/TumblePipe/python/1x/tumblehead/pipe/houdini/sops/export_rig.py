@@ -16,6 +16,7 @@ from tumblehead.pipe.paths import (
     get_rig_export_path,
     get_workfile_context
 )
+from tumblehead.config.variants import list_variants
 
 api = default_client()
 
@@ -24,26 +25,60 @@ class ExportRig(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_asset_uris(self) -> list[Uri]:
+    def list_entity_uris(self) -> list[str]:
+        """List entity URIs as strings, with 'from_context' as first option."""
         asset_entities = api.config.list_entities(
             filter = Uri.parse_unsafe('entity:/assets'),
             closure = True
         )
-        return [entity.uri for entity in asset_entities]
+        uris = [str(entity.uri) for entity in asset_entities]
+        return ['from_context'] + uris
 
-    def get_asset_uri(self) -> Uri | None:
-        asset_uris = self.list_asset_uris()
-        if len(asset_uris) == 0: return None
-        asset_uri_raw = self.parm('asset').eval()
-        if len(asset_uri_raw) == 0: return asset_uris[0]
-        asset_uri = Uri.parse_unsafe(asset_uri_raw)
-        if asset_uri not in asset_uris: return None
-        return asset_uri
+    def get_entity_uri(self) -> Uri | None:
+        entity_uri_raw = self.parm('entity').eval()
+        if entity_uri_raw == 'from_context':
+            file_path = Path(hou.hipFile.path())
+            context = get_workfile_context(file_path)
+            if context is None:
+                return None
+            # Verify it's an asset entity
+            if context.entity_uri.segments[0] != 'assets':
+                return None
+            return context.entity_uri
+        # From settings
+        entity_uris = self.list_entity_uris()
+        if len(entity_uris) <= 1:  # Only 'from_context' means no real URIs
+            return None
+        if len(entity_uri_raw) == 0:
+            return Uri.parse_unsafe(entity_uris[1])  # Skip 'from_context'
+        if entity_uri_raw not in entity_uris:
+            return None
+        return Uri.parse_unsafe(entity_uri_raw)
 
-    def set_asset_uri(self, asset_uri: Uri):
-        asset_uris = self.list_asset_uris()
-        if asset_uri not in asset_uris: return
-        self.parm('asset').set(str(asset_uri))
+    def set_entity_uri(self, entity_uri: Uri):
+        entity_uris = self.list_entity_uris()
+        uri_str = str(entity_uri)
+        if uri_str not in entity_uris:
+            return
+        self.parm('entity').set(uri_str)
+
+    def get_department_name(self) -> str:
+        return 'rig'
+
+    def list_variant_names(self) -> list[str]:
+        """List available variant names for current asset."""
+        entity_uri = self.get_entity_uri()
+        if entity_uri is None:
+            return ['default']
+        return list_variants(entity_uri)
+
+    def get_variant_name(self) -> str:
+        """Get selected variant name, defaults to 'default'."""
+        variant_names = self.list_variant_names()
+        variant_name = self.parm('variant').eval()
+        if not variant_name or variant_name not in variant_names:
+            return 'default'
+        return variant_name
 
     def execute(self, force_local: bool = False):
         """
@@ -67,14 +102,15 @@ class ExportRig(ns.Node):
         export_node = context.node('export')
 
         # Parameters
-        asset_uri = self.get_asset_uri()
-        export_path = get_rig_export_path(asset_uri)
+        entity_uri = self.get_entity_uri()
+        variant_name = self.get_variant_name()
+        export_path = get_rig_export_path(entity_uri, variant_name)
         version_path = get_next_version_path(export_path)
         version_name = version_path.name
         timestamp = dt.datetime.now().isoformat()
 
         # Prepare rig export
-        rig_file_name = '_'.join(asset_uri.segments[1:] + ['rig', version_name]) + '.bgeo.sc'
+        rig_file_name = '_'.join(entity_uri.segments[1:] + ['rig', version_name]) + '.bgeo.sc'
         output_file_path = version_path / rig_file_name
         export_node.parm('file').set(path_str(output_file_path))
 
@@ -87,7 +123,7 @@ class ExportRig(ns.Node):
         context = dict(
             inputs = [],
             outputs = [dict(
-                uri = str(asset_uri),
+                uri = str(entity_uri),
                 department = 'rig',
                 version = version_name,
                 timestamp = timestamp,
@@ -121,13 +157,21 @@ def on_created(raw_node):
     if raw_node_type != node_type: return
     node = ExportRig(raw_node)
 
-    # Parse scene file path
+    # Parse scene file path - if no context, set first available asset
     file_path = Path(hou.hipFile.path())
     context = get_workfile_context(file_path)
-    if context is None: return
+    if context is None:
+        entity_uris = node.list_entity_uris()
+        if len(entity_uris) > 1:  # Skip 'from_context'
+            node.set_entity_uri(Uri.parse_unsafe(entity_uris[1]))
+        return
 
-    # Set the default values from context
-    node.set_asset_uri(context.entity_uri)
+    # Default is 'from_context', which will resolve from workfile context
+    # Only need to set explicitly if not an asset workfile
+    if context.entity_uri.segments[0] != 'assets':
+        entity_uris = node.list_entity_uris()
+        if len(entity_uris) > 1:  # Skip 'from_context'
+            node.set_entity_uri(Uri.parse_unsafe(entity_uris[1]))
 
 def execute():
     raw_node = hou.pwd()

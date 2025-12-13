@@ -39,6 +39,7 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         self.tree_view = QtWidgets.QTreeView()
         self.tree_view.setHeaderHidden(False)
         self.tree_view.setMinimumHeight(0)
+        self.tree_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         layout.addWidget(self.tree_view)
 
         # Emit clicked signal
@@ -542,55 +543,62 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         self._open_context = None
         self._clear_qt_selection()
 
-        # Safely disconnect old model
-        old_model = self.tree_view.model()
-        if old_model is not None:
-            selection_model = self.tree_view.selectionModel()
-            if selection_model is not None:
+        # Block signals during model transition to prevent stale signal handling
+        self.tree_view.blockSignals(True)
+        try:
+            # Safely disconnect and clean up old model
+            old_model = self.tree_view.model()
+            if old_model is not None:
+                selection_model = self.tree_view.selectionModel()
+                if selection_model is not None:
+                    try:
+                        selection_model.selectionChanged.disconnect(self._selection_changed)
+                    except (TypeError, RuntimeError):
+                        # Signal wasn't connected or already disconnected
+                        pass
+                    selection_model.clear()  # Clear any pending selections
+                old_model.deleteLater()
+                # Process events to ensure old model is fully cleaned up before configuring new header
+                QtWidgets.QApplication.processEvents()
+
+            # Create and set the new model
+            new_model = _create_workspace_model(self._api)
+            self.tree_view.setModel(new_model)
+            self.tree_view.setUniformRowHeights(True)
+
+            # Configure column sizing - all columns auto-fit to content, horizontal scroll if needed
+            header = self.tree_view.header()
+            if header is not None and header.count() > 0:
+                header.setStretchLastSection(False)
+                header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)  # Name auto-fits
+                header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)  # Scene auto-fits
+                header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)  # Group fills remaining space
+
+            # Restore tree expansion state first (before selection)
+            if preserved_state:
                 try:
-                    selection_model.selectionChanged.disconnect(self._selection_changed)
-                except (TypeError, RuntimeError):
-                    # Signal wasn't connected or already disconnected
+                    self._set_tree_state(preserved_state)
+                except (AttributeError, IndexError, TypeError):
+                    # State restoration failed, continue without it
                     pass
-            old_model.deleteLater()
 
-        # Create and set the new model
-        new_model = _create_workspace_model(self._api)
-        self.tree_view.setModel(new_model)
-        self.tree_view.setUniformRowHeights(True)
+            # Restore open context first (purple brush)
+            if preserved_context is not None:
+                try:
+                    self.set_open_context(preserved_context)
+                except (AttributeError, ValueError):
+                    self._open_context = None
 
-        # Configure column sizing - Name stretches, others are interactive (user can resize)
-        header = self.tree_view.header()
-        header.setStretchLastSection(False)  # Don't stretch Group column
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)  # Name stretches
-        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)  # Scene - user resizable
-        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Interactive)  # Group - user resizable
-        header.resizeSection(1, 120)  # Set initial Scene column width
-        header.resizeSection(2, 100)  # Set initial Group column width
+            # Restore selection second (Qt handles orange highlight)
+            if preserved_selection is not None:
+                try:
+                    self.select(preserved_selection)
+                except (AttributeError, ValueError):
+                    self._selection = None
 
-        # Restore tree expansion state first (before selection)
-        if preserved_state:
-            try:
-                self._set_tree_state(preserved_state)
-            except (AttributeError, IndexError, TypeError):
-                # State restoration failed, continue without it
-                pass
-
-        # Restore open context first (purple brush)
-        if preserved_context is not None:
-            try:
-                self.set_open_context(preserved_context)
-            except (AttributeError, ValueError):
-                self._open_context = None
-
-        # Restore selection second (Qt handles orange highlight)
-        if preserved_selection is not None:
-            try:
-                self.select(preserved_selection)
-            except (AttributeError, ValueError):
-                self._selection = None
-
-        # Connect signals for new model
-        new_selection_model = self.tree_view.selectionModel()
-        if new_selection_model is not None:
-            new_selection_model.selectionChanged.connect(self._selection_changed)
+            # Connect signals for new model
+            new_selection_model = self.tree_view.selectionModel()
+            if new_selection_model is not None:
+                new_selection_model.selectionChanged.connect(self._selection_changed)
+        finally:
+            self.tree_view.blockSignals(False)

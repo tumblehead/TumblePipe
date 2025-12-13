@@ -127,7 +127,7 @@ def cli():
         return _error(f'Invalid entity type: {shot_uri.segments[0]} (expected shots)')
 
     # Check the render department name
-    render_department_names = api.config.list_render_department_names()
+    render_department_names = [d.name for d in list_departments('render')]
     render_department_name = args.render_department_name
     if render_department_name not in render_department_names:
         return _error(

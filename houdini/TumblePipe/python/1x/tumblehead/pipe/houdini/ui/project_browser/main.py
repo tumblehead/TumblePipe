@@ -237,6 +237,14 @@ class ProjectBrowser(QtWidgets.QWidget):
 
     def _global_refresh(self):
         """Enhanced global refresh with state preservation and user feedback"""
+        # Skip auto-refresh if user is actively editing (has focus on an input widget)
+        from qtpy.QtWidgets import QApplication, QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit, QPlainTextEdit
+        focus_widget = QApplication.focusWidget()
+        if focus_widget is not None:
+            input_types = (QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit, QPlainTextEdit)
+            if isinstance(focus_widget, input_types):
+                return  # Skip this refresh cycle - will try again in 60 seconds
+
         # Check if async refresh is already running
         if hasattr(self, '_refresh_in_progress') and self._refresh_in_progress:
             return
@@ -637,7 +645,7 @@ class ProjectBrowser(QtWidgets.QWidget):
         if uri is None:
             return
         purpose = uri.purpose
-        if purpose == 'entity':
+        if purpose in ('entity', 'groups'):
             self._workspace_browser.refresh()
         elif purpose == 'departments':
             self._department_browser.refresh()
@@ -720,6 +728,8 @@ class ProjectBrowser(QtWidgets.QWidget):
                 location_path = api.storage.resolve(Uri.parse_unsafe(f"assets:/{uri}"))
             case "shots":
                 location_path = api.storage.resolve(Uri.parse_unsafe(f"shots:/{uri}"))
+            case "groups":
+                location_path = api.storage.resolve(Uri.parse_unsafe(f"groups:/{uri}"))
         location_path.mkdir(parents=True, exist_ok=True)
         self._open_location_path(location_path)
 
@@ -791,9 +801,13 @@ class ProjectBrowser(QtWidgets.QWidget):
                 location_path = api.storage.resolve(Uri.parse_unsafe(
                     f"shots:/{entity_path}/{department_name}"
                 ))
+            case "groups":
+                location_path = api.storage.resolve(Uri.parse_unsafe(
+                    f"groups:/{entity_path}/{department_name}"
+                ))
         location_path.mkdir(parents=True, exist_ok=True)
         self._open_location_path(location_path)
-        
+
     def _department_reload_scene(self, _context):
         if self._selected_entity is None:
             return
@@ -887,6 +901,9 @@ class ProjectBrowser(QtWidgets.QWidget):
             if selected_context.version_name is None
             else file_path_from_context(selected_context)
         )
+        # Fall back to next file path if the specified version doesn't exist
+        if file_path is None:
+            file_path = next_file_path(selected_context)
 
         # Set the update mode to manual
         with util.update_mode(hou.updateMode.Manual):
@@ -1647,8 +1664,9 @@ class ProjectBrowser(QtWidgets.QWidget):
         else:
             util.set_block_range(BlockRange(1001, 1200))
 
-        # Set FPS from project config
-        fps = get_fps()
+        # Set FPS from entity config (with project fallback)
+        entity_uri = self._context.entity_uri if self._context is not None else None
+        fps = get_fps(entity_uri)
         if fps is not None:
             util.set_fps(fps)
 

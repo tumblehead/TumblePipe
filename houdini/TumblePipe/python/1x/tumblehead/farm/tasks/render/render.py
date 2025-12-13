@@ -169,6 +169,7 @@ def main(
 
         # Split AOVs into separate stacks
         _headline('Splitting AOVs')
+        print(f'Expected AOV names from config: {list(output_paths.keys())}')
         framestack_aov_paths = dict()
         for frame_index in render_range:
 
@@ -183,6 +184,9 @@ def main(
             if split_frame_paths is None:
                 return _error(f'Failed to split frame: {current_frame_path}')
 
+            # Log found AOV names
+            print(f'Found AOV names in EXR: {list(split_frame_paths.keys())}')
+
             # Store the paths
             aov_paths = dict()
             for aov_name, temp_aov_path in split_frame_paths.items():
@@ -193,6 +197,14 @@ def main(
                     _get_frame_path(output_aov_path, frame_index)
                 )
             framestack_aov_paths[frame_index] = aov_paths
+
+        # Check if any AOVs matched
+        total_matched = sum(len(paths) for paths in framestack_aov_paths.values())
+        if total_matched == 0:
+            print('WARNING: No AOVs matched between config and EXR!')
+            print(f'  Config AOVs: {list(output_paths.keys())}')
+            if split_frame_paths:
+                print(f'  EXR AOVs: {list(split_frame_paths.keys())}')
 
         # Copy frames to network
         _headline('Copying files to network')

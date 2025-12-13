@@ -21,6 +21,12 @@ from tumblehead.pipe.paths import (
 api = default_client()
 
 
+def _clear_dive(dive_node):
+    """Clear all child nodes from a subnet."""
+    for node in dive_node.children():
+        node.destroy()
+
+
 def _save_context_file(export_path: Path, entity_uri: Uri, department_name: str):
     """Save context.json with export metadata."""
     context_path = export_path / 'context.json'
@@ -165,15 +171,22 @@ class LayerSplit(ns.Node):
         if export_subnet is None:
             raise ValueError('Export subnetwork not found')
 
-        export_node = export_subnet.node('usd_rop')
-        if export_node is None:
-            raise ValueError('USD ROP not found in export subnetwork')
+        # Clear existing nodes and create fresh export node
+        _clear_dive(export_subnet)
 
-        # Configure export node
+        # Get input connection
+        input_node = export_subnet.indirectInputs()[0]
+
+        # Create export node
+        export_node = export_subnet.createNode('rop_usd', 'usd_rop')
+        export_node.setInput(0, input_node)
+
+        # Configure and execute export
         export_node.parm('lopoutput').set(path_str(file_path))
-
-        # Execute export
         export_node.parm('execute').pressButton()
+
+        # Layout the export subnet
+        export_subnet.layoutChildren()
 
         # Save context file
         _save_context_file(export_path, entity_uri, department_name)

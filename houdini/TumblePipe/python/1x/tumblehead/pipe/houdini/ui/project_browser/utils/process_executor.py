@@ -483,10 +483,16 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
     dept_order = {dept: i for i, dept in enumerate(departments)}
     asset_export_nodes.sort(key=lambda n: dept_order.get(n.get_department_name(), 999))
 
+    # Collect unique variants from export nodes
+    variants_found = set()
+
     for export_node in asset_export_nodes:
         asset_uri = export_node.get_entity_uri()
         dept = export_node.get_department_name()
         variant = export_node.get_variant_name()
+
+        # Track variants for build tasks
+        variants_found.add(variant)
 
         export_path = latest_export_path(asset_uri, variant, dept)
         version = _get_version_from_path(export_path)
@@ -498,6 +504,7 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
             uri=asset_uri,
             department=dept,
             task_type='export',
+            variant=variant,
             description=f"Export {_uri_name(asset_uri)}",
             current_version=version,
             execute_local=lambda n=node_ref: n.execute(force_local=True),
@@ -505,11 +512,12 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
         )
         tasks.append(task)
 
-    # Add build task for this asset (after all exports)
+    # Add build task for EACH variant (after all exports)
     if asset_export_nodes:
         asset_uri = context.entity_uri
-        build_task = _create_build_task(asset_uri)
-        tasks.append(build_task)
+        for variant in sorted(variants_found):
+            build_task = _create_build_task(asset_uri, variant)
+            tasks.append(build_task)
 
     return tasks
 
@@ -519,7 +527,7 @@ def _collect_rig_publish_tasks(context: Context) -> list[ProcessTask]:
     tasks = []
 
     def _is_rig_export_correct(node):
-        asset_uri = node.get_asset_uri()
+        asset_uri = node.get_entity_uri()
         return asset_uri == context.entity_uri
 
     rig_export_nodes = list(
@@ -533,10 +541,10 @@ def _collect_rig_publish_tasks(context: Context) -> list[ProcessTask]:
     )
 
     for export_node in rig_export_nodes:
-        asset_uri = export_node.get_asset_uri()
+        asset_uri = export_node.get_entity_uri()
+        variant = export_node.get_variant_name()
 
-        # Rig exports use 'default' variant
-        export_path = latest_export_path(asset_uri, 'default', 'rig')
+        export_path = latest_export_path(asset_uri, variant, 'rig')
         version = _get_version_from_path(export_path)
 
         node_ref = export_node
@@ -546,6 +554,7 @@ def _collect_rig_publish_tasks(context: Context) -> list[ProcessTask]:
             uri=asset_uri,
             department='rig',
             task_type='export',
+            variant=variant,
             description=f"Export rig: {_uri_name(asset_uri)}",
             current_version=version,
             execute_local=lambda n=node_ref: n.execute(force_local=True),
@@ -567,32 +576,33 @@ def _uri_name(uri: Uri) -> str:
     return str(uri)
 
 
-def _get_build_version(shot_uri: Uri) -> str | None:
-    """Get the current build version for a shot"""
+def _get_build_version(entity_uri: Uri, variant_name: str = 'default') -> str | None:
+    """Get the current build version for an entity"""
     try:
-        build_path = current_staged_path(shot_uri)
+        build_path = current_staged_path(entity_uri, variant_name)
         return _get_version_from_path(build_path)
     except Exception:
         return None
 
 
-def _create_build_task(shot_uri: Uri) -> ProcessTask:
-    """Create a build task for a shot"""
-    version = _get_build_version(shot_uri)
+def _create_build_task(entity_uri: Uri, variant_name: str = 'default') -> ProcessTask:
+    """Create a build task for an entity (shot or asset)"""
+    version = _get_build_version(entity_uri, variant_name)
 
     return ProcessTask(
         id=str(uuid.uuid4()),
-        uri=shot_uri,
+        uri=entity_uri,
         department='staged',
         task_type='build',
-        description="Build USD",
+        variant=variant_name,
+        description=f"Build USD ({variant_name})",
         current_version=version,
-        execute_local=lambda uri=shot_uri: _execute_build_local(uri),
-        execute_farm=lambda uri=shot_uri: _execute_build_farm(uri),
+        execute_local=lambda uri=entity_uri, v=variant_name: _execute_build_local(uri, v),
+        execute_farm=lambda uri=entity_uri, v=variant_name: _execute_build_farm(uri, v),
     )
 
 
-def _execute_build_local(entity_uri: Uri):
+def _execute_build_local(entity_uri: Uri, variant_name: str = 'default'):
     """Execute build locally using build task.
 
     Handles both shots and assets:
@@ -607,7 +617,7 @@ def _execute_build_local(entity_uri: Uri):
     entity_type = get_entity_type(entity_uri)
 
     # Get the output file path for the build (includes .usda filename)
-    output_path = next_staged_file_path(entity_uri)
+    output_path = next_staged_file_path(entity_uri, variant_name)
 
     # Try to get frame range - works for both shots AND animated assets
     frame_range = get_frame_range(entity_uri)
@@ -618,6 +628,7 @@ def _execute_build_local(entity_uri: Uri):
     print('Build Task Debug Info')
     print('=' * 40)
     print(f'Entity URI: {entity_uri}')
+    print(f'Variant: {variant_name}')
     print(f'Entity type: {entity_type}')
     print(f'Output path: {output_path}')
     print(f'Frame range: {render_range}')
@@ -631,12 +642,12 @@ def _execute_build_local(entity_uri: Uri):
     # Assets: render_range is optional (animated assets have it, static don't)
 
     # Execute the build
-    result = build_task.main(entity_uri, output_path, render_range)
+    result = build_task.main(entity_uri, output_path, render_range, variant_name)
     if result != 0:
         raise RuntimeError(f"Build failed with exit code {result}")
 
 
-def _execute_build_farm(entity_uri: Uri):
+def _execute_build_farm(entity_uri: Uri, variant_name: str = 'default'):
     """Submit build job to farm.
 
     Handles both shots and assets.
@@ -646,6 +657,7 @@ def _execute_build_farm(entity_uri: Uri):
     # Prepare config for farm submission
     config = {
         'entity_uri': str(entity_uri),
+        'variant_name': variant_name,
         'priority': 50,  # Default priority
         'pool_name': 'houdini'  # Default pool
     }
@@ -731,19 +743,15 @@ def collect_tasks_for_export_node(
     # Enable clicked node's task
     clicked_uri = export_node.get_entity_uri()
     clicked_dept = export_node.get_department_name()
-
-    # Handle ExportRig which uses get_asset_uri instead of get_entity_uri
-    if clicked_uri is None and hasattr(export_node, 'get_asset_uri'):
-        clicked_uri = export_node.get_asset_uri()
-        clicked_dept = 'rig'
+    clicked_variant = export_node.get_variant_name() if hasattr(export_node, 'get_variant_name') else 'default'
 
     if clicked_uri is not None:
         for task in all_tasks:
             # Enable export task for clicked department
             if task.uri == clicked_uri and task.department == clicked_dept:
                 enabled_task_ids.add(task.id)
-            # Also enable build task for the same entity
-            elif task.uri == clicked_uri and task.task_type == 'build':
+            # Enable build task for the same entity AND variant
+            elif task.uri == clicked_uri and task.task_type == 'build' and task.variant == clicked_variant:
                 enabled_task_ids.add(task.id)
 
     # Enable upstream dependency tasks (and their build tasks)
@@ -751,10 +759,11 @@ def collect_tasks_for_export_node(
     for upstream_node in upstream_nodes:
         upstream_uri = upstream_node.get_entity_uri()
         upstream_dept = upstream_node.get_department_name()
+        upstream_variant = upstream_node.get_variant_name() if hasattr(upstream_node, 'get_variant_name') else 'default'
         for task in all_tasks:
             if task.uri == upstream_uri and task.department == upstream_dept:
                 enabled_task_ids.add(task.id)
-            elif task.uri == upstream_uri and task.task_type == 'build':
+            elif task.uri == upstream_uri and task.task_type == 'build' and task.variant == upstream_variant:
                 enabled_task_ids.add(task.id)
 
     return all_tasks, enabled_task_ids

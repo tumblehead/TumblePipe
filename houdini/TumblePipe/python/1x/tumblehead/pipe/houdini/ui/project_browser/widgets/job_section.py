@@ -288,8 +288,8 @@ class JobSectionWidget(QWidget):
         self._table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._table.setAlternatingRowColors(False)
         self._table.verticalHeader().setVisible(False)
-        self._table.horizontalHeader().setStretchLastSection(False)
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        header = self._table.horizontalHeader()
+        header.setStretchLastSection(False)
         self._table.setShowGrid(False)
 
         # Disable internal scrolling - let parent scroll area handle it
@@ -303,6 +303,10 @@ class JobSectionWidget(QWidget):
         self._model = JobSubmissionTableModel()
         self._model.set_schema(self._schema)
         self._table.setModel(self._model)
+
+        # Configure header resize mode after model is set
+        if header is not None and header.count() > 0:
+            header.setSectionResizeMode(QHeaderView.Interactive)
 
         # Delegate
         self._delegate = JobSubmissionDelegate(self._table)

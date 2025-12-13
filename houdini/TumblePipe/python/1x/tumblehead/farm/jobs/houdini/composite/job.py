@@ -450,7 +450,7 @@ def _build_slapcomp_job(
 
     # Get department priorities for AOV resolution
     shot_departments = [d.name for d in list_departments('shots')]
-    render_departments = api.config.list_render_department_names()
+    render_departments = [d.name for d in list_departments('render')]
 
     # Resolve latest beauty and alpha AOVs across all departments
     # This will find the best available version of each AOV (prioritizing higher departments)

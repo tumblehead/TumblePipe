@@ -45,7 +45,7 @@ def _entity_from_context_json():
     if context is None: return None
 
     # Verify it's a shot entity
-    if context.entity_uri.purpose != 'entity': return None
+    if context.entity_uri.purpose not in ('entity', 'groups'): return None
     if len(context.entity_uri.segments) < 1: return None
     if context.entity_uri.segments[0] != 'shots': return None
 
@@ -1012,7 +1012,7 @@ class BuildComp(ns.Node):
 
         # Set frame range, FPS, and playback
         util.set_frame_range(frame_range)
-        fps = get_fps()
+        fps = get_fps(shot_uri)
         if fps is not None:
             util.set_fps(fps)
 

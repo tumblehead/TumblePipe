@@ -426,16 +426,11 @@ def export_scene_version(scene_uri: Uri) -> Path:
     if scene is None:
         raise ValueError(f"Scene not found: {scene_uri}")
 
-    # Collect asset sublayer paths
+    # Collect asset sublayer paths (assumes latest will exist at render time)
     layer_paths = []
     for entry in scene.assets:
         asset_uri = Uri.parse_unsafe(entry.asset)
-        staged_path = get_latest_staged_file_path(asset_uri)
-        if staged_path is None or not fix_path(staged_path).exists():
-            raise ValueError(
-                f"No staged build for asset {asset_uri}. "
-                f"Run asset build first."
-            )
+        staged_path = get_latest_staged_file_path(asset_uri, entry.variant)
         layer_paths.append(staged_path)
 
     # Get next version path

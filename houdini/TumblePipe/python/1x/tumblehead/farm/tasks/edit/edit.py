@@ -65,7 +65,7 @@ def main(shot_uri: Uri, purpose: str, render_range: BlockRange):
 
     # Get both shot and render department priorities
     shot_departments = [d.name for d in list_departments('shots')]
-    render_departments = api.config.list_render_department_names()
+    render_departments = [d.name for d in list_departments('render')]
 
     print(f'Shot department priority (low->high): {shot_departments}')
     print(f'Render department priority (low->high): {render_departments}')
@@ -107,7 +107,7 @@ def main(shot_uri: Uri, purpose: str, render_range: BlockRange):
 
     # Department priorities for manifest checking (matching resolve_latest_aovs hierarchy)
     shot_department_priority = [d.name for d in list_departments('shots')]
-    render_department_priority = api.config.list_render_department_names()
+    render_department_priority = [d.name for d in list_departments('render')]
 
     # Sync each resolved layer/AOV combination
     synced_count = 0

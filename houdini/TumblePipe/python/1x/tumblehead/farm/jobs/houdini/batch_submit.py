@@ -20,7 +20,8 @@ from tumblehead.api import (
     default_client
 )
 from tumblehead.util.uri import Uri
-from tumblehead.util.io import store_json
+from tumblehead.util.io import store_json, load_json
+from tumblehead.pipe.context import get_aov_names_from_context
 from tumblehead.config.timeline import get_frame_range
 from tumblehead.config.department import list_departments
 from tumblehead.apps.deadline import (
@@ -88,6 +89,37 @@ def _build_render_overrides(settings: dict) -> dict:
         if settings_key in settings:
             overrides[usd_path] = settings[settings_key]
     return overrides
+
+
+def _get_aov_names(entity_uri: Uri, department: str, variants: list[str]) -> list[str]:
+    """Get AOV names from layer exports or root layer context.
+
+    Args:
+        entity_uri: The entity URI for the shot/asset
+        department: The render department name
+        variants: List of variant names to check
+
+    Returns:
+        List of AOV names, or empty list if not found
+    """
+    # Try to get from layer exports
+    for variant in variants:
+        export_path = latest_export_path(entity_uri, variant, department)
+        if export_path is not None:
+            context_path = export_path / 'context.json'
+            context_data = load_json(context_path)
+            aov_names = get_aov_names_from_context(context_data, variant)
+            if aov_names:
+                return aov_names
+
+    # Fallback: read from root layer context
+    root_context_path = api.storage.resolve(Uri.parse_unsafe('config:/usd/context.json'))
+    root_context = load_json(root_context_path)
+    aov_names = get_aov_names_from_context(root_context)
+    if aov_names:
+        return aov_names
+
+    return []
 
 
 def _is_submissable(entity_uri: Uri, department_name: str) -> bool:
@@ -310,11 +342,14 @@ def submit_entity_batch(config: dict) -> list[str]:
             # Build render overrides from settings (maps column keys to USD paths)
             render_overrides = _build_render_overrides(settings)
 
+            # Get AOV names from layer exports or root layer context
+            aov_names = _get_aov_names(entity_uri, render_department, variants)
+
             # Create render_settings.json
             render_settings_path = temp_path / 'render_settings.json'
             store_json(render_settings_path, dict(
                 variant_names=variants,
-                aov_names=[],  # Will be looked up by stage.py from exports
+                aov_names=aov_names,
                 overrides=render_overrides
             ))
             relative_render_settings_path = render_settings_path.relative_to(temp_path)

@@ -21,6 +21,8 @@ from tumblehead.config.variants import list_variants
 from tumblehead.config.farm import list_pools
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.context as ctx
+from tumblehead.pipe.context import get_aov_names_from_context
+from tumblehead.pipe.houdini import util
 from tumblehead.pipe.paths import (
     latest_export_path,
     load_entity_context
@@ -43,7 +45,7 @@ def _entity_from_context_json():
     if context is None: return None
 
     # Verify it's a shot entity
-    if context.entity_uri.purpose != 'entity': return None
+    if context.entity_uri.purpose not in ('entity', 'groups'): return None
     if len(context.entity_uri.segments) < 1: return None
     if context.entity_uri.segments[0] != 'shots': return None
 
@@ -102,20 +104,33 @@ class SubmitRender(ns.Node):
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return []
         department_name = self.get_shot_department_name()
-        export_path = latest_export_path(
-            shot_uri,
-            variant_name,
-            department_name
-        )
-        if export_path is None: return []
-        context_path = export_path / 'context.json'
-        context_data = load_json(context_path)
-        if context_data is None: return []
-        layer_info = ctx.find_output(context_data,
-            variant = variant_name
-        )
-        if layer_info is None: return []
-        return layer_info['parameters']['aov_names']
+
+        # Try to get from layer export context
+        export_path = latest_export_path(shot_uri, variant_name, department_name)
+        if export_path is not None:
+            context_path = export_path / 'context.json'
+            context_data = load_json(context_path)
+            aov_names = get_aov_names_from_context(context_data, variant_name)
+            if aov_names:
+                return aov_names
+
+        # Fallback: read from root layer context
+        root_context_path = api.storage.resolve(Uri.parse_unsafe('config:/usd/context.json'))
+        root_context = load_json(root_context_path)
+        aov_names = get_aov_names_from_context(root_context)
+        if aov_names:
+            return aov_names
+
+        # Final fallback: get from USD stage directly
+        stage_node = self.native().node('build_shot/OUT')
+        if stage_node is not None:
+            root = stage_node.stage().GetPseudoRoot()
+            return [
+                aov_path.rsplit('/', 1)[-1].lower()
+                for aov_path in util.list_render_vars(root)
+            ]
+
+        return []
     
     def get_shot_uri(self) -> Uri | None:
         shot_uri_raw = self.parm('shot').eval()

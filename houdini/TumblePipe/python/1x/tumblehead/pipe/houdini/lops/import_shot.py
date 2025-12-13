@@ -46,7 +46,7 @@ def _entity_from_context_json():
     if context is None: return None
 
     # Verify it's a shot entity
-    if context.entity_uri.purpose != 'entity': return None
+    if context.entity_uri.purpose not in ('entity', 'groups'): return None
     if len(context.entity_uri.segments) < 1: return None
     if context.entity_uri.segments[0] != 'shots': return None
 
@@ -211,9 +211,10 @@ def _parse_staged_sublayers(staged_file_path: Path) -> list[dict]:
             sublayers.append({'path': abs_path, 'type': 'asset', 'department': None})
         else:
             # Shot department layer - extract dept name from path
-            # Pattern: ../../{dept}/v{version}/shots_{seq}_{shot}_{dept}_{version}.usd
+            # Pattern: ../../../{variant}/{dept}/v{version}/shots_{seq}_{shot}_{dept}_{version}.usd
+            # parts: [0]='..' [1]='..' [2]='..' [3]=variant [4]=dept [5]=version [6]=filename
             parts = rel_path.split('/')
-            dept = parts[2] if len(parts) > 2 else None
+            dept = parts[4] if len(parts) > 4 else None
             sublayers.append({'path': abs_path, 'type': 'shot_department', 'department': dept})
 
     return sublayers
@@ -269,18 +270,19 @@ class ImportShot(ns.Node):
     def get_department_name(self) -> str | None:
         department_name = self.parm('department').eval()
         if department_name == 'from_context':
-            context = _context_from_workfile()
+            # Use same context source as get_shot_uri() for consistency
+            context = _entity_from_context_json()
             if context is None: return None
             return context.department_name
         # From settings
         department_names = self.list_department_names()
         if len(department_names) == 0: return None
-        if len(department_name) == 0: return department_names[0]
+        if len(department_name) == 0: return department_names[1] if len(department_names) > 1 else None
         if department_name not in department_names: return None
         return department_name
 
     def get_shot_uri(self) -> Uri | None:
-        shot_uri_raw = self.parm('shot').eval()
+        shot_uri_raw = self.parm('entity').eval()
         if shot_uri_raw == 'from_context':
             context = _entity_from_context_json()
             if context is None: return None
@@ -311,7 +313,7 @@ class ImportShot(ns.Node):
     def set_shot_uri(self, shot_uri: Uri):
         shot_uris = self.list_shot_uris()
         if str(shot_uri) not in shot_uris: return  # Compare strings
-        self.parm('shot').set(str(shot_uri))
+        self.parm('entity').set(str(shot_uri))
 
     def set_department_name(self, department_name: str):
         self.parm('department').set(department_name)
@@ -320,19 +322,27 @@ class ImportShot(ns.Node):
         self.parm('include_procedurals').set(int(include_procedurals))
 
     def _update_labels(self):
-        """Update label parameters to show resolved values when 'from_context' is selected."""
-        shot_raw = self.parm('shot').eval()
-        if shot_raw == 'from_context':
+        """Update label parameters to show current entity/department selection."""
+        entity_raw = self.parm('entity').eval()
+        if entity_raw == 'from_context':
             shot_uri = self.get_shot_uri()
-            self.parm('shot_label').set(str(shot_uri) if shot_uri else '')
+            if shot_uri:
+                self.parm('entity_label').set(f'from_context: {shot_uri}')
+            else:
+                self.parm('entity_label').set('from_context: none')
         else:
-            self.parm('shot_label').set('')
+            # Specific entity URI selected
+            self.parm('entity_label').set(entity_raw)
 
         department_raw = self.parm('department').eval()
         if department_raw == 'from_context':
             department_name = self.get_department_name()
-            self.parm('department_label').set(department_name if department_name else '')
+            if department_name:
+                self.parm('department_label').set(f'from_context: {department_name}')
+            else:
+                self.parm('department_label').set('from_context: none')
         else:
+            # Specific department selected - no label needed
             self.parm('department_label').set('')
 
         # Update version label when 'latest' or 'current' is selected
@@ -340,19 +350,18 @@ class ImportShot(ns.Node):
         if version_raw in ('latest', 'current', ''):
             shot_uri = self.get_shot_uri()
             if shot_uri is not None:
-                if version_raw == 'latest' or version_raw == '':
-                    staged_file_path = get_latest_staged_file_path(shot_uri)
-                else:  # 'current'
-                    staged_file_path = current_staged_file_path(shot_uri)
-
-                if staged_file_path is not None:
-                    resolved_version = staged_file_path.parent.name
+                # For 'latest', use current_staged_file_path to get actual version number
+                # (get_latest_staged_file_path returns path in 'latest' directory)
+                actual_file_path = current_staged_file_path(shot_uri)
+                if actual_file_path is not None:
+                    resolved_version = actual_file_path.parent.name
                     self.parm('version_label').set(resolved_version)
                 else:
                     self.parm('version_label').set('')
             else:
                 self.parm('version_label').set('')
         else:
+            # Specific version selected - no label needed
             self.parm('version_label').set('')
 
     def execute(self):
@@ -382,10 +391,10 @@ class ImportShot(ns.Node):
             # Use specific version
             staged_file_path = get_staged_file_path(shot_uri, version_name)
 
-        if staged_file_path is None:
-            raise FileNotFoundError(f"No staged build found for {shot_uri}")
-        if not staged_file_path.exists():
-            raise FileNotFoundError(f"Staged file not found: {staged_file_path}")
+        if staged_file_path is None or not staged_file_path.exists():
+            # No staged build yet - set empty state and return
+            import_node.parm('num_files').set(0)
+            return
 
         # Get assets based on version type
         if version_name in ('latest', 'current'):
@@ -426,10 +435,10 @@ class ImportShot(ns.Node):
             departments_to_exclude.add(department_name)
 
         # Filter out excluded layers - don't load them at all
-        layers_to_load = [
+        layers_to_load = list(reversed([
             info for info in sublayers
             if info['department'] is None or info['department'] not in departments_to_exclude
-        ]
+        ]))
 
         # Configure Sublayer LOP with filtered layers
         import_node.parm('num_files').set(len(layers_to_load))
@@ -443,7 +452,7 @@ class ImportShot(ns.Node):
         frame_range = self.get_frame_range()
         if frame_range is not None:
             util.set_frame_range(frame_range)
-            fps = get_fps()
+            fps = get_fps(shot_uri)
             if fps is not None:
                 util.set_fps(fps)
 
@@ -455,7 +464,7 @@ class ImportShot(ns.Node):
             metadata_script = _set_shot_metadata_script(
                 shot_uri,
                 frame_range,
-                get_fps(),
+                get_fps(shot_uri),
                 version_name,
                 assets
             )
@@ -560,14 +569,32 @@ def on_created(raw_node):
 
     node = ImportShot(raw_node)
 
-    # If no context, set first available shot
-    entity = _entity_from_context_json()
-    if entity is None:
-        shot_uris = node.list_shot_uris()
-        if shot_uris:
-            node.set_shot_uri(shot_uris[0])
+    # Update labels to show current entity selection
+    node._update_labels()
 
 def execute():
     raw_node = hou.pwd()
     node = ImportShot(raw_node)
     node.execute()
+
+def select():
+    """HDA button callback to open entity selector dialog."""
+    from tumblehead.pipe.houdini.ui.widgets import EntitySelectorDialog
+
+    raw_node = hou.pwd()
+    node = ImportShot(raw_node)
+
+    dialog = EntitySelectorDialog(
+        api=api,
+        entity_filter='shots',  # Only shots for import_shot
+        include_from_context=True,
+        current_selection=node.parm('entity').eval(),
+        title="Select Shot",
+        parent=hou.qt.mainWindow()
+    )
+
+    if dialog.exec_():
+        selected_uri = dialog.get_selected_uri()
+        if selected_uri:
+            node.parm('entity').set(selected_uri)
+            node._update_labels()

@@ -155,10 +155,10 @@ class ExportLayer(ns.Node):
             return ['from_context']
 
         context_name = 'assets' if entity_type == 'asset' else 'shots'
-        # Exclude generated departments and filter to renderable only
+        # Exclude generated departments and filter to publishable only
         names = [
             d.name for d in list_departments(context_name, include_generated=False)
-            if d.renderable
+            if d.publishable
         ]
         return ['from_context'] + names
 
@@ -295,20 +295,28 @@ class ExportLayer(ns.Node):
         return self.parm('export_type').eval()
 
     def _update_labels(self):
-        """Update label parameters to show resolved values when 'from_context' is selected."""
+        """Update label parameters to show current entity/department selection."""
         entity_raw = self.parm('entity').eval()
         if entity_raw == 'from_context':
             entity_uri = self.get_entity_uri()
-            self.parm('entity_label').set(str(entity_uri) if entity_uri else '')
+            if entity_uri:
+                self.parm('entity_label').set(f'from_context: {entity_uri}')
+            else:
+                self.parm('entity_label').set('from_context: none')
         else:
-            self.parm('entity_label').set('')
+            # Specific entity URI selected
+            self.parm('entity_label').set(entity_raw)
 
         department_raw = self.parm('department').eval()
         if department_raw == 'from_context':
             department_name = self.get_department_name()
-            self.parm('department_label').set(department_name if department_name else '')
+            if department_name:
+                self.parm('department_label').set(f'from_context: {department_name}')
+            else:
+                self.parm('department_label').set('from_context: none')
         else:
-            self.parm('department_label').set('')
+            # Specific department selected
+            self.parm('department_label').set(department_raw)
 
     def set_entity_uri(self, entity_uri: Uri):
         entity_uris = self.list_entity_uris()
@@ -425,16 +433,6 @@ class ExportLayer(ns.Node):
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
 
-            # Cache the stage
-            cache_path = temp_path / f'{version_name}.usd'
-            self.parm('cache_file').set(path_str(cache_path))
-            self.parm('cache_f1').set(render_range.first_frame)
-            self.parm('cache_f2').set(render_range.last_frame)
-            self.parm('cache_f3').set(step)
-            self.parm('cache_execute').pressButton()
-            self.parm('cache_loadfromdisk').set(1)
-            self.parm('bypass_input').set(1)
-
             # Collect all prim paths to export (assets + stage components)
             all_export_prims = []
 
@@ -474,6 +472,12 @@ class ExportLayer(ns.Node):
             layer_file_name = get_layer_file_name(entity_uri, variant_name, department_name, version_name)
             _export_prims(export_subnet, all_export_prims, render_range, step, temp_path / layer_file_name)
 
+            # Extract AOV names from the stage
+            aov_names = [
+                aov_path.rsplit('/', 1)[-1].lower()
+                for aov_path in util.list_render_vars(stage.GetPseudoRoot())
+            ]
+
             # Write layer context
             context_path = temp_path / 'context.json'
             context = dict(
@@ -486,7 +490,8 @@ class ExportLayer(ns.Node):
                     timestamp=timestamp.isoformat(),
                     user=user_name,
                     parameters=dict(
-                        assets=parameter_assets
+                        assets=parameter_assets,
+                        aov_names=aov_names
                     )
                 )]
             )
@@ -497,18 +502,11 @@ class ExportLayer(ns.Node):
             for temp_item_path in temp_path.iterdir():
                 if temp_item_path.name == 'stage':
                     continue
-                if temp_item_path == cache_path:
-                    continue
                 output_item_path = version_path / temp_item_path.name
                 if temp_item_path.is_file():
                     shutil.copy(temp_item_path, output_item_path)
                 if temp_item_path.is_dir():
                     shutil.copytree(temp_item_path, output_item_path)
-
-            # Clear the cache
-            self.parm('cache_loadfromdisk').set(0)
-            self.parm('bypass_input').set(0)
-            self.parm('cache_file').set('')
 
         # Layout the created nodes
         export_subnet.layoutChildren()
@@ -634,13 +632,8 @@ def on_created(raw_node):
 
     node = ExportLayer(raw_node)
 
-    # If no context, set first available entity
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-    if context is None:
-        entity_uris = node.list_entity_uris()
-        if len(entity_uris) > 1:  # Skip 'from_context'
-            node.set_entity_uri(Uri.parse_unsafe(entity_uris[1]))
+    # Update labels to show current entity selection
+    node._update_labels()
 
 def execute():
     raw_node = hou.pwd()
@@ -651,3 +644,25 @@ def open_location():
     raw_node = hou.pwd()
     node = ExportLayer(raw_node)
     node.open_location()
+
+def select():
+    """HDA button callback to open entity selector dialog."""
+    from tumblehead.pipe.houdini.ui.widgets import EntitySelectorDialog
+
+    raw_node = hou.pwd()
+    node = ExportLayer(raw_node)
+
+    dialog = EntitySelectorDialog(
+        api=api,
+        entity_filter='both',
+        include_from_context=True,
+        current_selection=node.parm('entity').eval(),
+        title="Select Entity",
+        parent=hou.qt.mainWindow()
+    )
+
+    if dialog.exec_():
+        selected_uri = dialog.get_selected_uri()
+        if selected_uri:
+            node.parm('entity').set(selected_uri)
+            node._update_labels()

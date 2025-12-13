@@ -2221,7 +2221,8 @@ class JsonView(QTreeView):
         # Header settings - allow user to resize columns
         self._header = QHeaderView(Qt.Horizontal, self)
         self.setHeader(self._header)
-        self._header.setSectionResizeMode(QHeaderView.Interactive)
+        if self._header.count() > 0:
+            self._header.setSectionResizeMode(QHeaderView.Interactive)
         self._header.setStretchLastSection(True)
         self.setColumnWidth(0, 200)  # Structure
         self.setColumnWidth(1, 150)  # Value

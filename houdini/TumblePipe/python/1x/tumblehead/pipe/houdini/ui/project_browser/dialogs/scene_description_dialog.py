@@ -72,10 +72,12 @@ class SceneAssetsTable(QtWidgets.QTableWidget):
         super().__init__(parent)
         self.setColumnCount(3)
         self.setHorizontalHeaderLabels(['Asset', 'Instances', 'Variant'])
-        self.horizontalHeader().setStretchLastSection(True)
-        self.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-        self.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)
-        self.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.Interactive)
+        header = self.horizontalHeader()
+        header.setStretchLastSection(True)
+        if header.count() >= 3:
+            header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+            header.setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)
+            header.setSectionResizeMode(2, QtWidgets.QHeaderView.Interactive)
         self.setColumnWidth(1, 80)
         self.setColumnWidth(2, 120)
         self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -376,6 +378,24 @@ class SceneDescriptionDialog(QtWidgets.QDialog):
         """Get selected asset URIs from scene table."""
         return self.scene_table.get_selected_uris()
 
+    def _get_expanded_items(self):
+        """Get set of expanded category names"""
+        expanded = set()
+        for row in range(self.available_model.rowCount()):
+            index = self.available_model.index(row, 0)
+            item = self.available_model.itemFromIndex(index)
+            if item and self.available_tree.isExpanded(index):
+                expanded.add(item.text())
+        return expanded
+
+    def _restore_expanded_items(self, expanded_names):
+        """Restore expansion state for categories by name"""
+        for row in range(self.available_model.rowCount()):
+            index = self.available_model.index(row, 0)
+            item = self.available_model.itemFromIndex(index)
+            if item and item.text() in expanded_names:
+                self.available_tree.expand(index)
+
     def _add_to_scene(self):
         """Add selected available assets to scene."""
         selected = self._get_selected_available_assets()
@@ -412,12 +432,17 @@ class SceneDescriptionDialog(QtWidgets.QDialog):
 
     def _refresh_available(self):
         """Refresh available assets model after changes."""
+        # Preserve tree state before refresh
+        expanded = self._get_expanded_items()
+        scroll_pos = self.available_tree.verticalScrollBar().value()
+
         current_scene = set(self.scene_table.get_all_asset_uris())
         all_assets = list_available_assets()
         self.available_model.load_assets(all_assets, current_scene)
 
-        # Expand available tree
-        self.available_tree.expandAll()
+        # Restore tree state after refresh
+        self._restore_expanded_items(expanded)
+        self.available_tree.verticalScrollBar().setValue(scroll_pos)
 
     def _save_scene(self):
         """Save scene description and generate root department version."""
@@ -699,6 +724,24 @@ class GroupSceneDescriptionDialog(QtWidgets.QDialog):
         """Get selected asset URIs from scene table."""
         return self.scene_table.get_selected_uris()
 
+    def _get_expanded_items(self):
+        """Get set of expanded category names"""
+        expanded = set()
+        for row in range(self.available_model.rowCount()):
+            index = self.available_model.index(row, 0)
+            item = self.available_model.itemFromIndex(index)
+            if item and self.available_tree.isExpanded(index):
+                expanded.add(item.text())
+        return expanded
+
+    def _restore_expanded_items(self, expanded_names):
+        """Restore expansion state for categories by name"""
+        for row in range(self.available_model.rowCount()):
+            index = self.available_model.index(row, 0)
+            item = self.available_model.itemFromIndex(index)
+            if item and item.text() in expanded_names:
+                self.available_tree.expand(index)
+
     def _add_to_scene(self):
         """Add selected available assets to scene."""
         if self.current_member is None:
@@ -743,12 +786,17 @@ class GroupSceneDescriptionDialog(QtWidgets.QDialog):
 
     def _refresh_available(self):
         """Refresh available assets model after changes."""
+        # Preserve tree state before refresh
+        expanded = self._get_expanded_items()
+        scroll_pos = self.available_tree.verticalScrollBar().value()
+
         current_scene = set(self.scene_table.get_all_asset_uris())
         all_assets = list_available_assets()
         self.available_model.load_assets(all_assets, current_scene)
 
-        # Expand available tree
-        self.available_tree.expandAll()
+        # Restore tree state after refresh
+        self._restore_expanded_items(expanded)
+        self.available_tree.verticalScrollBar().setValue(scroll_pos)
 
     def _save_scene(self):
         """Save scene description for current member and generate root department version."""

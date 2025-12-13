@@ -5,6 +5,7 @@ from pathlib import Path
 from tumblehead.api import default_client
 from tumblehead.config.timeline import BlockRange
 from tumblehead.config.groups import find_group
+from tumblehead.config.department import list_departments
 from tumblehead.util.io import load_json
 from tumblehead.util.uri import Uri
 
@@ -989,7 +990,7 @@ def get_render_context(
     purpose: str = 'render'
     ) -> RenderContext:
     renders = dict()
-    render_department_names = api.config.list_render_department_names()
+    render_department_names = [d.name for d in list_departments('render')]
     for department_name in render_department_names:
         render = get_render(
             entity_uri,
@@ -1373,23 +1374,6 @@ def get_layer_file_name(
     ext = '.usda' if department_name == 'root' else '.usd'
     return f'{entity_name}_{variant_name}_{department_name}_{version_name}{ext}'
 
-def list_variant_names(entity_uri: Uri) -> list[str]:
-    """List all variant names for an entity.
-
-    Returns list of variant directory names under the entity's export path.
-    Excludes reserved names like '_shared' and '_staged'.
-    """
-    export_uri = Uri.parse_unsafe('export:/') / entity_uri.segments
-    export_path = api.storage.resolve(export_uri)
-    if not export_path.exists(): return []
-    variant_names = [
-        path.name
-        for path in export_path.iterdir()
-        if path.is_dir() and not path.name.startswith('_')
-    ]
-    return sorted(variant_names)
-
-
 ###############################################################################
 # Shared Export Paths (for layer_split)
 ###############################################################################
@@ -1471,23 +1455,27 @@ def get_shared_layer_file_name(
 ###############################################################################
 def get_staged_path(
     entity_uri: Uri,
-    version_name: str
+    version_name: str,
+    variant_name: str = 'default'
     ) -> Path:
     staged_uri = (
         Uri.parse_unsafe('export:/') /
         entity_uri.segments /
         '_staged' /
+        variant_name /
         version_name
     )
     return api.storage.resolve(staged_uri)
 
 def get_staged_file_path(
     entity_uri: Uri,
-    version_name: str
+    version_name: str,
+    variant_name: str = 'default'
     ) -> Path:
     version_path = get_staged_path(
         entity_uri,
-        version_name
+        version_name,
+        variant_name
     )
     usd_file_name = '.'.join([
         '_'.join(entity_uri.segments[1:] + [
@@ -1498,13 +1486,15 @@ def get_staged_file_path(
     return version_path / usd_file_name
 
 def current_staged_path(
-    entity_uri: Uri
+    entity_uri: Uri,
+    variant_name: str = 'default'
     ) -> Optional[Path]:
     """Get path to the highest numbered staged version directory."""
     staged_uri = (
         Uri.parse_unsafe('export:/') /
         entity_uri.segments /
-        '_staged'
+        '_staged' /
+        variant_name
     )
     staged_path = api.storage.resolve(staged_uri)
     version_paths = list_version_paths(staged_path)
@@ -1513,7 +1503,8 @@ def current_staged_path(
     return current_version_path
 
 def current_staged_file_path(
-    entity_uri: Uri
+    entity_uri: Uri,
+    variant_name: str = 'default'
     ) -> Optional[Path]:
     """Get path to the highest numbered staged .usda file."""
     usd_file_name_pattern = '.'.join([
@@ -1523,7 +1514,8 @@ def current_staged_file_path(
         'usda'
     ])
     current_version_path = current_staged_path(
-        entity_uri
+        entity_uri,
+        variant_name
     )
     if current_version_path is None: return None
     version_name = current_version_path.name
@@ -1531,18 +1523,21 @@ def current_staged_file_path(
     return current_version_path / usd_file_name
 
 def next_staged_path(
-    entity_uri: Uri
+    entity_uri: Uri,
+    variant_name: str = 'default'
     ) -> Path:
     staged_uri = (
         Uri.parse_unsafe('export:/') /
         entity_uri.segments /
-        '_staged'
+        '_staged' /
+        variant_name
     )
     staged_path = api.storage.resolve(staged_uri)
     return get_next_version_path(staged_path)
 
 def next_staged_file_path(
-    entity_uri: Uri
+    entity_uri: Uri,
+    variant_name: str = 'default'
     ) -> Path:
     usd_file_name_pattern = '.'.join([
         '_'.join(entity_uri.segments[1:] + [
@@ -1551,25 +1546,33 @@ def next_staged_file_path(
         'usda'
     ])
     version_path = next_staged_path(
-        entity_uri
+        entity_uri,
+        variant_name
     )
     version_name = version_path.name
     usd_file_name = usd_file_name_pattern.replace('*', version_name)
     return version_path / usd_file_name
 
-def get_latest_staged_path(entity_uri: Uri) -> Path:
+def get_latest_staged_path(
+    entity_uri: Uri,
+    variant_name: str = 'default'
+) -> Path:
     """Get path to the 'latest' staged directory."""
     staged_uri = (
         Uri.parse_unsafe('export:/') /
         entity_uri.segments /
         '_staged' /
+        variant_name /
         'latest'
     )
     return api.storage.resolve(staged_uri)
 
-def get_latest_staged_file_path(entity_uri: Uri) -> Path:
+def get_latest_staged_file_path(
+    entity_uri: Uri,
+    variant_name: str = 'default'
+) -> Path:
     """Get path to the 'latest' staged .usda file."""
-    version_path = get_latest_staged_path(entity_uri)
+    version_path = get_latest_staged_path(entity_uri, variant_name)
     usd_file_name = '.'.join([
         '_'.join(entity_uri.segments[1:] + ['latest']),
         'usda'
@@ -1612,6 +1615,6 @@ def get_scene_layer_file_name(scene_uri: Uri, version_name: str) -> str:
     scene_name = scene_uri.segments[-1]
     return f'{scene_name}_{version_name}.usda'
 
-def get_rig_export_path(asset_uri: Uri) -> Path:
-    export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / 'rig'
+def get_rig_export_path(asset_uri: Uri, variant_name: str = 'default') -> Path:
+    export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / variant_name / 'rig'
     return api.storage.resolve(export_uri)

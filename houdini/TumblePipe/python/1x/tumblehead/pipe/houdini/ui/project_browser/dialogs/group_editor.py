@@ -113,7 +113,8 @@ class GroupEditorWidget(QtWidgets.QWidget):
         # Configure header and columns for Scene column visibility
         header = self.available_tree.header()
         header.setStretchLastSection(True)
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        if header.count() > 0:
+            header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
 
         layout.addWidget(self.available_tree)
 
@@ -328,12 +329,34 @@ class GroupEditorWidget(QtWidgets.QWidget):
         current_members = set(self.members_model.get_member_entities())
 
         self.available_model.load_entities_from_uri(root_uri_str, assigned_entities, current_members)
+        # Reconfigure header after model reload (model.clear() invalidates header column refs)
+        header = self.available_tree.header()
+        if header is not None and header.count() > 0:
+            header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
         self._expand_trees()
 
     def _expand_trees(self):
         """Expand all nodes in both tree views"""
         self.available_tree.expandAll()
         self.members_tree.expandAll()
+
+    def _get_expanded_items(self, tree_view, model):
+        """Get set of expanded item names"""
+        expanded = set()
+        for row in range(model.rowCount()):
+            index = model.index(row, 0)
+            item = model.itemFromIndex(index)
+            if item and tree_view.isExpanded(index):
+                expanded.add(item.text())
+        return expanded
+
+    def _restore_expanded_items(self, tree_view, model, expanded_names):
+        """Restore expansion state for items by name"""
+        for row in range(model.rowCount()):
+            index = model.index(row, 0)
+            item = model.itemFromIndex(index)
+            if item and item.text() in expanded_names:
+                tree_view.expand(index)
 
     def _get_entities_in_other_groups(self):
         """Get set of entity URI strings already in other groups"""
@@ -379,8 +402,16 @@ class GroupEditorWidget(QtWidgets.QWidget):
         for uri_str in items_to_add:
             self.members_model.add_member(uri_str)
 
+        # Preserve tree state before refresh
+        expanded_available = self._get_expanded_items(self.available_tree, self.available_model)
+        scroll_pos = self.available_tree.verticalScrollBar().value()
+
         self._refresh_available_entities()
-        self._expand_trees()
+
+        # Restore tree state after refresh
+        self._restore_expanded_items(self.available_tree, self.available_model, expanded_available)
+        self.available_tree.verticalScrollBar().setValue(scroll_pos)
+        self.members_tree.expandAll()
 
         if len(self.members_model.get_member_entities()) > 0:
             self.context_combo.setEnabled(False)
@@ -408,8 +439,17 @@ class GroupEditorWidget(QtWidgets.QWidget):
                             indexes_to_remove.append(child_index)
 
         self.members_model.remove_members(indexes_to_remove)
+
+        # Preserve tree state before refresh
+        expanded_available = self._get_expanded_items(self.available_tree, self.available_model)
+        scroll_pos = self.available_tree.verticalScrollBar().value()
+
         self._refresh_available_entities()
-        self._expand_trees()
+
+        # Restore tree state after refresh
+        self._restore_expanded_items(self.available_tree, self.available_model, expanded_available)
+        self.available_tree.verticalScrollBar().setValue(scroll_pos)
+        self.members_tree.expandAll()
 
         if len(self.members_model.get_member_entities()) == 0 and self.is_new_group:
             self.context_combo.setEnabled(True)

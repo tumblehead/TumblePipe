@@ -77,10 +77,10 @@ def _post(
     if token is None:
         return _error('Discord token not found in config')
 
-    # Find the user to notify
+    # Find the user to notify (optional - continue without mention if not found)
     user_id = get_user_discord_id(user_name)
     if user_id is None:
-        return _error(f'User not found in discord config: {user_name}')
+        print(f'Warning: User not found in discord config: {user_name} (will post without mention)')
 
     # Find the channel to post to
     channel_id = get_discord_channel_id(channel_name)
@@ -95,9 +95,11 @@ def _post(
     async def on_ready():
         channel = client.get_channel(channel_id)
         if channel is None: return
-        user = await client.fetch_user(user_id)
-        if user is None: return
-        await callback(channel, user)
+        # Fetch user only if we have a user_id
+        user = None
+        if user_id is not None:
+            user = await client.fetch_user(user_id)
+        await callback(channel, user, user_name)
         await client.close()
 
     try:
@@ -120,21 +122,23 @@ def _post_file(
     name: str
     ) -> int:
 
-    async def _post_file(channel, user):
+    async def _post_file(channel, user, fallback_name):
         # Parse message into parts if it follows the pattern: "entity - department - version"
         message_parts = [part.strip() for part in message.split(' - ')]
+        # Use mention if user is available, otherwise use fallback name
+        submitted_by = user.mention if user else fallback_name
 
         if len(message_parts) == 3:
             entity, department, version = message_parts
             formatted_message = (
-                f'**Submitted by:** {user.mention}\n'
+                f'**Submitted by:** {submitted_by}\n'
                 f'**Entity:** {entity}\n'
                 f'**Department:** {department}\n'
                 f'**Version:** {version}'
             )
         else:
             formatted_message = (
-                f'**Submitted by:** {user.mention}\n'
+                f'**Submitted by:** {submitted_by}\n'
                 f'**Message:** {message}'
             )
 
@@ -155,28 +159,30 @@ def _post_message(
     message: str
     ) -> int:
 
-    async def _post_message(channel, user):
+    async def _post_message(channel, user, fallback_name):
         # Parse message into parts if it follows the pattern: "entity - department - version"
         message_parts = [part.strip() for part in message.split(' - ')]
+        # Use mention if user is available, otherwise use fallback name
+        submitted_by = user.mention if user else fallback_name
 
         if len(message_parts) == 3:
             entity, department, version = message_parts
             formatted_message = (
-                f'**Submitted by:** {user.mention}\n'
+                f'**Submitted by:** {submitted_by}\n'
                 f'**Entity:** {entity}\n'
                 f'**Department:** {department}\n'
                 f'**Version:** {version}'
             )
         else:
             formatted_message = (
-                f'**Submitted by:** {user.mention}\n'
+                f'**Submitted by:** {submitted_by}\n'
                 f'**Message:** {message}'
             )
 
         await channel.send(
             content = formatted_message
         )
-    
+
     return _post(
         user_name,
         channel_name,

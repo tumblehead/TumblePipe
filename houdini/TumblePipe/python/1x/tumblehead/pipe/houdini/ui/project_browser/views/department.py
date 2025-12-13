@@ -185,8 +185,10 @@ class DepartmentBrowser(QtWidgets.QWidget):
 
         # Set column widths to match current layout
         header = self._table_view.horizontalHeader()
+        header.setMinimumSectionSize(40)  # Prevent columns from becoming too narrow
         self._table_view.setColumnWidth(DepartmentTableModel.COLUMN_VERSION, 60)
         self._table_view.setColumnWidth(DepartmentTableModel.COLUMN_GROUP, 80)
+        self._table_view.setColumnWidth(DepartmentTableModel.COLUMN_DEPARTMENT, 100)  # Set minimum width
         self._table_view.setColumnWidth(DepartmentTableModel.COLUMN_USER, 80)
         self._table_view.setColumnWidth(DepartmentTableModel.COLUMN_RELATIVE_TIME, 70)
         header.setStretchLastSection(False)

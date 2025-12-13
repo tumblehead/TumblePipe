@@ -64,7 +64,7 @@ def _entity_from_context_json():
     if context is None: return None
 
     # Verify it's a shot entity
-    if context.entity_uri.purpose != 'entity': return None
+    if context.entity_uri.purpose not in ('entity', 'groups'): return None
     if len(context.entity_uri.segments) < 1: return None
     if context.entity_uri.segments[0] != 'shots': return None
 
@@ -119,6 +119,7 @@ class BuildShot(ns.Node):
     def _load_scene_context(self):
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return None
+        shot_variant = self.get_variant_name()
         match self.get_mode():
             case Mode.Latest:
                 # Get departments strictly before current (exclusive)
@@ -141,6 +142,7 @@ class BuildShot(ns.Node):
                     shot_uri,
                     upstream_shot_departments,
                     asset_departments,
+                    shot_variant=shot_variant,
                     asset_variants=asset_variants
                 )
             case Mode.Strict:
@@ -173,6 +175,21 @@ class BuildShot(ns.Node):
         if len(shot_uri_raw) == 0: return Uri.parse_unsafe(shot_uris[1])  # Skip 'from_context'
         if shot_uri_raw not in shot_uris: return None  # Compare strings
         return Uri.parse_unsafe(shot_uri_raw)
+
+    def list_variant_names(self) -> list[str]:
+        """List available variant names for current shot."""
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None:
+            return ['default']
+        return list_variants(shot_uri)
+
+    def get_variant_name(self) -> str:
+        """Get selected variant name, defaults to 'default'."""
+        variant_names = self.list_variant_names()
+        variant_name = self.parm('variant').eval()
+        if not variant_name or variant_name not in variant_names:
+            return 'default'
+        return variant_name
 
     def get_mode(self):
         match self.parm('mode').eval():
@@ -220,7 +237,7 @@ class BuildShot(ns.Node):
         # From settings
         department_names = self.list_department_names()
         if len(department_names) == 0: return None
-        if len(department_name) == 0: return department_names[0]
+        if len(department_name) == 0: return department_names[1] if len(department_names) > 1 else None
         if department_name not in department_names: return None
         return department_name
 
@@ -394,7 +411,7 @@ class BuildShot(ns.Node):
         if len(include_shot_departments) == 0: return
 
         # Set the shot fps (skip if not configured)
-        fps = get_fps()
+        fps = get_fps(shot_uri)
         if fps is not None:
             self.parm('shot_fps').set(fps)
 
@@ -411,7 +428,7 @@ class BuildShot(ns.Node):
 
             # Set frame range and FPS
             util.set_frame_range(frame_range)
-            fps = get_fps()
+            fps = get_fps(shot_uri)
             if fps is not None:
                 util.set_fps(fps)
 

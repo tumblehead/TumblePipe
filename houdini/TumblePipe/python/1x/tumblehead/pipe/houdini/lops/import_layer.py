@@ -6,7 +6,7 @@ from tumblehead.api import path_str, default_client
 from tumblehead.util.uri import Uri
 from tumblehead.util.io import load_json
 from tumblehead.config.department import list_departments
-from tumblehead.config.variants import get_entity_type
+from tumblehead.config.variants import get_entity_type, list_variants
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.util import uri_to_metadata_prim_path
 import tumblehead.pipe.context as ctx
@@ -16,7 +16,6 @@ from tumblehead.pipe.paths import (
     latest_export_path,
     get_export_uri,
     get_layer_file_name,
-    list_variant_names as list_entity_variants,
     latest_shared_export_file_path
 )
 
@@ -126,26 +125,17 @@ class ImportLayer(ns.Node):
     def list_department_names(self) -> list[str]:
         entity_type = self.get_entity_type()
         if entity_type is None:
-            return []
+            return ['from_context']
         context_name = 'assets' if entity_type == 'asset' else 'shots'
-        return [d.name for d in list_departments(context_name) if d.renderable]
+        names = [d.name for d in list_departments(context_name) if d.publishable]
+        return ['from_context'] + names
 
     def list_variant_names(self) -> list[str]:
-        """List available variant names for current entity.
-
-        Returns existing variants from disk, or ['default'] if none exist.
-        """
+        """List available variant names for current entity."""
         entity_uri = self.get_entity_uri()
         if entity_uri is None:
             return ['default']
-        variants = list_entity_variants(entity_uri)
-        if not variants:
-            return ['default']
-        # Ensure 'default' is always first
-        if 'default' in variants:
-            variants.remove('default')
-            variants.insert(0, 'default')
-        return variants
+        return list_variants(entity_uri)
 
     def list_version_names(self) -> list[str]:
         entity_uri = self.get_entity_uri()
@@ -187,15 +177,23 @@ class ImportLayer(ns.Node):
         return Uri.parse_unsafe(entity_uri_raw)
 
     def get_department_name(self) -> str | None:
+        department_name_raw = self.parm('department').eval()
+        # Handle 'from_context' special value
+        if department_name_raw == 'from_context':
+            file_path = Path(hou.hipFile.path())
+            context = get_workfile_context(file_path)
+            if context is None:
+                return None
+            return context.department_name
+        # From settings
         department_names = self.list_department_names()
         if len(department_names) == 0:
             return None
-        department_name = self.parm('department').eval()
-        if len(department_name) == 0:
+        if len(department_name_raw) == 0:
             return department_names[0]
-        if department_name not in department_names:
+        if department_name_raw not in department_names:
             return None
-        return department_name
+        return department_name_raw
 
     def get_variant_name(self) -> str:
         """Get selected variant name, defaults to 'default'."""
@@ -247,13 +245,17 @@ class ImportLayer(ns.Node):
         self.parm('include_layerbreak').set(int(include_layerbreak))
 
     def _update_labels(self):
-        """Update label parameters to show resolved values when 'from_context' is selected."""
+        """Update label parameters to show current entity selection."""
         entity_raw = self.parm('entity').eval()
         if entity_raw == 'from_context':
             entity_uri = self.get_entity_uri()
-            self.parm('entity_label').set(str(entity_uri) if entity_uri else '')
+            if entity_uri:
+                self.parm('entity_label').set(f'from_context: {entity_uri}')
+            else:
+                self.parm('entity_label').set('from_context: none')
         else:
-            self.parm('entity_label').set('')
+            # Specific entity URI selected
+            self.parm('entity_label').set(entity_raw)
 
     def execute(self):
         self._update_labels()
@@ -389,6 +391,9 @@ def on_created(raw_node):
         if len(entity_uris) > 1:  # Skip 'from_context'
             node.set_entity_uri(Uri.parse_unsafe(entity_uris[1]))
 
+    # Update labels to show current entity selection
+    node._update_labels()
+
 def execute():
     raw_node = hou.pwd()
     node = ImportLayer(raw_node)
@@ -398,3 +403,25 @@ def open_location():
     raw_node = hou.pwd()
     node = ImportLayer(raw_node)
     node.open_location()
+
+def select():
+    """HDA button callback to open entity selector dialog."""
+    from tumblehead.pipe.houdini.ui.widgets import EntitySelectorDialog
+
+    raw_node = hou.pwd()
+    node = ImportLayer(raw_node)
+
+    dialog = EntitySelectorDialog(
+        api=api,
+        entity_filter='both',
+        include_from_context=True,
+        current_selection=node.parm('entity').eval(),
+        title="Select Entity",
+        parent=hou.qt.mainWindow()
+    )
+
+    if dialog.exec_():
+        selected_uri = dialog.get_selected_uri()
+        if selected_uri:
+            node.parm('entity').set(selected_uri)
+            node.execute()

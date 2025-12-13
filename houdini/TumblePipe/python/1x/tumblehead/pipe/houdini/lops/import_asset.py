@@ -74,7 +74,7 @@ class ImportAsset(ns.Node):
         return [entity.uri for entity in asset_entities]
 
     def list_department_names(self):
-        return [d.name for d in list_departments('assets') if d.renderable]
+        return [d.name for d in list_departments('assets') if d.publishable]
 
     def list_version_names(self) -> list[str]:
         """List available staged versions including 'latest' and 'current'."""
@@ -129,7 +129,7 @@ class ImportAsset(ns.Node):
     def get_asset_uri(self) -> Uri | None:
         asset_uris = self.list_asset_uris()
         if len(asset_uris) == 0: return None
-        asset_uri_raw = self.parm('asset').eval()
+        asset_uri_raw = self.parm('entity').eval()
         if len(asset_uri_raw) == 0: return asset_uris[0]
         asset_uri = Uri.parse_unsafe(asset_uri_raw)
         if asset_uri not in asset_uris: return None
@@ -154,7 +154,7 @@ class ImportAsset(ns.Node):
     def set_asset_uri(self, asset_uri: Uri):
         asset_uris = self.list_asset_uris()
         if asset_uri not in asset_uris: return
-        self.parm('asset').set(str(asset_uri))
+        self.parm('entity').set(str(asset_uri))
     
     def set_exclude_department_names(self, exclude_department_names):
         department_names = self.list_department_names()
@@ -167,19 +167,38 @@ class ImportAsset(ns.Node):
     def set_include_layerbreak(self, include_layerbreak):
         self.parm('include_layerbreak').set(int(include_layerbreak))
 
+    def _update_labels(self):
+        """Update label parameters to show current entity selection."""
+        entity_uri = self.get_asset_uri()
+        if entity_uri:
+            self.parm('entity_label').set(str(entity_uri))
+        else:
+            self.parm('entity_label').set('none')
+
+        # Resolve version name (resolve 'latest' to actual version)
+        version_name = self.get_version_name()
+        if version_name == 'latest':
+            version_names = self.list_version_names()
+            actual_versions = [v for v in version_names if v not in ('latest', 'current')]
+            if actual_versions:
+                version_name = actual_versions[-1]
+        self.parm('version_label').set(version_name)
+
     def execute(self):
+        self._update_labels()
         asset_uri = self.get_asset_uri()
         if asset_uri is None:
             return result.Value(None)
 
-        # Get staged file path based on version selection
+        # Get variant and staged file path based on version selection
+        variant_name = self.get_variant_name()
         version_name = self.get_version_name()
         if version_name == 'latest':
-            staged_file_path = get_latest_staged_file_path(asset_uri)
+            staged_file_path = get_latest_staged_file_path(asset_uri, variant_name)
         elif version_name == 'current':
-            staged_file_path = current_staged_file_path(asset_uri)
+            staged_file_path = current_staged_file_path(asset_uri, variant_name)
         else:
-            staged_file_path = get_staged_file_path(asset_uri, version_name)
+            staged_file_path = get_staged_file_path(asset_uri, version_name, variant_name)
 
         if staged_file_path is None:
             raise FileNotFoundError(f"No staged build found for {asset_uri}")
@@ -221,11 +240,37 @@ def set_style(raw_node):
     raw_node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
-
-    # Set node style
     set_style(raw_node)
+    node = ImportAsset(raw_node)
+    # Set entity to first available
+    asset_uris = node.list_asset_uris()
+    if asset_uris:
+        node.set_asset_uri(asset_uris[0])
+    node._update_labels()
 
 def execute():
     raw_node = hou.pwd()
     node = ImportAsset(raw_node)
     node.execute()
+
+def select():
+    """HDA button callback to open entity selector dialog."""
+    from tumblehead.pipe.houdini.ui.widgets import EntitySelectorDialog
+
+    raw_node = hou.pwd()
+    node = ImportAsset(raw_node)
+
+    dialog = EntitySelectorDialog(
+        api=api,
+        entity_filter='assets',
+        include_from_context=False,
+        current_selection=node.parm('entity').eval(),
+        title="Select Asset",
+        parent=hou.qt.mainWindow()
+    )
+
+    if dialog.exec_():
+        selected_uri = dialog.get_selected_uri()
+        if selected_uri:
+            node.parm('entity').set(selected_uri)
+            node.execute()

@@ -81,11 +81,12 @@ class ProcessDialog(QtWidgets.QDialog):
         # Set column widths
         header = self._tree_view.header()
         header.setStretchLastSection(True)
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)  # Task
-        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)  # Department
-        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)  # Version
-        header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)  # Status
-        self._tree_view.setColumnWidth(3, 60)  # Status column
+        if header is not None and header.count() >= 4:
+            header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)  # Task
+            header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)  # Department
+            header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)  # Version
+            header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)  # Status
+            self._tree_view.setColumnWidth(3, 60)  # Status column
 
         layout.addWidget(self._tree_view)
 
@@ -483,12 +484,15 @@ class ProcessDialog(QtWidgets.QDialog):
         from tumblehead.pipe.paths import latest_export_path, current_staged_path
 
         try:
+            # Get variant from task, default to 'default'
+            variant = task.variant if task.variant else 'default'
+
             if task.task_type == 'export':
-                # Open export directory (using 'default' variant)
-                location_path = latest_export_path(task.uri, 'default', task.department)
+                # Open export directory
+                location_path = latest_export_path(task.uri, variant, task.department)
             elif task.task_type == 'build':
                 # Open staged (build) directory
-                location_path = current_staged_path(task.uri)
+                location_path = current_staged_path(task.uri, variant)
             else:
                 return
 

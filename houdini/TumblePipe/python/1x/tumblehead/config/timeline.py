@@ -143,8 +143,19 @@ def get_frame_range(uri: Uri) -> FrameRange | None:
         properties['roll_end']
     )
 
-def get_fps() -> int | None:
-    properties = api.config.get_properties(Uri.parse_unsafe('config:/project'))
+def get_fps(uri: Uri | None = None) -> int | None:
+    """Get FPS with optional entity override.
+
+    Args:
+        uri: Entity URI for entity-specific FPS, or None for project default
+
+    Returns:
+        FPS value or None if not configured
+    """
+    if uri is None:
+        uri = Uri.parse_unsafe('config:/project')
+
+    properties = api.config.get_properties(uri)
     if properties is None: return None
     if 'fps' not in properties: return None
     return int(properties['fps'])

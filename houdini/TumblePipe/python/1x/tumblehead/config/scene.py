@@ -234,7 +234,7 @@ def generate_root_version(shot_uri: Uri) -> Path:
         raise ValueError(f"No frame range defined for {shot_uri}")
 
     # Get fps (default to 24 if not set)
-    fps = get_fps()
+    fps = get_fps(shot_uri)
     if fps is None:
         fps = 24
 

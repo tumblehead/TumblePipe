@@ -12,6 +12,7 @@ if tumblehead_packages_path not in sys.path:
 from tumblehead.api import path_str, fix_path, to_windows_path, default_client
 from tumblehead.config.timeline import BlockRange
 from tumblehead.config.variants import list_variants
+from tumblehead.config.department import list_departments
 from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Houdini
 
@@ -104,7 +105,7 @@ def cli():
 
     # Check render department name
     render_department_name = args.render_department_name
-    render_department_names = api.config.list_render_department_names()
+    render_department_names = [d.name for d in list_departments('render')]
     if render_department_name not in render_department_names:
         return _error(
             f'Invalid render department name: '

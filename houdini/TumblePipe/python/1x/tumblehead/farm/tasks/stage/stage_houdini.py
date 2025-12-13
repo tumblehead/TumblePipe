@@ -6,6 +6,7 @@ import hou
 
 from tumblehead.api import (
     path_str,
+    fix_path,
     default_client
 )
 from tumblehead.config.timeline import BlockRange
@@ -108,6 +109,15 @@ def main(
     shot_node.execute()
     prev_node = shot_node.native()
 
+    # Sublayer root defaults to get render settings and RenderVar prims
+    root_defaults_uri = Uri.parse_unsafe('config:/usd/root_default_prims.usda')
+    root_defaults_path = fix_path(api.storage.resolve(root_defaults_uri))
+    if root_defaults_path.exists():
+        sublayer_node = scene_node.createNode('sublayer', '__root_defaults')
+        sublayer_node.parm('filepath1').set(path_str(root_defaults_path))
+        _connect(prev_node, sublayer_node)
+        prev_node = sublayer_node
+
     # Loop over each variant to create separate variant subnets
     for variant_name in variant_names:
 
@@ -152,10 +162,10 @@ def main(
     _connect(prev_node, edit_render_settings_node)
     prev_node = edit_render_settings_node
 
-    # Setup AOV pruning
+    # Setup AOV pruning - use composed stage that includes root defaults
     included_aov_names = _get_aov_names(render_settings_path)
     if included_aov_names is not None:
-        root = shot_node.native().stage().GetPseudoRoot()
+        root = prev_node.stage().GetPseudoRoot()
         aov_paths = {
             aov_path.rsplit('/', 1)[1]: aov_path
             for aov_path in util.list_render_vars(root)

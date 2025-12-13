@@ -37,6 +37,7 @@ class ProcessTask:
     execute_local: Callable[[], None] | None = None # Function to execute locally
     execute_farm: Callable[[], None] | None = None  # Function to execute on farm
     current_version: str | None = None              # Current export version (if known)
+    variant: str | None = None                      # Variant name (for build tasks)
 
 
 class ProcessTaskTableModel(QAbstractTableModel):
@@ -234,11 +235,12 @@ class ProcessTaskTreeModel(QStandardItemModel):
     # Column indices
     COLUMN_TASK = 0
     COLUMN_DEPARTMENT = 1
-    COLUMN_VERSION = 2
-    COLUMN_STATUS = 3
+    COLUMN_VARIANT = 2
+    COLUMN_VERSION = 3
+    COLUMN_STATUS = 4
 
     # Column headers
-    HEADERS = ['Task', 'Department', 'Version', 'Status']
+    HEADERS = ['Task', 'Department', 'Variant', 'Version', 'Status']
 
     # Status display mapping
     STATUS_DISPLAY = {
@@ -346,6 +348,10 @@ class ProcessTaskTreeModel(QStandardItemModel):
         dept_item = QStandardItem(task.department)
         dept_item.setEditable(False)
 
+        # Variant column
+        variant_item = QStandardItem(task.variant or '-')
+        variant_item.setEditable(False)
+
         # Version column
         version_item = QStandardItem(task.current_version or '-')
         version_item.setEditable(False)
@@ -355,7 +361,7 @@ class ProcessTaskTreeModel(QStandardItemModel):
         status_item.setEditable(False)
         status_item.setForeground(QBrush(QColor(self.STATUS_COLORS.get(task.status, '#919191'))))
 
-        return [task_item, dept_item, version_item, status_item]
+        return [task_item, dept_item, variant_item, version_item, status_item]
 
     def _on_item_changed(self, item: QStandardItem):
         """Handle checkbox changes with parent/child sync"""

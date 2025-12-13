@@ -71,7 +71,8 @@ def main(
 
     # Set the playback range and FPS
     util.set_block_range(render_range)
-    fps = get_fps()
+    entity_uri = Uri.parse_unsafe(entity_json['uri']) if entity_json else None
+    fps = get_fps(entity_uri)
     if fps is not None:
         util.set_fps(fps)
 

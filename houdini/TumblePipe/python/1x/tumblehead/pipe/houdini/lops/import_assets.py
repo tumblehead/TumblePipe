@@ -3,6 +3,8 @@ import hou
 from tumblehead.api import default_client
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
+from tumblehead.config.variants import list_variants
+from tumblehead.pipe.paths import list_version_paths
 from tumblehead.util import result
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.lops import import_asset
@@ -63,7 +65,7 @@ class ImportAssets(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_asset_uris(self, index) -> list[Uri]:
+    def list_entity_uris(self, index) -> list[Uri]:
         all_asset_entities = api.config.list_entities(
             filter = Uri.parse_unsafe('entity:/assets'),
             closure = True
@@ -75,7 +77,7 @@ class ImportAssets(ns.Node):
         other_asset_uris = set()
         for other_index in range(1, count + 1):
             if other_index == index: continue
-            other_asset_uri_raw = self.parm(f'asset{other_index}').eval()
+            other_asset_uri_raw = self.parm(f'entity{other_index}').eval()
             if len(other_asset_uri_raw) == 0: continue
             other_asset_uri = Uri.parse_unsafe(other_asset_uri_raw)
             if other_asset_uri in all_asset_uris:
@@ -88,20 +90,70 @@ class ImportAssets(ns.Node):
         ]
 
     def list_department_names(self):
-        return [d.name for d in list_departments('assets') if d.renderable]
+        return [d.name for d in list_departments('assets') if d.publishable]
 
-    def get_asset_uri(self, index) -> Uri | None:
-        asset_uris = self.list_asset_uris(index)
+    def get_entity_uri(self, index) -> Uri | None:
+        asset_uris = self.list_entity_uris(index)
         if len(asset_uris) == 0: return None
-        asset_uri_raw = self.parm(f'asset{index}').eval()
+        asset_uri_raw = self.parm(f'entity{index}').eval()
         if len(asset_uri_raw) == 0 or Uri.parse_unsafe(asset_uri_raw) not in asset_uris:
             asset_uri = asset_uris[0]
-            self.parm(f'asset{index}').set(str(asset_uri))
+            self.parm(f'entity{index}').set(str(asset_uri))
             return asset_uri
         return Uri.parse_unsafe(asset_uri_raw)
     
     def get_instances(self, index):
         return self.parm(f'instances{index}').eval()
+
+    def list_variant_names(self, index: int) -> list[str]:
+        """List available variant names for the asset at this index."""
+        asset_uri = self.get_entity_uri(index)
+        if asset_uri is None:
+            return ['default']
+        variants = list_variants(asset_uri)
+        if not variants:
+            return ['default']
+        if 'default' in variants:
+            variants.remove('default')
+            variants.insert(0, 'default')
+        return variants
+
+    def get_variant_name(self, index: int) -> str:
+        """Get selected variant name for this index, defaults to 'default'."""
+        variant_names = self.list_variant_names(index)
+        variant_name = self.parm(f'variant{index}').eval()
+        if not variant_name or variant_name not in variant_names:
+            return 'default'
+        return variant_name
+
+    def set_variant_name(self, index: int, variant_name: str):
+        """Set variant name for this index."""
+        self.parm(f'variant{index}').set(variant_name)
+
+    def list_version_names(self, index: int) -> list[str]:
+        """List available staged versions for asset at this index."""
+        asset_uri = self.get_entity_uri(index)
+        if asset_uri is None:
+            return ['latest', 'current']
+
+        staged_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / '_staged'
+        staged_path = api.storage.resolve(staged_uri)
+
+        version_paths = list_version_paths(staged_path)
+        version_names = [vp.name for vp in version_paths]
+
+        return ['latest', 'current'] + version_names
+
+    def get_version_name(self, index: int) -> str:
+        """Get selected version name for this index. Default is 'latest'."""
+        version_name = self.parm(f'version{index}').eval()
+        if len(version_name) == 0:
+            return 'latest'
+        return version_name
+
+    def set_version_name(self, index: int, version_name: str):
+        """Set version name for this index."""
+        self.parm(f'version{index}').set(version_name)
 
     def get_exclude_department_names(self):
         return list(filter(len, self.parm('departments').eval().split()))
@@ -116,23 +168,26 @@ class ImportAssets(ns.Node):
             if department_name not in exclude_department_names
         ]
 
-    def get_asset_imports(self) -> dict[Uri, int]:
-        asset_imports = {}
+    def get_asset_imports(self) -> list[tuple[Uri, str, str, int]]:
+        """Returns list of (asset_uri, variant, version, instances) for all asset imports."""
+        asset_imports = []
         count = self.parm('asset_imports').eval()
         for index in range(1, count + 1):
-            asset_uri = self.get_asset_uri(index)
+            asset_uri = self.get_entity_uri(index)
             if asset_uri is None: continue
+            variant = self.get_variant_name(index)
+            version = self.get_version_name(index)
             instances = self.get_instances(index)
-            asset_imports[asset_uri] = instances
+            asset_imports.append((asset_uri, variant, version, instances))
         return asset_imports
     
     def get_include_layerbreak(self):
         return bool(self.parm('include_layerbreak').eval())
 
-    def set_asset_uri(self, index, asset_uri: Uri):
-        asset_uris = self.list_asset_uris(index)
+    def set_entity_uri(self, index, asset_uri: Uri):
+        asset_uris = self.list_entity_uris(index)
         if asset_uri not in asset_uris: return
-        self.parm(f'asset{index}').set(str(asset_uri))
+        self.parm(f'entity{index}').set(str(asset_uri))
     
     def set_instances(self, index, instances):
         self.parm(f'instances{index}').set(instances)
@@ -147,13 +202,34 @@ class ImportAssets(ns.Node):
     
     def set_include_layerbreak(self, include_layerbreak):
         self.parm('include_layerbreak').set(int(include_layerbreak))
-    
+
+    def _update_labels(self, index: int):
+        """Update label parameters for the given index."""
+        entity_uri = self.get_entity_uri(index)
+        if entity_uri:
+            self.parm(f'entity_label{index}').set(str(entity_uri))
+        else:
+            self.parm(f'entity_label{index}').set('none')
+
+        # Resolve version name (resolve 'latest' to actual version)
+        version_name = self.get_version_name(index)
+        if version_name == 'latest':
+            version_names = self.list_version_names(index)
+            actual_versions = [v for v in version_names if v not in ('latest', 'current')]
+            if actual_versions:
+                version_name = actual_versions[-1]
+        self.parm(f'version_label{index}').set(version_name)
+
     def execute(self):
+
+        # Update labels for all entries
+        count = self.parm('asset_imports').eval()
+        for index in range(1, count + 1):
+            self._update_labels(index)
 
         # Clear scene
         context = self.native()
         dive_node = context.node('dive')
-        switch_node = context.node('switch')
         output_node = dive_node.node('output')
         _clear_scene(dive_node, output_node)
 
@@ -168,18 +244,21 @@ class ImportAssets(ns.Node):
 
         # Build asset nodes
         script_args = []
-        for asset_uri, instances in asset_imports.items():
+        for asset_uri, variant, version, instances in asset_imports:
             if instances == 0: continue
 
-            # Create node name from URI segments
+            # Create node name from URI segments (include variant for uniqueness)
             uri_name = '_'.join(asset_uri.segments[1:])
+            node_name = f'{uri_name}_{variant}_import' if variant != 'default' else f'{uri_name}_import'
 
             # Import the asset
             asset_node = import_asset.create(
                 dive_node,
-                f'{uri_name}_import'
+                node_name
             )
             asset_node.set_asset_uri(asset_uri)
+            asset_node.set_variant_name(variant)
+            asset_node.parm('version').set(version)
             asset_node.set_exclude_department_names(
                 exclude_department_names
             )
@@ -222,12 +301,20 @@ class ImportAssets(ns.Node):
             _connect(duplicate_metadata_node, merge_node)
 
             # Update the script arguments
-            asset_metadata_base = asset_metadata_path.rsplit('/', 1)[0]  # /_METADATA/_assets/_char
+            # Get sanitized entity name from metadata path to match duplicate node output
+            sanitized_name = asset_metadata_path.rsplit('/', 1)[1]  # e.g., _Chair
+            asset_metadata_base = asset_metadata_path.rsplit('/', 1)[0]  # e.g., /_METADATA/_assets/_CHAR
             base_name = asset_uri.segments[-1]  # Last segment is the asset name
             for index in range(instances):
+                # Match duplicate node naming: _Chair, _Chair0, _Chair1, etc.
+                if index == 0:
+                    instance_prim_name = sanitized_name  # Original keeps name
+                else:
+                    instance_prim_name = f'{sanitized_name}{index}'  # Copies get number suffix
+
                 instance_name = api.naming.get_instance_name(base_name, index)
                 script_args.append((
-                    f'{asset_metadata_base}/{instance_name}',
+                    f'{asset_metadata_base}/{instance_prim_name}',
                     instance_name
                 ))
 
@@ -241,9 +328,6 @@ class ImportAssets(ns.Node):
         )
         python_node.setInput(0, merge_node)
         output_node.setInput(0, python_node)
-
-        # Enable or disable layerbreak
-        switch_node.parm('input').set(1 if include_layerbreak else 0)
 
         # Layout the nodes
         dive_node.layoutChildren()
@@ -271,3 +355,25 @@ def execute():
     raw_node = hou.pwd()
     node = ImportAssets(raw_node)
     node.execute()
+
+def select(index: int):
+    """HDA button callback to open entity selector dialog."""
+    from tumblehead.pipe.houdini.ui.widgets import EntitySelectorDialog
+
+    raw_node = hou.pwd()
+    node = ImportAssets(raw_node)
+
+    dialog = EntitySelectorDialog(
+        api=api,
+        entity_filter='assets',
+        include_from_context=False,
+        current_selection=node.parm(f'entity{index}').eval(),
+        title="Select Asset",
+        parent=hou.qt.mainWindow()
+    )
+
+    if dialog.exec_():
+        selected_uri = dialog.get_selected_uri()
+        if selected_uri:
+            node.parm(f'entity{index}').set(selected_uri)
+            node._update_labels(index)

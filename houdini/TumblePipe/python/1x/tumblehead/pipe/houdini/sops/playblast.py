@@ -41,7 +41,7 @@ class Playblast(ns.Node):
     def list_department_names(self):
         return [d.name for d in list_departments('shots') if d.renderable]
 
-    def list_shot_uris(self) -> list[str]:
+    def list_entity_uris(self) -> list[str]:
         shot_entities = api.config.list_entities(
             filter=Uri.parse_unsafe('entity:/shots'),
             closure=True
@@ -86,33 +86,40 @@ class Playblast(ns.Node):
         if camera_name not in camera_names: return
         self.parm('camera').set(camera_name)
 
-    def get_shot_uri(self) -> Uri | None:
-        shot_uri_raw = self.parm('shot').eval()
-        if shot_uri_raw == 'from_context':
+    def get_entity_uri(self) -> Uri | None:
+        entity_uri_raw = self.parm('entity').eval()
+        if entity_uri_raw == 'from_context':
             file_path = Path(hou.hipFile.path())
             context = get_workfile_context(file_path)
             if context is None: return None
             return context.entity_uri
         # From settings
-        shot_uris = self.list_shot_uris()
-        if len(shot_uris) <= 1: return None  # Only 'from_context' means no real URIs
-        if len(shot_uri_raw) == 0: return Uri.parse_unsafe(shot_uris[1])  # Skip 'from_context'
-        if shot_uri_raw not in shot_uris: return None  # Compare strings
-        return Uri.parse_unsafe(shot_uri_raw)
+        entity_uris = self.list_entity_uris()
+        if len(entity_uris) <= 1: return None  # Only 'from_context' means no real URIs
+        if len(entity_uri_raw) == 0: return Uri.parse_unsafe(entity_uris[1])  # Skip 'from_context'
+        if entity_uri_raw not in entity_uris: return None  # Compare strings
+        return Uri.parse_unsafe(entity_uri_raw)
 
-    def set_shot_uri(self, shot_uri: Uri):
-        shot_uris = self.list_shot_uris()
-        if str(shot_uri) not in shot_uris: return  # Compare strings
-        self.parm('shot').set(str(shot_uri))
+    def set_entity_uri(self, entity_uri: Uri):
+        entity_uris = self.list_entity_uris()
+        if str(entity_uri) not in entity_uris: return  # Compare strings
+        self.parm('entity').set(str(entity_uri))
 
     def _update_labels(self):
-        """Update label parameters to show resolved values when 'from_context' is selected."""
-        shot_raw = self.parm('shot').eval()
-        if shot_raw == 'from_context':
-            shot_uri = self.get_shot_uri()
-            self.parm('shot_label').set(str(shot_uri) if shot_uri else '')
+        """Update label parameters to show current entity/department selection."""
+        entity_raw = self.parm('entity').eval()
+        if entity_raw == 'from_context':
+            entity_uri = self.get_entity_uri()
+            if entity_uri:
+                self.parm('entity_label').set(f'from_context: {entity_uri}')
+            else:
+                self.parm('entity_label').set('from_context: none')
         else:
-            self.parm('shot_label').set('')
+            # Specific entity URI selected - no label needed
+            self.parm('entity_label').set('')
+
+        # Department doesn't have from_context option, so just clear label
+        self.parm('department_label').set('')
 
     def playblast(self):
 
@@ -124,13 +131,13 @@ class Playblast(ns.Node):
         render_node = playblast_node.node('render')
 
         # Parameters and paths
-        shot_uri = self.get_shot_uri()
+        entity_uri = self.get_entity_uri()
         department_name = self.get_department_names()
         camera_path = self.get_camera_path()
-        frame_range = get_frame_range(shot_uri)
+        frame_range = get_frame_range(entity_uri)
         render_range = frame_range.full_range()
-        output_playblast_path = get_next_playblast_path(shot_uri, department_name)
-        output_daily_path = get_daily_path(shot_uri, department_name)
+        output_playblast_path = get_next_playblast_path(entity_uri, department_name)
+        output_daily_path = get_daily_path(entity_uri, department_name)
 
         # Set the camera path
         camera_node.parm('primpath').set(camera_path)
@@ -168,15 +175,15 @@ class Playblast(ns.Node):
     def view_latest(self):
 
         # Parameters and paths
-        shot_uri = self.get_shot_uri()
+        entity_uri = self.get_entity_uri()
         department_name = self.get_department_names()
-        output_playblast_path = get_latest_playblast_path(shot_uri, department_name)
+        output_playblast_path = get_latest_playblast_path(entity_uri, department_name)
 
         # Open playblast
         if not output_playblast_path.exists():
             return hou.ui.displayMessage(
                 (
-                    f'No playblast found for {shot_uri}.\n'
+                    f'No playblast found for {entity_uri}.\n'
                     f'{output_playblast_path}'
                 ),
                 title='Playblast',
@@ -187,9 +194,9 @@ class Playblast(ns.Node):
     def open_location(self):
 
         # Parameters and paths
-        shot_uri = self.get_shot_uri()
+        entity_uri = self.get_entity_uri()
         department_name = self.get_department_names()
-        output_playblast_path = get_latest_playblast_path(shot_uri, department_name)
+        output_playblast_path = get_latest_playblast_path(entity_uri, department_name)
         output_path = output_playblast_path.parent
 
         # Create and open the directory containing the playblast
@@ -218,13 +225,8 @@ def on_created(raw_node):
     if raw_node_type != node_type: return
     node = Playblast(raw_node)
 
-    # Parse scene file path
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-    if context is None: return
-    
-    # Set the default values from context
-    node.set_department_name(context.department_name)
+    # Update labels to show current entity selection
+    node._update_labels()
 
 def export():
     raw_node = hou.pwd()
@@ -240,3 +242,29 @@ def open_location():
     raw_node = hou.pwd()
     node = Playblast(raw_node)
     node.open_location()
+
+def browse_all():
+    """HDA button callback for Browse All - alias for open_location."""
+    open_location()
+
+def select():
+    """HDA button callback to open entity selector dialog."""
+    from tumblehead.pipe.houdini.ui.widgets import EntitySelectorDialog
+
+    raw_node = hou.pwd()
+    node = Playblast(raw_node)
+
+    dialog = EntitySelectorDialog(
+        api=api,
+        entity_filter='shots',  # Only shots for playblast
+        include_from_context=True,
+        current_selection=node.parm('entity').eval(),
+        title="Select Shot",
+        parent=hou.qt.mainWindow()
+    )
+
+    if dialog.exec_():
+        selected_uri = dialog.get_selected_uri()
+        if selected_uri:
+            node.parm('entity').set(selected_uri)
+            node._update_labels()
