@@ -16,12 +16,24 @@ from tumblehead.util.io import store_json
 from tumblehead.util.uri import Uri
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.houdini.util as util
-from tumblehead.pipe.paths import (
-    get_workfile_context,
-    entity_from_context
-)
+from tumblehead.pipe.paths import load_entity_context
 
 api = default_client()
+
+def _entity_from_context_json():
+    # Path to current workfile
+    file_path = Path(hou.hipFile.path())
+    if not file_path.exists(): return None
+
+    # Look for context.json in the workfile directory
+    context_json_path = file_path.parent / "context.json"
+    if not context_json_path.exists(): return None
+
+    # Load context using shared helper
+    context = load_entity_context(context_json_path)
+    if context is None: return None
+
+    return context
 
 class LookdevStudio(ns.Node):
     def __init__(self, native):
@@ -73,10 +85,8 @@ class LookdevStudio(ns.Node):
         reload(export_render_job)
 
         # Get the entity
-        workfile_path = Path(hou.hipFile.path())
-        context = get_workfile_context(workfile_path)
+        context = _entity_from_context_json()
         assert context is not None, 'Invalid workfile path'
-        entity = entity_from_context(context)
 
         # Parameters
         node_path = self.node('OUT/stage_OUT').path()
@@ -133,7 +143,10 @@ class LookdevStudio(ns.Node):
 
             # Submit the job
             export_render_job.submit(dict(
-                entity = entity.to_json(),
+                entity = dict(
+                    uri = str(context.entity_uri),
+                    department = context.department_name
+                ),
                 settings = dict(
                     user_name = get_user_name(),
                     purpose = 'turntable',

@@ -41,6 +41,9 @@ class ExportRig(ns.Node):
             context = get_workfile_context(file_path)
             if context is None:
                 return None
+            # Only accept entity URIs, not group URIs
+            if context.entity_uri.purpose != 'entity':
+                return None
             # Verify it's an asset entity
             if context.entity_uri.segments[0] != 'assets':
                 return None

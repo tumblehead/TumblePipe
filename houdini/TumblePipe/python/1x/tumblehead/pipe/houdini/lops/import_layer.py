@@ -165,6 +165,9 @@ class ImportLayer(ns.Node):
             context = get_workfile_context(file_path)
             if context is None:
                 return None
+            # Only accept entity URIs, not group URIs
+            if context.entity_uri.purpose != 'entity':
+                return None
             return context.entity_uri
         # From settings
         entity_uris = self.list_entity_uris()
@@ -257,6 +260,20 @@ class ImportLayer(ns.Node):
             # Specific entity URI selected
             self.parm('entity_label').set(entity_raw)
 
+    def _initialize(self):
+        """Initialize node with defaults from workfile context and update labels."""
+        file_path = Path(hou.hipFile.path())
+        context = get_workfile_context(file_path)
+
+        # If no context, set first available entity
+        if context is None:
+            entity_uris = self.list_entity_uris()
+            if len(entity_uris) > 1:  # Skip 'from_context'
+                self.set_entity_uri(Uri.parse_unsafe(entity_uris[1]))
+
+        # Update labels to show resolved values
+        self._update_labels()
+
     def execute(self):
         self._update_labels()
         return self._import_layer()
@@ -281,16 +298,23 @@ class ImportLayer(ns.Node):
 
     def _import_layer(self):
         """Unified import method for both assets and shots."""
+        native = self.native()
         entity_uri = self.get_entity_uri()
         variant_name = self.get_variant_name()
         department_name = self.get_department_name()
         version_name = self.get_version_name()
 
         if entity_uri is None:
+            ns.set_node_comment(native, "Bypassed: No entity selected")
+            native.bypass(True)
             return
         if department_name is None:
+            ns.set_node_comment(native, "Bypassed: No department selected")
+            native.bypass(True)
             return
         if version_name is None:
+            ns.set_node_comment(native, "Bypassed: No version selected")
+            native.bypass(True)
             return
 
         # Get layer file name
@@ -326,6 +350,8 @@ class ImportLayer(ns.Node):
 
         # Generate metadata update script from context.json
         context_path = version_path / 'context.json'
+        context_data = None
+        layer_info = None
         if context_path.exists():
             context_data = load_json(context_path)
             layer_info = ctx.find_output(
@@ -340,6 +366,17 @@ class ImportLayer(ns.Node):
                         entity_uri, department_name, version_name, assets
                     )
                     self.parm('metadata_python').set(script)
+
+        # Set success comment with import metadata
+        if layer_info is not None:
+            timestamp = layer_info.get('timestamp', '')
+            user = layer_info.get('user', '')
+            if timestamp and user:
+                ns.set_node_comment(native, f"Imported: {version_name}\n{timestamp}\nby {user}")
+            else:
+                ns.set_node_comment(native, f"Imported: {version_name}")
+        else:
+            ns.set_node_comment(native, f"Imported: {version_name}")
 
     def open_location(self):
         entity_uri = self.get_entity_uri()
@@ -370,9 +407,10 @@ def set_style(raw_node):
     raw_node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
+    # Set node style
     set_style(raw_node)
 
-    # Check context
+    # Validate node type
     raw_node_type = raw_node.type()
     if raw_node_type is None:
         return
@@ -381,18 +419,9 @@ def on_created(raw_node):
         return
     if raw_node_type != node_type:
         return
+
     node = ImportLayer(raw_node)
-
-    # Parse scene file path - if no context, set first available entity
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-    if context is None:
-        entity_uris = node.list_entity_uris()
-        if len(entity_uris) > 1:  # Skip 'from_context'
-            node.set_entity_uri(Uri.parse_unsafe(entity_uris[1]))
-
-    # Update labels to show current entity selection
-    node._update_labels()
+    node._initialize()
 
 def execute():
     raw_node = hou.pwd()

@@ -10,7 +10,7 @@ from tumblehead.config.variants import list_variants
 from tumblehead.config.department import list_departments
 from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini.lops import (
-    build_shot,
+    import_shot,
     import_layer
 )
 
@@ -47,17 +47,12 @@ def main(
     context = hou.node('/stage')
 
     # Config
-    included_asset_departments = [d.name for d in list_departments('assets') if d.renderable]
-    included_kit_departments = []
     included_shot_departments = [d.name for d in list_departments('shots') if d.renderable]
     shot_department_name = included_shot_departments[-1]
 
-    # Setup build shot
-    shot_node = build_shot.create(context, 'build_shot')
+    # Setup import shot
+    shot_node = import_shot.create(context, 'import_shot')
     shot_node.set_shot_uri(shot_uri)
-    shot_node.set_asset_department_names(included_asset_departments)
-    shot_node.set_kit_department_names(included_kit_departments)
-    shot_node.set_shot_department_names(included_shot_departments)
     shot_node.execute()
     prev_node = shot_node.native()
 

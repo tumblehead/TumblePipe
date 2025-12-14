@@ -29,7 +29,7 @@ class ProcessTask:
     id: str                                         # Unique task ID
     uri: Uri                                        # Entity URI being processed
     department: str                                 # Department name
-    task_type: str                                  # "export" | "build" | "render"
+    task_type: str                                  # "export" | "build" | "render" | "export_group"
     description: str                                # Human-readable description
     enabled: bool = True                            # Checkbox state (user can disable)
     status: TaskStatus = TaskStatus.PENDING         # Current status
@@ -38,6 +38,12 @@ class ProcessTask:
     execute_farm: Callable[[], None] | None = None  # Function to execute on farm
     current_version: str | None = None              # Current export version (if known)
     variant: str | None = None                      # Variant name (for build tasks)
+    first_frame: int | None = None                  # First frame (with roll)
+    last_frame: int | None = None                   # Last frame (with roll)
+    # Hierarchy support for grouped tasks
+    children: list['ProcessTask'] | None = None     # Child tasks (for parent/group tasks)
+    parent_id: str | None = None                    # Reference to parent task ID
+    node_path: str | None = None                    # Houdini node path (for display)
 
 
 class ProcessTaskTableModel(QAbstractTableModel):
@@ -237,10 +243,12 @@ class ProcessTaskTreeModel(QStandardItemModel):
     COLUMN_DEPARTMENT = 1
     COLUMN_VARIANT = 2
     COLUMN_VERSION = 3
-    COLUMN_STATUS = 4
+    COLUMN_FIRST_FRAME = 4
+    COLUMN_LAST_FRAME = 5
+    COLUMN_STATUS = 6
 
     # Column headers
-    HEADERS = ['Task', 'Department', 'Variant', 'Version', 'Status']
+    HEADERS = ['Task', 'Department', 'Variant', 'Version', 'First', 'Last', 'Status']
 
     # Status display mapping
     STATUS_DISPLAY = {
@@ -279,7 +287,13 @@ class ProcessTaskTreeModel(QStandardItemModel):
         self._initial_enabled_task_ids = task_ids
 
     def set_tasks(self, tasks: list[ProcessTask]):
-        """Build tree from flat task list, grouped by entity URI"""
+        """Build tree from flat task list, grouped by entity URI.
+
+        Supports 3-level hierarchy:
+        - Level 1: Entity (grouped by URI)
+        - Level 2: Tasks (or parent tasks with children)
+        - Level 3: Child tasks (for grouped export tasks)
+        """
         self._updating_checks = True
         self.clear()
         self.setHorizontalHeaderLabels(self.HEADERS)
@@ -323,16 +337,20 @@ class ProcessTaskTreeModel(QStandardItemModel):
                 entity_item.appendRow(task_row)
                 self._task_items[task.id] = task_row[0]
 
+                # Add grandchildren if this task has children (3rd level)
+                if task.children:
+                    for child_task in task.children:
+                        child_row = self._create_task_row(child_task)
+                        task_row[0].appendRow(child_row)
+                        self._task_items[child_task.id] = child_row[0]
+
         self._updating_checks = False
 
     def _uri_name(self, uri: Uri) -> str:
         """Extract display name from URI"""
         if uri is None:
             return "Unknown"
-        _, parts = uri.parts()
-        if parts:
-            return parts[-1]
-        return str(uri)
+        return uri.display_name()
 
     def _create_task_row(self, task: ProcessTask) -> list[QStandardItem]:
         """Create a row of items for a task"""
@@ -356,42 +374,78 @@ class ProcessTaskTreeModel(QStandardItemModel):
         version_item = QStandardItem(task.current_version or '-')
         version_item.setEditable(False)
 
+        # First Frame column
+        first_frame_item = QStandardItem(str(task.first_frame) if task.first_frame is not None else '-')
+        first_frame_item.setEditable(False)
+
+        # Last Frame column
+        last_frame_item = QStandardItem(str(task.last_frame) if task.last_frame is not None else '-')
+        last_frame_item.setEditable(False)
+
         # Status column
         status_item = QStandardItem(self.STATUS_DISPLAY.get(task.status, ''))
         status_item.setEditable(False)
         status_item.setForeground(QBrush(QColor(self.STATUS_COLORS.get(task.status, '#919191'))))
 
-        return [task_item, dept_item, variant_item, version_item, status_item]
+        return [task_item, dept_item, variant_item, version_item, first_frame_item, last_frame_item, status_item]
 
     def _on_item_changed(self, item: QStandardItem):
-        """Handle checkbox changes with parent/child sync"""
+        """Handle checkbox changes with parent/child sync (supports 3 levels)"""
         if self._updating_checks:
             return
 
         self._updating_checks = True
         try:
             is_entity = item.data(IS_ENTITY_ROLE)
+            task = item.data(TASK_ROLE)
 
             if is_entity:
-                # Entity checkbox changed - update all children
+                # Entity checkbox changed - update all tasks and grandchildren
                 check_state = item.checkState()
                 for row in range(item.rowCount()):
                     child = item.child(row, 0)
                     if child:
                         child.setCheckState(check_state)
-                        task = child.data(TASK_ROLE)
-                        if task:
-                            task.enabled = (check_state == Qt.Checked)
-            else:
-                # Task checkbox changed - update task and parent
-                task = item.data(TASK_ROLE)
-                if task:
-                    task.enabled = (item.checkState() == Qt.Checked)
-
-                # Update parent's tri-state
+                        child_task = child.data(TASK_ROLE)
+                        if child_task:
+                            child_task.enabled = (check_state == Qt.Checked)
+                        # Also update grandchildren (3rd level)
+                        for grandchild_row in range(child.rowCount()):
+                            grandchild = child.child(grandchild_row, 0)
+                            if grandchild:
+                                grandchild.setCheckState(check_state)
+                                grandchild_task = grandchild.data(TASK_ROLE)
+                                if grandchild_task:
+                                    grandchild_task.enabled = (check_state == Qt.Checked)
+            elif task and task.children:
+                # Parent task (with children) checkbox changed - update children
+                check_state = item.checkState()
+                for row in range(item.rowCount()):
+                    child = item.child(row, 0)
+                    if child:
+                        child.setCheckState(check_state)
+                        child_task = child.data(TASK_ROLE)
+                        if child_task:
+                            child_task.enabled = (check_state == Qt.Checked)
+                # Update parent task's own enabled state
+                task.enabled = (check_state == Qt.Checked)
+                # Update entity's tri-state
                 parent = item.parent()
                 if parent:
                     self._update_parent_check_state(parent)
+            else:
+                # Leaf task checkbox changed - update task and ancestors
+                if task:
+                    task.enabled = (item.checkState() == Qt.Checked)
+
+                # Update parent's tri-state (could be entity or parent task)
+                parent = item.parent()
+                if parent:
+                    self._update_parent_check_state(parent)
+                    # If parent is a task (not entity), also update grandparent entity
+                    grandparent = parent.parent()
+                    if grandparent and not parent.data(IS_ENTITY_ROLE):
+                        self._update_parent_check_state(grandparent)
         finally:
             self._updating_checks = False
 
@@ -413,16 +467,31 @@ class ProcessTaskTreeModel(QStandardItemModel):
             parent.setCheckState(Qt.PartiallyChecked)
 
     def get_tasks(self) -> list[ProcessTask]:
-        """Get all tasks in tree order"""
+        """Get all tasks in tree order (including children)"""
         return self._tasks
 
     def get_enabled_tasks(self) -> list[ProcessTask]:
-        """Get only enabled tasks in tree order"""
-        return [t for t in self._tasks if t.enabled]
+        """Get only enabled tasks in tree order (including enabled children)"""
+        enabled = []
+        for task in self._tasks:
+            if task.enabled:
+                enabled.append(task)
+            # Also include enabled children from parent tasks
+            if task.children:
+                for child in task.children:
+                    if child.enabled:
+                        enabled.append(child)
+        return enabled
 
     def get_enabled_count(self) -> int:
-        """Get count of enabled tasks"""
-        return len([t for t in self._tasks if t.enabled])
+        """Get count of enabled tasks (including children)"""
+        count = 0
+        for task in self._tasks:
+            if task.enabled:
+                count += 1
+            if task.children:
+                count += len([c for c in task.children if c.enabled])
+        return count
 
     def get_enabled_entity_uris(self) -> set[str]:
         """Get URIs of entities that have at least one enabled task."""
@@ -433,29 +502,50 @@ class ProcessTaskTreeModel(QStandardItemModel):
         return enabled_uris
 
     def set_all_enabled(self, enabled: bool):
-        """Enable or disable all tasks"""
+        """Enable or disable all tasks (including children)"""
         self._updating_checks = True
         try:
             check_state = Qt.Checked if enabled else Qt.Unchecked
             for task in self._tasks:
                 task.enabled = enabled
-            # Update all entity items
+                # Also update children
+                if task.children:
+                    for child in task.children:
+                        child.enabled = enabled
+            # Update all entity items and their descendants
             for entity_item in self._entity_items.values():
                 entity_item.setCheckState(check_state)
                 for row in range(entity_item.rowCount()):
                     child = entity_item.child(row, 0)
                     if child:
                         child.setCheckState(check_state)
+                        # Also update grandchildren (3rd level)
+                        for grandchild_row in range(child.rowCount()):
+                            grandchild = child.child(grandchild_row, 0)
+                            if grandchild:
+                                grandchild.setCheckState(check_state)
         finally:
             self._updating_checks = False
 
     def update_task_status(self, task_id: str, status: TaskStatus, error: str | None = None):
-        """Update status of a specific task by ID"""
+        """Update status of a specific task by ID (searches main tasks and children)"""
+        found = False
         for task in self._tasks:
             if task.id == task_id:
                 task.status = status
                 task.error_message = error
+                found = True
                 break
+            # Also check children
+            if task.children:
+                for child in task.children:
+                    if child.id == task_id:
+                        child.status = status
+                        child.error_message = error
+                        found = True
+                        break
+                if found:
+                    break
 
         # Update the status item in the tree
         task_item = self._task_items.get(task_id)
@@ -500,7 +590,7 @@ class ProcessTaskTreeModel(QStandardItemModel):
                 mode_allowed = True
                 if is_local:
                     # Local: Only current department exports + build allowed
-                    if task.task_type == 'export' and task.department != current_department:
+                    if task.task_type in ('export', 'export_group') and task.department != current_department:
                         mode_allowed = False
 
                 # Check if initial selection allows this task
@@ -516,8 +606,28 @@ class ProcessTaskTreeModel(QStandardItemModel):
                 if task_item:
                     task_item.setCheckState(Qt.Checked if task.enabled else Qt.Unchecked)
 
-            # Update parent checkboxes to reflect new states
+                # Also update children if this is a parent task
+                if task.children:
+                    for child in task.children:
+                        # Children inherit parent's mode filter
+                        child_mode_allowed = mode_allowed
+                        child_initial_allowed = True
+                        if self._initial_enabled_task_ids is not None:
+                            child_initial_allowed = child.id in self._initial_enabled_task_ids
+                        child.enabled = child_mode_allowed and child_initial_allowed
+
+                        child_item = self._task_items.get(child.id)
+                        if child_item:
+                            child_item.setCheckState(Qt.Checked if child.enabled else Qt.Unchecked)
+
+            # Update parent checkboxes to reflect new states (including parent tasks)
             for entity_item in self._entity_items.values():
+                # Update parent task tri-states first
+                for row in range(entity_item.rowCount()):
+                    task_item = entity_item.child(row, 0)
+                    if task_item and task_item.rowCount() > 0:
+                        self._update_parent_check_state(task_item)
+                # Then update entity tri-state
                 self._update_parent_check_state(entity_item)
         finally:
             self._updating_checks = False

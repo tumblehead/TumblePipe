@@ -138,3 +138,8 @@ SHAPE_NODE_EXPORT = 'bulge'
 SHAPE_NODE_DIVE = 'cigar'
 SHAPE_NODE_ARCHIVE = 'oval'
 SHAPE_NODE_DEFAULT = 'rect'
+
+def set_node_comment(native, message: str):
+    """Set node comment and ensure it's visible."""
+    native.setComment(message)
+    native.setGenericFlag(hou.nodeFlag.DisplayComment, True)

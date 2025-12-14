@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from tumblehead.util.io import store_json
+from tumblehead.util.io import load_json, store_json
 from tumblehead.util.uri import Uri
 
 
@@ -24,6 +24,9 @@ class DatabaseAdapter:
     def __init__(self, api):
         self._api = api
         self._config = api.config
+        self._file_mtimes = {}  # {purpose: mtime} - track when we last loaded each file
+        self._base_snapshots = {}  # {purpose: dict} - snapshot at load time for 3-way merge
+        self._record_file_mtimes()
 
     def list_purposes(self) -> list[str]:
         """List all available purposes from the config cache"""
@@ -67,7 +70,11 @@ class DatabaseAdapter:
         return self._config.cache.get(purpose)
 
     def save(self, uri: Uri, data: dict) -> None:
-        """Save changes to a URI by updating cache and persisting to file"""
+        """Save changes to a URI by updating cache and persisting to file.
+
+        This method merges the new data with existing data to preserve children
+        that already exist at the target path.
+        """
         purpose = uri.purpose
         cache_data = self._config.cache.get(purpose)
 
@@ -83,7 +90,25 @@ class DatabaseAdapter:
                 if segment not in children:
                     children[segment] = {'properties': {}, 'children': {}}
                 current = children[segment]
-            current['children'][uri.segments[-1]] = data
+
+            # Merge with existing data to preserve children
+            final_segment = uri.segments[-1]
+            children = current.setdefault('children', {})
+            existing = children.get(final_segment, {})
+
+            # Build merged data: preserve existing children, update properties
+            merged = {
+                'properties': data.get('properties', existing.get('properties', {})),
+                'children': existing.get('children', {}),  # Preserve existing children
+            }
+
+            # Preserve or update schema if present
+            if 'schema' in data:
+                merged['schema'] = data['schema']
+            elif 'schema' in existing:
+                merged['schema'] = existing['schema']
+
+            children[final_segment] = merged
 
         self._config.cache[purpose] = cache_data
         store_json(self._config.db_path / f'{purpose}.json', cache_data)
@@ -176,9 +201,164 @@ class DatabaseAdapter:
         else:
             self.save_root(uri.purpose, data)
 
+    def save_properties_with_merge(self, uri: Uri, properties: dict) -> tuple[bool, str]:
+        """Save properties with merge conflict detection. Returns (success, message)."""
+        if uri.segments:
+            data = self.lookup(uri) or {'properties': {}, 'children': {}}
+        else:
+            data = self.lookup_root(uri.purpose) or {'properties': {}, 'children': {}}
+        data['properties'] = properties
+        if uri.segments:
+            return self.save_with_merge(uri, data)
+        else:
+            return self.save_root_with_merge(uri.purpose, data)
+
+    def force_save_properties(self, uri: Uri, properties: dict) -> None:
+        """Force save properties without merge (user chose to overwrite)."""
+        if uri.segments:
+            data = self.lookup(uri) or {'properties': {}, 'children': {}}
+        else:
+            data = self.lookup_root(uri.purpose) or {'properties': {}, 'children': {}}
+        data['properties'] = properties
+        if uri.segments:
+            self.force_save(uri, data)
+        else:
+            self.force_save_root(uri.purpose, data)
+
     def transact(self, uri: Uri) -> 'DatabaseTransaction':
         """Create a transaction context for applying changes"""
         return DatabaseTransaction(self, uri)
+
+    def _record_file_mtimes(self) -> None:
+        """Record modification times for all cached purpose files."""
+        for purpose in self._config.cache.keys():
+            file_path = self._config.db_path / f'{purpose}.json'
+            if file_path.exists():
+                self._file_mtimes[purpose] = file_path.stat().st_mtime
+                self._base_snapshots[purpose] = deepcopy(self._config.cache[purpose])
+
+    def reload_cache(self) -> None:
+        """Reload all data from disk, discarding local changes."""
+        for purpose in list(self._config.cache.keys()):
+            file_path = self._config.db_path / f'{purpose}.json'
+            if file_path.exists():
+                self._config.cache[purpose] = load_json(file_path)
+        self._record_file_mtimes()
+
+    def save_with_merge(self, uri: Uri, data: dict) -> tuple[bool, str]:
+        """Save with automatic merge. Returns (success, message).
+
+        Returns:
+            (True, "") - saved successfully (no conflict or merge succeeded)
+            (False, "conflict") - merge conflict, caller should show dialog
+            (False, "error: ...") - other error
+        """
+        purpose = uri.purpose
+        file_path = self._config.db_path / f'{purpose}.json'
+
+        # Check if file was modified externally
+        if file_path.exists() and purpose in self._file_mtimes:
+            current_mtime = file_path.stat().st_mtime
+            if current_mtime > self._file_mtimes[purpose]:
+                # File changed externally - try to merge
+                disk_data = load_json(file_path)
+                base = self._base_snapshots.get(purpose, {})
+
+                # Build our full cache with the pending change applied
+                ours = deepcopy(self._config.cache.get(purpose, {}))
+                self._apply_uri_data(ours, uri, data)
+
+                merged, has_conflict = self._merge_changes(base, ours, disk_data)
+
+                if has_conflict:
+                    return False, "conflict"
+
+                # Merge succeeded - update cache with merged data
+                self._config.cache[purpose] = merged
+                store_json(file_path, merged)
+                self._file_mtimes[purpose] = file_path.stat().st_mtime
+                self._base_snapshots[purpose] = deepcopy(merged)
+                return True, ""
+
+        # No external changes - normal save
+        self.save(uri, data)
+        self._file_mtimes[purpose] = file_path.stat().st_mtime
+        self._base_snapshots[purpose] = deepcopy(self._config.cache[purpose])
+        return True, ""
+
+    def save_root_with_merge(self, purpose: str, data: dict) -> tuple[bool, str]:
+        """Save root with automatic merge. Returns (success, message)."""
+        file_path = self._config.db_path / f'{purpose}.json'
+
+        if file_path.exists() and purpose in self._file_mtimes:
+            current_mtime = file_path.stat().st_mtime
+            if current_mtime > self._file_mtimes[purpose]:
+                disk_data = load_json(file_path)
+                base = self._base_snapshots.get(purpose, {})
+
+                merged, has_conflict = self._merge_changes(base, data, disk_data)
+
+                if has_conflict:
+                    return False, "conflict"
+
+                self._config.cache[purpose] = merged
+                store_json(file_path, merged)
+                self._file_mtimes[purpose] = file_path.stat().st_mtime
+                self._base_snapshots[purpose] = deepcopy(merged)
+                return True, ""
+
+        self.save_root(purpose, data)
+        self._file_mtimes[purpose] = file_path.stat().st_mtime
+        self._base_snapshots[purpose] = deepcopy(self._config.cache[purpose])
+        return True, ""
+
+    def _apply_uri_data(self, cache_data: dict, uri: Uri, data: dict) -> None:
+        """Apply data at a URI path within cache_data (mutates cache_data)."""
+        if not uri.segments:
+            cache_data.update(data)
+            return
+
+        current = cache_data
+        for segment in uri.segments[:-1]:
+            children = current.setdefault('children', {})
+            if segment not in children:
+                children[segment] = {'properties': {}, 'children': {}}
+            current = children[segment]
+
+        final_segment = uri.segments[-1]
+        children = current.setdefault('children', {})
+        children[final_segment] = data
+
+    def _merge_changes(self, base: dict, ours: dict, theirs: dict) -> tuple[dict | None, bool]:
+        """Three-way merge using dictdiffer. Returns (merged_data, has_conflict)."""
+        try:
+            from dictdiffer import patch
+            from dictdiffer.merge import Merger, UnresolvedConflictsException
+
+            merger = Merger(base, ours, theirs, {})
+            merger.run()
+            merged = patch(merger.unified_patches, base)
+            return merged, False
+        except UnresolvedConflictsException:
+            return None, True
+        except ImportError:
+            # dictdiffer not available - fall back to simple overwrite
+            return ours, False
+
+    def force_save(self, uri: Uri, data: dict) -> None:
+        """Force save without merge (user chose to overwrite)."""
+        purpose = uri.purpose
+        self.save(uri, data)
+        file_path = self._config.db_path / f'{purpose}.json'
+        self._file_mtimes[purpose] = file_path.stat().st_mtime
+        self._base_snapshots[purpose] = deepcopy(self._config.cache[purpose])
+
+    def force_save_root(self, purpose: str, data: dict) -> None:
+        """Force save root without merge (user chose to overwrite)."""
+        self.save_root(purpose, data)
+        file_path = self._config.db_path / f'{purpose}.json'
+        self._file_mtimes[purpose] = file_path.stat().st_mtime
+        self._base_snapshots[purpose] = deepcopy(self._config.cache[purpose])
 
 
 class DatabaseTransaction:

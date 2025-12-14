@@ -127,6 +127,7 @@ class ImportRig(ns.Node):
         # Parameters
         asset_uri = self.get_entity_uri()
         if asset_uri is None:
+            ns.set_node_comment(context, "Bypassed: No asset selected")
             bypass_node.parm('input').set(0)
             return
         variant_name = self.get_variant_name()
@@ -138,6 +139,7 @@ class ImportRig(ns.Node):
             version_names = self.list_version_names()
             actual_versions = [v for v in version_names if v != 'latest']
             if not actual_versions:
+                ns.set_node_comment(context, "Bypassed: No versions available")
                 bypass_node.parm('input').set(0)
                 return
             version_name = actual_versions[-1]  # Get last (newest)
@@ -150,6 +152,7 @@ class ImportRig(ns.Node):
         version_path = api.storage.resolve(export_uri)
         file_path = version_path / f'{uri_name}_rig_{version_name}.bgeo.sc'
         if not file_path.exists():
+            ns.set_node_comment(context, "Bypassed: Rig file not found")
             bypass_node.parm('input').set(0)
             return
 
@@ -193,9 +196,13 @@ class ImportRig(ns.Node):
 
         # Layout the dive nodes
         dive_node.layoutChildren()
-        
+
         # Disable bypass
         bypass_node.parm('input').set(1)
+
+        # Set success comment
+        asset_name = asset_uri.segments[-1]
+        ns.set_node_comment(context, f"Imported: {asset_name}\n{version_name}")
 
 def create(scene, name):
     node_type = ns.find_node_type('import_rig', 'Sop')

@@ -8,9 +8,11 @@ from qtpy import QtWidgets
 
 from tumblehead.pipe.paths import get_workfile_context
 
-from ..helpers import get_timestamp_from_context, list_file_paths, get_user_from_context
+from ..helpers import get_timestamp_from_context, list_file_paths, get_user_from_context, file_path_from_context
 from ..widgets import ButtonSurface, RowHoverTableView, VersionItemDelegate
+from ..widgets.usd_viewer_menu import USDViewerContextMenu
 from ..models import VersionTableModel
+from ..viewers.usd_viewer import USDViewerLauncher
 
 
 class VersionButtonSurface(ButtonSurface):
@@ -122,6 +124,7 @@ class VersionView(QtWidgets.QWidget):
         self._selection = None
         self._model = VersionTableModel(self)
         self._selected_row = -1
+        self._usd_viewer_launcher = USDViewerLauncher(self)
 
         # Settings
         self.setMinimumHeight(0)
@@ -203,14 +206,29 @@ class VersionView(QtWidgets.QWidget):
         if not context:
             return
 
-        # Build and display the menu (same as before)
+        # Get file path to check if it's a USD file
+        file_path = file_path_from_context(context)
+
+        # Build and display the menu
         menu = QtWidgets.QMenu()
         open_location_action = menu.addAction("Open Location")
         revive_version_action = menu.addAction("Revive")
+
+        # Add USD viewer options if this is a USD file
+        USDViewerContextMenu.add_usd_menu_actions(menu, file_path, self._usd_viewer_launcher)
+
         selected_action = menu.exec_(self._table_view.mapToGlobal(position))
 
         if selected_action is None:
             return
+
+        # Handle USD viewer actions
+        if file_path and USDViewerContextMenu.handle_usd_menu_action(
+            selected_action, file_path, self._usd_viewer_launcher, self
+        ):
+            return
+
+        # Handle standard actions
         if selected_action == open_location_action:
             return self.open_location.emit(context)
         if selected_action == revive_version_action:

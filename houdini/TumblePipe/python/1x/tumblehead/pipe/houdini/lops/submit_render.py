@@ -122,7 +122,7 @@ class SubmitRender(ns.Node):
             return aov_names
 
         # Final fallback: get from USD stage directly
-        stage_node = self.native().node('build_shot/OUT')
+        stage_node = self.native().node('import_shot')
         if stage_node is not None:
             root = stage_node.stage().GetPseudoRoot()
             return [
@@ -285,6 +285,18 @@ class SubmitRender(ns.Node):
             self.parm('shot_department_label').set(shot_department_name if shot_department_name else '')
         else:
             self.parm('shot_department_label').set('')
+
+    def _initialize(self):
+        """Initialize node with defaults from workfile context and update labels."""
+        # If no context, set first available shot
+        entity = _entity_from_context_json()
+        if entity is None:
+            shot_uris = self.list_shot_uris()
+            if len(shot_uris) > 1:  # Skip 'from_context'
+                self.set_shot_uri(Uri.parse_unsafe(shot_uris[1]))
+
+        # Update labels to show resolved values
+        self._update_labels()
 
     def set_shot_uri(self, shot_uri: Uri):
         shot_uris = self.list_shot_uris()
@@ -536,17 +548,11 @@ def set_style(raw_node):
     raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DEFAULT)
 
 def on_created(raw_node):
-
     # Set node style
     set_style(raw_node)
 
-    # If no context, set first available shot
-    entity = _entity_from_context_json()
-    if entity is not None: return
     node = SubmitRender(raw_node)
-    shot_uris = node.list_shot_uris()
-    if len(shot_uris) > 1:  # Skip 'from_context'
-        node.set_shot_uri(Uri.parse_unsafe(shot_uris[1]))
+    node._initialize()
 
 def build_preview():
     raw_node = hou.pwd()

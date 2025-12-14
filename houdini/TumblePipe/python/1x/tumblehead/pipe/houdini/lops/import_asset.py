@@ -186,8 +186,11 @@ class ImportAsset(ns.Node):
 
     def execute(self):
         self._update_labels()
+        native = self.native()
         asset_uri = self.get_asset_uri()
         if asset_uri is None:
+            ns.set_node_comment(native, "Bypassed: No asset selected")
+            native.bypass(True)
             return result.Value(None)
 
         # Get variant and staged file path based on version selection
@@ -201,9 +204,13 @@ class ImportAsset(ns.Node):
             staged_file_path = get_staged_file_path(asset_uri, version_name, variant_name)
 
         if staged_file_path is None:
-            raise FileNotFoundError(f"No staged build found for {asset_uri}")
+            ns.set_node_comment(native, "Bypassed: No staged file found")
+            native.bypass(True)
+            return result.Value(None)
         if not staged_file_path.exists():
-            raise FileNotFoundError(f"Staged file not found: {staged_file_path}")
+            ns.set_node_comment(native, f"Bypassed: Staged file not found")
+            native.bypass(True)
+            return result.Value(None)
 
         # Set import node filepath
         self.parm('import_filepath1').set(path_str(staged_file_path))
@@ -225,6 +232,9 @@ class ImportAsset(ns.Node):
         # Generate and set metadata script
         script = _metadata_script(asset_uri, shot_uri, shot_department)
         self.parm('metadata_python').set(script)
+
+        # Set success comment with import metadata
+        ns.set_node_comment(native, f"Imported: {resolved_version}")
 
         return result.Value(None)
 

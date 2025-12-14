@@ -404,8 +404,12 @@ def export_scene_version(scene_uri: Uri) -> Path:
     Creates versioned .usda at:
     export:/scenes/{path}/_staged/v####/{scene}_v####.usda
 
-    The file sublayers all asset staged files from the scene.
-    Scene exports contain only direct assets (no inheritance).
+    The file sublayers:
+    1. Direct asset staged files (strongest in USD composition)
+    2. Parent scene layers (for inheritance - weaker)
+
+    Parent scene inheritance allows changes to parent scenes to propagate
+    automatically to child scenes without re-exporting the child.
 
     Returns:
         Path to the generated .usda file
@@ -426,12 +430,25 @@ def export_scene_version(scene_uri: Uri) -> Path:
     if scene is None:
         raise ValueError(f"Scene not found: {scene_uri}")
 
-    # Collect asset sublayer paths (assumes latest will exist at render time)
+    # Collect sublayer paths
     layer_paths = []
+
+    # 1. Direct assets FIRST (strongest in USD composition)
     for entry in scene.assets:
         asset_uri = Uri.parse_unsafe(entry.asset)
         staged_path = get_latest_staged_file_path(asset_uri, entry.variant)
         layer_paths.append(staged_path)
+
+    # 2. Parent scene sublayers AFTER (weaker, inherited)
+    #    Walk up: scenes:/outdoor/forest -> scenes:/outdoor
+    segments = list(scene_uri.segments)
+    while len(segments) > 1:
+        segments = segments[:-1]
+        parent_uri = SCENES_URI
+        for seg in segments:
+            parent_uri = parent_uri / seg
+        parent_latest_path = get_scene_latest_path(parent_uri)
+        layer_paths.append(parent_latest_path)
 
     # Get next version path
     version_path = next_scene_staged_path(scene_uri)

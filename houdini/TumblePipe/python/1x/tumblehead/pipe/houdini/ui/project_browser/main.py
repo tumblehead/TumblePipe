@@ -18,7 +18,6 @@ from tumblehead.pipe.houdini.ui.util import (
 )
 from tumblehead.pipe.houdini import util
 from tumblehead.pipe.houdini.lops import (
-    build_shot,
     create_model,
     import_shot,
     import_asset,
@@ -45,6 +44,7 @@ from .helpers import (
 )
 from .views import WorkspaceBrowser, DepartmentBrowser, DetailsView, VersionView, SettingsView
 from .utils.async_refresh import AsyncRefreshManager
+from .viewers.usd_viewer import USDViewerLauncher
 
 api = default_client()
 
@@ -61,6 +61,9 @@ class ProjectBrowser(QtWidgets.QWidget):
 
         # Initialize async refresh manager
         self._async_refresh_manager = AsyncRefreshManager(api, self)
+
+        # Initialize USD viewer launcher
+        self._usd_viewer_launcher = USDViewerLauncher(self)
 
         # Settings
         self.setObjectName("ProjectBrowser")
@@ -157,6 +160,21 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._department_browser = DepartmentBrowser(api)
         layout.addWidget(self._department_browser, 1, 1)
 
+        # Create footer with "View Latest Export" button
+        footer_widget = QtWidgets.QWidget()
+        footer_layout = QtWidgets.QHBoxLayout(footer_widget)
+        footer_layout.setContentsMargins(5, 5, 5, 5)
+        footer_layout.setSpacing(5)
+
+        self._view_export_button = QtWidgets.QPushButton("View Latest Export")
+        self._view_export_button.setIcon(hqt.Icon("NETWORKS_lop"))
+        self._view_export_button.setToolTip("Open latest staged USD export in USD viewer")
+        self._view_export_button.setEnabled(False)  # Disabled until shot selected
+        self._view_export_button.clicked.connect(self._view_latest_export)
+        footer_layout.addWidget(self._view_export_button)
+
+        layout.addWidget(footer_widget, 2, 1)  # Row 2, column 1 (below department browser)
+
         # Create the tabbed view
         self._tabbed_view = QtWidgets.QTabWidget()
         self._tabbed_view.setStyleSheet("QTabWidget::pane { border: 0; }")
@@ -203,6 +221,7 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._version_view.open_version.connect(self._open_version)
         self._version_view.revive_version.connect(self._revive_version)
         self._settings_view.auto_refresh_changed.connect(self._on_auto_refresh_changed)
+        self._settings_view.rebuild_nodes_changed.connect(self._on_rebuild_nodes_changed)
 
         # Setup auto-refresh timer (60 seconds)
         self._auto_refresh_timer = QTimer(self)
@@ -697,6 +716,10 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._version_view.set_context(context)
         self._version_view.select(context.version_name)
 
+        # Enable/disable export button based on context (shots only)
+        is_shot = bool(context and 'shots' in str(context.entity_uri))
+        self._view_export_button.setEnabled(is_shot)
+
 
     def _workspace_changed(self, entity_uri):
         """Handle workspace selection changes with validation"""
@@ -706,6 +729,10 @@ class ProjectBrowser(QtWidgets.QWidget):
 
             # Update department browser with new entity
             self._department_browser.set_entity(entity_uri)
+
+            # Update export button state based on entity type
+            is_shot = bool(entity_uri and 'shots' in str(entity_uri))
+            self._view_export_button.setEnabled(is_shot)
 
             # If we have a current context, try to maintain department selection
             if self._context is not None:
@@ -785,7 +812,13 @@ class ProjectBrowser(QtWidgets.QWidget):
         # Update the auto settings to reflect the new refresh setting
         self._auto_settings[Section.Asset][Action.Refresh] = enabled
         self._auto_settings[Section.Shot][Action.Refresh] = enabled
-        
+
+    def _on_rebuild_nodes_changed(self, enabled):
+        """Handle rebuild nodes setting change"""
+        # Update the auto settings to reflect the new rebuild setting
+        self._auto_settings[Section.Asset][Action.RebuildNodes] = enabled
+        self._auto_settings[Section.Shot][Action.RebuildNodes] = enabled
+
     def _department_open_location(self, context):
         if self._selected_entity is None:
             return
@@ -909,11 +942,15 @@ class ProjectBrowser(QtWidgets.QWidget):
         with util.update_mode(hou.updateMode.Manual):
             # Load the file path if it exists, otherwise create it
             if file_path.exists():
-                hou.hipFile.load(
-                    path_str(file_path),
-                    suppress_save_prompt=True,
-                    ignore_load_warnings=True,
-                )
+                try:
+                    hou.hipFile.load(
+                        path_str(file_path),
+                        suppress_save_prompt=True,
+                        ignore_load_warnings=True,
+                    )
+                except hou.OperationFailed as e:
+                    # File may have partially loaded - continue and try to fix with rebuild
+                    print(f"Warning: File loaded with errors: {e}")
                 context = get_workfile_context(file_path)
                 if context is None:
                     context = selected_context
@@ -929,16 +966,11 @@ class ProjectBrowser(QtWidgets.QWidget):
                 save_entity_context(file_path.parent, self._context)
                 self._initialize_scene()
 
-            # Find a build shot or import shot node
-            build_shot_nodes = list(
-                map(build_shot.BuildShot, ns.list_by_node_type("build_shot", "Lop"))
-            )
+            # Find an import shot node
             import_shot_nodes = list(
                 map(import_shot.ImportShot, ns.list_by_node_type("import_shot", "Lop"))
             )
-            if len(build_shot_nodes) > 0:
-                build_shot_nodes[0].setDisplayFlag(True)
-            elif len(import_shot_nodes) > 0:
+            if len(import_shot_nodes) > 0:
                 import_shot_nodes[0].native().setDisplayFlag(True)
 
             # Update the dependencies
@@ -1145,15 +1177,47 @@ class ProjectBrowser(QtWidgets.QWidget):
         stage = hou.node("/stage")
         stage.parm("rendergallerysource").set("$HIP/galleries/rendergallery.db")
 
+    def _rebuild_import_export_nodes(self):
+        """Rebuild import/export nodes to use latest HDA definitions.
+
+        Rebuilds these specific node types (which do NOT have dive targets):
+        - import_layer, import_shot, layer_split, export_layer, import_asset (LOP)
+        - import_rig (SOP)
+        """
+        from tumblehead.pipe.houdini import rebuild
+
+        lop_types = ['import_layer', 'import_shot', 'layer_split', 'export_layer', 'import_asset']
+        sop_types = ['import_rig']
+
+        all_rebuilt = []
+        all_failed = []
+
+        with hou.undos.group("Rebuild Import/Export Nodes"):
+            rebuilt, failed = rebuild.rebuild_nodes_by_type(lop_types, "Lop")
+            all_rebuilt.extend(rebuilt)
+            all_failed.extend(failed)
+
+            rebuilt, failed = rebuild.rebuild_nodes_by_type(sop_types, "Sop")
+            all_rebuilt.extend(rebuilt)
+            all_failed.extend(failed)
+
+        if all_failed:
+            error_details = "\n".join(f"  {path}: {error}" for path, error in all_failed)
+            hou.ui.displayMessage(
+                f"Some nodes could not be rebuilt:\n{error_details}",
+                severity=hou.severityType.Warning
+            )
+
+        return all_rebuilt
+
     def _refresh_scene(self):
+        # Rebuild import/export nodes if setting is enabled
+        if self._auto_settings.get(Section.Asset, {}).get(Action.RebuildNodes, False):
+            self._rebuild_import_export_nodes()
+
         # Find create model nodes
         create_model_nodes = list(
             map(create_model.CreateModel, ns.list_by_node_type("create_model", "Lop"))
-        )
-
-        # Find shot build nodes
-        build_shot_nodes = list(
-            map(build_shot.BuildShot, ns.list_by_node_type("build_shot", "Lop"))
         )
 
         # Find import shot nodes
@@ -1198,12 +1262,6 @@ class ProjectBrowser(QtWidgets.QWidget):
             if not create_model_node.is_valid():
                 continue
             create_model_node.execute()
-
-        # Import latest shot builds
-        for build_shot_node in build_shot_nodes:
-            if not build_shot_node.is_valid():
-                continue
-            build_shot_node.execute()
 
         # Import latest shot stages
         for import_shot_node in import_shot_nodes:
@@ -1409,18 +1467,18 @@ class ProjectBrowser(QtWidgets.QWidget):
             asset_export_node.execute()
 
         elif entity_type == 'shot':
-            # Find any build shot nodes
-            build_shot_nodes = list(
-                map(build_shot.BuildShot, ns.list_by_node_type("build_shot", "Lop"))
+            # Find any import shot nodes
+            import_shot_nodes = list(
+                map(import_shot.ImportShot, ns.list_by_node_type("import_shot", "Lop"))
             )
 
             # Temporarily disable procedurals
-            build_node_include_procedurals = {
-                build_shot_node.path(): build_shot_node.get_include_procedurals()
-                for build_shot_node in build_shot_nodes
+            shot_node_include_procedurals = {
+                import_shot_node.path(): import_shot_node.get_include_procedurals()
+                for import_shot_node in import_shot_nodes
             }
-            for build_shot_node in build_shot_nodes:
-                build_shot_node.set_include_procedurals(False)
+            for import_shot_node in import_shot_nodes:
+                import_shot_node.set_include_procedurals(False)
 
             # Execute layer_split nodes first (shared content)
             def _is_shot_split_correct(node):
@@ -1477,11 +1535,11 @@ class ProjectBrowser(QtWidgets.QWidget):
             shot_export_node.execute()
 
             # Re-enable procedurals
-            for build_shot_node in build_shot_nodes:
-                include_procedurals = build_node_include_procedurals[
-                    build_shot_node.path()
+            for import_shot_node in import_shot_nodes:
+                include_procedurals = shot_node_include_procedurals[
+                    import_shot_node.path()
                 ]
-                build_shot_node.set_include_procedurals(include_procedurals)
+                import_shot_node.set_include_procedurals(include_procedurals)
 
         elif entity_type == 'group':
             # Get group members
@@ -1695,6 +1753,17 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._open_location_path(texture_path)
 
     def _open_location_path(self, file_path):
+        """Open location in file browser, or USD file in configured viewer.
+
+        Args:
+            file_path: Path to file or directory to open
+        """
+        # If it's a USD file and a viewer is configured, use the USD viewer
+        if file_path.is_file() and self._usd_viewer_launcher.is_usd_file(file_path):
+            if self._usd_viewer_launcher.launch_viewer(file_path):
+                return  # Successfully launched USD viewer
+
+        # Fallback to file browser
         hou.ui.showInFileBrowser(
             path_str(file_path) + "/" if file_path.is_dir() else path_str(file_path)
         )
@@ -1742,3 +1811,45 @@ class ProjectBrowser(QtWidgets.QWidget):
         # Only continue if scene was actually opened
         self._save_scene()
         self._tabbed_view.setCurrentWidget(self._details_view)
+
+    def _view_latest_export(self):
+        """Open the latest staged export file in 3D-Info viewer."""
+        # Use selected entity directly (works without department selection)
+        if not self._selected_entity:
+            hou.ui.displayMessage(
+                "No shot selected.\n\nPlease select a shot first.",
+                title="No Selection"
+            )
+            return
+
+        # Get latest staged file path
+        from tumblehead.pipe.paths import get_latest_staged_file_path
+
+        try:
+            export_file = get_latest_staged_file_path(
+                self._selected_entity,
+                variant_name='default'
+            )
+        except Exception as e:
+            hou.ui.displayMessage(
+                f"Could not find latest export.\n\nError: {str(e)}",
+                title="Export Not Found"
+            )
+            return
+
+        if not export_file or not export_file.exists():
+            hou.ui.displayMessage(
+                "No staged export found for this shot.\n\n"
+                "Run a build job to create the staged export.",
+                title="Export Not Found"
+            )
+            return
+
+        # Launch in USD viewer
+        from .viewers.usd_viewer import USDViewerType
+        if not self._usd_viewer_launcher.launch_viewer(export_file, USDViewerType.AUTO):
+            hou.ui.displayMessage(
+                "Failed to launch USD viewer.\n\n"
+                "Configure viewer in Settings → Configure USD Viewers",
+                title="Viewer Not Configured"
+            )

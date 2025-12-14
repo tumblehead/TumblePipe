@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 
-from qtpy.QtCore import QObject, Qt, Signal
-from qtpy.QtGui import QStandardItem, QStandardItemModel
+from qtpy.QtCore import QObject, QRect, Qt, Signal
+from qtpy.QtGui import QColor, QPainter, QPen, QStandardItem, QStandardItemModel
 from qtpy.QtWidgets import (
+    QAbstractItemView,
     QInputDialog,
     QLineEdit,
     QMenu,
@@ -162,6 +163,12 @@ class EntityOpRemove(EntityOp):
 
 
 @dataclass(frozen=True)
+class EntityOpReorder(EntityOp):
+    from_label: str
+    to_label: str
+
+
+@dataclass(frozen=True)
 class EntityChange:
     uri: Uri
     op: EntityOp
@@ -177,6 +184,10 @@ def _entity_change_update(uri: Uri, from_label: str, to_label: str) -> EntityCha
 
 def _entity_change_remove(uri: Uri, label: str) -> EntityChange:
     return EntityChange(uri, EntityOpRemove(label))
+
+
+def _entity_change_reorder(uri: Uri, from_label: str, to_label: str) -> EntityChange:
+    return EntityChange(uri, EntityOpReorder(from_label, to_label))
 
 
 @dataclass(frozen=True)
@@ -212,6 +223,11 @@ class UriPathItem(QStandardItem, QObject):
         self._label = label
         self._items = dict()
 
+        # Enable drag and drop for reordering
+        flags = self.flags()
+        flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
+        self.setFlags(flags)
+
     def uri(self):
         return self.parent().uri() / self._label
 
@@ -243,6 +259,34 @@ class UriPathItem(QStandardItem, QObject):
         self.removeRow(index)
         del self._items[label]
         self.change.emit(_entity_change_remove(self.uri(), label))
+
+    def _reorder_entity(self, from_label: str, to_label: str):
+        """Move entity from_label to the position of to_label."""
+        if from_label == to_label:
+            return
+
+        # Get items
+        from_item = self._items[from_label]
+        to_item = self._items[to_label]
+
+        # Get rows
+        from_row = from_item.row()
+        to_row = to_item.row()
+
+        # Move in model using takeRow/insertRow
+        row_items = self.takeRow(from_row)
+        self.insertRow(to_row, row_items)
+
+        # Rebuild _items dict in new order
+        new_items = {}
+        for row in range(self.rowCount()):
+            child = self.child(row, 0)
+            if isinstance(child, UriPathItem):
+                new_items[child._label] = child
+        self._items = new_items
+
+        # Emit change signal
+        self.change.emit(_entity_change_reorder(self.uri(), from_label, to_label))
 
     def add_parts(self, parts: list[str], notify: bool = True):
         if len(parts) == 0:
@@ -295,6 +339,11 @@ class UriPurposeItem(QStandardItem, QObject):
         self._label = label
         self._items = dict()
 
+        # Enable drop for child entity reordering (but not drag - purposes are fixed)
+        flags = self.flags()
+        flags |= Qt.ItemIsDropEnabled
+        self.setFlags(flags)
+
     def uri(self):
         return Uri(self._label, None)
 
@@ -327,6 +376,34 @@ class UriPurposeItem(QStandardItem, QObject):
         self.removeRow(item.row())
         del self._items[label]
         self.entity_change.emit(_entity_change_remove(self.uri(), label))
+
+    def _reorder_entity(self, from_label: str, to_label: str):
+        """Move entity from_label to the position of to_label."""
+        if from_label == to_label:
+            return
+
+        # Get items
+        from_item = self._items[from_label]
+        to_item = self._items[to_label]
+
+        # Get rows
+        from_row = from_item.row()
+        to_row = to_item.row()
+
+        # Move in model using takeRow/insertRow
+        row_items = self.takeRow(from_row)
+        self.insertRow(to_row, row_items)
+
+        # Rebuild _items dict in new order
+        new_items = {}
+        for row in range(self.rowCount()):
+            child = self.child(row, 0)
+            if isinstance(child, UriPathItem):
+                new_items[child._label] = child
+        self._items = new_items
+
+        # Emit change signal
+        self.entity_change.emit(_entity_change_reorder(self.uri(), from_label, to_label))
 
     def add_parts(self, parts: list[str], notify: bool = True):
         if len(parts) == 0:
@@ -456,6 +533,15 @@ class DatabaseUriView(QTreeView):
         self.setSelectionMode(QTreeView.ExtendedSelection)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.setAlternatingRowColors(True)
+
+        # Drag-and-drop settings
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(False)  # Disable Qt's default, we draw our own
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.setDefaultDropAction(Qt.MoveAction)
+        self._drop_indicator_rect = QRect()
+        self._drop_indicator_position = None  # Store for use in dropEvent
 
         self._adapter = adapter
         self._selecting = False
@@ -611,3 +697,157 @@ class DatabaseUriView(QTreeView):
             parent._remove_entity(label)
 
         self.clearSelection()
+
+    def dragEnterEvent(self, event):
+        """Accept drag events from within the same view."""
+        if event.source() == self:
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        """Validate drop target during drag - only allow sibling reordering."""
+        target_index = self.indexAt(event.pos())
+        source_index = self.currentIndex()
+
+        if not target_index.isValid() or not source_index.isValid():
+            self._drop_indicator_rect = QRect()
+            event.ignore()
+            self.viewport().update()
+            return
+
+        source_item = self._model.itemFromIndex(source_index)
+        target_item = self._model.itemFromIndex(target_index)
+
+        if source_item is None or target_item is None:
+            self._drop_indicator_rect = QRect()
+            event.ignore()
+            self.viewport().update()
+            return
+
+        # Only allow UriPathItem reordering (not purposes)
+        if not isinstance(source_item, UriPathItem):
+            self._drop_indicator_rect = QRect()
+            event.ignore()
+            self.viewport().update()
+            return
+
+        # Only allow drops on siblings (same parent)
+        if source_item.parent() != target_item.parent():
+            self._drop_indicator_rect = QRect()
+            event.ignore()
+            self.viewport().update()
+            return
+
+        # Target must also be a UriPathItem (sibling)
+        if not isinstance(target_item, UriPathItem):
+            self._drop_indicator_rect = QRect()
+            event.ignore()
+            self.viewport().update()
+            return
+
+        # Call base class to get standard drag behavior
+        super().dragMoveEvent(event)
+
+        # Calculate drop indicator rect based on cursor position within item
+        rect = self.visualRect(target_index)
+        indicator_pos = self.dropIndicatorPosition()
+
+        if indicator_pos == QAbstractItemView.BelowItem:
+            # Line at bottom = will insert AFTER this item
+            self._drop_indicator_rect = QRect(rect.left(), rect.bottom(), rect.width(), 0)
+        else:
+            # AboveItem or OnItem = will insert AT this item's position
+            self._drop_indicator_rect = QRect(rect.left(), rect.top(), rect.width(), 0)
+
+        # Store indicator position for use in dropEvent
+        self._drop_indicator_position = indicator_pos
+
+        # Force viewport repaint to show indicator
+        self.viewport().update()
+        event.accept()
+
+    def dropEvent(self, event):
+        """Handle drop for reordering URI items within same parent."""
+        # Use stored indicator position (dropIndicatorPosition() may differ at drop time)
+        indicator_pos = self._drop_indicator_position
+
+        # Clear drop indicator
+        self._drop_indicator_rect = QRect()
+        self.viewport().update()
+
+        source_index = self.currentIndex()
+        target_index = self.indexAt(event.pos())
+
+        if not source_index.isValid() or not target_index.isValid():
+            event.ignore()
+            return
+
+        source_item = self._model.itemFromIndex(source_index)
+        target_item = self._model.itemFromIndex(target_index)
+
+        if source_item is None or target_item is None:
+            event.ignore()
+            return
+
+        # Only allow UriPathItem reordering
+        if not isinstance(source_item, UriPathItem) or not isinstance(target_item, UriPathItem):
+            event.ignore()
+            return
+
+        # Validate same parent
+        if source_item.parent() != target_item.parent():
+            event.ignore()
+            return
+
+        parent = source_item.parent()
+        if parent is None:
+            event.ignore()
+            return
+
+        from_label = source_item._label
+
+        # Determine actual target based on drop indicator position
+        if indicator_pos == QAbstractItemView.BelowItem:
+            # Insert after target - find next sibling
+            target_row = target_item.row()
+            if target_row + 1 < parent.rowCount():
+                next_item = parent.child(target_row + 1)
+                to_label = next_item._label
+            else:
+                # Target is last item - insert at end (after target)
+                # Use target's label - the reorder will handle putting source after it
+                to_label = target_item._label
+                # Special case: if source is before target, this is already correct
+                # If source is after target (would be same item), no-op
+                if from_label == to_label:
+                    event.ignore()
+                    return
+        else:
+            # AboveItem or OnItem - insert at target's position
+            to_label = target_item._label
+
+        if from_label == to_label:
+            event.ignore()
+            return
+
+        if hasattr(parent, '_reorder_entity'):
+            parent._reorder_entity(from_label, to_label)
+            event.accept()
+        else:
+            event.ignore()
+
+    def paintEvent(self, event):
+        """Custom paint to show prominent drop indicator line."""
+        super().paintEvent(event)
+
+        # Draw custom drop indicator line
+        if self.state() == QAbstractItemView.DraggingState and not self._drop_indicator_rect.isNull():
+            painter = QPainter(self.viewport())
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            pen = QPen(QColor("#4a90d9"), 2)
+            painter.setPen(pen)
+
+            rect = self._drop_indicator_rect
+            painter.drawLine(rect.left(), rect.top(), rect.right(), rect.top())
+            painter.end()

@@ -14,6 +14,7 @@ from tumblehead.pipe.houdini.ui.project_browser.models.job_schemas import (
     create_publish_schema,
     create_render_schema,
     get_column_property_map,
+    SubmissionConfigError,
 )
 from tumblehead.pipe.houdini.ui.project_browser.models.job_submission_table import (
     JobSubmissionTableModel,
@@ -474,13 +475,32 @@ class JobSubmissionDialog(QtWidgets.QDialog):
         scroll_layout.setContentsMargins(0, 0, 0, 0)
         scroll_layout.setSpacing(8)
 
-        # Publish section
-        self._publish_section = JobSectionWidget("Publish", create_publish_schema())
-        scroll_layout.addWidget(self._publish_section)
+        # Create sections - may fail if config is missing
+        try:
+            # Publish section
+            self._publish_section = JobSectionWidget("Publish", create_publish_schema())
+            scroll_layout.addWidget(self._publish_section)
 
-        # Render section
-        self._render_section = JobSectionWidget("Render", create_render_schema())
-        scroll_layout.addWidget(self._render_section)
+            # Render section
+            self._render_section = JobSectionWidget("Render", create_render_schema())
+            scroll_layout.addWidget(self._render_section)
+
+            self._config_error = None
+        except SubmissionConfigError as e:
+            self._config_error = str(e)
+            # Create placeholder widgets
+            self._publish_section = None
+            self._render_section = None
+
+            # Show error message in scroll area
+            error_label = QtWidgets.QLabel(
+                f"<b>Configuration Error</b><br><br>"
+                f"{str(e).replace(chr(10), '<br>')}<br><br>"
+                f"<i>Use the Column Editor to configure submission columns.</i>"
+            )
+            error_label.setWordWrap(True)
+            error_label.setStyleSheet("color: #ff6666; padding: 20px;")
+            scroll_layout.addWidget(error_label)
 
         # Add stretch at bottom to push sections to top when collapsed
         scroll_layout.addStretch()
@@ -521,13 +541,14 @@ class JobSubmissionDialog(QtWidgets.QDialog):
         self._entity_tree.selection_changed.connect(self._on_entity_selection_changed)
         self._submit_btn.clicked.connect(self._submit_jobs)
 
-        # Connect section enabled signals
-        self._publish_section.enabled_changed.connect(self._update_status)
-        self._render_section.enabled_changed.connect(self._update_status)
+        # Connect section signals only if sections are available
+        if self._publish_section is not None:
+            self._publish_section.enabled_changed.connect(self._update_status)
+            self._publish_section.model.dataChanged.connect(self._update_status)
 
-        # Connect model changes to status update
-        self._publish_section.model.dataChanged.connect(self._update_status)
-        self._render_section.model.dataChanged.connect(self._update_status)
+        if self._render_section is not None:
+            self._render_section.enabled_changed.connect(self._update_status)
+            self._render_section.model.dataChanged.connect(self._update_status)
 
     def _init_schema(self):
         """Initialize schemas (already done in setup_ui, just update status)."""
@@ -535,11 +556,17 @@ class JobSubmissionDialog(QtWidgets.QDialog):
 
     def _on_entity_selection_changed(self):
         """Handle entity selection change."""
+        # Skip if config error (no sections available)
+        if self._config_error is not None:
+            return
+
         selected = self._entity_tree.get_selected_entities()
 
         # Set entities on both sections (they stay synchronized)
-        self._publish_section.set_entities(selected)
-        self._render_section.set_entities(selected)
+        if self._publish_section is not None:
+            self._publish_section.set_entities(selected)
+        if self._render_section is not None:
+            self._render_section.set_entities(selected)
 
         # Apply entity properties (frame ranges, farm settings, etc.) as defaults
         if selected:
@@ -555,10 +582,12 @@ class JobSubmissionDialog(QtWidgets.QDialog):
         are shown dimmed; user edits become bold overrides.
         """
         # Apply to publish section
-        self._apply_section_entity_properties(self._publish_section, 'publish')
+        if self._publish_section is not None:
+            self._apply_section_entity_properties(self._publish_section, 'publish')
 
         # Apply to render section
-        self._apply_section_entity_properties(self._render_section, 'render')
+        if self._render_section is not None:
+            self._apply_section_entity_properties(self._render_section, 'render')
 
     def _apply_section_entity_properties(self, section: JobSectionWidget, section_name: str):
         """Apply entity properties to a specific section.
@@ -595,12 +624,25 @@ class JobSubmissionDialog(QtWidgets.QDialog):
 
     def _update_status(self):
         """Update submit button state."""
+        # Disable submit if config error
+        if self._config_error is not None:
+            self._submit_btn.setEnabled(False)
+            return
+
         # Get entity count from either section (they're synchronized)
-        row_count = self._publish_section.model.rowCount()
+        row_count = 0
+        if self._publish_section is not None:
+            row_count = self._publish_section.model.rowCount()
+        elif self._render_section is not None:
+            row_count = self._render_section.model.rowCount()
 
         # Check for validation errors in both sections
-        publish_errors = self._publish_section.model.validate_all() if self._publish_section.enabled else []
-        render_errors = self._render_section.model.validate_all() if self._render_section.enabled else []
+        publish_errors = []
+        render_errors = []
+        if self._publish_section is not None and self._publish_section.enabled:
+            publish_errors = self._publish_section.model.validate_all()
+        if self._render_section is not None and self._render_section.enabled:
+            render_errors = self._render_section.model.validate_all()
         errors = publish_errors + render_errors
 
         if row_count == 0:
@@ -608,8 +650,8 @@ class JobSubmissionDialog(QtWidgets.QDialog):
             return
 
         # Check section enabled states
-        publish_enabled = self._publish_section.enabled
-        render_enabled = self._render_section.enabled
+        publish_enabled = self._publish_section.enabled if self._publish_section is not None else False
+        render_enabled = self._render_section.enabled if self._render_section is not None else False
         any_enabled = publish_enabled or render_enabled
 
         if errors or not any_enabled:
@@ -645,12 +687,17 @@ class JobSubmissionDialog(QtWidgets.QDialog):
             }
         }
         """
-        publish_enabled = self._publish_section.enabled
-        render_enabled = self._render_section.enabled
+        # Handle case where sections might be None (config error)
+        publish_enabled = self._publish_section.enabled if self._publish_section is not None else False
+        render_enabled = self._render_section.enabled if self._render_section is not None else False
 
         # Get configs from each section
-        publish_configs = self._publish_section.get_configs() if publish_enabled else []
-        render_configs = self._render_section.get_configs() if render_enabled else []
+        publish_configs = []
+        render_configs = []
+        if self._publish_section is not None and publish_enabled:
+            publish_configs = self._publish_section.get_configs()
+        if self._render_section is not None and render_enabled:
+            render_configs = self._render_section.get_configs()
 
         # Build a map by URI for merging
         merged = {}
@@ -740,6 +787,12 @@ class JobSubmissionDialog(QtWidgets.QDialog):
             dept_str = ', '.join(set(departments)) if departments else 'N/A'
             description = f"{'+'.join(job_types)} [{dept_str}]"
 
+            # Extract display values from settings
+            variants = settings.get('variants', [])
+            variant_str = ', '.join(variants) if variants else None
+            first_frame = settings.get('first_frame')
+            last_frame = settings.get('last_frame')
+
             # Create task with farm-only execution
             # Use default parameter binding to capture config in closure
             task = ProcessTask(
@@ -750,6 +803,9 @@ class JobSubmissionDialog(QtWidgets.QDialog):
                 description=description,
                 execute_local=None,  # No local execution for farm submission
                 execute_farm=lambda c=config: batch_submit.submit_entity_batch(c),
+                variant=variant_str,
+                first_frame=first_frame,
+                last_frame=last_frame,
             )
             tasks.append(task)
 
@@ -771,9 +827,21 @@ class JobSubmissionDialog(QtWidgets.QDialog):
 
     def _submit_jobs(self):
         """Submit jobs to the farm using the ProcessDialog."""
+        # Check for config error
+        if self._config_error is not None:
+            QtWidgets.QMessageBox.warning(
+                self, "Configuration Error",
+                "Cannot submit jobs: submission columns not configured."
+            )
+            return
+
         # Validate enabled sections
-        publish_valid = self._publish_section.model.is_valid() if self._publish_section.enabled else True
-        render_valid = self._render_section.model.is_valid() if self._render_section.enabled else True
+        publish_valid = True
+        render_valid = True
+        if self._publish_section is not None and self._publish_section.enabled:
+            publish_valid = self._publish_section.model.is_valid()
+        if self._render_section is not None and self._render_section.enabled:
+            render_valid = self._render_section.model.is_valid()
 
         if not (publish_valid and render_valid):
             QtWidgets.QMessageBox.warning(

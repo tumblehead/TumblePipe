@@ -1,9 +1,12 @@
-from qtpy.QtGui import QStandardItemModel, QStandardItem
+from qtpy.QtGui import QStandardItemModel, QStandardItem, QFont, QColor, QBrush
 from qtpy.QtCore import Qt
 
 from tumblehead.util.uri import Uri
 from tumblehead.config.groups import list_groups as _list_groups
 from tumblehead.config.scene import get_inherited_scene_ref
+
+# Custom role for storing group names
+GROUP_NAMES_ROLE = Qt.UserRole + 1
 
 
 class GroupListModel(QStandardItemModel):
@@ -84,13 +87,13 @@ class GroupListModel(QStandardItemModel):
 
 
 class AvailableEntitiesModel(QStandardItemModel):
-    """Model for available entities (not in any group) - displays as tree"""
+    """Model for available entities - displays as tree with group badges"""
 
     def __init__(self, api, parent=None):
         super().__init__(parent)
         self.api = api
 
-    def load_entities(self, entity_type, assigned_entities, current_group_members=None):
+    def load_entities(self, entity_type, entity_assignments, current_group_members=None):
         """Load available entities based on type (backward compatibility wrapper)"""
         if entity_type == 'shot':
             root_uri_str = 'entity:/shots'
@@ -99,13 +102,22 @@ class AvailableEntitiesModel(QStandardItemModel):
         else:
             root_uri_str = 'entity:/'
 
-        self.load_entities_from_uri(root_uri_str, assigned_entities, current_group_members)
+        self.load_entities_from_uri(root_uri_str, entity_assignments, current_group_members)
 
-    def load_entities_from_uri(self, root_uri_str, assigned_entities, current_group_members=None):
-        """Load available entities as tree structure based on root URI"""
+    def load_entities_from_uri(self, root_uri_str, entity_assignments, current_group_members=None):
+        """Load available entities as tree structure based on root URI.
+
+        Args:
+            root_uri_str: Root URI to load entities from (e.g., 'entity:/shots')
+            entity_assignments: Dict mapping entity URI strings to
+                (set of departments, list of group names) for entities already in groups.
+                Entities in this dict will be shown with group badges.
+            current_group_members: Set of entity URI strings already in the current group
+                (these are excluded from the available list).
+        """
         self.clear()
-        self.setColumnCount(2)
-        self.setHorizontalHeaderLabels(['Name', 'Scene'])
+        self.setColumnCount(3)
+        self.setHorizontalHeaderLabels(['Name', 'Scene', 'Groups'])
 
         if current_group_members is None:
             current_group_members = set()
@@ -137,25 +149,37 @@ class AvailableEntitiesModel(QStandardItemModel):
                 entity_name = parts[2]
                 uri_str = str(uri)
 
+                # Skip entities already in the current group
                 if uri_str in current_group_members:
                     continue
 
-                if uri_str in assigned_entities:
-                    continue
+                # Get group info if entity is in other groups
+                group_names = []
+                if uri_str in entity_assignments:
+                    _, group_names = entity_assignments[uri_str]
 
                 if parent_name not in grouped:
                     grouped[parent_name] = []
-                grouped[parent_name].append((entity_name, uri_str, entity_type))
+                grouped[parent_name].append((entity_name, uri_str, entity_type, group_names))
 
             for parent_name in sorted(grouped.keys()):
                 parent_item = QStandardItem(parent_name)
                 parent_item.setSelectable(True)
                 parent_item.setEditable(False)
 
-                for entity_name, uri_str, entity_type in sorted(grouped[parent_name], key=lambda x: x[0]):
+                for entity_name, uri_str, entity_type, group_names in sorted(grouped[parent_name], key=lambda x: x[0]):
                     child_item = QStandardItem(entity_name)
                     child_item.setData(uri_str, Qt.UserRole)
+                    child_item.setData(group_names, GROUP_NAMES_ROLE)
                     child_item.setEditable(False)
+
+                    # Style entities already in other groups with italic font
+                    if group_names:
+                        font = child_item.font()
+                        font.setItalic(True)
+                        child_item.setFont(font)
+                        # Set tooltip showing which groups
+                        child_item.setToolTip(f"Already in: {', '.join(group_names)}")
 
                     # Look up scene for shots
                     scene_item = QStandardItem('')
@@ -167,9 +191,19 @@ class AvailableEntitiesModel(QStandardItemModel):
                             scene_name = scene_ref.segments[-1]
                             scene_item.setText(scene_name)
 
-                    parent_item.appendRow([child_item, scene_item])
+                    # Groups column - show badge text
+                    groups_item = QStandardItem(', '.join(group_names) if group_names else '')
+                    groups_item.setEditable(False)
+                    if group_names:
+                        # Use muted color for group badges text
+                        groups_item.setForeground(QBrush(QColor("#4a6fa5")))
+                        font = groups_item.font()
+                        font.setPointSize(7)
+                        groups_item.setFont(font)
 
-                self.appendRow([parent_item, QStandardItem('')])
+                    parent_item.appendRow([child_item, scene_item, groups_item])
+
+                self.appendRow([parent_item, QStandardItem(''), QStandardItem('')])
 
         except Exception as e:
             print(f"Error loading entities from URI '{root_uri_str}': {e}")
@@ -306,6 +340,8 @@ class GroupMembersModel(QStandardItemModel):
             parent_item = self.item(row)
             for child_row in range(parent_item.rowCount()):
                 child_item = parent_item.child(child_row)
+                if child_item is None:
+                    continue
                 uri_str = child_item.data(Qt.UserRole)
                 if uri_str:
                     entities.append(uri_str)

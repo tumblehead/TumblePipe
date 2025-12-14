@@ -90,7 +90,9 @@ def ensure_sequence(api, sequence: str, dry_run: bool = False) -> bool:
 
 def sync_from_csv(csv_path: Path, dry_run: bool = False) -> dict:
     """Import shots from CSV."""
+    print("Connecting to API...")
     api = default_client()
+    print("Connected.")
 
     stats = {
         'shots_added': 0,

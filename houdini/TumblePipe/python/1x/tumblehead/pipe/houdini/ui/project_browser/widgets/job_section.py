@@ -1,7 +1,7 @@
 """Collapsible section widget for job submission with integrated table."""
 
 from qtpy.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve
-from qtpy.QtGui import QColor, QPen, QBrush, QPainter, QFont
+from qtpy.QtGui import QColor, QPen, QBrush, QPainter, QFont, QCursor
 from qtpy.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -11,6 +11,8 @@ from qtpy.QtWidgets import (
     QHeaderView,
     QSizePolicy,
     QAbstractItemView,
+    QMenu,
+    QDialog,
 )
 
 from tumblehead.pipe.houdini.ui.project_browser.models.job_schemas import (
@@ -360,7 +362,14 @@ class JobSectionWidget(QWidget):
         self.collapsed_changed.emit(collapsed)
 
     def _on_settings_clicked(self):
-        """Handle settings button click - open column visibility dialog."""
+        """Handle settings button click - show menu with column options."""
+        menu = QMenu(self)
+        menu.addAction("Column Visibility...", self._show_visibility_dialog)
+        menu.addAction("Edit Columns...", self._show_column_editor)
+        menu.exec_(QCursor.pos())
+
+    def _show_visibility_dialog(self):
+        """Open the column visibility dialog."""
         dialog = ColumnVisibilityDialog(self._schema, self._hidden_columns, self)
         if dialog.exec_():
             # Get new hidden columns from dialog
@@ -369,6 +378,21 @@ class JobSectionWidget(QWidget):
             self._apply_column_visibility()
             # Save to user preferences
             save_column_visibility(self._schema.job_type, self._hidden_columns)
+
+    def _show_column_editor(self):
+        """Open the column editor dialog."""
+        from ..dialogs.column_editor_dialog import ColumnEditorDialog
+        dialog = ColumnEditorDialog(initial_section=self._schema.job_type, parent=self)
+        if dialog.exec_() == QDialog.Accepted:
+            # Emit signal to notify parent that schema needs to be reloaded
+            # The parent dialog will need to be closed and reopened
+            from qtpy.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Columns Updated",
+                "Column configuration has been saved.\n\n"
+                "Please close and reopen the Job Submission dialog to see the changes."
+            )
 
     def _apply_column_visibility(self):
         """Apply column visibility settings to the table view."""

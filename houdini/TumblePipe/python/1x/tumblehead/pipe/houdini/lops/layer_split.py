@@ -1,12 +1,14 @@
+from tempfile import TemporaryDirectory
 from pathlib import Path
 import subprocess
 import platform
 import json
+import shutil
 from datetime import datetime
 
 import hou
 
-from tumblehead.api import path_str, default_client
+from tumblehead.api import path_str, fix_path, default_client, get_user_name
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
 from tumblehead.config.variants import get_entity_type
@@ -15,28 +17,23 @@ from tumblehead.pipe.paths import (
     get_workfile_context,
     next_shared_export_path,
     latest_shared_export_path,
-    get_shared_layer_file_name
+    get_shared_layer_file_name,
+    shared_export_latest_path
 )
 
 api = default_client()
 
 
-def _clear_dive(dive_node):
-    """Clear all child nodes from a subnet."""
-    for node in dive_node.children():
-        node.destroy()
-
-
-def _save_context_file(export_path: Path, entity_uri: Uri, department_name: str):
+def _save_context_file(export_path: Path, entity_uri: Uri, department_name: str, version_name: str | None = None):
     """Save context.json with export metadata."""
     context_path = export_path / 'context.json'
     context_data = {
         'entity_uri': str(entity_uri),
         'department': department_name,
         'variant': '_shared',
-        'version': export_path.name,
+        'version': version_name or export_path.name,
         'timestamp': datetime.now().isoformat(),
-        'user': api.user.name
+        'user': get_user_name()
     }
     with context_path.open('w') as f:
         json.dump(context_data, f, indent=2)
@@ -82,6 +79,9 @@ class LayerSplit(ns.Node):
             context = get_workfile_context(file_path)
             if context is None:
                 return None
+            # Only accept entity URIs, not group URIs
+            if context.entity_uri.purpose != 'entity':
+                return None
             return context.entity_uri
         # From settings
         entity_uris = self.list_entity_uris()
@@ -125,6 +125,20 @@ class LayerSplit(ns.Node):
         else:
             self.parm('entity_label').set('')
 
+    def _initialize(self):
+        """Initialize node with defaults from workfile context and update labels."""
+        file_path = Path(hou.hipFile.path())
+        context = get_workfile_context(file_path)
+
+        if context is not None:
+            # Set from context
+            self.set_entity_uri(context.entity_uri)
+            if context.department_name:
+                self.set_department_name(context.department_name)
+
+        # Update labels to show resolved values
+        self._update_labels()
+
     def execute(self, force_local: bool = False):
         """
         Execute export.
@@ -155,43 +169,56 @@ class LayerSplit(ns.Node):
         export_path = next_shared_export_path(entity_uri, department_name)
         version_name = export_path.name
 
-        # Ensure export directory exists
-        export_path.mkdir(parents=True, exist_ok=True)
-
         # Get export filename
         file_name = get_shared_layer_file_name(
             entity_uri,
             department_name,
             version_name
         )
-        file_path = export_path / file_name
 
-        # Get the export subnetwork and configure it
-        export_subnet = self.native().node('export')
-        if export_subnet is None:
-            raise ValueError('Export subnetwork not found')
+        # Export to temp first, then copy to network
+        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
+            temp_path = Path(temp_dir)
 
-        # Clear existing nodes and create fresh export node
-        _clear_dive(export_subnet)
+            # Configure and execute export to temp
+            self.parm('export_lopoutput').set(path_str(temp_path / file_name))
+            self.parm('export_execute').pressButton()
 
-        # Get input connection
-        input_node = export_subnet.indirectInputs()[0]
+            # Save context file to temp
+            _save_context_file(temp_path, entity_uri, department_name, version_name)
 
-        # Create export node
-        export_node = export_subnet.createNode('rop_usd', 'usd_rop')
-        export_node.setInput(0, input_node)
+            # Copy all files from temp to export path
+            export_path.mkdir(parents=True, exist_ok=True)
+            for temp_item_path in temp_path.iterdir():
+                output_item_path = export_path / temp_item_path.name
+                if temp_item_path.is_file():
+                    shutil.copy(temp_item_path, output_item_path)
+                if temp_item_path.is_dir():
+                    shutil.copytree(temp_item_path, output_item_path)
 
-        # Configure and execute export
-        export_node.parm('lopoutput').set(path_str(file_path))
-        export_node.parm('execute').pressButton()
+        print(f'Exported shared layer to: {export_path / file_name}')
 
-        # Layout the export subnet
-        export_subnet.layoutChildren()
+        # Create/update "latest" copy
+        latest_path = shared_export_latest_path(entity_uri, department_name)
+        latest_path.mkdir(parents=True, exist_ok=True)
 
-        # Save context file
-        _save_context_file(export_path, entity_uri, department_name)
+        # Copy version files to latest (renaming versioned files to 'latest')
+        for item in export_path.iterdir():
+            dest_name = item.name.replace(version_name, 'latest')
+            dest = latest_path / dest_name
+            if dest.exists():
+                if dest.is_dir():
+                    shutil.rmtree(dest)
+                else:
+                    dest.unlink()
+            if item.is_dir():
+                shutil.copytree(item, dest)
+            else:
+                shutil.copy(item, dest)
 
-        print(f'Exported shared layer to: {file_path}')
+        print(f'Updated latest at: {latest_path}')
 
     def open_location(self):
         """Open the latest shared export location in file browser."""
@@ -242,23 +269,14 @@ def on_created(raw_node):
     # Set node style
     set_style(raw_node)
 
-    # Context
+    # Validate node type
     raw_node_type = raw_node.type()
     node_type = ns.find_node_type('layer_split', 'Lop')
     if raw_node_type != node_type:
         return
+
     node = LayerSplit(raw_node)
-
-    # Parse scene file path
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-    if context is None:
-        return
-
-    # Set the default values from context
-    node.set_entity_uri(context.entity_uri)
-    if context.department_name:
-        node.set_department_name(context.department_name)
+    node._initialize()
 
 
 def execute():

@@ -1,6 +1,6 @@
 AUTO_SETTINGS_DEFAULT = dict(
-    Asset=dict(Save=False, Refresh=True),
-    Shot=dict(Save=False, Refresh=True),
+    Asset=dict(Save=False, Refresh=True, RebuildNodes=False),
+    Shot=dict(Save=False, Refresh=True, RebuildNodes=False),
 )
 
 
@@ -18,6 +18,7 @@ class Section:
 class Action:
     Save = "Save"
     Refresh = "Refresh"
+    RebuildNodes = "RebuildNodes"
 
 
 class FrameRangeMode:

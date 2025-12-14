@@ -8,7 +8,7 @@ from tumblehead.config.variants import list_variants
 from tumblehead.config.department import list_departments
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.lops import (
-    build_shot,
+    import_shot,
     import_layer
 )
 from tumblehead.pipe.paths import (
@@ -83,12 +83,10 @@ class RenderDebug(ns.Node):
         variant_name = self.get_variant_name()
         included_shot_departments = [d.name for d in list_departments('shots') if d.renderable]
 
-        # Setup build shot
-        shot_node = build_shot.create(dive_node, 'build_shot')
+        # Setup import shot
+        shot_node = import_shot.create(dive_node, 'import_shot')
         shot_node.set_shot_uri(shot_uri)
-        shot_node.set_exclude_shot_department_names([])
         shot_node.set_include_procedurals(True)
-        shot_node.set_include_downstream_departments(True)
         shot_node.execute()
         prev_node = shot_node.native()
 

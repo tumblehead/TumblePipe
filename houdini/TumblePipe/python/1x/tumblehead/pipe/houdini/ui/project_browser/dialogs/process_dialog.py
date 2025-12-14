@@ -81,12 +81,15 @@ class ProcessDialog(QtWidgets.QDialog):
         # Set column widths
         header = self._tree_view.header()
         header.setStretchLastSection(True)
-        if header is not None and header.count() >= 4:
+        if header is not None and header.count() >= 7:
             header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)  # Task
             header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)  # Department
-            header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)  # Version
-            header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)  # Status
-            self._tree_view.setColumnWidth(3, 60)  # Status column
+            header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)  # Variant
+            header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)  # Version
+            header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)  # First
+            header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)  # Last
+            header.setSectionResizeMode(6, QtWidgets.QHeaderView.Interactive)  # Status
+            self._tree_view.setColumnWidth(6, 60)  # Status column
 
         layout.addWidget(self._tree_view)
 

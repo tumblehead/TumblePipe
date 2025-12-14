@@ -332,6 +332,18 @@ class BuildComp(ns.Node):
         else:
             self.parm('shot_label').set('')
 
+    def _initialize(self):
+        """Initialize node with defaults from workfile context and update labels."""
+        # If no context, set first available shot
+        entity = _entity_from_context_json()
+        if entity is None:
+            shot_uris = self.list_shot_uris()
+            if len(shot_uris) > 1:  # Skip 'from_context'
+                self.set_shot_uri(Uri.parse_unsafe(shot_uris[1]))
+
+        # Update labels to show resolved values
+        self._update_labels()
+
     def set_render_department_name(self, render_department_name):
         department_names = self.list_render_department_names()
         if render_department_name not in department_names: return
@@ -1354,14 +1366,8 @@ def create(scene, name):
     return BuildComp(scene.createNode(node_type.name(), name))
 
 def on_created(raw_node):
-
-    # If no context, set first available shot
-    entity = _entity_from_context_json()
-    if entity is not None: return
     node = BuildComp(raw_node)
-    shot_uris = node.list_shot_uris()
-    if len(shot_uris) > 1:  # Skip 'from_context'
-        node.set_shot_uri(Uri.parse_unsafe(shot_uris[1]))
+    node._initialize()
 
 def update():
     raw_node = hou.pwd()

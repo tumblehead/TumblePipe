@@ -1449,6 +1449,29 @@ def get_shared_layer_file_name(
     entity_name = '_'.join(entity_uri.segments)
     return f'{entity_name}_shared_{department_name}_{version_name}.usd'
 
+def shared_export_latest_path(
+    entity_uri: Uri,
+    department_name: str
+    ) -> Path:
+    """Get the 'latest' directory path for shared exports (copy-based latest)."""
+    export_uri = (
+        Uri.parse_unsafe('export:/') /
+        entity_uri.segments /
+        '_shared' /
+        department_name /
+        'latest'
+    )
+    return api.storage.resolve(export_uri)
+
+def shared_export_latest_file_path(
+    entity_uri: Uri,
+    department_name: str
+    ) -> Path:
+    """Get the 'latest' USD file path for shared exports."""
+    latest_path = shared_export_latest_path(entity_uri, department_name)
+    file_name = get_shared_layer_file_name(entity_uri, department_name, 'latest')
+    return latest_path / file_name
+
 
 ###############################################################################
 # Staged Paths

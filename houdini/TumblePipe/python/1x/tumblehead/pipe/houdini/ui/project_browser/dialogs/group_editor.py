@@ -34,6 +34,7 @@ class GroupEditorWidget(QtWidgets.QWidget):
 
         self.department_checkboxes = {}
         self._validation_errors = []
+        self._entity_assignments = {}  # entity_uri -> (departments, group_names)
 
         self._create_ui()
 
@@ -325,10 +326,17 @@ class GroupEditorWidget(QtWidgets.QWidget):
 
         root_uri_str = f'entity:/{context}'
 
-        assigned_entities = self._get_entities_in_other_groups()
+        # Get entity assignments for badge display and conflict validation
+        self._entity_assignments = self._get_entity_department_assignments()
+
+        # Current members to exclude (they're already in the group)
         current_members = set(self.members_model.get_member_entities())
 
-        self.available_model.load_entities_from_uri(root_uri_str, assigned_entities, current_members)
+        # Load all entities - no longer exclude entities in other groups
+        # Pass assignments to model for badge display
+        self.available_model.load_entities_from_uri(
+            root_uri_str, self._entity_assignments, current_members
+        )
         # Reconfigure header after model reload (model.clear() invalidates header column refs)
         header = self.available_tree.header()
         if header is not None and header.count() > 0:
@@ -358,9 +366,14 @@ class GroupEditorWidget(QtWidgets.QWidget):
             if item and item.text() in expanded_names:
                 tree_view.expand(index)
 
-    def _get_entities_in_other_groups(self):
-        """Get set of entity URI strings already in other groups"""
-        assigned = set()
+    def _get_entity_department_assignments(self):
+        """Get mapping of entity URIs to (assigned departments, group names)
+
+        Returns:
+            dict[str, tuple[set[str], list[str]]]: Mapping of entity URI string
+            to (set of departments, list of group names)
+        """
+        assignments = {}
         current_name = self.name_field.text().strip()
 
         shot_groups = list_groups('shots')
@@ -372,9 +385,43 @@ class GroupEditorWidget(QtWidgets.QWidget):
                 continue
 
             for member in group.members:
-                assigned.add(str(member))
+                uri_str = str(member)
+                if uri_str not in assignments:
+                    assignments[uri_str] = (set(), [])
+                assignments[uri_str][0].update(group.departments)
+                assignments[uri_str][1].append(group.name)
 
-        return assigned
+        return assignments
+
+    def _check_department_conflicts(self):
+        """Check for department conflicts between selected members and departments.
+
+        Returns:
+            list[tuple[str, str, str]]: List of (entity_uri, department, existing_group)
+            for each conflict found.
+        """
+        conflicts = []
+        selected_depts = set(self._get_selected_departments())
+        members = self.members_model.get_member_entities()
+
+        for member_uri in members:
+            if member_uri in self._entity_assignments:
+                existing_depts, group_names = self._entity_assignments[member_uri]
+                overlap = selected_depts & existing_depts
+
+                if overlap:
+                    # Find which group has each overlapping department
+                    current_name = self.name_field.text().strip()
+                    for group in list_groups('shots') + list_groups('assets'):
+                        if group.name == current_name:
+                            continue
+                        if member_uri not in [str(m) for m in group.members]:
+                            continue
+                        for dept in overlap:
+                            if dept in group.departments:
+                                conflicts.append((member_uri, dept, group.name))
+
+        return conflicts
 
     def _on_add_members(self):
         """Add selected available entities to members tree"""
@@ -527,6 +574,19 @@ class GroupEditorWidget(QtWidgets.QWidget):
                 "Cannot Save Group",
                 f"Please fix the following issues:\n\n{error_list}"
             )
+            return False
+
+        # Check for department conflicts with other groups
+        conflicts = self._check_department_conflicts()
+        if conflicts:
+            # Format conflict message
+            msg = "Cannot save - the following entities have department conflicts:\n\n"
+            for entity_uri, dept, group_name in conflicts:
+                # Extract entity name from URI (last segment)
+                entity_name = entity_uri.split('/')[-1]
+                msg += f"• {entity_name} → {dept} (already in '{group_name}')\n"
+
+            QtWidgets.QMessageBox.warning(self, "Department Conflict", msg)
             return False
 
         try:

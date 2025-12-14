@@ -45,8 +45,8 @@ def _entity_from_context_json():
     context = load_entity_context(context_json_path)
     if context is None: return None
 
-    # Verify it's a shot entity
-    if context.entity_uri.purpose not in ('entity', 'groups'): return None
+    # Verify it's a shot entity (not a group)
+    if context.entity_uri.purpose != 'entity': return None
     if len(context.entity_uri.segments) < 1: return None
     if context.entity_uri.segments[0] != 'shots': return None
 
@@ -126,19 +126,21 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
     return '\n'.join(script)
 
 def _get_scene_assets(shot_uri: Uri) -> list[dict]:
-    """Get current asset data from scene context.json.
+    """Get current asset data from scene context.json, including inherited assets.
 
     Reads scene reference from root layer's context.json (same source as USD composition).
-    This ensures metadata matches what's actually in the stage and avoids stale cache issues.
+    Also includes inherited assets from parent scenes in the hierarchy.
 
     Args:
         shot_uri: The shot entity URI
 
     Returns:
         List of asset dicts with keys: asset, instance, variant, instances, inputs
+        Inherited assets appear first, direct scene assets can override them.
     """
     from tumblehead.pipe.paths import latest_export_path, get_scene_latest_path
     from tumblehead.config.variants import DEFAULT_VARIANT
+    from tumblehead.config.scenes import get_inherited_assets
 
     # Get root layer to find scene reference (same approach as graph.py Fix 2)
     root_version_path = latest_export_path(shot_uri, DEFAULT_VARIANT, 'root')
@@ -169,18 +171,50 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
     if scene_context is None:
         return []
 
-    # Return full asset data with instance names derived from asset URI
+    # Get direct scene assets
     scene_assets = scene_context.get('parameters', {}).get('assets', [])
+
+    # Get inherited assets from parent scenes
+    inherited = get_inherited_assets(scene_uri)
+
+    # Build result: inherited first, then direct (direct overrides inherited)
     result = []
+    seen_assets = set()
+
+    # Add inherited assets (from furthest parent to closest)
+    for entry, parent_uri in reversed(inherited):
+        if entry.asset not in seen_assets:
+            asset_uri = Uri.parse_unsafe(entry.asset)
+            result.append({
+                'asset': entry.asset,
+                'instance': asset_uri.segments[-1],
+                'variant': entry.variant,
+                'instances': entry.instances,
+                'inputs': []
+            })
+            seen_assets.add(entry.asset)
+
+    # Add/override with direct scene assets
     for asset_data in scene_assets:
-        asset_uri = Uri.parse_unsafe(asset_data['asset'])
-        result.append({
-            'asset': asset_data['asset'],
-            'instance': asset_uri.segments[-1],  # Use asset name as instance
+        asset_uri_str = asset_data['asset']
+        asset_uri = Uri.parse_unsafe(asset_uri_str)
+        new_entry = {
+            'asset': asset_uri_str,
+            'instance': asset_uri.segments[-1],
             'variant': asset_data.get('variant', 'default'),
             'instances': asset_data.get('instances', 1),
-            'inputs': []  # No composition history for scene-level assets
-        })
+            'inputs': []
+        }
+        if asset_uri_str in seen_assets:
+            # Override inherited entry
+            for i, item in enumerate(result):
+                if item['asset'] == asset_uri_str:
+                    result[i] = new_entry
+                    break
+        else:
+            result.append(new_entry)
+            seen_assets.add(asset_uri_str)
+
     return result
 
 
@@ -364,6 +398,10 @@ class ImportShot(ns.Node):
             # Specific version selected - no label needed
             self.parm('version_label').set('')
 
+    def _initialize(self):
+        """Initialize node and update labels to show resolved values."""
+        self._update_labels()
+
     def execute(self):
         self._update_labels()
 
@@ -376,7 +414,9 @@ class ImportShot(ns.Node):
         # Get parameters
         shot_uri = self.get_shot_uri()
         if shot_uri is None:
-            raise ValueError("No shot selected. Check entity source and shot parameter.")
+            ns.set_node_comment(context, "Bypassed: No shot selected")
+            context.bypass(True)
+            return
 
         # Get staged file path based on version selection
         version_name = self.get_version_name()
@@ -475,6 +515,24 @@ class ImportShot(ns.Node):
         # Handle asset duplication for assets with instances > 1
         self._setup_asset_duplication(context, assets)
 
+        # Set success comment with import metadata
+        resolved_version = staged_file_path.parent.name
+        # Try to get timestamp and user from context.json
+        if context_data is not None:
+            outputs = context_data.get('outputs', [])
+            if outputs:
+                output = outputs[0]
+                timestamp = output.get('timestamp', '')
+                user = output.get('user', '')
+                if timestamp and user:
+                    ns.set_node_comment(context, f"Imported: {resolved_version}\n{timestamp}\nby {user}")
+                else:
+                    ns.set_node_comment(context, f"Imported: {resolved_version}")
+            else:
+                ns.set_node_comment(context, f"Imported: {resolved_version}")
+        else:
+            ns.set_node_comment(context, f"Imported: {resolved_version}")
+
     def _setup_asset_duplication(self, context, assets):
         """Configure duplication for assets with instance count > 1.
 
@@ -563,14 +621,11 @@ def set_style(raw_node):
     raw_node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
-
     # Set node style
     set_style(raw_node)
 
     node = ImportShot(raw_node)
-
-    # Update labels to show current entity selection
-    node._update_labels()
+    node._initialize()
 
 def execute():
     raw_node = hou.pwd()

@@ -14,6 +14,7 @@ from tumblehead.api import default_client
 from tumblehead.util.uri import Uri
 from tumblehead.config.groups import get_group
 from tumblehead.config.department import list_departments
+from tumblehead.config.timeline import get_frame_range
 from tumblehead.pipe.paths import latest_export_path, current_staged_path, Context
 from tumblehead.pipe.houdini.lops import export_layer, layer_split
 from tumblehead.pipe.houdini.sops import export_rig
@@ -53,6 +54,7 @@ class ProcessExecutor(QObject):
         self._mode: str = 'local'
         self._is_running: bool = False
         self._current_index: int = 0
+        self._executed_split_paths: set[str] = set()  # Track executed layer_split nodes
 
     def set_tasks(self, tasks: list[ProcessTask]):
         """Set the list of tasks to execute"""
@@ -74,6 +76,7 @@ class ProcessExecutor(QObject):
         """Start executing enabled tasks"""
         self._is_running = True
         self._current_index = 0
+        self._executed_split_paths.clear()  # Reset deduplication tracking
         # Use QTimer to allow UI updates between tasks
         QTimer.singleShot(0, self._execute_next_task)
 
@@ -108,19 +111,12 @@ class ProcessExecutor(QObject):
         stderr_capture = None
 
         try:
-            if self._mode == 'local':
-                if task.execute_local is not None:
-                    # Capture stdout/stderr during local execution to keep console clean
-                    with _capture_output() as (stdout_capture, stderr_capture):
-                        task.execute_local()
-                else:
-                    raise RuntimeError("No local executor defined for task")
-            else:  # farm
-                # Farm mode - let output go to farm logs (no capture)
-                if task.execute_farm is not None:
-                    task.execute_farm()
-                else:
-                    raise RuntimeError("No farm executor defined for task")
+            if task.children:
+                # Parent task with children - execute each enabled child
+                self._execute_grouped_task(task)
+            else:
+                # Regular task - execute directly
+                self._execute_single_task(task)
 
             task.status = TaskStatus.COMPLETED
             self.task_completed.emit(task.id)
@@ -129,27 +125,73 @@ class ProcessExecutor(QObject):
             task.status = TaskStatus.FAILED
             # Capture full traceback for debugging
             error_msg = traceback.format_exc()
-
-            # Retrieve captured output (must do this before StringIO objects are gone)
-            if stdout_capture is not None:
-                captured_stdout = stdout_capture.getvalue()
-            if stderr_capture is not None:
-                captured_stderr = stderr_capture.getvalue()
-
-            # For local mode, include captured output in error message
-            if self._mode == 'local' and (captured_stdout or captured_stderr):
-                error_msg += "\n\n--- Captured Output ---\n"
-                if captured_stdout:
-                    error_msg += f"STDOUT:\n{captured_stdout}\n"
-                if captured_stderr:
-                    error_msg += f"STDERR:\n{captured_stderr}\n"
-
             task.error_message = error_msg
             self.task_failed.emit(task.id, task.error_message)
 
         self._current_index += 1
         # Continue with next task after a short delay to allow UI update
         QTimer.singleShot(100, self._execute_next_task)
+
+    def _execute_single_task(self, task: ProcessTask):
+        """Execute a single task (no children)"""
+        if self._mode == 'local':
+            if task.execute_local is not None:
+                # Capture stdout/stderr during local execution to keep console clean
+                with _capture_output() as (stdout_capture, stderr_capture):
+                    task.execute_local()
+            else:
+                raise RuntimeError("No local executor defined for task")
+        else:  # farm
+            # Farm mode - let output go to farm logs (no capture)
+            if task.execute_farm is not None:
+                task.execute_farm()
+            else:
+                raise RuntimeError("No farm executor defined for task")
+
+    def _execute_grouped_task(self, parent_task: ProcessTask):
+        """Execute a grouped task by running its enabled children.
+
+        Handles deduplication for layer_split nodes to avoid executing
+        the same node multiple times when shared across variants.
+        """
+        if not parent_task.children:
+            return
+
+        for child in parent_task.children:
+            if not child.enabled:
+                child.status = TaskStatus.SKIPPED
+                continue
+
+            # Deduplication for layer_split nodes
+            if child.task_type == 'export_shared' and child.node_path:
+                if child.node_path in self._executed_split_paths:
+                    # Already executed this layer_split, skip
+                    child.status = TaskStatus.SKIPPED
+                    continue
+                self._executed_split_paths.add(child.node_path)
+
+            child.status = TaskStatus.RUNNING
+
+            try:
+                if self._mode == 'local':
+                    if child.execute_local is not None:
+                        with _capture_output() as (stdout_capture, stderr_capture):
+                            child.execute_local()
+                    else:
+                        raise RuntimeError(f"No local executor defined for child task: {child.description}")
+                else:  # farm
+                    if child.execute_farm is not None:
+                        child.execute_farm()
+                    else:
+                        raise RuntimeError(f"No farm executor defined for child task: {child.description}")
+
+                child.status = TaskStatus.COMPLETED
+
+            except Exception as e:
+                child.status = TaskStatus.FAILED
+                child.error_message = traceback.format_exc()
+                # Re-raise to fail the parent task
+                raise
 
 
 def _get_version_from_path(export_path) -> str | None:
@@ -162,6 +204,33 @@ def _get_version_from_path(export_path) -> str | None:
         if part.startswith('v') and part[1:].isdigit():
             return part
     return None
+
+
+def _get_frame_range_values(entity_uri: Uri, export_node=None) -> tuple[int | None, int | None]:
+    """Get first and last frame for display in process dialog.
+
+    Args:
+        entity_uri: The entity URI to get frame range for
+        export_node: Optional export node to get frame range from (preferred)
+
+    Returns:
+        Tuple of (first_frame, last_frame) or (None, None) if unavailable
+    """
+    # Try to get from export node first (has node-specific settings)
+    if export_node is not None and hasattr(export_node, 'get_frame_range'):
+        result = export_node.get_frame_range()
+        if result is not None:
+            frame_range, _ = result
+            render_range = frame_range.full_range()
+            return (render_range.first_frame, render_range.last_frame)
+
+    # Fall back to entity config
+    frame_range = get_frame_range(entity_uri)
+    if frame_range is not None:
+        render_range = frame_range.full_range()
+        return (render_range.first_frame, render_range.last_frame)
+
+    return (None, None)
 
 
 def _get_downstream_departments(entity_type: str, current_department: str) -> list[str]:
@@ -217,7 +286,11 @@ def collect_publish_tasks(context: Context) -> list[ProcessTask]:
 
 
 def _collect_group_publish_tasks(context: Context, departments: list[str]) -> list[ProcessTask]:
-    """Collect publish tasks for all group members across all specified departments"""
+    """Collect publish tasks for all group members across all specified departments.
+
+    Creates grouped export tasks where layer_split and export_layer nodes are
+    organized under a parent "Export (dept)" task for each entity/department.
+    """
     tasks = []
 
     group = get_group(context.entity_uri)
@@ -226,45 +299,10 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
 
     member_uris = set(group.members)
 
-    # Filter function for layer_split nodes
-    def _is_group_split_correct(node):
-        entity_uri = node.get_entity_uri()
-        if entity_uri is None:
-            return False
-        dept = node.get_department_name()
-        if dept not in departments:
-            return False
-        return entity_uri in member_uris
-
-    # Find and add layer_split tasks first (shared content)
-    group_split_nodes = list(
-        filter(
-            _is_group_split_correct,
-            map(
-                layer_split.LayerSplit,
-                ns.list_by_node_type("layer_split", "Lop"),
-            ),
-        )
-    )
-
-    for split_node in group_split_nodes:
-        entity_uri = split_node.get_entity_uri()
-        dept = split_node.get_department_name()
-        node_ref = split_node
-
-        task = ProcessTask(
-            id=str(uuid.uuid4()),
-            uri=entity_uri,
-            department=dept,
-            task_type='export_shared',
-            description=f"Export Shared ({dept})",
-            current_version=None,
-            execute_local=lambda n=node_ref: n.execute(force_local=True),
-            execute_farm=None,  # layer_split is local-only
-        )
-        tasks.append(task)
-
+    # Filter function for export_layer nodes
     def _is_group_export_correct(node):
+        if node.native().isBypassed():
+            return False
         entity_uri = node.get_entity_uri()
         if entity_uri is None:
             return False
@@ -284,45 +322,97 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
         )
     )
 
-    # Group export nodes by entity URI to organize tasks properly
-    exports_by_entity: dict[str, list] = {}
+    # Collect paths of layer_split nodes that are connected upstream to valid export nodes
+    connected_split_paths = set()
+    for export_node in group_export_nodes:
+        for upstream in find_upstream_export_nodes(export_node):
+            if isinstance(upstream, layer_split.LayerSplit):
+                connected_split_paths.add(upstream.path())
+
+    # Filter function for layer_split nodes - must be connected to a valid export node
+    def _is_group_split_correct(node):
+        if node.native().isBypassed():
+            return False
+        if node.path() not in connected_split_paths:
+            return False
+        entity_uri = node.get_entity_uri()
+        if entity_uri is None:
+            return False
+        dept = node.get_department_name()
+        if dept not in departments:
+            return False
+        return entity_uri in member_uris
+
+    # Find layer_split nodes - only connected ones
+    group_split_nodes = list(
+        filter(
+            _is_group_split_correct,
+            map(
+                layer_split.LayerSplit,
+                ns.list_by_node_type("layer_split", "Lop"),
+            ),
+        )
+    )
+
+    # Group export nodes by entity URI and department
+    exports_by_entity_dept: dict[tuple[str, str], list] = {}
     for export_node in group_export_nodes:
         entity_uri = export_node.get_entity_uri()
-        uri_str = str(entity_uri)
-        if uri_str not in exports_by_entity:
-            exports_by_entity[uri_str] = []
-        exports_by_entity[uri_str].append(export_node)
+        dept = export_node.get_department_name()
+        key = (str(entity_uri), dept)
+        if key not in exports_by_entity_dept:
+            exports_by_entity_dept[key] = []
+        exports_by_entity_dept[key].append(export_node)
+
+    # Group layer_split nodes by entity URI and department
+    splits_by_entity_dept: dict[tuple[str, str], list] = {}
+    for split_node in group_split_nodes:
+        entity_uri = split_node.get_entity_uri()
+        dept = split_node.get_department_name()
+        key = (str(entity_uri), dept)
+        if key not in splits_by_entity_dept:
+            splits_by_entity_dept[key] = []
+        splits_by_entity_dept[key].append(split_node)
 
     # Sort departments for consistent ordering
     dept_order = {dept: i for i, dept in enumerate(departments)}
 
-    # For each entity: add export tasks, then build task
-    for uri_str in sorted(exports_by_entity.keys()):
-        entity_exports = exports_by_entity[uri_str]
+    # Group by entity for output ordering
+    entities_with_exports: dict[str, list[str]] = {}  # uri_str -> list of departments
+    for (uri_str, dept) in exports_by_entity_dept.keys():
+        if uri_str not in entities_with_exports:
+            entities_with_exports[uri_str] = []
+        entities_with_exports[uri_str].append(dept)
+
+    # For each entity: add grouped export tasks, then build task
+    for uri_str in sorted(entities_with_exports.keys()):
+        depts = entities_with_exports[uri_str]
         # Sort by department order
-        entity_exports.sort(key=lambda n: dept_order.get(n.get_department_name(), 999))
+        depts.sort(key=lambda d: dept_order.get(d, 999))
 
-        entity_uri = entity_exports[0].get_entity_uri()
+        # Get entity URI from first export node
+        first_key = (uri_str, depts[0])
+        entity_uri = exports_by_entity_dept[first_key][0].get_entity_uri()
 
-        # Add export tasks for this entity
-        for export_node in entity_exports:
-            dept = export_node.get_department_name()
-            variant = export_node.get_variant_name()
-            export_path = latest_export_path(entity_uri, variant, dept)
-            version = _get_version_from_path(export_path)
-            node_ref = export_node
+        # Create one grouped export task per department
+        for dept in depts:
+            key = (uri_str, dept)
+            dept_exports = exports_by_entity_dept.get(key, [])
+            dept_splits = splits_by_entity_dept.get(key, [])
 
-            task = ProcessTask(
-                id=str(uuid.uuid4()),
-                uri=entity_uri,
+            # Get frame range from first export node
+            first_frame, last_frame = _get_frame_range_values(entity_uri, dept_exports[0] if dept_exports else None)
+
+            # Create grouped export task
+            group_task = _create_export_group_task(
+                entity_uri=entity_uri,
                 department=dept,
-                task_type='export',
-                description=f"Export ({dept})",
-                current_version=version,
-                execute_local=lambda n=node_ref: n.execute(force_local=True),
-                execute_farm=lambda n=node_ref: n._export_farm(),
+                split_nodes=dept_splits,
+                export_nodes=dept_exports,
+                first_frame=first_frame,
+                last_frame=last_frame,
             )
-            tasks.append(task)
+            tasks.append(group_task)
 
         # Add build task for this entity (after all exports)
         build_task = _create_build_task(entity_uri)
@@ -332,46 +422,18 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
 
 
 def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> list[ProcessTask]:
-    """Collect publish tasks for a single shot across all specified departments"""
+    """Collect publish tasks for a single shot across all specified departments.
+
+    Creates grouped export tasks where layer_split and export_layer nodes are
+    organized under a parent "Export (dept)" task for each department.
+    """
     tasks = []
     shot_uri = context.entity_uri
 
-    # Filter function for layer_split nodes
-    def _is_shot_split_correct(node):
-        entity_uri = node.get_entity_uri()
-        if entity_uri != shot_uri:
-            return False
-        dept = node.get_department_name()
-        return dept in departments
-
-    # Find and add layer_split tasks first (shared content)
-    shot_split_nodes = list(
-        filter(
-            _is_shot_split_correct,
-            map(
-                layer_split.LayerSplit,
-                ns.list_by_node_type("layer_split", "Lop"),
-            ),
-        )
-    )
-
-    for split_node in shot_split_nodes:
-        dept = split_node.get_department_name()
-        node_ref = split_node
-
-        task = ProcessTask(
-            id=str(uuid.uuid4()),
-            uri=shot_uri,
-            department=dept,
-            task_type='export_shared',
-            description=f"Export Shared ({dept})",
-            current_version=None,
-            execute_local=lambda n=node_ref: n.execute(force_local=True),
-            execute_farm=None,  # layer_split is local-only
-        )
-        tasks.append(task)
-
+    # Filter function for export_layer nodes
     def _is_shot_export_correct(node):
+        if node.native().isBypassed():
+            return False
         entity_uri = node.get_entity_uri()
         if entity_uri != shot_uri:
             return False
@@ -389,30 +451,74 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
         )
     )
 
-    # Sort by department order
-    dept_order = {dept: i for i, dept in enumerate(departments)}
-    shot_export_nodes.sort(key=lambda n: dept_order.get(n.get_department_name(), 999))
+    # Collect paths of layer_split nodes that are connected upstream to valid export nodes
+    connected_split_paths = set()
+    for export_node in shot_export_nodes:
+        for upstream in find_upstream_export_nodes(export_node):
+            if isinstance(upstream, layer_split.LayerSplit):
+                connected_split_paths.add(upstream.path())
 
+    # Filter function for layer_split nodes - must be connected to a valid export node
+    def _is_shot_split_correct(node):
+        if node.native().isBypassed():
+            return False
+        if node.path() not in connected_split_paths:
+            return False
+        entity_uri = node.get_entity_uri()
+        if entity_uri != shot_uri:
+            return False
+        dept = node.get_department_name()
+        return dept in departments
+
+    # Find layer_split nodes - only connected ones
+    shot_split_nodes = list(
+        filter(
+            _is_shot_split_correct,
+            map(
+                layer_split.LayerSplit,
+                ns.list_by_node_type("layer_split", "Lop"),
+            ),
+        )
+    )
+
+    # Group export nodes by department
+    exports_by_dept: dict[str, list] = {}
     for export_node in shot_export_nodes:
         dept = export_node.get_department_name()
-        variant = export_node.get_variant_name()
+        if dept not in exports_by_dept:
+            exports_by_dept[dept] = []
+        exports_by_dept[dept].append(export_node)
 
-        export_path = latest_export_path(shot_uri, variant, dept)
-        version = _get_version_from_path(export_path)
+    # Group layer_split nodes by department
+    splits_by_dept: dict[str, list] = {}
+    for split_node in shot_split_nodes:
+        dept = split_node.get_department_name()
+        if dept not in splits_by_dept:
+            splits_by_dept[dept] = []
+        splits_by_dept[dept].append(split_node)
 
-        node_ref = export_node
+    # Sort departments for consistent ordering
+    dept_order = {dept: i for i, dept in enumerate(departments)}
+    sorted_depts = sorted(exports_by_dept.keys(), key=lambda d: dept_order.get(d, 999))
 
-        task = ProcessTask(
-            id=str(uuid.uuid4()),
-            uri=shot_uri,
+    # Create one grouped export task per department
+    for dept in sorted_depts:
+        dept_exports = exports_by_dept.get(dept, [])
+        dept_splits = splits_by_dept.get(dept, [])
+
+        # Get frame range from first export node
+        first_frame, last_frame = _get_frame_range_values(shot_uri, dept_exports[0] if dept_exports else None)
+
+        # Create grouped export task
+        group_task = _create_export_group_task(
+            entity_uri=shot_uri,
             department=dept,
-            task_type='export',
-            description=f"Export ({dept})",
-            current_version=version,
-            execute_local=lambda n=node_ref: n.execute(force_local=True),
-            execute_farm=lambda n=node_ref: n._export_farm(),
+            split_nodes=dept_splits,
+            export_nodes=dept_exports,
+            first_frame=first_frame,
+            last_frame=last_frame,
         )
-        tasks.append(task)
+        tasks.append(group_task)
 
     # Add build task for this shot (after all exports)
     if shot_export_nodes:
@@ -423,52 +529,25 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
 
 
 def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> list[ProcessTask]:
-    """Collect publish tasks for a single asset across all specified departments"""
+    """Collect publish tasks for a single asset across all specified departments.
+
+    Creates grouped export tasks where layer_split and export_layer nodes are
+    organized under a parent "Export (dept)" task for each department.
+    """
     tasks = []
     asset_uri = context.entity_uri
 
-    # Filter function for layer_split nodes
-    def _is_asset_split_correct(node):
-        entity_uri = node.get_entity_uri()
-        if entity_uri != asset_uri:
-            return False
-        dept = node.get_department_name()
-        return dept in departments
-
-    # Find and add layer_split tasks first (shared content)
-    asset_split_nodes = list(
-        filter(
-            _is_asset_split_correct,
-            map(
-                layer_split.LayerSplit,
-                ns.list_by_node_type("layer_split", "Lop"),
-            ),
-        )
-    )
-
-    for split_node in asset_split_nodes:
-        dept = split_node.get_department_name()
-        node_ref = split_node
-
-        task = ProcessTask(
-            id=str(uuid.uuid4()),
-            uri=asset_uri,
-            department=dept,
-            task_type='export_shared',
-            description=f"Export Shared ({dept})",
-            current_version=None,
-            execute_local=lambda n=node_ref: n.execute(force_local=True),
-            execute_farm=None,  # layer_split is local-only
-        )
-        tasks.append(task)
-
+    # Filter function for export_layer nodes
     def _is_asset_export_correct(node):
+        if node.native().isBypassed():
+            return False
         entity_uri = node.get_entity_uri()
         if entity_uri != context.entity_uri:
             return False
         dept = node.get_department_name()
         return dept in departments
 
+    # Find export nodes for the asset across all departments
     asset_export_nodes = list(
         filter(
             _is_asset_export_correct,
@@ -479,42 +558,82 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
         )
     )
 
-    # Sort by department order
-    dept_order = {dept: i for i, dept in enumerate(departments)}
-    asset_export_nodes.sort(key=lambda n: dept_order.get(n.get_department_name(), 999))
-
-    # Collect unique variants from export nodes
-    variants_found = set()
-
+    # Collect paths of layer_split nodes that are connected upstream to valid export nodes
+    connected_split_paths = set()
     for export_node in asset_export_nodes:
-        asset_uri = export_node.get_entity_uri()
-        dept = export_node.get_department_name()
-        variant = export_node.get_variant_name()
+        for upstream in find_upstream_export_nodes(export_node):
+            if isinstance(upstream, layer_split.LayerSplit):
+                connected_split_paths.add(upstream.path())
 
-        # Track variants for build tasks
-        variants_found.add(variant)
+    # Filter function for layer_split nodes - must be connected to a valid export node
+    def _is_asset_split_correct(node):
+        if node.native().isBypassed():
+            return False
+        if node.path() not in connected_split_paths:
+            return False
+        entity_uri = node.get_entity_uri()
+        if entity_uri != asset_uri:
+            return False
+        dept = node.get_department_name()
+        return dept in departments
 
-        export_path = latest_export_path(asset_uri, variant, dept)
-        version = _get_version_from_path(export_path)
-
-        node_ref = export_node
-
-        task = ProcessTask(
-            id=str(uuid.uuid4()),
-            uri=asset_uri,
-            department=dept,
-            task_type='export',
-            variant=variant,
-            description=f"Export {_uri_name(asset_uri)}",
-            current_version=version,
-            execute_local=lambda n=node_ref: n.execute(force_local=True),
-            execute_farm=lambda n=node_ref: n._export_farm(),
+    # Find layer_split nodes - only connected ones
+    asset_split_nodes = list(
+        filter(
+            _is_asset_split_correct,
+            map(
+                layer_split.LayerSplit,
+                ns.list_by_node_type("layer_split", "Lop"),
+            ),
         )
-        tasks.append(task)
+    )
+
+    # Group export nodes by department
+    exports_by_dept: dict[str, list] = {}
+    for export_node in asset_export_nodes:
+        dept = export_node.get_department_name()
+        if dept not in exports_by_dept:
+            exports_by_dept[dept] = []
+        exports_by_dept[dept].append(export_node)
+
+    # Group layer_split nodes by department
+    splits_by_dept: dict[str, list] = {}
+    for split_node in asset_split_nodes:
+        dept = split_node.get_department_name()
+        if dept not in splits_by_dept:
+            splits_by_dept[dept] = []
+        splits_by_dept[dept].append(split_node)
+
+    # Sort departments for consistent ordering
+    dept_order = {dept: i for i, dept in enumerate(departments)}
+    sorted_depts = sorted(exports_by_dept.keys(), key=lambda d: dept_order.get(d, 999))
+
+    # Collect unique variants from export nodes for build tasks
+    variants_found = set()
+    for export_node in asset_export_nodes:
+        variants_found.add(export_node.get_variant_name())
+
+    # Create one grouped export task per department
+    for dept in sorted_depts:
+        dept_exports = exports_by_dept.get(dept, [])
+        dept_splits = splits_by_dept.get(dept, [])
+
+        # Get frame range from first export node
+        first_frame, last_frame = _get_frame_range_values(asset_uri, dept_exports[0] if dept_exports else None)
+
+        # Create grouped export task
+        group_task = _create_export_group_task(
+            entity_uri=asset_uri,
+            department=dept,
+            split_nodes=dept_splits,
+            export_nodes=dept_exports,
+            first_frame=first_frame,
+            last_frame=last_frame,
+        )
+        tasks.append(group_task)
 
     # Add build task for EACH variant (after all exports)
     if asset_export_nodes:
-        asset_uri = context.entity_uri
         for variant in sorted(variants_found):
             build_task = _create_build_task(asset_uri, variant)
             tasks.append(build_task)
@@ -548,6 +667,7 @@ def _collect_rig_publish_tasks(context: Context) -> list[ProcessTask]:
         version = _get_version_from_path(export_path)
 
         node_ref = export_node
+        first_frame, last_frame = _get_frame_range_values(asset_uri)
 
         task = ProcessTask(
             id=str(uuid.uuid4()),
@@ -559,6 +679,8 @@ def _collect_rig_publish_tasks(context: Context) -> list[ProcessTask]:
             current_version=version,
             execute_local=lambda n=node_ref: n.execute(force_local=True),
             execute_farm=None,  # export_rig is local-only
+            first_frame=first_frame,
+            last_frame=last_frame,
         )
         tasks.append(task)
 
@@ -576,6 +698,97 @@ def _uri_name(uri: Uri) -> str:
     return str(uri)
 
 
+# Track layer_split nodes executed in current session to avoid duplicates
+_executed_split_paths: set[str] = set()
+
+
+def reset_executed_splits():
+    """Reset tracking for new execution session."""
+    global _executed_split_paths
+    _executed_split_paths = set()
+
+
+def _create_export_group_task(
+    entity_uri: Uri,
+    department: str,
+    split_nodes: list,
+    export_nodes: list,
+    first_frame: int | None,
+    last_frame: int | None
+) -> ProcessTask:
+    """
+    Create a parent export task that groups layer_split and export_layer nodes.
+
+    Args:
+        entity_uri: The entity URI
+        department: The department name
+        split_nodes: List of layer_split nodes for shared content
+        export_nodes: List of export_layer nodes
+        first_frame: First frame (with roll)
+        last_frame: Last frame (with roll)
+
+    Returns:
+        A ProcessTask with children for each node
+    """
+    parent_id = str(uuid.uuid4())
+    children = []
+
+    # Add layer_split children (shared content)
+    for split_node in split_nodes:
+        node_ref = split_node
+        child = ProcessTask(
+            id=str(uuid.uuid4()),
+            uri=entity_uri,
+            department=department,
+            task_type='export_shared',
+            description="Export Shared",
+            node_path=split_node.path(),
+            parent_id=parent_id,
+            execute_local=lambda n=node_ref: n.execute(force_local=True),
+            execute_farm=lambda n=node_ref: n.execute(force_local=True),  # Farm script handles this
+            first_frame=first_frame,
+            last_frame=last_frame,
+        )
+        children.append(child)
+
+    # Add export_layer children
+    for export_node in export_nodes:
+        variant = export_node.get_variant_name()
+        export_path = latest_export_path(entity_uri, variant, department)
+        version = _get_version_from_path(export_path)
+        node_ref = export_node
+
+        child = ProcessTask(
+            id=str(uuid.uuid4()),
+            uri=entity_uri,
+            department=department,
+            task_type='export',
+            variant=variant,
+            description=f"Export ({variant})" if variant else "Export",
+            node_path=export_node.path(),
+            parent_id=parent_id,
+            current_version=version,
+            execute_local=lambda n=node_ref: n.execute(force_local=True),
+            execute_farm=lambda n=node_ref: n._export_farm(),
+            first_frame=first_frame,
+            last_frame=last_frame,
+        )
+        children.append(child)
+
+    # Create parent task
+    parent = ProcessTask(
+        id=parent_id,
+        uri=entity_uri,
+        department=department,
+        task_type='export_group',
+        description=f"Export ({department})",
+        children=children,
+        first_frame=first_frame,
+        last_frame=last_frame,
+    )
+    return parent
+
+
 def _get_build_version(entity_uri: Uri, variant_name: str = 'default') -> str | None:
     """Get the current build version for an entity"""
     try:
@@ -588,6 +801,7 @@ def _get_build_version(entity_uri: Uri, variant_name: str = 'default') -> str | 
 def _create_build_task(entity_uri: Uri, variant_name: str = 'default') -> ProcessTask:
     """Create a build task for an entity (shot or asset)"""
     version = _get_build_version(entity_uri, variant_name)
+    first_frame, last_frame = _get_frame_range_values(entity_uri)
 
     return ProcessTask(
         id=str(uuid.uuid4()),
@@ -599,6 +813,8 @@ def _create_build_task(entity_uri: Uri, variant_name: str = 'default') -> Proces
         current_version=version,
         execute_local=lambda uri=entity_uri, v=variant_name: _execute_build_local(uri, v),
         execute_farm=lambda uri=entity_uri, v=variant_name: _execute_build_farm(uri, v),
+        first_frame=first_frame,
+        last_frame=last_frame,
     )
 
 
@@ -732,7 +948,7 @@ def collect_tasks_for_export_node(
 
     Returns:
         Tuple of (all_tasks, enabled_task_ids) where enabled_task_ids contains
-        the IDs of tasks that should be enabled (the clicked node + upstream deps)
+        the IDs of tasks that should be enabled (the clicked node + upstream deps + children)
     """
     # Collect all publish tasks for full context
     all_tasks = collect_publish_tasks(context)
@@ -744,15 +960,42 @@ def collect_tasks_for_export_node(
     clicked_uri = export_node.get_entity_uri()
     clicked_dept = export_node.get_department_name()
     clicked_variant = export_node.get_variant_name() if hasattr(export_node, 'get_variant_name') else 'default'
+    clicked_node_path = export_node.path() if hasattr(export_node, 'path') else None
+
+    def _enable_matching_tasks(uri, dept, variant=None, node_path=None):
+        """Enable tasks matching the given criteria, including children of grouped tasks.
+
+        Only enables the parent group task if at least one child matches the node_path
+        or is an export_shared type (layer_split). This prevents sibling export nodes
+        from being enabled when clicking on a specific export node.
+        """
+        for task in all_tasks:
+            if task.uri == uri and task.department == dept:
+                # For grouped tasks, only enable parent if children match
+                if task.children:
+                    children_enabled = False
+                    for child in task.children:
+                        # Enable child if it matches node_path
+                        if node_path and child.node_path == node_path:
+                            enabled_task_ids.add(child.id)
+                            children_enabled = True
+                        elif child.task_type == 'export_shared':
+                            # Enable export_shared children (layer_split nodes)
+                            enabled_task_ids.add(child.id)
+                            children_enabled = True
+                    # Only enable parent group if children were enabled
+                    if children_enabled:
+                        enabled_task_ids.add(task.id)
+                else:
+                    # Non-grouped task, enable directly
+                    enabled_task_ids.add(task.id)
+            # Enable build task for the same entity
+            elif task.uri == uri and task.task_type == 'build':
+                if variant is None or task.variant == variant:
+                    enabled_task_ids.add(task.id)
 
     if clicked_uri is not None:
-        for task in all_tasks:
-            # Enable export task for clicked department
-            if task.uri == clicked_uri and task.department == clicked_dept:
-                enabled_task_ids.add(task.id)
-            # Enable build task for the same entity AND variant
-            elif task.uri == clicked_uri and task.task_type == 'build' and task.variant == clicked_variant:
-                enabled_task_ids.add(task.id)
+        _enable_matching_tasks(clicked_uri, clicked_dept, clicked_variant, clicked_node_path)
 
     # Enable upstream dependency tasks (and their build tasks)
     upstream_nodes = find_upstream_export_nodes(export_node)
@@ -760,11 +1003,8 @@ def collect_tasks_for_export_node(
         upstream_uri = upstream_node.get_entity_uri()
         upstream_dept = upstream_node.get_department_name()
         upstream_variant = upstream_node.get_variant_name() if hasattr(upstream_node, 'get_variant_name') else 'default'
-        for task in all_tasks:
-            if task.uri == upstream_uri and task.department == upstream_dept:
-                enabled_task_ids.add(task.id)
-            elif task.uri == upstream_uri and task.task_type == 'build' and task.variant == upstream_variant:
-                enabled_task_ids.add(task.id)
+        upstream_path = upstream_node.path() if hasattr(upstream_node, 'path') else None
+        _enable_matching_tasks(upstream_uri, upstream_dept, upstream_variant, upstream_path)
 
     return all_tasks, enabled_task_ids
 

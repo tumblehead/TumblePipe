@@ -179,6 +179,13 @@ class ImportRigs(ns.Node):
         # Parameters
         rig_imports = self.get_rig_imports()
 
+        # Check if any rigs to import
+        active_imports = [(uri, var, inst) for uri, var, inst in rig_imports if inst > 0]
+        if not active_imports:
+            ns.set_node_comment(context, "Bypassed: No rigs configured")
+            context.bypass(True)
+            return result.Value(None)
+
         # Build asset nodes
         prev_node = None
         for asset_uri, variant, instances in rig_imports:
@@ -207,6 +214,10 @@ class ImportRigs(ns.Node):
 
         # Layout the nodes
         dive_node.layoutChildren()
+
+        # Set success comment
+        rig_count = len(active_imports)
+        ns.set_node_comment(context, f"Imported: {rig_count} rig{'s' if rig_count != 1 else ''}")
 
         # Done
         return result.Value(None)

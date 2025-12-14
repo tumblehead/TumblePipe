@@ -19,8 +19,10 @@ from tumblehead.pipe.paths import (
     latest_export_path,
     next_export_path,
     get_workfile_context,
-    get_layer_file_name
+    get_layer_file_name,
+    shared_export_latest_file_path
 )
+from tumblehead.pipe.usd import add_sublayer
 
 api = default_client()
 
@@ -29,88 +31,6 @@ class ExportLayerError(Exception):
     """Raised when export_layer encounters a validation or execution error."""
     pass
 
-def _clear_dive(dive_node):
-    for node in dive_node.children():
-        node.destroy()
-
-def _ensure_node(stage, kind, name):
-    node = stage.node(name)
-    if node is not None: return node
-    return stage.createNode(kind, name)
-
-def _export_prim(dive_node, prim_path, render_range, step, file_path):
-
-    def _get_destination_path(prim_path):
-        parts = prim_path.split('/')
-        if len(parts) == 2: return '/'
-        return '/'.join(parts[:-1])
-
-    # Parameters
-    name = file_path.stem
-    input = dive_node.indirectInputs()[0]
-
-    # Create the nodes
-    isolate_node = _ensure_node(dive_node, 'graftbranches', f'{name}_isolate')
-    export_node = _ensure_node(dive_node, 'rop_usd', f'{name}_export')
-    isolate_node.setInput(1, input)
-    export_node.setInput(0, isolate_node)
-
-    # Isolate the prim
-    isolate_node.parm('primpath').set('')
-    isolate_node.parm('srcprimpath1').set(prim_path)
-    isolate_node.parm('dstprimpath1').set(_get_destination_path(prim_path))
-
-    # Export the prim
-    export_node.parm('trange').set(1)
-    export_node.parm('f1').deleteAllKeyframes()
-    export_node.parm('f2').deleteAllKeyframes()
-    export_node.parm('f1').set(render_range.first_frame)
-    export_node.parm('f2').set(render_range.last_frame)
-    export_node.parm('f3').set(step)
-    export_node.parm('lopoutput').set(path_str(file_path))
-    export_node.parm('execute').pressButton()
-
-def _export_prims(dive_node, prim_paths, render_range, step, file_path):
-
-    def _get_destination_path(prim_path):
-        parts = prim_path.split('/')
-        if len(parts) == 2: return '/'
-        return '/'.join(parts[:-1])
-
-    # Parameters
-    name = file_path.stem
-    input = dive_node.indirectInputs()[0]
-
-    # Create the nodes - destroy and recreate to avoid stale parameters
-    existing_isolate = dive_node.node(f'{name}_isolate')
-    if existing_isolate is not None:
-        existing_isolate.destroy()
-    existing_export = dive_node.node(f'{name}_export')
-    if existing_export is not None:
-        existing_export.destroy()
-
-    isolate_node = dive_node.createNode('graftbranches', f'{name}_isolate')
-    export_node = dive_node.createNode('rop_usd', f'{name}_export')
-    isolate_node.setInput(1, input)
-    export_node.setInput(0, isolate_node)
-
-    # Isolate all prims (add each to graftbranches)
-    isolate_node.parm('primpath').set('')
-    isolate_node.parm('primcount').set(len(prim_paths))
-
-    for idx, prim_path in enumerate(prim_paths, start=1):
-        isolate_node.parm(f'srcprimpath{idx}').set(prim_path)
-        isolate_node.parm(f'dstprimpath{idx}').set(_get_destination_path(prim_path))
-
-    # Export the prims
-    export_node.parm('trange').set(1)
-    export_node.parm('f1').deleteAllKeyframes()
-    export_node.parm('f2').deleteAllKeyframes()
-    export_node.parm('f1').set(render_range.first_frame)
-    export_node.parm('f2').set(render_range.last_frame)
-    export_node.parm('f3').set(step)
-    export_node.parm('lopoutput').set(path_str(file_path))
-    export_node.parm('execute').pressButton()
 
 class ExportLayer(ns.Node):
 
@@ -201,6 +121,9 @@ class ExportLayer(ns.Node):
             file_path = Path(hou.hipFile.path())
             context = get_workfile_context(file_path)
             if context is None:
+                return None
+            # Only accept entity URIs, not group URIs
+            if context.entity_uri.purpose != 'entity':
                 return None
             return context.entity_uri
         # From settings
@@ -318,6 +241,10 @@ class ExportLayer(ns.Node):
             # Specific department selected
             self.parm('department_label').set(department_raw)
 
+    def _initialize(self):
+        """Initialize node and update labels to show resolved values."""
+        self._update_labels()
+
     def set_entity_uri(self, entity_uri: Uri):
         entity_uris = self.list_entity_uris()
         if str(entity_uri) not in entity_uris:  # Compare strings
@@ -363,8 +290,6 @@ class ExportLayer(ns.Node):
     def _export_local(self):
         native = self.native()
         stage_node = native.node('IN_stage')
-        export_subnet = native.node('export')
-        _clear_dive(export_subnet)
 
         # Get parameters
         entity_uri = self.get_entity_uri()
@@ -433,7 +358,7 @@ class ExportLayer(ns.Node):
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
 
-            # Collect all prim paths to export (assets + stage components)
+            # Collect prim paths for validation (ensure stage has content)
             all_export_prims = []
 
             # Collect asset prim paths
@@ -468,9 +393,15 @@ class ExportLayer(ns.Node):
                     "Ensure the stage contains the asset prim, referenced assets, or stage components."
                 )
 
-            # Export everything into single file
+            # Export the stage
             layer_file_name = get_layer_file_name(entity_uri, variant_name, department_name, version_name)
-            _export_prims(export_subnet, all_export_prims, render_range, step, temp_path / layer_file_name)
+            self.parm('export_f1').deleteAllKeyframes()
+            self.parm('export_f2').deleteAllKeyframes()
+            self.parm('export_f1').set(render_range.first_frame)
+            self.parm('export_f2').set(render_range.last_frame)
+            self.parm('export_f3').set(step)
+            self.parm('export_lopoutput').set(path_str(temp_path / layer_file_name))
+            self.parm('export_execute').pressButton()
 
             # Extract AOV names from the stage
             aov_names = [
@@ -500,16 +431,17 @@ class ExportLayer(ns.Node):
             # Copy all files to output path
             version_path.mkdir(parents=True, exist_ok=True)
             for temp_item_path in temp_path.iterdir():
-                if temp_item_path.name == 'stage':
-                    continue
                 output_item_path = version_path / temp_item_path.name
                 if temp_item_path.is_file():
                     shutil.copy(temp_item_path, output_item_path)
                 if temp_item_path.is_dir():
                     shutil.copytree(temp_item_path, output_item_path)
 
-        # Layout the created nodes
-        export_subnet.layoutChildren()
+        # Add shared layer as sublayer if it exists
+        shared_file_path = shared_export_latest_file_path(entity_uri, department_name)
+        if shared_file_path.exists():
+            exported_layer_path = version_path / layer_file_name
+            add_sublayer(exported_layer_path, shared_file_path)
 
         # Update node comment
         native.setComment(
@@ -628,12 +560,11 @@ def set_style(raw_node):
     raw_node.setUserData('nodeshape', ns.SHAPE_NODE_EXPORT)
 
 def on_created(raw_node):
+    # Set node style
     set_style(raw_node)
 
     node = ExportLayer(raw_node)
-
-    # Update labels to show current entity selection
-    node._update_labels()
+    node._initialize()
 
 def execute():
     raw_node = hou.pwd()

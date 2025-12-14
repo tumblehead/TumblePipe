@@ -504,6 +504,7 @@ def resolve_shot_build(
                     scene_context_path = scene_path.parent / 'context.json'
                     scene_context_data = load_json(scene_context_path)
                     if scene_context_data is not None:
+                        # Add direct scene assets
                         for asset_datum in scene_context_data.get('parameters', {}).get('assets', []):
                             asset_uri = Uri.parse_unsafe(asset_datum['asset'])
                             asset_name = asset_uri.segments[-1]  # Use asset name as instance
@@ -517,6 +518,22 @@ def resolve_shot_build(
                             # Store variant for this asset
                             if asset_uri not in asset_variants:
                                 asset_variants[asset_uri] = variant
+
+                # Add inherited assets from parent scenes
+                from tumblehead.config.scenes import get_inherited_assets
+                inherited = get_inherited_assets(scene_uri)
+                for entry, parent_uri in inherited:
+                    asset_uri = Uri.parse_unsafe(entry.asset)
+                    asset_name = asset_uri.segments[-1]
+                    variant = entry.variant
+
+                    # Add to assets if not already present (direct assets take precedence)
+                    if asset_uri not in assets:
+                        assets[asset_uri] = set()
+                    assets[asset_uri].add(asset_name)
+
+                    if asset_uri not in asset_variants:
+                        asset_variants[asset_uri] = variant
 
     # Done
     return dict(

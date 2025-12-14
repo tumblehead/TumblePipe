@@ -9,6 +9,11 @@ from tumblehead.config.renderer import get_renderer_defaults
 from tumblehead.config.department import list_departments
 
 
+class SubmissionConfigError(Exception):
+    """Raised when submission column config is missing or invalid."""
+    pass
+
+
 class ColumnType(Enum):
     """Supported column editor types."""
     INTEGER = auto()      # QSpinBox
@@ -432,200 +437,62 @@ def get_submission_schema() -> JobTypeSchema:
 def create_publish_schema() -> JobTypeSchema:
     """Create schema for the Publish section only.
 
-    Loads columns from config database first, falling back to hardcoded defaults.
+    Loads columns from config database. Raises SubmissionConfigError if config is missing.
+
+    Raises:
+        SubmissionConfigError: If config:/submission/columns is not configured
     """
-    # Try loading from config database
     config_columns = load_submission_columns('publish')
-    if config_columns is not None:
-        return JobTypeSchema(
-            job_type='publish',
-            display_name='Publish',
-            sections=[],
-            columns=config_columns
+    if config_columns is None:
+        raise SubmissionConfigError(
+            "Publish columns not configured.\n\n"
+            "Please configure columns at:\n"
+            "  config:/submission/columns\n\n"
+            "Expected structure:\n"
+            "  {\n"
+            "    \"publish\": {\n"
+            "      \"columns\": [...],\n"
+            "      \"default_hidden\": [...]\n"
+            "    }\n"
+            "  }"
         )
 
-    # Fall back to hardcoded columns
     return JobTypeSchema(
         job_type='publish',
         display_name='Publish',
-        sections=[],  # No sections needed - this is a single-purpose schema
-        columns=[
-            ColumnDefinition(
-                key='department',
-                label='Department',
-                column_type=ColumnType.COMBO,
-                default_value=_get_default_publishable_department(),
-                choices_func=_get_publishable_department_choices,
-                width=100,
-                tooltip='Publish up to this department'
-            ),
-            ColumnDefinition(
-                key='pool',
-                label='Pool',
-                column_type=ColumnType.COMBO,
-                default_value=_get_default_pool_name(),
-                property_path='farm.default_pool',
-                choices_func=_get_pool_choices,
-                choices_from='farm.pools',
-                width=80,
-                tooltip='Farm pool for publish jobs'
-            ),
-            ColumnDefinition(
-                key='priority',
-                label='Priority',
-                column_type=ColumnType.INTEGER,
-                default_value=_get_default_priority_value(),
-                property_path='farm.priority',
-                min_value=0,
-                max_value=100,
-                step=5,
-                validator=_validate_priority,
-                width=60,
-                tooltip='Priority for publish jobs (0-100)'
-            ),
-        ]
+        sections=[],
+        columns=config_columns
     )
 
 
 def create_render_schema() -> JobTypeSchema:
     """Create schema for the Render section only.
 
-    Loads columns from config database first, falling back to hardcoded defaults.
-    """
-    # Try loading from config database
-    config_columns = load_submission_columns('render')
-    if config_columns is not None:
-        return JobTypeSchema(
-            job_type='render',
-            display_name='Render',
-            sections=[],
-            columns=config_columns
-        )
+    Loads columns from config database. Raises SubmissionConfigError if config is missing.
 
-    # Fall back to hardcoded columns
-    settings = _get_renderer_settings()
+    Raises:
+        SubmissionConfigError: If config:/submission/columns is not configured
+    """
+    config_columns = load_submission_columns('render')
+    if config_columns is None:
+        raise SubmissionConfigError(
+            "Render columns not configured.\n\n"
+            "Please configure columns at:\n"
+            "  config:/submission/columns\n\n"
+            "Expected structure:\n"
+            "  {\n"
+            "    \"render\": {\n"
+            "      \"columns\": [...],\n"
+            "      \"default_hidden\": [...]\n"
+            "    }\n"
+            "  }"
+        )
 
     return JobTypeSchema(
         job_type='render',
         display_name='Render',
-        sections=[],  # No sections needed - this is a single-purpose schema
-        columns=[
-            ColumnDefinition(
-                key='department',
-                label='Department',
-                column_type=ColumnType.COMBO,
-                default_value=_get_default_renderable_department(),
-                choices_func=_get_renderable_department_choices,
-                width=100,
-                tooltip='Department to render'
-            ),
-            ColumnDefinition(
-                key='variants',
-                label='Variants',
-                column_type=ColumnType.MULTI_SELECT,
-                default_value=[],  # Will be populated per-entity
-                per_entity_choices=True,
-                width=100,
-                tooltip='Select variants to render'
-            ),
-            ColumnDefinition(
-                key='pool',
-                label='Pool',
-                column_type=ColumnType.COMBO,
-                default_value=_get_default_pool_name(),
-                property_path='farm.default_pool',
-                choices_func=_get_pool_choices,
-                choices_from='farm.pools',
-                width=80,
-                tooltip='Farm pool for render jobs'
-            ),
-            ColumnDefinition(
-                key='priority',
-                label='Priority',
-                column_type=ColumnType.INTEGER,
-                default_value=_get_default_priority_value(),
-                property_path='farm.priority',
-                min_value=0,
-                max_value=100,
-                step=5,
-                validator=_validate_priority,
-                width=60,
-                tooltip='Priority for render jobs (0-100)'
-            ),
-            ColumnDefinition(
-                key='tile_count',
-                label='Tiles',
-                column_type=ColumnType.INTEGER,
-                default_value=settings.tile_count.default,
-                property_path='farm.tile_count',
-                min_value=settings.tile_count.min,
-                max_value=settings.tile_count.max,
-                step=1,
-                width=45,
-                tooltip='Number of tiles for parallel rendering'
-            ),
-            ColumnDefinition(
-                key='pre_roll',
-                label='Pre',
-                column_type=ColumnType.INTEGER,
-                default_value=0,
-                min_value=0,
-                max_value=999,
-                width=40,
-                tooltip='Pre-roll frames (motion blur handles)'
-            ),
-            ColumnDefinition(
-                key='first_frame',
-                label='First',
-                column_type=ColumnType.INTEGER,
-                default_value=1001,
-                min_value=0,
-                max_value=999999,
-                width=50,
-                tooltip='First frame of play range'
-            ),
-            ColumnDefinition(
-                key='last_frame',
-                label='Last',
-                column_type=ColumnType.INTEGER,
-                default_value=1100,
-                min_value=0,
-                max_value=999999,
-                width=50,
-                tooltip='Last frame of play range'
-            ),
-            ColumnDefinition(
-                key='post_roll',
-                label='Post',
-                column_type=ColumnType.INTEGER,
-                default_value=0,
-                min_value=0,
-                max_value=999,
-                width=40,
-                tooltip='Post-roll frames (motion blur handles)'
-            ),
-            ColumnDefinition(
-                key='batch_size',
-                label='Batch',
-                column_type=ColumnType.INTEGER,
-                default_value=settings.batch_size.default,
-                property_path='farm.batch_size',
-                min_value=settings.batch_size.min,
-                max_value=settings.batch_size.max,
-                step=5,
-                width=45,
-                tooltip='Frames per batch'
-            ),
-            ColumnDefinition(
-                key='denoise',
-                label='Denoise',
-                column_type=ColumnType.BOOLEAN,
-                default_value=settings.denoise,
-                property_path='render.enabledenoising',
-                width=55,
-                tooltip='Enable denoising'
-            ),
-        ]
+        sections=[],
+        columns=config_columns
     )
 
 
@@ -652,6 +519,14 @@ _CHOICES_FUNC_MAP = {
     'assets_departments': _get_assets_department_choices,
 }
 
+# Default value function mapping for config-defined columns
+_DEFAULT_FUNC_MAP = {
+    'default_publishable_department': _get_default_publishable_department,
+    'default_renderable_department': _get_default_renderable_department,
+    'default_pool': _get_default_pool_name,
+    'default_priority': _get_default_priority_value,
+}
+
 
 def _column_from_dict(data: dict, section_key: Optional[str] = None) -> ColumnDefinition:
     """Create a ColumnDefinition from a JSON dict.
@@ -667,8 +542,16 @@ def _column_from_dict(data: dict, section_key: Optional[str] = None) -> ColumnDe
     type_str = data.get('type', 'string').lower()
     column_type = _COLUMN_TYPE_MAP.get(type_str, ColumnType.STRING)
 
-    # Parse default value
+    # Parse default value - check for default_func first
     default_value = data.get('default')
+    default_func_name = data.get('default_func')
+    if default_func_name and default_value is None:
+        default_func = _DEFAULT_FUNC_MAP.get(default_func_name)
+        if default_func:
+            try:
+                default_value = default_func()
+            except Exception:
+                default_value = None
 
     # Handle choices function
     choices_func = None
@@ -772,25 +655,90 @@ def get_column_property_map(section: str) -> dict[str, str]:
 
     Returns:
         Dict mapping column key to property path (e.g., {'denoise': 'render.enabledenoising'})
-    """
-    # Try config-driven columns first
-    columns = load_submission_columns(section)
 
-    # Fall back to hardcoded schema
+    Raises:
+        SubmissionConfigError: If config is not found for the section
+    """
+    columns = load_submission_columns(section)
     if columns is None:
-        if section == 'publish':
-            schema = create_publish_schema()
-        elif section == 'render':
-            schema = create_render_schema()
-        else:
-            return {}
-        columns = schema.columns
+        raise SubmissionConfigError(f"Column config not found for section: {section}")
 
     return {
         col.key: col.property_path
         for col in columns
         if col.property_path is not None
     }
+
+
+def validate_submission_config() -> tuple[bool, str]:
+    """Validate that submission config exists and is complete.
+
+    Checks that config:/submission/columns exists and contains both
+    'publish' and 'render' sections with valid column definitions.
+
+    Returns:
+        Tuple of (is_valid, error_message). If valid, error_message is empty.
+    """
+    try:
+        from tumblehead.api import default_client
+        from tumblehead.util.uri import Uri
+
+        api = default_client()
+        props = api.config.get_properties(Uri.parse_unsafe('config:/submission/columns'))
+
+        if props is None:
+            return False, (
+                "Submission config not found.\n\n"
+                "Expected config at: config:/submission/columns"
+            )
+
+        errors = []
+
+        # Check publish section
+        if 'publish' not in props:
+            errors.append("Missing 'publish' section")
+        else:
+            publish_data = props['publish']
+            if not isinstance(publish_data, dict):
+                errors.append("'publish' section must be a dict")
+            elif 'columns' not in publish_data or not publish_data['columns']:
+                errors.append("'publish' section has no columns defined")
+
+        # Check render section
+        if 'render' not in props:
+            errors.append("Missing 'render' section")
+        else:
+            render_data = props['render']
+            if not isinstance(render_data, dict):
+                errors.append("'render' section must be a dict")
+            elif 'columns' not in render_data or not render_data['columns']:
+                errors.append("'render' section has no columns defined")
+
+        if errors:
+            return False, "Invalid submission config:\n" + "\n".join(f"  - {e}" for e in errors)
+
+        return True, ""
+
+    except Exception as e:
+        return False, f"Error loading submission config: {e}"
+
+
+def get_available_choice_functions() -> list[str]:
+    """Get list of available choice function names for the column editor.
+
+    Returns:
+        List of function names that can be used in column config 'choices_func'.
+    """
+    return list(_CHOICES_FUNC_MAP.keys())
+
+
+def get_available_default_functions() -> list[str]:
+    """Get list of available default function names for the column editor.
+
+    Returns:
+        List of function names that can be used in column config 'default_func'.
+    """
+    return list(_DEFAULT_FUNC_MAP.keys())
 
 
 # ============================================================================

@@ -15,7 +15,7 @@ from tumblehead.util.io import load_json
 from tumblehead.util.uri import Uri
 from tumblehead.pipe.houdini import util
 from tumblehead.pipe.houdini.lops import (
-    build_shot,
+    import_shot,
     import_layer
 )
 
@@ -101,11 +101,10 @@ def main(
         d.name for d in list_departments('shots') if d.renderable
     ]
 
-    # Create build shot node
-    shot_node = build_shot.create(scene_node, '__build_shot')
+    # Create import shot node
+    shot_node = import_shot.create(scene_node, '__import_shot')
     shot_node.set_shot_uri(shot_uri)
     shot_node.set_include_procedurals(True)
-    shot_node.set_include_downstream_departments(True)
     shot_node.execute()
     prev_node = shot_node.native()
 

@@ -134,6 +134,7 @@ class GroupEditorPanel(QWidget):
         self._original_departments: list[str] = []
         self._has_changes = False
         self._department_checkboxes: dict[str, QCheckBox] = {}
+        self._entity_assignments: dict[str, tuple[set[str], list[str]]] = {}
 
         self._build_ui()
 
@@ -279,29 +280,75 @@ class GroupEditorPanel(QWidget):
         """Refresh available entities for the context."""
         root_uri_str = f'entity:/{context}'
 
-        # Get entities in other groups
-        assigned_entities = self._get_entities_in_other_groups(context)
+        # Get entity assignments for badge display and conflict validation
+        self._entity_assignments = self._get_entity_department_assignments(context)
 
         # Current group members
         current_members = set(self._members_model.get_member_entities())
 
+        # Load all entities - pass assignments for badge display
         self._available_model.load_entities_from_uri(
-            root_uri_str, assigned_entities, current_members
+            root_uri_str, self._entity_assignments, current_members
         )
         self._available_tree.expandAll()
 
-    def _get_entities_in_other_groups(self, context: str) -> set[str]:
-        """Get entities assigned to other groups in this context."""
-        assigned = set()
+    def _get_entity_department_assignments(self, context: str) -> dict[str, tuple[set[str], list[str]]]:
+        """Get mapping of entity URIs to (assigned departments, group names).
+
+        Args:
+            context: The context ('shots' or 'assets')
+
+        Returns:
+            Dict mapping entity URI string to (set of departments, list of group names)
+        """
+        assignments = {}
         current_name = self._current_group.name if self._current_group else None
 
         for group in list_groups(context):
             if group.name == current_name:
                 continue
             for member in group.members:
-                assigned.add(str(member))
+                uri_str = str(member)
+                if uri_str not in assignments:
+                    assignments[uri_str] = (set(), [])
+                assignments[uri_str][0].update(group.departments)
+                assignments[uri_str][1].append(group.name)
 
-        return assigned
+        return assignments
+
+    def _check_department_conflicts(self) -> list[tuple[str, str, str]]:
+        """Check for department conflicts between selected members and departments.
+
+        Returns:
+            list[tuple[str, str, str]]: List of (entity_uri, department, existing_group)
+            for each conflict found.
+        """
+        if not self._current_group:
+            return []
+
+        conflicts = []
+        selected_depts = set(self._get_selected_departments())
+        members = self._members_model.get_member_entities()
+        context = self._current_group.uri.segments[0] if self._current_group.uri.segments else 'shots'
+
+        for member_uri in members:
+            if member_uri in self._entity_assignments:
+                existing_depts, group_names = self._entity_assignments[member_uri]
+                overlap = selected_depts & existing_depts
+
+                if overlap:
+                    # Find which group has each overlapping department
+                    current_name = self._current_group.name
+                    for group in list_groups(context):
+                        if group.name == current_name:
+                            continue
+                        if member_uri not in [str(m) for m in group.members]:
+                            continue
+                        for dept in overlap:
+                            if dept in group.departments:
+                                conflicts.append((member_uri, dept, group.name))
+
+        return conflicts
 
     def _refresh_departments(self, context: str):
         """Refresh department checkboxes based on context."""
@@ -364,6 +411,19 @@ class GroupEditorPanel(QWidget):
                     self, "Cannot Save",
                     "Group must have at least one department."
                 )
+                return False
+
+            # Check for department conflicts with other groups
+            conflicts = self._check_department_conflicts()
+            if conflicts:
+                # Format conflict message
+                msg = "Cannot save - the following entities have department conflicts:\n\n"
+                for entity_uri, dept, group_name in conflicts:
+                    # Extract entity name from URI (last segment)
+                    entity_name = entity_uri.split('/')[-1]
+                    msg += f"• {entity_name} → {dept} (already in '{group_name}')\n"
+
+                QMessageBox.warning(self, "Department Conflict", msg)
                 return False
 
             # Get context and name from current group

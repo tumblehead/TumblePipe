@@ -2,18 +2,21 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from functools import partial
 
-from qtpy.QtCore import QEvent, QObject, Qt, Signal
+from qtpy.QtCore import QEvent, QObject, QRect, Qt, Signal
 from qtpy.QtGui import (
     QBrush,
     QColor,
     QFont,
     QIntValidator,
+    QPainter,
+    QPen,
     QStandardItem,
     QStandardItemModel,
     QValidator,
 )
 from qtpy.QtWidgets import (
     QAbstractItemDelegate,
+    QAbstractItemView,
     QCheckBox,
     QHeaderView,
     QInputDialog,
@@ -569,6 +572,14 @@ class JsonOpFieldRemove(JsonOp):
 
 
 @dataclass(frozen=True)
+class JsonOpFieldReorder(JsonOp):
+    from_key: str
+    to_key: str
+    from_value: JsonValue
+    to_value: JsonValue
+
+
+@dataclass(frozen=True)
 class JsonChange:
     path: JsonPath
     op: JsonOp
@@ -622,6 +633,18 @@ def _change_field_rename(
 
 def _change_field_remove(path: JsonPath, key: str) -> JsonChange:
     return JsonChange(path, JsonOpFieldRemove(key))
+
+
+def _change_field_reorder(
+    path: JsonPath,
+    from_key: str,
+    to_key: str,
+    from_value: JsonValue,
+    to_value: JsonValue,
+) -> JsonChange:
+    return JsonChange(
+        path, JsonOpFieldReorder(from_key, to_key, from_value, to_value)
+    )
 
 
 ########################################################################################
@@ -890,6 +913,11 @@ class FieldBasicItem(QStandardItem, QObject):
         # Inherited fields are read-only
         if origin == FieldOrigin.INHERITED:
             self.setEditable(False)
+        else:
+            # Enable drag for non-inherited field items
+            flags = self.flags()
+            flags |= Qt.ItemIsDragEnabled
+            self.setFlags(flags)
 
     def path(self) -> JsonPath:
         return _parent(self).path() / self._key
@@ -977,6 +1005,11 @@ class FieldObjectItem(QStandardItem, QObject):
         # Inherited fields are read-only
         if origin == FieldOrigin.INHERITED:
             self.setEditable(False)
+        else:
+            # Enable drag (as field) and drop (as object container)
+            flags = self.flags()
+            flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
+            self.setFlags(flags)
 
     def path(self) -> JsonPath:
         return _parent(self).path() / self._key
@@ -1095,6 +1128,48 @@ class FieldObjectItem(QStandardItem, QObject):
         if notify:
             self.change.emit(_change_field_remove(self.path(), key))
 
+    def _reorder_field(self, from_key: str, to_key: str, notify: bool = True):
+        """Move field from_key to the position of to_key."""
+        if from_key == to_key:
+            return
+
+        # When modifying an inherited container, change origin to LOCAL
+        if notify and self._origin == FieldOrigin.INHERITED:
+            self._origin = FieldOrigin.LOCAL
+
+        # Get items
+        from_item = self._fields[from_key]
+        to_item = self._fields[to_key]
+
+        # Get rows
+        from_row = from_item.row()
+        to_row = to_item.row()
+
+        # Move in model using takeRow/insertRow
+        row_items = self.takeRow(from_row)
+        self.insertRow(to_row, row_items)
+
+        # Rebuild _fields dict in new order
+        new_fields = {}
+        for row in range(self.rowCount()):
+            child = self.child(row, 0)
+            if hasattr(child, '_key'):
+                new_fields[child._key] = child
+        self._fields = new_fields
+
+        # Emit change signal
+        if not notify:
+            return
+        self.change.emit(
+            _change_field_reorder(
+                self.path(),
+                from_key,
+                to_key,
+                from_item.to_json(),
+                to_item.to_json(),
+            )
+        )
+
     def set_value(self, values: dict[str, JsonValue], inherited_data: dict = None):
         # Clear existing fields
         for key in self._fields.keys():
@@ -1199,6 +1274,11 @@ class FieldArrayItem(QStandardItem, QObject):
         # Inherited fields are read-only
         if origin == FieldOrigin.INHERITED:
             self.setEditable(False)
+        else:
+            # Enable drag (as field) and drop (for array items)
+            flags = self.flags()
+            flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
+            self.setFlags(flags)
 
     def path(self) -> JsonPath:
         return _parent(self).path() / self._key
@@ -1329,6 +1409,45 @@ class FieldArrayItem(QStandardItem, QObject):
             return
         self.change.emit(_change_index_remove(self.path(), index))
 
+    def _move_item(self, from_index: int, to_index: int, notify: bool = True):
+        """Move item from from_index to to_index (can be non-adjacent)."""
+        if from_index == to_index:
+            return
+
+        # When modifying an inherited container, change origin to LOCAL
+        if notify and self._origin == FieldOrigin.INHERITED:
+            self._origin = FieldOrigin.LOCAL
+
+        # Get items for change signal
+        from_item = self._items[from_index]
+        to_item = self._items[to_index]
+
+        # Remove from old position
+        self._items.pop(from_index)
+        row = self.takeRow(from_index)
+
+        # Insert at new position (adjust if moving down)
+        insert_idx = to_index if from_index > to_index else to_index
+        self._items.insert(insert_idx, from_item)
+        self.insertRow(insert_idx, row)
+
+        # Re-index all items
+        for index, item in enumerate(self._items):
+            item._index = index
+
+        # Emit change signal
+        if not notify:
+            return
+        self.change.emit(
+            _change_index_reorder(
+                self.path(),
+                from_index,
+                to_index,
+                from_item.to_json(),
+                to_item.to_json(),
+            )
+        )
+
     def set_value(self, values: list[JsonValue]):
         # Clear existing items
         for index in reversed(range(self.rowCount())):
@@ -1402,6 +1521,12 @@ class IndexBasicItem(QStandardItem, QObject):
         # Members
         self._index = index
         self._origin = origin
+
+        # Enable drag for non-inherited items
+        if origin != FieldOrigin.INHERITED:
+            flags = self.flags()
+            flags |= Qt.ItemIsDragEnabled
+            self.setFlags(flags)
 
     def path(self) -> JsonPath:
         return _parent(self).path() / self._index
@@ -1486,6 +1611,12 @@ class IndexObjectItem(QStandardItem, QObject):
         self._index = index
         self._origin = origin
         self._fields = dict()
+
+        # Enable drag (as array item) and drop (as object container)
+        if origin != FieldOrigin.INHERITED:
+            flags = self.flags()
+            flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
+            self.setFlags(flags)
 
     def path(self) -> JsonPath:
         return _parent(self).path() / self._index
@@ -1604,6 +1735,48 @@ class IndexObjectItem(QStandardItem, QObject):
         if notify:
             self.change.emit(_change_field_remove(self.path(), key))
 
+    def _reorder_field(self, from_key: str, to_key: str, notify: bool = True):
+        """Move field from_key to the position of to_key."""
+        if from_key == to_key:
+            return
+
+        # When modifying an inherited container, change origin to LOCAL
+        if notify and self._origin == FieldOrigin.INHERITED:
+            self._origin = FieldOrigin.LOCAL
+
+        # Get items
+        from_item = self._fields[from_key]
+        to_item = self._fields[to_key]
+
+        # Get rows
+        from_row = from_item.row()
+        to_row = to_item.row()
+
+        # Move in model using takeRow/insertRow
+        row_items = self.takeRow(from_row)
+        self.insertRow(to_row, row_items)
+
+        # Rebuild _fields dict in new order
+        new_fields = {}
+        for row in range(self.rowCount()):
+            child = self.child(row, 0)
+            if hasattr(child, '_key'):
+                new_fields[child._key] = child
+        self._fields = new_fields
+
+        # Emit change signal
+        if not notify:
+            return
+        self.change.emit(
+            _change_field_reorder(
+                self.path(),
+                from_key,
+                to_key,
+                from_item.to_json(),
+                to_item.to_json(),
+            )
+        )
+
     def set_value(self, values: dict[str, JsonValue]):
         # Clear existing fields
         for key in self._fields.keys():
@@ -1676,6 +1849,12 @@ class IndexArrayItem(QStandardItem, QObject):
         self._index = index
         self._origin = origin
         self._items = list()
+
+        # Enable drag for non-inherited items, drop for array containers
+        if origin != FieldOrigin.INHERITED:
+            flags = self.flags()
+            flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
+            self.setFlags(flags)
 
     def path(self) -> JsonPath:
         return _parent(self).path() / self._index
@@ -1806,6 +1985,45 @@ class IndexArrayItem(QStandardItem, QObject):
         if not notify:
             return
         self.change.emit(_change_index_remove(self.path(), index))
+
+    def _move_item(self, from_index: int, to_index: int, notify: bool = True):
+        """Move item from from_index to to_index (can be non-adjacent)."""
+        if from_index == to_index:
+            return
+
+        # When modifying an inherited container, change origin to LOCAL
+        if notify and self._origin == FieldOrigin.INHERITED:
+            self._origin = FieldOrigin.LOCAL
+
+        # Get items for change signal
+        from_item = self._items[from_index]
+        to_item = self._items[to_index]
+
+        # Remove from old position
+        self._items.pop(from_index)
+        row = self.takeRow(from_index)
+
+        # Insert at new position (adjust if moving down)
+        insert_idx = to_index if from_index > to_index else to_index
+        self._items.insert(insert_idx, from_item)
+        self.insertRow(insert_idx, row)
+
+        # Re-index all items
+        for index, item in enumerate(self._items):
+            item._index = index
+
+        # Emit change signal
+        if not notify:
+            return
+        self.change.emit(
+            _change_index_reorder(
+                self.path(),
+                from_index,
+                to_index,
+                from_item.to_json(),
+                to_item.to_json(),
+            )
+        )
 
     def set_value(self, values: list[JsonValue]):
         # Clear existing items
@@ -1986,6 +2204,44 @@ class JsonModel(QStandardItemModel):
         # Emit change signal (removal of override)
         if notify:
             self.change.emit(_change_field_remove(self.path(), key))
+
+    def _reorder_field(self, from_key: str, to_key: str, notify: bool = True):
+        """Move field from_key to the position of to_key."""
+        if from_key == to_key:
+            return
+
+        # Get items
+        from_item = self._fields[from_key]
+        to_item = self._fields[to_key]
+
+        # Get rows
+        from_row = from_item.row()
+        to_row = to_item.row()
+
+        # Move in model using takeRow/insertRow
+        row_items = self.takeRow(from_row)
+        self.insertRow(to_row, row_items)
+
+        # Rebuild _fields dict in new order
+        new_fields = {}
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+            if hasattr(item, '_key'):
+                new_fields[item._key] = item
+        self._fields = new_fields
+
+        # Emit change signal
+        if not notify:
+            return
+        self.change.emit(
+            _change_field_reorder(
+                self.path(),
+                from_key,
+                to_key,
+                from_item.to_json(),
+                to_item.to_json(),
+            )
+        )
 
     def set_value(self, values: JsonRoot, inherited_data: dict = None):
         # Clear existing fields
@@ -2208,6 +2464,15 @@ class JsonView(QTreeView):
         self.setSelectionMode(QTreeView.ExtendedSelection)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.setAlternatingRowColors(True)
+
+        # Drag-and-drop settings
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(False)  # Disable Qt's default, we draw our own
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.setDefaultDropAction(Qt.MoveAction)
+        self._drop_indicator_rect = QRect()
+        self._drop_indicator_position = None  # Store for use in dropEvent
 
         # Connect signals
         self.customContextMenuRequested.connect(self._on_context_menu)
@@ -2445,3 +2710,166 @@ class JsonView(QTreeView):
             elif hasattr(item, '_index'):  # Index item - always remove
                 if item._index < len(getattr(parent, '_items', [])):
                     parent._remove_item(item._index)
+
+    def dragEnterEvent(self, event):
+        """Accept drag events from within the same view."""
+        if event.source() == self:
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        """Validate drop target during drag - only allow sibling reordering."""
+        target_index = self.indexAt(event.pos())
+        source_index = self.currentIndex()
+
+        if not target_index.isValid() or not source_index.isValid():
+            self._drop_indicator_rect = QRect()
+            event.ignore()
+            self.viewport().update()
+            return
+
+        source_item = self._model.itemFromIndex(source_index)
+        target_item = self._model.itemFromIndex(target_index)
+
+        if source_item is None or target_item is None:
+            self._drop_indicator_rect = QRect()
+            event.ignore()
+            self.viewport().update()
+            return
+
+        # Only allow drops on siblings (same parent)
+        if source_item.parent() != target_item.parent():
+            self._drop_indicator_rect = QRect()
+            event.ignore()
+            self.viewport().update()
+            return
+
+        # Check origin compatibility - inherited items cannot be reordered
+        if hasattr(source_item, '_origin') and source_item._origin == FieldOrigin.INHERITED:
+            self._drop_indicator_rect = QRect()
+            event.ignore()
+            self.viewport().update()
+            return
+
+        # Call base class to get standard drag behavior
+        super().dragMoveEvent(event)
+
+        # Calculate drop indicator rect based on cursor position within item
+        rect = self.visualRect(target_index)
+        indicator_pos = self.dropIndicatorPosition()
+
+        if indicator_pos == QAbstractItemView.BelowItem:
+            # Line at bottom = will insert AFTER this item
+            self._drop_indicator_rect = QRect(rect.left(), rect.bottom(), rect.width(), 0)
+        else:
+            # AboveItem or OnItem = will insert AT this item's position
+            self._drop_indicator_rect = QRect(rect.left(), rect.top(), rect.width(), 0)
+
+        # Store indicator position for use in dropEvent
+        self._drop_indicator_position = indicator_pos
+
+        # Force viewport repaint to show indicator
+        self.viewport().update()
+        event.accept()
+
+    def dropEvent(self, event):
+        """Handle drop for reordering items within same parent."""
+        # Use stored indicator position (dropIndicatorPosition() may differ at drop time)
+        indicator_pos = self._drop_indicator_position
+
+        # Clear drop indicator
+        self._drop_indicator_rect = QRect()
+        self.viewport().update()
+
+        source_index = self.currentIndex()
+        target_index = self.indexAt(event.pos())
+
+        if not source_index.isValid() or not target_index.isValid():
+            event.ignore()
+            return
+
+        source_item = self._model.itemFromIndex(source_index)
+        target_item = self._model.itemFromIndex(target_index)
+
+        if source_item is None or target_item is None:
+            event.ignore()
+            return
+
+        # Validate same parent (sibling reorder only)
+        if source_item.parent() != target_item.parent():
+            event.ignore()
+            return
+
+        # Handle inherited items - cannot reorder
+        if hasattr(source_item, '_origin') and source_item._origin == FieldOrigin.INHERITED:
+            event.ignore()
+            return
+
+        parent = source_item.parent()
+        if parent is None:
+            parent = self._model
+
+        # Determine if this is field reorder or index reorder
+        if hasattr(source_item, '_key') and hasattr(target_item, '_key'):
+            # Field reorder (object children)
+            from_key = source_item._key
+
+            # Determine actual target based on drop indicator position
+            if indicator_pos == QAbstractItemView.BelowItem:
+                # Insert after target - find next sibling
+                target_row = target_item.row()
+                if target_row + 1 < parent.rowCount():
+                    next_item = parent.child(target_row + 1, 0)
+                    if next_item and hasattr(next_item, '_key'):
+                        to_key = next_item._key
+                    else:
+                        to_key = target_item._key
+                else:
+                    # Target is last item
+                    to_key = target_item._key
+            else:
+                to_key = target_item._key
+
+            if from_key == to_key:
+                event.ignore()
+                return
+            if hasattr(parent, '_reorder_field'):
+                parent._reorder_field(from_key, to_key)
+                event.accept()
+                return
+        elif hasattr(source_item, '_index') and hasattr(target_item, '_index'):
+            # Index reorder (array children)
+            from_idx = source_item._index
+
+            # Determine actual target based on drop indicator position
+            if indicator_pos == QAbstractItemView.BelowItem:
+                # Insert after target
+                to_idx = target_item._index + 1
+            else:
+                to_idx = target_item._index
+
+            if from_idx == to_idx:
+                event.ignore()
+                return
+            if hasattr(parent, '_move_item'):
+                parent._move_item(from_idx, to_idx)
+                event.accept()
+                return
+
+        event.ignore()
+
+    def paintEvent(self, event):
+        """Custom paint to show prominent drop indicator line."""
+        super().paintEvent(event)
+
+        # Draw custom drop indicator line
+        if self.state() == QAbstractItemView.DraggingState and not self._drop_indicator_rect.isNull():
+            painter = QPainter(self.viewport())
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            pen = QPen(QColor("#4a90d9"), 2)
+            painter.setPen(pen)
+
+            rect = self._drop_indicator_rect
+            painter.drawLine(rect.left(), rect.top(), rect.right(), rect.top())
+            painter.end()

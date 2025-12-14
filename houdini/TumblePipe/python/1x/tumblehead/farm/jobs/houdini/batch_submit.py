@@ -20,7 +20,7 @@ from tumblehead.api import (
     default_client
 )
 from tumblehead.util.uri import Uri
-from tumblehead.util.io import store_json, load_json
+from tumblehead.util.io import store_json, load_json, store_text
 from tumblehead.pipe.context import get_aov_names_from_context
 from tumblehead.config.timeline import get_frame_range
 from tumblehead.config.department import list_departments
@@ -33,8 +33,12 @@ from tumblehead.pipe.paths import (
     latest_hip_file_path,
     latest_export_path,
     next_export_path,
+    get_latest_staged_file_path,
 )
+from tumblehead.pipe.usd import collapse_latest_references
 import tumblehead.farm.tasks.stage.task as stage_task
+import tumblehead.farm.tasks.render.task as render_task
+import tumblehead.farm.jobs.houdini.render.job as render_job
 
 api = default_client()
 
@@ -232,6 +236,7 @@ def submit_entity_batch(config: dict) -> list[str]:
     last_frame = settings.get('last_frame', 1100)
     batch_size = settings.get('batch_size', 10)
     denoise = settings.get('denoise', True)
+    standalone = settings.get('standalone', False)
 
     if not do_publish and not do_render:
         return []
@@ -354,40 +359,107 @@ def submit_entity_batch(config: dict) -> list[str]:
             ))
             relative_render_settings_path = render_settings_path.relative_to(temp_path)
 
-            # Build stage config matching what stage.py expects
-            stage_config = dict(
-                entity=dict(
-                    uri=str(entity_uri),
-                    department=render_department
-                ),
-                settings=dict(
-                    user_name=user_name,
-                    purpose='render',
-                    pool_name=render_pool,
-                    variant_names=variants,
-                    render_department_name=render_department,
-                    render_settings_path=path_str(relative_render_settings_path),
-                    tile_count=tile_count,
-                    first_frame=first_frame,
-                    last_frame=last_frame,
-                    step_size=1,  # Default
-                    batch_size=batch_size
-                ),
-                tasks=dict(
-                    stage=dict(priority=render_priority, channel_name='exports'),
-                    full_render=dict(priority=render_priority, denoise=denoise, channel_name='renders')
-                )
-            )
+            if not standalone:
+                # === DIRECT RENDER MODE (standalone=False) ===
+                # Skip stage task, render directly using existing staged file with resolved references
 
-            # Build stage job using existing task builder
-            stage_job_name = 'stage'
-            try:
-                paths = {render_settings_path: relative_render_settings_path}
-                stage_job = stage_task.build(stage_config, paths, temp_path)
-                jobs[stage_job_name] = stage_job
-                deps[stage_job_name] = [last_publish_job_name] if last_publish_job_name else []
-            except Exception as e:
-                logging.warning(f"Could not create stage job for {entity_uri}: {e}")
+                # Get the latest staged file (use first variant)
+                variant_name = variants[0] if variants else 'default'
+                latest_staged_path = get_latest_staged_file_path(entity_uri, variant_name)
+                if not latest_staged_path.exists():
+                    raise BatchSubmitError(
+                        f"Standalone render requires existing staged file for {entity_uri}. "
+                        f"Expected: {latest_staged_path}. "
+                        "Run a normal render first or disable standalone mode."
+                    )
+
+                # Create collapsed USD with resolved version references
+                collapsed_stage_path = temp_path / 'collapsed_stage.usda'
+                collapsed_content = collapse_latest_references(latest_staged_path, collapsed_stage_path)
+                store_text(collapsed_stage_path, collapsed_content)
+                relative_collapsed_path = collapsed_stage_path.relative_to(temp_path)
+
+                # Build render config for render job module
+                # - render_settings_path: absolute (loaded locally during job building)
+                # - input_path: relative (resolves in job data dir on farm)
+                render_config = dict(
+                    entity=dict(
+                        uri=str(entity_uri),
+                        department=render_department
+                    ),
+                    settings=dict(
+                        user_name=user_name,
+                        purpose='render',
+                        pool_name=render_pool,
+                        variant_names=variants,
+                        render_department_name=render_department,
+                        render_settings_path=path_str(render_settings_path),
+                        input_path=path_str(relative_collapsed_path),  # Relative path for farm (resolves in job data dir)
+                        tile_count=tile_count,
+                        first_frame=first_frame,
+                        last_frame=last_frame,
+                        step_size=1,
+                        batch_size=batch_size
+                    ),
+                    tasks=dict(
+                        full_render=dict(
+                            priority=render_priority,
+                            denoise=denoise,
+                            channel_name='renders'
+                        )
+                    )
+                )
+
+                # Submit render job directly (creates its own batch)
+                paths = {
+                    render_settings_path: relative_render_settings_path,
+                    collapsed_stage_path: relative_collapsed_path
+                }
+                try:
+                    result = render_job.submit(render_config, paths)
+                    if result != 0:
+                        raise BatchSubmitError(f"Standalone render submission failed for {entity_uri}")
+                    logging.info(f"Submitted standalone render for {entity_uri}")
+                    # Return empty list since render_job.submit handles its own submission
+                    return []
+                except Exception as e:
+                    raise BatchSubmitError(f"Could not submit standalone render for {entity_uri}: {e}")
+            else:
+                # === STAGE + RENDER MODE (standalone=True) ===
+                # Create stage job on farm, then render
+                stage_config = dict(
+                    entity=dict(
+                        uri=str(entity_uri),
+                        department=render_department
+                    ),
+                    settings=dict(
+                        user_name=user_name,
+                        purpose='render',
+                        pool_name=render_pool,
+                        variant_names=variants,
+                        render_department_name=render_department,
+                        render_settings_path=path_str(relative_render_settings_path),
+                        tile_count=tile_count,
+                        first_frame=first_frame,
+                        last_frame=last_frame,
+                        step_size=1,  # Default
+                        batch_size=batch_size
+                    ),
+                    tasks=dict(
+                        stage=dict(priority=render_priority, channel_name='exports'),
+                        full_render=dict(priority=render_priority, denoise=denoise, channel_name='renders')
+                    )
+                )
+
+                # Build stage job using existing task builder
+                stage_job_name = 'stage'
+                try:
+                    paths = {render_settings_path: relative_render_settings_path}
+                    stage_job = stage_task.build(stage_config, paths, temp_path)
+                    jobs[stage_job_name] = stage_job
+                    deps[stage_job_name] = [last_publish_job_name] if last_publish_job_name else []
+                except Exception as e:
+                    logging.warning(f"Could not create stage job for {entity_uri}: {e}")
 
             # Submit within temp directory context (files need to be copied)
             return _finalize_batch()

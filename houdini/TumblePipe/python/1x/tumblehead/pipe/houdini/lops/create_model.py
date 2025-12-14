@@ -89,6 +89,23 @@ class CreateModel(ns.Node):
         else:
             self.parm('asset_label').set('')
 
+    def _initialize(self):
+        """Initialize node with defaults from workfile context and update labels."""
+        file_path = Path(hou.hipFile.path())
+        context = get_workfile_context(file_path)
+
+        # If valid asset context, set from context
+        if context is not None and context.entity_uri.segments[0] == 'assets':
+            self.set_asset_uri(context.entity_uri)
+        else:
+            # Fall back to first available asset
+            asset_uris = self.list_asset_uris()
+            if len(asset_uris) > 1:  # Skip 'from_context'
+                self.set_asset_uri(Uri.parse_unsafe(asset_uris[1]))
+
+        # Update labels to show resolved values
+        self._update_labels()
+
     def execute(self):
         """Execute node - generate and set metadata script."""
         self._update_labels()
@@ -108,31 +125,21 @@ def set_style(raw_node):
     raw_node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
-
     # Set node style
     set_style(raw_node)
 
-    # Context
+    # Validate node type
     raw_node_type = raw_node.type()
-    if raw_node_type is None: return
+    if raw_node_type is None:
+        return
     node_type = ns.find_node_type('create_model', 'Lop')
-    if node_type is None: return
-    if raw_node_type != node_type: return
-    node = CreateModel(raw_node)
-
-    # Parse scene file path and check for valid asset context
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-
-    # If no valid asset context, set first available asset
-    if context is None or context.entity_uri.segments[0] != 'assets':
-        asset_uris = node.list_asset_uris()
-        if len(asset_uris) > 1:  # Skip 'from_context'
-            node.set_asset_uri(Uri.parse_unsafe(asset_uris[1]))
+    if node_type is None:
+        return
+    if raw_node_type != node_type:
         return
 
-    # Set the default values from context
-    node.set_asset_uri(context.entity_uri)
+    node = CreateModel(raw_node)
+    node._initialize()
 
 def execute():
     """Execute node from HDA callback."""

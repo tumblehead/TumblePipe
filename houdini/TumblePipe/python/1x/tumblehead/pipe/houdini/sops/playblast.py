@@ -92,6 +92,8 @@ class Playblast(ns.Node):
             file_path = Path(hou.hipFile.path())
             context = get_workfile_context(file_path)
             if context is None: return None
+            # Only accept entity URIs, not group URIs
+            if context.entity_uri.purpose != 'entity': return None
             return context.entity_uri
         # From settings
         entity_uris = self.list_entity_uris()
@@ -120,6 +122,10 @@ class Playblast(ns.Node):
 
         # Department doesn't have from_context option, so just clear label
         self.parm('department_label').set('')
+
+    def _initialize(self):
+        """Initialize node and update labels to show resolved values."""
+        self._update_labels()
 
     def playblast(self):
 
@@ -215,18 +221,17 @@ def set_style(raw_node):
     raw_node.setUserData('nodeshape', ns.SHAPE_NODE_EXPORT)
 
 def on_created(raw_node):
-
     # Set node style
     set_style(raw_node)
 
-    # Context
+    # Validate node type
     raw_node_type = raw_node.type()
     node_type = ns.find_node_type('playblast', 'Sop')
-    if raw_node_type != node_type: return
-    node = Playblast(raw_node)
+    if raw_node_type != node_type:
+        return
 
-    # Update labels to show current entity selection
-    node._update_labels()
+    node = Playblast(raw_node)
+    node._initialize()
 
 def export():
     raw_node = hou.pwd()

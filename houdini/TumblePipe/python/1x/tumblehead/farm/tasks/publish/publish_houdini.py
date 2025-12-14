@@ -13,7 +13,6 @@ from tumblehead.pipe.paths import (
 )
 from tumblehead.pipe.houdini import nodes as ns
 from tumblehead.pipe.houdini.lops import (
-    build_shot,
     import_shot,
     import_assets,
     import_layer,
@@ -42,12 +41,6 @@ def _error(msg):
     return 1
 
 def _update():
-
-    # Find shot build nodes
-    build_shot_nodes = list(map(
-        build_shot.BuildShot,
-        ns.list_by_node_type('build_shot', 'Lop')
-    ))
 
     # Find import shot nodes
     import_shot_nodes = list(map(
@@ -78,12 +71,6 @@ def _update():
         import_rigs.ImportRigs,
         ns.list_by_node_type('import_rigs', 'Sop')
     ))
-
-    # Import latest shot builds
-    for build_shot_node in build_shot_nodes:
-        if not build_shot_node.is_valid(): continue
-        build_shot_node.execute()
-        print(f'Updated {build_shot_node.path()}')
 
     # Import latest shot stages
     for import_shot_node in import_shot_nodes:

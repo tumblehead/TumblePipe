@@ -220,6 +220,12 @@ class ImportAssets(ns.Node):
                 version_name = actual_versions[-1]
         self.parm(f'version_label{index}').set(version_name)
 
+    def _initialize(self):
+        """Initialize node and update labels for all existing entries."""
+        count = self.parm('asset_imports').eval()
+        for index in range(1, count + 1):
+            self._update_labels(index)
+
     def execute(self):
 
         # Update labels for all entries
@@ -237,6 +243,13 @@ class ImportAssets(ns.Node):
         asset_imports = self.get_asset_imports()
         exclude_department_names = self.get_exclude_department_names()
         include_layerbreak = self.get_include_layerbreak()
+
+        # Check if any assets to import
+        active_imports = [(uri, var, ver, inst) for uri, var, ver, inst in asset_imports if inst > 0]
+        if not active_imports:
+            ns.set_node_comment(context, "Bypassed: No assets configured")
+            context.bypass(True)
+            return result.Value(None)
 
         # Build the merge node
         merge_node = dive_node.createNode('merge', 'merge')
@@ -332,6 +345,10 @@ class ImportAssets(ns.Node):
         # Layout the nodes
         dive_node.layoutChildren()
 
+        # Set success comment
+        asset_count = len(active_imports)
+        ns.set_node_comment(context, f"Imported: {asset_count} asset{'s' if asset_count != 1 else ''}")
+
         # Done
         return result.Value(None)
 
@@ -347,9 +364,11 @@ def set_style(raw_node):
     raw_node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
-
     # Set node style
     set_style(raw_node)
+
+    node = ImportAssets(raw_node)
+    node._initialize()
 
 def execute():
     raw_node = hou.pwd()
