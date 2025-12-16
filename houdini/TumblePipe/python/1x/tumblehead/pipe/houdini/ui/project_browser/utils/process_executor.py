@@ -171,6 +171,7 @@ class ProcessExecutor(QObject):
                 self._executed_split_paths.add(child.node_path)
 
             child.status = TaskStatus.RUNNING
+            self.task_started.emit(child.id)
 
             try:
                 if self._mode == 'local':
@@ -186,10 +187,12 @@ class ProcessExecutor(QObject):
                         raise RuntimeError(f"No farm executor defined for child task: {child.description}")
 
                 child.status = TaskStatus.COMPLETED
+                self.task_completed.emit(child.id)
 
             except Exception as e:
                 child.status = TaskStatus.FAILED
                 child.error_message = traceback.format_exc()
+                self.task_failed.emit(child.id, child.error_message)
                 # Re-raise to fail the parent task
                 raise
 

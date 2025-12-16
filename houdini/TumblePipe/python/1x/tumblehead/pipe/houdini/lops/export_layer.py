@@ -7,7 +7,6 @@ import json
 import hou
 
 from tumblehead.api import get_user_name, path_str, fix_path, default_client
-from tumblehead.util.io import store_json
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
 from tumblehead.config.variants import get_entity_type, list_variants
@@ -20,9 +19,11 @@ from tumblehead.pipe.paths import (
     next_export_path,
     get_workfile_context,
     get_layer_file_name,
-    shared_export_latest_file_path
+    shared_export_latest_file_path,
+    latest_hip_file_path
 )
 from tumblehead.pipe.usd import add_sublayer
+from tumblehead.pipe.context import save_layer_context
 
 api = default_client()
 
@@ -358,40 +359,14 @@ class ExportLayer(ns.Node):
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
 
-            # Collect prim paths for validation (ensure stage has content)
-            all_export_prims = []
-
-            # Collect asset prim paths
+            # Collect asset parameters
             parameter_assets = []
-            for asset_path, asset_metadata in assets.items():
-                all_export_prims.append(asset_path)
+            for asset_metadata in assets.values():
                 parameter_assets.append(dict(
                     asset=asset_metadata['uri'],
                     instance=asset_metadata['instance'],
                     inputs=asset_metadata.get('inputs', [])
                 ))
-
-            # Collect stage component prim paths
-            stage = stage_node.stage()
-            stage_prims = ['/cameras', '/lights', '/volumes', '/collections', '/Render', '/scene']
-            for prim_path in stage_prims:
-                if stage.GetPrimAtPath(prim_path).IsValid():
-                    all_export_prims.append(prim_path)
-
-            # For asset exports, also capture the asset's own root prim (e.g., /CHAR/Moose)
-            # This ensures materials, shaders, and other lookdev content is exported
-            is_asset_export = str(entity_uri).startswith('entity:/assets/')
-            if is_asset_export:
-                asset_prim_path = util.uri_to_prim_path(entity_uri)
-                if stage.GetPrimAtPath(asset_prim_path).IsValid():
-                    all_export_prims.append(asset_prim_path)
-
-            # Validate we have something to export - never silently create empty versions
-            if not all_export_prims:
-                raise ExportLayerError(
-                    f"No exportable content found for {entity_uri} {department_name}. "
-                    "Ensure the stage contains the asset prim, referenced assets, or stage components."
-                )
 
             # Export the stage
             layer_file_name = get_layer_file_name(entity_uri, variant_name, department_name, version_name)
@@ -406,27 +381,21 @@ class ExportLayer(ns.Node):
             # Extract AOV names from the stage
             aov_names = [
                 aov_path.rsplit('/', 1)[-1].lower()
-                for aov_path in util.list_render_vars(stage.GetPseudoRoot())
+                for aov_path in util.list_render_vars(root)
             ]
 
             # Write layer context
-            context_path = temp_path / 'context.json'
-            context = dict(
-                inputs=list(map(json.loads, asset_inputs)),
-                outputs=[dict(
-                    uri=str(entity_uri),
-                    variant=variant_name,
-                    department=department_name,
-                    version=version_name,
-                    timestamp=timestamp.isoformat(),
-                    user=user_name,
-                    parameters=dict(
-                        assets=parameter_assets,
-                        aov_names=aov_names
-                    )
-                )]
+            save_layer_context(
+                target_path=temp_path,
+                entity_uri=entity_uri,
+                department_name=department_name,
+                version_name=version_name,
+                timestamp=timestamp.isoformat(),
+                user_name=user_name,
+                variant_name=variant_name,
+                parameters=dict(assets=parameter_assets, aov_names=aov_names),
+                inputs=list(map(json.loads, asset_inputs))
             )
-            store_json(context_path, context)
 
             # Copy all files to output path
             version_path.mkdir(parents=True, exist_ok=True)
@@ -480,13 +449,21 @@ class ExportLayer(ns.Node):
         if priority is None:
             raise ExportLayerError("Priority is not set for farm export.")
 
+        # Get workfile path for bundling
+        workfile_path = latest_hip_file_path(entity_uri, department_name)
+        if not workfile_path.exists():
+            raise ExportLayerError(f"No workfile found for {entity_uri} {department_name}")
+        workfile_dest = Path('workfiles') / workfile_path.name
+        paths = {workfile_path: workfile_dest}
+
         config = {
+            'entity': {
+                'uri': str(entity_uri),
+                'department': department_name
+            },
             'settings': {
                 'priority': priority,
                 'pool_name': pool_name,
-                'entity_uri': str(entity_uri),
-                'variant_name': variant_name,
-                'department_name': department_name,
                 'first_frame': frame_range.full_range().first_frame,
                 'last_frame': frame_range.full_range().last_frame
             },
@@ -494,12 +471,13 @@ class ExportLayer(ns.Node):
                 'publish': {
                     'downstream_departments': downstream_deps
                 }
-            }
+            },
+            'workfile_path': path_str(workfile_dest)
         }
 
         from tumblehead.farm.jobs.houdini.publish import job as publish_job
         try:
-            publish_job.submit(config, {})
+            publish_job.submit(config, paths)
         except Exception as e:
             hou.ui.displayMessage(
                 f"Failed to submit farm job: {str(e)}",

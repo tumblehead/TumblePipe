@@ -2,13 +2,11 @@ from tempfile import TemporaryDirectory
 from pathlib import Path
 import subprocess
 import platform
-import json
 import shutil
-from datetime import datetime
 
 import hou
 
-from tumblehead.api import path_str, fix_path, default_client, get_user_name
+from tumblehead.api import path_str, fix_path, default_client
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
 from tumblehead.config.variants import get_entity_type
@@ -20,23 +18,9 @@ from tumblehead.pipe.paths import (
     get_shared_layer_file_name,
     shared_export_latest_path
 )
+from tumblehead.pipe.context import save_export_context
 
 api = default_client()
-
-
-def _save_context_file(export_path: Path, entity_uri: Uri, department_name: str, version_name: str | None = None):
-    """Save context.json with export metadata."""
-    context_path = export_path / 'context.json'
-    context_data = {
-        'entity_uri': str(entity_uri),
-        'department': department_name,
-        'variant': '_shared',
-        'version': version_name or export_path.name,
-        'timestamp': datetime.now().isoformat(),
-        'user': get_user_name()
-    }
-    with context_path.open('w') as f:
-        json.dump(context_data, f, indent=2)
 
 
 class LayerSplit(ns.Node):
@@ -187,7 +171,7 @@ class LayerSplit(ns.Node):
             self.parm('export_execute').pressButton()
 
             # Save context file to temp
-            _save_context_file(temp_path, entity_uri, department_name, version_name)
+            save_export_context(temp_path, entity_uri, department_name, version_name, variant_name='_shared')
 
             # Copy all files from temp to export path
             export_path.mkdir(parents=True, exist_ok=True)

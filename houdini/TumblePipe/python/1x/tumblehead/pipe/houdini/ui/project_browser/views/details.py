@@ -24,6 +24,8 @@ class DetailsView(QtWidgets.QWidget):
     open_scene_info = Signal()
     open_location = Signal(object)
     set_frame_range = Signal(object)
+    view_latest_export = Signal()
+    open_export_location = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -93,13 +95,16 @@ class DetailsView(QtWidgets.QWidget):
         self.publish_scene_button.clicked.connect(self._publish)
         top_button_layout.addWidget(self.publish_scene_button, 2, 0)
 
-        # Create the open export location button
-        self.open_export_location_button = QtWidgets.QPushButton()
-        self.open_export_location_button.setIcon(hqt.Icon("BUTTONS_folder"))
-        self.open_export_location_button.clicked.connect(
-            partial(self._open_location, Location.Export)
-        )
-        top_button_layout.addWidget(self.open_export_location_button, 2, 1)
+        # Create the view export button (replaces open export location button)
+        # Left-click: view latest export in USD viewer
+        # Right-click: show context menu with "Open Export Folder" option
+        self.view_export_button = QtWidgets.QPushButton()
+        self.view_export_button.setIcon(hqt.Icon("NETWORKS_lop"))
+        self.view_export_button.setToolTip("View latest staged USD export (right-click for folder)")
+        self.view_export_button.clicked.connect(self._view_export)
+        self.view_export_button.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.view_export_button.customContextMenuRequested.connect(self._view_export_context_menu)
+        top_button_layout.addWidget(self.view_export_button, 2, 1)
 
         # Create the open texture location button
         self.open_texture_location_button = QtWidgets.QPushButton()
@@ -334,7 +339,7 @@ class DetailsView(QtWidgets.QWidget):
             self.publish_scene_button.setEnabled(False)
             self.scene_info_button.setEnabled(False)
             self.open_workspace_location_button.setEnabled(False)
-            self.open_export_location_button.setEnabled(False)
+            self.view_export_button.setEnabled(False)
             self.open_texture_location_button.setEnabled(False)
 
             # Clear the workspace details
@@ -353,7 +358,7 @@ class DetailsView(QtWidgets.QWidget):
             self.publish_scene_button.setEnabled(True)
             self.scene_info_button.setEnabled(True)
             self.open_workspace_location_button.setEnabled(True)
-            self.open_export_location_button.setEnabled(True)
+            self.view_export_button.setEnabled(True)
             self.open_texture_location_button.setEnabled(True)
 
             # Set the details
@@ -387,6 +392,20 @@ class DetailsView(QtWidgets.QWidget):
         if self._context is None:
             return
         self.open_location.emit(location)
+
+    def _view_export(self):
+        """Left-click: Launch USD viewer for latest export."""
+        if self._context is None:
+            return
+        self.view_latest_export.emit()
+
+    def _view_export_context_menu(self, point):
+        """Right-click: Show context menu with Open Export Folder."""
+        menu = QtWidgets.QMenu()
+        open_folder_action = menu.addAction("Open Export Folder")
+        selected = menu.exec_(self.view_export_button.mapToGlobal(point))
+        if selected == open_folder_action:
+            self.open_export_location.emit()
 
     def _set_frame_range(self, frame_range):
         if self._context is None:

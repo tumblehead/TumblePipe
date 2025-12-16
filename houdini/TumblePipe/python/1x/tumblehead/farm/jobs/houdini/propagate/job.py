@@ -243,6 +243,12 @@ def submit(
             workfile_dest = Path('workfiles') / f'{dept_name}_{workfile_path.name}'
             paths[workfile_path] = workfile_dest
 
+            # Bundle context.json alongside workfile (for group workfile detection)
+            context_path = workfile_path.parent / 'context.json'
+            if context_path.exists():
+                context_dest = Path('workfiles') / 'context.json'
+                paths[context_path] = context_dest
+
             publish_config = {
                 'entity': {'uri': str(target_uri), 'department': dept_name},
                 'settings': config['settings'].copy(),

@@ -9,8 +9,8 @@ from tumblehead.api import (
     default_client
 )
 from tumblehead.util.uri import Uri
-from tumblehead.util.io import store_json
 import tumblehead.pipe.houdini.nodes as ns
+from tumblehead.pipe.context import save_layer_context
 from tumblehead.pipe.paths import (
     get_next_version_path,
     get_rig_export_path,
@@ -122,19 +122,14 @@ class ExportRig(ns.Node):
         export_node.parm('execute').pressButton()
 
         # Write context
-        context_path = version_path / 'context.json'
-        context = dict(
-            inputs = [],
-            outputs = [dict(
-                uri = str(entity_uri),
-                department = 'rig',
-                version = version_name,
-                timestamp = timestamp,
-                user = get_user_name(),
-                parameters = {}
-            )]
+        save_layer_context(
+            target_path=version_path,
+            entity_uri=entity_uri,
+            department_name='rig',
+            version_name=version_name,
+            timestamp=timestamp,
+            user_name=get_user_name()
         )
-        store_json(context_path, context)
 
 def create(scene, name):
     node_type = ns.find_node_type('export_rig', 'Sop')

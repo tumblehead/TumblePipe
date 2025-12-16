@@ -1,8 +1,10 @@
 from functools import partial
+from tempfile import TemporaryDirectory
 from pathlib import Path
 import datetime as dt
 import logging
 import sys
+import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent
@@ -10,6 +12,7 @@ if tumblehead_packages_path not in sys.path:
     sys.path.append(str(tumblehead_packages_path))
 
 from tumblehead.api import (
+    fix_path,
     path_str,
     to_wsl_path,
     to_windows_path,
@@ -29,6 +32,7 @@ from tumblehead.pipe.paths import (
     latest_export_path,
     next_export_path
 )
+import tumblehead.farm.tasks.publish.task as publish_task
 
 api = default_client()
 
@@ -126,55 +130,75 @@ def _error(msg):
     logging.error(msg)
     return 1
 
-PUBLISH_SCRIPT_PATH = Path(__file__).parent / 'publish.py'
 def _create_publish_job(
-    api,
     entity_uri,
-    variant_name,
     department_name,
     pool_name,
-    priority
+    priority,
+    paths: dict,
+    temp_path: Path
     ):
+    """Create a publish job using publish_task.build() pattern.
+
+    Args:
+        entity_uri: Entity URI to publish
+        department_name: Department name
+        pool_name: Deadline pool name
+        priority: Job priority
+        paths: Dict mapping source paths to relative dest paths (modified in place)
+        temp_path: Staging directory for job files
+
+    Returns:
+        Job object or None if workfile not found
+    """
     logging.debug(
         f'Creating publish job for '
         f'{entity_uri} '
         f'{department_name}'
     )
 
+    # Find the workfile
+    workfile_path = latest_hip_file_path(entity_uri, department_name)
+    if workfile_path is None or not workfile_path.exists():
+        logging.warning(f'No workfile found for {entity_uri}/{department_name}')
+        return None
+
+    # Get frame range
     frame_range = get_frame_range(entity_uri)
     if frame_range is None:
         raise ValueError(f"Cannot get frame range for entity: {entity_uri}. Ensure the entity has frame_start, frame_end, roll_start, roll_end properties configured.")
     render_range = frame_range.full_range()
 
-    output_path = next_export_path(entity_uri, variant_name, department_name)
-    version_name = output_path.name
-    job = Job(
-        to_wsl_path(PUBLISH_SCRIPT_PATH), None,
-        str(entity_uri),
-        department_name
-    )
-    job.name = (
-        f'publish '
-        f'{entity_uri} '
-        f'{department_name} '
-        f'{version_name}'
-    )
-    job.pool = pool_name
-    job.group = 'houdini'
-    job.priority = priority
-    job.start_frame = render_range.first_frame
-    job.end_frame = render_range.last_frame
-    job.step_size = 1
-    job.chunk_size = len(render_range)
-    job.max_frame_time = 10
-    job.env.update(dict(
-        TH_USER = get_user_name(),
-        TH_CONFIG_PATH = path_str(to_wsl_path(api.CONFIG_PATH)),
-        TH_PROJECT_PATH = path_str(to_wsl_path(api.PROJECT_PATH)),
-        TH_PIPELINE_PATH = path_str(to_wsl_path(api.PIPELINE_PATH))
-    ))
-    job.output_paths.append(to_windows_path(output_path))
-    return job
+    # Add workfile to paths for bundling
+    workfile_dest = Path('workfiles') / f'{department_name}_{workfile_path.name}'
+    paths[workfile_path] = workfile_dest
+
+    # Bundle context.json alongside workfile (for group workfile detection)
+    context_path = workfile_path.parent / 'context.json'
+    if context_path.exists():
+        context_dest = Path('workfiles') / 'context.json'
+        paths[context_path] = context_dest
+
+    # Build config for publish_task.build()
+    config = {
+        'entity': {
+            'uri': str(entity_uri),
+            'department': department_name
+        },
+        'settings': {
+            'priority': priority,
+            'pool_name': pool_name,
+            'first_frame': render_range.first_frame,
+            'last_frame': render_range.last_frame
+        },
+        'tasks': {
+            'publish': {}
+        },
+        'workfile_path': path_str(workfile_dest)
+    }
+
+    # Build job using publish_task
+    return publish_task.build(config, paths, temp_path)
 
 def _add_jobs(
     batch: Batch,
@@ -228,46 +252,58 @@ def main(
         f'{timestamp}'
     )
 
-    # Prepare adding jobs
-    jobs = dict()
-    deps = dict()
-    def _add_job(job_name, job, job_deps):
-        jobs[job_name] = job
-        deps[job_name] = job_deps
+    # Open temporary directory for staging job files
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path.mkdir(parents=True, exist_ok=True)
 
-    # Create update jobs for each sequence and shot
-    for uri in api.config.list_entities(Uri.parse_unsafe('entity:/shots/*/*')):
-        prev_job_name = None
-        down_stream_changed = False
-        # Use 'default' variant for batch update jobs
-        variant_name = 'default'
-        for department_name in department_names:
-                if not _is_submissable(uri, department_name): continue
-                out_of_date = _is_out_of_date(uri, variant_name, department_name)
-                if not down_stream_changed and not out_of_date: continue
-                # Create job name from URI path segments
-                uri_name = '_'.join(uri.segments[1:])
-                job_name = f'{uri_name}_{department_name}'
-                job = _create_publish_job(
-                    api,
-                    uri,
-                    variant_name,
-                    department_name,
-                    pool_name,
-                    priority
-                )
-                _add_job(job_name, job, (
-                    [] if prev_job_name is None else
-                    [prev_job_name]
-                ))
-                prev_job_name = job_name
-                down_stream_changed = True
+    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
+        temp_path = Path(temp_dir)
 
-    # Add jobs
-    _add_jobs(batch, jobs, deps)
+        # Prepare adding jobs
+        jobs = dict()
+        deps = dict()
+        paths = dict()  # Shared paths dict for bundling files
 
-    # Submit
-    farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))
+        def _add_job(job_name, job, job_deps):
+            if job is None:
+                return
+            jobs[job_name] = job
+            deps[job_name] = job_deps
+
+        # Create update jobs for each sequence and shot
+        for uri in api.config.list_entities(Uri.parse_unsafe('entity:/shots/*/*')):
+            prev_job_name = None
+            down_stream_changed = False
+            # Use 'default' variant for batch update jobs
+            variant_name = 'default'
+            for dept_name in department_names:
+                    if not _is_submissable(uri, dept_name): continue
+                    out_of_date = _is_out_of_date(uri, variant_name, dept_name)
+                    if not down_stream_changed and not out_of_date: continue
+                    # Create job name from URI path segments
+                    uri_name = '_'.join(uri.segments[1:])
+                    job_name = f'{uri_name}_{dept_name}'
+                    job = _create_publish_job(
+                        uri,
+                        dept_name,
+                        pool_name,
+                        priority,
+                        paths,
+                        temp_path
+                    )
+                    _add_job(job_name, job, (
+                        [] if prev_job_name is None else
+                        [prev_job_name]
+                    ))
+                    if job is not None:
+                        prev_job_name = job_name
+                        down_stream_changed = True
+
+        # Add jobs
+        _add_jobs(batch, jobs, deps)
+
+        # Submit (within temp directory context so files can be copied)
+        farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))
 
     # Done
     return 0

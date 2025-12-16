@@ -17,6 +17,7 @@ from ..helpers import (
     latest_context,
     get_user_from_context,
     format_relative_time,
+    has_staged_export,
 )
 from ..widgets import ButtonSurface, RowHoverTableView, DepartmentItemDelegate
 from ..models import DepartmentTableModel
@@ -135,6 +136,7 @@ class DepartmentBrowser(QtWidgets.QWidget):
     reload_scene = Signal(object)
     new_from_current = Signal(object)
     new_from_template = Signal(object)
+    view_latest_export = Signal()
 
     def __init__(self, api, parent=None):
         super().__init__(parent)
@@ -339,6 +341,16 @@ class DepartmentBrowser(QtWidgets.QWidget):
         # Build and display the menu (same as before)
         menu = QtWidgets.QMenu()
         open_location_action = menu.addAction("Open Location")
+
+        # Check if export exists for this entity
+        view_export_action = None
+        entity_uri = context.entity_uri if context else None
+        if entity_uri and has_staged_export(entity_uri):
+            view_export_action = menu.addAction("View Latest Export")
+        else:
+            no_export_action = menu.addAction("No Published Export")
+            no_export_action.setEnabled(False)
+
         reload_scene_action = menu.addAction("Reload Scene")
         new_from_current_action = menu.addAction("New: Current")
         new_from_template_action = menu.addAction("New: Template")
@@ -348,6 +360,8 @@ class DepartmentBrowser(QtWidgets.QWidget):
             return
         if selected_action == open_location_action:
             return self.open_location.emit(context)
+        if view_export_action and selected_action == view_export_action:
+            return self.view_latest_export.emit()
         if selected_action == reload_scene_action:
             return self.reload_scene.emit(context)
         if selected_action == new_from_current_action:

@@ -4,20 +4,24 @@ import datetime as dt
 import json
 import sys
 
-import hou
-
-from tumblehead.api import get_user_name
-from tumblehead.util.io import store_json
 from tumblehead.pipe.paths import (
     list_hip_file_paths,
     get_hip_file_path,
     latest_hip_file_path,
     next_hip_file_path,
     latest_export_path,
+    get_latest_staged_file_path,
     Context
 )
 from tumblehead.util.uri import Uri
 
+# Re-export from pipe.context for backward compatibility
+from tumblehead.pipe.context import (
+    save_context,
+    save_entity_context,
+    file_path_from_context,
+    get_timestamp_from_context,
+)
 
 
 def get_entity_type(entity_uri: Uri) -> str | None:
@@ -44,6 +48,20 @@ def entity_uri_from_path(path: list[str]) -> Uri | None:
             return Uri.parse_unsafe(f'groups:/{context}/{group_name}')
         case _:
             return None
+
+
+def has_staged_export(entity_uri: Uri) -> bool:
+    """Check if a staged export exists for the given entity.
+
+    This is a fast check - just constructs a path and checks if file exists.
+    """
+    if entity_uri is None:
+        return False
+    try:
+        export_file = get_latest_staged_file_path(entity_uri, variant_name='default')
+        return export_file is not None and export_file.exists()
+    except Exception:
+        return False
 
 
 def context_from_selection(entity_uri: Uri, department_name: str, version_name: str = None) -> Context:
@@ -84,68 +102,6 @@ def list_file_paths(context: Context):
 def latest_export_path_from_context(context: Context, variant_name: str = 'default'):
     """Get latest export path for a context."""
     return latest_export_path(context.entity_uri, variant_name, context.department_name)
-
-
-def file_path_from_context(context: Context):
-    """Get the hip file path for a context."""
-    if context is None:
-        return None
-    if context.version_name is None:
-        return None
-    file_path = get_hip_file_path(context.entity_uri, context.department_name, context.version_name)
-    if not file_path.exists():
-        return None
-    return file_path
-
-
-def get_timestamp_from_context(context: Context):
-    """Get file modification timestamp for a context."""
-    file_path = file_path_from_context(context)
-    if file_path is None:
-        return None
-    return dt.datetime.fromtimestamp(file_path.stat().st_mtime)
-
-
-def save_context(target_path, prev_context, next_context):
-    """Save version context metadata."""
-    def _get_version_name(context):
-        if context is None:
-            return "v0000"
-        if context.version_name is None:
-            return "v0000"
-        return context.version_name
-
-    timestamp = get_timestamp_from_context(next_context)
-    prev_version_name = _get_version_name(prev_context)
-    next_version_name = _get_version_name(next_context)
-    context_path = target_path / "_context" / f"{next_version_name}.json"
-    store_json(
-        context_path,
-        dict(
-            user=get_user_name(),
-            timestamp="" if timestamp is None else timestamp.isoformat(),
-            from_version=prev_version_name,
-            to_version=next_version_name,
-            houdini_version=hou.applicationVersionString(),
-        ),
-    )
-
-
-def save_entity_context(target_path, context: Context):
-    """Save entity context metadata."""
-    entity_context_path = target_path / "context.json"
-
-    if context is None:
-        return
-
-    context_data = dict(
-        uri=str(context.entity_uri),
-        department=context.department_name,
-        timestamp=dt.datetime.now().isoformat(),
-        user=get_user_name(),
-    )
-
-    store_json(entity_context_path, context_data)
 
 
 def get_user_from_context(context: Context):

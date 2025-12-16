@@ -38,12 +38,10 @@ from tumblehead.pipe.paths import (
 from tumblehead.pipe.usd import collapse_latest_references
 import tumblehead.farm.tasks.stage.task as stage_task
 import tumblehead.farm.tasks.render.task as render_task
+import tumblehead.farm.tasks.publish.task as publish_task
 import tumblehead.farm.jobs.houdini.render.job as render_job
 
 api = default_client()
-
-# Script paths for farm execution
-PUBLISH_SCRIPT_PATH = Path(__file__).parent / 'update' / 'publish.py'
 
 # Mapping from column keys to Karma/USD render setting attribute paths
 # These are used to build overrides for render_settings.json
@@ -150,12 +148,35 @@ def _is_out_of_date(entity_uri: Uri, variant_name: str, department_name: str) ->
 
 def _create_publish_job(
     entity_uri: Uri,
-    variant_name: str,
     department_name: str,
     pool_name: str,
-    priority: int
+    priority: int,
+    paths: dict,
+    temp_path: Path
 ) -> Job:
-    """Create a publish job for a single department."""
+    """Create a publish job using publish_task.build() pattern.
+
+    Args:
+        entity_uri: Entity URI to publish
+        department_name: Department name
+        pool_name: Deadline pool name
+        priority: Job priority
+        paths: Dict mapping source paths to relative dest paths (modified in place)
+        temp_path: Staging directory for job files
+
+    Returns:
+        Job object or None if workfile not found
+
+    Raises:
+        BatchSubmitError: If frame range cannot be determined
+    """
+    # Find the workfile
+    workfile_path = latest_hip_file_path(entity_uri, department_name)
+    if workfile_path is None or not workfile_path.exists():
+        logging.warning(f'No workfile found for {entity_uri}/{department_name}')
+        return None
+
+    # Get frame range
     frame_range = get_frame_range(entity_uri)
     if frame_range is None:
         raise BatchSubmitError(
@@ -164,31 +185,36 @@ def _create_publish_job(
         )
     render_range = frame_range.full_range()
 
-    output_path = next_export_path(entity_uri, variant_name, department_name)
-    version_name = output_path.name
+    # Add workfile to paths for bundling
+    workfile_dest = Path('workfiles') / f'{department_name}_{workfile_path.name}'
+    paths[workfile_path] = workfile_dest
 
-    job = Job(
-        to_wsl_path(PUBLISH_SCRIPT_PATH), None,
-        str(entity_uri),
-        department_name
-    )
-    job.name = f'publish {entity_uri} {department_name} {version_name}'
-    job.pool = pool_name
-    job.group = 'houdini'
-    job.priority = priority
-    job.start_frame = render_range.first_frame
-    job.end_frame = render_range.last_frame
-    job.step_size = 1
-    job.chunk_size = len(render_range)
-    job.max_frame_time = 10
-    job.env.update(dict(
-        TH_USER=get_user_name(),
-        TH_CONFIG_PATH=path_str(to_wsl_path(api.CONFIG_PATH)),
-        TH_PROJECT_PATH=path_str(to_wsl_path(api.PROJECT_PATH)),
-        TH_PIPELINE_PATH=path_str(to_wsl_path(api.PIPELINE_PATH))
-    ))
-    job.output_paths.append(to_windows_path(output_path))
-    return job
+    # Bundle context.json alongside workfile (for group workfile detection)
+    context_path = workfile_path.parent / 'context.json'
+    if context_path.exists():
+        context_dest = Path('workfiles') / 'context.json'
+        paths[context_path] = context_dest
+
+    # Build config for publish_task.build()
+    config = {
+        'entity': {
+            'uri': str(entity_uri),
+            'department': department_name
+        },
+        'settings': {
+            'priority': priority,
+            'pool_name': pool_name,
+            'first_frame': render_range.first_frame,
+            'last_frame': render_range.last_frame
+        },
+        'tasks': {
+            'publish': {}
+        },
+        'workfile_path': path_str(workfile_dest)
+    }
+
+    # Build job using publish_task
+    return publish_task.build(config, paths, temp_path)
 
 
 def submit_entity_batch(config: dict) -> list[str]:
@@ -284,32 +310,6 @@ def submit_entity_batch(config: dict) -> list[str]:
     deps = {}  # name -> [dep_names]
     last_publish_job_name = None
 
-    # Add publish jobs
-    if do_publish:
-        # Get departments up to and including publish target
-        pub_dept_names = department_names[:department_names.index(pub_department) + 1]
-
-        prev_job_name = None
-        # Use 'default' variant for batch publish jobs
-        variant_name = 'default'
-        for dept_name in pub_dept_names:
-            if not _is_submissable(entity_uri, dept_name):
-                continue
-
-            # Check if out of date (or if downstream changed)
-            if prev_job_name is None and not _is_out_of_date(entity_uri, variant_name, dept_name):
-                continue
-
-            job_name = f'publish_{dept_name}'
-            try:
-                job = _create_publish_job(entity_uri, variant_name, dept_name, pub_pool, pub_priority)
-                jobs[job_name] = job
-                deps[job_name] = [prev_job_name] if prev_job_name else []
-                prev_job_name = job_name
-                last_publish_job_name = job_name
-            except BatchSubmitError as e:
-                logging.warning(f"Could not create publish job for {entity_uri}/{dept_name}: {e}")
-
     # Helper to finalize and submit batch
     def _finalize_batch():
         if not jobs:
@@ -332,17 +332,45 @@ def submit_entity_batch(config: dict) -> list[str]:
         logging.info(f"Submitted batch for {entity_uri}: {len(job_ids)} jobs")
         return job_ids
 
-    # Add stage + render jobs (requires temp directory for config files)
-    if do_render:
-        if not variants:
-            variants = ['default']
+    # Create temp directory for staging files (used by both publish and render jobs)
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path.mkdir(parents=True, exist_ok=True)
 
-        # Create temp directory for staging files (must stay open until submission)
-        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
-        root_temp_path.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
+        temp_path = Path(temp_dir)
+        paths = {}  # Shared paths dict for bundling files
 
-        with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-            temp_path = Path(temp_dir)
+        # Add publish jobs
+        if do_publish:
+            # Get departments up to and including publish target
+            pub_dept_names = department_names[:department_names.index(pub_department) + 1]
+
+            prev_job_name = None
+            # Use 'default' variant for batch publish jobs
+            variant_name = 'default'
+            for dept_name in pub_dept_names:
+                if not _is_submissable(entity_uri, dept_name):
+                    continue
+
+                # Check if out of date (or if downstream changed)
+                if prev_job_name is None and not _is_out_of_date(entity_uri, variant_name, dept_name):
+                    continue
+
+                job_name = f'publish_{dept_name}'
+                try:
+                    job = _create_publish_job(entity_uri, dept_name, pub_pool, pub_priority, paths, temp_path)
+                    if job is not None:
+                        jobs[job_name] = job
+                        deps[job_name] = [prev_job_name] if prev_job_name else []
+                        prev_job_name = job_name
+                        last_publish_job_name = job_name
+                except BatchSubmitError as e:
+                    logging.warning(f"Could not create publish job for {entity_uri}/{dept_name}: {e}")
+
+        # Add stage + render jobs
+        if do_render:
+            if not variants:
+                variants = ['default']
 
             # Build render overrides from settings (maps column keys to USD paths)
             render_overrides = _build_render_overrides(settings)
@@ -411,12 +439,12 @@ def submit_entity_batch(config: dict) -> list[str]:
                 )
 
                 # Submit render job directly (creates its own batch)
-                paths = {
+                render_paths = {
                     render_settings_path: relative_render_settings_path,
                     collapsed_stage_path: relative_collapsed_path
                 }
                 try:
-                    result = render_job.submit(render_config, paths)
+                    result = render_job.submit(render_config, render_paths)
                     if result != 0:
                         raise BatchSubmitError(f"Standalone render submission failed for {entity_uri}")
                     logging.info(f"Submitted standalone render for {entity_uri}")
@@ -454,18 +482,15 @@ def submit_entity_batch(config: dict) -> list[str]:
                 # Build stage job using existing task builder
                 stage_job_name = 'stage'
                 try:
-                    paths = {render_settings_path: relative_render_settings_path}
-                    stage_job = stage_task.build(stage_config, paths, temp_path)
+                    stage_paths = {render_settings_path: relative_render_settings_path}
+                    stage_job = stage_task.build(stage_config, stage_paths, temp_path)
                     jobs[stage_job_name] = stage_job
                     deps[stage_job_name] = [last_publish_job_name] if last_publish_job_name else []
                 except Exception as e:
                     logging.warning(f"Could not create stage job for {entity_uri}: {e}")
 
-            # Submit within temp directory context (files need to be copied)
-            return _finalize_batch()
-
-    # No render jobs - submit directly
-    return _finalize_batch()
+        # Submit batch (within temp directory context so files can be copied)
+        return _finalize_batch()
 
 
 def submit_all(configs: list[dict]) -> dict[str, list[str]]:

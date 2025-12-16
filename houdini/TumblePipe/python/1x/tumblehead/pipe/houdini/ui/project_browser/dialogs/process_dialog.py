@@ -7,6 +7,7 @@ from qtpy.QtCore import Qt, Signal
 
 from ..models.process_task import ProcessTask, ProcessTaskTreeModel, TaskStatus, TASK_ROLE, IS_ENTITY_ROLE, ENTITY_URI_ROLE
 from ..utils.process_executor import ProcessExecutor
+from ..helpers import has_staged_export
 
 
 class ProcessDialog(QtWidgets.QDialog):
@@ -459,10 +460,28 @@ class ProcessDialog(QtWidgets.QDialog):
         if item is None:
             return
 
-        # Check if this is a task item (not entity parent)
+        # Check if this is an entity row (shot header) or task item
         is_entity = item.data(IS_ENTITY_ROLE)
         if is_entity:
-            return  # Don't show menu for entity headers
+            # Show "View Latest Export" for entity rows (shot headers)
+            entity_uri = item.data(ENTITY_URI_ROLE)
+            if entity_uri is None:
+                return
+
+            menu = QtWidgets.QMenu(self)
+            if has_staged_export(entity_uri):
+                view_export_action = menu.addAction("View Latest Export")
+            else:
+                no_export_action = menu.addAction("No Published Export")
+                no_export_action.setEnabled(False)
+                view_export_action = None
+
+            selected_action = menu.exec_(self._tree_view.mapToGlobal(position))
+            if selected_action is None:
+                return
+            if view_export_action and selected_action == view_export_action:
+                self._view_latest_export(entity_uri)
+            return
 
         # Get the task
         task = item.data(TASK_ROLE)
@@ -510,3 +529,38 @@ class ProcessDialog(QtWidgets.QDialog):
 
         except Exception as e:
             print(f"Failed to open location: {e}")
+
+    def _view_latest_export(self, entity_uri):
+        """Open the latest staged export file in USD viewer."""
+        import hou
+        from tumblehead.pipe.paths import get_latest_staged_file_path
+        from ..viewers.usd_viewer import USDViewerLauncher, USDViewerType
+
+        try:
+            export_file = get_latest_staged_file_path(
+                entity_uri,
+                variant_name='default'
+            )
+        except Exception as e:
+            hou.ui.displayMessage(
+                f"Could not find latest export.\n\nError: {str(e)}",
+                title="Export Not Found"
+            )
+            return
+
+        if not export_file or not export_file.exists():
+            hou.ui.displayMessage(
+                "No staged export found for this shot.\n\n"
+                "Run a build job to create the staged export.",
+                title="Export Not Found"
+            )
+            return
+
+        # Launch in USD viewer
+        launcher = USDViewerLauncher(self)
+        if not launcher.launch_viewer(export_file, USDViewerType.AUTO):
+            hou.ui.displayMessage(
+                "Failed to launch USD viewer.\n\n"
+                "Configure viewer in Settings → Configure USD Viewers",
+                title="Viewer Not Configured"
+            )

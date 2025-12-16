@@ -41,12 +41,44 @@ from .helpers import (
     file_path_from_context,
     latest_export_path_from_context,
     get_entity_type,
+    entity_uri_from_path,
 )
 from .views import WorkspaceBrowser, DepartmentBrowser, DetailsView, VersionView, SettingsView
 from .utils.async_refresh import AsyncRefreshManager
 from .viewers.usd_viewer import USDViewerLauncher
 
 api = default_client()
+
+
+def _get_workfile_uri(entity_uri: Uri, department_name: str) -> Uri:
+    """Get the correct workfile URI for an entity/department.
+
+    If the entity belongs to a group for this department, returns the group URI.
+    Otherwise returns the entity URI.
+
+    This ensures that when saving context.json for a group workfile,
+    the group URI is used instead of an individual member's URI.
+
+    Args:
+        entity_uri: The entity URI (could be shot, asset, or group)
+        department_name: The department name
+
+    Returns:
+        The group URI if entity belongs to a group, otherwise the entity URI
+    """
+    if entity_uri.purpose == 'groups':
+        return entity_uri
+    group = get_group_for_entity(entity_uri, department_name)
+    return group.uri if group is not None else entity_uri
+
+
+def get_group_for_entity(entity_uri: Uri, department_name: str):
+    """Find a group that contains the entity for the given department."""
+    from tumblehead.config.groups import find_group
+    if len(entity_uri.segments) < 1:
+        return None
+    context = entity_uri.segments[0]  # 'shots' or 'assets'
+    return find_group(context, entity_uri, department_name)
 
 
 class ProjectBrowser(QtWidgets.QWidget):
@@ -160,21 +192,6 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._department_browser = DepartmentBrowser(api)
         layout.addWidget(self._department_browser, 1, 1)
 
-        # Create footer with "View Latest Export" button
-        footer_widget = QtWidgets.QWidget()
-        footer_layout = QtWidgets.QHBoxLayout(footer_widget)
-        footer_layout.setContentsMargins(5, 5, 5, 5)
-        footer_layout.setSpacing(5)
-
-        self._view_export_button = QtWidgets.QPushButton("View Latest Export")
-        self._view_export_button.setIcon(hqt.Icon("NETWORKS_lop"))
-        self._view_export_button.setToolTip("Open latest staged USD export in USD viewer")
-        self._view_export_button.setEnabled(False)  # Disabled until shot selected
-        self._view_export_button.clicked.connect(self._view_latest_export)
-        footer_layout.addWidget(self._view_export_button)
-
-        layout.addWidget(footer_widget, 2, 1)  # Row 2, column 1 (below department browser)
-
         # Create the tabbed view
         self._tabbed_view = QtWidgets.QTabWidget()
         self._tabbed_view.setStyleSheet("QTabWidget::pane { border: 0; }")
@@ -202,6 +219,7 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._workspace_browser.edit_group.connect(self._edit_group)
         self._workspace_browser.delete_group.connect(self._delete_group)
         self._workspace_browser.edit_scene_for_entity.connect(self._edit_scene_for_entity)
+        self._workspace_browser.view_latest_export.connect(self._workspace_view_export)
         self._department_browser.selection_changed.connect(self._department_changed)
         self._department_browser.open_location.connect(self._department_open_location)
         self._department_browser.reload_scene.connect(self._department_reload_scene)
@@ -211,12 +229,17 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._department_browser.new_from_template.connect(
             self._department_new_from_template
         )
+        self._department_browser.view_latest_export.connect(self._view_latest_export)
         self._details_view.save_scene.connect(self._save_scene)
         self._details_view.refresh_scene.connect(self._refresh_scene)
         self._details_view.publish_scene.connect(self._publish_scene_clicked)
         self._details_view.open_scene_info.connect(self._open_scene_info)
         self._details_view.open_location.connect(self._open_location)
         self._details_view.set_frame_range.connect(self._set_frame_range)
+        self._details_view.view_latest_export.connect(self._view_latest_export)
+        self._details_view.open_export_location.connect(
+            lambda: self._open_export_location(self._context)
+        )
         self._version_view.open_location.connect(self._open_workspace_location)
         self._version_view.open_version.connect(self._open_version)
         self._version_view.revive_version.connect(self._revive_version)
@@ -716,10 +739,6 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._version_view.set_context(context)
         self._version_view.select(context.version_name)
 
-        # Enable/disable export button based on context (shots only)
-        is_shot = bool(context and 'shots' in str(context.entity_uri))
-        self._view_export_button.setEnabled(is_shot)
-
 
     def _workspace_changed(self, entity_uri):
         """Handle workspace selection changes with validation"""
@@ -729,10 +748,6 @@ class ProjectBrowser(QtWidgets.QWidget):
 
             # Update department browser with new entity
             self._department_browser.set_entity(entity_uri)
-
-            # Update export button state based on entity type
-            is_shot = bool(entity_uri and 'shots' in str(entity_uri))
-            self._view_export_button.setEnabled(is_shot)
 
             # If we have a current context, try to maintain department selection
             if self._context is not None:
@@ -759,6 +774,16 @@ class ProjectBrowser(QtWidgets.QWidget):
                 location_path = api.storage.resolve(Uri.parse_unsafe(f"groups:/{uri}"))
         location_path.mkdir(parents=True, exist_ok=True)
         self._open_location_path(location_path)
+
+    def _workspace_view_export(self, name_path):
+        """Handle view export from workspace browser context menu."""
+        entity_uri = entity_uri_from_path(name_path)
+        if entity_uri:
+            # Temporarily set selected entity and call viewer
+            old_entity = self._selected_entity
+            self._selected_entity = entity_uri
+            self._view_latest_export()
+            self._selected_entity = old_entity
 
     def _create_batch_entry(self, selected_path):
         """Open batch entity creation dialog"""
@@ -877,14 +902,20 @@ class ProjectBrowser(QtWidgets.QWidget):
         # Update context from saved file
         self._context = get_workfile_context(file_path)
         if self._context is None:
-            self._context = selected_context
+            # Get correct workfile URI (group if entity belongs to one)
+            workfile_uri = _get_workfile_uri(selected_context.entity_uri, selected_context.department_name)
+            self._context = Context(
+                entity_uri=workfile_uri,
+                department_name=selected_context.department_name,
+                version_name=selected_context.version_name
+            )
         save_context(file_path.parent, None, self._context)
         save_entity_context(file_path.parent, self._context)
         self._update_scene()
 
         # Update all UI components
         self._update_ui_from_context(self._context)
-        
+
     def _department_new_from_template(self, context):
         """Create a new version from a template in the specified department
 
@@ -916,7 +947,13 @@ class ProjectBrowser(QtWidgets.QWidget):
         # Update context from saved file
         self._context = get_workfile_context(file_path)
         if self._context is None:
-            self._context = selected_context
+            # Get correct workfile URI (group if entity belongs to one)
+            workfile_uri = _get_workfile_uri(selected_context.entity_uri, selected_context.department_name)
+            self._context = Context(
+                entity_uri=workfile_uri,
+                department_name=selected_context.department_name,
+                version_name=selected_context.version_name
+            )
         save_context(file_path.parent, None, self._context)
         save_entity_context(file_path.parent, self._context)
         self._initialize_scene()
@@ -924,7 +961,7 @@ class ProjectBrowser(QtWidgets.QWidget):
 
         # Update all UI components
         self._update_ui_from_context(self._context)
-        
+
 
     def _open_scene_internal(self, selected_context, should_reload=False):
         """Internal scene opening logic shared by normal and auto-save variants"""
@@ -953,7 +990,13 @@ class ProjectBrowser(QtWidgets.QWidget):
                     print(f"Warning: File loaded with errors: {e}")
                 context = get_workfile_context(file_path)
                 if context is None:
-                    context = selected_context
+                    # Get correct workfile URI (group if entity belongs to one)
+                    workfile_uri = _get_workfile_uri(selected_context.entity_uri, selected_context.department_name)
+                    context = Context(
+                        entity_uri=workfile_uri,
+                        department_name=selected_context.department_name,
+                        version_name=selected_context.version_name
+                    )
                     save_entity_context(file_path.parent, context)
                 self._context = context
                 save_entity_context(file_path.parent, self._context)
@@ -961,7 +1004,13 @@ class ProjectBrowser(QtWidgets.QWidget):
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 hou.hipFile.clear(suppress_save_prompt=True)
                 hou.hipFile.save(path_str(file_path))
-                self._context = selected_context
+                # Get correct workfile URI (group if entity belongs to one)
+                workfile_uri = _get_workfile_uri(selected_context.entity_uri, selected_context.department_name)
+                self._context = Context(
+                    entity_uri=workfile_uri,
+                    department_name=selected_context.department_name,
+                    version_name=selected_context.version_name
+                )
                 save_context(file_path.parent, None, self._context)
                 save_entity_context(file_path.parent, self._context)
                 self._initialize_scene()

@@ -1,10 +1,13 @@
 import hou
 
+from pathlib import Path
+
 from tumblehead.api import default_client
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
 from tumblehead.config.variants import list_variants
-from tumblehead.pipe.paths import list_version_paths
+from tumblehead.pipe.paths import list_version_paths, get_workfile_context
+from tumblehead.pipe.houdini.util import uri_to_metadata_prim_path
 from tumblehead.util import result
 import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.lops import import_asset
@@ -60,6 +63,80 @@ def _update_script(instances):
     
     # Done
     return script
+
+def _assets_metadata_script(
+    asset_imports: list[tuple[Uri, str, str, int]],
+    shot_uri: Uri | None = None,
+    shot_department: str | None = None
+) -> str:
+    """
+    Generate Python script for creating metadata prims for all imported assets.
+
+    Creates metadata at /_METADATA/_assets/... for each asset instance.
+    If shot_uri and shot_department are provided, adds them to the inputs array
+    to track which department introduced these assets.
+
+    Args:
+        asset_imports: List of (asset_uri, variant, version, instances) tuples
+        shot_uri: Optional shot entity URI for provenance tracking
+        shot_department: Optional shot department name for provenance tracking
+
+    Returns:
+        Python script string to execute in the set_metadata node
+    """
+    # Build inputs list for provenance tracking
+    inputs_str = '[]'
+    if shot_uri is not None and shot_department is not None:
+        inputs_str = f"[{{'uri': '{str(shot_uri)}', 'department': '{shot_department}', 'version': 'initial'}}]"
+
+    script_lines = [
+        'import hou',
+        '',
+        'from tumblehead.pipe.houdini import util',
+        '',
+        'node = hou.pwd()',
+        'stage = node.editableStage()',
+        '',
+    ]
+
+    for asset_uri, variant, version, instances in asset_imports:
+        if instances == 0:
+            continue
+
+        base_name = asset_uri.segments[-1]
+        metadata_prim_path = uri_to_metadata_prim_path(asset_uri)
+
+        if instances == 1:
+            # Single instance - use base name
+            script_lines.extend([
+                f'# Asset: {asset_uri}',
+                f'prim = stage.DefinePrim("{metadata_prim_path}", "Scope")',
+                f'util.set_metadata(prim, {{',
+                f"    'uri': '{str(asset_uri)}',",
+                f"    'instance': '{base_name}',",
+                f"    'inputs': {inputs_str}",
+                f'}})',
+                '',
+            ])
+        else:
+            # Multiple instances - create metadata for each
+            for index in range(instances):
+                instance_name = api.naming.get_instance_name(base_name, index)
+                # Instance metadata paths: e.g., /_METADATA/_assets/_CHAR/_Chair -> /_METADATA/_assets/_CHAR/_ChairA
+                instance_metadata_path = f"{metadata_prim_path.rsplit('/', 1)[0]}/_{instance_name}"
+
+                script_lines.extend([
+                    f'# Asset: {asset_uri} (instance {instance_name})',
+                    f'prim = stage.DefinePrim("{instance_metadata_path}", "Scope")',
+                    f'util.set_metadata(prim, {{',
+                    f"    'uri': '{str(asset_uri)}',",
+                    f"    'instance': '{instance_name}',",
+                    f"    'inputs': {inputs_str}",
+                    f'}})',
+                    '',
+                ])
+
+    return '\n'.join(script_lines)
 
 class ImportAssets(ns.Node):
     def __init__(self, native):
@@ -248,6 +325,7 @@ class ImportAssets(ns.Node):
         active_imports = [(uri, var, ver, inst) for uri, var, ver, inst in asset_imports if inst > 0]
         if not active_imports:
             ns.set_node_comment(context, "Bypassed: No assets configured")
+            self.parm('set_metadata_python').set('')  # Clear metadata script
             context.bypass(True)
             return result.Value(None)
 
@@ -275,7 +353,9 @@ class ImportAssets(ns.Node):
             asset_node.set_exclude_department_names(
                 exclude_department_names
             )
-            asset_node.set_include_layerbreak(include_layerbreak)
+            # Always disable layerbreak on internal nodes - layerbreaks interfere with merge
+            # and cause metadata to be stripped. The parent import_assets can have its own layerbreak.
+            asset_node.set_include_layerbreak(False)
             asset_node.execute()
 
             # In the case of one instance
@@ -348,6 +428,26 @@ class ImportAssets(ns.Node):
         # Set success comment
         asset_count = len(active_imports)
         ns.set_node_comment(context, f"Imported: {asset_count} asset{'s' if asset_count != 1 else ''}")
+
+        # Get workfile context for provenance tracking
+        shot_uri = None
+        shot_department = None
+        file_path = Path(hou.hipFile.path())
+        workfile_context = get_workfile_context(file_path)
+        if workfile_context is not None:
+            entity_uri = workfile_context.entity_uri
+            # Only track shot context (not asset context)
+            if entity_uri.segments and entity_uri.segments[0] == 'shots':
+                shot_uri = entity_uri
+                shot_department = workfile_context.department_name
+
+        # Generate and set metadata script (runs after merge at HDA level)
+        metadata_script = _assets_metadata_script(
+            active_imports,
+            shot_uri,
+            shot_department
+        )
+        self.parm('set_metadata_python').set(metadata_script)
 
         # Done
         return result.Value(None)

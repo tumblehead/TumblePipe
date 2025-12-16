@@ -9,10 +9,13 @@ import logging
 import sys
 
 # Add tumblehead python packages path
-tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
+tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent.parent
 if str(tumblehead_packages_path) not in sys.path:
     sys.path.insert(0, str(tumblehead_packages_path))
 
+from tumblehead.api import path_str
+from tumblehead.util.uri import Uri
+from tumblehead.pipe.paths import latest_hip_file_path
 from tumblehead.farm.tasks.publish import publish
 
 
@@ -32,6 +35,13 @@ def cli():
     parser.add_argument('end_frame', type=int, help='End frame')
     args = parser.parse_args()
 
+    # Find the latest workfile for this entity/department
+    entity_uri = Uri.parse_unsafe(args.entity_uri)
+    workfile_path = latest_hip_file_path(entity_uri, args.department)
+    if workfile_path is None or not workfile_path.exists():
+        logging.error(f'No workfile found for {entity_uri}/{args.department}')
+        return 1
+
     # Build config matching what publish.main() expects
     config = {
         'entity': {
@@ -46,7 +56,8 @@ def cli():
         },
         'tasks': {
             'publish': {}
-        }
+        },
+        'workfile_path': path_str(workfile_path)
     }
 
     # Run the publish task

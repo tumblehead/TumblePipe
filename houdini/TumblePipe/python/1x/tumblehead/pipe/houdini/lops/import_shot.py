@@ -440,7 +440,7 @@ class ImportShot(ns.Node):
         if version_name in ('latest', 'current'):
             # For latest/current: union of scene assets + context.json assets
             # - Scene assets: what's currently in live scene (USD composition follows latest)
-            # - Context.json: what was built (may have additional assets from department exports)
+            # - Context.json: what was built (has provenance inputs from department exports)
             scene_assets = _get_scene_assets(shot_uri)
 
             # Read context.json for additional assets from department exports
@@ -450,9 +450,26 @@ class ImportShot(ns.Node):
             if context_data is not None:
                 context_assets = context_data.get('parameters', {}).get('assets', [])
 
-            # Union: start with scene assets, add any from context that aren't already present
-            assets = list(scene_assets)  # Copy scene assets
-            scene_asset_uris = {a['asset'] for a in scene_assets}
+            # Build lookup for context asset inputs (provenance tracking)
+            context_inputs_lookup = {
+                ctx_asset.get('asset'): ctx_asset.get('inputs', [])
+                for ctx_asset in context_assets
+            }
+
+            # Union: use scene assets as base, but merge inputs from context
+            # This preserves provenance info (which department introduced each asset)
+            assets = []
+            scene_asset_uris = set()
+            for scene_asset in scene_assets:
+                asset_uri = scene_asset['asset']
+                scene_asset_uris.add(asset_uri)
+                # Merge inputs from context if available
+                merged_asset = scene_asset.copy()
+                if asset_uri in context_inputs_lookup:
+                    merged_asset['inputs'] = context_inputs_lookup[asset_uri]
+                assets.append(merged_asset)
+
+            # Add any context assets not in scene
             for ctx_asset in context_assets:
                 if ctx_asset.get('asset') not in scene_asset_uris:
                     assets.append(ctx_asset)

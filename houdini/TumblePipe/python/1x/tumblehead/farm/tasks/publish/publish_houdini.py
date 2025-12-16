@@ -9,6 +9,7 @@ from tumblehead.util.uri import Uri
 from tumblehead.config.groups import get_group
 from tumblehead.pipe.paths import (
     next_hip_file_path,
+    get_workfile_context,
     Context
 )
 from tumblehead.pipe.houdini import nodes as ns
@@ -25,7 +26,7 @@ from tumblehead.pipe.houdini.sops import (
 from tumblehead.pipe.houdini.cops import (
     build_comp
 )
-from tumblehead.pipe.houdini.ui.project_browser.helpers import (
+from tumblehead.pipe.context import (
     save_context,
     save_entity_context,
 )
@@ -39,6 +40,16 @@ def _headline(title):
 def _error(msg):
     print(f'ERROR: {msg}')
     return 1
+
+def _get_workfile_group():
+    """Check if current workfile is a group workfile and return group if so."""
+    file_path = Path(hou.hipFile.path())
+    context = get_workfile_context(file_path)
+    if context is None:
+        return None
+    if context.entity_uri.purpose != 'groups':
+        return None
+    return get_group(context.entity_uri)
 
 def _update():
 
@@ -110,10 +121,35 @@ def _publish(entity_uri: Uri, department_name: str):
         department_name: str
         ):
 
-        def _is_split_correct(node):
-            if node.get_department_name() != department_name: return False
-            if node.get_entity_uri() != asset_uri: return False
-            return True
+        # Check if we're in a group workfile
+        group = _get_workfile_group()
+
+        if group is not None:
+            # Group workfile: use membership-based matching
+            member_uris = set(group.members)
+
+            def _is_split_correct(node):
+                if node.get_department_name() != department_name: return False
+                entity_uri = node.get_entity_uri()
+                if entity_uri is None: return False
+                return entity_uri in member_uris and entity_uri == asset_uri
+
+            def _is_export_correct(node):
+                if node.get_department_name() != department_name: return False
+                entity_uri = node.get_entity_uri()
+                if entity_uri is None: return False
+                return entity_uri in member_uris and entity_uri == asset_uri
+        else:
+            # Single entity workfile: use exact matching (current behavior)
+            def _is_split_correct(node):
+                if node.get_department_name() != department_name: return False
+                if node.get_entity_uri() != asset_uri: return False
+                return True
+
+            def _is_export_correct(node):
+                if node.get_department_name() != department_name: return False
+                if node.get_entity_uri() != asset_uri: return False
+                return True
 
         # Execute layer_split nodes first (shared content)
         split_nodes = list(filter(
@@ -126,11 +162,6 @@ def _publish(entity_uri: Uri, department_name: str):
         for split_node in split_nodes:
             split_node.execute()
             print(f'Exported shared layer: {split_node.path()}')
-
-        def _is_export_correct(node):
-            if node.get_department_name() != department_name: return False
-            if node.get_entity_uri() != asset_uri: return False
-            return True
 
         # Find the export nodes
         export_nodes = list(filter(
@@ -156,10 +187,35 @@ def _publish(entity_uri: Uri, department_name: str):
         department_name: str
         ):
 
-        def _is_shot_split_correct(node):
-            if node.get_department_name() != department_name: return False
-            if node.get_entity_uri() != shot_uri: return False
-            return True
+        # Check if we're in a group workfile
+        group = _get_workfile_group()
+
+        if group is not None:
+            # Group workfile: use membership-based matching
+            member_uris = set(group.members)
+
+            def _is_shot_split_correct(node):
+                if node.get_department_name() != department_name: return False
+                entity_uri = node.get_entity_uri()
+                if entity_uri is None: return False
+                return entity_uri in member_uris and entity_uri == shot_uri
+
+            def _is_shot_export_correct(node):
+                if node.get_department_name() != department_name: return False
+                entity_uri = node.get_entity_uri()
+                if entity_uri is None: return False
+                return entity_uri in member_uris and entity_uri == shot_uri
+        else:
+            # Single entity workfile: use exact matching (current behavior)
+            def _is_shot_split_correct(node):
+                if node.get_department_name() != department_name: return False
+                if node.get_entity_uri() != shot_uri: return False
+                return True
+
+            def _is_shot_export_correct(node):
+                if node.get_department_name() != department_name: return False
+                if node.get_entity_uri() != shot_uri: return False
+                return True
 
         # Execute layer_split nodes first (shared content)
         shot_split_nodes = list(filter(
@@ -172,11 +228,6 @@ def _publish(entity_uri: Uri, department_name: str):
         for split_node in shot_split_nodes:
             split_node.execute()
             print(f'Exported shared layer: {split_node.path()}')
-
-        def _is_shot_export_correct(node):
-            if node.get_department_name() != department_name: return False
-            if node.get_entity_uri() != shot_uri: return False
-            return True
 
         # Find the export nodes
         shot_export_nodes = list(filter(

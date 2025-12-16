@@ -1,8 +1,8 @@
-from qtpy.QtCore import Qt, Signal
+from qtpy.QtCore import Qt, Signal, QEvent
 from qtpy.QtGui import QBrush
 from qtpy import QtWidgets
 
-from ..helpers import entity_uri_from_path
+from ..helpers import entity_uri_from_path, has_staged_export
 from ..models import _create_workspace_model
 
 
@@ -16,6 +16,7 @@ class WorkspaceBrowser(QtWidgets.QWidget):
     edit_group = Signal(object)
     delete_group = Signal(object)
     edit_scene_for_entity = Signal(object)  # entity_uri - opens scene editor for entity's scene
+    view_latest_export = Signal(list)  # name_path - view latest export for shot
 
     def __init__(self, api, parent=None):
         super().__init__(parent)
@@ -42,10 +43,12 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         self.tree_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         layout.addWidget(self.tree_view)
 
-        # Emit clicked signal
-        self.tree_view.clicked.connect(self._left_clicked)
+        # Set up context menu for right-click
         self.tree_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree_view.customContextMenuRequested.connect(self._right_clicked)
+
+        # Install event filter to handle mouse press on non-selectable items
+        self.tree_view.viewport().installEventFilter(self)
 
         # Initial update
         self.refresh()
@@ -382,15 +385,22 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         except Exception as e:
             raise RuntimeError(f"Error in workspace selection change: {e}")
 
-    def _left_clicked(self, index):
-        model = self.tree_view.model()
-        item = model.itemFromIndex(index)
-        if item.isSelectable():
-            return
-        if self.tree_view.isExpanded(index):
-            self.tree_view.collapse(index)
-        else:
-            self.tree_view.expand(index)
+    def eventFilter(self, obj, event):
+        # Intercept mouse press on non-selectable items to prevent selection highlighting
+        if obj == self.tree_view.viewport() and event.type() == QEvent.MouseButtonPress:
+            index = self.tree_view.indexAt(event.pos())
+            if index.isValid():
+                model = self.tree_view.model()
+                name_index = index.sibling(index.row(), 0)
+                item = model.itemFromIndex(name_index)
+                if item is not None and not item.isSelectable():
+                    # Handle expand/collapse directly and consume the event
+                    if self.tree_view.isExpanded(name_index):
+                        self.tree_view.collapse(name_index)
+                    else:
+                        self.tree_view.expand(name_index)
+                    return True  # Consume the event, preventing selection
+        return super().eventFilter(obj, event)
 
     def _right_clicked(self, point):
         index = self.tree_view.indexAt(point)
@@ -438,6 +448,17 @@ class WorkspaceBrowser(QtWidgets.QWidget):
             return
 
         open_location_action = menu.addAction("Open Location")
+
+        # Add "View Latest Export" for shots only (check if export exists)
+        view_export_action = None
+        if len(name_path) >= 2 and name_path[0] == 'shots':
+            entity_uri = entity_uri_from_path(name_path)
+            if has_staged_export(entity_uri):
+                view_export_action = menu.addAction("View Latest Export")
+            else:
+                no_export_action = menu.addAction("No Published Export")
+                no_export_action.setEnabled(False)
+
         create_batch_action = menu.addAction("Add Entity")
 
         remove_entry_action = None
@@ -449,6 +470,8 @@ class WorkspaceBrowser(QtWidgets.QWidget):
             return
         if selected_action == open_location_action:
             return self.open_location.emit(name_path)
+        if view_export_action and selected_action == view_export_action:
+            return self.view_latest_export.emit(name_path)
         if selected_action == create_batch_action:
             return self.create_batch_entry.emit(name_path)
         if selected_action == remove_entry_action:
@@ -467,9 +490,21 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         menu = QtWidgets.QMenu()
         edit_action = menu.addAction("Edit Scene")
 
+        # Check if export exists
+        view_export_action = None
+        if has_staged_export(entity_uri):
+            view_export_action = menu.addAction("View Latest Export")
+        else:
+            no_export_action = menu.addAction("No Published Export")
+            no_export_action.setEnabled(False)
+
         selected_action = menu.exec_(self.tree_view.mapToGlobal(point))
+        if selected_action is None:
+            return
         if selected_action == edit_action:
             self.edit_scene_for_entity.emit(entity_uri)
+        elif view_export_action and selected_action == view_export_action:
+            self.view_latest_export.emit(name_path)
 
     def _show_group_context_menu(self, point, name_path):
         """Show context menu for Group column."""
@@ -488,9 +523,23 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         menu = QtWidgets.QMenu()
         edit_action = menu.addAction("Edit Group")
 
+        # Add "View Latest Export" for shots only (check if export exists)
+        view_export_action = None
+        if name_path[0] == 'shots':
+            entity_uri = entity_uri_from_path(name_path)
+            if has_staged_export(entity_uri):
+                view_export_action = menu.addAction("View Latest Export")
+            else:
+                no_export_action = menu.addAction("No Published Export")
+                no_export_action.setEnabled(False)
+
         selected_action = menu.exec_(self.tree_view.mapToGlobal(point))
+        if selected_action is None:
+            return
         if selected_action == edit_action:
             self.edit_group.emit(group_path)
+        elif view_export_action and selected_action == view_export_action:
+            self.view_latest_export.emit(name_path)
 
     def _get_tree_state(self):
         # Recursive visit function
