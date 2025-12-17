@@ -12,6 +12,7 @@ from qtpy.QtWidgets import (
 )
 
 from tumblehead.util.uri import Uri
+from tumblehead.api import refresh_global_cache
 
 from ..utils.database_adapter import DatabaseAdapter
 from ..views.json_editor import JsonView
@@ -38,6 +39,7 @@ class DatabaseWindow(QMainWindow):
         self.resize(1000, 700)
 
         self._api = api
+        refresh_global_cache()  # Reload cache from disk to pick up external changes
         self._adapter = DatabaseAdapter(api)
         self._uri = None
         self._original_properties = None
@@ -363,3 +365,8 @@ class DatabaseWindow(QMainWindow):
         # Re-select current entity to refresh JSON view
         if self._uri is not None:
             self._on_entity_selected(self._uri)
+
+    def select_entity(self, uri: Uri) -> None:
+        """Select and navigate to an entity in the URI tree."""
+        self._uri_view.set_selected(uri)
+        self._on_entity_selected(uri)

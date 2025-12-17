@@ -220,10 +220,9 @@ def generate_root_version(shot_uri: Uri) -> Path:
     from tumblehead.config.timeline import get_frame_range, get_fps
     from tumblehead.pipe.paths import (
         get_next_version_path,
-        get_scene_latest_path,
         get_layer_file_name
     )
-    from tumblehead.pipe.usd import generate_usda_content
+    from tumblehead.pipe.usd import generate_usda_content, generate_scene_sublayer_uri
 
     # Get scene reference (may be None if no scene assigned)
     scene_ref, _ = get_inherited_scene_ref(shot_uri)
@@ -238,21 +237,21 @@ def generate_root_version(shot_uri: Uri) -> Path:
     if fps is None:
         fps = 24
 
-    # Collect sublayer paths
-    layer_paths = []
+    # Collect sublayer references
+    layer_refs = []
 
-    # Scene layer (if assigned) - ALWAYS include path even if not exported yet
-    # This allows the "latest" reference chain to work when scene is exported later
+    # Scene layer (if assigned) - use entity URI for dynamic resolution
     if scene_ref is not None:
-        scene_path = get_scene_latest_path(scene_ref)
-        layer_paths.append(scene_path)
-        # USD will resolve the reference at load time
+        scene_uri = generate_scene_sublayer_uri(scene_ref)
+        layer_refs.append(scene_uri)
 
     # Root defaults template (weakest - provides camera, render settings, render vars)
+    # Note: This is the only exception - config templates use filesystem paths
+    # since they are static and don't need dynamic version resolution
     root_defaults_uri = Uri.parse_unsafe('config:/usd/root_default_prims.usda')
     root_defaults_path = fix_path(api.storage.resolve(root_defaults_uri))
     if root_defaults_path.exists():
-        layer_paths.append(root_defaults_path)
+        layer_refs.append(root_defaults_path)
 
     # Get next version path for root department (using 'default' variant)
     export_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / 'default' / 'root'
@@ -269,7 +268,7 @@ def generate_root_version(shot_uri: Uri) -> Path:
 
     # Generate USDA content with sublayers and timing metadata
     usda_content = generate_usda_content(
-        layer_paths=layer_paths,
+        layer_paths=layer_refs,
         output_path=output_path,
         fps=fps,
         start_frame=full_range.first_frame,

@@ -15,9 +15,10 @@ from tumblehead.pipe.paths import (
     get_workfile_context,
     load_entity_context,
     current_staged_file_path,
-    get_latest_staged_file_path,
     get_staged_file_path,
-    list_version_paths
+    list_version_paths,
+    get_export_path,
+    get_layer_file_name
 )
 
 api = default_client()
@@ -218,13 +219,105 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
     return result
 
 
+def _resolve_entity_uri_to_path(uri_string: str) -> Path | None:
+    """Resolve entity:/ URI to filesystem path.
+
+    Args:
+        uri_string: Entity URI string (e.g., entity:/shots/sq030/sh310?dept=root&variant=default&version=v0006)
+
+    Returns:
+        Resolved filesystem Path, or None if resolution fails
+    """
+    # Split base URI from query string
+    if '?' not in uri_string:
+        return None
+
+    base_uri, query_string = uri_string.split('?', 1)
+
+    # Parse query parameters
+    params = {}
+    for param in query_string.split('&'):
+        if '=' in param:
+            k, v = param.split('=', 1)
+            params[k] = v
+
+    dept = params.get('dept')
+    variant = params.get('variant', 'default')
+    version = params.get('version')
+
+    if not dept or not version:
+        return None
+
+    # Parse the base URI to get entity path
+    entity_uri = Uri.parse(base_uri)
+    if entity_uri is None:
+        return None
+
+    # Get the full export path (includes variant/dept/version)
+    version_path = get_export_path(entity_uri, variant, dept, version)
+
+    # Generate filename using existing helper
+    filename = get_layer_file_name(entity_uri, variant, dept, version)
+    file_path = version_path / filename
+
+    return file_path
+
+
+def _parse_entity_uri_info(uri_string: str) -> dict:
+    """Parse entity:/ URI and extract layer info, resolving to filesystem path.
+
+    Args:
+        uri_string: Entity URI string (e.g., entity:/shots/seq/shot?dept=animation&variant=default&version=v0006)
+
+    Returns:
+        Dict with keys: path (resolved Path or URI string), type, department, variant
+    """
+    # Split base URI from query string
+    if '?' in uri_string:
+        base_uri, query_string = uri_string.split('?', 1)
+    else:
+        return {'path': uri_string, 'type': 'unknown', 'department': None}
+
+    # Parse query parameters
+    params = {}
+    for param in query_string.split('&'):
+        if '=' in param:
+            k, v = param.split('=', 1)
+            params[k] = v
+
+    dept = params.get('dept')
+    variant = params.get('variant', 'default')
+
+    # Determine type based on URI and department
+    if '/assets/' in base_uri:
+        layer_type = 'asset'
+    elif dept == 'root':
+        layer_type = 'root'
+    else:
+        layer_type = 'shot_department'
+
+    # Resolve entity URI to filesystem path
+    resolved_path = _resolve_entity_uri_to_path(uri_string)
+
+    return {
+        'path': resolved_path if resolved_path else uri_string,  # Use resolved path or fallback to URI
+        'type': layer_type,
+        'department': dept,
+        'variant': variant
+    }
+
+
 def _parse_staged_sublayers(staged_file_path: Path) -> list[dict]:
     """Parse staged .usda file and extract sublayer info.
 
+    Handles both entity:/ URIs (new format) and filesystem paths
+    (backwards compatibility with existing files).
+
     Returns list of dicts with:
-    - path: absolute Path to the layer file
-    - type: 'shot_department' | 'asset' | 'root'
+    - path: absolute Path to the layer file OR entity URI string
+    - type: 'shot_department' | 'asset' | 'root' | 'scene'
     - department: department name (for shot_department type)
+    - variant: variant name (if present in URI)
     """
     sublayers = []
     staged_dir = staged_file_path.parent
@@ -232,24 +325,32 @@ def _parse_staged_sublayers(staged_file_path: Path) -> list[dict]:
     with open(staged_file_path, 'r') as f:
         content = f.read()
 
-    # Extract sublayer paths from USDA
+    # Extract sublayer paths/URIs from USDA
     for match in re.finditer(r'@([^@]+)@', content):
-        rel_path = match.group(1)
-        # Use normpath instead of resolve() to preserve drive letter (avoid UNC paths)
-        abs_path = Path(os.path.normpath(staged_dir / rel_path))
+        ref = match.group(1)
 
-        # Categorize layer
-        if '/root/' in rel_path:
-            sublayers.append({'path': abs_path, 'type': 'root', 'department': 'root'})
-        elif '/_staged/' in rel_path:
-            sublayers.append({'path': abs_path, 'type': 'asset', 'department': None})
+        # Check if this is an entity URI
+        if ref.startswith('entity:/'):
+            # Entity URI - parse parameters to get info
+            info = _parse_entity_uri_info(ref)
+            sublayers.append(info)
         else:
-            # Shot department layer - extract dept name from path
-            # Pattern: ../../../{variant}/{dept}/v{version}/shots_{seq}_{shot}_{dept}_{version}.usd
-            # parts: [0]='..' [1]='..' [2]='..' [3]=variant [4]=dept [5]=version [6]=filename
-            parts = rel_path.split('/')
-            dept = parts[4] if len(parts) > 4 else None
-            sublayers.append({'path': abs_path, 'type': 'shot_department', 'department': dept})
+            # Filesystem path (backwards compatibility with existing files)
+            # Use normpath instead of resolve() to preserve drive letter (avoid UNC paths)
+            abs_path = Path(os.path.normpath(staged_dir / ref))
+
+            # Categorize layer
+            if '/root/' in ref:
+                sublayers.append({'path': abs_path, 'type': 'root', 'department': 'root'})
+            elif '/_staged/' in ref:
+                sublayers.append({'path': abs_path, 'type': 'asset', 'department': None})
+            else:
+                # Shot department layer - extract dept name from path
+                # Pattern: ../../../{variant}/{dept}/v{version}/shots_{seq}_{shot}_{dept}_{version}.usd
+                # parts: [0]='..' [1]='..' [2]='..' [3]=variant [4]=dept [5]=version [6]=filename
+                parts = ref.split('/')
+                dept = parts[4] if len(parts) > 4 else None
+                sublayers.append({'path': abs_path, 'type': 'shot_department', 'department': dept})
 
     return sublayers
 
@@ -384,8 +485,8 @@ class ImportShot(ns.Node):
         if version_raw in ('latest', 'current', ''):
             shot_uri = self.get_shot_uri()
             if shot_uri is not None:
-                # For 'latest', use current_staged_file_path to get actual version number
-                # (get_latest_staged_file_path returns path in 'latest' directory)
+                # Both 'latest' and 'current' use highest versioned staged file
+                # ('latest' strips versions for dynamic resolution at import time)
                 actual_file_path = current_staged_file_path(shot_uri)
                 if actual_file_path is not None:
                     resolved_version = actual_file_path.parent.name
@@ -421,15 +522,27 @@ class ImportShot(ns.Node):
         # Get staged file path based on version selection
         version_name = self.get_version_name()
 
+        # Import resolver module for latest mode control
+        from tumblehead.resolver import PythonExpose
+        from pxr import Ar
+
         if version_name == 'latest':
-            # Use _staged/latest/ directory
-            staged_file_path = get_latest_staged_file_path(shot_uri)
+            # Enable resolver latest mode for full cascade semantics
+            # All nested entity:/ URIs will resolve to their latest versions
+            PythonExpose.set_latest_mode(True)
+            staged_file_path = current_staged_file_path(shot_uri)
         elif version_name == 'current':
-            # Use highest numbered version (previous default behavior)
+            # Disable latest mode - use frozen versions from build
+            PythonExpose.set_latest_mode(False)
             staged_file_path = current_staged_file_path(shot_uri)
         else:
-            # Use specific version
+            # Disable latest mode - use specific version
+            PythonExpose.set_latest_mode(False)
             staged_file_path = get_staged_file_path(shot_uri, version_name)
+
+        # Refresh resolver cache to ensure fresh resolution with the new mode
+        resolver = Ar.GetResolver()
+        resolver.RefreshContext(Ar.ResolverContext())
 
         if staged_file_path is None or not staged_file_path.exists():
             # No staged build yet - set empty state and return
@@ -501,7 +614,16 @@ class ImportShot(ns.Node):
         import_node.parm('num_files').set(len(layers_to_load))
 
         for i, info in enumerate(layers_to_load):
-            layer_path = path_str(info['path'])
+            # Handle both filesystem paths (Path objects) and entity URIs (strings)
+            # The resolver handles latest mode via TH_RESOLVER_USE_LATEST env var,
+            # so we pass entity URIs through directly - no stripping needed here
+            path_value = info['path']
+            if isinstance(path_value, str):
+                # Entity URI - pass through directly, resolver handles latest mode
+                layer_path = path_value
+            else:
+                # Filesystem Path object
+                layer_path = path_str(path_value)
             import_node.parm(f'filepath{i+1}').set(layer_path)
             import_node.parm(f'enable{i+1}').set(1)
 

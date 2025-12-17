@@ -420,24 +420,27 @@ def export_scene_version(scene_uri: Uri) -> Path:
     from tumblehead.pipe.paths import (
         next_scene_staged_path,
         get_scene_layer_file_name,
-        get_scene_latest_path,
-        get_latest_staged_file_path
+        get_scene_latest_path
     )
-    from tumblehead.pipe.usd import generate_simple_usda_content
+    from tumblehead.pipe.usd import (
+        generate_simple_usda_content,
+        generate_staged_sublayer_uri,
+        generate_scene_sublayer_uri
+    )
 
     # Get scene
     scene = get_scene(scene_uri)
     if scene is None:
         raise ValueError(f"Scene not found: {scene_uri}")
 
-    # Collect sublayer paths
-    layer_paths = []
+    # Collect sublayer URIs
+    layer_uris = []
 
     # 1. Direct assets FIRST (strongest in USD composition)
     for entry in scene.assets:
         asset_uri = Uri.parse_unsafe(entry.asset)
-        staged_path = get_latest_staged_file_path(asset_uri, entry.variant)
-        layer_paths.append(staged_path)
+        staged_uri = generate_staged_sublayer_uri(asset_uri, entry.variant)
+        layer_uris.append(staged_uri)
 
     # 2. Parent scene sublayers AFTER (weaker, inherited)
     #    Walk up: scenes:/outdoor/forest -> scenes:/outdoor
@@ -447,8 +450,8 @@ def export_scene_version(scene_uri: Uri) -> Path:
         parent_uri = SCENES_URI
         for seg in segments:
             parent_uri = parent_uri / seg
-        parent_latest_path = get_scene_latest_path(parent_uri)
-        layer_paths.append(parent_latest_path)
+        parent_scene_uri = generate_scene_sublayer_uri(parent_uri)
+        layer_uris.append(parent_scene_uri)
 
     # Get next version path
     version_path = next_scene_staged_path(scene_uri)
@@ -460,7 +463,7 @@ def export_scene_version(scene_uri: Uri) -> Path:
 
     # Generate USDA content (no timing metadata for scenes)
     usda_content = generate_simple_usda_content(
-        layer_paths=layer_paths,
+        layer_paths=layer_uris,
         output_path=output_path
     )
 
@@ -486,7 +489,7 @@ def export_scene_version(scene_uri: Uri) -> Path:
     latest_path.parent.mkdir(parents=True, exist_ok=True)
 
     latest_usda_content = generate_simple_usda_content(
-        layer_paths=layer_paths,
+        layer_paths=layer_uris,
         output_path=latest_path
     )
     store_text(latest_path, latest_usda_content)

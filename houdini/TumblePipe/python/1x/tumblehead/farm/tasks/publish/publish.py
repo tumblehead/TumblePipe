@@ -15,7 +15,8 @@ from tumblehead.api import (
     fix_path,
     get_user_name,
     to_windows_path,
-    default_client
+    default_client,
+    refresh_global_cache
 )
 from tumblehead.util.io import (
     load_json,
@@ -153,6 +154,7 @@ def main(config):
 
     # Auto-trigger asset build if this is a renderable asset department
     entity_type = _get_entity_type(entity_uri)
+    refresh_global_cache('departments')
     if entity_type == 'asset' and is_renderable('assets', department_name):
         logging.info(f'Renderable asset department published: {department_name}')
         _trigger_asset_build(entity_uri, config.get('settings', {}))

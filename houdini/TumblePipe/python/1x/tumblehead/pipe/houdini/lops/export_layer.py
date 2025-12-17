@@ -3,6 +3,7 @@ from pathlib import Path
 import datetime as dt
 import shutil
 import json
+import os
 
 import hou
 
@@ -19,7 +20,6 @@ from tumblehead.pipe.paths import (
     next_export_path,
     get_workfile_context,
     get_layer_file_name,
-    shared_export_latest_file_path,
     latest_hip_file_path
 )
 from tumblehead.pipe.usd import add_sublayer
@@ -378,6 +378,9 @@ class ExportLayer(ns.Node):
             self.parm('export_lopoutput').set(path_str(temp_path / layer_file_name))
             self.parm('export_execute').pressButton()
 
+            # Re-fetch root prim after export (stage may have been modified)
+            root = stage_node.stage().GetPseudoRoot()
+
             # Extract AOV names from the stage
             aov_names = [
                 aov_path.rsplit('/', 1)[-1].lower()
@@ -406,11 +409,14 @@ class ExportLayer(ns.Node):
                 if temp_item_path.is_dir():
                     shutil.copytree(temp_item_path, output_item_path)
 
-        # Add shared layer as sublayer if it exists
-        shared_file_path = shared_export_latest_file_path(entity_uri, department_name)
-        if shared_file_path.exists():
+        # Add shared layer as sublayer if any shared export exists
+        # Use entity URI - the resolver handles dynamic version lookup at runtime
+        from tumblehead.pipe.paths import latest_shared_export_path
+        shared_version_path = latest_shared_export_path(entity_uri, department_name)
+        if shared_version_path is not None:
             exported_layer_path = version_path / layer_file_name
-            add_sublayer(exported_layer_path, shared_file_path)
+            shared_uri = f"{entity_uri}?dept={department_name}&variant=_shared"
+            add_sublayer(exported_layer_path, shared_uri)
 
         # Update node comment
         native.setComment(

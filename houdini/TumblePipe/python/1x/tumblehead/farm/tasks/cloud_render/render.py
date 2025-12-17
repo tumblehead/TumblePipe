@@ -28,6 +28,7 @@ from tumblehead.config.timeline import BlockRange
 from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Husk, ITileStitch
 from tumblehead.apps import exr
+from tumblehead.farm.tasks.env import get_base_env
 
 api = default_client()
 
@@ -51,6 +52,12 @@ def _get_frame_path(frame_path, frame_index):
         frame_path.parent /
         frame_path.name.replace('*', frame_name)
     )
+
+def _print_env(env):
+    """Print environment variables for debugging."""
+    _headline('Environment variables')
+    for key, value in sorted(env.items()):
+        print(f'  {key}={value}')
 
 def main(
     tile_count: int,
@@ -99,13 +106,19 @@ def main(
         if not temp_input_path.exists():
             return _error(f'Input file not found: {temp_input_path}')
 
+        # Get and print environment for debugging
+        env = get_base_env(api)
+        _print_env(env)
+
         # Render with husk and Karama XPU
         _headline('Rendering tiles')
         x_tiles = y_tiles = int(math.sqrt(tile_count))
         temp_frame_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Build base husk arguments
+        # --resolver-context is required for custom ArResolver plugins to work with husk
         base_args = [
+            '--resolver-context', path_str(to_windows_path(temp_input_path)),
             '--make-output-path',
             '--no-mplay',
             '--check-licenses', 'Karma Renderer',
@@ -125,9 +138,7 @@ def main(
                         _fix_frame_pattern(temp_frame_path, '$F4')
                     ))
                 ],
-                env = dict(
-                    OCIO = path_str(to_windows_path(Path(os.environ['OCIO']))),
-                )
+                env=env
             )
         else:
             # Multiple tiles - render with tile flags
@@ -142,9 +153,7 @@ def main(
                             _fix_frame_pattern(temp_frame_path, '$F4')
                         ))
                     ],
-                    env = dict(
-                        OCIO = path_str(to_windows_path(Path(os.environ['OCIO']))),
-                    )
+                    env=env
                 )
 
             # Stitch the tiles together to create the frames

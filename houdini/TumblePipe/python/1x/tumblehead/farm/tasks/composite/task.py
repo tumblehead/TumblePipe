@@ -9,12 +9,12 @@ if tumblehead_packages_path not in sys.path:
     sys.path.append(str(tumblehead_packages_path))
 
 from tumblehead.api import (
-    get_user_name,
     path_str,
     to_wsl_path,
     to_windows_path,
     default_client
 )
+from tumblehead.farm.tasks.env import get_base_env
 from tumblehead.util.io import store_json
 from tumblehead.naming import random_name
 from tumblehead.apps.deadline import Job as Task
@@ -155,12 +155,6 @@ def build(config, paths, staging_path):
     task.max_frame_time = 20
     task.paths.update(paths)
     task.paths[task_path] = task_path.relative_to(staging_path)
-    task.env.update(dict(
-        TH_USER = get_user_name(),
-        TH_CONFIG_PATH = path_str(to_wsl_path(api.CONFIG_PATH)),
-        TH_PROJECT_PATH = path_str(to_wsl_path(api.PROJECT_PATH)),
-        TH_PIPELINE_PATH = path_str(to_wsl_path(api.PIPELINE_PATH)),
-        OCIO = path_str(to_wsl_path(Path(os.environ['OCIO'])))
-    ))
+    task.env.update(get_base_env(api))
     task.output_paths.append(to_windows_path(receipt_path))
     return task

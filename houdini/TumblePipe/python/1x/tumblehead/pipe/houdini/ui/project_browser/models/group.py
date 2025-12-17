@@ -239,9 +239,13 @@ class GroupMembersModel(QStandardItemModel):
                     entity_name = parts[1]
 
             if parent_name and entity_name:
-                if parent_name not in grouped:
-                    grouped[parent_name] = []
-                grouped[parent_name].append((entity_name, uri_str))
+                # Strip whitespace and validate
+                parent_name = parent_name.strip()
+                entity_name = entity_name.strip()
+                if parent_name and entity_name:
+                    if parent_name not in grouped:
+                        grouped[parent_name] = []
+                    grouped[parent_name].append((entity_name, uri_str))
 
         for parent_name in sorted(grouped.keys()):
             parent_item = QStandardItem(parent_name)
@@ -258,6 +262,10 @@ class GroupMembersModel(QStandardItemModel):
 
     def add_member(self, uri_str):
         """Add a member to the model, maintaining tree structure"""
+        # Check if entity already exists
+        if uri_str in self.get_member_entities():
+            return
+
         parent_name = None
         entity_name = None
 
@@ -272,6 +280,12 @@ class GroupMembersModel(QStandardItemModel):
                 parent_name = parts[0]
                 entity_name = parts[1]
 
+        if not parent_name or not entity_name:
+            return
+
+        # Additional validation - strip whitespace and check again
+        parent_name = parent_name.strip()
+        entity_name = entity_name.strip()
         if not parent_name or not entity_name:
             return
 
@@ -290,7 +304,7 @@ class GroupMembersModel(QStandardItemModel):
             inserted = False
             for row in range(self.rowCount()):
                 if self.item(row).text() > parent_name:
-                    self.insertRow(row, parent_item)
+                    self.insertRow(row, [parent_item])
                     inserted = True
                     break
             if not inserted:
@@ -302,8 +316,11 @@ class GroupMembersModel(QStandardItemModel):
 
         inserted = False
         for row in range(parent_item.rowCount()):
-            if parent_item.child(row).text() > entity_name:
-                parent_item.insertRow(row, child_item)
+            existing_child = parent_item.child(row)
+            if existing_child is None:
+                continue
+            if existing_child.text() > entity_name:
+                parent_item.insertRow(row, [child_item])
                 inserted = True
                 break
         if not inserted:

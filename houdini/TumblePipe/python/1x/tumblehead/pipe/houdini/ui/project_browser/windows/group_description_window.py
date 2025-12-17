@@ -464,12 +464,29 @@ class GroupEditorPanel(QWidget):
     def _get_selected_available(self) -> list[str]:
         """Get selected available entity URIs."""
         selected = []
+        seen = set()
         for index in self._available_tree.selectedIndexes():
+            # Only process column 0 (name column)
+            if index.column() != 0:
+                continue
             item = self._available_model.itemFromIndex(index)
-            if item:
-                uri_str = item.data(Qt.UserRole)
-                if uri_str:
+            if not item:
+                continue
+            uri_str = item.data(Qt.UserRole)
+            if uri_str:
+                # Leaf node with URI
+                if uri_str not in seen:
                     selected.append(uri_str)
+                    seen.add(uri_str)
+            else:
+                # Parent node - add all children
+                for row in range(item.rowCount()):
+                    child = item.child(row)
+                    if child:
+                        child_uri = child.data(Qt.UserRole)
+                        if child_uri and child_uri not in seen:
+                            selected.append(child_uri)
+                            seen.add(child_uri)
         return selected
 
     def _get_selected_members(self) -> list:

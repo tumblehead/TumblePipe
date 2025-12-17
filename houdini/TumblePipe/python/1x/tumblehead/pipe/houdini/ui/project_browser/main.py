@@ -220,6 +220,7 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._workspace_browser.delete_group.connect(self._delete_group)
         self._workspace_browser.edit_scene_for_entity.connect(self._edit_scene_for_entity)
         self._workspace_browser.view_latest_export.connect(self._workspace_view_export)
+        self._workspace_browser.edit_entity.connect(self._edit_entity_in_database)
         self._department_browser.selection_changed.connect(self._department_changed)
         self._department_browser.open_location.connect(self._department_open_location)
         self._department_browser.reload_scene.connect(self._department_reload_scene)
@@ -245,11 +246,6 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._version_view.revive_version.connect(self._revive_version)
         self._settings_view.auto_refresh_changed.connect(self._on_auto_refresh_changed)
         self._settings_view.rebuild_nodes_changed.connect(self._on_rebuild_nodes_changed)
-
-        # Setup auto-refresh timer (60 seconds)
-        self._auto_refresh_timer = QTimer(self)
-        self._auto_refresh_timer.timeout.connect(self._global_refresh)
-        self._auto_refresh_timer.start(60000)  # 60000 ms = 60 seconds
 
         # Detect current workfile context on startup and set open context indicator
         self._detect_and_set_initial_context()
@@ -698,6 +694,12 @@ class ProjectBrowser(QtWidgets.QWidget):
         """Handle database window closure"""
         self._database_window = None
 
+    def _edit_entity_in_database(self, entity_uri):
+        """Open Database Editor and navigate to the specified entity."""
+        self._open_database_editor()
+        if self._database_window:
+            self._database_window.select_entity(entity_uri)
+
     def _selection(self):
         if self._selected_entity is None:
             return None
@@ -899,16 +901,24 @@ class ProjectBrowser(QtWidgets.QWidget):
         file_path.parent.mkdir(parents=True, exist_ok=True)
         hou.hipFile.save(path_str(file_path))
 
-        # Update context from saved file
-        self._context = get_workfile_context(file_path)
-        if self._context is None:
-            # Get correct workfile URI (group if entity belongs to one)
-            workfile_uri = _get_workfile_uri(selected_context.entity_uri, selected_context.department_name)
+        # Update context from saved file - always validate the URI
+        file_context = get_workfile_context(file_path)
+        expected_uri = _get_workfile_uri(selected_context.entity_uri, selected_context.department_name)
+        if file_context is None:
             self._context = Context(
-                entity_uri=workfile_uri,
+                entity_uri=expected_uri,
                 department_name=selected_context.department_name,
                 version_name=selected_context.version_name
             )
+        elif file_context.entity_uri != expected_uri:
+            # Fix corrupted context.json with wrong URI
+            self._context = Context(
+                entity_uri=expected_uri,
+                department_name=file_context.department_name,
+                version_name=file_context.version_name
+            )
+        else:
+            self._context = file_context
         save_context(file_path.parent, None, self._context)
         save_entity_context(file_path.parent, self._context)
         self._update_scene()
@@ -944,16 +954,24 @@ class ProjectBrowser(QtWidgets.QWidget):
         hou.hipFile.clear(suppress_save_prompt=True)
         hou.hipFile.save(path_str(file_path))
 
-        # Update context from saved file
-        self._context = get_workfile_context(file_path)
-        if self._context is None:
-            # Get correct workfile URI (group if entity belongs to one)
-            workfile_uri = _get_workfile_uri(selected_context.entity_uri, selected_context.department_name)
+        # Update context from saved file - always validate the URI
+        file_context = get_workfile_context(file_path)
+        expected_uri = _get_workfile_uri(selected_context.entity_uri, selected_context.department_name)
+        if file_context is None:
             self._context = Context(
-                entity_uri=workfile_uri,
+                entity_uri=expected_uri,
                 department_name=selected_context.department_name,
                 version_name=selected_context.version_name
             )
+        elif file_context.entity_uri != expected_uri:
+            # Fix corrupted context.json with wrong URI
+            self._context = Context(
+                entity_uri=expected_uri,
+                department_name=file_context.department_name,
+                version_name=file_context.version_name
+            )
+        else:
+            self._context = file_context
         save_context(file_path.parent, None, self._context)
         save_entity_context(file_path.parent, self._context)
         self._initialize_scene()
@@ -989,15 +1007,21 @@ class ProjectBrowser(QtWidgets.QWidget):
                     # File may have partially loaded - continue and try to fix with rebuild
                     print(f"Warning: File loaded with errors: {e}")
                 context = get_workfile_context(file_path)
+                # Always ensure the URI matches the expected workfile URI (handles group folders)
+                expected_uri = _get_workfile_uri(selected_context.entity_uri, selected_context.department_name)
                 if context is None:
-                    # Get correct workfile URI (group if entity belongs to one)
-                    workfile_uri = _get_workfile_uri(selected_context.entity_uri, selected_context.department_name)
                     context = Context(
-                        entity_uri=workfile_uri,
+                        entity_uri=expected_uri,
                         department_name=selected_context.department_name,
                         version_name=selected_context.version_name
                     )
-                    save_entity_context(file_path.parent, context)
+                elif context.entity_uri != expected_uri:
+                    # Fix corrupted context.json with wrong URI
+                    context = Context(
+                        entity_uri=expected_uri,
+                        department_name=context.department_name,
+                        version_name=context.version_name
+                    )
                 self._context = context
                 save_entity_context(file_path.parent, self._context)
             else:
@@ -1134,9 +1158,22 @@ class ProjectBrowser(QtWidgets.QWidget):
                 file_path = next_file_path(self._context)
                 hou.hipFile.save(path_str(file_path))
 
-                # Update current context
+                # Update current context - preserve entity_uri to avoid re-reading corrupted context
                 prev_context = self._context
-                self._context = get_workfile_context(file_path)
+                file_context = get_workfile_context(file_path)
+                if file_context is not None:
+                    self._context = Context(
+                        entity_uri=prev_context.entity_uri,
+                        department_name=file_context.department_name,
+                        version_name=file_context.version_name
+                    )
+                else:
+                    version_name = file_path.stem.rsplit('_', 1)[-1] if '_' in file_path.stem else None
+                    self._context = Context(
+                        entity_uri=prev_context.entity_uri,
+                        department_name=prev_context.department_name,
+                        version_name=version_name
+                    )
                 save_context(file_path.parent, prev_context, self._context)
                 save_entity_context(file_path.parent, self._context)
             else:
@@ -1154,9 +1191,22 @@ class ProjectBrowser(QtWidgets.QWidget):
                     file_path = next_file_path(self._context)
                     hou.hipFile.save(path_str(file_path))
 
-                    # Update current context
+                    # Update current context - preserve entity_uri to avoid re-reading corrupted context
                     prev_context = self._context
-                    self._context = get_workfile_context(file_path)
+                    file_context = get_workfile_context(file_path)
+                    if file_context is not None:
+                        self._context = Context(
+                            entity_uri=prev_context.entity_uri,
+                            department_name=file_context.department_name,
+                            version_name=file_context.version_name
+                        )
+                    else:
+                        version_name = file_path.stem.rsplit('_', 1)[-1] if '_' in file_path.stem else None
+                        self._context = Context(
+                            entity_uri=prev_context.entity_uri,
+                            department_name=prev_context.department_name,
+                            version_name=version_name
+                        )
                     save_context(file_path.parent, prev_context, self._context)
                     save_entity_context(file_path.parent, self._context)
 
@@ -1180,8 +1230,24 @@ class ProjectBrowser(QtWidgets.QWidget):
             file_path = next_file_path(self._context)
             hou.hipFile.save(path_str(file_path))
 
-            # Set the new context
-            self._context = get_workfile_context(file_path)
+            # Set the new context - preserve the existing entity_uri to avoid
+            # re-reading potentially corrupted context.json
+            file_context = get_workfile_context(file_path)
+            if file_context is not None:
+                # Use the file's version_name but preserve our known-good entity_uri
+                self._context = Context(
+                    entity_uri=prev_context.entity_uri,
+                    department_name=file_context.department_name,
+                    version_name=file_context.version_name
+                )
+            else:
+                # Fallback: construct context from prev_context with new version
+                version_name = file_path.stem.rsplit('_', 1)[-1] if '_' in file_path.stem else None
+                self._context = Context(
+                    entity_uri=prev_context.entity_uri,
+                    department_name=prev_context.department_name,
+                    version_name=version_name
+                )
             save_context(file_path.parent, prev_context, self._context)
             save_entity_context(file_path.parent, self._context)
 

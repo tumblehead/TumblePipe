@@ -15,6 +15,7 @@ from tumblehead.api import (
     to_windows_path,
     default_client
 )
+from tumblehead.farm.tasks.env import get_base_env
 from tumblehead.util.io import store_json
 from tumblehead.naming import random_name
 from tumblehead.apps.deadline import Job as Task
@@ -138,12 +139,11 @@ def build(config, paths, staging_path):
     task.paths[context_path] = context_path.relative_to(staging_path)
     task.paths[config_path] = relative_config_path
     task.paths[pipeline_path] = relative_pipeline_path
+    task.env.update(get_base_env(api))
+    # Override with relative paths for cloud packaging
     task.env.update(dict(
-        TH_USER = get_user_name(),
         TH_CONFIG_PATH = path_str(relative_config_path),
-        TH_PROJECT_PATH = path_str(to_wsl_path(api.PROJECT_PATH)),
         TH_PIPELINE_PATH = path_str(relative_pipeline_path),
-        OCIO = path_str(to_wsl_path(Path(os.environ['OCIO'])))
     ))
     task.output_paths.append(to_windows_path(receipt_path))
 

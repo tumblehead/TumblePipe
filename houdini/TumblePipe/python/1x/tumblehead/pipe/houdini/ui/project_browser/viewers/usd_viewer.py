@@ -325,6 +325,8 @@ class USDViewerLauncher(QtCore.QObject):
         Raises:
             subprocess.SubprocessError: If process launch fails
         """
+        import os
+
         # Convert paths to strings
         viewer_str = str(viewer_path)
         file_str = str(file_path)
@@ -333,9 +335,13 @@ class USDViewerLauncher(QtCore.QObject):
         # This is needed for viewers like 3D-Info that look for resources relative to cwd
         cwd = str(viewer_path.parent)
 
+        # Build environment with USD resolver paths
+        # This allows external viewers to resolve entity:/ URIs in sublayers
+        env = os.environ.copy()
+        env = self._add_resolver_env(env)
+
         # Build command - try different argument formats for 3D-Info
         # Some viewers need --file or -f flag, others just take the path
-        import os
         exe_name = os.path.basename(viewer_str).lower()
 
         if 'cst_3dinfo' in exe_name or '3d-info' in exe_name or '3dinfo' in exe_name:
@@ -349,10 +355,74 @@ class USDViewerLauncher(QtCore.QObject):
         subprocess.Popen(
             cmd,
             cwd=cwd,
+            env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True
         )
+
+    def _add_resolver_env(self, env: dict) -> dict:
+        """Add USD resolver environment variables for entity:/ URI resolution.
+
+        Configures PXR_PLUGINPATH_NAME and PYTHONPATH so external viewers can
+        resolve entity:/ URIs using our custom USD asset resolver.
+
+        Args:
+            env: Base environment dictionary to modify
+
+        Returns:
+            Modified environment dictionary with resolver paths
+        """
+        import os
+
+        # Get TH_BIN_PATH for resolver location
+        bin_path = os.environ.get('TH_BIN_PATH')
+        if not bin_path:
+            return env
+
+        # Base resolver paths for compiled plugin and Python bindings
+        # Note: TH_BIN_PATH already includes 'windows' (e.g., W:/_pipeline/bin/windows)
+        resolver_base = Path(bin_path) / 'houdini' / '21.0' / 'UsdAssetResolver' / 'cachedResolver'
+        resolver_resources = resolver_base / 'resources'
+        resolver_python = resolver_base / 'lib' / 'python'
+
+        if not resolver_resources.exists():
+            logger.warning(f"USD resolver resources not found: {resolver_resources}")
+            return env
+
+        # Get pipeline path for project's custom resolver and tumblehead imports
+        pipeline_path = os.environ.get('TH_PIPELINE_PATH')
+        project_resolver = None
+        pipeline_python = None
+        if pipeline_path:
+            # Project's custom PythonExpose.py (takes precedence over base resolver)
+            project_resolver = Path(pipeline_path) / 'houdini' / 'Tumblehead' / 'python' / '1x' / 'tumblehead' / 'resolver'
+            pipeline_python = Path(pipeline_path) / 'houdini' / 'Tumblehead' / 'python' / '1x'
+
+        # Build PYTHONPATH additions (project resolver first, then base resolver bindings)
+        python_paths = []
+        if project_resolver and project_resolver.exists():
+            python_paths.append(str(project_resolver))
+        python_paths.append(str(resolver_python))
+        if pipeline_python and pipeline_python.exists():
+            python_paths.append(str(pipeline_python))
+
+        # Prepend resolver plugin path
+        current_plugin_path = env.get('PXR_PLUGINPATH_NAME', '')
+        if current_plugin_path:
+            env['PXR_PLUGINPATH_NAME'] = f"{resolver_resources}{os.pathsep}{current_plugin_path}"
+        else:
+            env['PXR_PLUGINPATH_NAME'] = str(resolver_resources)
+
+        # Prepend resolver and pipeline Python paths
+        current_python_path = env.get('PYTHONPATH', '')
+        new_python_path = os.pathsep.join(python_paths)
+        if current_python_path:
+            env['PYTHONPATH'] = f"{new_python_path}{os.pathsep}{current_python_path}"
+        else:
+            env['PYTHONPATH'] = new_python_path
+
+        return env
 
 
 # Convenience function for quick access

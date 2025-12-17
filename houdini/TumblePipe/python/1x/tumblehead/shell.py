@@ -22,7 +22,7 @@ external_path = pipeline_path / 'houdini' / 'Tumblehead' / 'python3.11libs' / 'e
 sys.path.insert(0, str(external_path))
 
 # Set project environment variables
-os.environ['OCIO'] = str(pipeline_path / 'ocio' / 'config.ocio')
+os.environ['OCIO'] = str(pipeline_path / 'ocio' / 'tumblehead.ocio')
 
 # Load the tumblehead api
 from tumblehead.api import default_client

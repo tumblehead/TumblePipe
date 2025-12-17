@@ -163,6 +163,8 @@ class JobSubmissionDelegate(QStyledItemDelegate):
 
         if col_type == ColumnType.INTEGER:
             editor = QSpinBox(parent)
+            # Set sensible default max (QSpinBox defaults to 99 which is too low for frame numbers)
+            editor.setMaximum(999999)
             if col_def:
                 if col_def.min_value is not None:
                     editor.setMinimum(int(col_def.min_value))
@@ -175,6 +177,8 @@ class JobSubmissionDelegate(QStyledItemDelegate):
         elif col_type == ColumnType.FLOAT:
             editor = QDoubleSpinBox(parent)
             editor.setDecimals(2)
+            # Set sensible default max (QDoubleSpinBox defaults to 99.99 which is too low)
+            editor.setMaximum(999999.0)
             if col_def:
                 if col_def.min_value is not None:
                     editor.setMinimum(col_def.min_value)

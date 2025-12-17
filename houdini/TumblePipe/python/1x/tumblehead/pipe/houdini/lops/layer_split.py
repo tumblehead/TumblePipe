@@ -15,8 +15,7 @@ from tumblehead.pipe.paths import (
     get_workfile_context,
     next_shared_export_path,
     latest_shared_export_path,
-    get_shared_layer_file_name,
-    shared_export_latest_path
+    get_shared_layer_file_name
 )
 from tumblehead.pipe.context import save_export_context
 
@@ -184,25 +183,11 @@ class LayerSplit(ns.Node):
 
         print(f'Exported shared layer to: {export_path / file_name}')
 
-        # Create/update "latest" copy
-        latest_path = shared_export_latest_path(entity_uri, department_name)
-        latest_path.mkdir(parents=True, exist_ok=True)
-
-        # Copy version files to latest (renaming versioned files to 'latest')
-        for item in export_path.iterdir():
-            dest_name = item.name.replace(version_name, 'latest')
-            dest = latest_path / dest_name
-            if dest.exists():
-                if dest.is_dir():
-                    shutil.rmtree(dest)
-                else:
-                    dest.unlink()
-            if item.is_dir():
-                shutil.copytree(item, dest)
-            else:
-                shutil.copy(item, dest)
-
-        print(f'Updated latest at: {latest_path}')
+        # Generate entity URI for downstream reference
+        # The custom USD resolver handles dynamic version lookup at runtime,
+        # eliminating the need for copy-based "latest" directories
+        entity_uri_str = f"{entity_uri}?dept={department_name}&variant=_shared"
+        print(f'Entity URI for sublayer reference: {entity_uri_str}')
 
     def open_location(self):
         """Open the latest shared export location in file browser."""

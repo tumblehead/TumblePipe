@@ -94,7 +94,7 @@ class Graph:
 def entity_key(entity_uri: Uri, department_name: Optional[str]) -> str:
     """Create unique key for entity URI + department combination."""
     dept_suffix = f'/{department_name}' if department_name else ''
-    return f'{entity_uri.path}{dept_suffix}'
+    return f'{entity_uri}{dept_suffix}'
 
 
 def get_latest_version(api, entity_uri: Uri, variant_name: str, department_name: Optional[str]) -> Optional[Path]:

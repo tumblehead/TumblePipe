@@ -266,6 +266,15 @@ def _parent(item: QStandardItem) -> QStandardItem | QStandardItemModel | None:
     return item.model()
 
 
+def _propagate_origin_to_local(item):
+    """Propagate LOCAL origin up the tree when an inherited value is modified."""
+    parent = _parent(item)
+    while parent is not None and hasattr(parent, '_origin'):
+        if parent._origin == FieldOrigin.INHERITED:
+            parent._origin = FieldOrigin.LOCAL
+        parent = _parent(parent)
+
+
 def _child(parent, row, column):
     if isinstance(parent, QStandardItem):
         return parent.child(row, column)
@@ -956,6 +965,7 @@ class FieldBasicItem(QStandardItem, QObject):
         # When overriding an inherited field, change origin to LOCAL
         if self._origin == FieldOrigin.INHERITED:
             self._origin = FieldOrigin.LOCAL
+            _propagate_origin_to_local(self)
         self.change.emit(
             _change_field_update(_parent(self).path(), self._key, value)
         )
@@ -1556,6 +1566,7 @@ class IndexBasicItem(QStandardItem, QObject):
         # When overriding an inherited field, change origin to LOCAL
         if self._origin == FieldOrigin.INHERITED:
             self._origin = FieldOrigin.LOCAL
+            _propagate_origin_to_local(self)
         self.change.emit(
             _change_index_update(_parent(self).path(), self._index, value)
         )
@@ -2438,10 +2449,10 @@ class JsonItemDelegate(QStyledItemDelegate):
 
     def eventFilter(self, editor, event):
         if event.type() == QEvent.FocusOut:
-            # Commit data when clicking away
+            # Commit data when clicking away - allow event to propagate so editingFinished fires
             self.commitData.emit(editor)
             self.closeEditor.emit(editor, QAbstractItemDelegate.EndEditHint.NoHint)
-            return True
+            return False
         if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
             # Cancel edit on Escape - close without committing
             self.closeEditor.emit(editor, QAbstractItemDelegate.EndEditHint.RevertModelData)

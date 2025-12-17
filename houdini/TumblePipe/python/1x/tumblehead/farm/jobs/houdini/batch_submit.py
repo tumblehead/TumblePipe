@@ -394,11 +394,11 @@ def submit_entity_batch(config: dict) -> list[str]:
                 # Get the latest staged file (use first variant)
                 variant_name = variants[0] if variants else 'default'
                 latest_staged_path = get_latest_staged_file_path(entity_uri, variant_name)
-                if not latest_staged_path.exists():
+                if latest_staged_path is None or not latest_staged_path.exists():
                     raise BatchSubmitError(
-                        f"Standalone render requires existing staged file for {entity_uri}. "
-                        f"Expected: {latest_staged_path}. "
-                        "Run a normal render first or disable standalone mode."
+                        f"No staged file found for {entity_uri} variant '{variant_name}'. "
+                        f"Expected staged files at: export:/{'/'.join(entity_uri.segments)}/_staged/{variant_name}/. "
+                        "Publish the entity first to create staged files."
                     )
 
                 # Create collapsed USD with resolved version references
@@ -438,6 +438,9 @@ def submit_entity_batch(config: dict) -> list[str]:
                     )
                 )
 
+                # Submit any pending publish jobs first
+                pub_job_ids = _finalize_batch()
+
                 # Submit render job directly (creates its own batch)
                 render_paths = {
                     render_settings_path: relative_render_settings_path,
@@ -448,8 +451,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                     if result != 0:
                         raise BatchSubmitError(f"Standalone render submission failed for {entity_uri}")
                     logging.info(f"Submitted standalone render for {entity_uri}")
-                    # Return empty list since render_job.submit handles its own submission
-                    return []
+                    return pub_job_ids
                 except Exception as e:
                     raise BatchSubmitError(f"Could not submit standalone render for {entity_uri}: {e}")
             else:

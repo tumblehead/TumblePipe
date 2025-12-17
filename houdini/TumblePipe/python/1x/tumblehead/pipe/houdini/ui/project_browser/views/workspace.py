@@ -17,6 +17,7 @@ class WorkspaceBrowser(QtWidgets.QWidget):
     delete_group = Signal(object)
     edit_scene_for_entity = Signal(object)  # entity_uri - opens scene editor for entity's scene
     view_latest_export = Signal(list)  # name_path - view latest export for shot
+    edit_entity = Signal(object)  # entity_uri - opens database editor for entity
 
     def __init__(self, api, parent=None):
         super().__init__(parent)
@@ -465,6 +466,10 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         if len(name_path) > 1:
             remove_entry_action = menu.addAction("Remove Entity")
 
+        edit_entity_action = None
+        if len(name_path) > 1:
+            edit_entity_action = menu.addAction("Edit Entity")
+
         selected_action = menu.exec_(self.tree_view.mapToGlobal(point))
         if selected_action is None:
             return
@@ -476,6 +481,10 @@ class WorkspaceBrowser(QtWidgets.QWidget):
             return self.create_batch_entry.emit(name_path)
         if selected_action == remove_entry_action:
             return self.remove_entry.emit(name_path)
+        if selected_action == edit_entity_action:
+            entity_uri = entity_uri_from_path(name_path)
+            if entity_uri:
+                return self.edit_entity.emit(entity_uri)
 
     def _show_scene_context_menu(self, point, name_path):
         """Show context menu for Scene column."""
@@ -508,25 +517,45 @@ class WorkspaceBrowser(QtWidgets.QWidget):
 
     def _show_group_context_menu(self, point, name_path):
         """Show context menu for Group column."""
+        from tumblehead.config.groups import find_groups_for_entity
+
         # Only show for entities (shots or assets), not categories or groups
         if len(name_path) < 2:
             return
         if name_path[0] == 'groups':
             return
 
-        # Build group path for edit_group signal
-        # Format: ["groups", context, group_name] for existing groups
-        # Or just the entity name_path for creating/editing
         context = name_path[0]  # 'shots' or 'assets'
-        group_path = ['groups', context] + name_path[1:]
+        entity_uri = entity_uri_from_path(name_path)
+        if entity_uri is None:
+            return
+
+        # Find actual groups this entity belongs to
+        groups = find_groups_for_entity(entity_uri)
 
         menu = QtWidgets.QMenu()
-        edit_action = menu.addAction("Edit Group")
+
+        # Build edit group menu item(s)
+        edit_actions = {}
+        if not groups:
+            # No groups - show disabled indicator
+            no_group_action = menu.addAction("No Group Assigned")
+            no_group_action.setEnabled(False)
+        elif len(groups) == 1:
+            # Single group - direct edit action
+            group = groups[0]
+            edit_action = menu.addAction(f"Edit Group '{group.name}'")
+            edit_actions[edit_action] = group.name
+        else:
+            # Multiple groups - submenu
+            edit_menu = menu.addMenu("Edit Group")
+            for group in groups:
+                action = edit_menu.addAction(group.name)
+                edit_actions[action] = group.name
 
         # Add "View Latest Export" for shots only (check if export exists)
         view_export_action = None
         if name_path[0] == 'shots':
-            entity_uri = entity_uri_from_path(name_path)
             if has_staged_export(entity_uri):
                 view_export_action = menu.addAction("View Latest Export")
             else:
@@ -536,7 +565,9 @@ class WorkspaceBrowser(QtWidgets.QWidget):
         selected_action = menu.exec_(self.tree_view.mapToGlobal(point))
         if selected_action is None:
             return
-        if selected_action == edit_action:
+        if selected_action in edit_actions:
+            group_name = edit_actions[selected_action]
+            group_path = ['groups', context, group_name]
             self.edit_group.emit(group_path)
         elif view_export_action and selected_action == view_export_action:
             self.view_latest_export.emit(name_path)

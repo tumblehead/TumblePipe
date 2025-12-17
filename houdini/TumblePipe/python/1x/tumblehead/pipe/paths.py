@@ -1576,28 +1576,38 @@ def next_staged_file_path(
     usd_file_name = usd_file_name_pattern.replace('*', version_name)
     return version_path / usd_file_name
 
-def get_latest_staged_path(
+def get_staged_base_path(
     entity_uri: Uri,
     variant_name: str = 'default'
 ) -> Path:
-    """Get path to the 'latest' staged directory."""
+    """Get base staged path for an entity (without version)."""
     staged_uri = (
         Uri.parse_unsafe('export:/') /
         entity_uri.segments /
         '_staged' /
-        variant_name /
-        'latest'
+        variant_name
     )
     return api.storage.resolve(staged_uri)
+
+def get_latest_staged_path(
+    entity_uri: Uri,
+    variant_name: str = 'default'
+) -> Optional[Path]:
+    """Get path to the latest staged version directory."""
+    base_path = get_staged_base_path(entity_uri, variant_name)
+    return get_latest_version_path(base_path)
 
 def get_latest_staged_file_path(
     entity_uri: Uri,
     variant_name: str = 'default'
-) -> Path:
-    """Get path to the 'latest' staged .usda file."""
+) -> Optional[Path]:
+    """Get path to the latest staged .usda file."""
     version_path = get_latest_staged_path(entity_uri, variant_name)
+    if version_path is None:
+        return None
+    version_name = version_path.name
     usd_file_name = '.'.join([
-        '_'.join(entity_uri.segments[1:] + ['latest']),
+        '_'.join(entity_uri.segments[1:] + [version_name]),
         'usda'
     ])
     return version_path / usd_file_name

@@ -364,7 +364,7 @@ def create_submission_schema() -> JobTypeSchema:
                 min_value=0,
                 max_value=999,
                 section_key='render',
-                width=40,
+                width=50,
                 tooltip='Pre-roll frames (motion blur handles)'
             ),
             ColumnDefinition(
@@ -375,7 +375,7 @@ def create_submission_schema() -> JobTypeSchema:
                 min_value=0,
                 max_value=999999,
                 section_key='render',
-                width=50,
+                width=70,
                 tooltip='First frame of play range'
             ),
             ColumnDefinition(
@@ -386,7 +386,7 @@ def create_submission_schema() -> JobTypeSchema:
                 min_value=0,
                 max_value=999999,
                 section_key='render',
-                width=50,
+                width=70,
                 tooltip='Last frame of play range'
             ),
             ColumnDefinition(
@@ -397,7 +397,7 @@ def create_submission_schema() -> JobTypeSchema:
                 min_value=0,
                 max_value=999,
                 section_key='render',
-                width=40,
+                width=50,
                 tooltip='Post-roll frames (motion blur handles)'
             ),
             ColumnDefinition(
@@ -409,7 +409,7 @@ def create_submission_schema() -> JobTypeSchema:
                 max_value=settings.batch_size.max,
                 step=5,
                 section_key='render',
-                width=45,
+                width=55,
                 tooltip='Frames per batch'
             ),
             ColumnDefinition(

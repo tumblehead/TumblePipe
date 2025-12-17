@@ -6,12 +6,14 @@ from pathlib import Path
 import os
 import re
 import logging
+from typing import Union
 
 from tumblehead.api import path_str
+from tumblehead.util.uri import Uri
 
 
 def generate_usda_content(
-    layer_paths: list[Path],
+    layer_paths: list[Union[Path, str]],
     output_path: Path,
     fps: float = None,
     start_frame: int = None,
@@ -20,9 +22,14 @@ def generate_usda_content(
     """
     Generate USDA file content with sublayers.
 
+    Primarily uses entity:/ URIs for sublayer references. Filesystem paths
+    are only supported for static config templates (e.g., root_default_prims.usda)
+    that don't require dynamic version resolution.
+
     Args:
-        layer_paths: List of absolute paths to sublayer files
-        output_path: Final output path (for computing relative paths)
+        layer_paths: List of sublayer references - prefer entity:/ URI strings.
+                    Path objects are only for static config templates.
+        output_path: Final output path (for computing relative paths from filesystem paths)
         fps: Frames per second (optional, omit for simple sublayer files)
         start_frame: Start time code (optional)
         end_frame: End time code (optional)
@@ -50,14 +57,19 @@ def generate_usda_content(
     # Add sublayers
     lines.append('    subLayers = [')
 
-    for layer_path in layer_paths:
-        # Try to compute relative path, fall back to absolute if drives differ (Windows)
-        try:
-            relative_layer_path = Path(os.path.relpath(layer_path, output_path.parent))
-        except ValueError:
-            # Different drives (e.g., temp on C:, export on P:) - use absolute path
-            relative_layer_path = layer_path
-        lines.append(f'        @{path_str(relative_layer_path)}@,')
+    for layer_ref in layer_paths:
+        if isinstance(layer_ref, str) and layer_ref.startswith('entity:/'):
+            # Entity URI - use as-is (resolver handles resolution)
+            lines.append(f'        @{layer_ref}@,')
+        else:
+            # Filesystem path - compute relative path
+            layer_path = layer_ref if isinstance(layer_ref, Path) else Path(layer_ref)
+            try:
+                relative_layer_path = Path(os.path.relpath(layer_path, output_path.parent))
+            except ValueError:
+                # Different drives (e.g., temp on C:, export on P:) - use absolute path
+                relative_layer_path = layer_path
+            lines.append(f'        @{path_str(relative_layer_path)}@,')
 
     lines.append('    ]')
     lines.append(')')
@@ -66,17 +78,19 @@ def generate_usda_content(
 
 
 def generate_simple_usda_content(
-    layer_paths: list[Path],
+    layer_paths: list[Union[Path, str]],
     output_path: Path
 ) -> str:
     """
     Generate simple USDA file content with just sublayers (no timing metadata).
 
-    Useful for asset staged files that don't need frame range information.
+    Useful for asset staged files and scenes that don't need frame range information.
+    Primarily uses entity:/ URIs for sublayer references.
 
     Args:
-        layer_paths: List of absolute paths to sublayer files
-        output_path: Final output path (for computing relative paths)
+        layer_paths: List of sublayer references - prefer entity:/ URI strings.
+                    Path objects are only for static config templates.
+        output_path: Final output path (for computing relative paths from filesystem paths)
 
     Returns:
         USDA file content as string
@@ -210,17 +224,18 @@ def collapse_latest_references(
     output_path: Path
 ) -> str:
     """
-    Collapse a staged USDA file by resolving all 'latest' references to versioned paths.
+    Copy a staged USDA file's content for use in a collapsed render stage.
 
-    Reads the staged file, finds all sublayer references containing 'latest',
-    resolves each to its actual versioned path, and generates new USDA content.
+    Reads the staged file and generates USDA content with the same metadata
+    and sublayer references. All sublayer references should be entity:/ URIs
+    which are resolved by the custom USD asset resolver at runtime.
 
     Args:
-        staged_file_path: Path to the source _latest.usda file
-        output_path: Output path (for computing relative paths)
+        staged_file_path: Path to the source staged .usda file
+        output_path: Output path (not used for entity URIs, kept for API compatibility)
 
     Returns:
-        USDA file content as string with resolved version references
+        USDA file content as string
 
     Raises:
         ValueError: If staged file doesn't exist or has invalid format
@@ -238,18 +253,13 @@ def collapse_latest_references(
     if not metadata['sublayers']:
         logging.warning(f"No sublayers found in {staged_file_path}")
 
-    # Resolve each sublayer path
-    source_dir = staged_file_path.parent
-    resolved_paths = []
+    # All sublayers should be entity:/ URIs - pass through unchanged
+    # The custom USD resolver handles version resolution at runtime
+    sublayer_refs = metadata['sublayers']
 
-    for sublayer_str in metadata['sublayers']:
-        sublayer_path = Path(sublayer_str)
-        resolved_path = _resolve_latest_to_version(sublayer_path, source_dir)
-        resolved_paths.append(resolved_path)
-
-    # Generate new USDA content with resolved paths
+    # Generate new USDA content
     return generate_usda_content(
-        layer_paths=resolved_paths,
+        layer_paths=sublayer_refs,
         output_path=output_path,
         fps=metadata['fps'],
         start_frame=metadata['start_frame'],
@@ -257,13 +267,17 @@ def collapse_latest_references(
     )
 
 
-def add_sublayer(layer_path: Path, sublayer_path: Path) -> bool:
+def add_sublayer(layer_path: Path, sublayer_ref: Union[Path, str]) -> bool:
     """
     Add a sublayer to an existing USD layer file.
 
+    Primarily uses entity:/ URIs for sublayer references. The resolver handles
+    dynamic version resolution at runtime.
+
     Args:
         layer_path: Path to the USD layer to modify
-        sublayer_path: Path to the sublayer to add (will be stored as relative path)
+        sublayer_ref: Prefer entity:/ URI string. Path objects are only for
+                     static config templates that don't need version resolution.
 
     Returns:
         True if sublayer was added successfully, False on error
@@ -275,10 +289,111 @@ def add_sublayer(layer_path: Path, sublayer_path: Path) -> bool:
         logging.error(f"Failed to open layer: {layer_path}")
         return False
 
-    # Compute relative path from layer to sublayer
-    rel_path = os.path.relpath(sublayer_path, layer_path.parent)
+    if isinstance(sublayer_ref, str) and sublayer_ref.startswith('entity:/'):
+        # Entity URI - use as-is (resolver handles resolution)
+        layer.subLayerPaths.append(sublayer_ref)
+    else:
+        # Filesystem path - compute relative path
+        rel_path = os.path.relpath(sublayer_ref, layer_path.parent)
+        layer.subLayerPaths.append(rel_path.replace('\\', '/'))
 
-    # Append to sublayers (last = weakest in USD composition)
-    layer.subLayerPaths.append(rel_path.replace('\\', '/'))
     layer.Save()
     return True
+
+
+def generate_entity_sublayer_uri(
+    entity_uri: Uri,
+    variant_name: str,
+    department_name: str,
+    version_name: str | None = None
+) -> str:
+    """
+    Generate an entity:/ URI for use as a USD sublayer reference.
+
+    The generated URI can be used in USD sublayer paths and will be
+    resolved by the custom asset resolver at runtime.
+
+    Args:
+        entity_uri: Entity URI (e.g., entity:/assets/SET/Arena)
+        variant_name: Variant name (default, _shared, etc.)
+        department_name: Department name (lookdev, model, etc.)
+        version_name: Optional specific version (None = latest)
+
+    Returns:
+        Entity URI string for USD sublayer reference
+
+    Example:
+        >>> uri = Uri.parse_unsafe('entity:/assets/SET/Arena')
+        >>> generate_entity_sublayer_uri(uri, 'default', 'lookdev')
+        'entity:/assets/SET/Arena?dept=lookdev&variant=default'
+        >>> generate_entity_sublayer_uri(uri, '_shared', 'lookdev', 'v0013')
+        'entity:/assets/SET/Arena?dept=lookdev&variant=_shared&version=v0013'
+    """
+    uri_str = f"{entity_uri}?dept={department_name}&variant={variant_name}"
+    if version_name:
+        uri_str += f"&version={version_name}"
+    return uri_str
+
+
+def generate_scene_sublayer_uri(
+    scene_uri: Uri,
+    version_name: str | None = None
+) -> str:
+    """
+    Generate an entity:/ URI for a scene sublayer reference.
+
+    The generated URI can be used in USD sublayer paths and will be
+    resolved by the custom asset resolver at runtime.
+
+    Args:
+        scene_uri: Scene URI (e.g., scenes:/outdoor/forest)
+        version_name: Optional specific version (None = latest)
+
+    Returns:
+        Entity URI string for USD sublayer reference
+
+    Example:
+        >>> uri = Uri.parse_unsafe('scenes:/outdoor/forest')
+        >>> generate_scene_sublayer_uri(uri)
+        'entity:/scenes/outdoor/forest'
+        >>> generate_scene_sublayer_uri(uri, 'v0013')
+        'entity:/scenes/outdoor/forest?version=v0013'
+    """
+    # Convert scenes:/ URI to entity:/scenes/ format
+    segments = '/'.join(str(s) for s in scene_uri.segments)
+    uri_str = f"entity:/scenes/{segments}"
+    if version_name:
+        uri_str += f"?version={version_name}"
+    return uri_str
+
+
+def generate_staged_sublayer_uri(
+    entity_uri: Uri,
+    variant_name: str,
+    version_name: str | None = None
+) -> str:
+    """
+    Generate an entity:/ URI for a staged asset/shot sublayer reference.
+
+    Unlike generate_entity_sublayer_uri which includes a department,
+    this generates URIs for staged files (composed from all departments).
+
+    Args:
+        entity_uri: Entity URI (e.g., entity:/assets/SET/Arena)
+        variant_name: Variant name (default, _shared, etc.)
+        version_name: Optional specific version (None = latest)
+
+    Returns:
+        Entity URI string for USD sublayer reference
+
+    Example:
+        >>> uri = Uri.parse_unsafe('entity:/assets/SET/Arena')
+        >>> generate_staged_sublayer_uri(uri, 'default')
+        'entity:/assets/SET/Arena?variant=default'
+        >>> generate_staged_sublayer_uri(uri, 'default', 'v0013')
+        'entity:/assets/SET/Arena?variant=default&version=v0013'
+    """
+    uri_str = f"{entity_uri}?variant={variant_name}"
+    if version_name:
+        uri_str += f"&version={version_name}"
+    return uri_str

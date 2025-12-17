@@ -12,7 +12,6 @@ import tumblehead.pipe.houdini.nodes as ns
 from tumblehead.pipe.houdini.util import uri_to_metadata_prim_path
 from tumblehead.pipe.paths import (
     get_workfile_context,
-    get_latest_staged_file_path,
     get_staged_file_path,
     current_staged_file_path,
     list_version_paths
@@ -196,12 +195,28 @@ class ImportAsset(ns.Node):
         # Get variant and staged file path based on version selection
         variant_name = self.get_variant_name()
         version_name = self.get_version_name()
+
+        # Import resolver module for latest mode control
+        from tumblehead.resolver import PythonExpose
+        from pxr import Ar
+
         if version_name == 'latest':
-            staged_file_path = get_latest_staged_file_path(asset_uri, variant_name)
+            # Enable resolver latest mode for full cascade semantics
+            # All nested entity:/ URIs will resolve to their latest versions
+            PythonExpose.set_latest_mode(True)
+            staged_file_path = current_staged_file_path(asset_uri, variant_name)
         elif version_name == 'current':
+            # Disable latest mode - use frozen versions from build
+            PythonExpose.set_latest_mode(False)
             staged_file_path = current_staged_file_path(asset_uri, variant_name)
         else:
+            # Disable latest mode - use specific version
+            PythonExpose.set_latest_mode(False)
             staged_file_path = get_staged_file_path(asset_uri, version_name, variant_name)
+
+        # Refresh resolver cache to ensure fresh resolution with the new mode
+        resolver = Ar.GetResolver()
+        resolver.RefreshContext(Ar.ResolverContext())
 
         if staged_file_path is None:
             ns.set_node_comment(native, "Bypassed: No staged file found")
