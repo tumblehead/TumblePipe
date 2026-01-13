@@ -1,0 +1,224 @@
+name: Weekly Release
+
+on:
+  schedule:
+    # Sunday at 11 PM UTC
+    - cron: '0 23 * * 0'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  check-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for changes since last release
+        id: check
+        run: |
+          # Get last release tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous release found, will create initial release"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "version_bump=minor" >> $GITHUB_OUTPUT
+            echo "last_tag=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "last_tag=$LAST_TAG" >> $GITHUB_OUTPUT
+
+          # Check if there are commits since last tag
+          COMMIT_COUNT=$(git rev-list ${LAST_TAG}..HEAD --count)
+
+          if [ "$COMMIT_COUNT" -eq "0" ]; then
+            echo "No changes since last release ($LAST_TAG)"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Found $COMMIT_COUNT commits since $LAST_TAG"
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+
+          # Determine version bump based on commit messages
+          COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s")
+
+          if echo "$COMMITS" | grep -qiE "^(break|breaking|major):"; then
+            echo "version_bump=major" >> $GITHUB_OUTPUT
+          elif echo "$COMMITS" | grep -qiE "^(feat|feature|add):"; then
+            echo "version_bump=minor" >> $GITHUB_OUTPUT
+          else
+            echo "version_bump=patch" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Calculate new version
+        if: steps.check.outputs.has_changes == 'true'
+        id: version
+        run: |
+          # Get current version from hpm.toml or last tag
+          if [ -f "houdini/TumblePipe/hpm.toml" ]; then
+            CURRENT=$(grep -oP 'version = "\K[^"]+' houdini/TumblePipe/hpm.toml || echo "0.0.0")
+          elif [ -n "${{ steps.check.outputs.last_tag }}" ]; then
+            CURRENT="${{ steps.check.outputs.last_tag }}"
+            CURRENT="${CURRENT#v}"  # Remove 'v' prefix
+          else
+            CURRENT="0.0.0"
+          fi
+
+          echo "Current version: $CURRENT"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          # Default to 0 if parsing fails
+          MAJOR=${MAJOR:-0}
+          MINOR=${MINOR:-0}
+          PATCH=${PATCH:-0}
+
+          case "${{ steps.check.outputs.version_bump }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "New version: $NEW_VERSION (bump type: ${{ steps.check.outputs.version_bump }})"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        if: steps.check.outputs.has_changes == 'true'
+        id: changelog
+        run: |
+          LAST_TAG="${{ steps.check.outputs.last_tag }}"
+
+          if [ -z "$LAST_TAG" ]; then
+            echo "changelog=Initial release" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get all commits since last tag
+          echo "Generating changelog from $LAST_TAG to HEAD..."
+
+          # Initialize sections
+          BREAKING=""
+          FEATURES=""
+          FIXES=""
+          OTHER=""
+
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+
+            msg=$(echo "$line" | cut -d'|' -f1)
+            hash=$(echo "$line" | cut -d'|' -f2)
+
+            # Categorize by commit prefix
+            if echo "$msg" | grep -qiE "^(break|breaking|major):"; then
+              clean_msg=$(echo "$msg" | sed 's/^[^:]*://')
+              BREAKING="${BREAKING}- ${clean_msg} (\`${hash}\`)\n"
+            elif echo "$msg" | grep -qiE "^(feat|feature|add):"; then
+              clean_msg=$(echo "$msg" | sed 's/^[^:]*://')
+              FEATURES="${FEATURES}- ${clean_msg} (\`${hash}\`)\n"
+            elif echo "$msg" | grep -qiE "^(fix|bugfix|patch):"; then
+              clean_msg=$(echo "$msg" | sed 's/^[^:]*://')
+              FIXES="${FIXES}- ${clean_msg} (\`${hash}\`)\n"
+            else
+              OTHER="${OTHER}- ${msg} (\`${hash}\`)\n"
+            fi
+          done < <(git log ${LAST_TAG}..HEAD --pretty=format:"%s|%h")
+
+          # Build changelog
+          CHANGELOG=""
+
+          if [ -n "$BREAKING" ]; then
+            CHANGELOG="${CHANGELOG}### Breaking Changes\n${BREAKING}\n"
+          fi
+
+          if [ -n "$FEATURES" ]; then
+            CHANGELOG="${CHANGELOG}### New Features\n${FEATURES}\n"
+          fi
+
+          if [ -n "$FIXES" ]; then
+            CHANGELOG="${CHANGELOG}### Bug Fixes\n${FIXES}\n"
+          fi
+
+          if [ -n "$OTHER" ]; then
+            CHANGELOG="${CHANGELOG}### Other Changes\n${OTHER}\n"
+          fi
+
+          # Output changelog (handle multiline)
+          {
+            echo "changelog<<EOF"
+            echo -e "$CHANGELOG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Update hpm.toml version
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          if [ -f "houdini/TumblePipe/hpm.toml" ]; then
+            sed -i 's/version = "[^"]*"/version = "${{ steps.version.outputs.version }}"/' houdini/TumblePipe/hpm.toml
+            echo "Updated hpm.toml to version ${{ steps.version.outputs.version }}"
+          else
+            echo "Warning: hpm.toml not found, skipping version update"
+          fi
+
+      - name: Commit version update
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
+            git push
+          fi
+
+      - name: Create and push tag
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          echo "Created and pushed tag: $TAG"
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.has_changes == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: TumblePipe v${{ steps.version.outputs.version }}
+          body: |
+            ## What's Changed
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ## Installation
+
+            ```bash
+            hpm add tumblepipe --git https://github.com/tumblehead/TumblePipe --version ${{ steps.version.outputs.version }}
+            ```
+
+            ## Full Changelog
+
+            https://github.com/tumblehead/TumblePipe/compare/${{ steps.check.outputs.last_tag }}...v${{ steps.version.outputs.version }}
+
+            ---
+            *Platform-specific builds will be attached shortly by the build workflow.*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

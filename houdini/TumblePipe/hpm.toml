@@ -1,0 +1,23 @@
+[package]
+name = "tumblepipe"
+version = "1.0.0"
+description = "Tumblehead production pipeline for Houdini - HDAs, tools, and farm integration"
+authors = ["Tumblehead"]
+license = "MIT"
+repository = "https://github.com/tumblehead/TumblePipe"
+keywords = ["houdini", "pipeline", "vfx", "usd", "lops", "karma"]
+
+[houdini]
+min_version = "21.0"
+
+# Python dependencies - HPM manages these via UV
+[python_dependencies]
+qtpy = "*"              # Qt abstraction for UI
+watchdog = "*"          # File system monitoring
+pymongo = "*"           # MongoDB client
+dictdiffer = "*"        # Database merge operations
+opentimelineio = "*"    # Timeline for DJV viewer
+discord-py = "*"        # Discord notifications
+
+[scripts]
+setup-resolver = "python3.11libs/setup_usd_resolver.bat"
