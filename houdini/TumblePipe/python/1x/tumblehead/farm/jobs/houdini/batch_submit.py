@@ -21,7 +21,7 @@ from tumblehead.api import (
 )
 from tumblehead.util.uri import Uri
 from tumblehead.util.io import store_json, load_json, store_text
-from tumblehead.pipe.context import get_aov_names_from_context
+from tumblehead.pipe.context import get_aov_names_from_context, aggregate_aov_names_from_inputs
 from tumblehead.config.timeline import get_frame_range
 from tumblehead.config.department import list_departments
 from tumblehead.apps.deadline import (
@@ -46,27 +46,37 @@ api = default_client()
 # Mapping from column keys to Karma/USD render setting attribute paths
 # These are used to build overrides for render_settings.json
 # Supports both column keys (samples, mblur) and property paths (render.pathtracedsamples)
+# Attribute names are from the Karma schema (P:/buzz2/_config/usd/root_default_prims.usda)
 RENDER_OVERRIDE_MAP = {
     # Column keys (from job submission dialog)
-    'samples': 'karma:global:pathtracedsamples',
-    'mblur': 'karma:global:enablemotionblur',
-    'dof': 'karma:global:enabledof',
-    'denoise': 'karma:global:enabledenoising',
-    'diffuse_limit': 'karma:global:diffuselimit',
-    'reflection_limit': 'karma:global:reflectionlimit',
-    'refraction_limit': 'karma:global:refractionlimit',
-    'volume_limit': 'karma:global:volumelimit',
-    'sss_limit': 'karma:global:ssslimit',
+    'samples': 'karma:global:pathtracedsamples',       # int
+    'mblur': 'karma:object:mblur',                     # bool (object namespace)
+    'dof': 'karma:global:enable_dof',                  # bool (note underscore)
+    'denoise': None,                                   # Not a render setting (post-process)
+    'diffuse_limit': 'karma:object:diffuselimit',      # float (object namespace)
+    'reflection_limit': 'karma:object:reflectlimit',   # float (note: "reflect" not "reflection")
+    'refraction_limit': 'karma:object:refractlimit',   # float (note: "refract" not "refraction")
+    'volume_limit': 'karma:object:volumelimit',        # float (object namespace)
+    'sss_limit': 'karma:object:ssslimit',              # float (object namespace)
     # Property paths (for backward compatibility)
     'render.pathtracedsamples': 'karma:global:pathtracedsamples',
-    'render.enablemblur': 'karma:global:enablemotionblur',
-    'render.enabledof': 'karma:global:enabledof',
-    'render.enabledenoising': 'karma:global:enabledenoising',
-    'render.diffuselimit': 'karma:global:diffuselimit',
-    'render.reflectionlimit': 'karma:global:reflectionlimit',
-    'render.refractionlimit': 'karma:global:refractionlimit',
-    'render.volumelimit': 'karma:global:volumelimit',
-    'render.ssslimit': 'karma:global:ssslimit',
+    'render.enablemblur': 'karma:object:mblur',
+    'render.enabledof': 'karma:global:enable_dof',
+    'render.enabledenoising': None,
+    'render.diffuselimit': 'karma:object:diffuselimit',
+    'render.reflectionlimit': 'karma:object:reflectlimit',
+    'render.refractionlimit': 'karma:object:refractlimit',
+    'render.volumelimit': 'karma:object:volumelimit',
+    'render.ssslimit': 'karma:object:ssslimit',
+}
+
+# Attributes that need float type conversion (stored as int in settings but float in Karma schema)
+FLOAT_ATTRIBUTES = {
+    'karma:object:diffuselimit',
+    'karma:object:reflectlimit',
+    'karma:object:refractlimit',
+    'karma:object:volumelimit',
+    'karma:object:ssslimit',
 }
 
 
@@ -79,6 +89,8 @@ def _build_render_overrides(settings: dict) -> dict:
     """Build render overrides dict from job settings.
 
     Maps settings keys to Karma/USD attribute paths using RENDER_OVERRIDE_MAP.
+    Skips entries with None USD path (e.g., denoise which is handled as post-process).
+    Converts limit values to float for correct USD type output.
 
     Args:
         settings: Job settings dict from submission dialog
@@ -88,31 +100,60 @@ def _build_render_overrides(settings: dict) -> dict:
     """
     overrides = {}
     for settings_key, usd_path in RENDER_OVERRIDE_MAP.items():
+        if usd_path is None:
+            continue  # Skip settings without USD attribute (e.g., denoise)
         if settings_key in settings:
-            overrides[usd_path] = settings[settings_key]
+            value = settings[settings_key]
+            # Convert to float for attributes that require float type
+            if usd_path in FLOAT_ATTRIBUTES and isinstance(value, int):
+                value = float(value)
+            overrides[usd_path] = value
     return overrides
 
 
 def _get_aov_names(entity_uri: Uri, department: str, variants: list[str]) -> list[str]:
-    """Get AOV names from layer exports or root layer context.
+    """Get AOV names from layer exports, including AOVs from referenced assets.
+
+    Checks all shot departments for AOVs (since AOVs can be defined in any department),
+    then aggregates AOVs from referenced assets.
 
     Args:
         entity_uri: The entity URI for the shot/asset
-        department: The render department name
+        department: The render department name (unused, kept for API compatibility)
         variants: List of variant names to check
 
     Returns:
-        List of AOV names, or empty list if not found
+        List of unique AOV names from shot + all referenced assets, or empty list if not found
     """
-    # Try to get from layer exports
+    aov_set = set()
+
+    # Determine entity context for department list
+    entity_context = 'shots' if str(entity_uri).startswith('entity:/shots/') else 'assets'
+    all_departments = [d.name for d in list_departments(entity_context)]
+
+    # Try to get from layer exports - check ALL departments
     for variant in variants:
-        export_path = latest_export_path(entity_uri, variant, department)
-        if export_path is not None:
+        for dept in all_departments:
+            export_path = latest_export_path(entity_uri, variant, dept)
+            if export_path is None:
+                continue
+
             context_path = export_path / 'context.json'
             context_data = load_json(context_path)
-            aov_names = get_aov_names_from_context(context_data, variant)
-            if aov_names:
-                return aov_names
+            if context_data is None:
+                continue
+
+            # Get shot's own AOV names
+            shot_aov_names = get_aov_names_from_context(context_data, variant)
+            aov_set.update(shot_aov_names)
+
+            # Aggregate AOV names from asset inputs
+            asset_aov_names = aggregate_aov_names_from_inputs(context_data, variant)
+            aov_set.update(asset_aov_names)
+
+    # If we found any AOVs, return them
+    if aov_set:
+        return list(aov_set)
 
     # Fallback: read from root layer context
     root_context_path = api.storage.resolve(Uri.parse_unsafe('config:/usd/context.json'))
@@ -262,6 +303,7 @@ def submit_entity_batch(config: dict) -> list[str]:
     last_frame = settings.get('last_frame', 1100)
     batch_size = settings.get('batch_size', 10)
     denoise = settings.get('denoise', True)
+    copy_to_edit = settings.get('copy_to_edit', False)
     standalone = settings.get('standalone', False)
 
     if not do_publish and not do_render:
@@ -378,38 +420,46 @@ def submit_entity_batch(config: dict) -> list[str]:
             # Get AOV names from layer exports or root layer context
             aov_names = _get_aov_names(entity_uri, render_department, variants)
 
-            # Create render_settings.json
-            render_settings_path = temp_path / 'render_settings.json'
-            store_json(render_settings_path, dict(
-                variant_names=variants,
-                aov_names=aov_names,
-                overrides=render_overrides
-            ))
-            relative_render_settings_path = render_settings_path.relative_to(temp_path)
-
             if not standalone:
                 # === DIRECT RENDER MODE (standalone=False) ===
                 # Skip stage task, render directly using existing staged file with resolved references
 
-                # Get the latest staged file (use first variant)
-                variant_name = variants[0] if variants else 'default'
-                latest_staged_path = get_latest_staged_file_path(entity_uri, variant_name)
-                if latest_staged_path is None or not latest_staged_path.exists():
-                    raise BatchSubmitError(
-                        f"No staged file found for {entity_uri} variant '{variant_name}'. "
-                        f"Expected staged files at: export:/{'/'.join(entity_uri.segments)}/_staged/{variant_name}/. "
-                        "Publish the entity first to create staged files."
-                    )
+                # Create render_settings.json (no overrides - baked into collapsed_stage.usda)
+                render_settings_path = temp_path / 'render_settings.json'
+                store_json(render_settings_path, dict(
+                    variant_names=variants,
+                    aov_names=aov_names
+                ))
+                relative_render_settings_path = render_settings_path.relative_to(temp_path)
 
-                # Create collapsed USD with resolved version references
-                collapsed_stage_path = temp_path / 'collapsed_stage.usda'
-                collapsed_content = collapse_latest_references(latest_staged_path, collapsed_stage_path)
-                store_text(collapsed_stage_path, collapsed_content)
-                relative_collapsed_path = collapsed_stage_path.relative_to(temp_path)
+                # Create collapsed USD for each variant with resolved version references and render overrides
+                input_paths = {}
+                for variant_name in variants:
+                    latest_staged_path = get_latest_staged_file_path(entity_uri, variant_name)
+                    if latest_staged_path is None or not latest_staged_path.exists():
+                        raise BatchSubmitError(
+                            f"No staged file found for {entity_uri} variant '{variant_name}'. "
+                            f"Expected staged files at: export:/{'/'.join(entity_uri.segments)}/_staged/{variant_name}/. "
+                            "Publish the entity first to create staged files."
+                        )
+
+                    # Create collapsed USD for this variant
+                    collapsed_stage_path = temp_path / f'collapsed_stage_{variant_name}.usda'
+                    collapsed_content = collapse_latest_references(
+                        latest_staged_path,
+                        collapsed_stage_path,
+                        render_overrides
+                    )
+                    store_text(collapsed_stage_path, collapsed_content)
+                    relative_collapsed_path = collapsed_stage_path.relative_to(temp_path)
+                    input_paths[variant_name] = path_str(relative_collapsed_path)
+
+                    # Add to paths for bundling
+                    paths[collapsed_stage_path] = relative_collapsed_path
 
                 # Build render config for render job module
                 # - render_settings_path: absolute (loaded locally during job building)
-                # - input_path: relative (resolves in job data dir on farm)
+                # - input_paths: per-variant relative paths (resolves in job data dir on farm)
                 render_config = dict(
                     entity=dict(
                         uri=str(entity_uri),
@@ -422,12 +472,13 @@ def submit_entity_batch(config: dict) -> list[str]:
                         variant_names=variants,
                         render_department_name=render_department,
                         render_settings_path=path_str(render_settings_path),
-                        input_path=path_str(relative_collapsed_path),  # Relative path for farm (resolves in job data dir)
+                        input_paths=input_paths,  # Per-variant relative paths for farm (resolves in job data dir)
                         tile_count=tile_count,
                         first_frame=first_frame,
                         last_frame=last_frame,
                         step_size=1,
-                        batch_size=batch_size
+                        batch_size=batch_size,
+                        copy_to_edit=copy_to_edit
                     ),
                     tasks=dict(
                         full_render=dict(
@@ -438,25 +489,36 @@ def submit_entity_batch(config: dict) -> list[str]:
                     )
                 )
 
-                # Submit any pending publish jobs first
-                pub_job_ids = _finalize_batch()
+                # Add render settings to paths for bundling (collapsed stage files already added in loop)
+                paths[render_settings_path] = relative_render_settings_path
 
-                # Submit render job directly (creates its own batch)
-                render_paths = {
-                    render_settings_path: relative_render_settings_path,
-                    collapsed_stage_path: relative_collapsed_path
-                }
+                # Build render jobs and add to batch (depends on last publish job if any)
+                render_depends_on = [last_publish_job_name] if last_publish_job_name else []
                 try:
-                    result = render_job.submit(render_config, render_paths)
-                    if result != 0:
-                        raise BatchSubmitError(f"Standalone render submission failed for {entity_uri}")
-                    logging.info(f"Submitted standalone render for {entity_uri}")
-                    return pub_job_ids
+                    render_job.build(
+                        render_config,
+                        paths,
+                        temp_path,
+                        jobs,
+                        deps,
+                        depends_on=render_depends_on
+                    )
+                    logging.info(f"Added render jobs for {entity_uri}")
                 except Exception as e:
-                    raise BatchSubmitError(f"Could not submit standalone render for {entity_uri}: {e}")
+                    raise BatchSubmitError(f"Could not build render jobs for {entity_uri}: {e}")
             else:
                 # === STAGE + RENDER MODE (standalone=True) ===
                 # Create stage job on farm, then render
+
+                # Create render_settings.json (with overrides for dynamic application by stage task)
+                render_settings_path = temp_path / 'render_settings.json'
+                store_json(render_settings_path, dict(
+                    variant_names=variants,
+                    aov_names=aov_names,
+                    overrides=render_overrides
+                ))
+                relative_render_settings_path = render_settings_path.relative_to(temp_path)
+
                 stage_config = dict(
                     entity=dict(
                         uri=str(entity_uri),
@@ -473,7 +535,8 @@ def submit_entity_batch(config: dict) -> list[str]:
                         first_frame=first_frame,
                         last_frame=last_frame,
                         step_size=1,  # Default
-                        batch_size=batch_size
+                        batch_size=batch_size,
+                        copy_to_edit=copy_to_edit
                     ),
                     tasks=dict(
                         stage=dict(priority=render_priority, channel_name='exports'),

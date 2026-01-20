@@ -8,6 +8,7 @@ from tumblehead.pipe.paths import (
     list_hip_file_paths,
     get_hip_file_path,
     latest_hip_file_path,
+    latest_hip_file_path_with_context,
     next_hip_file_path,
     latest_export_path,
     get_latest_staged_file_path,
@@ -75,7 +76,7 @@ def context_from_selection(entity_uri: Uri, department_name: str, version_name: 
 
 def latest_context(entity_uri: Uri, department_name: str) -> Context:
     """Get latest context for any entity type. Returns paths.Context directly."""
-    file_path = latest_hip_file_path(entity_uri, department_name)
+    file_path = latest_hip_file_path_with_context(entity_uri, department_name)
     version_name = None if file_path is None else file_path.stem.rsplit("_", 1)[-1]
     return Context(
         entity_uri=entity_uri,
@@ -84,14 +85,19 @@ def latest_context(entity_uri: Uri, department_name: str) -> Context:
     )
 
 
-def next_file_path(context: Context):
-    """Get next file path for a context."""
-    return next_hip_file_path(context.entity_uri, context.department_name)
+def next_file_path(context: Context, nc_type: str | None = None):
+    """Get next file path for a context.
+
+    Args:
+        context: The workfile context
+        nc_type: 'nc' for .hipnc, 'lc' for .hiplc, None for .hip
+    """
+    return next_hip_file_path(context.entity_uri, context.department_name, nc_type)
 
 
 def latest_file_path(context: Context):
     """Get latest file path for a context."""
-    return latest_hip_file_path(context.entity_uri, context.department_name)
+    return latest_hip_file_path_with_context(context.entity_uri, context.department_name)
 
 
 def list_file_paths(context: Context):
@@ -131,6 +137,23 @@ def get_user_from_context(context: Context):
         return context_data.get('user', 'Unknown')
     except (json.JSONDecodeError, OSError, KeyError):
         return "Unknown"
+
+
+def get_extension_from_context(context: Context):
+    """Get the file extension for the workfile of a given context.
+
+    Returns:
+        str: File extension without leading dot (e.g., 'hip', 'hiplc', 'hipnc')
+        None: If no workfile exists for this context
+    """
+    if context is None or context.version_name is None:
+        return None
+
+    file_path = file_path_from_context(context)
+    if file_path is None:
+        return None
+
+    return file_path.suffix.lstrip('.')
 
 
 def format_relative_time(timestamp):

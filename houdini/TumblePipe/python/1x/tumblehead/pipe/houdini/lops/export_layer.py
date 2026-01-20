@@ -24,8 +24,45 @@ from tumblehead.pipe.paths import (
 )
 from tumblehead.pipe.usd import add_sublayer
 from tumblehead.pipe.context import save_layer_context
+from tumblehead.apps.houdini import stitch_usd_directories
 
 api = default_client()
+
+
+def _calculate_chunks(first_frame: int, last_frame: int, batch_size: int) -> list[tuple[int, int]]:
+    """Split frame range into chunks of batch_size."""
+    if batch_size <= 0:
+        return [(first_frame, last_frame)]
+    chunks = []
+    current = first_frame
+    while current <= last_frame:
+        chunk_end = min(current + batch_size - 1, last_frame)
+        chunks.append((current, chunk_end))
+        current = chunk_end + 1
+    return chunks
+
+
+def _flatten_sidecar_directories(export_path: Path) -> None:
+    """
+    Flatten Houdini's .usd.textures sidecar directories.
+
+    Houdini automatically creates {filename}.usd.textures/ directories for
+    COP-generated textures. This function moves the contents directly to the
+    export path and removes the empty sidecar directory.
+    """
+    for item in export_path.iterdir():
+        if item.is_dir() and item.name.endswith('.usd.textures'):
+            # Move all contents from sidecar dir to parent
+            for sidecar_item in item.iterdir():
+                target = export_path / sidecar_item.name
+                if target.exists():
+                    if target.is_dir():
+                        shutil.rmtree(target)
+                    else:
+                        target.unlink()
+                sidecar_item.rename(target)
+            # Remove empty sidecar directory
+            item.rmdir()
 
 
 class ExportLayerError(Exception):
@@ -218,6 +255,14 @@ class ExportLayer(ns.Node):
         """Get export type ('local' or 'farm')."""
         return self.parm('export_type').eval()
 
+    def get_batch_size(self) -> int:
+        """Get batch size for chunked export.
+
+        Returns:
+            Batch size (0 means no batching, export all frames at once).
+        """
+        return self.parm('batch_size').eval()
+
     def _update_labels(self):
         """Update label parameters to show current entity/department selection."""
         entity_raw = self.parm('entity').eval()
@@ -312,6 +357,7 @@ class ExportLayer(ns.Node):
 
         frame_range, step = frame_range_result
         render_range = frame_range.full_range()
+        batch_size = self.get_batch_size()
         user_name = get_user_name()
         timestamp = dt.datetime.now()
         fps = get_fps()
@@ -326,14 +372,13 @@ class ExportLayer(ns.Node):
         # Check if we're exporting a shot (to add shot dept entry to inputs)
         is_shot_export = str(entity_uri).startswith('entity:/shots/')
 
-        # Scrape stage for assets
-        assets = dict()
+        # Scrape stage for assets - group by asset URI to count instances
+        assets_by_uri = dict()  # {asset_uri: [list of instance info]}
         asset_inputs = set()
-        for asset_metadata in util.list_assets(root):
-            asset_uri = Uri.parse_unsafe(asset_metadata['uri'])
-            asset_path = util.uri_to_prim_path(asset_uri)
-            instance_name = asset_metadata['instance']
-            asset_instance_path = f'{asset_path.rsplit("/", 1)[0]}/{instance_name}'
+        for asset_info in util.list_assets(root):
+            prim_path = asset_info['prim_path']
+            asset_metadata = asset_info['metadata']
+            asset_uri_str = asset_metadata['uri']
 
             # Add current shot department entry to inputs if exporting a shot
             if is_shot_export:
@@ -347,7 +392,14 @@ class ExportLayer(ns.Node):
                 if shot_dept_entry not in existing_inputs:
                     asset_metadata['inputs'] = existing_inputs + [shot_dept_entry]
 
-            assets[asset_instance_path] = asset_metadata
+            # Group by asset URI to count instances
+            if asset_uri_str not in assets_by_uri:
+                assets_by_uri[asset_uri_str] = []
+            assets_by_uri[asset_uri_str].append({
+                'prim_path': prim_path,
+                'instance': asset_metadata['instance'],
+                'inputs': asset_metadata.get('inputs', [])
+            })
             asset_inputs.update(set(map(json.dumps, asset_metadata['inputs'])))
 
         # Set fps
@@ -359,24 +411,78 @@ class ExportLayer(ns.Node):
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
 
-            # Collect asset parameters
+            # Collect asset parameters with instance counts
             parameter_assets = []
-            for asset_metadata in assets.values():
+            for asset_uri_str, instances in assets_by_uri.items():
+                # Use first instance for metadata, count all instances
+                first_instance = instances[0]
                 parameter_assets.append(dict(
-                    asset=asset_metadata['uri'],
-                    instance=asset_metadata['instance'],
-                    inputs=asset_metadata.get('inputs', [])
+                    asset=asset_uri_str,
+                    instance=first_instance['instance'],
+                    instances=len(instances),  # Count of instances
+                    inputs=first_instance['inputs']
                 ))
 
             # Export the stage
             layer_file_name = get_layer_file_name(entity_uri, variant_name, department_name, version_name)
-            self.parm('export_f1').deleteAllKeyframes()
-            self.parm('export_f2').deleteAllKeyframes()
-            self.parm('export_f1').set(render_range.first_frame)
-            self.parm('export_f2').set(render_range.last_frame)
             self.parm('export_f3').set(step)
-            self.parm('export_lopoutput').set(path_str(temp_path / layer_file_name))
-            self.parm('export_execute').pressButton()
+
+            if batch_size > 0:
+                # Batched export: export chunks to separate directories then stitch
+                chunks = _calculate_chunks(render_range.first_frame, render_range.last_frame, batch_size)
+
+                # Create chunks directory
+                chunks_dir = temp_path / 'chunks'
+                chunks_dir.mkdir(exist_ok=True)
+                chunk_dirs = []
+
+                for chunk_start, chunk_end in chunks:
+                    # Each chunk exports to its own subdirectory
+                    chunk_name = f"{chunk_start:04d}-{chunk_end:04d}"
+                    chunk_dir = chunks_dir / chunk_name
+                    chunk_dir.mkdir(exist_ok=True)
+
+                    # Use 'stage.usd' as temp filename so sidecar directory is 'stage/'
+                    temp_export_name = 'stage.usd'
+                    chunk_temp_path = chunk_dir / temp_export_name
+                    chunk_main_path = chunk_dir / layer_file_name
+
+                    self.parm('export_f1').deleteAllKeyframes()
+                    self.parm('export_f2').deleteAllKeyframes()
+                    self.parm('export_f1').set(chunk_start)
+                    self.parm('export_f2').set(chunk_end)
+                    self.parm('export_lopoutput').set(path_str(chunk_temp_path))
+                    self.parm('export_execute').pressButton()
+
+                    # Rename to final name
+                    chunk_temp_path.rename(chunk_main_path)
+
+                    # Flatten any .usd.textures sidecar directories
+                    _flatten_sidecar_directories(chunk_dir)
+
+                    chunk_dirs.append(chunk_dir)
+
+                # Stitch all chunks (main file + sidecar directories)
+                stitch_usd_directories(chunk_dirs, layer_file_name, temp_path)
+
+                # Clean up chunks directory
+                shutil.rmtree(chunks_dir)
+            else:
+                # Standard export: export all frames at once
+                # Use 'stage.usd' as temp filename so sidecar directory is 'stage/'
+                temp_export_name = 'stage.usd'
+                self.parm('export_f1').deleteAllKeyframes()
+                self.parm('export_f2').deleteAllKeyframes()
+                self.parm('export_f1').set(render_range.first_frame)
+                self.parm('export_f2').set(render_range.last_frame)
+                self.parm('export_lopoutput').set(path_str(temp_path / temp_export_name))
+                self.parm('export_execute').pressButton()
+
+                # Rename the exported file to the final layer name
+                (temp_path / temp_export_name).rename(temp_path / layer_file_name)
+
+                # Flatten any .usd.textures sidecar directories
+                _flatten_sidecar_directories(temp_path)
 
             # Re-fetch root prim after export (stage may have been modified)
             root = stage_node.stage().GetPseudoRoot()
@@ -409,14 +515,15 @@ class ExportLayer(ns.Node):
                 if temp_item_path.is_dir():
                     shutil.copytree(temp_item_path, output_item_path)
 
-        # Add shared layer as sublayer if any shared export exists
-        # Use entity URI - the resolver handles dynamic version lookup at runtime
+        # Add shared layer as sublayer only if entity has multiple variants
         from tumblehead.pipe.paths import latest_shared_export_path
-        shared_version_path = latest_shared_export_path(entity_uri, department_name)
-        if shared_version_path is not None:
-            exported_layer_path = version_path / layer_file_name
-            shared_uri = f"{entity_uri}?dept={department_name}&variant=_shared"
-            add_sublayer(exported_layer_path, shared_uri)
+
+        if len(list_variants(entity_uri)) > 1:
+            shared_version_path = latest_shared_export_path(entity_uri, department_name)
+            if shared_version_path is not None:
+                exported_layer_path = version_path / layer_file_name
+                shared_uri = f"{entity_uri}?dept={department_name}&variant=_shared"
+                add_sublayer(exported_layer_path, shared_uri)
 
         # Update node comment
         native.setComment(
@@ -465,7 +572,8 @@ class ExportLayer(ns.Node):
         config = {
             'entity': {
                 'uri': str(entity_uri),
-                'department': department_name
+                'department': department_name,
+                'variant': variant_name
             },
             'settings': {
                 'priority': priority,
@@ -581,3 +689,42 @@ def select():
         if selected_uri:
             node.parm('entity').set(selected_uri)
             node._update_labels()
+
+
+def validate():
+    """HDA button callback to run stage validation."""
+    from tumblehead.pipe.houdini.validators import validate_stage
+
+    raw_node = hou.pwd()
+    stage_node = raw_node.node('IN_stage')
+
+    if stage_node is None:
+        hou.ui.displayMessage(
+            "No stage input connected.",
+            severity=hou.severityType.Warning
+        )
+        return
+
+    stage = stage_node.stage()
+    if stage is None:
+        hou.ui.displayMessage(
+            "No stage available for validation.",
+            severity=hou.severityType.Warning
+        )
+        return
+
+    root = stage.GetPseudoRoot()
+    result = validate_stage(root)
+
+    if result.passed:
+        hou.ui.displayMessage(
+            "Validation passed - no issues found.",
+            severity=hou.severityType.Message,
+            title="Validation Passed"
+        )
+    else:
+        hou.ui.displayMessage(
+            result.format_message(),
+            severity=hou.severityType.Error,
+            title="Validation Failed"
+        )

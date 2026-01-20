@@ -61,6 +61,79 @@ def get_aov_names_from_context(context_data: dict, variant: str = None) -> list[
     return []
 
 
+def aggregate_aov_names_from_inputs(
+    context_data: dict,
+    variant: str = 'default'
+) -> list[str]:
+    """Aggregate AOV names from asset exports referenced in context.json.
+
+    Looks at outputs[0].parameters.assets to find referenced assets,
+    then checks all department exports for each asset to collect aov_names.
+
+    Args:
+        context_data: The loaded context.json dictionary
+        variant: Variant name to use when looking up asset exports
+
+    Returns:
+        List of unique AOV names aggregated from all referenced assets
+    """
+    if context_data is None:
+        return []
+
+    # Import here to avoid circular dependency
+    from tumblehead.pipe.paths import latest_export_path
+    from tumblehead.util.io import load_json
+    from tumblehead.util.uri import Uri
+    from tumblehead.config.department import list_departments
+
+    aov_set = set()
+
+    # Get assets from outputs[0].parameters.assets
+    outputs = context_data.get('outputs', [])
+    if not outputs:
+        return []
+
+    parameters = outputs[0].get('parameters', {})
+    assets = parameters.get('assets', [])
+
+    if not assets:
+        return []
+
+    # Get all asset departments to check
+    asset_departments = [d.name for d in list_departments('assets')]
+
+    for asset_entry in assets:
+        # Asset entries have structure: {asset: uri, instance: name, inputs: [...]}
+        asset_uri_str = asset_entry.get('asset', '')
+        if not asset_uri_str.startswith('entity:/assets/'):
+            continue
+
+        try:
+            asset_uri = Uri.parse_unsafe(asset_uri_str)
+
+            # Check all departments for this asset's exports
+            for department in asset_departments:
+                asset_export_path = latest_export_path(asset_uri, variant, department)
+                if asset_export_path is None:
+                    continue
+
+                # Load the asset's context.json
+                asset_context_path = asset_export_path / 'context.json'
+                asset_context = load_json(asset_context_path)
+                if asset_context is None:
+                    continue
+
+                # Extract AOV names from the asset (no variant filter)
+                asset_aov_names = get_aov_names_from_context(asset_context)
+                aov_set.update(asset_aov_names)
+
+        except Exception:
+            # Skip invalid entries gracefully
+            continue
+
+    return list(aov_set)
+
+
 def file_path_from_context(context: Context):
     """Get the hip file path for a context."""
     if context is None:
@@ -81,7 +154,7 @@ def get_timestamp_from_context(context: Context):
     return dt.datetime.fromtimestamp(file_path.stat().st_mtime)
 
 
-def save_context(target_path: Path, prev_context, next_context, houdini_version: str = None):
+def save_context(target_path: Path, prev_context, next_context, houdini_version: str = None, file_extension: str = None):
     """Save version context metadata (_context/{version}.json).
 
     Args:
@@ -89,6 +162,8 @@ def save_context(target_path: Path, prev_context, next_context, houdini_version:
         prev_context: Previous Context (or None)
         next_context: Next Context
         houdini_version: Optional Houdini version string. If None, attempts to get from hou module.
+        file_extension: Optional file extension (e.g., 'hip', 'hiplc', 'hipnc'). Used to avoid
+            unreliable exists() calls on SMB/CIFS network storage when opening workfiles.
     """
     def _get_version_name(context):
         if context is None:
@@ -117,6 +192,7 @@ def save_context(target_path: Path, prev_context, next_context, houdini_version:
             from_version=prev_version_name,
             to_version=next_version_name,
             houdini_version=houdini_version,
+            extension=file_extension,
         ),
     )
 
@@ -131,6 +207,7 @@ def save_entity_context(target_path: Path, context: Context):
     context_data = dict(
         uri=str(context.entity_uri),
         department=context.department_name,
+        version=context.version_name,
         timestamp=dt.datetime.now().isoformat(),
         user=get_user_name(),
     )

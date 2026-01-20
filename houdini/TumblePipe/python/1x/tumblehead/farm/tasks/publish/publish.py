@@ -28,6 +28,7 @@ from tumblehead.config.department import is_renderable
 from tumblehead.pipe.paths import (
     next_export_path
 )
+from tumblehead.farm.tasks.env import print_env
 
 api = default_client()
 
@@ -64,13 +65,14 @@ def _get_asset_uri(entity_uri: Uri) -> Uri | None:
     return Uri.parse_unsafe(f'entity:/assets/{entity_uri.segments[1]}/{entity_uri.segments[2]}')
 
 
-def _trigger_asset_build(entity_uri: Uri, settings: dict):
+def _trigger_asset_build(entity_uri: Uri, settings: dict, variant_name: str = 'default'):
     """
     Trigger asset build job after successful renderable department publish.
 
     Args:
         entity_uri: The asset entity URI
         settings: Settings from config containing priority and pool_name
+        variant_name: The variant to build (defaults to 'default')
     """
     try:
         from tumblehead.farm.jobs.houdini.build import job as build_job
@@ -84,16 +86,17 @@ def _trigger_asset_build(entity_uri: Uri, settings: dict):
         # Submit asset build job
         build_config = {
             'entity_uri': str(asset_uri),
+            'variant_name': variant_name,
             'priority': settings.get('priority', 50),
             'pool_name': settings.get('pool_name', 'general')
         }
 
-        logging.info(f'Triggering asset build for: {asset_uri}')
+        logging.info(f'Triggering asset build for: {asset_uri} variant: {variant_name}')
         result = build_job.submit(build_config)
         if result != 0:
             logging.warning(f'Asset build job submission returned non-zero: {result}')
         else:
-            logging.info(f'Asset build job submitted successfully for: {asset_uri}')
+            logging.info(f'Asset build job submitted successfully for: {asset_uri} variant: {variant_name}')
 
     except Exception as e:
         logging.warning(f'Failed to trigger asset build: {e}')
@@ -108,6 +111,9 @@ def _next_export_path(entity):
 
 SCRIPT_PATH = Path(__file__).parent / 'publish_houdini.py'
 def main(config):
+
+    # Print environment variables for debugging
+    print_env()
 
     # Decide on the next export path
     export_path = _next_export_path(config['entity'])
@@ -154,10 +160,11 @@ def main(config):
 
     # Auto-trigger asset build if this is a renderable asset department
     entity_type = _get_entity_type(entity_uri)
+    variant_name = config['entity'].get('variant', 'default')
     refresh_global_cache('departments')
     if entity_type == 'asset' and is_renderable('assets', department_name):
         logging.info(f'Renderable asset department published: {department_name}')
-        _trigger_asset_build(entity_uri, config.get('settings', {}))
+        _trigger_asset_build(entity_uri, config.get('settings', {}), variant_name)
 
     # Done
     print('Success')

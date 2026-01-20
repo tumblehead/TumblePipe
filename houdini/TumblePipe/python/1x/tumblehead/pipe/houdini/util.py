@@ -35,11 +35,11 @@ def iter_scene(prim, predicate):
 def get_frame_range() -> FrameRange:
     first_frame, last_frame = hou.playbar.frameRange()
     start_frame, end_frame = hou.playbar.playbackRange()
-    start_roll = first_frame - start_frame
-    end_roll = end_frame - last_frame
+    start_roll = round(first_frame - start_frame)
+    end_roll = round(end_frame - last_frame)
     return FrameRange(
-        start_frame,
-        end_frame,
+        round(start_frame),
+        round(end_frame),
         start_roll,
         end_roll
     )
@@ -176,9 +176,32 @@ def is_render_var(prim):
     return prim.GetTypeName() == 'RenderVar'
 
 def list_assets(root):
+    """
+    List all asset metadata dicts in the stage, including prim paths.
+
+    Returns list of dicts with:
+    - 'prim_path': The metadata prim path (includes copy suffixes like /MiniFig1)
+    - 'metadata': The asset metadata dict (uri, instance, inputs, etc.)
+    """
     metadata_root = root.GetPrimAtPath('/_METADATA')
-    if not metadata_root.IsValid(): return []
-    return list(map(get_metadata, iter_scene(metadata_root, is_asset)))
+    if not metadata_root.IsValid():
+        return []
+
+    def get_asset_info(prim):
+        metadata = get_metadata(prim)
+        if metadata is None:
+            return None
+        return {
+            'prim_path': str(prim.GetPath()),
+            'metadata': metadata
+        }
+
+    results = []
+    for prim in iter_scene(metadata_root, is_asset):
+        info = get_asset_info(prim)
+        if info is not None:
+            results.append(info)
+    return results
 
 def list_shots(root):
     """List all shot metadata dicts in the stage."""

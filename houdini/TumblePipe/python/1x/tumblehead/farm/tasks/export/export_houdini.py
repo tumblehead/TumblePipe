@@ -11,8 +11,23 @@ from tumblehead.api import (
 from tumblehead.util.io import load_json
 from tumblehead.config.timeline import BlockRange, get_fps
 from tumblehead.pipe.houdini import util
+from tumblehead.apps.houdini import stitch_usd_directories
 
 api = default_client()
+
+
+def _calculate_chunks(first_frame: int, last_frame: int, batch_size: int) -> list[tuple[int, int]]:
+    """Split frame range into chunks of batch_size."""
+    if batch_size <= 0:
+        return [(first_frame, last_frame)]
+    chunks = []
+    current = first_frame
+    while current <= last_frame:
+        chunk_end = min(current + batch_size - 1, last_frame)
+        chunks.append((current, chunk_end))
+        current = chunk_end + 1
+    return chunks
+
 
 def _headline(title):
     print(f' {title} '.center(80, '='))
@@ -78,6 +93,7 @@ def _get_render_settings_script(render_settings_path: Path) -> str:
 
 def main(
     render_range: BlockRange,
+    batch_size: int,
     render_settings_path: Path,
     input_path: Path,
     node_path: str,
@@ -145,10 +161,49 @@ def main(
         util.set_fps(fps)
 
     # Export the USD stage
-    export_node.parm('file').set(path_str(output_path))
-    export_node.parm('f1').set(render_range.first_frame)
-    export_node.parm('f2').set(render_range.last_frame)
-    export_node.parm('execute').pressButton()
+    if batch_size > 0:
+        # Batched export: export chunks to separate directories then stitch
+        import shutil
+        chunks = _calculate_chunks(render_range.first_frame, render_range.last_frame, batch_size)
+        output_file_name = output_path.name  # e.g., "stage.usd"
+        output_dir = output_path.parent
+
+        # Create chunks directory
+        chunks_dir = output_dir / 'chunks'
+        chunks_dir.mkdir(exist_ok=True)
+        chunk_dirs = []
+
+        for chunk_start, chunk_end in chunks:
+            # Each chunk exports to its own subdirectory
+            chunk_name = f"{chunk_start:04d}-{chunk_end:04d}"
+            chunk_dir = chunks_dir / chunk_name
+            chunk_dir.mkdir(exist_ok=True)
+            chunk_main_path = chunk_dir / output_file_name
+
+            export_node.parm('file').set(path_str(chunk_main_path))
+            export_node.parm('f1').set(chunk_start)
+            export_node.parm('f2').set(chunk_end)
+            export_node.parm('execute').pressButton()
+
+            if not chunk_main_path.exists():
+                return _error(f'Failed to export USD chunk: {chunk_main_path}')
+
+            print(f'Exported chunk: {chunk_dir}')
+            chunk_dirs.append(chunk_dir)
+
+        # Stitch all chunks (main file + sidecar directories)
+        print(f'Stitching {len(chunk_dirs)} chunks into: {output_dir}')
+        stitch_usd_directories(chunk_dirs, output_file_name, output_dir)
+
+        # Clean up chunks directory
+        shutil.rmtree(chunks_dir)
+        print(f'Cleaned up chunks directory')
+    else:
+        # Standard export: export all frames at once
+        export_node.parm('file').set(path_str(output_path))
+        export_node.parm('f1').set(render_range.first_frame)
+        export_node.parm('f2').set(render_range.last_frame)
+        export_node.parm('execute').pressButton()
 
     # Verify the USD file was created
     if not output_path.exists():
@@ -163,6 +218,7 @@ def main(
 config = {
     'first_frame': 'int',
     'last_frame': 'int',
+    'batch_size': 'int',  # 0 = no batching, >0 = export in chunks then stitch
     'render_settings_path': 'path/to/render_settings.json',
     'input_path': 'path/to/input.hip',
     'node_path': '/stage/path/to/node',
@@ -189,6 +245,7 @@ def _is_valid_config(config):
     if not isinstance(config, dict): return False
     if not _check_int(config, 'first_frame'): return False
     if not _check_int(config, 'last_frame'): return False
+    if not _check_int(config, 'batch_size'): return False
     if not _check_str(config, 'render_settings_path'): return False
     if not _check_str(config, 'input_path'): return False
     if not _check_str(config, 'node_path'): return False
@@ -219,6 +276,7 @@ def cli():
         config['first_frame'],
         config['last_frame']
     )
+    batch_size = config['batch_size']
     render_settings_path = Path(config['render_settings_path'])
     input_path = Path(config['input_path'])
     node_path = config['node_path']
@@ -227,6 +285,7 @@ def cli():
     # Run main
     return main(
         render_range,
+        batch_size,
         render_settings_path,
         input_path,
         node_path,

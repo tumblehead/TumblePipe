@@ -25,6 +25,7 @@ from tumblehead.util.io import (
 from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Hython
 from tumblehead.farm.jobs.houdini.cloud_render import job as render_job
+from tumblehead.farm.tasks.env import print_env
 
 api = default_client()
 
@@ -40,6 +41,9 @@ def _walk_path(path: Path):
 
 SCRIPT_PATH = Path(__file__).parent / 'stage_houdini.py'
 def main(config):
+
+    # Print environment variables for debugging
+    print_env()
 
     # Get config data
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])

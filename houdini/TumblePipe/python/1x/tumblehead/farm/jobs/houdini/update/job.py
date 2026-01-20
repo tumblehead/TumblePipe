@@ -200,57 +200,112 @@ def _create_publish_job(
     # Build job using publish_task
     return publish_task.build(config, paths, temp_path)
 
-def _add_jobs(
-    batch: Batch,
+
+def build(
+    config: dict,
+    paths: dict[Path, Path],
+    temp_path: Path,
     jobs: dict[str, Job],
-    deps: dict[str, list[str]]
-    ):
-    indicies = {
-        job_name: batch.add_job(job)
-        for job_name, job in jobs.items()
-    }
-    for job_name, job_deps in deps.items():
-        if len(job_deps) == 0: continue
-        for dep_name in job_deps:
-            if dep_name not in indicies:
-                logging.warning(
-                    f'Job "{job_name}" depends on '
-                    f'non-existing job "{dep_name}"'
-                )
-                continue
-            batch.add_dep(
-                indicies[job_name],
-                indicies[dep_name]
+    deps: dict[str, list[str]],
+    depends_on: list[str] = None
+    ) -> list[str]:
+    """Build update jobs and add to provided dicts.
+
+    Args:
+        config: Job configuration with department_name, pool_name, priority
+        paths: Files to bundle with jobs (modified in place)
+        temp_path: Staging directory
+        jobs: Dict to add Job objects to (modified in place)
+        deps: Dict to add dependencies to (modified in place)
+        depends_on: Optional list of job names this job depends on
+
+    Returns:
+        List of terminal job names (for dependency chaining)
+    """
+    if depends_on is None:
+        depends_on = []
+
+    # Config
+    department_name = config['entity']['department']
+    pool_name = config['settings']['pool_name']
+    priority = config['settings']['priority']
+
+    # Find department names up to and including the given department name
+    shot_departments = list_departments('shots')
+    department_names = [d.name for d in shot_departments]
+    department_names = department_names[:department_names.index(department_name) + 1]
+
+    # Helper to add job
+    def _add_job(job_name, job, job_deps):
+        if job is None:
+            return
+        jobs[job_name] = job
+        deps[job_name] = job_deps
+
+    # Track terminal jobs (last job in each shot's chain)
+    terminal_job_names = []
+
+    # Create update jobs for each sequence and shot
+    for uri in api.config.list_entities(Uri.parse_unsafe('entity:/shots/*/*')):
+        prev_job_name = None
+        down_stream_changed = False
+        # Use 'default' variant for batch update jobs
+        variant_name = 'default'
+        first_job_in_shot = True
+        for dept_name in department_names:
+            if not _is_submissable(uri, dept_name): continue
+            out_of_date = _is_out_of_date(uri, variant_name, dept_name)
+            if not down_stream_changed and not out_of_date: continue
+            # Create job name from URI path segments
+            uri_name = '_'.join(uri.segments[1:])
+            job_name = f'{uri_name}_{dept_name}'
+            job = _create_publish_job(
+                uri,
+                dept_name,
+                pool_name,
+                priority,
+                paths,
+                temp_path
             )
+            # First job in shot chain depends on depends_on parameter
+            if first_job_in_shot:
+                job_deps = depends_on.copy()
+                first_job_in_shot = False
+            else:
+                job_deps = [] if prev_job_name is None else [prev_job_name]
+            _add_job(job_name, job, job_deps)
+            if job is not None:
+                prev_job_name = job_name
+                down_stream_changed = True
 
-def main(
-    api,
-    department_name,
-    pool_name,
-    priority
+        # Track last job in this shot's chain
+        if prev_job_name is not None:
+            terminal_job_names.append(prev_job_name)
+
+    return terminal_job_names
+
+
+def submit(
+    config: dict,
+    paths: dict[Path, Path]
     ) -> int:
+    """Create batch, build jobs, and submit to farm.
 
+    Args:
+        config: Job configuration
+        paths: Files to bundle with jobs
+
+    Returns:
+        0 on success, 1 on error
+    """
     # Parameters
     project_name = api.PROJECT_PATH.name
     user_name = get_user_name()
     timestamp = dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
 
-    # Find partment names up to and including the given department name
-    shot_departments = list_departments('shots')
-    department_names = [d.name for d in shot_departments]
-    department_names = department_names[:department_names.index(department_name) + 1]
-
     # Get deadline ready
     try: farm = Deadline()
     except: return _error('Could not connect to Deadline')
-
-    # Batch
-    batch = Batch(
-        f'{project_name} '
-        'update '
-        f'{user_name} '
-        f'{timestamp}'
-    )
 
     # Open temporary directory for staging job files
     root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
@@ -259,54 +314,71 @@ def main(
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
 
-        # Prepare adding jobs
-        jobs = dict()
-        deps = dict()
-        paths = dict()  # Shared paths dict for bundling files
+        # Batch
+        batch = Batch(
+            f'{project_name} '
+            'update '
+            f'{user_name} '
+            f'{timestamp}'
+        )
 
-        def _add_job(job_name, job, job_deps):
-            if job is None:
-                return
-            jobs[job_name] = job
-            deps[job_name] = job_deps
+        # Build jobs using the new build() function
+        jobs = {}
+        deps = {}
+        build(config, paths, temp_path, jobs, deps)
 
-        # Create update jobs for each sequence and shot
-        for uri in api.config.list_entities(Uri.parse_unsafe('entity:/shots/*/*')):
-            prev_job_name = None
-            down_stream_changed = False
-            # Use 'default' variant for batch update jobs
-            variant_name = 'default'
-            for dept_name in department_names:
-                    if not _is_submissable(uri, dept_name): continue
-                    out_of_date = _is_out_of_date(uri, variant_name, dept_name)
-                    if not down_stream_changed and not out_of_date: continue
-                    # Create job name from URI path segments
-                    uri_name = '_'.join(uri.segments[1:])
-                    job_name = f'{uri_name}_{dept_name}'
-                    job = _create_publish_job(
-                        uri,
-                        dept_name,
-                        pool_name,
-                        priority,
-                        paths,
-                        temp_path
-                    )
-                    _add_job(job_name, job, (
-                        [] if prev_job_name is None else
-                        [prev_job_name]
-                    ))
-                    if job is not None:
-                        prev_job_name = job_name
-                        down_stream_changed = True
+        # Check if there are any jobs to submit
+        if not jobs:
+            logging.debug('No updates needed')
+            return 0
 
-        # Add jobs
-        _add_jobs(batch, jobs, deps)
+        # Add jobs to batch
+        batch.add_jobs_with_deps(jobs, deps)
 
         # Submit (within temp directory context so files can be copied)
         farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))
 
     # Done
+    logging.debug(f'Submitted update batch with {len(jobs)} jobs')
     return 0
+
+
+def main(
+    api,
+    department_name,
+    pool_name,
+    priority
+    ) -> int:
+    """Legacy entry point for backward compatibility.
+
+    Args:
+        api: API client instance
+        department_name: Department name to update up to
+        pool_name: Deadline pool name
+        priority: Job priority
+
+    Returns:
+        0 on success, 1 on error
+    """
+    # Convert parameters to config format
+    config = {
+        'entity': {
+            'uri': 'entity:/shots',  # Placeholder, build() scans all shots
+            'department': department_name
+        },
+        'settings': {
+            'priority': priority,
+            'pool_name': pool_name,
+            'first_frame': 0,  # Not used by update jobs
+            'last_frame': 0    # Not used by update jobs
+        },
+        'tasks': {
+            'publish': {}
+        }
+    }
+
+    # Call submit with converted config
+    return submit(config, {})
 
 def cli():
     import argparse

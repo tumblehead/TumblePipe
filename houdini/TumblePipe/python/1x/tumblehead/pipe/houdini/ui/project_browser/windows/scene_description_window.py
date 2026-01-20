@@ -1117,8 +1117,9 @@ class SceneDescriptionWindow(QMainWindow):
     def _on_save_changes(self):
         """Save all pending changes with progress dialog.
 
-        Key optimization: Roots reference scene_latest.usda, so when scene
-        assets change, we only need to export the scene - no root/shot rebuild!
+        Key optimization: Roots reference scenes via entity:/ URIs which resolve
+        dynamically, so when scene assets change, we only need to export the
+        scene - no root/shot rebuild!
 
         Only rebuild roots/shots when scene ASSIGNMENTS change.
         """
@@ -1191,7 +1192,7 @@ class SceneDescriptionWindow(QMainWindow):
         """Create ProcessTask objects for saving scene changes.
 
         Key optimization: Only rebuild roots/shots when scene ASSIGNMENTS change.
-        Scene asset changes only need scene export (roots reference scene_latest).
+        Scene asset changes only need scene export (roots use entity:/ URIs that resolve dynamically).
 
         Order: Scene exports → Root generation → Build staged
         """
@@ -1212,7 +1213,7 @@ class SceneDescriptionWindow(QMainWindow):
             tasks.append(scene_task)
 
         # 2. Root + Build tasks ONLY for shots with assignment changes
-        # (not needed for pure scene asset changes - they reference scene_latest)
+        # (not needed for pure scene asset changes - entity:/ URIs resolve dynamically)
         for shot_uri in shots_with_assignment_changes:
             root_task = ProcessTask(
                 id=str(uuid.uuid4()),

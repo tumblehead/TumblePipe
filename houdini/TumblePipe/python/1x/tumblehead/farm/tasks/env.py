@@ -1,7 +1,36 @@
 """Common environment variable setup for farm tasks."""
 import os
+from typing import Optional
 
 from tumblehead.api import get_user_name, path_str, to_windows_path, default_client
+
+
+# Default environment variables to print for debugging
+DEFAULT_ENV_VARS = [
+    'OCIO',
+    'TH_USER',
+    'TH_CONFIG_PATH',
+    'TH_PROJECT_PATH',
+    'TH_PIPELINE_PATH',
+    'TH_BIN_PATH',
+    'TH_EXPORT_PATH',
+    'PXR_PLUGINPATH_NAME',
+    'PYTHONPATH',
+]
+
+
+def print_env(env_vars: Optional[list[str]] = None):
+    """Print environment variables for debugging.
+
+    Args:
+        env_vars: List of env var names to print. If None, uses DEFAULT_ENV_VARS.
+    """
+    print(' Environment variables '.center(80, '='))
+    if env_vars is None:
+        env_vars = DEFAULT_ENV_VARS
+    for key in env_vars:
+        value = os.environ.get(key, '<not set>')
+        print(f'  {key}={value}')
 
 
 def get_base_env(api=None):

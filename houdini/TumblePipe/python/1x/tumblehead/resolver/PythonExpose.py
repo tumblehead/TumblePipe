@@ -50,9 +50,10 @@ LOG = logging.getLogger("Python | {file_name}".format(file_name=__name__))
 LOG.setLevel(level=logging.INFO)
 
 
-# Module-level state for latest mode
-# When True, resolver ignores explicit versions and always resolves to latest
-_latest_mode = False
+# Environment variable for latest mode (replaces module-level state)
+# Using env var instead of Python global to persist across Houdini's cooking model
+# where multiple nodes may set different modes during the same cook cycle.
+_LATEST_MODE_ENV_VAR = "TH_RESOLVER_LATEST_MODE"
 
 
 def set_latest_mode(enabled: bool):
@@ -62,11 +63,12 @@ def set_latest_mode(enabled: bool):
     ignoring explicit versions. This provides full cascade/closure semantics
     where all nested layers also resolve to their latest versions.
 
+    Uses environment variable to persist across Houdini's node cooking model.
+
     Args:
         enabled: True to always resolve to latest, False to respect explicit versions
     """
-    global _latest_mode
-    _latest_mode = enabled
+    os.environ[_LATEST_MODE_ENV_VAR] = "1" if enabled else "0"
     LOG.debug(f"::: Latest mode {'enabled' if enabled else 'disabled'}")
 
 
@@ -76,7 +78,7 @@ def get_latest_mode() -> bool:
     Returns:
         True if latest mode is enabled, False otherwise
     """
-    return _latest_mode
+    return os.environ.get(_LATEST_MODE_ENV_VAR, "0") == "1"
 
 
 def _get_export_base_path() -> Path:
@@ -246,14 +248,62 @@ def _get_export_base() -> Path | None:
 def _use_latest_mode() -> bool:
     """Check if resolver should ignore explicit versions and use latest.
 
-    Uses module-level _latest_mode state, controlled via set_latest_mode().
+    Uses TH_RESOLVER_LATEST_MODE environment variable, controlled via set_latest_mode().
     When enabled, all entity:/ URIs resolve to their latest version,
     providing full cascade/closure semantics through all nested layers.
 
     Returns:
         True if latest mode is enabled, False otherwise.
     """
-    return _latest_mode
+    return os.environ.get(_LATEST_MODE_ENV_VAR, "0") == "1"
+
+
+def _resolve_root_uri(
+    segments: list,
+    version: str | None
+) -> str:
+    """
+    Resolve a root layer entity URI.
+
+    Root is stored at shot-level: {export}/{segments}/_root/{version}/{filename}
+    Example: P:/export/shots/sq050/sh446/_root/v0006/shots_sq050_sh446_root_v0006.usda
+
+    Args:
+        segments: Entity path segments (e.g., ['shots', 'sq050', 'sh446'])
+        version: Version name or None for latest
+
+    Returns:
+        Resolved filesystem path or empty string if resolution fails
+    """
+    export_base = _get_export_base()
+    if not export_base:
+        return ""
+
+    # Build path: {export_base}/{segments}/_root/{version}/
+    entity_path = export_base
+    for segment in segments:
+        entity_path = entity_path / segment
+
+    root_path = entity_path / "_root"
+
+    # Resolve version
+    use_latest = _use_latest_mode()
+    if version and not use_latest:
+        version_name = version
+    else:
+        version_name = _find_latest_version(root_path)
+        if not version_name:
+            LOG.warning(f"No versions found at: {root_path}")
+            return ""
+
+    version_path = root_path / version_name
+
+    # Filename: {entity_name}_root_{version}.usda (no variant in filename)
+    entity_name = "_".join(segments)
+    filename = f"{entity_name}_root_{version_name}.usda"
+
+    resolved_path = version_path / filename
+    return str(resolved_path).replace("\\", "/")
 
 
 def _resolve_department_uri(
@@ -268,6 +318,9 @@ def _resolve_department_uri(
     Path structure: {export}/{segments}/{variant}/{dept}/{version}/{filename}
     Example: P:/export/assets/SET/Arena/default/lookdev/v0013/assets_SET_Arena_default_lookdev_v0013.usd
 
+    Special case: Root department is stored at shot-level _root/ directory
+    (no variant subfolder). Delegates to _resolve_root_uri.
+
     Args:
         segments: Entity path segments (e.g., ['assets', 'SET', 'Arena'])
         department: Department name (e.g., 'lookdev')
@@ -277,6 +330,10 @@ def _resolve_department_uri(
     Returns:
         Resolved filesystem path or empty string if resolution fails
     """
+    # Root department has special handling - stored at shot-level _root/
+    if department == "root":
+        return _resolve_root_uri(segments, version)
+
     export_base = _get_export_base()
     if not export_base:
         return ""
@@ -296,7 +353,9 @@ def _resolve_department_uri(
     else:
         version_name = _find_latest_version(variant_path)
         if not version_name:
-            LOG.warning(f"No versions found at: {variant_path}")
+            # Silently skip _shared variants that don't exist (cleaned up for single-variant entities)
+            if variant != "_shared":
+                LOG.warning(f"No versions found at: {variant_path}")
             return ""
 
     version_path = variant_path / version_name
@@ -527,13 +586,8 @@ class ResolverContext:
         # Handle entity URIs
         if assetPath.startswith("entity:"):
             resolved_path = _resolve_entity_uri(assetPath)
-            if resolved_path:
-                context.AddCachingPair(assetPath, resolved_path)
-                return resolved_path
-            else:
-                # Return empty string for failed resolution
-                context.AddCachingPair(assetPath, "")
-                return ""
+            # Don't cache entity URIs - always resolve fresh to pick up new versions
+            return resolved_path if resolved_path else ""
 
         # Handle relative path identifiers (from CreateRelativePathIdentifier)
         relative_path_prefix = "relativePath|"
@@ -553,5 +607,7 @@ class ResolverContext:
             return resolved_path
 
         # For other paths, return as-is (let default resolver handle it)
+        # Log all non-entity paths for debugging texture resolution issues
+        LOG.info(f"::: Passthrough path: {assetPath}")
         context.AddCachingPair(assetPath, assetPath)
         return assetPath

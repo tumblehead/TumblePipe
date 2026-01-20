@@ -27,9 +27,14 @@ from tumblehead.config.timeline import BlockRange
 from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Husk, ITileStitch
 from tumblehead.apps import exr
-from tumblehead.farm.tasks.env import get_base_env
+from tumblehead.farm.tasks.env import get_base_env, print_env
 
 api = default_client()
+
+# Required AOVs that must be present - missing these fails the render
+# Other AOVs (utility passes like depth, position) are optional
+REQUIRED_AOVS = {'beauty', 'normal', 'albedo'}
+
 
 def _headline(title):
     print(f' {title} '.center(80, '='))
@@ -52,11 +57,6 @@ def _get_frame_path(frame_path, frame_index):
         frame_path.name.replace('*', frame_name)
     )
 
-def _print_env(env):
-    """Print environment variables for debugging."""
-    _headline('Environment variables')
-    for key, value in sorted(env.items()):
-        print(f'  {key}={value}')
 
 def main(
     tile_count: int,
@@ -105,7 +105,7 @@ def main(
 
         # Get and print environment for debugging
         env = get_base_env(api)
-        _print_env(env)
+        print_env()
 
         # Render with husk and Karama XPU
         _headline('Rendering tiles')
@@ -207,13 +207,37 @@ def main(
                 )
             framestack_aov_paths[frame_index] = aov_paths
 
-        # Check if any AOVs matched
-        total_matched = sum(len(paths) for paths in framestack_aov_paths.values())
-        if total_matched == 0:
-            print('WARNING: No AOVs matched between config and EXR!')
-            print(f'  Config AOVs: {list(output_paths.keys())}')
-            if split_frame_paths:
-                print(f'  EXR AOVs: {list(split_frame_paths.keys())}')
+        # Validate that all expected AOVs were rendered
+        expected_aovs = set(output_paths.keys())
+        rendered_aovs = set()
+        for aov_paths in framestack_aov_paths.values():
+            rendered_aovs.update(aov_paths.keys())
+        missing_aovs = expected_aovs - rendered_aovs
+
+        if missing_aovs:
+            # Check for potential name mismatches (case differences, etc.)
+            exr_aovs_lower = {name.lower(): name for name in split_frame_paths.keys()}
+            potential_matches = []
+            for missing in missing_aovs:
+                if missing.lower() in exr_aovs_lower:
+                    potential_matches.append(f"'{missing}' -> '{exr_aovs_lower[missing.lower()]}'")
+
+            # Separate required vs optional missing AOVs
+            missing_required = {aov for aov in missing_aovs if aov.lower() in REQUIRED_AOVS}
+            missing_optional = missing_aovs - missing_required
+
+            if missing_optional:
+                print(f'WARNING: Missing optional AOVs in rendered output: {sorted(missing_optional)}')
+                print(f'  These utility passes were not produced by the renderer')
+
+            if missing_required:
+                print(f'ERROR: Missing required AOVs in rendered output: {sorted(missing_required)}')
+                print(f'  Expected AOVs: {sorted(expected_aovs)}')
+                print(f'  Rendered AOVs: {sorted(rendered_aovs)}')
+                print(f'  EXR AOVs: {sorted(split_frame_paths.keys())}')
+                if potential_matches:
+                    print(f'  Potential name mismatches: {potential_matches}')
+                return _error(f'Render did not produce required AOVs. Missing: {missing_required}')
 
         # Copy frames to network
         _headline('Copying files to network')
@@ -318,6 +342,12 @@ def cli():
     input_path = Path(config['input_path'])
     if not input_path.exists():
         return _error(f'Input path not found: {input_path}')
+
+    # Print input USD content for debugging (only for ASCII .usda files)
+    if input_path.suffix == '.usda':
+        _headline('Input USD')
+        with open(input_path, 'r') as f:
+            print(f.read())
 
     # Get the output path
     output_paths = {

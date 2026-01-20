@@ -163,6 +163,32 @@ class Batch:
             worklist += list(self._refs[index] - visited)
         return order
 
+    def add_jobs_with_deps(
+        self,
+        jobs: dict[str, 'Job'],
+        deps: dict[str, list[str]]
+        ):
+        """Add multiple jobs with their dependencies.
+
+        Args:
+            jobs: Dict mapping job names to Job objects
+            deps: Dict mapping job names to lists of dependency job names
+        """
+        indicies = {
+            job_name: self.add_job(job)
+            for job_name, job in jobs.items()
+        }
+        for job_name, job_deps in deps.items():
+            if len(job_deps) == 0: continue
+            for dep_name in job_deps:
+                if dep_name not in indicies:
+                    logging.warning(
+                        f'Job "{job_name}" depends on '
+                        f'non-existing job "{dep_name}"'
+                    )
+                    continue
+                self.add_dep(indicies[job_name], indicies[dep_name])
+
 class Job:
     def __init__(self,
         script_path,

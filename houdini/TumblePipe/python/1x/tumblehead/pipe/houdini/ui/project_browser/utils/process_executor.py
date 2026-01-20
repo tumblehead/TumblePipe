@@ -72,6 +72,29 @@ class ProcessExecutor(QObject):
         """Cancel execution (will stop after current task)"""
         self._is_running = False
 
+    def _check_dependencies(self, task: ProcessTask) -> tuple[bool, str | None]:
+        """Check if all dependencies completed successfully.
+
+        Returns:
+            (can_run, skip_reason) - can_run=True if deps satisfied, else skip_reason explains why
+        """
+        if not task.depends_on:
+            return True, None
+
+        for dep_id in task.depends_on:
+            dep_task = next((t for t in self._tasks if t.id == dep_id), None)
+            if dep_task is None:
+                continue  # Dependency not in task list, ignore
+            if dep_task.status == TaskStatus.FAILED:
+                return False, f"Dependency '{dep_task.description}' failed"
+            if dep_task.status == TaskStatus.SKIPPED and dep_task.enabled:
+                # Only block if dependency was skipped due to its own failed dependency
+                # (not because user disabled it)
+                return False, f"Dependency '{dep_task.description}' was skipped"
+            if dep_task.status == TaskStatus.PENDING:
+                return False, f"Dependency '{dep_task.description}' not yet executed"
+        return True, None
+
     def execute(self):
         """Start executing enabled tasks"""
         self._is_running = True
@@ -101,6 +124,16 @@ class ProcessExecutor(QObject):
             return
 
         task = self._tasks[self._current_index]
+
+        # Check dependencies before running
+        can_run, skip_reason = self._check_dependencies(task)
+        if not can_run:
+            task.status = TaskStatus.SKIPPED
+            task.error_message = skip_reason
+            self._current_index += 1
+            QTimer.singleShot(0, self._execute_next_task)
+            return
+
         task.status = TaskStatus.RUNNING
         self.task_started.emit(task.id)
 
@@ -387,7 +420,7 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
             entities_with_exports[uri_str] = []
         entities_with_exports[uri_str].append(dept)
 
-    # For each entity: add grouped export tasks, then build task
+    # For each entity: add validation + export tasks, then build task
     for uri_str in sorted(entities_with_exports.keys()):
         depts = entities_with_exports[uri_str]
         # Sort by department order
@@ -397,7 +430,10 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
         first_key = (uri_str, depts[0])
         entity_uri = exports_by_entity_dept[first_key][0].get_entity_uri()
 
-        # Create one grouped export task per department
+        # Track export task IDs for build dependency
+        export_task_ids = []
+
+        # Create validation + export tasks per department
         for dept in depts:
             key = (uri_str, dept)
             dept_exports = exports_by_entity_dept.get(key, [])
@@ -406,7 +442,15 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
             # Get frame range from first export node
             first_frame, last_frame = _get_frame_range_values(entity_uri, dept_exports[0] if dept_exports else None)
 
-            # Create grouped export task
+            # Create validation task (export depends on this)
+            validation_task = _create_validation_task(
+                entity_uri=entity_uri,
+                department=dept,
+                export_nodes=dept_exports,
+            )
+            tasks.append(validation_task)
+
+            # Create grouped export task (depends on validation)
             group_task = _create_export_group_task(
                 entity_uri=entity_uri,
                 department=dept,
@@ -414,12 +458,26 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
                 export_nodes=dept_exports,
                 first_frame=first_frame,
                 last_frame=last_frame,
+                depends_on=[validation_task.id],
             )
             tasks.append(group_task)
+            export_task_ids.append(group_task.id)
 
-        # Add build task for this entity (after all exports)
-        build_task = _create_build_task(entity_uri)
-        tasks.append(build_task)
+        # Collect unique variants from export nodes for this entity
+        entity_variants_found = set()
+        for dept in depts:
+            key = (uri_str, dept)
+            for export_node in exports_by_entity_dept.get(key, []):
+                entity_variants_found.add(export_node.get_variant_name())
+
+        # Add grouped build task (depends on all exports)
+        if entity_variants_found:
+            build_group = _create_build_group_task(
+                entity_uri,
+                sorted(entity_variants_found),
+                depends_on=export_task_ids
+            )
+            tasks.append(build_group)
 
     return tasks
 
@@ -504,7 +562,10 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
     dept_order = {dept: i for i, dept in enumerate(departments)}
     sorted_depts = sorted(exports_by_dept.keys(), key=lambda d: dept_order.get(d, 999))
 
-    # Create one grouped export task per department
+    # Track export task IDs for build dependency
+    export_task_ids = []
+
+    # Create validation + export tasks per department
     for dept in sorted_depts:
         dept_exports = exports_by_dept.get(dept, [])
         dept_splits = splits_by_dept.get(dept, [])
@@ -512,7 +573,15 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
         # Get frame range from first export node
         first_frame, last_frame = _get_frame_range_values(shot_uri, dept_exports[0] if dept_exports else None)
 
-        # Create grouped export task
+        # Create validation task (export depends on this)
+        validation_task = _create_validation_task(
+            entity_uri=shot_uri,
+            department=dept,
+            export_nodes=dept_exports,
+        )
+        tasks.append(validation_task)
+
+        # Create grouped export task (depends on validation)
         group_task = _create_export_group_task(
             entity_uri=shot_uri,
             department=dept,
@@ -520,13 +589,31 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
             export_nodes=dept_exports,
             first_frame=first_frame,
             last_frame=last_frame,
+            depends_on=[validation_task.id],
         )
         tasks.append(group_task)
+        export_task_ids.append(group_task.id)
 
-    # Add build task for this shot (after all exports)
-    if shot_export_nodes:
-        build_task = _create_build_task(shot_uri)
-        tasks.append(build_task)
+    # Collect unique variants from export nodes for build tasks
+    variants_found = set()
+    for export_node in shot_export_nodes:
+        variants_found.add(export_node.get_variant_name())
+
+    # Add grouped build task (depends on all exports)
+    if variants_found:
+        # Get frame range from first export node (exports share the same frame range setting)
+        build_first, build_last = None, None
+        if shot_export_nodes:
+            build_first, build_last = _get_frame_range_values(shot_uri, shot_export_nodes[0])
+
+        build_group = _create_build_group_task(
+            shot_uri,
+            sorted(variants_found),
+            depends_on=export_task_ids,
+            first_frame=build_first,
+            last_frame=build_last
+        )
+        tasks.append(build_group)
 
     return tasks
 
@@ -616,7 +703,10 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
     for export_node in asset_export_nodes:
         variants_found.add(export_node.get_variant_name())
 
-    # Create one grouped export task per department
+    # Track export task IDs for build dependency
+    export_task_ids = []
+
+    # Create validation + export tasks per department
     for dept in sorted_depts:
         dept_exports = exports_by_dept.get(dept, [])
         dept_splits = splits_by_dept.get(dept, [])
@@ -624,7 +714,15 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
         # Get frame range from first export node
         first_frame, last_frame = _get_frame_range_values(asset_uri, dept_exports[0] if dept_exports else None)
 
-        # Create grouped export task
+        # Create validation task (export depends on this)
+        validation_task = _create_validation_task(
+            entity_uri=asset_uri,
+            department=dept,
+            export_nodes=dept_exports,
+        )
+        tasks.append(validation_task)
+
+        # Create grouped export task (depends on validation)
         group_task = _create_export_group_task(
             entity_uri=asset_uri,
             department=dept,
@@ -632,14 +730,19 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
             export_nodes=dept_exports,
             first_frame=first_frame,
             last_frame=last_frame,
+            depends_on=[validation_task.id],
         )
         tasks.append(group_task)
+        export_task_ids.append(group_task.id)
 
-    # Add build task for EACH variant (after all exports)
-    if asset_export_nodes:
-        for variant in sorted(variants_found):
-            build_task = _create_build_task(asset_uri, variant)
-            tasks.append(build_task)
+    # Add grouped build task (depends on all exports)
+    if variants_found:
+        build_group = _create_build_group_task(
+            asset_uri,
+            sorted(variants_found),
+            depends_on=export_task_ids
+        )
+        tasks.append(build_group)
 
     return tasks
 
@@ -711,13 +814,63 @@ def reset_executed_splits():
     _executed_split_paths = set()
 
 
+def _create_validation_task(
+    entity_uri: Uri,
+    department: str,
+    export_nodes: list,
+    variant: str = 'default'
+) -> ProcessTask:
+    """Create a validation task for export nodes.
+
+    Runs stage validation on all export nodes before they are executed.
+    The validation checks for issues like RenderVar name mismatches.
+
+    Args:
+        entity_uri: The entity URI
+        department: Department name
+        export_nodes: List of export nodes to validate
+        variant: Variant name
+
+    Returns:
+        ProcessTask for validation
+    """
+    def validate_fn():
+        from tumblehead.pipe.houdini.validators import validate_stage
+        for export_node in export_nodes:
+            # Get the input stage from the export node
+            native = export_node.native()
+            stage_node = native.node('IN_stage')
+            if stage_node is None:
+                continue
+            stage = stage_node.stage()
+            if stage is None:
+                continue
+            root = stage.GetPseudoRoot()
+            result = validate_stage(root)
+            if not result.passed:
+                raise RuntimeError(f"Validation failed:\n{result.format_message()}")
+
+    return ProcessTask(
+        id=str(uuid.uuid4()),
+        uri=entity_uri,
+        department=department,
+        task_type='validate',
+        description=f"Validate ({department})",
+        execute_local=validate_fn,
+        execute_farm=validate_fn,
+        variant=variant,
+        status=TaskStatus.PENDING
+    )
+
+
 def _create_export_group_task(
     entity_uri: Uri,
     department: str,
     split_nodes: list,
     export_nodes: list,
     first_frame: int | None,
-    last_frame: int | None
+    last_frame: int | None,
+    depends_on: list[str] | None = None
 ) -> ProcessTask:
     """
     Create a parent export task that groups layer_split and export_layer nodes.
@@ -729,6 +882,7 @@ def _create_export_group_task(
         export_nodes: List of export_layer nodes
         first_frame: First frame (with roll)
         last_frame: Last frame (with roll)
+        depends_on: Optional list of task IDs this task depends on
 
     Returns:
         A ProcessTask with children for each node
@@ -788,6 +942,7 @@ def _create_export_group_task(
         children=children,
         first_frame=first_frame,
         last_frame=last_frame,
+        depends_on=depends_on or [],
     )
     return parent
 
@@ -801,8 +956,21 @@ def _get_build_version(entity_uri: Uri, variant_name: str = 'default') -> str | 
         return None
 
 
-def _create_build_task(entity_uri: Uri, variant_name: str = 'default') -> ProcessTask:
-    """Create a build task for an entity (shot or asset)"""
+def _create_build_task(
+    entity_uri: Uri,
+    variant_name: str = 'default',
+    depends_on: list[str] | None = None
+) -> ProcessTask:
+    """Create a build task for an entity (shot or asset).
+
+    Args:
+        entity_uri: The entity URI
+        variant_name: Variant name (default: 'default')
+        depends_on: Optional list of task IDs this task depends on (typically export tasks)
+
+    Returns:
+        ProcessTask for building the USD
+    """
     version = _get_build_version(entity_uri, variant_name)
     first_frame, last_frame = _get_frame_range_values(entity_uri)
 
@@ -818,18 +986,86 @@ def _create_build_task(entity_uri: Uri, variant_name: str = 'default') -> Proces
         execute_farm=lambda uri=entity_uri, v=variant_name: _execute_build_farm(uri, v),
         first_frame=first_frame,
         last_frame=last_frame,
+        depends_on=depends_on or [],
     )
 
 
-def _execute_build_local(entity_uri: Uri, variant_name: str = 'default'):
+def _create_build_group_task(
+    entity_uri: Uri,
+    variants: list[str],
+    depends_on: list[str] | None = None,
+    first_frame: int | None = None,
+    last_frame: int | None = None
+) -> ProcessTask:
+    """
+    Create a parent build task that groups variant build tasks.
+
+    Args:
+        entity_uri: The entity URI
+        variants: List of variant names to build
+        depends_on: Optional list of task IDs this task depends on
+        first_frame: Optional first frame override (from export node)
+        last_frame: Optional last frame override (from export node)
+
+    Returns:
+        A ProcessTask with children for each variant
+    """
+    parent_id = str(uuid.uuid4())
+    children = []
+
+    # Use override if provided, otherwise get from entity config
+    if first_frame is None or last_frame is None:
+        first_frame, last_frame = _get_frame_range_values(entity_uri)
+
+    # Add child task for each variant
+    for variant_name in variants:
+        version = _get_build_version(entity_uri, variant_name)
+        child = ProcessTask(
+            id=str(uuid.uuid4()),
+            uri=entity_uri,
+            department='staged',
+            task_type='build',
+            variant=variant_name,
+            description=f"Build USD ({variant_name})",
+            parent_id=parent_id,
+            current_version=version,
+            execute_local=lambda uri=entity_uri, v=variant_name, ff=first_frame, lf=last_frame: _execute_build_local(uri, v, ff, lf),
+            execute_farm=lambda uri=entity_uri, v=variant_name, ff=first_frame, lf=last_frame: _execute_build_farm(uri, v, ff, lf),
+            first_frame=first_frame,
+            last_frame=last_frame,
+        )
+        children.append(child)
+
+    # Create parent task
+    parent = ProcessTask(
+        id=parent_id,
+        uri=entity_uri,
+        department='staged',
+        task_type='build_group',
+        description="Build USD",
+        children=children,
+        first_frame=first_frame,
+        last_frame=last_frame,
+        depends_on=depends_on or [],
+    )
+    return parent
+
+
+def _execute_build_local(entity_uri: Uri, variant_name: str = 'default', first_frame: int | None = None, last_frame: int | None = None):
     """Execute build locally using build task.
 
     Handles both shots and assets:
     - Shots: require frame range
     - Assets: frame range is optional (animated assets have it, static don't)
+
+    Args:
+        entity_uri: The entity URI
+        variant_name: The variant to build
+        first_frame: Optional first frame override (from export node)
+        last_frame: Optional last frame override (from export node)
     """
     from tumblehead.pipe.paths import next_staged_file_path
-    from tumblehead.config.timeline import get_frame_range
+    from tumblehead.config.timeline import get_frame_range, BlockRange
     from tumblehead.farm.tasks.build import build as build_task
 
     # Determine entity type for validation
@@ -838,9 +1074,12 @@ def _execute_build_local(entity_uri: Uri, variant_name: str = 'default'):
     # Get the output file path for the build (includes .usda filename)
     output_path = next_staged_file_path(entity_uri, variant_name)
 
-    # Try to get frame range - works for both shots AND animated assets
-    frame_range = get_frame_range(entity_uri)
-    render_range = frame_range.full_range() if frame_range is not None else None
+    # Use provided frame range if available, otherwise get from entity config
+    if first_frame is not None and last_frame is not None:
+        render_range = BlockRange(first_frame, last_frame)
+    else:
+        frame_range = get_frame_range(entity_uri)
+        render_range = frame_range.full_range() if frame_range is not None else None
 
     # Print diagnostic info (will be captured and shown on error)
     print('=' * 40)
@@ -866,10 +1105,16 @@ def _execute_build_local(entity_uri: Uri, variant_name: str = 'default'):
         raise RuntimeError(f"Build failed with exit code {result}")
 
 
-def _execute_build_farm(entity_uri: Uri, variant_name: str = 'default'):
+def _execute_build_farm(entity_uri: Uri, variant_name: str = 'default', first_frame: int | None = None, last_frame: int | None = None):
     """Submit build job to farm.
 
     Handles both shots and assets.
+
+    Args:
+        entity_uri: The entity URI
+        variant_name: The variant to build
+        first_frame: Optional first frame override (from export node)
+        last_frame: Optional last frame override (from export node)
     """
     from tumblehead.farm.jobs.houdini.build import job as build_job
 
@@ -880,6 +1125,11 @@ def _execute_build_farm(entity_uri: Uri, variant_name: str = 'default'):
         'priority': 50,  # Default priority
         'pool_name': 'houdini'  # Default pool
     }
+
+    # Pass custom frame range if provided
+    if first_frame is not None and last_frame is not None:
+        config['first_frame'] = first_frame
+        config['last_frame'] = last_frame
 
     build_job.submit(config)
 
@@ -996,6 +1246,18 @@ def collect_tasks_for_export_node(
             elif task.uri == uri and task.task_type == 'build':
                 if variant is None or task.variant == variant:
                     enabled_task_ids.add(task.id)
+            # Enable build_group task for the same entity (grouped build tasks)
+            elif task.uri == uri and task.task_type == 'build_group':
+                if task.children:
+                    children_enabled = False
+                    for child in task.children:
+                        if child.task_type == 'build':
+                            if variant is None or child.variant == variant:
+                                enabled_task_ids.add(child.id)
+                                children_enabled = True
+                    # Only enable parent if at least one child matches the variant
+                    if children_enabled:
+                        enabled_task_ids.add(task.id)
 
     if clicked_uri is not None:
         _enable_matching_tasks(clicked_uri, clicked_dept, clicked_variant, clicked_node_path)

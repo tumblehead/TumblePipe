@@ -10,6 +10,7 @@ from tumblehead.api import path_str, fix_path, default_client
 from tumblehead.util.uri import Uri
 from tumblehead.config.department import list_departments
 from tumblehead.config.variants import get_entity_type
+from tumblehead.config.timeline import get_frame_range as config_get_frame_range, get_fps, FrameRange
 from tumblehead.pipe.houdini import nodes as ns
 from tumblehead.pipe.paths import (
     get_workfile_context,
@@ -87,6 +88,30 @@ class LayerSplit(ns.Node):
             return None
         return department_name
 
+    def get_frame_range_source(self) -> str:
+        return self.parm('frame_range').eval()
+
+    def get_frame_range(self) -> tuple[FrameRange, int] | None:
+        frame_range_source = self.get_frame_range_source()
+        match frame_range_source:
+            case 'from_context':
+                entity_uri = self.get_entity_uri()
+                if entity_uri is None:
+                    return None
+                frame_range = config_get_frame_range(entity_uri)
+                if frame_range is None:
+                    return None
+                return frame_range, 1
+            case 'from_settings':
+                return FrameRange(
+                    self.parm('frame_settingsx').eval(),
+                    self.parm('frame_settingsy').eval(),
+                    self.parm('roll_settingsx').eval(),
+                    self.parm('roll_settingsy').eval()
+                ), self.parm('frame_settingsz').eval()
+            case _:
+                assert False, f'Unknown frame range source: {frame_range_source}'
+
     def set_entity_uri(self, entity_uri: Uri):
         entity_uris = self.list_entity_uris()
         if str(entity_uri) not in entity_uris:  # Compare strings
@@ -100,13 +125,22 @@ class LayerSplit(ns.Node):
         self.parm('department').set(department_name)
 
     def _update_labels(self):
-        """Update label parameters to show resolved values when 'from_context' is selected."""
+        """Update label parameters to show current entity/department selection."""
         entity_raw = self.parm('entity').eval()
         if entity_raw == 'from_context':
             entity_uri = self.get_entity_uri()
-            self.parm('entity_label').set(str(entity_uri) if entity_uri else '')
+            if entity_uri:
+                self.parm('entity_label').set(f'from_context: {entity_uri}')
+            else:
+                self.parm('entity_label').set('from_context: none')
         else:
-            self.parm('entity_label').set('')
+            self.parm('entity_label').set(entity_raw)
+
+        department_name = self.get_department_name()
+        if department_name:
+            self.parm('department_label').set(department_name)
+        else:
+            self.parm('department_label').set('')
 
     def _initialize(self):
         """Initialize node with defaults from workfile context and update labels."""
@@ -148,6 +182,20 @@ class LayerSplit(ns.Node):
         if department_name is None:
             raise ValueError('No valid department name')
 
+        # Get frame range from settings or entity configuration
+        frame_range_result = self.get_frame_range()
+        if frame_range_result is None:
+            raise ValueError(f'No frame range defined for {entity_uri}')
+        frame_range, frame_step = frame_range_result
+
+        # Get full range (including roll)
+        full_range = frame_range.full_range()
+
+        # Get fps (default to 24 if not set)
+        fps = get_fps(entity_uri)
+        if fps is None:
+            fps = 24
+
         # Get next version path for shared export
         export_path = next_shared_export_path(entity_uri, department_name)
         version_name = export_path.name
@@ -164,6 +212,16 @@ class LayerSplit(ns.Node):
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
+
+            # Set fps metadata
+            self.parm('set_metadata_fps').set(fps)
+
+            # Set frame range parameters
+            self.parm('export_f1').deleteAllKeyframes()
+            self.parm('export_f2').deleteAllKeyframes()
+            self.parm('export_f1').set(full_range.first_frame)
+            self.parm('export_f2').set(full_range.last_frame)
+            self.parm('export_f3').set(frame_step)
 
             # Configure and execute export to temp
             self.parm('export_lopoutput').set(path_str(temp_path / file_name))
@@ -258,3 +316,72 @@ def open_location():
     raw_node = hou.pwd()
     node = LayerSplit(raw_node)
     node.open_location()
+
+
+def select():
+    """HDA button callback to open entity selector dialog."""
+    from tumblehead.pipe.houdini.ui.widgets import EntitySelectorDialog
+
+    raw_node = hou.pwd()
+    node = LayerSplit(raw_node)
+
+    dialog = EntitySelectorDialog(
+        api=api,
+        entity_filter='both',
+        include_from_context=True,
+        current_selection=node.parm('entity').eval(),
+        title="Select Entity",
+        parent=hou.qt.mainWindow()
+    )
+
+    if dialog.exec_():
+        selected_uri = dialog.get_selected_uri()
+        if selected_uri:
+            node.parm('entity').set(selected_uri)
+            node._update_labels()
+
+
+def validate():
+    """HDA button callback to run stage validation."""
+    from tumblehead.pipe.houdini.validators import validate_stage
+
+    raw_node = hou.pwd()
+    stage_node = raw_node.node('IN_stage')
+
+    if stage_node is None:
+        hou.ui.displayMessage(
+            "No stage input connected.",
+            severity=hou.severityType.Warning
+        )
+        return
+
+    stage = stage_node.stage()
+    if stage is None:
+        hou.ui.displayMessage(
+            "No stage available for validation.",
+            severity=hou.severityType.Warning
+        )
+        return
+
+    root = stage.GetPseudoRoot()
+    result = validate_stage(root)
+
+    if result.passed:
+        hou.ui.displayMessage(
+            "Validation passed - no issues found.",
+            severity=hou.severityType.Message,
+            title="Validation Passed"
+        )
+    else:
+        hou.ui.displayMessage(
+            result.format_message(),
+            severity=hou.severityType.Error,
+            title="Validation Failed"
+        )
+
+
+def update_labels():
+    """HDA callback to update label parameters when entity/department changes."""
+    raw_node = hou.pwd()
+    node = LayerSplit(raw_node)
+    node._update_labels()

@@ -116,6 +116,8 @@ class SopModify(ns.Node):
     def _list_cache_configs(self, version_name):
         result = list()
         cache_name = self.get_cache_name()
+        if cache_name is None or version_name is None:
+            return result
         cache_path = self._get_cache_path() / cache_name / version_name
         frame_range, step = self.get_frame_range()
         render_range = frame_range.full_range()
@@ -288,7 +290,10 @@ class SopModify(ns.Node):
         loading_node.layoutChildren()
         
         # Set node state color
-        latest_version_name = self.list_version_names()[-1]
+        version_names = self.list_version_names()
+        if len(version_names) == 0:
+            return
+        latest_version_name = version_names[-1]
         native.setColor(
             hou.Color(0, .8, .1)
             if version_name == latest_version_name else

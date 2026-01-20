@@ -9,6 +9,7 @@ from tumblehead.util.io import load_json
 from tumblehead.util.uri import Uri
 from tumblehead.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblehead.config.department import list_departments
+from tumblehead.config.variants import list_variants
 import tumblehead.pipe.houdini.nodes as ns
 import tumblehead.pipe.houdini.util as util
 from tumblehead.pipe.paths import (
@@ -16,10 +17,9 @@ from tumblehead.pipe.paths import (
     load_entity_context,
     current_staged_file_path,
     get_staged_file_path,
-    list_version_paths,
-    get_export_path,
-    get_layer_file_name
+    list_version_paths
 )
+from tumblehead.pipe.graph import get_source_department
 
 api = default_client()
 
@@ -139,7 +139,7 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
         List of asset dicts with keys: asset, instance, variant, instances, inputs
         Inherited assets appear first, direct scene assets can override them.
     """
-    from tumblehead.pipe.paths import latest_export_path, get_scene_latest_path
+    from tumblehead.pipe.paths import latest_export_path, get_current_scene_staged_file_path
     from tumblehead.config.variants import DEFAULT_VARIANT
     from tumblehead.config.scenes import get_inherited_assets
 
@@ -160,7 +160,7 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
 
     # Follow scene reference to get current assets
     scene_uri = Uri.parse_unsafe(scene_ref)
-    scene_layer_path = get_scene_latest_path(scene_uri)
+    scene_layer_path = get_current_scene_staged_file_path(scene_uri)
     if scene_layer_path is None:
         return []
 
@@ -219,58 +219,19 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
     return result
 
 
-def _resolve_entity_uri_to_path(uri_string: str) -> Path | None:
-    """Resolve entity:/ URI to filesystem path.
-
-    Args:
-        uri_string: Entity URI string (e.g., entity:/shots/sq030/sh310?dept=root&variant=default&version=v0006)
-
-    Returns:
-        Resolved filesystem Path, or None if resolution fails
-    """
-    # Split base URI from query string
-    if '?' not in uri_string:
-        return None
-
-    base_uri, query_string = uri_string.split('?', 1)
-
-    # Parse query parameters
-    params = {}
-    for param in query_string.split('&'):
-        if '=' in param:
-            k, v = param.split('=', 1)
-            params[k] = v
-
-    dept = params.get('dept')
-    variant = params.get('variant', 'default')
-    version = params.get('version')
-
-    if not dept or not version:
-        return None
-
-    # Parse the base URI to get entity path
-    entity_uri = Uri.parse(base_uri)
-    if entity_uri is None:
-        return None
-
-    # Get the full export path (includes variant/dept/version)
-    version_path = get_export_path(entity_uri, variant, dept, version)
-
-    # Generate filename using existing helper
-    filename = get_layer_file_name(entity_uri, variant, dept, version)
-    file_path = version_path / filename
-
-    return file_path
-
-
 def _parse_entity_uri_info(uri_string: str) -> dict:
-    """Parse entity:/ URI and extract layer info, resolving to filesystem path.
+    """Parse entity:/ URI and extract layer metadata for filtering.
+
+    Does NOT resolve the URI to a filesystem path - the URI is kept as a string
+    so it can be passed to the Sublayer LOP, which will use the USD ArResolver
+    to resolve it. This allows the resolver's _latest_mode logic to apply,
+    dynamically resolving to the latest version when enabled.
 
     Args:
         uri_string: Entity URI string (e.g., entity:/shots/seq/shot?dept=animation&variant=default&version=v0006)
 
     Returns:
-        Dict with keys: path (resolved Path or URI string), type, department, variant
+        Dict with keys: path (entity URI string), type, department, variant
     """
     # Split base URI from query string
     if '?' in uri_string:
@@ -296,11 +257,9 @@ def _parse_entity_uri_info(uri_string: str) -> dict:
     else:
         layer_type = 'shot_department'
 
-    # Resolve entity URI to filesystem path
-    resolved_path = _resolve_entity_uri_to_path(uri_string)
-
+    # Keep entity URI as string - let USD resolver handle version resolution
     return {
-        'path': resolved_path if resolved_path else uri_string,  # Use resolved path or fallback to URI
+        'path': uri_string,  # Entity URI passed to Sublayer LOP
         'type': layer_type,
         'department': dept,
         'variant': variant
@@ -355,6 +314,63 @@ def _parse_staged_sublayers(staged_file_path: Path) -> list[dict]:
     return sublayers
 
 
+def _get_layer_display_name(layer_info: dict) -> str:
+    """Generate human-readable display name for layer."""
+    layer_type = layer_info.get('type', 'unknown')
+    department = layer_info.get('department')
+
+    if layer_type == 'root':
+        return 'Root'
+    elif layer_type == 'shot_department' and department:
+        return department.capitalize()
+    elif layer_type == 'asset':
+        path_value = layer_info.get('path', '')
+        if isinstance(path_value, str) and 'entity:/assets/' in path_value:
+            parts = path_value.split('/assets/')[-1].split('?')[0]
+            return f"Asset: {parts.split('/')[-1]}"
+        return 'Asset'
+    return f'Layer ({layer_type})'
+
+
+def _extract_layer_version(layer_info: dict) -> str:
+    """Extract version string from layer info."""
+    path_value = layer_info.get('path', '')
+
+    if isinstance(path_value, str) and 'version=' in path_value:
+        for param in path_value.split('?')[-1].split('&'):
+            if param.startswith('version='):
+                return param.split('=')[1]
+    elif hasattr(path_value, 'parent'):
+        parent_name = path_value.parent.name
+        if parent_name.startswith('v') and parent_name[1:].isdigit():
+            return parent_name
+    return 'latest'
+
+
+def _sanitize_parm_name(name: str) -> str:
+    """Convert display name to valid parameter name."""
+    safe = re.sub(r'[^a-zA-Z0-9]', '_', name)
+    if safe and safe[0].isdigit():
+        safe = 'l_' + safe
+    return safe.lower()
+
+
+def _extract_asset_uri_from_sublayer(path_value) -> str | None:
+    """Extract asset entity URI from sublayer path info.
+
+    Args:
+        path_value: Either an entity URI string or a filesystem Path
+
+    Returns:
+        The asset entity URI string (without query params), or None
+    """
+    if isinstance(path_value, str) and 'entity:/assets/' in path_value:
+        # Entity URI format: entity:/assets/CATEGORY/ASSET?variant=...
+        # Strip query parameters
+        return path_value.split('?')[0]
+    return None
+
+
 class ImportShot(ns.Node):
     def __init__(self, native):
         super().__init__(native)
@@ -378,14 +394,30 @@ class ImportShot(ns.Node):
         names = [dept.name for dept in shot_departments]
         return ['from_context'] + names
 
+    def list_variant_names(self) -> list[str]:
+        """List available variant names for current shot."""
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None:
+            return ['default']
+        variants = list_variants(shot_uri)
+        if not variants:
+            return ['default']
+        # Ensure 'default' is always first
+        if 'default' in variants:
+            variants.remove('default')
+            variants.insert(0, 'default')
+        return variants
+
     def list_version_names(self) -> list[str]:
         """List available staged versions including 'latest' and 'current'."""
         shot_uri = self.get_shot_uri()
         if shot_uri is None:
             return ['latest', 'current']
 
-        # Get staged directory
-        staged_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_staged'
+        variant_name = self.get_variant_name()
+
+        # Get staged directory for this variant
+        staged_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_staged' / variant_name
         staged_path = api.storage.resolve(staged_uri)
 
         # Get versioned directories (v0001, v0002, etc.)
@@ -401,6 +433,13 @@ class ImportShot(ns.Node):
         if len(version_name) == 0:
             return 'latest'  # Default to latest
         return version_name
+
+    def get_variant_name(self) -> str:
+        """Get selected variant name. Default is 'default'."""
+        variant_name = self.parm('variant').eval()
+        if len(variant_name) == 0:
+            return 'default'
+        return variant_name
 
     def get_department_name(self) -> str | None:
         department_name = self.parm('department').eval()
@@ -487,7 +526,8 @@ class ImportShot(ns.Node):
             if shot_uri is not None:
                 # Both 'latest' and 'current' use highest versioned staged file
                 # ('latest' strips versions for dynamic resolution at import time)
-                actual_file_path = current_staged_file_path(shot_uri)
+                variant_name = self.get_variant_name()
+                actual_file_path = current_staged_file_path(shot_uri, variant_name)
                 if actual_file_path is not None:
                     resolved_version = actual_file_path.parent.name
                     self.parm('version_label').set(resolved_version)
@@ -498,6 +538,78 @@ class ImportShot(ns.Node):
         else:
             # Specific version selected - no label needed
             self.parm('version_label').set('')
+
+    def _update_layer_stack_ui(self, layers_to_load: list[dict]):
+        """Update HDA spare parameters to show layer stack with toggles.
+
+        Creates checkbox parameters on HDA that control sublayer enables via expressions.
+        """
+        native = self.native()
+        import_node = native.node('import')
+
+        # Get existing parameter template group (preserve existing UI!)
+        parm_group = native.parmTemplateGroup()
+
+        # Remove old layer_stack folder if it exists (for rebuild on re-import)
+        if parm_group.find('layer_stack'):
+            parm_group.remove('layer_stack')
+
+        # Create Layer Stack folder
+        layer_folder = hou.FolderParmTemplate(
+            'layer_stack', 'Layer Stack',
+            folder_type=hou.folderType.Simple
+        )
+
+        # Calculate max name length for padding (column alignment)
+        max_name_len = max(
+            (len(_get_layer_display_name(info)) for info in layers_to_load),
+            default=20
+        )
+
+        # Add parameters for each layer
+        for i, layer_info in enumerate(layers_to_load):
+            display_name = _get_layer_display_name(layer_info)
+            version = _extract_layer_version(layer_info)
+            safe_name = f"layer_{i}"
+
+            # Pad the display name for column alignment
+            padded_name = display_name.ljust(max_name_len + 2)
+
+            # Toggle parameter with padded label
+            toggle_parm = hou.ToggleParmTemplate(
+                f'{safe_name}_enable',
+                padded_name,
+                default_value=True
+            )
+            toggle_parm.setJoinWithNext(True)
+            layer_folder.addParmTemplate(toggle_parm)
+
+            # Version label - hide the parameter name, show only column_labels
+            version_parm = hou.LabelParmTemplate(
+                f'{safe_name}_version',
+                '',  # Empty main label
+                column_labels=(version,),
+                is_label_hidden=True  # Hide parameter name
+            )
+            layer_folder.addParmTemplate(version_parm)
+
+        # Insert after 'selection' folder (before 'settings')
+        # Fall back to other positions if folders don't exist
+        if parm_group.find('selection'):
+            parm_group.insertAfter('selection', layer_folder)
+        elif parm_group.find('settings'):
+            parm_group.insertBefore('settings', layer_folder)
+        else:
+            parm_group.append(layer_folder)
+
+        # Apply modified parameter template group
+        native.setParmTemplateGroup(parm_group)
+
+        # Set expressions on sublayer enables to read from HDA checkboxes
+        for i in range(len(layers_to_load)):
+            safe_name = f"layer_{i}"
+            enable_parm = import_node.parm(f'enable{i+1}')
+            enable_parm.setExpression(f'ch("../{safe_name}_enable")')
 
     def _initialize(self):
         """Initialize node and update labels to show resolved values."""
@@ -519,8 +631,9 @@ class ImportShot(ns.Node):
             context.bypass(True)
             return
 
-        # Get staged file path based on version selection
+        # Get staged file path based on version and variant selection
         version_name = self.get_version_name()
+        variant_name = self.get_variant_name()
 
         # Import resolver module for latest mode control
         from tumblehead.resolver import PythonExpose
@@ -530,15 +643,15 @@ class ImportShot(ns.Node):
             # Enable resolver latest mode for full cascade semantics
             # All nested entity:/ URIs will resolve to their latest versions
             PythonExpose.set_latest_mode(True)
-            staged_file_path = current_staged_file_path(shot_uri)
+            staged_file_path = current_staged_file_path(shot_uri, variant_name)
         elif version_name == 'current':
             # Disable latest mode - use frozen versions from build
             PythonExpose.set_latest_mode(False)
-            staged_file_path = current_staged_file_path(shot_uri)
+            staged_file_path = current_staged_file_path(shot_uri, variant_name)
         else:
             # Disable latest mode - use specific version
             PythonExpose.set_latest_mode(False)
-            staged_file_path = get_staged_file_path(shot_uri, version_name)
+            staged_file_path = get_staged_file_path(shot_uri, version_name, variant_name)
 
         # Refresh resolver cache to ensure fresh resolution with the new mode
         resolver = Ar.GetResolver()
@@ -604,10 +717,35 @@ class ImportShot(ns.Node):
         if department_name is not None:
             departments_to_exclude.add(department_name)
 
-        # Filter out excluded layers - don't load them at all
+        # Build set of asset URIs to exclude (introduced by current/downstream departments)
+        # This prevents import_shot from loading assets that import_assets will handle
+        all_shot_departments = self.list_shot_department_names()
+        excluded_asset_uris = set()
+        for asset_info in assets:
+            inputs = asset_info.get('inputs', [])
+            source_dept = get_source_department(inputs, all_shot_departments)
+            if source_dept is not None and source_dept in departments_to_exclude:
+                excluded_asset_uris.add(asset_info['asset'])
+
+        # Filter out excluded layers - both department layers AND assets from excluded departments
+        def should_include_layer(info):
+            # Skip _shared variant layers for single-variant entities
+            if info.get('variant') == '_shared':
+                if len(list_variants(shot_uri)) <= 1:
+                    return False
+
+            if info['type'] == 'shot_department':
+                return info['department'] not in departments_to_exclude
+            elif info['type'] == 'asset':
+                asset_uri = _extract_asset_uri_from_sublayer(info['path'])
+                if asset_uri is not None:
+                    return asset_uri not in excluded_asset_uris
+            # Include root, scene, and unknown types
+            return True
+
         layers_to_load = list(reversed([
             info for info in sublayers
-            if info['department'] is None or info['department'] not in departments_to_exclude
+            if should_include_layer(info)
         ]))
 
         # Configure Sublayer LOP with filtered layers
@@ -615,17 +753,24 @@ class ImportShot(ns.Node):
 
         for i, info in enumerate(layers_to_load):
             # Handle both filesystem paths (Path objects) and entity URIs (strings)
-            # The resolver handles latest mode via TH_RESOLVER_USE_LATEST env var,
-            # so we pass entity URIs through directly - no stripping needed here
             path_value = info['path']
-            if isinstance(path_value, str):
-                # Entity URI - pass through directly, resolver handles latest mode
+            if isinstance(path_value, str) and path_value.startswith('entity:'):
+                # Entity URI - parse to manipulate query params
+                uri = Uri.parse_unsafe(path_value)
+                # Strip version when in 'latest' mode so resolver picks actual latest
+                if version_name == 'latest' and 'version' in uri.query:
+                    del uri.query['version']
+                layer_path = str(uri)
+            elif isinstance(path_value, str):
+                # Other string path - pass through directly
                 layer_path = path_value
             else:
                 # Filesystem Path object
                 layer_path = path_str(path_value)
             import_node.parm(f'filepath{i+1}').set(layer_path)
-            import_node.parm(f'enable{i+1}').set(1)
+
+        # Update layer stack UI with checkboxes and link to sublayer enables
+        self._update_layer_stack_ui(layers_to_load)
 
         # Set frame range and FPS
         frame_range = self.get_frame_range()

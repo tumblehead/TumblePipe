@@ -21,6 +21,7 @@ from tumblehead.util.io import load_json
 from tumblehead.util.uri import Uri
 from tumblehead.config.timeline import BlockRange, get_fps
 from tumblehead.apps import exr, mp4
+from tumblehead.farm.tasks.env import print_env
 
 api = default_client()
 
@@ -57,6 +58,9 @@ def main(
         'OCIO environment variable not set. '
         'Please set it to the OCIO config file.'
     )
+
+    # Print environment variables for debugging
+    print_env()
 
     # Find output paths that are not generated
     missing_output_paths = [

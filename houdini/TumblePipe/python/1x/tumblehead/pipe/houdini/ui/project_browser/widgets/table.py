@@ -1,8 +1,15 @@
 from qtpy.QtCore import Qt, QModelIndex, Signal, QItemSelectionModel, QRect
-from qtpy.QtGui import QColor, QPen, QBrush
+from qtpy.QtGui import QColor, QPen, QBrush, QFont
 from qtpy.QtWidgets import QTableView, QStyledItemDelegate, QStyle, QAbstractItemView
 
 from ..models.department import DepartmentTableModel
+
+# Extension badge colors - distinguish license types visually
+EXTENSION_COLORS = {
+    'hip': '#4a8a4a',    # Green - commercial
+    'hiplc': '#8a6a4a',  # Orange - Indie
+    'hipnc': '#6a4a8a',  # Purple - Non-commercial
+}
 
 
 class CellSelectionTableView(QTableView):
@@ -316,6 +323,11 @@ class DepartmentItemDelegate(QStyledItemDelegate):
 
             painter.drawText(text_rect, alignment, str(text))
 
+        # Draw extension badge on version column
+        extension = index.data(Qt.UserRole + 2)
+        if extension and index.column() == DepartmentTableModel.COLUMN_VERSION:
+            self._draw_extension_badge(painter, rect, extension)
+
         painter.restore()
 
     def _draw_group_badge(self, painter, rect, text):
@@ -339,6 +351,43 @@ class DepartmentItemDelegate(QStyledItemDelegate):
         # Draw text
         painter.setPen(QColor("#ffffff"))
         painter.drawText(badge_rect, Qt.AlignCenter, text)
+
+    def _draw_extension_badge(self, painter, rect, extension):
+        """Draw a small pill-shaped badge showing file extension."""
+        if not extension:
+            return
+
+        ext = extension.lstrip('.').lower()
+        color = EXTENSION_COLORS.get(ext, '#5a5a5a')
+
+        # Use smaller font for compact badge
+        original_font = painter.font()
+        small_font = QFont(original_font)
+        small_font.setPointSize(7)
+        painter.setFont(small_font)
+
+        text = ext.upper()  # "HIP", "HIPLC", "HIPNC"
+        font_metrics = painter.fontMetrics()
+        text_width = font_metrics.horizontalAdvance(text)
+        badge_width = text_width + 8
+        badge_height = 14
+
+        # Position badge at right side of cell
+        badge_x = rect.right() - badge_width - 5
+        badge_y = rect.y() + (rect.height() - badge_height) // 2
+        badge_rect = QRect(badge_x, badge_y, badge_width, badge_height)
+
+        # Draw pill background
+        painter.setBrush(QBrush(QColor(color)))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(badge_rect, badge_height // 2, badge_height // 2)
+
+        # Draw text
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(badge_rect, Qt.AlignCenter, text)
+
+        # Restore original font
+        painter.setFont(original_font)
 
 
 class VersionItemDelegate(QStyledItemDelegate):
@@ -407,4 +456,46 @@ class VersionItemDelegate(QStyledItemDelegate):
 
             painter.drawText(text_rect, alignment, str(text))
 
+        # Draw extension badge if available (on version column only)
+        extension = index.data(Qt.UserRole + 2)
+        if extension and index.column() == 0:
+            self._draw_extension_badge(painter, rect, extension)
+
         painter.restore()
+
+    def _draw_extension_badge(self, painter, rect, extension):
+        """Draw a small pill-shaped badge showing file extension."""
+        if not extension:
+            return
+
+        ext = extension.lstrip('.').lower()
+        color = EXTENSION_COLORS.get(ext, '#5a5a5a')
+
+        # Use smaller font for compact badge
+        original_font = painter.font()
+        small_font = QFont(original_font)
+        small_font.setPointSize(7)
+        painter.setFont(small_font)
+
+        text = ext.upper()  # "HIP", "HIPLC", "HIPNC"
+        font_metrics = painter.fontMetrics()
+        text_width = font_metrics.horizontalAdvance(text)
+        badge_width = text_width + 8
+        badge_height = 14
+
+        # Position badge at right side of cell
+        badge_x = rect.right() - badge_width - 5
+        badge_y = rect.y() + (rect.height() - badge_height) // 2
+        badge_rect = QRect(badge_x, badge_y, badge_width, badge_height)
+
+        # Draw pill background
+        painter.setBrush(QBrush(QColor(color)))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(badge_rect, badge_height // 2, badge_height // 2)
+
+        # Draw text
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(badge_rect, Qt.AlignCenter, text)
+
+        # Restore original font
+        painter.setFont(original_font)

@@ -1,7 +1,7 @@
 from qtpy.QtCore import Qt, QAbstractTableModel, QModelIndex
 from qtpy.QtGui import QFont, QBrush
 
-from ..helpers import get_timestamp_from_context, get_user_from_context
+from ..helpers import get_timestamp_from_context, get_user_from_context, get_extension_from_context
 
 
 class VersionTableModel(QAbstractTableModel):
@@ -65,6 +65,10 @@ class VersionTableModel(QAbstractTableModel):
         elif role == Qt.UserRole:
             # Return the full context for click handling
             return context
+
+        elif role == Qt.UserRole + 2:
+            # Return file extension for badge display
+            return get_extension_from_context(context)
 
         return None
 

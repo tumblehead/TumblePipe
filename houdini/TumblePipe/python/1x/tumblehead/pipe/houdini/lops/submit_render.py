@@ -30,6 +30,9 @@ from tumblehead.pipe.paths import (
 
 api = default_client()
 
+# Required AOVs that must be present for rendering
+REQUIRED_AOVS = {'beauty', 'normal', 'albedo'}
+
 
 def _entity_from_context_json():
     # Path to current workfile
@@ -431,6 +434,11 @@ class SubmitRender(ns.Node):
             if aov in seen: continue
             seen.add(aov)
             aov_names.append(aov)
+
+        # Validate required AOVs are present
+        missing_aovs = REQUIRED_AOVS - {name.lower() for name in aov_names}
+        if missing_aovs:
+            raise ValueError(f"Missing required AOVs for render: {sorted(missing_aovs)}")
 
         # Prepare tasks
         tasks = dict()

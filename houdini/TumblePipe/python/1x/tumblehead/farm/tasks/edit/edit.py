@@ -15,6 +15,7 @@ from tumblehead.config.department import list_departments
 from tumblehead.util.io import load_json, store_json
 from tumblehead.pipe.paths import get_render_context
 from tumblehead.util.uri import Uri
+from tumblehead.farm.tasks.env import print_env
 
 api = default_client()
 
@@ -58,6 +59,9 @@ def _manifest_get(data, *path_steps):
     return data
 
 def main(shot_uri: Uri, purpose: str, render_range: BlockRange):
+
+    # Print environment variables for debugging
+    print_env()
 
     # Get render context and resolve latest AOVs at runtime
     _headline('Resolving latest AOVs across all departments')

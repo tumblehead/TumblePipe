@@ -325,12 +325,15 @@ class ImportLayer(ns.Node):
             self.parm('bypass_input').set(0)
             return
 
-        # Import shared layer (index 1)
-        shared_file_path = latest_shared_export_file_path(entity_uri, department_name)
-        shared_exists = shared_file_path is not None and shared_file_path.exists()
+        # Import shared layer (index 1) - only if entity has multiple variants
+        shared_exists = False
+        if len(list_variants(entity_uri)) > 1:
+            shared_file_path = latest_shared_export_file_path(entity_uri, department_name)
+            shared_exists = shared_file_path is not None and shared_file_path.exists()
+            if shared_exists:
+                self.parm('import_filepath1').set(path_str(shared_file_path))
+
         self.parm('import_enable1').set(1 if shared_exists else 0)
-        if shared_exists:
-            self.parm('import_filepath1').set(path_str(shared_file_path))
 
         # Get version path for variant layer
         export_uri = get_export_uri(entity_uri, variant_name, department_name) / version_name

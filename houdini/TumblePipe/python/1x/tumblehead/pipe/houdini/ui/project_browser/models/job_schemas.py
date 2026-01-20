@@ -421,6 +421,15 @@ def create_submission_schema() -> JobTypeSchema:
                 width=55,
                 tooltip='Enable denoising'
             ),
+            ColumnDefinition(
+                key='copy_to_edit',
+                label='Copy to Edit',
+                column_type=ColumnType.BOOLEAN,
+                default_value=False,
+                section_key='render',
+                width=80,
+                tooltip='Copy rendered AOVs (beauty, objid_*, holdout_*) to edit directory after render'
+            ),
         ]
     )
 

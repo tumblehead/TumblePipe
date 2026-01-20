@@ -27,7 +27,8 @@ from tumblehead.config.department import list_departments
 from tumblehead.pipe.paths import (
     latest_export_path,
     get_layer_file_name,
-    get_scene_latest_path
+    get_current_scene_staged_file_path,
+    get_latest_version_path
 )
 import tumblehead.pipe.context as ctx
 
@@ -479,12 +480,18 @@ def resolve_shot_build(
     shot_layer_paths, assets, asset_inputs = _latest_shot_layer_paths(shot_departments, shot_variant)
     asset_layer_paths = _latest_asset_layer_paths(assets, asset_departments, asset_variants)
 
-    # Find root department layer (if it exists)
+    # Track which assets come from scene (vs. shot-flow assets from department exports)
+    scene_asset_uris = set()
+
+    # Find root department layer (shot-level, stored at _root/)
     root_layer = None
-    root_version_path = latest_export_path(shot_uri, shot_variant, 'root')
+    export_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_root'
+    export_path = api.storage.resolve(export_uri)
+    root_version_path = get_latest_version_path(export_path)
     if root_version_path is not None:
         version_name = root_version_path.name
-        layer_file_name = get_layer_file_name(shot_uri, shot_variant, 'root', version_name)
+        entity_name = '_'.join(shot_uri.segments)
+        layer_file_name = f'{entity_name}_root_{version_name}.usda'
         root_layer_path = root_version_path / layer_file_name
         if root_layer_path.exists():
             root_layer = root_layer_path
@@ -499,7 +506,7 @@ def resolve_shot_build(
             if scene_ref is not None:
                 # Follow scene reference to get current assets
                 scene_uri = Uri.parse_unsafe(scene_ref)
-                scene_path = get_scene_latest_path(scene_uri)
+                scene_path = get_current_scene_staged_file_path(scene_uri)
                 if scene_path is not None:
                     scene_context_path = scene_path.parent / 'context.json'
                     scene_context_data = load_json(scene_context_path)
@@ -509,6 +516,9 @@ def resolve_shot_build(
                             asset_uri = Uri.parse_unsafe(asset_datum['asset'])
                             asset_name = asset_uri.segments[-1]  # Use asset name as instance
                             variant = asset_datum.get('variant', DEFAULT_VARIANT)
+
+                            # Track as scene asset (for distinguishing from shot-flow assets)
+                            scene_asset_uris.add(asset_uri)
 
                             # Add to assets if not already present
                             if asset_uri not in assets:
@@ -527,6 +537,9 @@ def resolve_shot_build(
                     asset_name = asset_uri.segments[-1]
                     variant = entry.variant
 
+                    # Track as scene asset (for distinguishing from shot-flow assets)
+                    scene_asset_uris.add(asset_uri)
+
                     # Add to assets if not already present (direct assets take precedence)
                     if asset_uri not in assets:
                         assets[asset_uri] = set()
@@ -541,9 +554,10 @@ def resolve_shot_build(
         asset_inputs=asset_inputs,  # Track inputs per asset for staged output
         shot_layers=shot_layer_paths,
         asset_layers=asset_layer_paths,
-        root_layer=root_layer,  # Root department layer (base sublayer)
+        root_layer=root_layer,  # Root department layer (shot-level, stored at _root/)
         shot_variant=shot_variant,
-        asset_variants=asset_variants
+        asset_variants=asset_variants,
+        scene_asset_uris=scene_asset_uris  # Track which assets are from scene (vs. shot-flow)
     )
 
 

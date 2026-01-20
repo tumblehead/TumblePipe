@@ -21,8 +21,14 @@ from tumblehead.util.io import (
 )
 from tumblehead.config.timeline import BlockRange
 from tumblehead.apps import exr
+from tumblehead.farm.tasks.env import print_env
 
 api = default_client()
+
+
+def _get_ocio_env():
+    """Get OCIO environment dict for WSL subprocess calls."""
+    return dict(OCIO=os.environ['OCIO'])
 
 def _headline(title):
     print(f' {title} '.center(80, '='))
@@ -61,7 +67,7 @@ def _merge_rgba(
         '-o', path_str(to_wsl_path(output_path))
     ]
     print(f'    Merging RGBA: beauty + alpha -> temp')
-    return exr._run(oiiotool_cmd)
+    return exr._run(oiiotool_cmd, env=_get_ocio_env())
 
 def _composite_frame(
     frame_index: int,
@@ -138,7 +144,7 @@ def _composite_frame(
                     '-o', path_str(to_wsl_path(rgb_source_path))
                 ])
 
-                result = exr._run(oiiotool_cmd)
+                result = exr._run(oiiotool_cmd, env=_get_ocio_env())
                 if result != 0:
                     return _error(f'Failed to composite LPE AOVs for layer {layer_name}')
             else:
@@ -165,7 +171,7 @@ def _composite_frame(
                     '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
                     '-o', path_str(to_wsl_path(layer_rgba_path))
                 ]
-                result = exr._run(add_alpha_cmd)
+                result = exr._run(add_alpha_cmd, env=_get_ocio_env())
                 if result != 0:
                     return _error(f'Failed to add constant alpha for layer {layer_name}')
                 layer_output_paths.append((layer_name, layer_rgba_path, beauty_path))
@@ -211,7 +217,7 @@ def _composite_frame(
                 '-o', path_str(to_wsl_path(output_frame_path))
             ])
 
-            result = exr._run(oiiotool_cmd)
+            result = exr._run(oiiotool_cmd, env=_get_ocio_env())
             if result != 0:
                 return _error(f'Failed to composite layers for frame {frame_index}')
 
@@ -230,6 +236,9 @@ def main(
         'OCIO environment variable not set. '
         'Please set it to the OCIO config file.'
     )
+
+    # Print environment variables for debugging
+    print_env()
 
     # Receipt files
     receipt_paths = [

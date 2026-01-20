@@ -43,14 +43,10 @@ def _get_frame_path(frames_path, frame_index):
     )
 
 def _should_denoise_aov(aov_name):
+    """Denoise all AOVs except variance/MSE passes."""
     name = aov_name.lower()
-    if name == 'beauty': return True
-    if name == 'alpha': return True
     if name.endswith('_mse'): return False
-    if name.startswith('beauty_'): return True
-    if name.startswith('holdout_'): return True
-    if name.startswith('objid_'): return True
-    return False
+    return True
 
 def _create_file_node(parent, name):
     file_node = parent.createNode('file', name)
@@ -109,6 +105,20 @@ def main(
         if _should_denoise_aov(aov_name)
     }
 
+    # Filter to only AOVs that have source files on disk
+    # (some AOVs may be in config but weren't rendered)
+    available_aov_paths = {}
+    for aov_name, aov_path in target_aov_paths.items():
+        test_frame_path = _get_frame_path(
+            _fix_frames_pattern(aov_path),
+            render_range.first_frame
+        )
+        if test_frame_path.exists():
+            available_aov_paths[aov_name] = aov_path
+        else:
+            print(f'WARNING: Skipping AOV {aov_name} - source files not found')
+    target_aov_paths = available_aov_paths
+
     # Check that target AOVs are available
     for aov_name in target_aov_paths.keys():
         if aov_name in input_paths: continue
@@ -148,6 +158,10 @@ def main(
 
     root_temp_path = to_windows_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
+
+    # Track AOVs that fail to denoise
+    failed_aovs = set()
+
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
 
@@ -216,8 +230,15 @@ def main(
                             print(f'  Source file node errors: {src_errors}')
                     except:
                         pass
-                    raise
+                    # Mark AOV as failed and skip to next AOV
+                    failed_aovs.add(aov_name)
+                    print(f'  Skipping remaining frames for AOV {aov_name}')
+                    break  # Exit frame loop, continue to next AOV
             
+            # Skip compression if AOV failed
+            if aov_name in failed_aovs:
+                continue
+
             # DWAB compress and copy to the output path
             output_frames_path.parent.mkdir(parents = True, exist_ok = True)
             for frame_index in render_range:
@@ -234,25 +255,55 @@ def main(
                 )
                 exr.dwab_encode(temp_frame_path, output_frame_path)
             
+            # Skip validation for failed AOVs
+            if aov_name in failed_aovs:
+                continue
+
             # Check that all frames were rendered
             for frame_index in render_range:
                 output_frame_path = _get_frame_path(
                     output_frames_path, frame_index
                 )
                 if output_frame_path.exists(): continue
-                return _error(f'Frame not rendered: {output_frame_path}')
-        
+                # Frame missing - mark AOV as failed and skip
+                print(f'WARNING: Frame not rendered: {output_frame_path}')
+                failed_aovs.add(aov_name)
+                break
+
+    # Report failed AOVs
+    if failed_aovs:
+        print(f'\nWARNING: Failed to denoise {len(failed_aovs)} AOV(s): {", ".join(sorted(failed_aovs))}')
+
+    # Check for critical AOV failures (beauty + mattes are required for downstream tasks)
+    failed_critical = set()
+    for aov in failed_aovs:
+        aov_lower = aov.lower()
+        if aov_lower == 'beauty':
+            failed_critical.add(aov)
+        elif aov_lower.startswith('objid_'):
+            failed_critical.add(aov)
+        elif aov_lower.startswith('holdout_'):
+            failed_critical.add(aov)
+
+    if failed_critical:
+        return _error(f'Critical AOV(s) failed to denoise: {", ".join(sorted(failed_critical))}')
+
     # Create the frame receipts
     _headline('Creating frame receipts')
     receipt_path = _fix_frames_pattern(receipt_path)
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     for frame_index, aov_paths in output_frame_paths.items():
-        if len(aov_paths) == 0: continue
+        # Filter out failed AOVs from receipt
+        successful_aov_paths = {
+            aov_name: path for aov_name, path in aov_paths.items()
+            if aov_name not in failed_aovs
+        }
+        if len(successful_aov_paths) == 0: continue
         current_receipt_path = _get_frame_path(receipt_path, frame_index)
         print(f'Creating receipt: {current_receipt_path}')
         store_json(current_receipt_path, {
             aov_name: path_str(output_aov_path)
-            for aov_name, output_aov_path in aov_paths.items()
+            for aov_name, output_aov_path in successful_aov_paths.items()
         })
 
     # Done

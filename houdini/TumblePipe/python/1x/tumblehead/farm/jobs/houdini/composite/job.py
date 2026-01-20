@@ -795,34 +795,132 @@ def _build_slapcomp_notify_job(
     # Done
     return task
 
-def _add_jobs(
-    batch: Batch,
+
+def build(
+    config: dict,
+    paths: dict[Path, Path],
+    temp_path: Path,
     jobs: dict[str, Job],
-    deps: dict[str, list[str]]
-    ):
-    indicies = {
-        job_name: batch.add_job(job)
-        for job_name, job in jobs.items()
-    }
-    for job_name, job_deps in deps.items():
-        if len(job_deps) == 0: continue
-        for dep_name in job_deps:
-            if dep_name not in indicies:
-                logging.warning(
-                    f'Job "{job_name}" depends on '
-                    f'non-existing job "{dep_name}"'
-                )
-                continue
-            batch.add_dep(
-                indicies[job_name],
-                indicies[dep_name]
+    deps: dict[str, list[str]],
+    depends_on: list[str] = None
+    ) -> list[str]:
+    """Build composite jobs and add to provided dicts.
+
+    Args:
+        config: Job configuration
+        paths: Files to bundle with jobs
+        temp_path: Staging directory
+        jobs: Dict to add Job objects to (modified in place)
+        deps: Dict to add dependencies to (modified in place)
+        depends_on: Optional list of job names this job depends on
+
+    Returns:
+        List of terminal job names (for dependency chaining)
+    """
+    if depends_on is None:
+        depends_on = []
+
+    # Helper to add job
+    def _add_job(job_name, job, job_deps):
+        jobs[job_name] = job
+        deps[job_name] = job_deps
+
+    # Track terminal jobs
+    terminal_jobs = []
+
+    # Initial partial composite job
+    render_version_name = None
+    if 'partial_composite' in config['tasks']:
+        render_result = _build_partial_composite_job(
+            config,
+            paths,
+            temp_path
+        )
+        composite_job_obj, render_version_name = render_result
+        notify_job_obj = _build_partial_notify_job(
+            config,
+            temp_path,
+            render_version_name
+        )
+        _add_job('partial_composite', composite_job_obj, depends_on.copy())
+        _add_job('partial_notify', notify_job_obj, ['partial_composite'])
+        terminal_jobs.append('partial_notify')
+
+    # Following full composite jobs
+    if 'full_composite' in config['tasks']:
+        terminal_jobs = []  # Clear - full composite jobs become terminals
+        render_result = _build_full_composite_job(
+            config,
+            paths,
+            temp_path,
+            render_version_name
+        )
+        composite_job_obj, render_version_name = render_result
+
+        # Get layer names for creating per-layer MP4 jobs
+        layer_names = config['settings']['layer_names']
+
+        # Determine full_composite dependencies
+        full_composite_deps = (
+            depends_on.copy() if 'partial_composite' not in config['tasks'] else
+            ['partial_composite']
+        )
+        _add_job('full_composite', composite_job_obj, full_composite_deps)
+
+        # Create MP4 jobs for each layer
+        for layer_name in layer_names:
+            layer_mp4_obj = _build_layer_mp4_job(
+                config,
+                temp_path,
+                layer_name,
+                render_version_name
             )
+            job_name = f'layer_mp4_{layer_name}'
+            _add_job(job_name, layer_mp4_obj, ['full_composite'])
+
+        edit_job_obj = _build_edit_job(
+            config,
+            temp_path
+        )
+        slapcomp_result = _build_slapcomp_job(
+            config,
+            temp_path,
+            render_version_name
+        )
+        slapcomp_job_obj, slapcomp_version_name = slapcomp_result
+        slapcomp_mp4_result = _build_slapcomp_mp4_job(
+            config,
+            temp_path,
+            slapcomp_version_name
+        )
+        slapcomp_mp4_obj, _ = slapcomp_mp4_result
+        slapcomp_notify_obj = _build_slapcomp_notify_job(
+            config,
+            temp_path,
+            slapcomp_version_name
+        )
+        _add_job('edit', edit_job_obj, ['full_composite'])
+        _add_job('slapcomp', slapcomp_job_obj, ['full_composite'])
+        _add_job('slapcomp_mp4', slapcomp_mp4_obj, ['slapcomp'])
+        _add_job('slapcomp_notify', slapcomp_notify_obj, ['slapcomp_mp4'])
+        terminal_jobs.append('slapcomp_notify')
+
+    return terminal_jobs
+
 
 def submit(
     config: dict,
     paths: dict[Path, Path]
     ) -> int:
+    """Create batch, build jobs, and submit to farm.
 
+    Args:
+        config: Job configuration
+        paths: Files to bundle with jobs
+
+    Returns:
+        0 on success, 1 on error
+    """
     # Config
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = config['settings']['user_name']
@@ -852,88 +950,13 @@ def submit(
             f'{timestamp}'
         )
 
-        # Prepare adding jobs
-        jobs = dict()
-        deps = dict()
-        def _add_job(job_name, job, job_deps):
-            jobs[job_name] = job
-            deps[job_name] = job_deps
+        # Build jobs using the new build() function
+        jobs = {}
+        deps = {}
+        build(config, paths, temp_path, jobs, deps)
 
-        # Initial partial composite job
-        render_version_name = None
-        if 'partial_composite' in config['tasks']:
-            render_result = _build_partial_composite_job(
-                config,
-                paths,
-                temp_path
-            )
-            composite_job, render_version_name = render_result
-            notify_job = _build_partial_notify_job(
-                config,
-                temp_path,
-                render_version_name
-            )
-            _add_job('partial_composite', composite_job, [])
-            _add_job('partial_notify', notify_job, ['partial_composite'])
-
-        # Following full composite jobs
-        if 'full_composite' in config['tasks']:
-            render_result = _build_full_composite_job(
-                config,
-                paths,
-                temp_path,
-                render_version_name
-            )
-            composite_job, render_version_name = render_result
-
-            # Get layer names for creating per-layer MP4 jobs
-            layer_names = config['settings']['layer_names']
-
-            # Create MP4 jobs for each layer
-            layer_mp4_jobs = []
-            for layer_name in layer_names:
-                layer_mp4 = _build_layer_mp4_job(
-                    config,
-                    temp_path,
-                    layer_name,
-                    render_version_name
-                )
-                job_name = f'layer_mp4_{layer_name}'
-                _add_job(job_name, layer_mp4, ['full_composite'])
-                layer_mp4_jobs.append(job_name)
-
-            edit_job = _build_edit_job(
-                config,
-                temp_path
-            )
-            slapcomp_result = _build_slapcomp_job(
-                config,
-                temp_path,
-                render_version_name
-            )
-            slapcomp_job, slapcomp_version_name = slapcomp_result
-            slapcomp_mp4_result = _build_slapcomp_mp4_job(
-                config,
-                temp_path,
-                slapcomp_version_name
-            )
-            slapcomp_mp4, _ = slapcomp_mp4_result
-            slapcomp_notify = _build_slapcomp_notify_job(
-                config,
-                temp_path,
-                slapcomp_version_name
-            )
-            _add_job('full_composite', composite_job, (
-                [] if 'partial_composite' not in config['tasks'] else
-                ['partial_composite']
-            ))
-            _add_job('edit', edit_job, ['full_composite'])
-            _add_job('slapcomp', slapcomp_job, ['full_composite'])
-            _add_job('slapcomp_mp4', slapcomp_mp4, ['slapcomp'])
-            _add_job('slapcomp_notify', slapcomp_notify, ['slapcomp_mp4'])
-
-        # Add jobs
-        _add_jobs(batch, jobs, deps)
+        # Add jobs to batch
+        batch.add_jobs_with_deps(jobs, deps)
 
         # Submit
         farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))

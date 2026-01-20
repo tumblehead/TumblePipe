@@ -253,14 +253,15 @@ def generate_root_version(shot_uri: Uri) -> Path:
     if root_defaults_path.exists():
         layer_refs.append(root_defaults_path)
 
-    # Get next version path for root department (using 'default' variant)
-    export_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / 'default' / 'root'
+    # Get next version path for root (shot-level, not variant-specific)
+    export_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_root'
     export_path = fix_path(api.storage.resolve(export_uri))
     version_path = get_next_version_path(export_path)
     version_name = version_path.name
 
-    # Generate output path
-    layer_file_name = get_layer_file_name(shot_uri, 'default', 'root', version_name)
+    # Generate output path (no variant in filename for shot-level root)
+    entity_name = '_'.join(shot_uri.segments)
+    layer_file_name = f'{entity_name}_root_{version_name}.usda'
     output_path = version_path / layer_file_name
 
     # Get full frame range (including roll)
@@ -297,21 +298,27 @@ def get_root_layer_path(shot_uri: Uri) -> Path | None:
     """
     Get the latest root department layer path for a shot.
 
+    Root layer is shot-level (stored at _root/, not under any variant).
+
     Args:
         shot_uri: The shot entity URI
 
     Returns:
-        Path to the latest root layer .usd file, or None if no root exports exist
+        Path to the latest root layer .usda file, or None if no root exports exist
     """
-    from tumblehead.pipe.paths import latest_export_path, get_layer_file_name
+    from tumblehead.pipe.paths import get_latest_version_path
 
-    # Use 'default' variant for root department
-    version_path = latest_export_path(shot_uri, 'default', 'root')
+    # Root is shot-level, stored at _root/ (not variant-specific)
+    export_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_root'
+    export_path = fix_path(api.storage.resolve(export_uri))
+    version_path = get_latest_version_path(export_path)
     if version_path is None:
         return None
 
+    # Construct filename (no variant for shot-level root)
     version_name = version_path.name
-    layer_file_name = get_layer_file_name(shot_uri, 'default', 'root', version_name)
+    entity_name = '_'.join(shot_uri.segments)
+    layer_file_name = f'{entity_name}_root_{version_name}.usda'
     layer_path = version_path / layer_file_name
 
     if not fix_path(layer_path).exists():

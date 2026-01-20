@@ -27,10 +27,15 @@ class WildcardItem(UriPath):
 class NamedItem(UriPath):
     name: str
 
-@dataclass(frozen=True)
+@dataclass
 class Uri:
     purpose: str
     path: UriPath | None
+    query: dict = None
+
+    def __post_init__(self):
+        if self.query is not None: return
+        object.__setattr__(self, 'query', dict())
 
     @staticmethod
     def parse_unsafe(raw_uri: str) -> 'Uri':
@@ -62,9 +67,18 @@ class Uri:
                 path = _parse_part(name, path)
             return path
 
+        # Parse query string if present
+        query = dict()
+        if '?' in raw_uri:
+            raw_uri, query_string = raw_uri.split('?', 1)
+            for param in query_string.split('&'):
+                if '=' in param:
+                    k, v = param.split('=', 1)
+                    query[k] = v
+
         purpose, raw_segments = _parse_purpose(raw_uri)
         path = _parse_path(raw_segments)
-        return Uri(purpose, path)
+        return Uri(purpose, path, query)
     
     @staticmethod
     def parse(raw_uri: str) -> 'Uri | None':
@@ -137,7 +151,6 @@ class Uri:
         return segments[-1] if segments else None
 
     def display_name(self) -> str:
-        """Generate a display name for entities (e.g., 'sequence/shot' or 'category/asset')."""
         segments = self.segments
         if len(segments) >= 3:
             return f"{segments[1]}/{segments[2]}"
@@ -155,7 +168,10 @@ class Uri:
         purpose, parts = self.parts()
         purpose = '' if purpose is None else f'{purpose}:'
         path = '/'.join(parts)
-        return f'{purpose}/{path}'
+        base = f'{purpose}/{path}'
+        if len(self.query) == 0: return base
+        query = '&'.join(f'{k}={v}' for k, v in self.query.items())
+        return f'{base}?{query}'
 
     def __hash__(self) -> int:
         return hash(str(self))

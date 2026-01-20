@@ -46,8 +46,42 @@ from .helpers import (
 from .views import WorkspaceBrowser, DepartmentBrowser, DetailsView, VersionView, SettingsView
 from .utils.async_refresh import AsyncRefreshManager
 from .viewers.usd_viewer import USDViewerLauncher
+from .viewers.djv_viewer import DJVViewerLauncher
+from .dialogs.render_viewer_dialog import RenderViewerDialog
 
 api = default_client()
+
+
+def _is_nc_file(file_path: Path) -> tuple:
+    """Check if file has non-commercial marker in header.
+
+    Houdini hip files have a magic header that indicates license type:
+    - Commercial files start with 'HouNC' is NOT present
+    - Non-commercial files start with 'HouNC' (5 bytes)
+    - Limited commercial files start with 'HouLC' (5 bytes)
+
+    Returns:
+        tuple: (is_infected: bool, marker_type: str) where marker_type is 'nc', 'lc', or ''
+    """
+    # Check extension first (fast path)
+    ext = file_path.suffix.lower()
+    if ext == '.hipnc':
+        return True, 'nc'
+    if ext == '.hiplc':
+        return True, 'lc'
+
+    # Check file header magic bytes for .hip files with internal markers
+    try:
+        with open(file_path, 'rb') as f:
+            magic = f.read(5)
+            if magic == b'HouNC':
+                return True, 'nc'
+            if magic == b'HouLC':
+                return True, 'lc'
+    except Exception:
+        pass
+
+    return False, ''
 
 
 def _get_workfile_uri(entity_uri: Uri, department_name: str) -> Uri:
@@ -90,6 +124,17 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._selected_entity = None  # Uri | None - the selected entity
         self._selected_department = None
         self._auto_settings = AUTO_SETTINGS_DEFAULT.copy()
+
+        # NC (non-commercial) session type for save extension handling
+        # Session type determines extension: 'nc' → .hipnc, 'lc' → .hiplc, None → .hip
+        # This matches what Houdini uses for Ctrl+S, preventing duplicate versions
+        self._nc_session_type = self._detect_nc_session_type()
+
+        # Farm submission dialog state persistence
+        self._farm_dialog_selections: set[str] | None = None
+        self._farm_dialog_expanded: set[str] | None = None
+        self._farm_dialog_splitter: list[int] | None = None
+        self._farm_dialog_context_uri: str | None = None
 
         # Initialize async refresh manager
         self._async_refresh_manager = AsyncRefreshManager(api, self)
@@ -162,6 +207,18 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._submit_jobs_button.setMaximumWidth(30)
         self._submit_jobs_button.clicked.connect(self._open_job_submission)
         workspace_header_layout.addWidget(self._submit_jobs_button)
+
+        # Create the view renders button
+        self._view_renders_button = QtWidgets.QPushButton()
+        self._view_renders_button.setIcon(hqt.Icon("COP2_mosaic"))
+        self._view_renders_button.setToolTip("View Renders in DJV")
+        self._view_renders_button.setMaximumWidth(30)
+        self._view_renders_button.clicked.connect(self._open_render_viewer)
+        workspace_header_layout.addWidget(self._view_renders_button)
+
+        # DJV viewer launcher
+        self._djv_launcher = DJVViewerLauncher(self)
+        self._render_viewer_selections = set()
 
         # Window references
         self._database_window = None
@@ -266,6 +323,27 @@ class ProjectBrowser(QtWidgets.QWidget):
         except Exception:
             # If context detection fails, just continue without setting open context
             pass
+
+    def _detect_nc_session_type(self) -> str | None:
+        """Check if running NC/LC Houdini license.
+
+        Returns:
+            'nc' for Apprentice/ApprenticeHD (.hipnc files)
+            'lc' for Indie (.hiplc files)
+            None for commercial licenses
+        """
+        try:
+            license_cat = hou.licenseCategory()
+            if license_cat in (
+                hou.licenseCategoryType.Apprentice,
+                hou.licenseCategoryType.ApprenticeHD
+            ):
+                return 'nc'
+            if license_cat == hou.licenseCategoryType.Indie:
+                return 'lc'
+            return None
+        except Exception:
+            return None
 
     def refresh(self):
         self._details_view.refresh()
@@ -634,8 +712,73 @@ class ProjectBrowser(QtWidgets.QWidget):
     def _open_job_submission(self):
         """Open the job submission dialog"""
         from .dialogs import JobSubmissionDialog
-        dialog = JobSubmissionDialog(parent=self)
+
+        # Determine if context changed (reset selections and expand state if so)
+        # Note: splitter sizes persist across context changes
+        current_context_uri = str(self._context.entity_uri) if self._context else None
+        if current_context_uri != self._farm_dialog_context_uri:
+            self._farm_dialog_selections = None
+            self._farm_dialog_expanded = None
+            self._farm_dialog_context_uri = current_context_uri
+
+        # Create dialog with context, previous selections, expand state, and splitter sizes
+        dialog = JobSubmissionDialog(
+            context=self._context,
+            previous_selections=self._farm_dialog_selections,
+            previous_expanded=self._farm_dialog_expanded,
+            previous_splitter_sizes=self._farm_dialog_splitter,
+            parent=self
+        )
         dialog.exec_()
+
+        # Save state for next open
+        self._farm_dialog_selections = dialog.get_selected_uris()
+        self._farm_dialog_expanded = dialog.get_expanded_paths()
+        self._farm_dialog_splitter = dialog.get_splitter_sizes()
+
+    def _open_render_viewer(self):
+        """Open the render viewer dialog for viewing renders in DJV."""
+        # Check if DJV is configured
+        if not self._djv_launcher.is_configured():
+            hou.ui.displayMessage(
+                "DJV is not configured.\n\n"
+                "Set the TH_DJV_PATH environment variable to the path of the DJV executable.",
+                severity=hou.severityType.Warning,
+                title="DJV Not Found"
+            )
+            return
+
+        # Create dialog with previous selections
+        dialog = RenderViewerDialog(
+            previous_selections=self._render_viewer_selections,
+            parent=self
+        )
+
+        if dialog.exec_():
+            # Get selected shots and settings
+            selected_shots = dialog.get_selected_shots()
+            render_department = dialog.get_selected_department()
+            layer_name = dialog.get_selected_layer()
+            aov_name = dialog.get_selected_aov()
+
+            if selected_shots:
+                # Launch DJV with render timeline
+                success = self._djv_launcher.launch_render_timeline(
+                    shots=selected_shots,
+                    render_department=render_department,
+                    layer_name=layer_name,
+                    aov_name=aov_name
+                )
+                if not success:
+                    hou.ui.displayMessage(
+                        "Failed to launch DJV.\n\n"
+                        "Check the console for details.",
+                        severity=hou.severityType.Warning,
+                        title="DJV Launch Failed"
+                    )
+
+        # Save selections for next open
+        self._render_viewer_selections = dialog.get_selected_uris()
 
     def _open_scene_editor(self):
         """Open or focus the scene description editor window (non-modal)"""
@@ -897,7 +1040,8 @@ class ProjectBrowser(QtWidgets.QWidget):
             return
 
         # Save the current scene to new version
-        file_path = next_file_path(selected_context)
+        # Use session type for extension (matches Houdini Ctrl+S behavior)
+        file_path = next_file_path(selected_context, nc_type=self._nc_session_type)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         hou.hipFile.save(path_str(file_path))
 
@@ -919,7 +1063,7 @@ class ProjectBrowser(QtWidgets.QWidget):
             )
         else:
             self._context = file_context
-        save_context(file_path.parent, None, self._context)
+        save_context(file_path.parent, None, self._context, file_extension=file_path.suffix.lstrip('.'))
         save_entity_context(file_path.parent, self._context)
         self._update_scene()
 
@@ -949,7 +1093,9 @@ class ProjectBrowser(QtWidgets.QWidget):
             return
 
         # Create new scene from template
-        file_path = next_file_path(selected_context)
+        # Use appropriate extension based on NC session type
+        nc_type = self._nc_session_type
+        file_path = next_file_path(selected_context, nc_type=nc_type)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         hou.hipFile.clear(suppress_save_prompt=True)
         hou.hipFile.save(path_str(file_path))
@@ -972,7 +1118,7 @@ class ProjectBrowser(QtWidgets.QWidget):
             )
         else:
             self._context = file_context
-        save_context(file_path.parent, None, self._context)
+        save_context(file_path.parent, None, self._context, file_extension=file_path.suffix.lstrip('.'))
         save_entity_context(file_path.parent, self._context)
         self._initialize_scene()
         self._update_scene()
@@ -984,14 +1130,16 @@ class ProjectBrowser(QtWidgets.QWidget):
     def _open_scene_internal(self, selected_context, should_reload=False):
         """Internal scene opening logic shared by normal and auto-save variants"""
         # Get the file path
+        # Use appropriate extension based on NC session type (for new files)
+        nc_type = self._nc_session_type
         file_path = (
-            next_file_path(selected_context)
+            next_file_path(selected_context, nc_type=nc_type)
             if selected_context.version_name is None
             else file_path_from_context(selected_context)
         )
         # Fall back to next file path if the specified version doesn't exist
         if file_path is None:
-            file_path = next_file_path(selected_context)
+            file_path = next_file_path(selected_context, nc_type=nc_type)
 
         # Set the update mode to manual
         with util.update_mode(hou.updateMode.Manual):
@@ -1035,7 +1183,7 @@ class ProjectBrowser(QtWidgets.QWidget):
                     department_name=selected_context.department_name,
                     version_name=selected_context.version_name
                 )
-                save_context(file_path.parent, None, self._context)
+                save_context(file_path.parent, None, self._context, file_extension=file_path.suffix.lstrip('.'))
                 save_entity_context(file_path.parent, self._context)
                 self._initialize_scene()
 
@@ -1153,9 +1301,42 @@ class ProjectBrowser(QtWidgets.QWidget):
                 elif result == QtWidgets.QMessageBox.Cancel:
                     return False
         else:
+            # Check if we have a valid context - existing file might not be a pipeline file
+            if self._context is None:
+                if auto_save:
+                    # Can't auto-save without context, just continue
+                    return True
+                else:
+                    # Ask user to save manually like a new file
+                    message = "The current scene has unsaved changes.\nDo you want to save it?"
+                    result = QtWidgets.QMessageBox.question(
+                        self,
+                        "Save Scene",
+                        message,
+                        QtWidgets.QMessageBox.Yes
+                        | QtWidgets.QMessageBox.No
+                        | QtWidgets.QMessageBox.Cancel,
+                    )
+                    if result == QtWidgets.QMessageBox.Yes:
+                        file_path = hou.ui.selectFile(
+                            title="Choose the file path to save the scene",
+                            start_directory=path_str(Path.home()),
+                            file_type=hou.fileType.Hip,
+                            chooser_mode=hou.fileChooserMode.Write,
+                        )
+                        if len(file_path) == 0:
+                            return False
+                        hou.hipFile.save(file_path)
+                    elif result == QtWidgets.QMessageBox.No:
+                        return True
+                    elif result == QtWidgets.QMessageBox.Cancel:
+                        return False
+                    return True
+
             if auto_save:
                 # Auto save the pipeline scene without prompting
-                file_path = next_file_path(self._context)
+                # Use session type for extension (matches Houdini Ctrl+S behavior)
+                file_path = next_file_path(self._context, nc_type=self._nc_session_type)
                 hou.hipFile.save(path_str(file_path))
 
                 # Update current context - preserve entity_uri to avoid re-reading corrupted context
@@ -1174,7 +1355,7 @@ class ProjectBrowser(QtWidgets.QWidget):
                         department_name=prev_context.department_name,
                         version_name=version_name
                     )
-                save_context(file_path.parent, prev_context, self._context)
+                save_context(file_path.parent, prev_context, self._context, file_extension=file_path.suffix.lstrip('.'))
                 save_entity_context(file_path.parent, self._context)
             else:
                 # Ask the user if they want to save the current pipeline scene
@@ -1188,7 +1369,8 @@ class ProjectBrowser(QtWidgets.QWidget):
                     | QtWidgets.QMessageBox.Cancel,
                 )
                 if result == QtWidgets.QMessageBox.Yes:
-                    file_path = next_file_path(self._context)
+                    # Use session type for extension (matches Houdini Ctrl+S behavior)
+                    file_path = next_file_path(self._context, nc_type=self._nc_session_type)
                     hou.hipFile.save(path_str(file_path))
 
                     # Update current context - preserve entity_uri to avoid re-reading corrupted context
@@ -1207,7 +1389,7 @@ class ProjectBrowser(QtWidgets.QWidget):
                             department_name=prev_context.department_name,
                             version_name=version_name
                         )
-                    save_context(file_path.parent, prev_context, self._context)
+                    save_context(file_path.parent, prev_context, self._context, file_extension=file_path.suffix.lstrip('.'))
                     save_entity_context(file_path.parent, self._context)
 
                 elif result == QtWidgets.QMessageBox.No:
@@ -1227,7 +1409,8 @@ class ProjectBrowser(QtWidgets.QWidget):
 
         try:
             # Save the file path
-            file_path = next_file_path(self._context)
+            # Use session type for extension (matches Houdini Ctrl+S behavior)
+            file_path = next_file_path(self._context, nc_type=self._nc_session_type)
             hou.hipFile.save(path_str(file_path))
 
             # Set the new context - preserve the existing entity_uri to avoid
@@ -1248,7 +1431,7 @@ class ProjectBrowser(QtWidgets.QWidget):
                     department_name=prev_context.department_name,
                     version_name=version_name
                 )
-            save_context(file_path.parent, prev_context, self._context)
+            save_context(file_path.parent, prev_context, self._context, file_extension=file_path.suffix.lstrip('.'))
             save_entity_context(file_path.parent, self._context)
 
             # Update all UI components

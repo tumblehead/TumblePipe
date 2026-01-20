@@ -79,18 +79,22 @@ class ProcessDialog(QtWidgets.QDialog):
         self._tree_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self._tree_view.customContextMenuRequested.connect(self._show_context_menu)
 
-        # Set column widths
+        # Set column widths and enable user resizing
         header = self._tree_view.header()
-        header.setStretchLastSection(True)
+        header.setStretchLastSection(False)  # Don't auto-stretch last column
         if header is not None and header.count() >= 7:
-            header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)  # Task
-            header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)  # Department
-            header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)  # Variant
-            header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)  # Version
-            header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)  # First
-            header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)  # Last
-            header.setSectionResizeMode(6, QtWidgets.QHeaderView.Interactive)  # Status
-            self._tree_view.setColumnWidth(6, 60)  # Status column
+            # All columns are Interactive (user-resizable)
+            for col in range(7):
+                header.setSectionResizeMode(col, QtWidgets.QHeaderView.Interactive)
+
+            # Set sensible default widths
+            self._tree_view.setColumnWidth(0, 200)  # Task
+            self._tree_view.setColumnWidth(1, 90)   # Department
+            self._tree_view.setColumnWidth(2, 70)   # Variant
+            self._tree_view.setColumnWidth(3, 60)   # Version
+            self._tree_view.setColumnWidth(4, 50)   # First
+            self._tree_view.setColumnWidth(5, 50)   # Last
+            self._tree_view.setColumnWidth(6, 60)   # Status
 
         layout.addWidget(self._tree_view)
 
@@ -108,7 +112,6 @@ class ProcessDialog(QtWidgets.QDialog):
 
         mode_layout.addWidget(self._local_radio)
         mode_layout.addWidget(self._farm_radio)
-        mode_layout.addStretch()
 
         layout.addWidget(self._mode_group)
 
@@ -188,6 +191,9 @@ class ProcessDialog(QtWidgets.QDialog):
         # Update status when model changes (tree model uses itemChanged)
         self._model.itemChanged.connect(lambda _: self._update_status())
 
+        # Auto-expand/collapse based on checkbox state
+        self._model.itemChanged.connect(self._on_item_changed)
+
         # Connect mode radio buttons to filter tasks
         self._local_radio.toggled.connect(self._on_mode_changed)
         self._farm_radio.toggled.connect(self._on_mode_changed)
@@ -201,6 +207,19 @@ class ProcessDialog(QtWidgets.QDialog):
         """Deselect all tasks"""
         self._model.set_all_enabled(False)
         self._update_status()
+
+    def _on_item_changed(self, item):
+        """Handle item changes - expand/collapse based on check state"""
+        if not item.hasChildren():
+            return
+
+        index = self._model.indexFromItem(item)
+        if item.checkState() == Qt.Unchecked:
+            # Collapse when unchecked
+            self._tree_view.collapse(index)
+        elif item.checkState() == Qt.Checked:
+            # Expand when checked
+            self._tree_view.expand(index)
 
     def _on_mode_changed(self):
         """Update task enablement based on execution mode"""

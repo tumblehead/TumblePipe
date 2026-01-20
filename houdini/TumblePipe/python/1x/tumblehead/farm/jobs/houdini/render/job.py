@@ -128,7 +128,9 @@ def _is_valid_config(config):
         if not isinstance(settings['variant_names'], list): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
-        if not _check_str(settings, 'input_path'): return False
+        # Accept either input_paths (per-variant dict) or input_path (legacy single path)
+        if 'input_paths' not in settings and 'input_path' not in settings: return False
+        if 'input_paths' in settings and not isinstance(settings['input_paths'], dict): return False
         if not _check_int(settings, 'tile_count'): return False
         if not _check_int(settings, 'first_frame'): return False
         if not _check_int(settings, 'last_frame'): return False
@@ -993,34 +995,251 @@ def _build_slapcomp_notify_job(
     # Done
     return task
 
-def _add_jobs(
-    batch: Batch,
+def build(
+    config: dict,
+    paths: dict[Path, Path],
+    temp_path: Path,
     jobs: dict[str, Job],
-    deps: dict[str, list[str]]
-    ):
-    indicies = {
-        job_name: batch.add_job(job)
-        for job_name, job in jobs.items()
-    }
-    for job_name, job_deps in deps.items():
-        if len(job_deps) == 0: continue
-        for dep_name in job_deps:
-            if dep_name not in indicies:
-                logging.warning(
-                    f'Job "{job_name}" depends on '
-                    f'non-existing job "{dep_name}"'
+    deps: dict[str, list[str]],
+    depends_on: list[str] = None
+    ) -> list[str]:
+    """Build render jobs and add to provided dicts.
+
+    Args:
+        config: Job configuration
+        paths: Files to bundle with jobs
+        temp_path: Staging directory
+        jobs: Dict to add Job objects to (modified in place)
+        deps: Dict to add dependencies to (modified in place)
+        depends_on: Optional list of job names this job depends on
+
+    Returns:
+        List of terminal job names (for dependency chaining)
+    """
+    if depends_on is None:
+        depends_on = []
+
+    # Config
+    variant_names = config['settings']['variant_names']
+    render_department_name = config['settings']['render_department_name']
+
+    # Helper to add job
+    def _add_job(job_name, job, job_deps):
+        jobs[job_name] = job
+        deps[job_name] = job_deps
+
+    # Track version names per layer
+    render_version_names = {}
+    denoise_version_names = {}
+
+    # Track terminal jobs for return value
+    terminal_jobs = []
+
+    # PARTIAL RENDER: Create jobs for each layer
+    if 'partial_render' in config['tasks']:
+        for layer_name in variant_names:
+
+            # Create layer-specific config
+            layer_config = config.copy()
+            layer_config['settings'] = config['settings'].copy()
+            layer_config['settings']['variant_name'] = layer_name
+            # Set variant-specific input path from input_paths dict (or fall back to legacy input_path)
+            if 'input_paths' in config['settings']:
+                layer_config['settings']['input_path'] = config['settings']['input_paths'][layer_name]
+
+            # Build partial render job for this layer
+            render_result = _build_partial_render_job(layer_config, paths, temp_path)
+            render_job_obj, render_version = render_result
+            render_version_names[layer_name] = render_version
+            # First jobs depend on depends_on parameter
+            _add_job(f'partial_render_{layer_name}', render_job_obj, depends_on.copy())
+
+            if config['tasks']['partial_render']['denoise']:
+                denoise_result = _build_partial_denoise_job(
+                    layer_config,
+                    temp_path,
+                    render_department_name,
+                    render_version
                 )
-                continue
-            batch.add_dep(
-                indicies[job_name],
-                indicies[dep_name]
+                denoise_job_obj, denoise_version = denoise_result
+                denoise_version_names[layer_name] = denoise_version
+                _add_job(f'partial_denoise_{layer_name}', denoise_job_obj, [f'partial_render_{layer_name}'])
+
+                notify_job_obj = _build_partial_notify_job(
+                    layer_config,
+                    temp_path,
+                    'denoise',
+                    denoise_version
+                )
+                _add_job(f'partial_notify_{layer_name}', notify_job_obj, [f'partial_denoise_{layer_name}'])
+                terminal_jobs.append(f'partial_notify_{layer_name}')
+            else:
+                notify_job_obj = _build_partial_notify_job(
+                    layer_config,
+                    temp_path,
+                    render_department_name,
+                    render_version
+                )
+                _add_job(f'partial_notify_{layer_name}', notify_job_obj, [f'partial_render_{layer_name}'])
+                terminal_jobs.append(f'partial_notify_{layer_name}')
+
+    # FULL RENDER: Create jobs for each layer
+    if 'full_render' in config['tasks']:
+        # Clear terminal jobs - full render jobs will be the new terminals
+        terminal_jobs = []
+
+        for layer_name in variant_names:
+            # Create layer-specific config
+            layer_config = config.copy()
+            layer_config['settings'] = config['settings'].copy()
+            layer_config['settings']['variant_name'] = layer_name
+            # Set variant-specific input path from input_paths dict (or fall back to legacy input_path)
+            if 'input_paths' in config['settings']:
+                layer_config['settings']['input_path'] = config['settings']['input_paths'][layer_name]
+
+            # Build full render job for this layer
+            render_result = _build_full_render_job(
+                layer_config,
+                paths,
+                temp_path,
+                render_version_names.get(layer_name)
             )
+            render_job_obj, render_version = render_result
+            render_version_names[layer_name] = render_version
+
+            # Determine dependencies
+            render_deps = []
+            if 'partial_render' in config['tasks']:
+                render_deps = [f'partial_render_{layer_name}']
+            else:
+                # No partial render, so full render depends on depends_on
+                render_deps = depends_on.copy()
+
+            _add_job(f'full_render_{layer_name}', render_job_obj, render_deps)
+
+            if config['tasks']['full_render']['denoise']:
+                denoise_result = _build_full_denoise_job(
+                    layer_config,
+                    temp_path,
+                    render_department_name,
+                    render_version
+                )
+                denoise_job_obj, denoise_version = denoise_result
+                denoise_version_names[layer_name] = denoise_version
+                _add_job(f'full_denoise_{layer_name}', denoise_job_obj, [f'full_render_{layer_name}'])
+
+                layer_mp4_result = _build_layer_mp4_job(
+                    layer_config,
+                    temp_path,
+                    'denoise',
+                    denoise_version
+                )
+                layer_mp4_job_obj, _ = layer_mp4_result
+                _add_job(f'layer_mp4_{layer_name}', layer_mp4_job_obj, [f'full_denoise_{layer_name}'])
+            else:
+                layer_mp4_result = _build_layer_mp4_job(
+                    layer_config,
+                    temp_path,
+                    render_department_name,
+                    render_version
+                )
+                layer_mp4_job_obj, _ = layer_mp4_result
+                _add_job(f'layer_mp4_{layer_name}', layer_mp4_job_obj, [f'full_render_{layer_name}'])
+
+        # CROSS-LAYER JOBS: Create once, depend on all layer jobs
+        if config['tasks']['full_render']['denoise']:
+            # Collect all denoise job names
+            all_denoise_jobs = [f'full_denoise_{ln}' for ln in variant_names]
+
+            # Edit job depends on all denoise jobs (only if copy_to_edit is enabled)
+            if config['settings'].get('copy_to_edit', False):
+                edit_job_obj = _build_edit_job(config, temp_path)
+                _add_job('edit', edit_job_obj, all_denoise_jobs)
+
+            # Slapcomp depends on all denoise jobs
+            # Use version from first layer (all should have same version number)
+            first_layer = variant_names[0]
+            slapcomp_result = _build_slapcomp_job(
+                config,
+                temp_path,
+                'denoise',
+                denoise_version_names[first_layer]
+            )
+            slapcomp_job_obj, slapcomp_version = slapcomp_result
+            _add_job('slapcomp', slapcomp_job_obj, all_denoise_jobs)
+
+            slapcomp_mp4_result = _build_slapcomp_mp4_job(
+                config,
+                temp_path,
+                'denoise',
+                slapcomp_version
+            )
+            slapcomp_mp4_job_obj, _ = slapcomp_mp4_result
+            _add_job('slapcomp_mp4', slapcomp_mp4_job_obj, ['slapcomp'])
+
+            slapcomp_notify_job_obj = _build_slapcomp_notify_job(
+                config,
+                temp_path,
+                'denoise',
+                slapcomp_version
+            )
+            _add_job('slapcomp_notify', slapcomp_notify_job_obj, ['slapcomp_mp4'])
+        else:
+            # Collect all render job names
+            all_render_jobs = [f'full_render_{ln}' for ln in variant_names]
+
+            # Edit job depends on all render jobs (only if copy_to_edit is enabled)
+            if config['settings'].get('copy_to_edit', False):
+                edit_job_obj = _build_edit_job(config, temp_path)
+                _add_job('edit', edit_job_obj, all_render_jobs)
+
+            # Slapcomp depends on all render jobs
+            first_layer = variant_names[0]
+            slapcomp_result = _build_slapcomp_job(
+                config,
+                temp_path,
+                render_department_name,
+                render_version_names[first_layer]
+            )
+            slapcomp_job_obj, slapcomp_version = slapcomp_result
+            _add_job('slapcomp', slapcomp_job_obj, all_render_jobs)
+
+            slapcomp_mp4_result = _build_slapcomp_mp4_job(
+                config,
+                temp_path,
+                render_department_name,
+                slapcomp_version
+            )
+            slapcomp_mp4_job_obj, _ = slapcomp_mp4_result
+            _add_job('slapcomp_mp4', slapcomp_mp4_job_obj, ['slapcomp'])
+
+            slapcomp_notify_job_obj = _build_slapcomp_notify_job(
+                config,
+                temp_path,
+                render_department_name,
+                slapcomp_version
+            )
+            _add_job('slapcomp_notify', slapcomp_notify_job_obj, ['slapcomp_mp4'])
+
+        # Terminal jobs for full render are the final notification jobs
+        terminal_jobs = ['slapcomp_notify']
+
+    return terminal_jobs
+
 
 def submit(
     config: dict,
     paths: dict[Path, Path]
     ) -> int:
+    """Create batch, build jobs, and submit to farm.
 
+    Args:
+        config: Job configuration
+        paths: Files to bundle with jobs
+
+    Returns:
+        0 on success, 1 on error
+    """
     # Config
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = config['settings']['user_name']
@@ -1053,191 +1272,13 @@ def submit(
             f'{timestamp}'
         )
 
-        # Parameters
-        render_department_name = config['settings']['render_department_name']
+        # Build jobs using the new build() function
+        jobs = {}
+        deps = {}
+        build(config, paths, temp_path, jobs, deps)
 
-        # Prepare adding jobs
-        jobs = dict()
-        deps = dict()
-        def _add_job(job_name, job, job_deps):
-            jobs[job_name] = job
-            deps[job_name] = job_deps
-
-        # Track version names per layer
-        render_version_names = {}
-        denoise_version_names = {}
-
-        # PARTIAL RENDER: Create jobs for each layer
-        if 'partial_render' in config['tasks']:
-            for layer_name in variant_names:
-                
-                # Create layer-specific config
-                layer_config = config.copy()
-                layer_config['settings'] = config['settings'].copy()
-                layer_config['settings']['variant_name'] = layer_name
-
-                # Build partial render job for this layer
-                render_result = _build_partial_render_job(layer_config, paths, temp_path)
-                render_job, render_version = render_result
-                render_version_names[layer_name] = render_version
-                _add_job(f'partial_render_{layer_name}', render_job, [])
-
-                if config['tasks']['partial_render']['denoise']:
-                    denoise_result = _build_partial_denoise_job(
-                        layer_config,
-                        temp_path,
-                        render_department_name,
-                        render_version
-                    )
-                    denoise_job, denoise_version = denoise_result
-                    denoise_version_names[layer_name] = denoise_version
-                    _add_job(f'partial_denoise_{layer_name}', denoise_job, [f'partial_render_{layer_name}'])
-
-                    notify_job = _build_partial_notify_job(
-                        layer_config,
-                        temp_path,
-                        'denoise',
-                        denoise_version
-                    )
-                    _add_job(f'partial_notify_{layer_name}', notify_job, [f'partial_denoise_{layer_name}'])
-                else:
-                    notify_job = _build_partial_notify_job(
-                        layer_config,
-                        temp_path,
-                        render_department_name,
-                        render_version
-                    )
-                    _add_job(f'partial_notify_{layer_name}', notify_job, [f'partial_render_{layer_name}'])
-
-        # FULL RENDER: Create jobs for each layer
-        if 'full_render' in config['tasks']:
-            for layer_name in variant_names:
-                # Create layer-specific config
-                layer_config = config.copy()
-                layer_config['settings'] = config['settings'].copy()
-                layer_config['settings']['variant_name'] = layer_name
-
-                # Build full render job for this layer
-                render_result = _build_full_render_job(
-                    layer_config,
-                    paths,
-                    temp_path,
-                    render_version_names.get(layer_name)
-                )
-                render_job, render_version = render_result
-                render_version_names[layer_name] = render_version
-
-                # Determine dependencies
-                render_deps = []
-                if 'partial_render' in config['tasks']:
-                    render_deps = [f'partial_render_{layer_name}']
-
-                _add_job(f'full_render_{layer_name}', render_job, render_deps)
-
-                if config['tasks']['full_render']['denoise']:
-                    denoise_result = _build_full_denoise_job(
-                        layer_config,
-                        temp_path,
-                        render_department_name,
-                        render_version
-                    )
-                    denoise_job, denoise_version = denoise_result
-                    denoise_version_names[layer_name] = denoise_version
-                    _add_job(f'full_denoise_{layer_name}', denoise_job, [f'full_render_{layer_name}'])
-
-                    layer_mp4_result = _build_layer_mp4_job(
-                        layer_config,
-                        temp_path,
-                        'denoise',
-                        denoise_version
-                    )
-                    layer_mp4_job, _ = layer_mp4_result
-                    _add_job(f'layer_mp4_{layer_name}', layer_mp4_job, [f'full_denoise_{layer_name}'])
-                else:
-                    layer_mp4_result = _build_layer_mp4_job(
-                        layer_config,
-                        temp_path,
-                        render_department_name,
-                        render_version
-                    )
-                    layer_mp4_job, _ = layer_mp4_result
-                    _add_job(f'layer_mp4_{layer_name}', layer_mp4_job, [f'full_render_{layer_name}'])
-
-            # CROSS-LAYER JOBS: Create once, depend on all layer jobs
-            if config['tasks']['full_render']['denoise']:
-                # Collect all denoise job names
-                all_denoise_jobs = [f'full_denoise_{ln}' for ln in variant_names]
-
-                # Edit job depends on all denoise jobs
-                edit_job = _build_edit_job(config, temp_path)
-                _add_job('edit', edit_job, all_denoise_jobs)
-
-                # Slapcomp depends on all denoise jobs
-                # Use version from first layer (all should have same version number)
-                first_layer = variant_names[0]
-                slapcomp_result = _build_slapcomp_job(
-                    config,
-                    temp_path,
-                    'denoise',
-                    denoise_version_names[first_layer]
-                )
-                slapcomp_job, slapcomp_version = slapcomp_result
-                _add_job('slapcomp', slapcomp_job, all_denoise_jobs)
-
-                slapcomp_mp4_result = _build_slapcomp_mp4_job(
-                    config,
-                    temp_path,
-                    'denoise',
-                    slapcomp_version
-                )
-                slapcomp_mp4_job, _ = slapcomp_mp4_result
-                _add_job('slapcomp_mp4', slapcomp_mp4_job, ['slapcomp'])
-
-                slapcomp_notify_job = _build_slapcomp_notify_job(
-                    config,
-                    temp_path,
-                    'denoise',
-                    slapcomp_version
-                )
-                _add_job('slapcomp_notify', slapcomp_notify_job, ['slapcomp_mp4'])
-            else:
-                # Collect all render job names
-                all_render_jobs = [f'full_render_{ln}' for ln in variant_names]
-
-                # Edit job depends on all render jobs
-                edit_job = _build_edit_job(config, temp_path)
-                _add_job('edit', edit_job, all_render_jobs)
-
-                # Slapcomp depends on all render jobs
-                first_layer = variant_names[0]
-                slapcomp_result = _build_slapcomp_job(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    render_version_names[first_layer]
-                )
-                slapcomp_job, slapcomp_version = slapcomp_result
-                _add_job('slapcomp', slapcomp_job, all_render_jobs)
-
-                slapcomp_mp4_result = _build_slapcomp_mp4_job(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    slapcomp_version
-                )
-                slapcomp_mp4_job, _ = slapcomp_mp4_result
-                _add_job('slapcomp_mp4', slapcomp_mp4_job, ['slapcomp'])
-
-                slapcomp_notify_job = _build_slapcomp_notify_job(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    slapcomp_version
-                )
-                _add_job('slapcomp_notify', slapcomp_notify_job, ['slapcomp_mp4'])
-
-        # Add jobs
-        _add_jobs(batch, jobs, deps)
+        # Add jobs to batch
+        batch.add_jobs_with_deps(jobs, deps)
 
         # Submit
         farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))

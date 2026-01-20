@@ -28,7 +28,7 @@ from tumblehead.config.timeline import BlockRange
 from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Husk, ITileStitch
 from tumblehead.apps import exr
-from tumblehead.farm.tasks.env import get_base_env
+from tumblehead.farm.tasks.env import get_base_env, print_env
 
 api = default_client()
 
@@ -53,11 +53,6 @@ def _get_frame_path(frame_path, frame_index):
         frame_path.name.replace('*', frame_name)
     )
 
-def _print_env(env):
-    """Print environment variables for debugging."""
-    _headline('Environment variables')
-    for key, value in sorted(env.items()):
-        print(f'  {key}={value}')
 
 def main(
     tile_count: int,
@@ -108,7 +103,7 @@ def main(
 
         # Get and print environment for debugging
         env = get_base_env(api)
-        _print_env(env)
+        print_env()
 
         # Render with husk and Karama XPU
         _headline('Rendering tiles')

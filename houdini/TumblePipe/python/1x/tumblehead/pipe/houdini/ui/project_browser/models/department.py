@@ -3,7 +3,7 @@ from qtpy.QtGui import QFont, QBrush, QColor
 
 from tumblehead.config.groups import find_group
 
-from ..helpers import get_timestamp_from_context, get_user_from_context, format_relative_time
+from ..helpers import get_timestamp_from_context, get_user_from_context, format_relative_time, get_extension_from_context
 
 
 class DepartmentTableModel(QAbstractTableModel):
@@ -116,6 +116,10 @@ class DepartmentTableModel(QAbstractTableModel):
                     return QBrush(QColor("#5e4a8a"))
             else:
                 return QBrush(QColor("#3a3a3a"))
+
+        elif role == Qt.UserRole + 2:
+            # Return file extension for badge display
+            return get_extension_from_context(context)
 
         return None
 

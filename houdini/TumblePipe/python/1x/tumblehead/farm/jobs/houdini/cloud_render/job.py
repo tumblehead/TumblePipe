@@ -871,34 +871,165 @@ def _build_full_notify_job(
     # Done
     return task
 
-def _add_jobs(
-    batch: Batch,
+
+def build(
+    config: dict,
+    paths: dict[Path, Path],
+    temp_path: Path,
     jobs: dict[str, Job],
-    deps: dict[str, list[str]]
-    ):
-    indicies = {
-        job_name: batch.add_job(job)
-        for job_name, job in jobs.items()
-    }
-    for job_name, job_deps in deps.items():
-        if len(job_deps) == 0: continue
-        for dep_name in job_deps:
-            if dep_name not in indicies:
-                logging.warning(
-                    f'Job "{job_name}" depends on '
-                    f'non-existing job "{dep_name}"'
-                )
-                continue
-            batch.add_dep(
-                indicies[job_name],
-                indicies[dep_name]
+    deps: dict[str, list[str]],
+    depends_on: list[str] = None
+    ) -> list[str]:
+    """Build cloud render jobs and add to provided dicts.
+
+    Args:
+        config: Job configuration
+        paths: Files to bundle with jobs
+        temp_path: Staging directory
+        jobs: Dict to add Job objects to (modified in place)
+        deps: Dict to add dependencies to (modified in place)
+        depends_on: Optional list of job names this job depends on
+
+    Returns:
+        List of terminal job names (for dependency chaining)
+    """
+    if depends_on is None:
+        depends_on = []
+
+    # Config
+    render_department_name = config['settings']['render_department_name']
+
+    # Helper to add job
+    def _add_job(job_name, job, job_deps):
+        jobs[job_name] = job
+        deps[job_name] = job_deps
+
+    # Track terminal jobs
+    terminal_jobs = []
+
+    # Initial partial render job
+    render_version_name = None
+    if 'partial_render' in config['tasks']:
+        render_result = _build_partial_render_job(config, paths, temp_path)
+        render_job_obj, render_version_name = render_result
+        _add_job('partial_render', render_job_obj, depends_on.copy())
+        if config['tasks']['partial_render']['denoise']:
+            denoise_result = _build_partial_denoise_job(
+                config,
+                temp_path,
+                render_department_name,
+                render_version_name
             )
+            denoise_job_obj, denoise_version_name = denoise_result
+            notify_job_obj = _build_partial_notify_job(
+                config,
+                temp_path,
+                'denoise',
+                denoise_version_name
+            )
+            _add_job('partial_denoise', denoise_job_obj, ['partial_render'])
+            _add_job('partial_notify', notify_job_obj, ['partial_denoise'])
+            terminal_jobs.append('partial_notify')
+        else:
+            notify_job_obj = _build_partial_notify_job(
+                config,
+                temp_path,
+                render_department_name,
+                render_version_name
+            )
+            _add_job('partial_notify', notify_job_obj, ['partial_render'])
+            terminal_jobs.append('partial_notify')
+
+    # Following full render jobs
+    if 'full_render' in config['tasks']:
+        terminal_jobs = []  # Clear - full render jobs become the terminals
+        render_result = _build_full_render_job(
+            config,
+            paths,
+            temp_path,
+            render_version_name
+        )
+        render_job_obj, render_version_name = render_result
+        full_render_deps = (
+            depends_on.copy() if 'partial_render' not in config['tasks'] else
+            ['partial_render']
+        )
+        _add_job('full_render', render_job_obj, full_render_deps)
+        if config['tasks']['full_render']['denoise']:
+            denoise_result = _build_full_denoise_job(
+                config,
+                temp_path,
+                render_department_name,
+                render_version_name
+            )
+            denoise_job_obj, denoise_version_name = denoise_result
+            slapcomp_result = _build_slapcomp_job(
+                config,
+                temp_path,
+                'denoise',
+                denoise_version_name
+            )
+            slapcomp_job_obj, slapcomp_version_name = slapcomp_result
+            mp4_result = _build_mp4_job(
+                config,
+                temp_path,
+                'denoise',
+                slapcomp_version_name
+            )
+            mp4_job_obj, mp4_version_name = mp4_result
+            notify_job_obj = _build_full_notify_job(
+                config,
+                temp_path,
+                'denoise',
+                mp4_version_name
+            )
+            _add_job('full_denoise', denoise_job_obj, ['full_render'])
+            _add_job('slapcomp', slapcomp_job_obj, ['full_denoise'])
+            _add_job('mp4', mp4_job_obj, ['slapcomp'])
+            _add_job('full_notify', notify_job_obj, ['mp4'])
+            terminal_jobs.append('full_notify')
+        else:
+            slapcomp_result = _build_slapcomp_job(
+                config,
+                temp_path,
+                render_department_name,
+                render_version_name
+            )
+            slapcomp_job_obj, slapcomp_version_name = slapcomp_result
+            mp4_result = _build_mp4_job(
+                config,
+                temp_path,
+                render_department_name,
+                slapcomp_version_name
+            )
+            mp4_job_obj, mp4_version_name = mp4_result
+            notify_job_obj = _build_full_notify_job(
+                config,
+                temp_path,
+                render_department_name,
+                mp4_version_name
+            )
+            _add_job('slapcomp', slapcomp_job_obj, ['full_render'])
+            _add_job('mp4', mp4_job_obj, ['slapcomp'])
+            _add_job('full_notify', notify_job_obj, ['mp4'])
+            terminal_jobs.append('full_notify')
+
+    return terminal_jobs
+
 
 def submit(
     config: dict,
     paths: dict[Path, Path]
     ) -> int:
+    """Create batch, build jobs, and submit to farm.
 
+    Args:
+        config: Job configuration
+        paths: Files to bundle with jobs
+
+    Returns:
+        0 on success, 1 on error
+    """
     # Config
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = config['settings']['user_name']
@@ -929,119 +1060,13 @@ def submit(
             f'{timestamp}'
         )
 
-        # Parameters
-        render_department_name = config['settings']['render_department_name']
+        # Build jobs using the new build() function
+        jobs = {}
+        deps = {}
+        build(config, paths, temp_path, jobs, deps)
 
-        # Prepare adding jobs
-        jobs = dict()
-        deps = dict()
-        def _add_job(job_name, job, job_deps):
-            jobs[job_name] = job
-            deps[job_name] = job_deps
-
-        # Initial partial render job
-        render_version_name = None
-        if 'partial_render' in config['tasks']:
-            render_result = _build_partial_render_job(config, paths, temp_path)
-            render_job, render_version_name = render_result
-            _add_job('partial_render', render_job, [])
-            if config['tasks']['partial_render']['denoise']:
-                denoise_result = _build_partial_denoise_job(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    render_version_name
-                )
-                denoise_job, denoise_version_name = denoise_result
-                notify_job = _build_partial_notify_job(
-                    config,
-                    temp_path,
-                    'denoise',
-                    denoise_version_name
-                )
-                _add_job('partial_denoise', denoise_job, ['partial_render'])
-                _add_job('partial_notify', notify_job, ['partial_denoise'])
-            else:
-                notify_job = _build_partial_notify_job(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    render_version_name
-                )
-                _add_job('partial_notify', notify_job, ['partial_render'])
-
-        # Following full render jobs
-        if 'full_render' in config['tasks']:
-            render_result = _build_full_render_job(
-                config,
-                paths,
-                temp_path,
-                render_version_name
-            )
-            render_job, render_version_name = render_result
-            _add_job('full_render', render_job, (
-                [] if 'partial_render' not in config['tasks'] else
-                ['partial_render']
-            ))
-            if config['tasks']['full_render']['denoise']:
-                denoise_result = _build_full_denoise_job(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    render_version_name
-                )
-                denoise_job, denoise_version_name = denoise_result
-                slapcomp_result = _build_slapcomp_job(
-                    config,
-                    temp_path,
-                    'denoise',
-                    denoise_version_name
-                )
-                slapcomp_job, slapcomp_version_name = slapcomp_result
-                mp4_result = _build_mp4_job(
-                    config,
-                    temp_path,
-                    'denoise',
-                    slapcomp_version_name
-                )
-                mp4_job, mp4_version_name = mp4_result
-                notify_job = _build_full_notify_job(
-                    config,
-                    temp_path,
-                    'denoise',
-                    mp4_version_name
-                )
-                _add_job('full_denoise', denoise_job, ['full_render'])
-                _add_job('slapcomp', slapcomp_job, ['full_denoise'])
-                _add_job('mp4', mp4_job, ['slapcomp'])
-                _add_job('full_notify', notify_job, ['mp4'])
-            else:
-                slapcomp_result = _build_slapcomp_job(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    render_version_name
-                )
-                slapcomp_job, slapcomp_version_name = slapcomp_result
-                mp4_result = _build_mp4_job(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    slapcomp_version_name
-                )
-                mp4_job, mp4_version_name = mp4_result
-                notify_job = _build_full_notify_job(
-                    config,
-                    temp_path,
-                    render_department_name,
-                    mp4_version_name
-                )
-                _add_job('slapcomp', slapcomp_job, ['full_render'])
-                _add_job('mp4', mp4_job, ['slapcomp'])
-                _add_job('full_notify', notify_job, ['mp4'])
-
-        # Add jobs
-        _add_jobs(batch, jobs, deps)
+        # Add jobs to batch
+        batch.add_jobs_with_deps(jobs, deps)
 
         # Submit
         farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))

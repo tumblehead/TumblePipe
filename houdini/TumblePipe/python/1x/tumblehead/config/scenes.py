@@ -419,8 +419,7 @@ def export_scene_version(scene_uri: Uri) -> Path:
     """
     from tumblehead.pipe.paths import (
         next_scene_staged_path,
-        get_scene_layer_file_name,
-        get_scene_latest_path
+        get_scene_layer_file_name
     )
     from tumblehead.pipe.usd import (
         generate_simple_usda_content,
@@ -476,29 +475,6 @@ def export_scene_version(scene_uri: Uri) -> Path:
     store_json(context_path, {
         'uri': str(scene_uri),
         'version': version_name,
-        'parameters': {
-            'assets': [
-                {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.variant}
-                for entry in scene.assets
-            ]
-        }
-    })
-
-    # Create "latest" copy
-    latest_path = get_scene_latest_path(scene_uri)
-    latest_path.parent.mkdir(parents=True, exist_ok=True)
-
-    latest_usda_content = generate_simple_usda_content(
-        layer_paths=layer_uris,
-        output_path=latest_path
-    )
-    store_text(latest_path, latest_usda_content)
-
-    # Write latest context.json
-    store_json(latest_path.parent / 'context.json', {
-        'uri': str(scene_uri),
-        'version': 'latest',
-        'source_version': version_name,
         'parameters': {
             'assets': [
                 {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.variant}

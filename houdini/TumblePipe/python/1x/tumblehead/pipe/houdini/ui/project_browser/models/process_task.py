@@ -44,6 +44,7 @@ class ProcessTask:
     children: list['ProcessTask'] | None = None     # Child tasks (for parent/group tasks)
     parent_id: str | None = None                    # Reference to parent task ID
     node_path: str | None = None                    # Houdini node path (for display)
+    depends_on: list[str] = field(default_factory=list)  # List of task IDs this task depends on
 
 
 class ProcessTaskTableModel(QAbstractTableModel):
@@ -346,6 +347,9 @@ class ProcessTaskTreeModel(QStandardItemModel):
 
         self._updating_checks = False
 
+        # Update dependency styling after tasks are set
+        self._update_dependency_styling()
+
     def _uri_name(self, uri: Uri) -> str:
         """Extract display name from URI"""
         if uri is None:
@@ -446,6 +450,9 @@ class ProcessTaskTreeModel(QStandardItemModel):
                     grandparent = parent.parent()
                     if grandparent and not parent.data(IS_ENTITY_ROLE):
                         self._update_parent_check_state(grandparent)
+
+            # Update dependency styling after enabled states change
+            self._update_dependency_styling()
         finally:
             self._updating_checks = False
 
@@ -465,6 +472,69 @@ class ProcessTaskTreeModel(QStandardItemModel):
             parent.setCheckState(Qt.Checked)
         else:
             parent.setCheckState(Qt.PartiallyChecked)
+
+        # Also update parent task's enabled state (so executor runs it)
+        parent_task = parent.data(TASK_ROLE)
+        if parent_task is not None:
+            parent_task.enabled = (checked_count > 0)
+
+    def _find_task_by_id(self, task_id: str) -> ProcessTask | None:
+        """Find a task by ID in main tasks or children."""
+        for t in self._tasks:
+            if t.id == task_id:
+                return t
+            if t.children:
+                for child in t.children:
+                    if child.id == task_id:
+                        return child
+        return None
+
+    def _can_task_run(self, task: ProcessTask) -> bool:
+        """Check if task can run based on its own state and parent state.
+
+        Note: Dependencies (depends_on) are NOT checked here - users can
+        independently disable dependencies like validation without affecting
+        the visual state of dependent tasks. The executor handles dependency
+        checking at runtime.
+        """
+        # Task must be enabled
+        if not task.enabled:
+            return False
+
+        # Check if parent task can run (for child tasks in hierarchy)
+        if task.parent_id:
+            parent_task = self._find_task_by_id(task.parent_id)
+            if parent_task and not self._can_task_run(parent_task):
+                return False
+
+        return True
+
+    def _update_dependency_styling(self):
+        """Update visual styling for tasks based on dependency status."""
+        blocked_color = QColor('#666666')  # Grey for blocked tasks
+        normal_color = QColor('#ffffff')   # White for normal tasks
+
+        for task_id, task_item in self._task_items.items():
+            # Find the task
+            task = task_item.data(TASK_ROLE)
+            if task is None:
+                continue
+
+            # Check if task can run
+            can_run = self._can_task_run(task)
+
+            # Update foreground color for all columns in the row
+            parent = task_item.parent()
+            if parent is None:
+                continue
+
+            row = task_item.row()
+            color = normal_color if can_run else blocked_color
+
+            for col in range(len(self.HEADERS)):
+                col_item = parent.child(row, col)
+                if col_item:
+                    col_item.setForeground(QBrush(color))
 
     def get_tasks(self) -> list[ProcessTask]:
         """Get all tasks in tree order (including children)"""
@@ -524,6 +594,9 @@ class ProcessTaskTreeModel(QStandardItemModel):
                             grandchild = child.child(grandchild_row, 0)
                             if grandchild:
                                 grandchild.setCheckState(check_state)
+
+            # Update dependency styling after enabled states change
+            self._update_dependency_styling()
         finally:
             self._updating_checks = False
 
@@ -629,5 +702,8 @@ class ProcessTaskTreeModel(QStandardItemModel):
                         self._update_parent_check_state(task_item)
                 # Then update entity tri-state
                 self._update_parent_check_state(entity_item)
+
+            # Update dependency styling after enabled states change
+            self._update_dependency_styling()
         finally:
             self._updating_checks = False

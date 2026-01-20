@@ -36,7 +36,7 @@ def from_jpg(
     )))
 
     # Find missing frames
-    frame_count = (frame_range.first_frame - frame_range.last_frame) + 1
+    frame_count = len(frame_range)
     available_frame_indices = {
         int(frame.name.split('.')[-2])
         for frame in input_frames
@@ -101,6 +101,7 @@ def from_jpg(
             '-start_number', str(frame_range.first_frame),
             '-i', path_str(to_wsl_path(temp_framestack_path)),
             '-frames:v', str(frame_count),
+            '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
             '-c:v', 'libx264',
             '-crf', '17',
             '-pix_fmt', 'yuv420p',
@@ -142,8 +143,8 @@ def scale(
             '-i', path_str(input_mp4_path), 
             '-vf', (
                 'scale='
-                f'iw{scale_expression}:'
-                f'ih{scale_expression}'
+                f'trunc(iw{scale_expression}/2)*2:'
+                f'trunc(ih{scale_expression}/2)*2'
             ),
             path_str(to_wsl_path(temp_output_mp4_path))
         ])

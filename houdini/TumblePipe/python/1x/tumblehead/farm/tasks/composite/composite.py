@@ -24,6 +24,7 @@ from tumblehead.util.io import (
 from tumblehead.config.timeline import BlockRange
 from tumblehead.util.uri import Uri
 from tumblehead.apps.houdini import Hython
+from tumblehead.farm.tasks.env import print_env
 
 api = default_client()
 
@@ -64,6 +65,9 @@ def main(
         'OCIO environment variable not set. '
         'Please set it to the OCIO config file.'
     )
+
+    # Print environment variables for debugging
+    print_env()
 
     # Output receipt paths
     receipt_paths = [

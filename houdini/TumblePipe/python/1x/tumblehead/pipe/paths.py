@@ -11,6 +11,9 @@ from tumblehead.util.uri import Uri
 
 api = default_client()
 
+# All valid Houdini file extensions (commercial, limited commercial, non-commercial)
+HIP_EXTENSIONS = ('hip', 'hiplc', 'hipnc')
+
 ###############################################################################
 # Version Paths
 ###############################################################################
@@ -1038,19 +1041,17 @@ def list_hip_file_paths(
                 department_name
             )
     workspace_path = api.storage.resolve(workspace_uri)
-    hip_file_name_pattern = '.'.join([
-        '_'.join(workfile_uri.segments[1:] + [
-            department_name,
-            '*'
-        ]),
-        'hip'
-    ])
+    base_pattern = '_'.join(workfile_uri.segments[1:] + [department_name, '*'])
+
+    # Find all hip file variants (.hip, .hiplc, .hipnc)
+    all_hip_files = []
+    for ext in HIP_EXTENSIONS:
+        pattern = f'{base_pattern}.{ext}'
+        all_hip_files.extend(workspace_path.glob(pattern))
+
     hip_file_paths = list(sorted(
-        filter(
-            _valid_file_path_version_name,
-            workspace_path.glob(hip_file_name_pattern)
-        ),
-        key = _get_file_path_version_code
+        filter(_valid_file_path_version_name, all_hip_files),
+        key=_get_file_path_version_code
     ))
     return hip_file_paths
 
@@ -1082,14 +1083,28 @@ def get_hip_file_path(
                 department_name
             )
     workspace_path = api.storage.resolve(workspace_uri)
-    hip_file_name = '.'.join([
-        '_'.join(workfile_uri.segments[1:] + [
-            department_name,
-            version_name
-        ]),
-        'hip'
+    base_name = '_'.join(workfile_uri.segments[1:] + [
+        department_name,
+        version_name
     ])
-    return workspace_path / hip_file_name
+
+    # Priority 1: Check _context/{version}.json for stored extension
+    # This avoids unreliable exists() calls on SMB/CIFS network storage
+    version_context_path = workspace_path / "_context" / f"{version_name}.json"
+    version_data = load_json(version_context_path)
+    if version_data is not None:
+        stored_extension = version_data.get('extension')
+        if stored_extension is not None:
+            return workspace_path / f'{base_name}.{stored_extension}'
+
+    # Priority 2: Search for file by extension (fallback for older workfiles)
+    for ext in HIP_EXTENSIONS:
+        hip_file_path = workspace_path / f'{base_name}.{ext}'
+        if hip_file_path.exists():
+            return hip_file_path
+
+    # Fallback: return .hip path (caller handles non-existence)
+    return workspace_path / f'{base_name}.hip'
 
 def latest_hip_file_path(
     entity_uri: Uri,
@@ -1118,27 +1133,32 @@ def latest_hip_file_path(
                 department_name
             )
     workspace_path = api.storage.resolve(workspace_uri)
-    hip_file_name_pattern = '.'.join([
-        '_'.join(workfile_uri.segments[1:] + [
-            department_name,
-            '*'
-        ]),
-        'hip'
-    ])
+    base_pattern = '_'.join(workfile_uri.segments[1:] + [department_name, '*'])
+
+    # Find all hip file variants (.hip, .hiplc, .hipnc)
+    all_hip_files = []
+    for ext in HIP_EXTENSIONS:
+        pattern = f'{base_pattern}.{ext}'
+        all_hip_files.extend(workspace_path.glob(pattern))
+
     hip_file_paths = list(sorted(
-        filter(
-            _valid_file_path_version_name,
-            workspace_path.glob(hip_file_name_pattern)
-        ),
-        key = _get_file_path_version_code
+        filter(_valid_file_path_version_name, all_hip_files),
+        key=_get_file_path_version_code
     ))
     if len(hip_file_paths) == 0: return None
     return hip_file_paths[-1]
 
-def next_hip_file_path(
+def latest_hip_file_path_with_context(
     entity_uri: Uri,
     department_name: str
-    ) -> Path:
+    ) -> Optional[Path]:
+    """Get latest hip file path, preferring context.json tracked version.
+
+    More reliable than glob() on network filesystems (SMB/CIFS) where
+    directory listings may be cached. Falls back to glob-based discovery
+    if context unavailable or tracked file doesn't exist.
+    """
+    # Resolve workspace path (same logic as existing functions)
     if entity_uri.purpose == 'groups':
         workfile_uri = entity_uri
         workspace_uri = (
@@ -1162,24 +1182,79 @@ def next_hip_file_path(
                 department_name
             )
     workspace_path = api.storage.resolve(workspace_uri)
-    hip_file_name_pattern = '.'.join([
-        '_'.join(workfile_uri.segments[1:] + [
-            department_name,
-            '*'
-        ]),
-        'hip'
-    ])
+
+    # Priority 1: Check context.json for tracked version
+    context_path = workspace_path / 'context.json'
+    context_data = load_json(context_path)
+    if context_data is not None:
+        tracked_version = context_data.get('version')
+        if tracked_version is not None:
+            base_name = '_'.join(workfile_uri.segments[1:] + [
+                department_name,
+                tracked_version
+            ])
+            # Check all hip file extensions (.hip, .hiplc, .hipnc)
+            for ext in HIP_EXTENSIONS:
+                tracked_file_path = workspace_path / f'{base_name}.{ext}'
+                if tracked_file_path.exists():
+                    return tracked_file_path
+
+    # Priority 2: Fall back to glob-based discovery
+    return latest_hip_file_path(entity_uri, department_name)
+
+def next_hip_file_path(
+    entity_uri: Uri,
+    department_name: str,
+    nc_type: str | None = None
+    ) -> Path:
+    """Get path for the next version of a workfile.
+
+    Args:
+        entity_uri: Entity URI
+        department_name: Department name
+        nc_type: 'nc' for .hipnc, 'lc' for .hiplc, None for .hip
+    """
+    if entity_uri.purpose == 'groups':
+        workfile_uri = entity_uri
+        workspace_uri = (
+            Uri.parse_unsafe('groups:/') /
+            workfile_uri.segments /
+            department_name
+        )
+    else:
+        group = find_group(entity_uri.segments[0], entity_uri, department_name)
+        workfile_uri = entity_uri if group is None else group.uri
+        if group is not None:
+            workspace_uri = (
+                Uri.parse_unsafe('groups:/') /
+                workfile_uri.segments /
+                department_name
+            )
+        else:
+            workspace_uri = (
+                Uri.parse_unsafe('project:/') /
+                workfile_uri.segments /
+                department_name
+            )
+    workspace_path = api.storage.resolve(workspace_uri)
+    base_pattern = '_'.join(workfile_uri.segments[1:] + [department_name, '*'])
+
+    # Find all hip file variants (.hip, .hiplc, .hipnc) to determine latest version
+    all_hip_files = []
+    for ext in HIP_EXTENSIONS:
+        pattern = f'{base_pattern}.{ext}'
+        all_hip_files.extend(workspace_path.glob(pattern))
+
     version_codes = list(sorted(map(
         _get_file_path_version_code,
-        filter(
-            _valid_file_path_version_name,
-            workspace_path.glob(hip_file_name_pattern))
-        )
-    ))
+        filter(_valid_file_path_version_name, all_hip_files)
+    )))
     latest_version_code = 0 if len(version_codes) == 0 else version_codes[-1]
     next_version_code = latest_version_code + 1
     next_version_name = api.naming.get_version_name(next_version_code)
-    hip_file_name = hip_file_name_pattern.replace('*', next_version_name)
+    # Use appropriate extension based on NC type
+    ext = {'nc': 'hipnc', 'lc': 'hiplc'}.get(nc_type, 'hip')
+    hip_file_name = f'{base_pattern.replace("*", next_version_name)}.{ext}'
     return workspace_path / hip_file_name
 
 @dataclass(frozen=True)
@@ -1449,30 +1524,6 @@ def get_shared_layer_file_name(
     entity_name = '_'.join(entity_uri.segments)
     return f'{entity_name}_shared_{department_name}_{version_name}.usd'
 
-def shared_export_latest_path(
-    entity_uri: Uri,
-    department_name: str
-    ) -> Path:
-    """Get the 'latest' directory path for shared exports (copy-based latest)."""
-    export_uri = (
-        Uri.parse_unsafe('export:/') /
-        entity_uri.segments /
-        '_shared' /
-        department_name /
-        'latest'
-    )
-    return api.storage.resolve(export_uri)
-
-def shared_export_latest_file_path(
-    entity_uri: Uri,
-    department_name: str
-    ) -> Path:
-    """Get the 'latest' USD file path for shared exports."""
-    latest_path = shared_export_latest_path(entity_uri, department_name)
-    file_name = get_shared_layer_file_name(entity_uri, department_name, 'latest')
-    return latest_path / file_name
-
-
 ###############################################################################
 # Staged Paths
 ###############################################################################
@@ -1630,18 +1681,15 @@ def next_scene_staged_path(scene_uri: Uri) -> Path:
     staged_path = get_scene_staged_path(scene_uri)
     return get_next_version_path(staged_path)
 
-def get_scene_latest_path(scene_uri: Uri) -> Path:
-    """Get path to scene's latest staged .usda file."""
-    staged_uri = (
-        Uri.parse_unsafe('export:/') /
-        'scenes' /
-        scene_uri.segments /
-        '_staged' /
-        'latest'
-    )
-    staged_path = api.storage.resolve(staged_uri)
+def get_current_scene_staged_file_path(scene_uri: Uri) -> Optional[Path]:
+    """Get path to the highest numbered staged scene .usda file."""
+    staged_path = get_scene_staged_path(scene_uri)
+    version_path = get_latest_version_path(staged_path)
+    if version_path is None:
+        return None
+    version_name = version_path.name
     scene_name = scene_uri.segments[-1]
-    return staged_path / f'{scene_name}_latest.usda'
+    return version_path / f'{scene_name}_{version_name}.usda'
 
 def get_scene_layer_file_name(scene_uri: Uri, version_name: str) -> str:
     """Get filename for scene layer (e.g., 'forest_v0001.usda')."""

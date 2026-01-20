@@ -30,6 +30,7 @@ from tumblehead.config.discord import (
     get_user_discord_id,
     get_channel_id as get_discord_channel_id
 )
+from tumblehead.farm.tasks.env import print_env
 
 api = default_client()
 
@@ -460,6 +461,9 @@ def main(
     message: str,
     command: Command
     ) -> int:
+    # Print environment variables for debugging
+    print_env()
+
     match command:
         case CommandNotify():
             return _notify(

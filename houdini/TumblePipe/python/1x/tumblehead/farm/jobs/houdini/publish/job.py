@@ -117,55 +117,95 @@ def _is_valid_config(config):
     if not _valid_tasks(config['tasks']): return False
     return True
 
-def _add_jobs(
-    batch: Batch,
-    jobs: dict[str, Job],
-    deps: dict[str, list[str]]
-    ):
-    indicies = {
-        job_name: batch.add_job(job)
-        for job_name, job in jobs.items()
-    }
-    for job_name, job_deps in deps.items():
-        if len(job_deps) == 0: continue
-        for dep_name in job_deps:
-            if dep_name not in indicies:
-                logging.warning(
-                    f'Job "{job_name}" depends on '
-                    f'non-existing job "{dep_name}"'
-                )
-                continue
-            batch.add_dep(
-                indicies[job_name],
-                indicies[dep_name]
-            )
 
-def submit(
+def build(
     config: dict,
-    paths: dict[Path, Path]
-    ) -> int:
-    
+    paths: dict[Path, Path],
+    temp_path: Path,
+    jobs: dict[str, Job],
+    deps: dict[str, list[str]],
+    depends_on: list[str] = None
+    ) -> list[str]:
+    """Build publish jobs and add to provided dicts.
+
+    Args:
+        config: Job configuration
+        paths: Files to bundle with jobs
+        temp_path: Staging directory
+        jobs: Dict to add Job objects to (modified in place)
+        deps: Dict to add dependencies to (modified in place)
+        depends_on: Optional list of job names this job depends on
+
+    Returns:
+        List of terminal job names (for dependency chaining)
+    """
+    if depends_on is None:
+        depends_on = []
+
     # Config
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = get_user_name()
     pool_name = config['settings']['pool_name']
     downstream_departments = config['tasks']['publish'].get('downstream_departments', [])
-    
+
+    # Helper to add job
+    def _add_job(job_name, job, job_deps):
+        jobs[job_name] = job
+        deps[job_name] = job_deps
+
+    # Add publish job
+    publish_job = publish_task.build(config, paths, temp_path)
+    notify_job = notify_task.build(dict(
+        title = f'notify publish {entity_uri}',
+        priority = 90,
+        pool_name = pool_name,
+        user_name = user_name,
+        channel_name = 'exports',
+        message = f'Published {entity_uri}' + (f' +{len(downstream_departments)} downstream' if downstream_departments else ''),
+        command = dict(
+            mode = 'notify'
+        )
+    ), dict(), temp_path)
+
+    _add_job('publish', publish_job, depends_on.copy())
+    _add_job('notify', notify_job, ['publish'])
+
+    return ['notify']
+
+
+def submit(
+    config: dict,
+    paths: dict[Path, Path]
+    ) -> int:
+    """Create batch, build jobs, and submit to farm.
+
+    Args:
+        config: Job configuration
+        paths: Files to bundle with jobs
+
+    Returns:
+        0 on success, 1 on error
+    """
+    # Config
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    user_name = get_user_name()
+    downstream_departments = config['tasks']['publish'].get('downstream_departments', [])
+
     # Parameters
     project_name = get_project_name()
     timestamp = dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
-    
+
     # Get deadline ready
     try: farm = Deadline()
     except: return _error('Could not connect to Deadline')
-    
+
     # Open temporary directory
     root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
         logging.debug(f'Temporary directory: {temp_path}')
-        
+
         # Batch
         downstream_suffix = f" +{len(downstream_departments)}" if downstream_departments else ""
         batch = Batch(
@@ -176,31 +216,14 @@ def submit(
             f'{timestamp}'
             f'{downstream_suffix}'
         )
-        
-        # Prepare adding jobs
-        jobs = dict()
-        deps = dict()
-        def _add_job(job_name, job, job_deps):
-            jobs[job_name] = job
-            deps[job_name] = job_deps
-        
-        # Add publish job
-        publish_job = publish_task.build(config, paths, temp_path)
-        notify_job = notify_task.build(dict(
-            title = f'notify publish {entity_uri}',
-            priority = 90,
-            pool_name = pool_name,
-            user_name = user_name,
-            channel_name = 'exports',
-            message = f'Published {entity_uri}' + (f' +{len(downstream_departments)} downstream' if downstream_departments else ''),
-            command = dict(
-                mode = 'notify'
-            )
-        ), dict(), temp_path)
-        
-        _add_job('publish', publish_job, [])
-        _add_job('notify', notify_job, ['publish'])
-        _add_jobs(batch, jobs, deps)
+
+        # Build jobs using the new build() function
+        jobs = {}
+        deps = {}
+        build(config, paths, temp_path, jobs, deps)
+
+        # Add jobs to batch
+        batch.add_jobs_with_deps(jobs, deps)
 
         # Submit
         farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))
