@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Optional
 from pathlib import Path
@@ -8,6 +9,8 @@ from tumblehead.config.groups import find_group
 from tumblehead.config.department import list_departments
 from tumblehead.util.io import load_json
 from tumblehead.util.uri import Uri
+
+logger = logging.getLogger(__name__)
 
 api = default_client()
 
@@ -1188,7 +1191,8 @@ def latest_hip_file_path_with_context(
     context_data = load_json(context_path)
     if context_data is not None:
         tracked_version = context_data.get('version')
-        if tracked_version is not None:
+        # Validate version exists and has valid format before using
+        if tracked_version and api.naming.is_valid_version_name(tracked_version):
             base_name = '_'.join(workfile_uri.segments[1:] + [
                 department_name,
                 tracked_version
@@ -1197,10 +1201,26 @@ def latest_hip_file_path_with_context(
             for ext in HIP_EXTENSIONS:
                 tracked_file_path = workspace_path / f'{base_name}.{ext}'
                 if tracked_file_path.exists():
+                    logger.info(
+                        f"Resolved latest workfile from context: {tracked_file_path}"
+                    )
                     return tracked_file_path
+            # Context points to non-existent file
+            logger.warning(
+                f"Context version {tracked_version} does not exist on disk, "
+                f"falling back to glob: {entity_uri}"
+            )
+        elif tracked_version:
+            logger.warning(
+                f"Context has invalid version format '{tracked_version}', "
+                f"falling back to glob: {entity_uri}"
+            )
 
     # Priority 2: Fall back to glob-based discovery
-    return latest_hip_file_path(entity_uri, department_name)
+    result = latest_hip_file_path(entity_uri, department_name)
+    if result is not None:
+        logger.info(f"Resolved latest workfile via glob: {result}")
+    return result
 
 def next_hip_file_path(
     entity_uri: Uri,
@@ -1255,7 +1275,13 @@ def next_hip_file_path(
     # Use appropriate extension based on NC type
     ext = {'nc': 'hipnc', 'lc': 'hiplc'}.get(nc_type, 'hip')
     hip_file_name = f'{base_pattern.replace("*", next_version_name)}.{ext}'
-    return workspace_path / hip_file_name
+    result_path = workspace_path / hip_file_name
+
+    logger.info(
+        f"Generated next workfile path: {result_path} "
+        f"(entity={entity_uri}, dept={department_name})"
+    )
+    return result_path
 
 @dataclass(frozen=True)
 class Context:
@@ -1267,22 +1293,36 @@ def load_entity_context(context_json_path: Path) -> Optional[Context]:
     """
     Load entity context from a context.json file.
 
-    Returns Context with entity_uri from the 'entity' field,
+    Returns Context with entity_uri from the 'uri' field,
     department_name from 'department' field, and version_name
-    from 'version' field (or empty string if not present).
+    from 'version' field (or None if not present/empty).
     """
     context_data = load_json(context_json_path)
     if context_data is None:
+        logger.debug(f"No context data found at {context_json_path}")
         return None
 
     uri_str = context_data.get('uri')
     if not uri_str:
+        logger.warning(f"Context missing 'uri' field: {context_json_path}")
         return None
 
     try:
         entity_uri = Uri.parse_unsafe(uri_str)
         department_name = context_data.get('department', '')
-        version_name = context_data.get('version', '')
+        # Normalize empty string and None to None for consistent handling
+        raw_version = context_data.get('version')
+        version_name = raw_version if raw_version else None
+
+        if version_name is None:
+            logger.warning(f"Context has missing/empty version: {context_json_path}")
+        elif not api.naming.is_valid_version_name(version_name):
+            logger.warning(f"Context has invalid version '{version_name}': {context_json_path}")
+
+        logger.debug(
+            f"Loaded context: uri={entity_uri}, dept={department_name}, "
+            f"version={version_name}"
+        )
 
         return Context(
             entity_uri=entity_uri,
@@ -1290,6 +1330,7 @@ def load_entity_context(context_json_path: Path) -> Optional[Context]:
             version_name=version_name
         )
     except:
+        logger.error(f"Failed to parse context: {context_json_path}", exc_info=True)
         return None
 
 def get_workfile_context(hip_file_path: Path) -> Optional[Context]:
@@ -1357,8 +1398,16 @@ def latest_export_path(
     )
     export_path = api.storage.resolve(export_uri)
     version_paths = list_version_paths(export_path)
-    if len(version_paths) == 0: return None
+    if len(version_paths) == 0:
+        logger.debug(
+            f"No export versions found: uri={entity_uri}, "
+            f"variant={variant_name}, dept={department_name}"
+        )
+        return None
     latest_version_path = version_paths[-1]
+    logger.debug(
+        f"Resolved latest export: {latest_version_path}"
+    )
     return latest_version_path
 
 def latest_export_file_path(

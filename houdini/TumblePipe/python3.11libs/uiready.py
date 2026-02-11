@@ -1,13 +1,7 @@
-import hou
 import os
 
 
 def load():
-
-    # Set the desktop
-    tumblehead_desktop = hou.ui.desktop("Tumblehead")
-    tumblehead_desktop.setAsCurrent()
-
     # Initialize RPC server if in development mode
     if os.environ.get("TH_DEV") == "1":
         try:

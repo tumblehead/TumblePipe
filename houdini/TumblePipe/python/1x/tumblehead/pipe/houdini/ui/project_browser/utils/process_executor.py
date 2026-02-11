@@ -40,6 +40,38 @@ def _capture_output():
         sys.stderr = old_stderr
 
 
+class ValidationSession:
+    """Tracks validation state across multiple validation tasks in a single execution.
+
+    When a user clicks "Remember choice" in the validation dialog, the choice
+    is stored here and applied to subsequent validations in the same session.
+    """
+
+    # Constants matching ValidationConfirmDialog
+    CONTINUE = 1
+    CANCEL = 2
+
+    def __init__(self):
+        self.remembered_choice: int | None = None
+
+    def reset(self):
+        """Reset session state for new execution."""
+        self.remembered_choice = None
+
+    def has_remembered_choice(self) -> bool:
+        return self.remembered_choice is not None
+
+    def get_remembered_choice(self) -> int | None:
+        return self.remembered_choice
+
+    def set_remembered_choice(self, choice: int):
+        self.remembered_choice = choice
+
+
+# Module-level session instance
+_validation_session = ValidationSession()
+
+
 class ProcessExecutor(QObject):
     """Executes process tasks sequentially with progress signals"""
 
@@ -100,6 +132,7 @@ class ProcessExecutor(QObject):
         self._is_running = True
         self._current_index = 0
         self._executed_split_paths.clear()  # Reset deduplication tracking
+        _validation_session.reset()  # Reset validation choices for new run
         # Use QTimer to allow UI updates between tasks
         QTimer.singleShot(0, self._execute_next_task)
 
@@ -155,11 +188,17 @@ class ProcessExecutor(QObject):
             self.task_completed.emit(task.id)
 
         except Exception as e:
-            task.status = TaskStatus.FAILED
-            # Capture full traceback for debugging
-            error_msg = traceback.format_exc()
-            task.error_message = error_msg
-            self.task_failed.emit(task.id, task.error_message)
+            # Check if this is a user-initiated cancellation (no error dialog needed)
+            from ..dialogs.validation_dialog import ValidationCancelled
+            if isinstance(e, ValidationCancelled):
+                task.status = TaskStatus.SKIPPED
+                # Don't emit task_failed - this was intentional
+            else:
+                task.status = TaskStatus.FAILED
+                # Capture full traceback for debugging
+                error_msg = traceback.format_exc()
+                task.error_message = error_msg
+                self.task_failed.emit(task.id, task.error_message)
 
         self._current_index += 1
         # Continue with next task after a short delay to allow UI update
@@ -223,11 +262,17 @@ class ProcessExecutor(QObject):
                 self.task_completed.emit(child.id)
 
             except Exception as e:
-                child.status = TaskStatus.FAILED
-                child.error_message = traceback.format_exc()
-                self.task_failed.emit(child.id, child.error_message)
-                # Re-raise to fail the parent task
-                raise
+                # Check if this is a user-initiated cancellation
+                from ..dialogs.validation_dialog import ValidationCancelled
+                if isinstance(e, ValidationCancelled):
+                    child.status = TaskStatus.SKIPPED
+                    raise  # Re-raise to skip parent task too
+                else:
+                    child.status = TaskStatus.FAILED
+                    child.error_message = traceback.format_exc()
+                    self.task_failed.emit(child.id, child.error_message)
+                    # Re-raise to fail the parent task
+                    raise
 
 
 def _get_version_from_path(export_path) -> str | None:
@@ -825,6 +870,9 @@ def _create_validation_task(
     Runs stage validation on all export nodes before they are executed.
     The validation checks for issues like RenderVar name mismatches.
 
+    When validation fails, shows an interactive dialog allowing
+    the user to continue or cancel the export.
+
     Args:
         entity_uri: The entity URI
         department: Department name
@@ -834,10 +882,63 @@ def _create_validation_task(
     Returns:
         ProcessTask for validation
     """
-    def validate_fn():
+    def validate_local_fn():
+        from tumblehead.pipe.houdini.validators import validate_stage
+        from tumblehead.pipe.houdini.validators.base import ValidationResult
+        from ..dialogs.validation_dialog import ValidationConfirmDialog, ValidationCancelled
+        import hou
+
+        # Collect all validation results
+        combined_result = ValidationResult()
+
+        for export_node in export_nodes:
+            native = export_node.native()
+            stage_node = native.node('IN_stage')
+            if stage_node is None:
+                continue
+            stage = stage_node.stage()
+            if stage is None:
+                continue
+            root = stage.GetPseudoRoot()
+            result = validate_stage(root)
+            combined_result.merge(result)
+
+        # No validation failures - continue normally
+        if combined_result.passed:
+            return
+
+        combined_message = combined_result.format_message()
+
+        # Check if user already made a remembered choice
+        if _validation_session.has_remembered_choice():
+            if _validation_session.get_remembered_choice() == ValidationSession.CONTINUE:
+                return  # Continue without prompting
+            else:
+                raise ValidationCancelled("Export cancelled by user")
+
+        # Show dialog and get user choice
+        entity_name = _uri_name(entity_uri)
+        dialog = ValidationConfirmDialog(
+            validation_message=combined_message,
+            department=department,
+            entity_name=entity_name,
+            parent=hou.qt.mainWindow()
+        )
+        dialog.exec_()
+
+        # Handle user choice
+        if dialog.remember_choice:
+            _validation_session.set_remembered_choice(dialog.user_choice)
+
+        if dialog.user_choice == ValidationConfirmDialog.CONTINUE:
+            return  # Task passes, exports will run
+        else:
+            raise ValidationCancelled("Export cancelled by user")
+
+    def validate_farm_fn():
+        # Farm execution: no UI available, use original blocking behavior
         from tumblehead.pipe.houdini.validators import validate_stage
         for export_node in export_nodes:
-            # Get the input stage from the export node
             native = export_node.native()
             stage_node = native.node('IN_stage')
             if stage_node is None:
@@ -856,8 +957,8 @@ def _create_validation_task(
         department=department,
         task_type='validate',
         description=f"Validate ({department})",
-        execute_local=validate_fn,
-        execute_farm=validate_fn,
+        execute_local=validate_local_fn,
+        execute_farm=validate_farm_fn,
         variant=variant,
         status=TaskStatus.PENDING
     )

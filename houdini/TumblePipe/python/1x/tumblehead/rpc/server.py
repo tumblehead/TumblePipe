@@ -29,6 +29,9 @@ from .protocol import (
 )
 from .commands import registry
 
+# Module-level logger - uses centralized file-based logging
+logger = logging.getLogger(__name__)
+
 
 class HoudiniRpcServer:
     """RPC server for handling remote commands in Houdini context."""
@@ -37,14 +40,12 @@ class HoudiniRpcServer:
         self,
         host: str = "localhost",
         port: Optional[int] = None,
-        log_level: int = logging.INFO,
     ):
         """Initialize the RPC server.
 
         Args:
             host: Host interface to bind to
             port: Port to bind to (auto-assigned if None)
-            log_level: Logging level for server operations
         """
         self._host = host
         self._port = port or free_port()
@@ -52,17 +53,6 @@ class HoudiniRpcServer:
         self._server_thread: Optional[threading.Thread] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._running = False
-
-        # Set up logging
-        self._logger = logging.getLogger(__name__)
-        self._logger.setLevel(log_level)
-        if not self._logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-            handler.setFormatter(formatter)
-            self._logger.addHandler(handler)
 
     @property
     def host(self) -> str:
@@ -119,7 +109,7 @@ class HoudiniRpcServer:
                 )
 
             request_id = message.id
-            self._logger.info(f"Processing command: {message.command}")
+            logger.info(f"Processing command: {message.command}")
 
             # Handle ping specially
             if message.command == "system.ping":
@@ -134,7 +124,7 @@ class HoudiniRpcServer:
 
         except ValueError as e:
             # Parameter validation or command not found
-            self._logger.warning(f"Invalid request: {e}")
+            logger.warning(f"Invalid request: {e}")
             error = create_error(
                 request_id, ErrorCode.INVALID_PARAMS, str(e), timestamp
             )
@@ -142,7 +132,7 @@ class HoudiniRpcServer:
 
         except Exception as e:
             # Unexpected error during command execution
-            self._logger.error(f"Command execution error: {e}", exc_info=True)
+            logger.error(f"Command execution error: {e}", exc_info=True)
             error = create_error(
                 request_id, ErrorCode.EXECUTION_ERROR, str(e), timestamp
             )
@@ -157,7 +147,7 @@ class HoudiniRpcServer:
         try:
             self._loop.run_until_complete(self._start_server())
         except Exception as e:
-            self._logger.error(f"Server error: {e}", exc_info=True)
+            logger.error(f"Server error: {e}", exc_info=True)
         finally:
             self._loop.close()
             self._loop = None
@@ -169,7 +159,7 @@ class HoudiniRpcServer:
         try:
             async with self._server:
                 self._running = True
-                self._logger.info(
+                logger.info(
                     f"RPC server started on {self._host}:{self._port}"
                 )
 
@@ -178,7 +168,7 @@ class HoudiniRpcServer:
                     await asyncio.sleep(1)
 
         except Exception as e:
-            self._logger.error(f"Server startup error: {e}")
+            logger.error(f"Server startup error: {e}")
             raise
         finally:
             self._running = False
@@ -191,7 +181,7 @@ class HoudiniRpcServer:
         without blocking the user interface.
         """
         if self._running:
-            self._logger.warning("Server is already running")
+            logger.warning("Server is already running")
             return
 
         self._server_thread = threading.Thread(
@@ -208,12 +198,12 @@ class HoudiniRpcServer:
         if not self._running:
             raise RuntimeError("Failed to start RPC server")
 
-        self._logger.info(f"RPC server running at {self._host}:{self._port}")
+        logger.info(f"RPC server running at {self._host}:{self._port}")
 
     def stop(self):
         """Stop the RPC server."""
         if not self._running:
-            self._logger.warning("Server is not running")
+            logger.warning("Server is not running")
             return
 
         self._running = False
@@ -222,9 +212,9 @@ class HoudiniRpcServer:
         if self._server_thread and self._server_thread.is_alive():
             self._server_thread.join(timeout=5.0)
             if self._server_thread.is_alive():
-                self._logger.warning("Server thread did not stop gracefully")
+                logger.warning("Server thread did not stop gracefully")
 
-        self._logger.info("RPC server stopped")
+        logger.info("RPC server stopped")
 
     def __enter__(self):
         """Context manager entry."""

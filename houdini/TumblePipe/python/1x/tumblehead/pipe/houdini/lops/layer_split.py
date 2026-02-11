@@ -3,8 +3,11 @@ from pathlib import Path
 import subprocess
 import platform
 import shutil
+import logging
 
 import hou
+
+logger = logging.getLogger(__name__)
 
 from tumblehead.api import path_str, fix_path, default_client
 from tumblehead.util.uri import Uri
@@ -191,6 +194,11 @@ class LayerSplit(ns.Node):
         # Get full range (including roll)
         full_range = frame_range.full_range()
 
+        logger.info(
+            f"Starting shared layer export: uri={entity_uri}, dept={department_name}, "
+            f"frames={full_range.first_frame}-{full_range.last_frame}, step={frame_step}"
+        )
+
         # Get fps (default to 24 if not set)
         fps = get_fps(entity_uri)
         if fps is None:
@@ -239,13 +247,15 @@ class LayerSplit(ns.Node):
                 if temp_item_path.is_dir():
                     shutil.copytree(temp_item_path, output_item_path)
 
-        print(f'Exported shared layer to: {export_path / file_name}')
+        logger.info(
+            f"Shared layer export completed: uri={entity_uri}, dept={department_name}, "
+            f"version={version_name}, output={export_path / file_name}"
+        )
 
         # Generate entity URI for downstream reference
         # The custom USD resolver handles dynamic version lookup at runtime,
         # eliminating the need for copy-based "latest" directories
         entity_uri_str = f"{entity_uri}?dept={department_name}&variant=_shared"
-        print(f'Entity URI for sublayer reference: {entity_uri_str}')
 
     def open_location(self):
         """Open the latest shared export location in file browser."""

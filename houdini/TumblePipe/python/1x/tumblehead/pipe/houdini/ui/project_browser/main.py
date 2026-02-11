@@ -1,11 +1,14 @@
 """Main ProjectBrowser component"""
 
+import logging
 from pathlib import Path
 
 from qtpy.QtCore import Qt, QTimer
 from qtpy import QtWidgets
 import hou
 from hou import qt as hqt
+
+logger = logging.getLogger(__name__)
 
 from tumblehead.api import is_dev, path_str, default_client
 from tumblehead.config.timeline import BlockRange, get_frame_range, get_fps
@@ -1129,6 +1132,11 @@ class ProjectBrowser(QtWidgets.QWidget):
 
     def _open_scene_internal(self, selected_context, should_reload=False):
         """Internal scene opening logic shared by normal and auto-save variants"""
+        logger.info(
+            f"Opening scene: uri={selected_context.entity_uri}, "
+            f"dept={selected_context.department_name}, version={selected_context.version_name}"
+        )
+
         # Get the file path
         # Use appropriate extension based on NC session type (for new files)
         nc_type = self._nc_session_type
@@ -1153,11 +1161,12 @@ class ProjectBrowser(QtWidgets.QWidget):
                     )
                 except hou.OperationFailed as e:
                     # File may have partially loaded - continue and try to fix with rebuild
-                    print(f"Warning: File loaded with errors: {e}")
+                    logger.warning(f"File loaded with errors: {file_path} - {e}")
                 context = get_workfile_context(file_path)
                 # Always ensure the URI matches the expected workfile URI (handles group folders)
                 expected_uri = _get_workfile_uri(selected_context.entity_uri, selected_context.department_name)
                 if context is None:
+                    logger.warning(f"No context found, creating new: {file_path}")
                     context = Context(
                         entity_uri=expected_uri,
                         department_name=selected_context.department_name,
@@ -1165,6 +1174,9 @@ class ProjectBrowser(QtWidgets.QWidget):
                     )
                 elif context.entity_uri != expected_uri:
                     # Fix corrupted context.json with wrong URI
+                    logger.warning(
+                        f"Context URI mismatch, correcting: {context.entity_uri} -> {expected_uri}"
+                    )
                     context = Context(
                         entity_uri=expected_uri,
                         department_name=context.department_name,
@@ -1213,6 +1225,11 @@ class ProjectBrowser(QtWidgets.QWidget):
 
             # Set the viewport to the vulkan renderer
             vulkan_all_scene_viewers()
+
+            logger.info(
+                f"Scene opened successfully: {file_path} "
+                f"(version={self._context.version_name})"
+            )
 
     def _open_scene(self, should_reload=False, auto_save=False, new_department=None):
         """Open a scene file, returning success status
@@ -1407,6 +1424,11 @@ class ProjectBrowser(QtWidgets.QWidget):
             return
         prev_context = self._context
 
+        logger.info(
+            f"Saving scene: uri={prev_context.entity_uri}, "
+            f"dept={prev_context.department_name}, prev_version={prev_context.version_name}"
+        )
+
         try:
             # Save the file path
             # Use session type for extension (matches Houdini Ctrl+S behavior)
@@ -1437,6 +1459,11 @@ class ProjectBrowser(QtWidgets.QWidget):
             # Update all UI components
             self._update_ui_from_context(self._context)
 
+            logger.info(
+                f"Scene saved successfully: {file_path} "
+                f"(version={self._context.version_name})"
+            )
+
             # Hide spinner and flash success with proper sequencing
             from qtpy.QtCore import QTimer
             QTimer.singleShot(50, lambda: self._details_view.hide_workfile_spinner())
@@ -1444,6 +1471,7 @@ class ProjectBrowser(QtWidgets.QWidget):
 
         except Exception as e:
             # Hide spinner on error
+            logger.error(f"Failed to save scene: {e}", exc_info=True)
             self._details_view.hide_workfile_spinner()
             hou.ui.displayMessage(f"Error saving scene: {str(e)}", severity=hou.severityType.Error)
         
@@ -1645,6 +1673,11 @@ class ProjectBrowser(QtWidgets.QWidget):
 
         entity_type = get_entity_type(self._context.entity_uri)
         department_name = self._context.department_name
+
+        logger.info(
+            f"Publishing scene: uri={self._context.entity_uri}, "
+            f"dept={department_name}, entity_type={entity_type}"
+        )
 
         def _is_asset_export_correct(node):
             if entity_type != 'asset':

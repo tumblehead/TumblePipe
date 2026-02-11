@@ -14,6 +14,7 @@ class Department:
     publishable: bool
     renderable: bool
     generated: bool = False  # True for Python-generated departments (not Houdini-exportable)
+    enabled: bool = True  # False means retired/hidden from normal use
 
 def add_department(
     context: str,
@@ -21,7 +22,8 @@ def add_department(
     independent: bool = False,
     publishable: bool = True,
     renderable: bool = False,
-    generated: bool = False
+    generated: bool = False,
+    enabled: bool = True
     ):
     department_uri = DEPARTMENTS_URI / context / name
     properties = api.config.get_properties(department_uri)
@@ -30,7 +32,8 @@ def add_department(
         independent = independent,
         publishable = publishable,
         renderable = renderable,
-        generated = generated
+        generated = generated,
+        enabled = enabled
     ))
 
 def remove_department(context: str, name: str):
@@ -82,7 +85,23 @@ def is_generated(context: str, name: str) -> bool:
         raise KeyError(f'Department not found: {department_uri}')
     return properties.get('generated', False)
 
-def list_departments(context: str, include_generated: bool = True) -> list[Department]:
+def set_enabled(context: str, name: str, enabled: bool):
+    """Set whether a department is enabled (active) or disabled (retired)."""
+    department_uri = DEPARTMENTS_URI / context / name
+    properties = api.config.get_properties(department_uri)
+    if properties is None: return
+    properties['enabled'] = enabled
+    api.config.set_properties(department_uri, properties)
+
+def is_enabled(context: str, name: str) -> bool:
+    """Check if a department is enabled."""
+    department_uri = DEPARTMENTS_URI / context / name
+    properties = api.config.get_properties(department_uri)
+    if properties is None:
+        raise KeyError(f'Department not found: {department_uri}')
+    return properties.get('enabled', True)
+
+def list_departments(context: str, include_generated: bool = True, include_disabled: bool = False) -> list[Department]:
     """
     List departments for a context (shots or assets).
 
@@ -90,6 +109,7 @@ def list_departments(context: str, include_generated: bool = True) -> list[Depar
         context: 'shots' or 'assets'
         include_generated: If False, excludes Python-generated departments
                           (useful for Houdini export menus)
+        include_disabled: If True, includes disabled/retired departments
     """
     departments_data = api.config.cache.get('departments', {})
     root_children = departments_data.get('children', {})
@@ -100,10 +120,13 @@ def list_departments(context: str, include_generated: bool = True) -> list[Depar
             independent = dept_data['properties']['independent'],
             publishable = dept_data['properties']['publishable'],
             renderable = dept_data['properties']['renderable'],
-            generated = dept_data['properties'].get('generated', False)
+            generated = dept_data['properties'].get('generated', False),
+            enabled = dept_data['properties'].get('enabled', True)
         )
         for dept_name, dept_data in context_data.items()
     ]
     if not include_generated:
         departments = [d for d in departments if not d.generated]
+    if not include_disabled:
+        departments = [d for d in departments if d.enabled]
     return departments

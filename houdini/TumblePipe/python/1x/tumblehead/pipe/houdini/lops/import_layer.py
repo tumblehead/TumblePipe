@@ -1,6 +1,9 @@
+import logging
 from pathlib import Path
 
 import hou
+
+logger = logging.getLogger(__name__)
 
 from tumblehead.api import path_str, default_client
 from tumblehead.util.uri import Uri
@@ -305,17 +308,22 @@ class ImportLayer(ns.Node):
         version_name = self.get_version_name()
 
         if entity_uri is None:
+            logger.debug("Import bypassed: No entity selected")
             ns.set_node_comment(native, "Bypassed: No entity selected")
             native.bypass(True)
             return
         if department_name is None:
+            logger.debug(f"Import bypassed: No department selected for {entity_uri}")
             ns.set_node_comment(native, "Bypassed: No department selected")
             native.bypass(True)
             return
         if version_name is None:
+            logger.debug(f"Import bypassed: No version selected for {entity_uri}/{department_name}")
             ns.set_node_comment(native, "Bypassed: No version selected")
             native.bypass(True)
             return
+
+        logger.info(f"Importing layer: uri={entity_uri}, dept={department_name}, variant={variant_name}, version={version_name}")
 
         # Get layer file name
         layer_file_name = self._get_layer_file_name()
@@ -332,6 +340,7 @@ class ImportLayer(ns.Node):
             shared_exists = shared_file_path is not None and shared_file_path.exists()
             if shared_exists:
                 self.parm('import_filepath1').set(path_str(shared_file_path))
+                logger.debug(f"Found shared layer: {shared_file_path}")
 
         self.parm('import_enable1').set(1 if shared_exists else 0)
 
@@ -345,8 +354,14 @@ class ImportLayer(ns.Node):
         self.parm('import_enable2').set(1 if variant_exists else 0)
         self.parm('import_filepath2').set(path_str(variant_file_path))
 
+        if not variant_exists:
+            logger.warning(f"Variant layer file not found: {variant_file_path}")
+
         # Enable bypass if either layer exists
         self.parm('bypass_input').set(1 if (shared_exists or variant_exists) else 0)
+
+        if not shared_exists and not variant_exists:
+            logger.warning(f"No layer files found for import: uri={entity_uri}, dept={department_name}, version={version_name}")
 
         # Update version label
         self.parm('version_label').set(version_name)
@@ -380,6 +395,8 @@ class ImportLayer(ns.Node):
                 ns.set_node_comment(native, f"Imported: {version_name}")
         else:
             ns.set_node_comment(native, f"Imported: {version_name}")
+
+        logger.info(f"Import completed: uri={entity_uri}, dept={department_name}, version={version_name}")
 
     def open_location(self):
         entity_uri = self.get_entity_uri()

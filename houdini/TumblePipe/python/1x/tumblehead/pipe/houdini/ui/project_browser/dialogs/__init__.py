@@ -5,6 +5,7 @@ from .schema_migration_dialog import SchemaMigrationDialog
 from .process_dialog import ProcessDialog
 from .job_submission_dialog import JobSubmissionDialog
 from .save_confirmation_dialog import SaveConfirmationDialog
+from .validation_dialog import ValidationConfirmDialog, ValidationCancelled
 
 __all__ = [
     'AffectedEntitiesDialog',
@@ -14,4 +15,6 @@ __all__ = [
     'ProcessDialog',
     'JobSubmissionDialog',
     'SaveConfirmationDialog',
+    'ValidationConfirmDialog',
+    'ValidationCancelled',
 ]

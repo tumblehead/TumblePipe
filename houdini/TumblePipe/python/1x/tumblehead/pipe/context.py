@@ -1,9 +1,12 @@
 import datetime as dt
+import logging
 from pathlib import Path
 from tumblehead.api import get_user_name
 from tumblehead.util.io import store_json
 from tumblehead.pipe.paths import Context, get_hip_file_path
 from tumblehead.util.uri import Uri
+
+logger = logging.getLogger(__name__)
 
 
 def find_input(data, **kwargs):
@@ -184,6 +187,12 @@ def save_context(target_path: Path, prev_context, next_context, houdini_version:
     prev_version_name = _get_version_name(prev_context)
     next_version_name = _get_version_name(next_context)
     context_path = target_path / "_context" / f"{next_version_name}.json"
+
+    logger.info(
+        f"Saving version context: {prev_version_name} -> {next_version_name} "
+        f"at {target_path}"
+    )
+
     store_json(
         context_path,
         dict(
@@ -203,6 +212,18 @@ def save_entity_context(target_path: Path, context: Context):
 
     if context is None:
         return
+
+    # Warn if saving with None version - helps identify code paths that create invalid context
+    if context.version_name is None:
+        logger.warning(
+            f"Saving context.json with None version at {target_path} "
+            f"(entity: {context.entity_uri}, department: {context.department_name})"
+        )
+
+    logger.info(
+        f"Saving entity context: uri={context.entity_uri}, "
+        f"dept={context.department_name}, version={context.version_name}"
+    )
 
     context_data = dict(
         uri=str(context.entity_uri),
@@ -233,6 +254,11 @@ def save_export_context(
         version_name: Version name
         variant_name: Variant name (default: 'default')
     """
+    logger.info(
+        f"Saving export context: uri={entity_uri}, dept={department_name}, "
+        f"version={version_name}, variant={variant_name}"
+    )
+
     context_path = target_path / 'context.json'
     context_data = dict(
         uri=str(entity_uri),
@@ -271,6 +297,12 @@ def save_layer_context(
         parameters: Optional parameters dict
         inputs: Optional list of input references
     """
+    input_count = len(inputs) if inputs else 0
+    logger.info(
+        f"Saving layer context: uri={entity_uri}, dept={department_name}, "
+        f"version={version_name}, variant={variant_name}, inputs={input_count}"
+    )
+
     context_path = target_path / 'context.json'
     context_data = dict(
         inputs=inputs or [],

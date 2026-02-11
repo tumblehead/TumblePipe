@@ -1,11 +1,13 @@
+import logging
 from tempfile import TemporaryDirectory
 from pathlib import Path
 import datetime as dt
 import shutil
 import json
-import os
 
 import hou
+
+logger = logging.getLogger(__name__)
 
 from tumblehead.api import get_user_name, path_str, fix_path, default_client
 from tumblehead.util.uri import Uri
@@ -68,6 +70,44 @@ def _flatten_sidecar_directories(export_path: Path) -> None:
 class ExportLayerError(Exception):
     """Raised when export_layer encounters a validation or execution error."""
     pass
+
+
+def _validate_export_files(temp_path: Path, expected_filename: str, operation_desc: str) -> None:
+    """Validate that export operation created expected files.
+
+    Args:
+        temp_path: Directory where files should be created
+        expected_filename: Name of main USD file expected
+        operation_desc: Description for error message (e.g., "batch export chunk 1001-1010")
+
+    Raises:
+        ExportLayerError: If expected files don't exist with detailed diagnostic info
+    """
+    expected_file = temp_path / expected_filename
+
+    if not expected_file.exists():
+        # Check if temp directory itself exists
+        if not temp_path.exists():
+            raise ExportLayerError(
+                f"Export failed during {operation_desc}: "
+                f"Temp directory not found: {temp_path}\n"
+                f"This may indicate a disk I/O error or permission issue."
+            )
+
+        # List what files DO exist for diagnostics
+        existing_files = [f.name for f in temp_path.iterdir()] if temp_path.exists() else []
+
+        raise ExportLayerError(
+            f"Export failed during {operation_desc}: "
+            f"Expected file not created: {expected_filename}\n"
+            f"Export path: {temp_path}\n"
+            f"Files found: {existing_files if existing_files else '(none)'}\n\n"
+            f"Possible causes:\n"
+            f"- Disk full or quota exceeded\n"
+            f"- Network drive disconnected\n"
+            f"- File permissions issue\n"
+            f"- Houdini export node errors (check Houdini console)"
+        )
 
 
 class ExportLayer(ns.Node):
@@ -343,6 +383,11 @@ class ExportLayer(ns.Node):
         department_name = self.get_department_name()
         frame_range_result = self.get_frame_range()
 
+        logger.info(
+            f"Starting local export: uri={entity_uri}, dept={department_name}, "
+            f"variant={variant_name}"
+        )
+
         if entity_uri is None:
             raise ExportLayerError("Entity URI is not set. Check 'Entity Source' setting or workfile context.")
         if department_name is None:
@@ -454,16 +499,38 @@ class ExportLayer(ns.Node):
                     self.parm('export_lopoutput').set(path_str(chunk_temp_path))
                     self.parm('export_execute').pressButton()
 
+                    # Validate files were created
+                    _validate_export_files(chunk_dir, temp_export_name, f"batch export chunk {chunk_name}")
+
                     # Rename to final name
-                    chunk_temp_path.rename(chunk_main_path)
+                    try:
+                        chunk_temp_path.rename(chunk_main_path)
+                    except Exception as e:
+                        logger.error(f"Failed to rename chunk file: {e}")
+                        raise ExportLayerError(
+                            f"Failed to rename chunk file from {temp_export_name} to {layer_file_name}: {e}"
+                        )
 
                     # Flatten any .usd.textures sidecar directories
                     _flatten_sidecar_directories(chunk_dir)
 
+                    logger.info(f"Chunk {chunk_name} exported successfully")
+
                     chunk_dirs.append(chunk_dir)
 
                 # Stitch all chunks (main file + sidecar directories)
-                stitch_usd_directories(chunk_dirs, layer_file_name, temp_path)
+                try:
+                    logger.info(f"Stitching {len(chunk_dirs)} chunks into final USD")
+                    stitch_usd_directories(chunk_dirs, layer_file_name, temp_path)
+                    logger.info("Chunk stitching completed successfully")
+                except Exception as e:
+                    logger.error(f"USD stitching failed: {e}")
+                    raise ExportLayerError(
+                        f"Failed to stitch USD chunks:\n"
+                        f"Chunks: {len(chunk_dirs)}\n"
+                        f"Output: {temp_path / layer_file_name}\n"
+                        f"Error: {str(e)}"
+                    )
 
                 # Clean up chunks directory
                 shutil.rmtree(chunks_dir)
@@ -471,6 +538,7 @@ class ExportLayer(ns.Node):
                 # Standard export: export all frames at once
                 # Use 'stage.usd' as temp filename so sidecar directory is 'stage/'
                 temp_export_name = 'stage.usd'
+                logger.info(f"Exporting frames {render_range.first_frame}-{render_range.last_frame}")
                 self.parm('export_f1').deleteAllKeyframes()
                 self.parm('export_f2').deleteAllKeyframes()
                 self.parm('export_f1').set(render_range.first_frame)
@@ -478,11 +546,26 @@ class ExportLayer(ns.Node):
                 self.parm('export_lopoutput').set(path_str(temp_path / temp_export_name))
                 self.parm('export_execute').pressButton()
 
+                # Validate files were created
+                _validate_export_files(
+                    temp_path,
+                    temp_export_name,
+                    f"standard export (frames {render_range.first_frame}-{render_range.last_frame})"
+                )
+
                 # Rename the exported file to the final layer name
-                (temp_path / temp_export_name).rename(temp_path / layer_file_name)
+                try:
+                    (temp_path / temp_export_name).rename(temp_path / layer_file_name)
+                except Exception as e:
+                    logger.error(f"Failed to rename exported file: {e}")
+                    raise ExportLayerError(
+                        f"Failed to rename exported file from {temp_export_name} to {layer_file_name}: {e}"
+                    )
 
                 # Flatten any .usd.textures sidecar directories
                 _flatten_sidecar_directories(temp_path)
+
+                logger.info("Export to temp completed successfully")
 
             # Re-fetch root prim after export (stage may have been modified)
             root = stage_node.stage().GetPseudoRoot()
@@ -508,12 +591,25 @@ class ExportLayer(ns.Node):
 
             # Copy all files to output path
             version_path.mkdir(parents=True, exist_ok=True)
-            for temp_item_path in temp_path.iterdir():
-                output_item_path = version_path / temp_item_path.name
-                if temp_item_path.is_file():
-                    shutil.copy(temp_item_path, output_item_path)
-                if temp_item_path.is_dir():
-                    shutil.copytree(temp_item_path, output_item_path)
+            logger.info(f"Copying exported files to: {version_path}")
+
+            try:
+                for temp_item_path in temp_path.iterdir():
+                    output_item_path = version_path / temp_item_path.name
+                    if temp_item_path.is_file():
+                        shutil.copy(temp_item_path, output_item_path)
+                    elif temp_item_path.is_dir():
+                        shutil.copytree(temp_item_path, output_item_path)
+            except Exception as e:
+                logger.error(f"Failed to copy files to output: {e}")
+                raise ExportLayerError(
+                    f"Failed to copy exported files to final location:\n"
+                    f"Source: {temp_path}\n"
+                    f"Destination: {version_path}\n"
+                    f"Error: {str(e)}"
+                )
+
+            logger.info("Files copied to output path successfully")
 
         # Add shared layer as sublayer only if entity has multiple variants
         from tumblehead.pipe.paths import latest_shared_export_path
@@ -523,7 +619,12 @@ class ExportLayer(ns.Node):
             if shared_version_path is not None:
                 exported_layer_path = version_path / layer_file_name
                 shared_uri = f"{entity_uri}?dept={department_name}&variant=_shared"
-                add_sublayer(exported_layer_path, shared_uri)
+                try:
+                    add_sublayer(exported_layer_path, shared_uri)
+                    logger.info(f"Added shared layer sublayer: {shared_uri}")
+                except Exception as e:
+                    # Non-fatal error - log warning but don't fail the export
+                    logger.warning(f"Failed to add shared layer sublayer (non-fatal): {e}")
 
         # Update node comment
         native.setComment(
@@ -532,6 +633,11 @@ class ExportLayer(ns.Node):
             f'by {user_name}'
         )
         native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+
+        logger.info(
+            f"Export completed: uri={entity_uri}, dept={department_name}, "
+            f"version={version_name}, output={version_path}"
+        )
 
     def _export_farm(self):
         entity_uri = self.get_entity_uri()

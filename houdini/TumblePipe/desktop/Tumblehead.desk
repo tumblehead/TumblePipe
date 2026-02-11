@@ -24,30 +24,25 @@ root {
                 }
                 split 0.737056 H R {
                     tabs 6 1 {
-                        pane panetab23 -a 1 -l 10 -H /stage/ -T LOP -m pythonpanel
-                        pane panetab7 -a 0 -l 10 -H /stage/ -T LOP -m python
+                        pane panetab23 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
+                        pane panetab7 -a 0 -l 10 -H /img/ -T IMG -m python
                         pane panetab9 -a 0 -l 0 -H /obj/ -T OBJ -m perfmon
                         pane panetab14 -a 1 -l 1 -H /stage/ -T LOP -m rendergallery
-                        pane panetab3 -a 1 -l 10 -H /stage/ -T LOP -m pythonpanel
-                        pane panetab5 -a 1 -l 10 -H /stage/ -T LOP -m pythonpanel
-                        pane panetab4 -a 1 -l 10 -H /stage/ -T LOP -m pythonpanel
-                        pane panetab18 -a 1 -l 10 -H /stage/ -T LOP -m pythonpanel
+                        pane panetab3 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
+                        pane panetab5 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
+                        pane panetab4 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
+                        pane panetab18 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
                     }
                     tabs 0 1 {
-                        pane panetab15 -a 0 -l 10 -H /stage/ -T LOP -m pythonpanel
+                        pane panetab15 -a 0 -l 10 -H /img/ -T IMG -m pythonpanel
                     }
                 }
             }
         }
-        split 0.494054 V {
-            split 0.725725 H {
-                tabs 0 1 {
-                    pane panetab13 -a 0 -l 1 -H /stage/ -T LOP -m parmeditor
-                    pane panetab8 -a 1 -l 10 -H /stage/ -T LOP -m pythonpanel
-                }
-                tabs 0 1 {
-                    pane panetab19 -a 0 -l 1 -H /stage/ -T LOP -m pythonpanel
-                }
+        split 0.520953 V {
+            tabs 0 1 {
+                pane panetab13 -a 0 -l 1 -H /stage/ -T LOP -m parmeditor
+                pane panetab8 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
             }
             tabs 0 1 {
                 pane panetab11 -a 0 -l 1 -H /stage/ -T LOP -m neteditor
@@ -113,15 +108,17 @@ viewroto  -S file -F 'lookdev/uvgrid_grey.exr' -C '' -a on -f 'scale' -o 0 0 -s 
 viewroto  -S file -F '' -C '' -a on -f 'scale' -o 0 0 -s 1 1 -O 1 -B 1 -e off image ${DESKNAME}.panetab2.solaris.persp1
 viewforeground -d on -f on -D Pz -s 0 ${DESKNAME}.panetab2.solaris.persp1
 viewforeground -o 1 ${DESKNAME}.panetab2.solaris.persp1
-viewtransform ${DESKNAME}.panetab2.solaris.persp1 version ( 3 )  flag ( Fax )  orthowidth ( 4.15948 )  focal ( 50 )  aperture ( 41.4214 )  window ( 0 1 0 1 )  winroll ( 0 )  clear ( 1 )  nearfar ( 0.0503128 11286 )  aspect ( 1.33333 )  pixelaspect ( 1 )  txyz ( -0.328839 -0.361057 8.25607 )  pxyz ( -0.225429 0.0711046 0.852147 )  rotation ( 0.871112 0.0667695 -0.486524 2.00469e-07 0.990714 0.135964 0.491085 -0.11844 0.863023  )  homedistance ( 6.11921 )  homeadjboxwidth ( 4.15948 )  homeorthowidth ( 4.15948 )  homeradius ( 4.73862 )  homeaxis ( 0 )  homecustom ( 0.707107 -0.353553 0.612372 0 0.866025 0.5 -0.707107 -0.353553 0.612372  )  adjustlimits ( 3 )  fov ( 45b)  inffreecam ( 0 )  
+viewheadlight -H off -q off -t 0 -D 0 0 -100  -s on -b 0.6 -c -0.1 -Z 0.02 -d """" -r 0 0 0 -T 1 1 1 -i 1 -e 0 -m off -A 0 -a 45 -f 1 -F 1 -I 1 -E 0 -S on -z 0.51 -k on -M off -B 3 -g 0.2 0.2 0.2 -h 0.5 -K 1 1 1 -j 1 -J 0 -l 33 -L 55 -O 0.83 0.93 1 -p 0.4 -P 0 -n 30 -N -80 -w 0.58 0.79 1  -u 0.5 -U 0 -v 35 -V -170 ${DESKNAME}.panetab2.solaris.persp1
+viewtransform ${DESKNAME}.panetab2.solaris.persp1 version ( 3 )  flag ( Fax )  orthowidth ( 4.15948 )  focal ( 50 )  aperture ( 41.4214 )  window ( 0 1 0 1 )  winroll ( 0 )  clear ( 1 )  nearfar ( 0.0503128 11286 )  aspect ( 1.33333 )  pixelaspect ( 1 )  txyz ( -0.328839 -0.361057 8.25607 )  pxyz ( -0.225429 0.0711046 0.852147 )  rotation ( 0.871112 0.0667695 -0.486524 2.00469e-07 0.990714 0.135964 0.491085 -0.11844 0.863023  )  homedistance ( 6.11921 )  homeadjboxwidth ( 4.15948 )  homeorthowidth ( 4.15948 )  homeradius ( 4.73862 )  homeaxis ( 0 )  homecustom ( 0.707107 -0.353553 0.612372 0 0.866025 0.5 -0.707107 -0.353553 0.612372  )  adjustlimits ( 3 )  fov ( 45b)  limitnear ( 0 1)  
 viewcamera -c '' ${DESKNAME}.panetab2.solaris.persp1
 vieworthogrid -d on -o 0 0 0 -s 0.2 0.2 -r 5 5 -R 1 ${DESKNAME}.panetab2.solaris.persp1
 viewuvgrid -r on -s 0.1 0.1 -P off -S 64 64 -O 0 0 -C on -t on ${DESKNAME}.panetab2.solaris.persp1
 viewagentopts  -L on -b 0 -d 1 -l 0 -m 4 -p 1000 -w 1 -B 1 ${DESKNAME}.panetab2.solaris.persp1
 viewcharacteropts  -D off ${DESKNAME}.panetab2.solaris.persp1
 viewonionskin  -e on -a 4 -b 4 -i 6 -o 0.5 -A 1 1 1 -B 1 1 1 ${DESKNAME}.panetab2.solaris.persp1
-viewposteffects  -D off -B off -t "" -f off -V off -S on -a 1 -b 5 -F 1 -g 1 -c 1 1 1 -C 1 1 1 -d 1e+06 -h 0 -H 100 10 -i 1 -I 1 -l 1 -n "" -o 1 -O 1 -r 0 1000 -R 1 200 -s 1 1 -u 0 -U 100 10 -v 0 ${DESKNAME}.panetab2.solaris.persp1
+viewposteffects  -D off -B off -t "" -f off -V off -S on -a 1 -b 5 -F 1 -g 1 -c 1 1 1 -C 1 1 1 -d 1e+06 -e on -h 0 -H 100 10 -i 1 -I 1 -l 1 -n "" -o 1 -O 1 -r 0 1000 -R 1 200 -s 1 1 -u 0 -U 100 10 -v 0 ${DESKNAME}.panetab2.solaris.persp1
 viewposteffects  -e off -E 10 -T 0.95 -L 1 ${DESKNAME}.panetab2.solaris.persp1
+viewposteffects  -A off -N off -x on ${DESKNAME}.panetab2.solaris.persp1
 viewmaskoverlay -o 0.4 ${DESKNAME}.panetab2.solaris.persp1
 viewdispset -m off always -n off always -c off always -u off always -x off always -N off always -C off always -b off always -M off always -v off always -V off always -U off always -h off -P off -p off -f off -o off -w off -s shade -F off -l on -L on -G off -B none -d uv -r unique scene ${DESKNAME}.panetab2.solaris.top1
 viewdispset -t off  scene ${DESKNAME}.panetab2.solaris.top1
@@ -159,14 +156,16 @@ viewroto  -S file -F 'lookdev/uvgrid_grey.exr' -C '' -a on -f 'scale' -o 0 0 -s 
 viewroto  -S file -F '' -C '' -a on -f 'scale' -o 0 0 -s 1 1 -O 1 -B 1 -e off image ${DESKNAME}.panetab2.solaris.top1
 viewforeground -d on -f on -D Pz -s 0 ${DESKNAME}.panetab2.solaris.top1
 viewforeground -o 1 ${DESKNAME}.panetab2.solaris.top1
-viewtransform ${DESKNAME}.panetab2.solaris.top1 version ( 3 )  flag ( Fox )  orthowidth ( 2.22222 )  focal ( 50 )  aperture ( 41.4214 )  window ( 0 1 0 1 )  winroll ( 0 )  clear ( 1 )  nearfar ( 0.00346447 34644.7 )  aspect ( 1.33333 )  pixelaspect ( 1 )  txyz ( 0 0 3.68246 )  pxyz ( 0 0 0 )  rotation ( 1 0 0 0 1.19209e-07 1 0 -1 1.19209e-07  )  homedistance ( 3.68246 )  homeadjboxwidth ( 2.22222 )  homeorthowidth ( 2.22222 )  homeradius ( 3.4641 )  homeaxis ( 0 )  homecustom ( 0.707107 -0.353553 0.612372 0 0.866025 0.5 -0.707107 -0.353553 0.612372  )  adjustlimits ( 3 )  fov ( 45b)  inffreecam ( 0 )  
+viewheadlight -H off -q off -t 0 -D 0 0 -100  -s on -b 0.6 -c -0.1 -Z 0.02 -d """" -r 0 0 0 -T 1 1 1 -i 1 -e 0 -m off -A 0 -a 45 -f 1 -F 1 -I 1 -E 0 -S on -z 0.51 -k on -M off -B 3 -g 0.2 0.2 0.2 -h 0.5 -K 1 1 1 -j 1 -J 0 -l 33 -L 55 -O 0.83 0.93 1 -p 0.4 -P 0 -n 30 -N -80 -w 0.58 0.79 1  -u 0.5 -U 0 -v 35 -V -170 ${DESKNAME}.panetab2.solaris.top1
+viewtransform ${DESKNAME}.panetab2.solaris.top1 version ( 3 )  flag ( Fox )  orthowidth ( 2.22222 )  focal ( 50 )  aperture ( 41.4214 )  window ( 0 1 0 1 )  winroll ( 0 )  clear ( 1 )  nearfar ( 0.00346447 34644.7 )  aspect ( 1.33333 )  pixelaspect ( 1 )  txyz ( 0 0 3.68246 )  pxyz ( 0 0 0 )  rotation ( 1 0 0 0 1.19209e-07 1 0 -1 1.19209e-07  )  homedistance ( 3.68246 )  homeadjboxwidth ( 2.22222 )  homeorthowidth ( 2.22222 )  homeradius ( 3.4641 )  homeaxis ( 0 )  homecustom ( 0.707107 -0.353553 0.612372 0 0.866025 0.5 -0.707107 -0.353553 0.612372  )  adjustlimits ( 3 )  fov ( 45b)  limitnear ( 0 1)  
 vieworthogrid -d on -o 0 0 0 -s 0.2 0.2 -r 5 5 -R 1 ${DESKNAME}.panetab2.solaris.top1
 viewuvgrid -r on -s 0.1 0.1 -P off -S 64 64 -O 0 0 -C on -t on ${DESKNAME}.panetab2.solaris.top1
 viewagentopts  -L on -b 0 -d 1 -l 0 -m 4 -p 1000 -w 1 -B 1 ${DESKNAME}.panetab2.solaris.top1
 viewcharacteropts  -D off ${DESKNAME}.panetab2.solaris.top1
 viewonionskin  -e on -a 4 -b 4 -i 6 -o 0.5 -A 1 1 1 -B 1 1 1 ${DESKNAME}.panetab2.solaris.top1
-viewposteffects  -D off -B off -t "" -f off -V off -S on -a 1 -b 5 -F 1 -g 1 -c 1 1 1 -C 1 1 1 -d 1e+06 -h 0 -H 100 10 -i 1 -I 1 -l 1 -n "" -o 1 -O 1 -r 0 1000 -R 1 200 -s 1 1 -u 0 -U 100 10 -v 0 ${DESKNAME}.panetab2.solaris.top1
+viewposteffects  -D off -B off -t "" -f off -V off -S on -a 1 -b 5 -F 1 -g 1 -c 1 1 1 -C 1 1 1 -d 1e+06 -e on -h 0 -H 100 10 -i 1 -I 1 -l 1 -n "" -o 1 -O 1 -r 0 1000 -R 1 200 -s 1 1 -u 0 -U 100 10 -v 0 ${DESKNAME}.panetab2.solaris.top1
 viewposteffects  -e off -E 10 -T 0.95 -L 1 ${DESKNAME}.panetab2.solaris.top1
+viewposteffects  -A off -N off -x on ${DESKNAME}.panetab2.solaris.top1
 viewmaskoverlay -o 0.4 ${DESKNAME}.panetab2.solaris.top1
 viewdispset -m off always -n off always -c off always -u off always -x off always -N off always -C off always -b off always -M off always -v off always -V off always -U off always -h off -P off -p off -f off -o off -w off -s shade -F off -l on -L on -G off -B none -d uv -r unique scene ${DESKNAME}.panetab2.solaris.front1
 viewdispset -t off  scene ${DESKNAME}.panetab2.solaris.front1
@@ -204,14 +203,16 @@ viewroto  -S file -F 'lookdev/uvgrid_grey.exr' -C '' -a on -f 'scale' -o 0 0 -s 
 viewroto  -S file -F '' -C '' -a on -f 'scale' -o 0 0 -s 1 1 -O 1 -B 1 -e off image ${DESKNAME}.panetab2.solaris.front1
 viewforeground -d on -f on -D Pz -s 0 ${DESKNAME}.panetab2.solaris.front1
 viewforeground -o 1 ${DESKNAME}.panetab2.solaris.front1
-viewtransform ${DESKNAME}.panetab2.solaris.front1 version ( 3 )  flag ( Fox )  orthowidth ( 2.22222 )  focal ( 50 )  aperture ( 41.4214 )  window ( 0 1 0 1 )  winroll ( 0 )  clear ( 1 )  nearfar ( 0.00346447 34644.7 )  aspect ( 1.33333 )  pixelaspect ( 1 )  txyz ( 0 0 3.68246 )  pxyz ( 0 0 0 )  rotation ( 1 0 0 0 1 0 0 0 1  )  homedistance ( 3.68246 )  homeadjboxwidth ( 2.22222 )  homeorthowidth ( 2.22222 )  homeradius ( 3.4641 )  homeaxis ( 0 )  homecustom ( 0.707107 -0.353553 0.612372 0 0.866025 0.5 -0.707107 -0.353553 0.612372  )  adjustlimits ( 3 )  fov ( 45b)  inffreecam ( 0 )  
+viewheadlight -H off -q off -t 0 -D 0 0 -100  -s on -b 0.6 -c -0.1 -Z 0.02 -d """" -r 0 0 0 -T 1 1 1 -i 1 -e 0 -m off -A 0 -a 45 -f 1 -F 1 -I 1 -E 0 -S on -z 0.51 -k on -M off -B 3 -g 0.2 0.2 0.2 -h 0.5 -K 1 1 1 -j 1 -J 0 -l 33 -L 55 -O 0.83 0.93 1 -p 0.4 -P 0 -n 30 -N -80 -w 0.58 0.79 1  -u 0.5 -U 0 -v 35 -V -170 ${DESKNAME}.panetab2.solaris.front1
+viewtransform ${DESKNAME}.panetab2.solaris.front1 version ( 3 )  flag ( Fox )  orthowidth ( 2.22222 )  focal ( 50 )  aperture ( 41.4214 )  window ( 0 1 0 1 )  winroll ( 0 )  clear ( 1 )  nearfar ( 0.00346447 34644.7 )  aspect ( 1.33333 )  pixelaspect ( 1 )  txyz ( 0 0 3.68246 )  pxyz ( 0 0 0 )  rotation ( 1 0 0 0 1 0 0 0 1  )  homedistance ( 3.68246 )  homeadjboxwidth ( 2.22222 )  homeorthowidth ( 2.22222 )  homeradius ( 3.4641 )  homeaxis ( 0 )  homecustom ( 0.707107 -0.353553 0.612372 0 0.866025 0.5 -0.707107 -0.353553 0.612372  )  adjustlimits ( 3 )  fov ( 45b)  limitnear ( 0 1)  
 vieworthogrid -d on -o 0 0 0 -s 0.2 0.2 -r 5 5 -R 1 ${DESKNAME}.panetab2.solaris.front1
 viewuvgrid -r on -s 0.1 0.1 -P off -S 64 64 -O 0 0 -C on -t on ${DESKNAME}.panetab2.solaris.front1
 viewagentopts  -L on -b 0 -d 1 -l 0 -m 4 -p 1000 -w 1 -B 1 ${DESKNAME}.panetab2.solaris.front1
 viewcharacteropts  -D off ${DESKNAME}.panetab2.solaris.front1
 viewonionskin  -e on -a 4 -b 4 -i 6 -o 0.5 -A 1 1 1 -B 1 1 1 ${DESKNAME}.panetab2.solaris.front1
-viewposteffects  -D off -B off -t "" -f off -V off -S on -a 1 -b 5 -F 1 -g 1 -c 1 1 1 -C 1 1 1 -d 1e+06 -h 0 -H 100 10 -i 1 -I 1 -l 1 -n "" -o 1 -O 1 -r 0 1000 -R 1 200 -s 1 1 -u 0 -U 100 10 -v 0 ${DESKNAME}.panetab2.solaris.front1
+viewposteffects  -D off -B off -t "" -f off -V off -S on -a 1 -b 5 -F 1 -g 1 -c 1 1 1 -C 1 1 1 -d 1e+06 -e on -h 0 -H 100 10 -i 1 -I 1 -l 1 -n "" -o 1 -O 1 -r 0 1000 -R 1 200 -s 1 1 -u 0 -U 100 10 -v 0 ${DESKNAME}.panetab2.solaris.front1
 viewposteffects  -e off -E 10 -T 0.95 -L 1 ${DESKNAME}.panetab2.solaris.front1
+viewposteffects  -A off -N off -x on ${DESKNAME}.panetab2.solaris.front1
 viewmaskoverlay -o 0.4 ${DESKNAME}.panetab2.solaris.front1
 viewdispset -m off always -n off always -c off always -u off always -x off always -N off always -C off always -b off always -M off always -v off always -V off always -U off always -h off -P off -p off -f off -o off -w off -s shade -F off -l on -L on -G off -B none -d uv -r unique scene ${DESKNAME}.panetab2.solaris.right1
 viewdispset -t off  scene ${DESKNAME}.panetab2.solaris.right1
@@ -249,28 +250,31 @@ viewroto  -S file -F 'lookdev/uvgrid_grey.exr' -C '' -a on -f 'scale' -o 0 0 -s 
 viewroto  -S file -F '' -C '' -a on -f 'scale' -o 0 0 -s 1 1 -O 1 -B 1 -e off image ${DESKNAME}.panetab2.solaris.right1
 viewforeground -d on -f on -D Pz -s 0 ${DESKNAME}.panetab2.solaris.right1
 viewforeground -o 1 ${DESKNAME}.panetab2.solaris.right1
-viewtransform ${DESKNAME}.panetab2.solaris.right1 version ( 3 )  flag ( Fox )  orthowidth ( 2.22222 )  focal ( 50 )  aperture ( 41.4214 )  window ( 0 1 0 1 )  winroll ( 0 )  clear ( 1 )  nearfar ( 0.00346447 34644.7 )  aspect ( 1.33333 )  pixelaspect ( 1 )  txyz ( 0 0 3.68246 )  pxyz ( 0 0 0 )  rotation ( 6.12323e-17 0 1 0 1 0 -1 0 6.12323e-17  )  homedistance ( 3.68246 )  homeadjboxwidth ( 2.22222 )  homeorthowidth ( 2.22222 )  homeradius ( 3.4641 )  homeaxis ( 0 )  homecustom ( 0.707107 -0.353553 0.612372 0 0.866025 0.5 -0.707107 -0.353553 0.612372  )  adjustlimits ( 3 )  fov ( 45b)  inffreecam ( 0 )  
+viewheadlight -H off -q off -t 0 -D 0 0 -100  -s on -b 0.6 -c -0.1 -Z 0.02 -d """" -r 0 0 0 -T 1 1 1 -i 1 -e 0 -m off -A 0 -a 45 -f 1 -F 1 -I 1 -E 0 -S on -z 0.51 -k on -M off -B 3 -g 0.2 0.2 0.2 -h 0.5 -K 1 1 1 -j 1 -J 0 -l 33 -L 55 -O 0.83 0.93 1 -p 0.4 -P 0 -n 30 -N -80 -w 0.58 0.79 1  -u 0.5 -U 0 -v 35 -V -170 ${DESKNAME}.panetab2.solaris.right1
+viewtransform ${DESKNAME}.panetab2.solaris.right1 version ( 3 )  flag ( Fox )  orthowidth ( 2.22222 )  focal ( 50 )  aperture ( 41.4214 )  window ( 0 1 0 1 )  winroll ( 0 )  clear ( 1 )  nearfar ( 0.00346447 34644.7 )  aspect ( 1.33333 )  pixelaspect ( 1 )  txyz ( 0 0 3.68246 )  pxyz ( 0 0 0 )  rotation ( 6.12323e-17 0 1 0 1 0 -1 0 6.12323e-17  )  homedistance ( 3.68246 )  homeadjboxwidth ( 2.22222 )  homeorthowidth ( 2.22222 )  homeradius ( 3.4641 )  homeaxis ( 0 )  homecustom ( 0.707107 -0.353553 0.612372 0 0.866025 0.5 -0.707107 -0.353553 0.612372  )  adjustlimits ( 3 )  fov ( 45b)  limitnear ( 0 1)  
 vieworthogrid -d on -o 0 0 0 -s 0.2 0.2 -r 5 5 -R 1 ${DESKNAME}.panetab2.solaris.right1
 viewuvgrid -r on -s 0.1 0.1 -P off -S 64 64 -O 0 0 -C on -t on ${DESKNAME}.panetab2.solaris.right1
 viewagentopts  -L on -b 0 -d 1 -l 0 -m 4 -p 1000 -w 1 -B 1 ${DESKNAME}.panetab2.solaris.right1
 viewcharacteropts  -D off ${DESKNAME}.panetab2.solaris.right1
 viewonionskin  -e on -a 4 -b 4 -i 6 -o 0.5 -A 1 1 1 -B 1 1 1 ${DESKNAME}.panetab2.solaris.right1
-viewposteffects  -D off -B off -t "" -f off -V off -S on -a 1 -b 5 -F 1 -g 1 -c 1 1 1 -C 1 1 1 -d 1e+06 -h 0 -H 100 10 -i 1 -I 1 -l 1 -n "" -o 1 -O 1 -r 0 1000 -R 1 200 -s 1 1 -u 0 -U 100 10 -v 0 ${DESKNAME}.panetab2.solaris.right1
+viewposteffects  -D off -B off -t "" -f off -V off -S on -a 1 -b 5 -F 1 -g 1 -c 1 1 1 -C 1 1 1 -d 1e+06 -e on -h 0 -H 100 10 -i 1 -I 1 -l 1 -n "" -o 1 -O 1 -r 0 1000 -R 1 200 -s 1 1 -u 0 -U 100 10 -v 0 ${DESKNAME}.panetab2.solaris.right1
 viewposteffects  -e off -E 10 -T 0.95 -L 1 ${DESKNAME}.panetab2.solaris.right1
+viewposteffects  -A off -N off -x on ${DESKNAME}.panetab2.solaris.right1
 viewmaskoverlay -o 0.4 ${DESKNAME}.panetab2.solaris.right1
 viewsnapshotoption -s off -h off -a 1 -v '*' -m 0 ${DESKNAME}.panetab2.solaris
 cplane -o 0 0 0 -n 4.37114e-08 1 -4.37114e-08 -x 1.91069e-15 4.37114e-08 1 -l n -s 0.1 0.1 -c 40 40 -r 10 10 -d off ${DESKNAME}.panetab2.solaris
 glcache -t 1638 -v 6553
+glcache -T 0
 sceneviewopts -C on -c on -e on -F off -g on -H on -i -1 -k "component" -l on -m on -M on -p "" -P off -s on -S 1 -r "HD_HoudiniRendererPlugin" -K off -R 960 540 -V off ${DESKNAME}.panetab2.solaris
-sceneviewconfig -y 1 -l 1 -o 1 -g -p -m "High Quality Lighting" "Houdini GL" ${DESKNAME}.panetab2.solaris
-sceneviewconfig -y 1 -l 1 -o 1 -r -m "High Quality Lighting and Shadows" "Karma XPU" ${DESKNAME}.panetab2.solaris
+sceneviewconfig -z 1 -y 1 -l 1 -o 1 -r -m "High Quality Lighting and Shadows" "Karma XPU" ${DESKNAME}.panetab2.solaris
+sceneviewconfig -z 1 -y 1 -l 1 -o 1 -g -p -m "High Quality Lighting" "Houdini GL" ${DESKNAME}.panetab2.solaris
 viewlayout -s 2 ${DESKNAME}.panetab2.solaris
 viewtype -t ortho_right ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",4)`
 viewtype -t ortho_front ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",3)`
 viewtype -t ortho_top ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",1)`
 viewtype -t perspective ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",2)`
 pythonpanel -s on -t off -n SceneGraphLayersPanel panetab6
-networkeditor -p '{\n	"taskgraphcollapsemode":"Off",\n	"backgroundimageediting":"0",\n	"gridxstep":"2.0",\n	"overviewmode":"2",\n	"workitemattrtocollapseby":"",\n	"showparmdialogmax":"1",\n	"showtaskgraphperf":"0",\n	"palettecolors":"",\n	"taskgraphsortcriteria":"Automatic",\n	"showparmdialog":"0",\n	"showspareinputdep":"1",\n	"taskgraphperfstatname":"Cook Time",\n	"showmenu":"1",\n	"taskgraphsortdirection":"0",\n	"showdep":"0",\n	"showtasksmenu":"1",\n	"showcopsmenu":"1",\n	"palettemode":"0",\n	"gridmode":"0",\n	"gridystep":"1.0",\n	"showperfstats":"1",\n	"overviewbounds":"0.000000 0.000000 591.000000 140.100000",\n	"perfstatname":"Time",\n	"palettesize":"187 187",\n	"showchilddep":"1",\n	"backgroundimagebrightness":"1.0",\n	"workitemcolorattribute":"",\n	"useworkitemcolorattribute":"0"\n}\n' panetab16
+networkeditor -p '{\n	"backgroundimagebrightness":"1.0",\n	"gridmode":"0",\n	"showcopsmenu":"1",\n	"taskgraphcollapsemode":"Off",\n	"showtasksmenu":"1",\n	"useworkitemcolorattribute":"0",\n	"showmenu":"1",\n	"gridxstep":"2.0",\n	"showparmdialogmax":"1",\n	"perfstatname":"Time",\n	"palettemode":"0",\n	"taskgraphsortdirection":"0",\n	"showchilddep":"1",\n	"backgroundimageediting":"0",\n	"showtaskgraphperf":"0",\n	"showperfstats":"1",\n	"showparmdialog":"0",\n	"overviewmode":"2",\n	"showdep":"0",\n	"palettecolors":"",\n	"showspareinputdep":"1",\n	"workitemcolorattribute":"",\n	"palettesize":"187 187",\n	"overviewbounds":"0.000000 0.000000 591.000000 140.100000",\n	"taskgraphperfstatname":"Cook Time",\n	"gridystep":"1.0",\n	"taskgraphsortcriteria":"Automatic",\n	"workitemattrtocollapseby":""\n}\n' panetab16
 pythonpanel -s on -t off -n contexteditor panetab23
 performance -c on -d on -f on -g off -j on -k on -m off -n on -o on -t off -v on -p on -y on -u on -e off -r absolute -R seconds -w tree panetab9
  panetab14
@@ -281,8 +285,7 @@ pythonpanel -s on -t off -n pdgservicemenu panetab18
 pythonpanel -s on -t off -n rig_tree panetab15
 parmeditor -T 0.25 -w 0 panetab13
 pythonpanel -s on -t off -n labs::diff panetab8
-pythonpanel -s on -t off -n sidefx::node_info panetab19
-networkeditor -p '{\n	"taskgraphcollapsemode":"Off",\n	"backgroundimageediting":"0",\n	"gridxstep":"2.0",\n	"overviewmode":"2",\n	"workitemattrtocollapseby":"",\n	"showparmdialogmax":"1",\n	"showtaskgraphperf":"0",\n	"palettecolors":"",\n	"obj:listmode":"0",\n	"showtree":"0",\n	"taskgraphsortcriteria":"Automatic",\n	"showparmdialog":"0",\n	"showtimedep":"1",\n	"showspareinputdep":"1",\n	"taskgraphperfstatname":"Cook Time",\n	"showmenu":"1",\n	"taskgraphsortdirection":"0",\n	"typesidebarsplit":"0.25",\n	"showdep":"0",\n	"showtasksmenu":"1",\n	"showcopsmenu":"1",\n	"treesplit":"0.25",\n	"palettemode":"0",\n	"gridmode":"0",\n	"showgrouplist":"0",\n	"gridystep":"1.0",\n	"showperfstats":"1",\n	"overviewbounds":"0.000000 0.000000 394.500000 222.000000",\n	"perfstatname":"Time",\n	"palettesize":"150 150",\n	"grouplistsplit":"0.75",\n	"showchilddep":"1",\n	"backgroundimagebrightness":"1.0",\n	"workitemcolorattribute":"",\n	"useworkitemcolorattribute":"1",\n	"showtypesidebar":"0"\n}\n' panetab11
+networkeditor -p '{\n	"backgroundimagebrightness":"1.0",\n	"gridmode":"0",\n	"showcopsmenu":"1",\n	"taskgraphcollapsemode":"Off",\n	"showtasksmenu":"1",\n	"useworkitemcolorattribute":"1",\n	"typesidebarsplit":"0.25",\n	"showmenu":"1",\n	"gridxstep":"2.0",\n	"treesplit":"0.25",\n	"showparmdialogmax":"1",\n	"perfstatname":"Time",\n	"palettemode":"0",\n	"taskgraphsortdirection":"0",\n	"showchilddep":"1",\n	"backgroundimageediting":"0",\n	"showtaskgraphperf":"0",\n	"showgrouplist":"0",\n	"showperfstats":"1",\n	"showparmdialog":"0",\n	"overviewmode":"2",\n	"showdep":"0",\n	"palettecolors":"",\n	"obj:listmode":"0",\n	"showspareinputdep":"1",\n	"workitemcolorattribute":"",\n	"palettesize":"150 150",\n	"showtypesidebar":"0",\n	"showtimedep":"1",\n	"showtree":"0",\n	"overviewbounds":"0.000000 0.000000 263.400000 161.700000",\n	"taskgraphperfstatname":"Cook Time",\n	"gridystep":"1.0",\n	"taskgraphsortcriteria":"Automatic",\n	"workitemattrtocollapseby":"",\n	"grouplistsplit":"0.75"\n}\n' panetab11
 netcolumns -c display,xray,select,origin,capture,bone -n OBJ panetab11
 netcolumns -c display,render,template,selectabletemplate,highlight,unload,bypass,lock -n SOP panetab11
 netcolumns -c delscript,comment -n CHOPNET panetab11

@@ -302,11 +302,19 @@ class DepartmentItemDelegate(QStyledItemDelegate):
         painter.setPen(text_color)
         text = index.data(Qt.DisplayRole)
 
+        # Check if this is VERSION column with extension badge
+        extension = index.data(Qt.UserRole + 2)
+        has_badge = extension and index.column() == DepartmentTableModel.COLUMN_VERSION
+
         # Special rendering for group column - draw pill badge
         if index.column() == DepartmentTableModel.COLUMN_GROUP and text:
             self._draw_group_badge(painter, rect, str(text))
         elif text:
-            text_rect = rect.adjusted(5, 0, -5, 0)  # Add padding
+            # Adjust text_rect to leave space for badge on the left if present
+            if has_badge:
+                text_rect = rect.adjusted(35, 0, -5, 0)  # Leave space for badge on left
+            else:
+                text_rect = rect.adjusted(5, 0, -5, 0)  # Normal padding
             alignment = index.data(Qt.TextAlignmentRole)
             if alignment is None:
                 alignment = Qt.AlignLeft | Qt.AlignVCenter
@@ -324,8 +332,7 @@ class DepartmentItemDelegate(QStyledItemDelegate):
             painter.drawText(text_rect, alignment, str(text))
 
         # Draw extension badge on version column
-        extension = index.data(Qt.UserRole + 2)
-        if extension and index.column() == DepartmentTableModel.COLUMN_VERSION:
+        if has_badge:
             self._draw_extension_badge(painter, rect, extension)
 
         painter.restore()
@@ -372,8 +379,8 @@ class DepartmentItemDelegate(QStyledItemDelegate):
         badge_width = text_width + 8
         badge_height = 14
 
-        # Position badge at right side of cell
-        badge_x = rect.right() - badge_width - 5
+        # Position badge at left side of cell to avoid overlapping version text
+        badge_x = rect.x() + 5
         badge_y = rect.y() + (rect.height() - badge_height) // 2
         badge_rect = QRect(badge_x, badge_y, badge_width, badge_height)
 
