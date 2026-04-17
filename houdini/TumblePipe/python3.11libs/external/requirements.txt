@@ -1,5 +1,0 @@
-qtpy
-watchdog
-pymongo
-dictdiffer
-opentimelineio
