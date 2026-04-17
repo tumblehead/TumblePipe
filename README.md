@@ -26,7 +26,9 @@ This readme will help you get up and running with TumblePipe. For documentation 
 
 # Download
 
-## Via HPM (recommended)
+## Via [HPM](https://hpm.readthedocs.io) (recommended)
+[HPM](https://hpm.readthedocs.io) is the Houdini Package Manager — a CLI tool for installing and managing Houdini packages.
+
 ```bash
 hpm add tumblepipe --git https://github.com/tumblehead/TumblePipe
 ```
