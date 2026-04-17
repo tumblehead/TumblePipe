@@ -1,7 +1,7 @@
 # TumblePipe
-An example of an all Houdini pipeline for animation film production, developed for the Turbulence short film.
+A small studio pipeline for animation and VFX projects in Houdini, developed for the Turbulence short film.
 
-This readme is here to help you get up and running with this project, and get it ready for use on your own Houdini creations. For documentation on how to do further development, to understand what the various parts of the project does, and how to extend the project for your own purposes, there will be additional external documentation in the future.
+This readme will help you get up and running with TumblePipe. For documentation on further development, understanding the various parts of the project, and extending it for your own purposes, there will be additional external documentation in the future.
 
 # Disclaimer
 - This project is free, and you can do with it and the resources you find here as you please.
@@ -13,20 +13,26 @@ This readme is here to help you get up and running with this project, and get it
 - We won't give any deprecation warnings, and can not give a backwards compatible guarantee for future versions.
 
 # Project Structure
-Here is a sparse walkthrough of this repository's directory structure:
-- `./deadline/Shell` (A custom deadline plugin, that the farm scripts expects to be available)
-- `./examples`
-    - `config` (An example pipeline configuration, could be used as a starting point)
-    - `turbulence_houdini.bat` (An example Windows .bat launcher for running Houdini and configuring the TumblePipe package)
-- `./houdini`
-    - `TumblePipe` (The TumblePipe Houdini package)
-        - `otls` (The directory containing all the pipeline HDAs)
-        - `python/1x/tumblehead` (The Python package containing all the pipeline scripts)
-        - `python3.11libs/external` (The directory that will contain the pipeline's Python virtual environment)
-    - `TumblePipe.json` (The TumblePipe Houdini package description)
+- `otls/` — Houdini Digital Assets (HDAs) in text format for version control
+- `python/1x/tumblepipe/` — Pipeline Python modules
+- `python3.11libs/` — Python libraries loaded by Houdini at startup
+- `scripts/` — Houdini startup scripts (123.py, etc.)
+- `desktop/` — Houdini desktop layout
+- `python_panels/` — Houdini Python panels (project browser)
+- `ocio/` — OpenColorIO configuration
+- `resources/` — Pipeline resource files
+- `resolver-src/` — Source code for the `entity://` USD asset resolver (tumbleResolver)
+- `hpm.toml` — HPM package manifest
 
 # Download
-You can find downloads for the zipped package releases on the GitHub repository, under [releases](https://github.com/tumblehead/TumblePipe/releases).
+
+## Via HPM (recommended)
+```bash
+hpm add tumblepipe --git https://github.com/tumblehead/TumblePipe
+```
+
+## Manual
+You can find zipped package releases on the GitHub repository under [releases](https://github.com/tumblehead/TumblePipe/releases).
 
 # Prerequisites
 Before installing TumblePipe, you'll need to set up a Linux environment with the required tools. This is necessary both for workstations and render farm workers.
@@ -86,68 +92,43 @@ The pipeline uses several `TH_*` environment variables (detailed in the Configur
 - Other variables like `TH_PROJECT_PATH` and `TH_PIPELINE_PATH` are set in your launcher script
 
 # Installation
-Installing a Houdini package is simply as unzipping the downloaded release.
+Install TumblePipe as a Houdini package. Where you place it depends on your studio setup:
 
-1) Where you wan't to place the package then depends on your studio setup:
-    - For Individuals
-        - You could have a location where you have placed other Houdini packages already
-        - You could also locate it in the houdini preference directory, under the user documents directory
-        - You could locate and bundle the package per project
-    - For Teams
-        - You could have it on a shared location, e.g. a shared file server
-        - You could install it for each workstation locally
+- **Individuals**: Place it alongside your other Houdini packages, in your Houdini preference directory, or bundle it per project.
+- **Teams**: Place it on a shared file server, or install locally per workstation.
 
-2) You then need to make Houdini aware of the TumblePipe Houdini package
-    - For Individuals
-        - A simple way is to create a launcher script, e.g. on Windows with .bat file. For an example check out `./examples/launcher/windows_launcher.bat`
-    - For Teams
-        - You might have your own system for managing environments and launching DCCs
-        - You could also use a launcher script, as described above for individuals
+You then need to make Houdini aware of the package. A simple way is to create a launcher script (e.g. a Windows `.bat` file) that sets the required environment variables and launches Houdini.
 
 # Configuration
-The configuration of the pipeline will allow it to customize it to your house rules, as well as informing the tools which assets and shots are in your project, as well as departments etc.
-
-For an example, and as a starting point for you own configurations, you can copy and use the example config that can be found in `./examples/config`
+The configuration allows you to customize TumblePipe to your house rules, as well as informing the tools which assets and shots are in your project, departments, etc.
 
 ## Framework
-The approach we took to make the various scripts in the pipeline flexible enough to handle different projects, was to factor out a small framework of interfaces for you to implement. This allows you to customize the pipeline to fit with your house rules. This is also where the pipeline would allow you to hook it up with other systems; such as databases, storage systems and other project management software.  
+The pipeline uses a small framework of interfaces for customization. You implement these Python modules in a shared config directory:
 
-You will need to create a set of Python modules in a shared config directory, and implement some methods and functions:
-- config_convention.py (responsible for managing workspace configuration)
-- naming_convention.py (responsible for managing naming of items in the pipeline context)
-- storage_convention.py (responsible for mapping project resource URIs to filesystem paths)
-- render_convention.py (responsible for managing render configuration)
+- `config_convention.py` — workspace configuration
+- `naming_convention.py` — naming of items in the pipeline context
+- `storage_convention.py` — mapping project resource URIs to filesystem paths
+- `render_convention.py` — render configuration
 
-The file name of the these Python modules are not optional, the pipeline expect these modules to exist, and be placed in the root of your config directory.
+The file names are not optional; the pipeline expects these modules to exist in the root of your config directory.
 
-As an additional example of a pipeline configuration, please check out the Turbulence project work files. You can find this resource along with other information on the Turbulence project's dedicated SideFX [tech-demo](https://www.sidefx.com/tech-demos/turbulence/) website.
+As an additional example, check out the Turbulence project work files on SideFX's [tech-demo](https://www.sidefx.com/tech-demos/turbulence/) website.
 
 # Deadline and Render Farm
-In order to use the render farm scripts, you'll need to set up Deadline workers with the same prerequisites as your workstations.
+For render farm usage, set up Deadline workers with the same prerequisites as your workstations.
 
 ## Render Farm Prerequisites
-Each farm worker needs the same WSL2/Ubuntu setup as described in the Prerequisites section:
+Each farm worker needs the same WSL2/Ubuntu setup:
 
 - **WSL2 and Ubuntu**: Follow the same installation steps
 - **Required Tools**: Install UV, ffmpeg, openimageio-tools, and opencolorio-tools
-- **Drive Mapping**: This is **critical** - workers must have identical drive mappings in `/etc/fstab` to access project files
-  - If your workstation has `P: /mnt/p drvfs defaults 0 0`, all workers need the same mapping
-  - Without matching drive mappings, farm jobs will fail to read/write files
+- **Drive Mapping**: **Critical** — workers must have identical drive mappings in `/etc/fstab` to access project files
 
-## Installing the UV Deadline Plugin
-TumblePipe uses a custom Deadline plugin that leverages Astral UV for fast Python environment management.
+## Deadline UV Plugin
+TumblePipe uses a custom Deadline plugin for UV-based render processing. The plugin is maintained separately:
 
-1) **Copy the plugin** to your Deadline repository:
-   ```
-   Copy deadline/UV/ to <DeadlineRepository>/custom/plugins/UV/
-   ```
-
-2) **Restart Deadline workers** to load the new plugin
-
-3) **For detailed configuration**, see the [UV Plugin README](deadline/UV/README.md) which covers:
-   - Performance tuning (cache directories, Python pre-installation)
-   - Troubleshooting common issues
-   - Advanced usage and optimization
+- **Repository**: [tumblehead/deadline-uv-plugin](https://github.com/tumblehead/deadline-uv-plugin)
+- **Installation**: Copy the plugin contents to `<DeadlineRepository>/custom/plugins/UV/` and restart Deadline workers.
 
 ## Additional Resources
 - **Deadline Plugin Development**: [Thinkbox Documentation](https://docs.thinkboxsoftware.com/products/deadline/10.1/1_User%20Manual/manual/manual-plugins.html)
