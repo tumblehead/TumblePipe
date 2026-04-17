@@ -33,6 +33,9 @@ This readme will help you get up and running with TumblePipe. For documentation 
 hpm add tumblepipe --git https://github.com/tumblehead/TumblePipe
 ```
 
+## Via [TumbleTrove Desktop](https://tumbletrove.com/desktop)
+The [TumbleTrove Desktop](https://tumbletrove.com/desktop) app lets you browse, install, and update Houdini packages — including TumblePipe — with a graphical interface. No command line required.
+
 ## Manual
 You can find zipped package releases on the GitHub repository under [releases](https://github.com/tumblehead/TumblePipe/releases).
 
