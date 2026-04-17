@@ -1,0 +1,9 @@
+{
+	"values":["20.5.550"
+	],
+	"indexes":{
+		"hdaroot/output1.userdata":0,
+		"hdaroot/depth_cull_shader.userdata":0,
+		"hdaroot/input1.userdata":0
+	}
+}

@@ -1,0 +1,3800 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Sop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::maps_baker::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 5.16278 -4.7342
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	unpackusd1 1 1 "input1"
+1 	transformbyattrib1 1 1 "input2"
+}
+inputs
+{
+0 	unpackusd1 0 1
+1 	transformbyattrib1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"wirestyle":{
+		"type":"string",
+		"value":"rounded"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.inp"
+Content-Type: text/plain
+
+2
+0 -0.14622525814150056 9.7090362192238846 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 2.8537747418584996 10.209036219223885 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/LOW.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/LOW.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0.0733528 1.03221
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault off exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	tangents3 1 1 "input1"
+}
+inputs
+{
+0 	tangents3 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0 0 0 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/LOW.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+copyinput	[ 0	locks=0 ]	(	"on"	)
+cacheinput	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/LOW.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/HIGH.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/HIGH.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 3.29313 1.03221
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	normal12 1 1 "input1"
+}
+inputs
+{
+0 	normal12 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0 0 0 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/HIGH.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+copyinput	[ 0	locks=0 ]	(	"on"	)
+cacheinput	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/HIGH.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position -3.2265 -1.09753
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	LOW 1 1 "input1"
+}
+inputs
+{
+0 	LOW 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normal11.init"
+Content-Type: text/plain
+
+type = normal
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normal11.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0.0733528 4.91076
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normal11.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+group	[ 0	locks=0 ]	(	""	)
+grouptype	[ 0	locks=0 ]	(	"guess"	)
+overridenormal	[ 0	locks=0 ]	(	"off"	)
+normalattrib	[ 0	locks=0 ]	(	N	)
+construct	[ 0	locks=0 ]	(	0	)
+docompute	[ 0	locks=0 ]	(	"on"	)
+type	[ 0	locks=0 ]	(	"typevertex"	)
+cuspangle	[ 0	locks=0 ]	(	180	)
+method	[ 0	locks=0 ]	(	1	)
+origifzero	[ 0	locks=0 ]	(	"on"	)
+modify	[ 0	locks=0 ]	(	0	)
+normalize	[ 0	locks=0 ]	(	"off"	)
+reverse	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normal11.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/tangents3.init"
+Content-Type: text/plain
+
+type = polyframe
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/tangents3.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0.0733528 3.75254
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	normal11 1 1 "input1"
+}
+inputs
+{
+0 	normal11 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author MAINGEAR@DESKTOP-P98C1VA
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/tangents3.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+group	[ 0	locks=0 ]	(	""	)
+entity	[ 0	locks=0 ]	(	"primitive"	)
+style	[ 0	locks=0 ]	(	mikkt	)
+attribname	[ 0	locks=0 ]	(	""	)
+Non	[ 0	locks=0 ]	(	"off"	)
+N	[ 0	locks=0 ]	(	N	)
+tangentuon	[ 0	locks=0 ]	(	"on"	)
+tangentu	[ 0	locks=0 ]	(	tangentu	)
+tangentvon	[ 0	locks=0 ]	(	"on"	)
+tangentv	[ 0	locks=0 ]	(	tangentv	)
+signson	[ 0	locks=0 ]	(	"off"	)
+signs	[ 8	locks=0 ]	(	signs	)
+ortho	[ 0	locks=0 ]	(	"off"	)
+lefthanded	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/tangents3.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normal12.init"
+Content-Type: text/plain
+
+type = normal
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normal12.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 3.29313 4.91076
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(1) "" 1 "input1"
+}
+inputs
+{
+0 	(1) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normal12.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+group	[ 0	locks=0 ]	(	""	)
+grouptype	[ 0	locks=0 ]	(	"guess"	)
+overridenormal	[ 0	locks=0 ]	(	"off"	)
+normalattrib	[ 0	locks=0 ]	(	N	)
+construct	[ 0	locks=0 ]	(	0	)
+docompute	[ 0	locks=0 ]	(	"on"	)
+type	[ 0	locks=0 ]	(	"typevertex"	)
+cuspangle	[ 0	locks=0 ]	(	180	)
+method	[ 0	locks=0 ]	(	1	)
+origifzero	[ 0	locks=0 ]	(	"on"	)
+modify	[ 0	locks=0 ]	(	0	)
+normalize	[ 0	locks=0 ]	(	"off"	)
+reverse	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normal12.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/subdivide1.init"
+Content-Type: text/plain
+
+type = subdivide
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/subdivide1.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0.0733528 -0.940073
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	LOW 1 1 "input1"
+}
+inputs
+{
+0 	LOW 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/subdivide1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+subdivide	[ 0	locks=0 ]	(	""	)
+creases	[ 0	locks=0 ]	(	""	)
+algorithm	[ 0	locks=0 ]	(	"osdcc"	)
+iterations	[ 0	locks=0 ]	(	3	)
+overridecrease	[ 0	locks=0 ]	(	"off"	)
+creaseweight	[ 0	locks=0 ]	(	0	)
+outputcrease	[ 0	locks=0 ]	(	"off"	)
+outcreasegroup	[ 0	locks=0 ]	(	creases	)
+closeholes	[ 0	locks=0 ]	(	"pull"	)
+surroundpoly	[ 0	locks=0 ]	(	"edges"	)
+bias	[ 0	locks=0 ]	(	1	)
+updatenmls	[ 0	locks=0 ]	(	"on"	)
+smoothvertex	[ 0	locks=0 ]	(	"on"	)
+consisttopology	[ 0	locks=0 ]	(	"off"	)
+linearcreases	[ 0	locks=0 ]	(	"off"	)
+buildpolysoups	[ 0	locks=0 ]	(	"off"	)
+indepcurves	[ 0	locks=0 ]	(	"off"	)
+removeholes	[ 0	locks=0 ]	(	"on"	)
+vtxboundary	[ 0	locks=0 ]	(	"corner"	)
+fvarlinear	[ 0	locks=0 ]	(	"bilinear"	)
+creasemethod	[ 0	locks=0 ]	(	"uniform"	)
+trianglesubd	[ 0	locks=0 ]	(	"catclark"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/subdivide1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/LOW_subdiv.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/LOW_subdiv.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0.0733528 -2.24107
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	subdivide1 1 1 "input1"
+}
+inputs
+{
+0 	subdivide1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0 0 0 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/LOW_subdiv.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+copyinput	[ 0	locks=0 ]	(	"on"	)
+cacheinput	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/LOW_subdiv.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2.init"
+Content-Type: text/plain
+
+type = copnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 3.29313 -0.406191
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+usecoppath	[ 0	locks=0 ]	(	"off"	)
+coppath	[ 0	locks=0 ]	(	""	)
+singleoutput	[ 0	locks=0 ]	(	"on"	)
+output	[ 0	locks=0 ]	(	0	)
+plane	[ 0	locks=0 ]	(	"xy"	)
+docompile	[ 0	locks=0 ]	(	"off"	)
+outputapexgraph	[ 0	locks=0 ]	(	"off"	)
+setres	[ 0	locks=0 ]	(	"on"	)
+res	[ 0	locks=0 ]	(	4096	4096	)
+resmenu	[ 0	locks=0 ]	(	"none"	)
+setpixelscale	[ 0	locks=0 ]	(	"off"	)
+pixelscale	[ 0	locks=0 ]	(	2	)
+setborder	[ 0	locks=0 ]	(	"off"	)
+border	[ 0	locks=0 ]	(	"wrap"	)
+setprecision	[ 0	locks=0 ]	(	"off"	)
+precision	[ 0	locks=0 ]	(	"b32"	)
+setvistile	[ 0	locks=0 ]	(	"off"	)
+vistile	[ 0	locks=0 ]	(	3	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	},
+	"wirestyle":{
+		"type":"string",
+		"value":"rounded"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/previewmaterial1.init"
+Content-Type: text/plain
+
+type = previewmaterial
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/previewmaterial1.def"
+Content-Type: text/plain
+
+comment ""
+position 32.699 -9.27131
+connectornextid 16
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	LOW2 0 1 "geo"
+1 	OUT_Diffuse 1 1 "basecolor"
+2 	"" "" 1 "metalness"
+3 	"" "" 1 "specular"
+4 	"" "" 1 "spec_color"
+5 	"" "" 1 "roughness"
+6 	"" "" 1 "coat"
+7 	"" "" 1 "coat_color"
+8 	"" "" 1 "coat_roughness"
+9 	"" "" 1 "sheen"
+10 	"" "" 1 "sheen_color"
+11 	"" "" 1 "sheen_rougness"
+12 	"" "" 1 "emission"
+13 	"" "" 1 "emission_color"
+14 	"" "" 1 "opacity"
+15 	OUT_N 1 1 "normal"
+}
+inputs
+{
+0 	LOW2 0 1
+1 	OUT_Diffuse 0 1
+2 	"" 0 1
+3 	"" 0 1
+4 	"" 0 1
+5 	"" 0 1
+6 	"" 0 1
+7 	"" 0 1
+8 	"" 0 1
+9 	"" 0 1
+10 	"" 0 1
+11 	"" 0 1
+12 	"" 0 1
+13 	"" 0 1
+14 	"" 0 1
+15 	OUT_N 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/previewmaterial1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+geotype	[ 0	locks=0 ]	(	"grid"	)
+t	[ 0	locks=0 ]	(	0	0	0	)
+geoscale	[ 0	locks=0 ]	(	1	)
+geouvscale	[ 0	locks=0 ]	(	1	)
+geores	[ 0	locks=0 ]	(	10	)
+geowaviness	[ 0	locks=0 ]	(	0	)
+geobevel	[ 0	locks=0 ]	(	"off"	)
+geobevelshape	[ 0	locks=0 ]	(	"round"	)
+geobeveloffset	[ 0	locks=0 ]	(	0.1	)
+sepparm	[ 0	locks=0 ]	(	)
+default_basecolor	[ 0	locks=0 ]	(	0.06793200224637985	0.0815591961145401	0.10199999809265137	)
+tintwithcdswitch	[ 0	locks=0 ]	(	"off"	)
+folder8	[ 0	locks=0 ]	(	0	)
+default_metalness	[ 0	locks=0 ]	(	0	)
+metalnessscale	[ 0	locks=0 ]	(	1	)
+folder0	[ 0	locks=0 ]	(	0	)
+default_specular	[ 0	locks=0 ]	(	1	)
+default_spec_color	[ 0	locks=0 ]	(	1	1	1	)
+default_specular_roughness	[ 0	locks=0 ]	(	0.5	)
+specularroughnessscale	[ 0	locks=0 ]	(	1	)
+specular_IOR	[ 0	locks=0 ]	(	1.5	)
+folder1	[ 0	locks=0 ]	(	0	)
+default_coat_amount	[ 0	locks=0 ]	(	0	)
+default_coat_color	[ 0	locks=0 ]	(	1	1	1	)
+default_coat_roughness	[ 0	locks=0 ]	(	0.3	)
+coatroughnessscale	[ 0	locks=0 ]	(	1	)
+folder2	[ 0	locks=0 ]	(	0	)
+default_sheen_amount	[ 0	locks=0 ]	(	0	)
+default_sheen_color	[ 0	locks=0 ]	(	1	1	1	)
+default_sheen_roughness	[ 0	locks=0 ]	(	0.25	)
+sheenroughnessscale	[ 0	locks=0 ]	(	1	)
+folder3	[ 0	locks=0 ]	(	0	)
+default_emission_amount	[ 0	locks=0 ]	(	0	)
+emissionscale	[ 0	locks=0 ]	(	1	)
+default_emission_color	[ 0	locks=0 ]	(	1	1	1	)
+folder7	[ 0	locks=0 ]	(	1	)
+normalmap_scale	[ 0	locks=0 ]	(	1	)
+heightscale	[ 0	locks=0 ]	(	1	)
+folder5	[ 0	locks=0 ]	(	0	)
+default_transmission_amount	[ 0	locks=0 ]	(	0	)
+default_transmission_color	[ 0	locks=0 ]	(	1	1	1	)
+folder4	[ 0	locks=0 ]	(	0	)
+default_sss_amount	[ 0	locks=0 ]	(	0	)
+default_sss_color	[ 0	locks=0 ]	(	1	0	0	)
+default_sss_radius	[ 0	locks=0 ]	(	1	0	0	)
+sss_radius_scale	[ 0	locks=0 ]	(	1	)
+folder6	[ 0	locks=0 ]	(	0	)
+default_opacity_amount	[ 0	locks=0 ]	(	1	)
+opacityscale	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/previewmaterial1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/P_HIGH1.init"
+Content-Type: text/plain
+
+type = rasterizegeo
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/P_HIGH1.def"
+Content-Type: text/plain
+
+comment ""
+position 10.9397 -9.91324
+connectornextid 8
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on outputforview 2 lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+2 "output1"
+3 "output2"
+4 "output3"
+5 "output4"
+6 "output5"
+7 "output6"
+}
+inputsNamed3
+{
+0 	"" "" 1 "camera_ref"
+1 	rasterizesetup4 1 1 "geometry"
+}
+inputs
+{
+0 	"" 0 1
+1 	rasterizesetup4 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/P_HIGH1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+quicksetup	[ 0	locks=0 ]	(	"menu"	)
+attributes	[ 0	locks=0 ]	(	4	)
+outtype1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	"vector3"	)
+name1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	origP	)
+outtype2	[ 0	locks=0 ]	(	"float"	)
+name2	[ 0	locks=0 ]	(	intrinsic:alpha	)
+outtype3	[ 0	locks=0 ]	(	"vector3"	)
+name3	[ 0	locks=0 ]	(	N	)
+outtype4	[ 0	locks=0 ]	(	"vector3"	)
+name4	[ 0	locks=0 ]	(	Cd	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/P_HIGH1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/LOW1.init"
+Content-Type: text/plain
+
+type = sopimport
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/LOW1.def"
+Content-Type: text/plain
+
+comment ""
+position 4.84357 -6.27144
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "geometry"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/LOW1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+usesoppath	[ 0	locks=0 ]	(	"on"	)
+soppath	[ 0	locks=0 ]	(	../../LOW	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/LOW1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/LOW1.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/HIGH1.init"
+Content-Type: text/plain
+
+type = sopimport
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/HIGH1.def"
+Content-Type: text/plain
+
+comment ""
+position 4.84357 -10.1382
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "geometry"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/HIGH1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+usesoppath	[ 0	locks=0 ]	(	"on"	)
+soppath	[ 0	locks=0 ]	(	../../HIGH	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/HIGH1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/HIGH1.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/P_LOW1.init"
+Content-Type: text/plain
+
+type = rasterizegeo
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/P_LOW1.def"
+Content-Type: text/plain
+
+comment ""
+position 10.8202 -5.97144
+connectornextid 7
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on outputforview 2 lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+2 "output1"
+3 "output2"
+4 "output3"
+5 "output4"
+6 "output5"
+}
+inputsNamed3
+{
+0 	"" "" 1 "camera_ref"
+1 	rasterizesetup3 1 1 "geometry"
+}
+inputs
+{
+0 	"" 0 1
+1 	rasterizesetup3 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/P_LOW1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+quicksetup	[ 0	locks=0 ]	(	"menu"	)
+attributes	[ 0	locks=0 ]	(	5	)
+outtype1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	"vector3"	)
+name1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	origP	)
+outtype2	[ 0	locks=0 ]	(	"float"	)
+name2	[ 0	locks=0 ]	(	intrinsic:alpha	)
+outtype3	[ 0	locks=0 ]	(	"vector3"	)
+name3	[ 0	locks=0 ]	(	N	)
+outtype4	[ 0	locks=0 ]	(	"vector3"	)
+name4	[ 0	locks=0 ]	(	tangentu	)
+outtype5	[ 0	locks=0 ]	(	"vector3"	)
+name5	[ 0	locks=0 ]	(	tangentv	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/P_LOW1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rasterizesetup3.init"
+Content-Type: text/plain
+
+type = rasterizesetup
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rasterizesetup3.def"
+Content-Type: text/plain
+
+comment ""
+position 7.75362 -6.27144
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+1 "result"
+}
+inputsNamed3
+{
+0 	LOW1 0 1 "source"
+}
+inputs
+{
+0 	LOW1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rasterizesetup3.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+space	[ 0	locks=0 ]	(	"uv"	)
+orient	[ 0	locks=0 ]	(	"yup"	)
+fit	[ 0	locks=0 ]	(	"none"	)
+refsize	[ 0	locks=0 ]	(	2	2	2	)
+refpos	[ 0	locks=0 ]	(	0	0	0	)
+targetpos	[ 0	locks=0 ]	(	0	0	0	)
+targetsize	[ 0	locks=0 ]	(	2	2	2	)
+doscale	[ 0	locks=0 ]	(	"off"	)
+dofitdepth	[ 0	locks=0 ]	(	"off"	)
+fitdepth	[ 0	locks=0 ]	(	-1	1	)
+uvattrib	[ 0	locks=0 ]	(	uv	)
+addnormal	[ 0	locks=0 ]	(	"on"	)
+adddepth	[ 0	locks=0 ]	(	"on"	)
+depthattrib	[ 0	locks=0 ]	(	depth	)
+origpattrib	[ 0	locks=0 ]	(	origP	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rasterizesetup3.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rasterizesetup4.init"
+Content-Type: text/plain
+
+type = rasterizesetup
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rasterizesetup4.def"
+Content-Type: text/plain
+
+comment ""
+position 7.75362 -10.1382
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+1 "result"
+}
+inputsNamed3
+{
+0 	HIGH1 0 1 "source"
+}
+inputs
+{
+0 	HIGH1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rasterizesetup4.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+space	[ 0	locks=0 ]	(	"uv"	)
+orient	[ 0	locks=0 ]	(	"yup"	)
+fit	[ 0	locks=0 ]	(	"none"	)
+refsize	[ 0	locks=0 ]	(	2	2	2	)
+refpos	[ 0	locks=0 ]	(	0	0	0	)
+targetpos	[ 0	locks=0 ]	(	0	0	0	)
+targetsize	[ 0	locks=0 ]	(	2	2	2	)
+doscale	[ 0	locks=0 ]	(	"off"	)
+dofitdepth	[ 0	locks=0 ]	(	"off"	)
+fitdepth	[ 0	locks=0 ]	(	-1	1	)
+uvattrib	[ 0	locks=0 ]	(	uv	)
+addnormal	[ 0	locks=0 ]	(	"on"	)
+adddepth	[ 0	locks=0 ]	(	"on"	)
+depthattrib	[ 0	locks=0 ]	(	depth	)
+origpattrib	[ 0	locks=0 ]	(	origP	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rasterizesetup4.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/wrangle1.init"
+Content-Type: text/plain
+
+type = wrangle
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/wrangle1.def"
+Content-Type: text/plain
+
+comment ""
+position 15.3497 -7.18216
+connectornextid 9
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on outputforview 4 lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+4 "output1"
+5 "output2"
+6 "output3"
+7 "output4"
+8 "output5"
+}
+inputsNamed3
+{
+0 	P_LOW1 5 1 "input1"
+1 	P_LOW1 6 1 "input2"
+2 	P_LOW1 4 1 "input3"
+3 	P_HIGH1 4 1 "input4"
+}
+inputs
+{
+0 	P_LOW1 3 1
+1 	P_LOW1 4 1
+2 	P_LOW1 2 1
+3 	P_HIGH1 2 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/wrangle1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+vexsnippet	[ 0	locks=0 ]	(	"matrix3  TBN =set(
+    normalize(@T),
+    normalize(-@B),
+    normalize(@N)
+);
+
+matrix3 iTBN = invert(TBN);
+
+v@Nt = (@Nh*iTBN)+0.5;
+"	)
+vex_exportlist	[ 0	locks=0 ]	(	*	)
+vex_strict	[ 0	locks=0 ]	(	"off"	)
+vex_cwdpath	[ 0	locks=0 ]	(	""	)
+vex_outputmask	[ 0	locks=0 ]	(	*	)
+aovs	[ 0	locks=0 ]	(	5	)
+type1	[ 0	locks=0 ]	(	"vector"	)
+layer1	[ 0	locks=0 ]	(	T	)
+geoinput1	[ 0	locks=0 ]	(	1	)
+type2	[ 0	locks=0 ]	(	"vector"	)
+layer2	[ 0	locks=0 ]	(	B	)
+geoinput2	[ 0	locks=0 ]	(	1	)
+type3	[ 0	locks=0 ]	(	"vector"	)
+layer3	[ 0	locks=0 ]	(	N	)
+geoinput3	[ 0	locks=0 ]	(	1	)
+type4	[ 0	locks=0 ]	(	"vector"	)
+layer4	[ 0	locks=0 ]	(	Nh	)
+geoinput4	[ 0	locks=0 ]	(	1	)
+type5	[ 0	locks=0 ]	(	"vector"	)
+layer5	[ 0	locks=0 ]	(	Nt	)
+geoinput5	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/wrangle1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/LOW2.init"
+Content-Type: text/plain
+
+type = sopimport
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/LOW2.def"
+Content-Type: text/plain
+
+comment ""
+position 19.6289 -3.82882
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "geometry"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/LOW2.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+usesoppath	[ 0	locks=0 ]	(	"on"	)
+soppath	[ 0	locks=0 ]	(	../../LOW_subdiv	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/LOW2.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/LOW2.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding.init"
+Content-Type: text/plain
+
+type = subnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding.def"
+Content-Type: text/plain
+
+comment ""
+position 19.1105 -9.23444
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	wrangle1 8 1 "input1"
+1 	P_LOW1 3 1 "input2"
+}
+inputs
+{
+0 	wrangle1 4 1
+1 	P_LOW1 1 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+inputs	[ 0	locks=0 ]	(	2	)
+outputs	[ 0	locks=0 ]	(	1	)
+inputlabel1	[ 0	locks=0 ]	(	output5	)
+inputtype1	[ 0	locks=0 ]	(	"vector"	)
+inputlabel2	[ 0	locks=0 ]	(	output2	)
+inputtype2	[ 0	locks=0 ]	(	"float"	)
+outputlabel1	[ 0	locks=0 ]	(	normal	)
+outputtype1	[ 0	locks=0 ]	(	"vector"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/opencl1.init"
+Content-Type: text/plain
+
+type = opencl
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/opencl1.def"
+Content-Type: text/plain
+
+comment ""
+position 26.6693 -10.7217
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	channelsplit1 1 1 "input1"
+1 	(__dot1) "" 1 "input2"
+}
+inputs
+{
+0 	channelsplit1 0 1
+1 	(__dot1) 1 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/opencl1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	0	)
+kernelcode	[ 0	locks=0 ]	(	"#bind layer src?
+#bind layer mask?
+
+#bind layer &tdst
+#bind layer &tmask
+#bind layer &dst
+#bind layer &dstmask
+
+@KERNEL
+{
+    if (@Iteration==0)
+    {
+        @tdst.set(@src);
+        @tmask.set(@mask);
+    }
+    else
+    {
+        if (@dstmask.x==0)
+        {
+            float a_up = @dstmask.bufferIndex(@ixy+(int2)(0, 1))[0];  
+            float a_down = @dstmask.bufferIndex(@ixy+(int2)(0, -1))[0];  
+            float a_left = @dstmask.bufferIndex(@ixy+(int2)(1, 0))[0];  
+            float a_right = @dstmask.bufferIndex(@ixy+(int2)(-1, 0))[0];  
+        
+            float4 up = @dst.bufferIndex(@ixy+(int2)(0, 1));  
+            float4 down = @dst.bufferIndex(@ixy+(int2)(0, -1));  
+            float4 left = @dst.bufferIndex(@ixy+(int2)(1, 0));  
+            float4 right = @dst.bufferIndex(@ixy+(int2)(-1, 0));
+            
+            float4 combined = (
+                up * a_up +
+                down * a_down +
+                left * a_left +
+                right * a_right
+            );
+                
+            float total = (
+                a_up + 
+                a_down + 
+                a_left + 
+                a_right
+            );
+            
+            if (total!=0.0f)
+            {
+                @tdst.set(combined/total);
+                @tmask.set(1.0);
+            }
+            else
+            {
+                @tdst.set(0);
+                @tmask.set(0);
+            }
+        }
+        else
+        {
+            @tdst.set(@dst);
+            @tmask.set(@dstmask);
+        }
+    }
+}
+
+
+@WRITEBACK
+{
+    if (@tmask.x==0)
+    {
+        float a_up = @tmask.bufferIndex(@ixy+(int2)(0, 1))[0];  
+        float a_down = @tmask.bufferIndex(@ixy+(int2)(0, -1))[0];  
+        float a_left = @tmask.bufferIndex(@ixy+(int2)(1, 0))[0];  
+        float a_right = @tmask.bufferIndex(@ixy+(int2)(-1, 0))[0];  
+    
+        float4 up = @tdst.bufferIndex(@ixy+(int2)(0, 1));  
+        float4 down = @tdst.bufferIndex(@ixy+(int2)(0, -1));  
+        float4 left = @tdst.bufferIndex(@ixy+(int2)(1, 0));  
+        float4 right = @tdst.bufferIndex(@ixy+(int2)(-1, 0));
+        
+        float4 combined=up*a_up+down*a_down+left*a_left+right*a_right;
+        float total=a_up+a_down+a_left+a_right;
+        
+        if (total!=0.0f)
+        {
+            @dst.set(combined/total);
+            @dstmask.set(1.0);
+        }
+        else
+        {
+            @dst.set(0);
+            @dstmask.set(0);
+        }
+    }
+    else
+    {
+        @dst.set(@tdst);
+        @dstmask.set(@tmask);
+    }
+}
+
+
+
+
+"	)
+kerneloptions	[ 0	locks=0 ]	(	""	)
+options_tile	[ 0	locks=0 ]	(	1	1	)
+options_iterations	[ 0	locks=0 ]	(	6	)
+options_iteration	[ 0	locks=0 ]	(	"on"	)
+usewritebackkernel	[ 0	locks=0 ]	(	"on"	)
+options_time	[ 0	locks=0 ]	(	"off"	)
+options_importprequel	[ 0	locks=0 ]	(	"on"	)
+options_timing	[ 0	locks=0 ]	(	"off"	)
+filter	[ 0	locks=0 ]	(	"box"	)
+options_precision	[ 0	locks=0 ]	(	"32"	)
+inputs	[ 0	locks=0 ]	(	2	)
+parm_spacerparm	[ 0	locks=0 ]	(	)
+outputs	[ 0	locks=0 ]	(	4	)
+bindings	[ 0	locks=0 ]	(	0	)
+displaycode	[ 0	locks=0 ]	(	0	)
+generatedcode	[ 0	locks=0 ]	(	""	)
+input1_name	[ 0	locks=0 ]	(	src	)
+input1_type	[ 0	locks=0 ]	(	"float3"	)
+input1_optional	[ 0	locks=0 ]	(	"on"	)
+output1_name	[ 0	locks=0 ]	(	dst	)
+output1_type	[ 0	locks=0 ]	(	"floatn"	)
+output1_metadata	[ 0	locks=0 ]	(	"first"	)
+output1_precision	[ 0	locks=0 ]	(	"node"	)
+output1_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output1_metaname	[ 0	locks=0 ]	(	""	)
+output2_name	[ 0	locks=0 ]	(	dstmask	)
+output2_type	[ 0	locks=0 ]	(	"floatn"	)
+output2_metadata	[ 0	locks=0 ]	(	"first"	)
+output2_precision	[ 0	locks=0 ]	(	"node"	)
+output2_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output2_metaname	[ 0	locks=0 ]	(	""	)
+output3_name	[ 0	locks=0 ]	(	tdst	)
+output3_type	[ 0	locks=0 ]	(	"floatn"	)
+output3_metadata	[ 0	locks=0 ]	(	"first"	)
+output3_precision	[ 0	locks=0 ]	(	"node"	)
+output3_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output3_metaname	[ 0	locks=0 ]	(	""	)
+output4_name	[ 0	locks=0 ]	(	tmask	)
+output4_type	[ 0	locks=0 ]	(	"floatn"	)
+output4_metadata	[ 0	locks=0 ]	(	"first"	)
+output4_precision	[ 0	locks=0 ]	(	"node"	)
+output4_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output4_metaname	[ 0	locks=0 ]	(	""	)
+input2_name	[ 0	locks=0 ]	(	mask	)
+input2_type	[ 0	locks=0 ]	(	"float"	)
+input2_optional	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/opencl1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/channelsplit1.init"
+Content-Type: text/plain
+
+type = channelsplit
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/channelsplit1.def"
+Content-Type: text/plain
+
+comment ""
+position 20.0486 -15.4163
+connectornextid 4
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+1 "red"
+2 "green"
+3 "blue"
+}
+inputsNamed3
+{
+0 	input1 0 1 "rgba"
+}
+inputs
+{
+0 	input1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/channelsplit1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/channelsplit1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/opencl2.init"
+Content-Type: text/plain
+
+type = opencl
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/opencl2.def"
+Content-Type: text/plain
+
+comment ""
+position 26.6693 -13.1045
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	channelsplit1 2 1 "input1"
+1 	(__dot1) "" 1 "input2"
+}
+inputs
+{
+0 	channelsplit1 1 1
+1 	(__dot1) 1 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/opencl2.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	0	)
+kernelcode	[ 0	locks=0 ]	(	"#bind layer src?
+#bind layer mask?
+
+#bind layer &tdst
+#bind layer &tmask
+#bind layer &dst
+#bind layer &dstmask
+
+@KERNEL
+{
+    if (@Iteration==0)
+    {
+        @tdst.set(@src);
+        @tmask.set(@mask);
+    }
+    else
+    {
+        if (@dstmask.x==0)
+        {
+            float a_up = @dstmask.bufferIndex(@ixy+(int2)(0, 1))[0];  
+            float a_down = @dstmask.bufferIndex(@ixy+(int2)(0, -1))[0];  
+            float a_left = @dstmask.bufferIndex(@ixy+(int2)(1, 0))[0];  
+            float a_right = @dstmask.bufferIndex(@ixy+(int2)(-1, 0))[0];  
+        
+            float4 up = @dst.bufferIndex(@ixy+(int2)(0, 1));  
+            float4 down = @dst.bufferIndex(@ixy+(int2)(0, -1));  
+            float4 left = @dst.bufferIndex(@ixy+(int2)(1, 0));  
+            float4 right = @dst.bufferIndex(@ixy+(int2)(-1, 0));
+            
+            float4 combined = (
+                up * a_up +
+                down * a_down +
+                left * a_left +
+                right * a_right
+            );
+                
+            float total = (
+                a_up + 
+                a_down + 
+                a_left + 
+                a_right
+            );
+            
+            if (total!=0.0f)
+            {
+                @tdst.set(combined/total);
+                @tmask.set(1.0);
+            }
+            else
+            {
+                @tdst.set(0);
+                @tmask.set(0);
+            }
+        }
+        else
+        {
+            @tdst.set(@dst);
+            @tmask.set(@dstmask);
+        }
+    }
+}
+
+
+@WRITEBACK
+{
+    if (@tmask.x==0)
+    {
+        float a_up = @tmask.bufferIndex(@ixy+(int2)(0, 1))[0];  
+        float a_down = @tmask.bufferIndex(@ixy+(int2)(0, -1))[0];  
+        float a_left = @tmask.bufferIndex(@ixy+(int2)(1, 0))[0];  
+        float a_right = @tmask.bufferIndex(@ixy+(int2)(-1, 0))[0];  
+    
+        float4 up = @tdst.bufferIndex(@ixy+(int2)(0, 1));  
+        float4 down = @tdst.bufferIndex(@ixy+(int2)(0, -1));  
+        float4 left = @tdst.bufferIndex(@ixy+(int2)(1, 0));  
+        float4 right = @tdst.bufferIndex(@ixy+(int2)(-1, 0));
+        
+        float4 combined=up*a_up+down*a_down+left*a_left+right*a_right;
+        float total=a_up+a_down+a_left+a_right;
+        
+        if (total!=0.0f)
+        {
+            @dst.set(combined/total);
+            @dstmask.set(1.0);
+        }
+        else
+        {
+            @dst.set(0);
+            @dstmask.set(0);
+        }
+    }
+    else
+    {
+        @dst.set(@tdst);
+        @dstmask.set(@tmask);
+    }
+}
+
+
+
+
+"	)
+kerneloptions	[ 0	locks=0 ]	(	""	)
+options_tile	[ 0	locks=0 ]	(	1	1	)
+options_iterations	[ 0	locks=0 ]	(	6	)
+options_iteration	[ 0	locks=0 ]	(	"on"	)
+usewritebackkernel	[ 0	locks=0 ]	(	"on"	)
+options_time	[ 0	locks=0 ]	(	"off"	)
+options_importprequel	[ 0	locks=0 ]	(	"on"	)
+options_timing	[ 0	locks=0 ]	(	"off"	)
+filter	[ 0	locks=0 ]	(	"box"	)
+options_precision	[ 0	locks=0 ]	(	"32"	)
+inputs	[ 0	locks=0 ]	(	2	)
+parm_spacerparm	[ 0	locks=0 ]	(	)
+outputs	[ 0	locks=0 ]	(	4	)
+bindings	[ 0	locks=0 ]	(	0	)
+displaycode	[ 0	locks=0 ]	(	0	)
+generatedcode	[ 0	locks=0 ]	(	""	)
+input1_name	[ 0	locks=0 ]	(	src	)
+input1_type	[ 0	locks=0 ]	(	"float3"	)
+input1_optional	[ 0	locks=0 ]	(	"on"	)
+output1_name	[ 0	locks=0 ]	(	dst	)
+output1_type	[ 0	locks=0 ]	(	"floatn"	)
+output1_metadata	[ 0	locks=0 ]	(	"first"	)
+output1_precision	[ 0	locks=0 ]	(	"node"	)
+output1_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output1_metaname	[ 0	locks=0 ]	(	""	)
+output2_name	[ 0	locks=0 ]	(	dstmask	)
+output2_type	[ 0	locks=0 ]	(	"floatn"	)
+output2_metadata	[ 0	locks=0 ]	(	"first"	)
+output2_precision	[ 0	locks=0 ]	(	"node"	)
+output2_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output2_metaname	[ 0	locks=0 ]	(	""	)
+output3_name	[ 0	locks=0 ]	(	tdst	)
+output3_type	[ 0	locks=0 ]	(	"floatn"	)
+output3_metadata	[ 0	locks=0 ]	(	"first"	)
+output3_precision	[ 0	locks=0 ]	(	"node"	)
+output3_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output3_metaname	[ 0	locks=0 ]	(	""	)
+output4_name	[ 0	locks=0 ]	(	tmask	)
+output4_type	[ 0	locks=0 ]	(	"floatn"	)
+output4_metadata	[ 0	locks=0 ]	(	"first"	)
+output4_precision	[ 0	locks=0 ]	(	"node"	)
+output4_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output4_metaname	[ 0	locks=0 ]	(	""	)
+input2_name	[ 0	locks=0 ]	(	mask	)
+input2_type	[ 0	locks=0 ]	(	"float"	)
+input2_optional	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/opencl2.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/opencl3.init"
+Content-Type: text/plain
+
+type = opencl
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/opencl3.def"
+Content-Type: text/plain
+
+comment ""
+position 26.6693 -15.6893
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	channelsplit1 3 1 "input1"
+1 	(__dot1) "" 1 "input2"
+}
+inputs
+{
+0 	channelsplit1 2 1
+1 	(__dot1) 1 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/opencl3.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	0	)
+kernelcode	[ 0	locks=0 ]	(	"#bind layer src?
+#bind layer mask?
+
+#bind layer &tdst
+#bind layer &tmask
+#bind layer &dst
+#bind layer &dstmask
+
+@KERNEL
+{
+    if (@Iteration==0)
+    {
+        @tdst.set(@src);
+        @tmask.set(@mask);
+    }
+    else
+    {
+        if (@dstmask.x==0)
+        {
+            float a_up = @dstmask.bufferIndex(@ixy+(int2)(0, 1))[0];  
+            float a_down = @dstmask.bufferIndex(@ixy+(int2)(0, -1))[0];  
+            float a_left = @dstmask.bufferIndex(@ixy+(int2)(1, 0))[0];  
+            float a_right = @dstmask.bufferIndex(@ixy+(int2)(-1, 0))[0];  
+        
+            float4 up = @dst.bufferIndex(@ixy+(int2)(0, 1));  
+            float4 down = @dst.bufferIndex(@ixy+(int2)(0, -1));  
+            float4 left = @dst.bufferIndex(@ixy+(int2)(1, 0));  
+            float4 right = @dst.bufferIndex(@ixy+(int2)(-1, 0));
+            
+            float4 combined = (
+                up * a_up +
+                down * a_down +
+                left * a_left +
+                right * a_right
+            );
+                
+            float total = (
+                a_up + 
+                a_down + 
+                a_left + 
+                a_right
+            );
+            
+            if (total!=0.0f)
+            {
+                @tdst.set(combined/total);
+                @tmask.set(1.0);
+            }
+            else
+            {
+                @tdst.set(0);
+                @tmask.set(0);
+            }
+        }
+        else
+        {
+            @tdst.set(@dst);
+            @tmask.set(@dstmask);
+        }
+    }
+}
+
+
+@WRITEBACK
+{
+    if (@tmask.x==0)
+    {
+        float a_up = @tmask.bufferIndex(@ixy+(int2)(0, 1))[0];  
+        float a_down = @tmask.bufferIndex(@ixy+(int2)(0, -1))[0];  
+        float a_left = @tmask.bufferIndex(@ixy+(int2)(1, 0))[0];  
+        float a_right = @tmask.bufferIndex(@ixy+(int2)(-1, 0))[0];  
+    
+        float4 up = @tdst.bufferIndex(@ixy+(int2)(0, 1));  
+        float4 down = @tdst.bufferIndex(@ixy+(int2)(0, -1));  
+        float4 left = @tdst.bufferIndex(@ixy+(int2)(1, 0));  
+        float4 right = @tdst.bufferIndex(@ixy+(int2)(-1, 0));
+        
+        float4 combined=up*a_up+down*a_down+left*a_left+right*a_right;
+        float total=a_up+a_down+a_left+a_right;
+        
+        if (total!=0.0f)
+        {
+            @dst.set(combined/total);
+            @dstmask.set(1.0);
+        }
+        else
+        {
+            @dst.set(0);
+            @dstmask.set(0);
+        }
+    }
+    else
+    {
+        @dst.set(@tdst);
+        @dstmask.set(@tmask);
+    }
+}
+
+
+
+
+"	)
+kerneloptions	[ 0	locks=0 ]	(	""	)
+options_tile	[ 0	locks=0 ]	(	1	1	)
+options_iterations	[ 0	locks=0 ]	(	6	)
+options_iteration	[ 0	locks=0 ]	(	"on"	)
+usewritebackkernel	[ 0	locks=0 ]	(	"on"	)
+options_time	[ 0	locks=0 ]	(	"off"	)
+options_importprequel	[ 0	locks=0 ]	(	"on"	)
+options_timing	[ 0	locks=0 ]	(	"off"	)
+filter	[ 0	locks=0 ]	(	"box"	)
+options_precision	[ 0	locks=0 ]	(	"32"	)
+inputs	[ 0	locks=0 ]	(	2	)
+parm_spacerparm	[ 0	locks=0 ]	(	)
+outputs	[ 0	locks=0 ]	(	4	)
+bindings	[ 0	locks=0 ]	(	0	)
+displaycode	[ 0	locks=0 ]	(	0	)
+generatedcode	[ 0	locks=0 ]	(	""	)
+input1_name	[ 0	locks=0 ]	(	src	)
+input1_type	[ 0	locks=0 ]	(	"float3"	)
+input1_optional	[ 0	locks=0 ]	(	"on"	)
+output1_name	[ 0	locks=0 ]	(	dst	)
+output1_type	[ 0	locks=0 ]	(	"floatn"	)
+output1_metadata	[ 0	locks=0 ]	(	"first"	)
+output1_precision	[ 0	locks=0 ]	(	"node"	)
+output1_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output1_metaname	[ 0	locks=0 ]	(	""	)
+output2_name	[ 0	locks=0 ]	(	dstmask	)
+output2_type	[ 0	locks=0 ]	(	"floatn"	)
+output2_metadata	[ 0	locks=0 ]	(	"first"	)
+output2_precision	[ 0	locks=0 ]	(	"node"	)
+output2_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output2_metaname	[ 0	locks=0 ]	(	""	)
+output3_name	[ 0	locks=0 ]	(	tdst	)
+output3_type	[ 0	locks=0 ]	(	"floatn"	)
+output3_metadata	[ 0	locks=0 ]	(	"first"	)
+output3_precision	[ 0	locks=0 ]	(	"node"	)
+output3_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output3_metaname	[ 0	locks=0 ]	(	""	)
+output4_name	[ 0	locks=0 ]	(	tmask	)
+output4_type	[ 0	locks=0 ]	(	"floatn"	)
+output4_metadata	[ 0	locks=0 ]	(	"first"	)
+output4_precision	[ 0	locks=0 ]	(	"node"	)
+output4_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output4_metaname	[ 0	locks=0 ]	(	""	)
+input2_name	[ 0	locks=0 ]	(	mask	)
+input2_type	[ 0	locks=0 ]	(	"float"	)
+input2_optional	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/opencl3.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/channeljoin1.init"
+Content-Type: text/plain
+
+type = channeljoin
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/channeljoin1.def"
+Content-Type: text/plain
+
+comment ""
+position 29.3031 -13.2863
+connectornextid 4
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+3 "rgba"
+}
+inputsNamed3
+{
+0 	opencl1 2 1 "red"
+1 	opencl2 2 1 "green"
+2 	opencl3 2 1 "blue"
+}
+inputs
+{
+0 	opencl1 0 1
+1 	opencl2 0 1
+2 	opencl3 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/channeljoin1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	f3	)
+color	[ 0	locks=0 ]	(	0	0	0	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/channeljoin1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/input1.init"
+Content-Type: text/plain
+
+type = input
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/input1.def"
+Content-Type: text/plain
+
+comment ""
+position 17.525 -14.7092
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "output1"
+1 "output2"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/input1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/input1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/output1.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/output1.def"
+Content-Type: text/plain
+
+comment ""
+position 31.8267 -13.2863
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	channeljoin1 3 1 "input1"
+}
+inputs
+{
+0 	channeljoin1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/output1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/output1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding/__dot1.networkdotinit"
+Content-Type: text/plain
+
+{
+	"version":1,
+	"posx":21.3532848537389413,
+	"posy":-13.2371217923306741,
+	"pinned":false,
+	"color":"FROMOUTPUT",
+	"input":"input1 1 1"
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding.order"
+Content-Type: text/plain
+
+7
+opencl1
+channelsplit1
+opencl2
+opencl3
+channeljoin1
+input1
+output1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1.init"
+Content-Type: text/plain
+
+type = subnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1.def"
+Content-Type: text/plain
+
+comment ""
+position 18.8217 -12.2713
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	P_HIGH1 5 1 "input1"
+1 	P_LOW1 3 1 "input2"
+}
+inputs
+{
+0 	P_HIGH1 3 1
+1 	P_LOW1 1 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+inputs	[ 0	locks=0 ]	(	2	)
+outputs	[ 0	locks=0 ]	(	1	)
+inputlabel1	[ 0	locks=0 ]	(	output5	)
+inputtype1	[ 0	locks=0 ]	(	"vector"	)
+inputlabel2	[ 0	locks=0 ]	(	output2	)
+inputtype2	[ 0	locks=0 ]	(	"float"	)
+outputlabel1	[ 0	locks=0 ]	(	normal	)
+outputtype1	[ 0	locks=0 ]	(	"vector"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/opencl1.init"
+Content-Type: text/plain
+
+type = opencl
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/opencl1.def"
+Content-Type: text/plain
+
+comment ""
+position 26.6693 -10.7217
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	channelsplit1 1 1 "input1"
+1 	(__dot1) "" 1 "input2"
+}
+inputs
+{
+0 	channelsplit1 0 1
+1 	(__dot1) 1 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/opencl1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	0	)
+kernelcode	[ 0	locks=0 ]	(	"#bind layer src?
+#bind layer mask?
+
+#bind layer &tdst
+#bind layer &tmask
+#bind layer &dst
+#bind layer &dstmask
+
+@KERNEL
+{
+    if (@Iteration==0)
+    {
+        @tdst.set(@src);
+        @tmask.set(@mask);
+    }
+    else
+    {
+        if (@dstmask.x==0)
+        {
+            float a_up = @dstmask.bufferIndex(@ixy+(int2)(0, 1))[0];  
+            float a_down = @dstmask.bufferIndex(@ixy+(int2)(0, -1))[0];  
+            float a_left = @dstmask.bufferIndex(@ixy+(int2)(1, 0))[0];  
+            float a_right = @dstmask.bufferIndex(@ixy+(int2)(-1, 0))[0];  
+        
+            float4 up = @dst.bufferIndex(@ixy+(int2)(0, 1));  
+            float4 down = @dst.bufferIndex(@ixy+(int2)(0, -1));  
+            float4 left = @dst.bufferIndex(@ixy+(int2)(1, 0));  
+            float4 right = @dst.bufferIndex(@ixy+(int2)(-1, 0));
+            
+            float4 combined = (
+                up * a_up +
+                down * a_down +
+                left * a_left +
+                right * a_right
+            );
+                
+            float total = (
+                a_up + 
+                a_down + 
+                a_left + 
+                a_right
+            );
+            
+            if (total!=0.0f)
+            {
+                @tdst.set(combined/total);
+                @tmask.set(1.0);
+            }
+            else
+            {
+                @tdst.set(0);
+                @tmask.set(0);
+            }
+        }
+        else
+        {
+            @tdst.set(@dst);
+            @tmask.set(@dstmask);
+        }
+    }
+}
+
+
+@WRITEBACK
+{
+    if (@tmask.x==0)
+    {
+        float a_up = @tmask.bufferIndex(@ixy+(int2)(0, 1))[0];  
+        float a_down = @tmask.bufferIndex(@ixy+(int2)(0, -1))[0];  
+        float a_left = @tmask.bufferIndex(@ixy+(int2)(1, 0))[0];  
+        float a_right = @tmask.bufferIndex(@ixy+(int2)(-1, 0))[0];  
+    
+        float4 up = @tdst.bufferIndex(@ixy+(int2)(0, 1));  
+        float4 down = @tdst.bufferIndex(@ixy+(int2)(0, -1));  
+        float4 left = @tdst.bufferIndex(@ixy+(int2)(1, 0));  
+        float4 right = @tdst.bufferIndex(@ixy+(int2)(-1, 0));
+        
+        float4 combined=up*a_up+down*a_down+left*a_left+right*a_right;
+        float total=a_up+a_down+a_left+a_right;
+        
+        if (total!=0.0f)
+        {
+            @dst.set(combined/total);
+            @dstmask.set(1.0);
+        }
+        else
+        {
+            @dst.set(0);
+            @dstmask.set(0);
+        }
+    }
+    else
+    {
+        @dst.set(@tdst);
+        @dstmask.set(@tmask);
+    }
+}
+
+
+
+
+"	)
+kerneloptions	[ 0	locks=0 ]	(	""	)
+options_tile	[ 0	locks=0 ]	(	1	1	)
+options_iterations	[ 0	locks=0 ]	(	6	)
+options_iteration	[ 0	locks=0 ]	(	"on"	)
+usewritebackkernel	[ 0	locks=0 ]	(	"on"	)
+options_time	[ 0	locks=0 ]	(	"off"	)
+options_importprequel	[ 0	locks=0 ]	(	"on"	)
+options_timing	[ 0	locks=0 ]	(	"off"	)
+filter	[ 0	locks=0 ]	(	"box"	)
+options_precision	[ 0	locks=0 ]	(	"32"	)
+inputs	[ 0	locks=0 ]	(	2	)
+parm_spacerparm	[ 0	locks=0 ]	(	)
+outputs	[ 0	locks=0 ]	(	4	)
+bindings	[ 0	locks=0 ]	(	0	)
+displaycode	[ 0	locks=0 ]	(	0	)
+generatedcode	[ 0	locks=0 ]	(	""	)
+input1_name	[ 0	locks=0 ]	(	src	)
+input1_type	[ 0	locks=0 ]	(	"float3"	)
+input1_optional	[ 0	locks=0 ]	(	"on"	)
+output1_name	[ 0	locks=0 ]	(	dst	)
+output1_type	[ 0	locks=0 ]	(	"floatn"	)
+output1_metadata	[ 0	locks=0 ]	(	"first"	)
+output1_precision	[ 0	locks=0 ]	(	"node"	)
+output1_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output1_metaname	[ 0	locks=0 ]	(	""	)
+output2_name	[ 0	locks=0 ]	(	dstmask	)
+output2_type	[ 0	locks=0 ]	(	"floatn"	)
+output2_metadata	[ 0	locks=0 ]	(	"first"	)
+output2_precision	[ 0	locks=0 ]	(	"node"	)
+output2_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output2_metaname	[ 0	locks=0 ]	(	""	)
+output3_name	[ 0	locks=0 ]	(	tdst	)
+output3_type	[ 0	locks=0 ]	(	"floatn"	)
+output3_metadata	[ 0	locks=0 ]	(	"first"	)
+output3_precision	[ 0	locks=0 ]	(	"node"	)
+output3_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output3_metaname	[ 0	locks=0 ]	(	""	)
+output4_name	[ 0	locks=0 ]	(	tmask	)
+output4_type	[ 0	locks=0 ]	(	"floatn"	)
+output4_metadata	[ 0	locks=0 ]	(	"first"	)
+output4_precision	[ 0	locks=0 ]	(	"node"	)
+output4_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output4_metaname	[ 0	locks=0 ]	(	""	)
+input2_name	[ 0	locks=0 ]	(	mask	)
+input2_type	[ 0	locks=0 ]	(	"float"	)
+input2_optional	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/opencl1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/channelsplit1.init"
+Content-Type: text/plain
+
+type = channelsplit
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/channelsplit1.def"
+Content-Type: text/plain
+
+comment ""
+position 20.0486 -15.4163
+connectornextid 4
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+1 "red"
+2 "green"
+3 "blue"
+}
+inputsNamed3
+{
+0 	input1 0 1 "rgba"
+}
+inputs
+{
+0 	input1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/channelsplit1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/channelsplit1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/opencl2.init"
+Content-Type: text/plain
+
+type = opencl
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/opencl2.def"
+Content-Type: text/plain
+
+comment ""
+position 26.6693 -13.1045
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	channelsplit1 2 1 "input1"
+1 	(__dot1) "" 1 "input2"
+}
+inputs
+{
+0 	channelsplit1 1 1
+1 	(__dot1) 1 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/opencl2.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	0	)
+kernelcode	[ 0	locks=0 ]	(	"#bind layer src?
+#bind layer mask?
+
+#bind layer &tdst
+#bind layer &tmask
+#bind layer &dst
+#bind layer &dstmask
+
+@KERNEL
+{
+    if (@Iteration==0)
+    {
+        @tdst.set(@src);
+        @tmask.set(@mask);
+    }
+    else
+    {
+        if (@dstmask.x==0)
+        {
+            float a_up = @dstmask.bufferIndex(@ixy+(int2)(0, 1))[0];  
+            float a_down = @dstmask.bufferIndex(@ixy+(int2)(0, -1))[0];  
+            float a_left = @dstmask.bufferIndex(@ixy+(int2)(1, 0))[0];  
+            float a_right = @dstmask.bufferIndex(@ixy+(int2)(-1, 0))[0];  
+        
+            float4 up = @dst.bufferIndex(@ixy+(int2)(0, 1));  
+            float4 down = @dst.bufferIndex(@ixy+(int2)(0, -1));  
+            float4 left = @dst.bufferIndex(@ixy+(int2)(1, 0));  
+            float4 right = @dst.bufferIndex(@ixy+(int2)(-1, 0));
+            
+            float4 combined = (
+                up * a_up +
+                down * a_down +
+                left * a_left +
+                right * a_right
+            );
+                
+            float total = (
+                a_up + 
+                a_down + 
+                a_left + 
+                a_right
+            );
+            
+            if (total!=0.0f)
+            {
+                @tdst.set(combined/total);
+                @tmask.set(1.0);
+            }
+            else
+            {
+                @tdst.set(0);
+                @tmask.set(0);
+            }
+        }
+        else
+        {
+            @tdst.set(@dst);
+            @tmask.set(@dstmask);
+        }
+    }
+}
+
+
+@WRITEBACK
+{
+    if (@tmask.x==0)
+    {
+        float a_up = @tmask.bufferIndex(@ixy+(int2)(0, 1))[0];  
+        float a_down = @tmask.bufferIndex(@ixy+(int2)(0, -1))[0];  
+        float a_left = @tmask.bufferIndex(@ixy+(int2)(1, 0))[0];  
+        float a_right = @tmask.bufferIndex(@ixy+(int2)(-1, 0))[0];  
+    
+        float4 up = @tdst.bufferIndex(@ixy+(int2)(0, 1));  
+        float4 down = @tdst.bufferIndex(@ixy+(int2)(0, -1));  
+        float4 left = @tdst.bufferIndex(@ixy+(int2)(1, 0));  
+        float4 right = @tdst.bufferIndex(@ixy+(int2)(-1, 0));
+        
+        float4 combined=up*a_up+down*a_down+left*a_left+right*a_right;
+        float total=a_up+a_down+a_left+a_right;
+        
+        if (total!=0.0f)
+        {
+            @dst.set(combined/total);
+            @dstmask.set(1.0);
+        }
+        else
+        {
+            @dst.set(0);
+            @dstmask.set(0);
+        }
+    }
+    else
+    {
+        @dst.set(@tdst);
+        @dstmask.set(@tmask);
+    }
+}
+
+
+
+
+"	)
+kerneloptions	[ 0	locks=0 ]	(	""	)
+options_tile	[ 0	locks=0 ]	(	1	1	)
+options_iterations	[ 0	locks=0 ]	(	6	)
+options_iteration	[ 0	locks=0 ]	(	"on"	)
+usewritebackkernel	[ 0	locks=0 ]	(	"on"	)
+options_time	[ 0	locks=0 ]	(	"off"	)
+options_importprequel	[ 0	locks=0 ]	(	"on"	)
+options_timing	[ 0	locks=0 ]	(	"off"	)
+filter	[ 0	locks=0 ]	(	"box"	)
+options_precision	[ 0	locks=0 ]	(	"32"	)
+inputs	[ 0	locks=0 ]	(	2	)
+parm_spacerparm	[ 0	locks=0 ]	(	)
+outputs	[ 0	locks=0 ]	(	4	)
+bindings	[ 0	locks=0 ]	(	0	)
+displaycode	[ 0	locks=0 ]	(	0	)
+generatedcode	[ 0	locks=0 ]	(	""	)
+input1_name	[ 0	locks=0 ]	(	src	)
+input1_type	[ 0	locks=0 ]	(	"float3"	)
+input1_optional	[ 0	locks=0 ]	(	"on"	)
+output1_name	[ 0	locks=0 ]	(	dst	)
+output1_type	[ 0	locks=0 ]	(	"floatn"	)
+output1_metadata	[ 0	locks=0 ]	(	"first"	)
+output1_precision	[ 0	locks=0 ]	(	"node"	)
+output1_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output1_metaname	[ 0	locks=0 ]	(	""	)
+output2_name	[ 0	locks=0 ]	(	dstmask	)
+output2_type	[ 0	locks=0 ]	(	"floatn"	)
+output2_metadata	[ 0	locks=0 ]	(	"first"	)
+output2_precision	[ 0	locks=0 ]	(	"node"	)
+output2_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output2_metaname	[ 0	locks=0 ]	(	""	)
+output3_name	[ 0	locks=0 ]	(	tdst	)
+output3_type	[ 0	locks=0 ]	(	"floatn"	)
+output3_metadata	[ 0	locks=0 ]	(	"first"	)
+output3_precision	[ 0	locks=0 ]	(	"node"	)
+output3_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output3_metaname	[ 0	locks=0 ]	(	""	)
+output4_name	[ 0	locks=0 ]	(	tmask	)
+output4_type	[ 0	locks=0 ]	(	"floatn"	)
+output4_metadata	[ 0	locks=0 ]	(	"first"	)
+output4_precision	[ 0	locks=0 ]	(	"node"	)
+output4_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output4_metaname	[ 0	locks=0 ]	(	""	)
+input2_name	[ 0	locks=0 ]	(	mask	)
+input2_type	[ 0	locks=0 ]	(	"float"	)
+input2_optional	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/opencl2.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/opencl3.init"
+Content-Type: text/plain
+
+type = opencl
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/opencl3.def"
+Content-Type: text/plain
+
+comment ""
+position 26.6693 -15.6893
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	channelsplit1 3 1 "input1"
+1 	(__dot1) "" 1 "input2"
+}
+inputs
+{
+0 	channelsplit1 2 1
+1 	(__dot1) 1 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/opencl3.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	0	)
+kernelcode	[ 0	locks=0 ]	(	"#bind layer src?
+#bind layer mask?
+
+#bind layer &tdst
+#bind layer &tmask
+#bind layer &dst
+#bind layer &dstmask
+
+@KERNEL
+{
+    if (@Iteration==0)
+    {
+        @tdst.set(@src);
+        @tmask.set(@mask);
+    }
+    else
+    {
+        if (@dstmask.x==0)
+        {
+            float a_up = @dstmask.bufferIndex(@ixy+(int2)(0, 1))[0];  
+            float a_down = @dstmask.bufferIndex(@ixy+(int2)(0, -1))[0];  
+            float a_left = @dstmask.bufferIndex(@ixy+(int2)(1, 0))[0];  
+            float a_right = @dstmask.bufferIndex(@ixy+(int2)(-1, 0))[0];  
+        
+            float4 up = @dst.bufferIndex(@ixy+(int2)(0, 1));  
+            float4 down = @dst.bufferIndex(@ixy+(int2)(0, -1));  
+            float4 left = @dst.bufferIndex(@ixy+(int2)(1, 0));  
+            float4 right = @dst.bufferIndex(@ixy+(int2)(-1, 0));
+            
+            float4 combined = (
+                up * a_up +
+                down * a_down +
+                left * a_left +
+                right * a_right
+            );
+                
+            float total = (
+                a_up + 
+                a_down + 
+                a_left + 
+                a_right
+            );
+            
+            if (total!=0.0f)
+            {
+                @tdst.set(combined/total);
+                @tmask.set(1.0);
+            }
+            else
+            {
+                @tdst.set(0);
+                @tmask.set(0);
+            }
+        }
+        else
+        {
+            @tdst.set(@dst);
+            @tmask.set(@dstmask);
+        }
+    }
+}
+
+
+@WRITEBACK
+{
+    if (@tmask.x==0)
+    {
+        float a_up = @tmask.bufferIndex(@ixy+(int2)(0, 1))[0];  
+        float a_down = @tmask.bufferIndex(@ixy+(int2)(0, -1))[0];  
+        float a_left = @tmask.bufferIndex(@ixy+(int2)(1, 0))[0];  
+        float a_right = @tmask.bufferIndex(@ixy+(int2)(-1, 0))[0];  
+    
+        float4 up = @tdst.bufferIndex(@ixy+(int2)(0, 1));  
+        float4 down = @tdst.bufferIndex(@ixy+(int2)(0, -1));  
+        float4 left = @tdst.bufferIndex(@ixy+(int2)(1, 0));  
+        float4 right = @tdst.bufferIndex(@ixy+(int2)(-1, 0));
+        
+        float4 combined=up*a_up+down*a_down+left*a_left+right*a_right;
+        float total=a_up+a_down+a_left+a_right;
+        
+        if (total!=0.0f)
+        {
+            @dst.set(combined/total);
+            @dstmask.set(1.0);
+        }
+        else
+        {
+            @dst.set(0);
+            @dstmask.set(0);
+        }
+    }
+    else
+    {
+        @dst.set(@tdst);
+        @dstmask.set(@tmask);
+    }
+}
+
+
+
+
+"	)
+kerneloptions	[ 0	locks=0 ]	(	""	)
+options_tile	[ 0	locks=0 ]	(	1	1	)
+options_iterations	[ 0	locks=0 ]	(	6	)
+options_iteration	[ 0	locks=0 ]	(	"on"	)
+usewritebackkernel	[ 0	locks=0 ]	(	"on"	)
+options_time	[ 0	locks=0 ]	(	"off"	)
+options_importprequel	[ 0	locks=0 ]	(	"on"	)
+options_timing	[ 0	locks=0 ]	(	"off"	)
+filter	[ 0	locks=0 ]	(	"box"	)
+options_precision	[ 0	locks=0 ]	(	"32"	)
+inputs	[ 0	locks=0 ]	(	2	)
+parm_spacerparm	[ 0	locks=0 ]	(	)
+outputs	[ 0	locks=0 ]	(	4	)
+bindings	[ 0	locks=0 ]	(	0	)
+displaycode	[ 0	locks=0 ]	(	0	)
+generatedcode	[ 0	locks=0 ]	(	""	)
+input1_name	[ 0	locks=0 ]	(	src	)
+input1_type	[ 0	locks=0 ]	(	"float3"	)
+input1_optional	[ 0	locks=0 ]	(	"on"	)
+output1_name	[ 0	locks=0 ]	(	dst	)
+output1_type	[ 0	locks=0 ]	(	"floatn"	)
+output1_metadata	[ 0	locks=0 ]	(	"first"	)
+output1_precision	[ 0	locks=0 ]	(	"node"	)
+output1_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output1_metaname	[ 0	locks=0 ]	(	""	)
+output2_name	[ 0	locks=0 ]	(	dstmask	)
+output2_type	[ 0	locks=0 ]	(	"floatn"	)
+output2_metadata	[ 0	locks=0 ]	(	"first"	)
+output2_precision	[ 0	locks=0 ]	(	"node"	)
+output2_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output2_metaname	[ 0	locks=0 ]	(	""	)
+output3_name	[ 0	locks=0 ]	(	tdst	)
+output3_type	[ 0	locks=0 ]	(	"floatn"	)
+output3_metadata	[ 0	locks=0 ]	(	"first"	)
+output3_precision	[ 0	locks=0 ]	(	"node"	)
+output3_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output3_metaname	[ 0	locks=0 ]	(	""	)
+output4_name	[ 0	locks=0 ]	(	tmask	)
+output4_type	[ 0	locks=0 ]	(	"floatn"	)
+output4_metadata	[ 0	locks=0 ]	(	"first"	)
+output4_precision	[ 0	locks=0 ]	(	"node"	)
+output4_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output4_metaname	[ 0	locks=0 ]	(	""	)
+input2_name	[ 0	locks=0 ]	(	mask	)
+input2_type	[ 0	locks=0 ]	(	"float"	)
+input2_optional	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/opencl3.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/channeljoin1.init"
+Content-Type: text/plain
+
+type = channeljoin
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/channeljoin1.def"
+Content-Type: text/plain
+
+comment ""
+position 29.3031 -13.2863
+connectornextid 4
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+3 "rgba"
+}
+inputsNamed3
+{
+0 	opencl1 2 1 "red"
+1 	opencl2 2 1 "green"
+2 	opencl3 2 1 "blue"
+}
+inputs
+{
+0 	opencl1 0 1
+1 	opencl2 0 1
+2 	opencl3 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/channeljoin1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	f3	)
+color	[ 0	locks=0 ]	(	0	0	0	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/channeljoin1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/input1.init"
+Content-Type: text/plain
+
+type = input
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/input1.def"
+Content-Type: text/plain
+
+comment ""
+position 17.525 -14.7092
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "output1"
+1 "output2"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/input1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/input1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/output1.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/output1.def"
+Content-Type: text/plain
+
+comment ""
+position 31.8267 -13.2863
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	channeljoin1 3 1 "input1"
+}
+inputs
+{
+0 	channeljoin1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/output1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/output1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1/__dot1.networkdotinit"
+Content-Type: text/plain
+
+{
+	"version":1,
+	"posx":21.3532848537389413,
+	"posy":-13.2371217923306741,
+	"pinned":false,
+	"color":"FROMOUTPUT",
+	"input":"input1 1 1"
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1.order"
+Content-Type: text/plain
+
+7
+opencl1
+channelsplit1
+opencl2
+opencl3
+channeljoin1
+input1
+output1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/padding1.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rop_image1.init"
+Content-Type: text/plain
+
+type = rop_image
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rop_image1.def"
+Content-Type: text/plain
+
+comment ""
+position 24.2242 -14.6621
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rop_image1.chn"
+Content-Type: text/plain
+
+{
+    channel f1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = $FSTART }
+    }
+    channel f2 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = $FEND }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rop_image1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+execute	[ 0	locks=0 ]	(	0	)
+renderpreview	[ 0	locks=0 ]	(	0	)
+executebackground	[ 0	locks=0 ]	(	0	)
+renderdialog	[ 0	locks=0 ]	(	0	)
+trange	[ 0	locks=0 ]	(	"off"	)
+f	[ 0	locks=0 ]	(	[ f1	0 ] 	[ f2	0 ] 	1	)
+take	[ 0	locks=0 ]	(	_current_	)
+coppath	[ 0	locks=0 ]	(	../OUT_N	)
+addaovs	[ 0	locks=0 ]	(	0	)
+copoutput	[ 0	locks=0 ]	(	P:/Turbulence_2/assets/CHAR/Steward_B/texture/All_normals_v01.png	)
+docompile	[ 0	locks=0 ]	(	"off"	)
+setres	[ 0	locks=0 ]	(	"off"	)
+res	[ 0	locks=0 ]	(	1024	1024	)
+resmenu	[ 0	locks=0 ]	(	"none"	)
+setpixelscale	[ 0	locks=0 ]	(	"off"	)
+pixelscale	[ 0	locks=0 ]	(	1	)
+setborder	[ 0	locks=0 ]	(	"off"	)
+border	[ 0	locks=0 ]	(	"wrap"	)
+setprecision	[ 0	locks=0 ]	(	"off"	)
+precision	[ 0	locks=0 ]	(	"b32"	)
+colorconversion	[ 0	locks=0 ]	(	"raw"	)
+ociocolorspace	[ 0	locks=0 ]	(	Automatic	)
+ociolook	[ 0	locks=0 ]	(	None	)
+ociodisplay	[ 0	locks=0 ]	(	Default	)
+ocioview	[ 0	locks=0 ]	(	Default	)
+saveretry	[ 0	locks=0 ]	(	0	)
+reloadfiles	[ 0	locks=0 ]	(	"off"	)
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	)
+outputaovs	[ 0	locks=0 ]	(	1	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+savebackground	[ 0	locks=0 ]	(	"on"	)
+vm_image_artist	[ 0	locks=0 ]	(	""	)
+vm_image_comment	[ 0	locks=0 ]	(	""	)
+vm_image_hostname	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_label	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
+vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
+vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
+vm_image_exr_compression	[ 0	locks=0 ]	(	"piz"	)
+pngtga_alpha_multiplication	[ 0	locks=0 ]	(	"premult"	)
+tprerender	[ 0	locks=0 ]	(	"on"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"on"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"on"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostwrite	[ 0	locks=0 ]	(	"on"	)
+postwrite	[ 0	locks=0 ]	(	""	)
+lpostwrite	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"on"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+aov1	[ 0	locks=0 ]	(	C	)
+size1	[ 0	locks=0 ]	(	"auto"	)
+raw1	[ 0	locks=0 ]	(	"off"	)
+useport1	[ 0	locks=0 ]	(	"off"	)
+port1	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rop_image1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/OUT_N.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/OUT_N.def"
+Content-Type: text/plain
+
+comment ""
+position 24.2242 -12.2713
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	padding 2 1 "input1"
+}
+inputs
+{
+0 	padding 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/OUT_N.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputs	[ 0	locks=0 ]	(	1	)
+outputname1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/OUT_N.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/OUT_Diffuse.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/OUT_Diffuse.def"
+Content-Type: text/plain
+
+comment ""
+position 24.3402 -15.8741
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	padding1 2 1 "input1"
+}
+inputs
+{
+0 	padding1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/OUT_Diffuse.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputs	[ 0	locks=0 ]	(	1	)
+outputname1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/OUT_Diffuse.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rop_image2.init"
+Content-Type: text/plain
+
+type = rop_image
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rop_image2.def"
+Content-Type: text/plain
+
+comment ""
+position 24.3402 -18.0524
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@TH2405
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rop_image2.chn"
+Content-Type: text/plain
+
+{
+    channel f1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = $FSTART }
+    }
+    channel f2 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = $FEND }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rop_image2.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+execute	[ 0	locks=0 ]	(	0	)
+renderpreview	[ 0	locks=0 ]	(	0	)
+executebackground	[ 0	locks=0 ]	(	0	)
+renderdialog	[ 0	locks=0 ]	(	0	)
+trange	[ 0	locks=0 ]	(	"off"	)
+f	[ 0	locks=0 ]	(	[ f1	0 ] 	[ f2	0 ] 	1	)
+take	[ 0	locks=0 ]	(	_current_	)
+coppath	[ 0	locks=0 ]	(	../OUT_Diffuse	)
+addaovs	[ 0	locks=0 ]	(	0	)
+copoutput	[ 0	locks=0 ]	(	P:/Turbulence_2/assets/CHAR/Steward_B/texture/All_diffuse_v01.png	)
+docompile	[ 0	locks=0 ]	(	"off"	)
+setres	[ 0	locks=0 ]	(	"off"	)
+res	[ 0	locks=0 ]	(	1024	1024	)
+resmenu	[ 0	locks=0 ]	(	"none"	)
+setpixelscale	[ 0	locks=0 ]	(	"off"	)
+pixelscale	[ 0	locks=0 ]	(	1	)
+setborder	[ 0	locks=0 ]	(	"off"	)
+border	[ 0	locks=0 ]	(	"wrap"	)
+setprecision	[ 0	locks=0 ]	(	"off"	)
+precision	[ 0	locks=0 ]	(	"b32"	)
+colorconversion	[ 0	locks=0 ]	(	"ocio"	)
+ociocolorspace	[ 0	locks=0 ]	(	Automatic	)
+ociolook	[ 0	locks=0 ]	(	None	)
+ociodisplay	[ 0	locks=0 ]	(	Default	)
+ocioview	[ 0	locks=0 ]	(	Default	)
+saveretry	[ 0	locks=0 ]	(	0	)
+reloadfiles	[ 0	locks=0 ]	(	"off"	)
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	)
+outputaovs	[ 0	locks=0 ]	(	1	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+savebackground	[ 0	locks=0 ]	(	"on"	)
+vm_image_artist	[ 0	locks=0 ]	(	""	)
+vm_image_comment	[ 0	locks=0 ]	(	""	)
+vm_image_hostname	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_label	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
+vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
+vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
+vm_image_exr_compression	[ 0	locks=0 ]	(	"piz"	)
+pngtga_alpha_multiplication	[ 0	locks=0 ]	(	"premult"	)
+tprerender	[ 0	locks=0 ]	(	"on"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"on"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"on"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostwrite	[ 0	locks=0 ]	(	"on"	)
+postwrite	[ 0	locks=0 ]	(	""	)
+lpostwrite	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"on"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+aov1	[ 0	locks=0 ]	(	C	)
+size1	[ 0	locks=0 ]	(	"auto"	)
+raw1	[ 0	locks=0 ]	(	"off"	)
+useport1	[ 0	locks=0 ]	(	"off"	)
+port1	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2/rop_image2.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2.order"
+Content-Type: text/plain
+
+15
+previewmaterial1
+P_HIGH1
+LOW1
+HIGH1
+P_LOW1
+rasterizesetup3
+rasterizesetup4
+wrangle1
+LOW2
+padding
+padding1
+rop_image1
+OUT_N
+OUT_Diffuse
+rop_image2
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/bake_maps2.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.order"
+Content-Type: text/plain
+
+9
+LOW
+HIGH
+output0
+normal11
+tangents3
+normal12
+subdivide1
+LOW_subdiv
+bake_maps2
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

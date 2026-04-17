@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<shelfDocument>
+  <!-- This file contains definitions of shelves, toolbars, and tools.
+ It should not be hand-edited when it is being used by the application.
+ Note, that two definitions of the same element are not allowed in
+ a single file. -->
+
+  <tool name="$HDA_DEFAULT_TOOL" label="$HDA_LABEL" icon="$HDA_ICON">
+    <toolMenuContext name="viewer">
+      <contextNetType>LOP</contextNetType>
+    </toolMenuContext>
+    <toolMenuContext name="network">
+      <contextOpType>$HDA_TABLE_AND_NAME</contextOpType>
+    </toolMenuContext>
+    <toolSubmenu>_PIPELINE</toolSubmenu>
+    <script scriptType="python"><![CDATA[import loptoolutils
+
+sopcreate = loptoolutils.genericTool(kwargs, '$HDA_NAME')]]></script>
+  </tool>
+
+  <tool name="soppayload" label="SOP Payload" icon="LOP_sopcreate">
+    <toolMenuContext name="network">
+      <contextNetType>LOP</contextNetType>
+    </toolMenuContext>
+    <toolSubmenu>Geometry</toolSubmenu>
+    <script scriptType="python"><![CDATA[import loptoolutils
+
+sopcreate = loptoolutils.genericTool(kwargs, 'sopcreate', 'soppayload')
+sopcreate.parm('asreference').set(1)
+sopcreate.parm('reftype').set('payloadstrong')
+sopcreate.parm('enable_savepath').set(1)
+sopcreate.parm('savepath').set('$HIP/geo/$HIPNAME.$OS.usd')]]></script>
+  </tool>
+</shelfDocument>

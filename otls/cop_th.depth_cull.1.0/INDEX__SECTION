@@ -1,0 +1,14 @@
+Operator:     th::depth_cull::1.0
+Label:        th depth cull
+Path:         oplib:/th::Cop/depth_cull::1.0?th::Cop/depth_cull::1.0
+Icon:         COP_th-depth_cull-1.0
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 3
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Sat Jun 14 16:27:06 2025
+

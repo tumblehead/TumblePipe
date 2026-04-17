@@ -1,0 +1,4419 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Lop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::projection_mapping::1.1
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+comment ""
+position -9.44534 -4.40787
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	pig 1 1 "input1"
+}
+inputs
+{
+0 	pig 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.inp"
+Content-Type: text/plain
+
+1
+0 -3.7534331476241078e-09 7.1733111311239188 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/assignmaterial.init"
+Content-Type: text/plain
+
+type = assignmaterial
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/assignmaterial.def"
+Content-Type: text/plain
+
+comment ""
+position -1.49293e-08 3.08729
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	projection_material 1 1 "input1"
+}
+inputs
+{
+0 	projection_material 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/assignmaterial.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+nummaterials	[ 0	locks=0 ]	(	1	)
+enable1	[ 0	locks=0 ]	(	"on"	)
+primpattern1	[ 0	locks=0 ]	(	`chs(\"../projected_prim\")`	)
+matspecmethod1	[ 0	locks=0 ]	(	"path"	)
+matspecpath1	[ 0	locks=0 ]	(	`chs(\"../projection_material/primpath\")`	)
+matspeccvex1	[ 0	locks=0 ]	(	""	)
+matspecvexpr1	[ 0	locks=0 ]	(	""	)
+parmsovermethod1	[ 0	locks=0 ]	(	"none"	)
+parmsovercvex1	[ 0	locks=0 ]	(	""	)
+parmsovervexpr1	[ 0	locks=0 ]	(	""	)
+parmsoverexports1	[ 0	locks=0 ]	(	*	)
+matparentpath1	[ 0	locks=0 ]	(	/materials	)
+matparenttype1	[ 0	locks=0 ]	(	UsdGeomScope	)
+cvexbindingsfolder1	[ 0	locks=0 ]	(	0	)
+cvexautobind1	[ 0	locks=0 ]	(	"on"	)
+cvexbindings1	[ 0	locks=0 ]	(	0	)
+matbindingfolder1	[ 0	locks=0 ]	(	1	)
+geosubset1	[ 0	locks=0 ]	(	"off"	)
+bindpurpose1	[ 0	locks=0 ]	(	""	)
+bindstrength1	[ 0	locks=0 ]	(	"fallback"	)
+bindmethod1	[ 0	locks=0 ]	(	"direct"	)
+bindcollectionexpand1	[ 0	locks=0 ]	(	"off"	)
+bindpath1	[ 0	locks=0 ]	(	""	)
+bindname1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/assignmaterial.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/assignmaterial.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps.init"
+Content-Type: text/plain
+
+type = copnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps.def"
+Content-Type: text/plain
+
+comment ""
+position 4.21067 4.37033
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+setres	[ 0	locks=0 ]	(	"on"	)
+res	[ 0	locks=0 ]	(	1503	1503	)
+resmenu	[ 0	locks=0 ]	(	"none"	)
+setpixelscale	[ 0	locks=0 ]	(	"off"	)
+pixelscale	[ 0	locks=0 ]	(	2	)
+setborder	[ 0	locks=0 ]	(	"off"	)
+border	[ 0	locks=0 ]	(	"clamp"	)
+setprecision	[ 0	locks=0 ]	(	"off"	)
+precision	[ 0	locks=0 ]	(	"b32"	)
+setvistile	[ 0	locks=0 ]	(	"off"	)
+vistile	[ 0	locks=0 ]	(	3	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/base_color.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/base_color.def"
+Content-Type: text/plain
+
+comment ""
+position 5.4405 -1.15
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	checkerboard 0 1 "input1"
+}
+inputs
+{
+0 	checkerboard 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/base_color.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputs	[ 0	locks=0 ]	(	1	)
+outputname1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/base_color.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/render_projection.init"
+Content-Type: text/plain
+
+type = rop_image
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/render_projection.def"
+Content-Type: text/plain
+
+comment ""
+position 8.61895 -1.915
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/render_projection.chn"
+Content-Type: text/plain
+
+{
+    channel f1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = $FSTART }
+    }
+    channel f2 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = $FEND }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/render_projection.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+execute	[ 0	locks=0 ]	(	0	)
+renderpreview	[ 0	locks=0 ]	(	0	)
+executebackground	[ 0	locks=0 ]	(	0	)
+renderdialog	[ 0	locks=0 ]	(	0	)
+trange	[ 0	locks=0 ]	(	"off"	)
+f	[ 0	locks=0 ]	(	[ f1	0 ] 	[ f2	0 ] 	1	)
+take	[ 0	locks=0 ]	(	_current_	)
+coppath	[ 0	locks=0 ]	(	../base_color	)
+addaovs	[ 0	locks=0 ]	(	0	)
+copoutput	[ 0	locks=0 ]	(	$HIP/texture/projected_base_color.png	)
+docompile	[ 0	locks=0 ]	(	"off"	)
+setres	[ 0	locks=0 ]	(	"off"	)
+res	[ 0	locks=0 ]	(	1024	1024	)
+resmenu	[ 0	locks=0 ]	(	"none"	)
+setpixelscale	[ 0	locks=0 ]	(	"off"	)
+pixelscale	[ 0	locks=0 ]	(	1	)
+setborder	[ 0	locks=0 ]	(	"off"	)
+border	[ 0	locks=0 ]	(	"wrap"	)
+setprecision	[ 0	locks=0 ]	(	"off"	)
+precision	[ 0	locks=0 ]	(	"b32"	)
+colorconversion	[ 0	locks=0 ]	(	"ocio"	)
+ociocolorspace	[ 0	locks=0 ]	(	Automatic	)
+ociolook	[ 0	locks=0 ]	(	None	)
+ociodisplay	[ 0	locks=0 ]	(	Default	)
+ocioview	[ 0	locks=0 ]	(	Default	)
+saveretry	[ 0	locks=0 ]	(	0	)
+reloadfiles	[ 0	locks=0 ]	(	"off"	)
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	)
+outputaovs	[ 0	locks=0 ]	(	1	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+savebackground	[ 0	locks=0 ]	(	"on"	)
+vm_image_artist	[ 0	locks=0 ]	(	""	)
+vm_image_comment	[ 0	locks=0 ]	(	""	)
+vm_image_hostname	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_label	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
+vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
+vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
+vm_image_exr_compression	[ 0	locks=0 ]	(	"piz"	)
+pngtga_alpha_multiplication	[ 0	locks=0 ]	(	"premult"	)
+tprerender	[ 0	locks=0 ]	(	"on"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"on"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"on"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostwrite	[ 0	locks=0 ]	(	"on"	)
+postwrite	[ 0	locks=0 ]	(	""	)
+lpostwrite	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"on"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+aov1	[ 0	locks=0 ]	(	C	)
+size1	[ 0	locks=0 ]	(	"auto"	)
+raw1	[ 0	locks=0 ]	(	"off"	)
+useport1	[ 0	locks=0 ]	(	"off"	)
+port1	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/render_projection.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/checkerboard.init"
+Content-Type: text/plain
+
+type = checkerboard
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/checkerboard.def"
+Content-Type: text/plain
+
+comment ""
+position 1.76072 -1.225
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "checkerboard"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/checkerboard.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	f3	)
+rows	[ 0	locks=0 ]	(	8	)
+cols	[ 0	locks=0 ]	(	8	)
+even	[ 0	locks=0 ]	(	1	1	1	1	)
+odd	[ 0	locks=0 ]	(	0	0	0	0	)
+t	[ 0	locks=0 ]	(	0	0	)
+bias	[ 0	locks=0 ]	(	0	0	)
+tilesize	[ 0	locks=0 ]	(	2	2	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps/checkerboard.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps.order"
+Content-Type: text/plain
+
+3
+base_color
+render_projection
+checkerboard
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_maps.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs.init"
+Content-Type: text/plain
+
+type = sopmodify
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs.def"
+Content-Type: text/plain
+
+comment ""
+position -0.00345001 5.70555
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs.chn"
+Content-Type: text/plain
+
+{
+    channel defineonlyleafprims {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = !ch(\"asreference\") }
+    }
+    channel setdefaultprim {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"asreference\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+folder0	[ 0	locks=0 ]	(	0	0	)
+primpattern	[ 8	locks=0 ]	(	`chs(\"../projected_prim\")`	)
+addpathattrib	[ 0	locks=0 ]	(	"on"	)
+pathattrib	[ 0	locks=0 ]	(	path	)
+addnameattrib	[ 0	locks=0 ]	(	"on"	)
+nameattrib	[ 0	locks=0 ]	(	name	)
+timesample	[ 0	locks=0 ]	(	"static"	)
+importtime	[ 0	locks=0 ]	(	1087.4	)
+staticimportframe	[ 0	locks=0 ]	(	1001	)
+importtraversal	[ 0	locks=0 ]	(	none	)
+viewportlod	[ 0	locks=0 ]	(	"full"	)
+pivot	[ 0	locks=0 ]	(	"centroid"	)
+purpose	[ 0	locks=0 ]	(	proxy	)
+unpacktopolygons	[ 0	locks=0 ]	(	"on"	)
+unpack_pathattrib	[ 0	locks=0 ]	(	path	)
+unpack_nameattrib	[ 0	locks=0 ]	(	name	)
+transfer_attrs	[ 0	locks=0 ]	(	""	)
+import_primvars	[ 0	locks=0 ]	(	*	)
+importattributes	[ 0	locks=0 ]	(	""	)
+nontransformingprimvars	[ 0	locks=0 ]	(	rest	)
+translatesttouv	[ 0	locks=0 ]	(	"on"	)
+layerbreak	[ 0	locks=0 ]	(	"off"	)
+asreference	[ 0	locks=0 ]	(	"off"	)
+copycontents	[ 0	locks=0 ]	(	"on"	)
+adjustxformsforinput	[ 0	locks=0 ]	(	"on"	)
+applyinverseusdxform	[ 0	locks=0 ]	(	"on"	)
+bindmaterials	[ 0	locks=0 ]	(	nobind	)
+reftype	[ 0	locks=0 ]	(	payloadweak	)
+refprim	[ 0	locks=0 ]	(	""	)
+refprimpath	[ 0	locks=0 ]	(	`chs(\"primpattern\")`	)
+primpath	[ 0	locks=0 ]	(	/$OS	)
+instanceable	[ 0	locks=0 ]	(	"off"	)
+parentprimkind	[ 0	locks=0 ]	(	group	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
+showlopstage	[ 0	locks=0 ]	(	hidden_edited_prims	)
+sepparm	[ 0	locks=0 ]	(	)
+enable_group	[ 0	locks=0 ]	(	"off"	)
+group	[ 0	locks=0 ]	(	""	)
+enable_grouptype	[ 0	locks=0 ]	(	"off"	)
+grouptype	[ 0	locks=0 ]	(	primitive	)
+enable_pathprefix	[ 0	locks=0 ]	(	"on"	)
+pathprefix	[ 0	locks=0 ]	(	/$OS	)
+enable_savepath	[ 0	locks=0 ]	(	"off"	)
+savepath	[ 0	locks=0 ]	(	""	)
+sepparm2	[ 0	locks=0 ]	(	)
+primitivedefinitiongroup	[ 0	locks=0 ]	(	0	)
+enable_packedusdhandling	[ 0	locks=0 ]	(	"off"	)
+packedusdhandling	[ 0	locks=0 ]	(	xformandattribs	)
+enable_otherprimhandling	[ 0	locks=0 ]	(	"off"	)
+otherprimhandling	[ 0	locks=0 ]	(	define	)
+enable_defineonlyleafprims	[ 0	locks=0 ]	(	"on"	)
+defineonlyleafprims	[ 0	locks=0 ]	(	[ defineonlyleafprims	0 ] 	)
+enable_packedhandling	[ 0	locks=0 ]	(	"off"	)
+packedhandling	[ 0	locks=0 ]	(	nativeinstances	)
+enable_nurbscurvehandling	[ 0	locks=0 ]	(	"off"	)
+nurbscurvehandling	[ 0	locks=0 ]	(	basiscurves	)
+enable_nurbssurfhandling	[ 0	locks=0 ]	(	"off"	)
+nurbssurfhandling	[ 0	locks=0 ]	(	meshes	)
+enable_kindschema	[ 0	locks=0 ]	(	"off"	)
+kindschema	[ 0	locks=0 ]	(	component	)
+enable_pathattr	[ 0	locks=0 ]	(	"off"	)
+pathattr	[ 0	locks=0 ]	(	path,name	)
+enable_heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
+heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
+geometryhandlinggroup	[ 0	locks=0 ]	(	0	)
+enable_polygonsassubd	[ 0	locks=0 ]	(	"off"	)
+polygonsassubd	[ 0	locks=0 ]	(	"off"	)
+enable_subdgroup	[ 0	locks=0 ]	(	"off"	)
+subdgroup	[ 0	locks=0 ]	(	""	)
+enable_reversepolygons	[ 0	locks=0 ]	(	"off"	)
+reversepolygons	[ 0	locks=0 ]	(	"off"	)
+enable_setmissingwidths	[ 0	locks=0 ]	(	"on"	)
+setmissingwidths	[ 0	locks=0 ]	(	0.01	)
+importdatagroup	[ 0	locks=0 ]	(	1	)
+authortimesamples	[ 0	locks=0 ]	(	auto	)
+enable_setdefaultprim	[ 0	locks=0 ]	(	"on"	)
+setdefaultprim	[ 0	locks=0 ]	(	[ setdefaultprim	0 ] 	)
+enable_topologyhandling	[ 0	locks=0 ]	(	"off"	)
+topologyhandling	[ 0	locks=0 ]	(	animated	)
+enable_attribs	[ 0	locks=0 ]	(	"off"	)
+attribs	[ 0	locks=0 ]	(	"* ^__* ^usd*"	)
+enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
+indexattribs	[ 0	locks=0 ]	(	""	)
+enable_constantattribs	[ 0	locks=0 ]	(	"off"	)
+constantattribs	[ 0	locks=0 ]	(	""	)
+enable_scalarconstantattribs	[ 0	locks=0 ]	(	"off"	)
+scalarconstantattribs	[ 0	locks=0 ]	(	""	)
+enable_boolattribs	[ 0	locks=0 ]	(	"off"	)
+boolattribs	[ 0	locks=0 ]	(	""	)
+enable_uintattribs	[ 0	locks=0 ]	(	"off"	)
+uintattribs	[ 0	locks=0 ]	(	""	)
+enable_uint64attribs	[ 0	locks=0 ]	(	"off"	)
+uint64attribs	[ 0	locks=0 ]	(	""	)
+enable_staticattribs	[ 0	locks=0 ]	(	"off"	)
+staticattribs	[ 0	locks=0 ]	(	""	)
+enable_partitionattribs	[ 0	locks=0 ]	(	"off"	)
+partitionattribs	[ 0	locks=0 ]	(	""	)
+enable_prefixpartitionsubsets	[ 0	locks=0 ]	(	"off"	)
+prefixpartitionsubsets	[ 0	locks=0 ]	(	"on"	)
+enable_subsetgroups	[ 0	locks=0 ]	(	"off"	)
+subsetgroups	[ 0	locks=0 ]	(	""	)
+enable_customattribs	[ 0	locks=0 ]	(	"on"	)
+customattribs	[ 0	locks=0 ]	(	puv	)
+enable_translateuvtost	[ 0	locks=0 ]	(	"off"	)
+translateuvtost	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 1.61701 1.90411
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	switch1 0 1 "input1"
+}
+inputs
+{
+0 	switch1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+label1	[ 0	locks=0 ]	(	"Sub-Network Input #1"	)
+label2	[ 0	locks=0 ]	(	"Sub-Network Input #2"	)
+label3	[ 0	locks=0 ]	(	"Sub-Network Input #3"	)
+label4	[ 0	locks=0 ]	(	"Sub-Network Input #4"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify.inp"
+Content-Type: text/plain
+
+4
+0 0 6 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 3 6.5 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+2 6 7 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+3 9 7.5 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/OUT.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/OUT.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position -1.11759e-08 0.270767
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	attribcopy 1 1 "input1"
+}
+inputs
+{
+0 	attribcopy 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/OUT.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/OUT.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/store_rest.init"
+Content-Type: text/plain
+
+type = rest
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/store_rest.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position -1.11759e-08 4.75754
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/store_rest.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+mode	[ 0	locks=0 ]	(	"store"	)
+restattribname	[ 0	locks=0 ]	(	rest	)
+file	[ 0	locks=0 ]	(	""	)
+nml	[ 0	locks=0 ]	(	"off"	)
+normalattribname	[ 0	locks=0 ]	(	rnml	)
+xform	[ 0	locks=0 ]	(	"off"	)
+xformattribname	[ 0	locks=0 ]	(	restxform	)
+quadric	[ 0	locks=0 ]	(	"off"	)
+quadricattribname	[ 0	locks=0 ]	(	Pref	)
+precision	[ 0	locks=0 ]	(	"auto"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/store_rest.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/swap_rest.init"
+Content-Type: text/plain
+
+type = rest
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/swap_rest.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 2.30843 2.27077
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	uv_project 1 1 "input1"
+}
+inputs
+{
+0 	uv_project 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/swap_rest.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+mode	[ 0	locks=0 ]	(	"swap"	)
+restattribname	[ 0	locks=0 ]	(	rest	)
+file	[ 0	locks=0 ]	(	""	)
+nml	[ 0	locks=0 ]	(	"off"	)
+normalattribname	[ 0	locks=0 ]	(	rnml	)
+xform	[ 0	locks=0 ]	(	"off"	)
+xformattribname	[ 0	locks=0 ]	(	restxform	)
+quadric	[ 0	locks=0 ]	(	"off"	)
+quadricattribname	[ 0	locks=0 ]	(	Pref	)
+precision	[ 0	locks=0 ]	(	"auto"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/swap_rest.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/uv_project.init"
+Content-Type: text/plain
+
+type = texture
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/uv_project.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 2.30843 3.47499
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	store_rest 1 1 "input1"
+}
+inputs
+{
+0 	store_rest 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/uv_project.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+uvattrib	[ 0	locks=0 ]	(	uv	)
+group	[ 0	locks=0 ]	(	""	)
+type	[ 0	locks=0 ]	(	"persp"	)
+axis	[ 0	locks=0 ]	(	"y"	)
+campath	[ 0	locks=0 ]	(	../../../../objnet/lopimportcam	)
+coord	[ 0	locks=0 ]	(	"vertex"	)
+s	[ 8	locks=0 ]	(	1	1	1	)
+offset	[ 0	locks=0 ]	(	0	0	0	)
+angle	[ 0	locks=0 ]	(	0	)
+fixseams	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/uv_project.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/attribcopy.init"
+Content-Type: text/plain
+
+type = attribcopy
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/attribcopy.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position -0.00345001 1.23605
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	store_rest 1 1 "input1"
+2 	swap_rest 1 1 "input2"
+}
+inputs
+{
+0 	store_rest 0 1
+1 	swap_rest 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@gabriel-3090
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/attribcopy.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+srcgroup	[ 0	locks=0 ]	(	""	)
+srcgrouptype	[ 0	locks=0 ]	(	"vertices"	)
+destgroup	[ 0	locks=0 ]	(	""	)
+destgrouptype	[ 0	locks=0 ]	(	"vertices"	)
+matchbyattribute	[ 0	locks=0 ]	(	"off"	)
+matchbyattributemethod	[ 0	locks=0 ]	(	"byvalues"	)
+attributetomatch	[ 0	locks=0 ]	(	piece	)
+attrib	[ 0	locks=0 ]	(	"otherattrib"	)
+attribname	[ 0	locks=0 ]	(	uv	)
+copyp	[ 0	locks=0 ]	(	"on"	)
+usenewname	[ 0	locks=0 ]	(	"off"	)
+newname	[ 0	locks=0 ]	(	""	)
+class	[ 0	locks=0 ]	(	"guess"	)
+copyvariable	[ 0	locks=0 ]	(	"on"	)
+copydata	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify/attribcopy.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify.order"
+Content-Type: text/plain
+
+5
+OUT
+store_rest
+swap_rest
+uv_project
+attribcopy
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/project_uvs/modify/modify.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_material.init"
+Content-Type: text/plain
+
+type = editmaterialproperties
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_material.def"
+Content-Type: text/plain
+
+comment ""
+position -1.49293e-08 4.37033
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	project_uvs 1 1 "input1"
+}
+inputs
+{
+0 	project_uvs 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+creator doc:/solaris/quick_materials#quick_surface_material
+explicit 1
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_material.spareparmdef"
+Content-Type: text/plain
+
+    groupcollapsible {
+        name    "sample_group2"
+        label   "Frame Range/Subframes"
+        grouptag { "group_type" "collapsible" }
+        parmtag { "sidefx::header_parm" "sample_behavior" }
+        grouptag { "sidefx::switcher" "sample_group" }
+
+        parm {
+            name    "sample_behavior"
+            baseparm
+            label   "Sampling Behavior"
+            export  none
+        }
+        parm {
+            name    "sample_f"
+            baseparm
+            label   "Start/End/Inc"
+            export  none
+        }
+        parm {
+            name    "sample_subframeenable"
+            baseparm
+            label   "Subframe Sampling"
+            export  none
+        }
+        groupsimple {
+            name    "sample_subframegroup2"
+            label   "Subframe Sampling"
+            disablewhen "{ sample_subframeenable == 0 }"
+            grouptag { "group_type" "simple" }
+            parmtag { "sidefx::header_toggle" "sample_subframeenable" }
+            grouptag { "sidefx::switcher" "sample_subframegroup" }
+
+            parm {
+                name    "sample_shuttermode"
+                baseparm
+                label   "Shutter"
+                export  none
+            }
+            parm {
+                name    "sample_shutterrange"
+                baseparm
+                label   "Shutter Open/Close"
+                export  none
+            }
+            parm {
+                name    "sample_cameraprim"
+                baseparm
+                label   "Camera Prim"
+                export  none
+            }
+            parm {
+                name    "sample_count"
+                baseparm
+                label   "Samples"
+                export  none
+            }
+            parm {
+                name    "sample_includeframe"
+                baseparm
+                label   "Always Include Frame Sample"
+                export  none
+            }
+        }
+
+    }
+
+    parm {
+        name    "primpath"
+        baseparm
+        label   "Primitive Path"
+        export  none
+    }
+    parm {
+        name    "classprimpath"
+        baseparm
+        label   "Class Prim Path"
+        export  none
+    }
+    groupcollapsible {
+        name    "folder0"
+        label   "Quick Material"
+        grouptag { "group_type" "collapsible" }
+        parmtag { "sidefx::header_parm" "quickmaterialrefresh" }
+
+        parm {
+            name    "quickmaterialrefresh"
+            label   "Refresh"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.pwd().parm('reload').pressButton;hou.pwd().parm('createparms').pressButton()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "reftype"
+            baseparm
+            label   "Reference Type"
+            export  none
+        }
+        parm {
+            name    "classancestor"
+            baseparm
+            label   "Class Ancestor"
+            export  none
+        }
+        parm {
+            name    "reffilepath"
+            baseparm
+            label   "Reference File Path"
+            export  none
+        }
+        parm {
+            name    "reload"
+            baseparm
+            label   "Reload File"
+            export  none
+        }
+        parm {
+            name    "createparms"
+            baseparm
+            label   "Create Parameters"
+            export  none
+        }
+        parm {
+            name    "createoutputparms"
+            baseparm
+            label   "Create Material Outputs"
+            export  none
+        }
+        parm {
+            name    "primpattern"
+            baseparm
+            label   "Primitives"
+            export  none
+        }
+        parm {
+            name    "initforedit"
+            baseparm
+            label   "Initialize Parameters"
+            export  none
+        }
+        groupsimple {
+            name    "destinationprim_group2"
+            label   "Destination Primitive"
+            hidewhen "{ reftype == none } { reftype == createclass }"
+            grouptag { "group_type" "simple" }
+            grouptag { "sidefx::switcher" "destinationprim_group" }
+
+            parm {
+                name    "refparentmat"
+                baseparm
+                label   "Reference Parent Material"
+                export  none
+            }
+            parm {
+                name    "instanceable"
+                baseparm
+                label   "Make Instanceable"
+                export  none
+            }
+            parm {
+                name    "parentprimtype"
+                baseparm
+                label   "Parent Primitive Type"
+                export  none
+            }
+        }
+
+    }
+
+    parm {
+        name    "primtype"
+        baseparm
+        label   "Primitive Type"
+        export  none
+    }
+    groupcollapsible {
+        name    "folder0_0"
+        label   "Base"
+        parmtag { "group_default" "1" }
+        grouptag { "group_type" "collapsible" }
+        grouptag { "sidefx::shader_isparm" "0" }
+
+        parm {
+            name    "base_control"
+            label   "base"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:base', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "base"
+            label   "Base"
+            type    float
+            default { "1" }
+            disablewhen "{ base_control == block } { base_control == none } { base_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "ogl_diff_intensity" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:base" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "base_color_control"
+            label   "base_color"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'color3f', 'inputs:base_color', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "base_color"
+            label   "Color"
+            type    color
+            size    3
+            default { "1" "1" "1" }
+            disablewhen "{ base_color_control == block } { base_color_control == none } { base_color_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "ogl_diff" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:base_color" }
+            parmtag { "usdvaluetype" "color3f" }
+        }
+        parm {
+            name    "base_color_file_control"
+            label   "base_color_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:base_color_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "base_color_file"
+            label   "Color Map"
+            type    image
+            default { "" }
+            disablewhen "{ base_color_file_control == block } { base_color_file_control == none } { base_color_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:base_color_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+        parm {
+            name    "base_color_primvar_control"
+            label   "base_color_primvar"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'string', 'inputs:base_color_primvar', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "base_color_primvar"
+            label   "Color Primvar"
+            type    string
+            default { "displayColor" }
+            disablewhen "{ base_color_primvar_control == block } { base_color_primvar_control == none } { base_color_primvar_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "sidefx::shader_isparmuniform" "1" }
+            parmtag { "usdvaluename" "inputs:base_color_primvar" }
+            parmtag { "usdvaluetype" "string" }
+        }
+        parm {
+            name    "metalness_control"
+            label   "metalness"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:metalness', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "metalness"
+            label   "Metalness"
+            type    float
+            default { "0" }
+            disablewhen "{ metalness_control == block } { metalness_control == none } { metalness_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "ogl_metallic" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:metalness" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "metalness_file_control"
+            label   "metalness_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:metalness_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "metalness_file"
+            label   "Metalness Map"
+            type    image
+            default { "" }
+            disablewhen "{ metalness_file_control == block } { metalness_file_control == none } { metalness_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:metalness_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder0_1"
+        label   "Specular"
+        grouptag { "group_type" "collapsible" }
+        grouptag { "sidefx::shader_isparm" "0" }
+
+        parm {
+            name    "specular_control"
+            label   "specular"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:specular', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "specular"
+            label   "Specular"
+            type    float
+            default { "1" }
+            disablewhen "{ specular_control == block } { specular_control == none } { specular_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "ogl_spec_intensity" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:specular" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "specular_color_control"
+            label   "specular_color"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'color3f', 'inputs:specular_color', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "specular_color"
+            label   "Color"
+            type    color
+            size    3
+            default { "1" "1" "1" }
+            disablewhen "{ specular_color_control == block } { specular_color_control == none } { specular_color_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "ogl_spec" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:specular_color" }
+            parmtag { "usdvaluetype" "color3f" }
+        }
+        parm {
+            name    "specular_color_file_control"
+            label   "specular_color_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:specular_color_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "specular_color_file"
+            label   "Color Map"
+            type    image
+            default { "" }
+            disablewhen "{ specular_color_file_control == block } { specular_color_file_control == none } { specular_color_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:specular_color_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+        parm {
+            name    "specular_roughness_control"
+            label   "specular_roughness"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:specular_roughness', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "specular_roughness"
+            label   "Roughness"
+            type    float
+            default { "0.2" }
+            disablewhen "{ specular_roughness_control == block } { specular_roughness_control == none } { specular_roughness_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "ogl_rough" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:specular_roughness" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "specular_roughness_file_control"
+            label   "specular_roughness_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:specular_roughness_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "specular_roughness_file"
+            label   "Roughness Map"
+            type    image
+            default { "" }
+            disablewhen "{ specular_roughness_file_control == block } { specular_roughness_file_control == none } { specular_roughness_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:specular_roughness_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+        parm {
+            name    "roughness_primvar_control"
+            label   "roughness_primvar"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'string', 'inputs:roughness_primvar', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "roughness_primvar"
+            label   "Roughness Primvar"
+            type    string
+            default { "" }
+            disablewhen "{ roughness_primvar_control == block } { roughness_primvar_control == none } { roughness_primvar_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "sidefx::shader_isparmuniform" "1" }
+            parmtag { "usdvaluename" "inputs:roughness_primvar" }
+            parmtag { "usdvaluetype" "string" }
+        }
+        parm {
+            name    "specular_IOR_control"
+            label   "specular_IOR"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:specular_IOR', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "specular_IOR"
+            label   "Index of Refraction"
+            type    float
+            default { "1.5" }
+            disablewhen "{ specular_IOR_control == block } { specular_IOR_control == none } { specular_IOR_control == disconnectinput }"
+            range   { 0 3 }
+            parmtag { "ogl_ior" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:specular_IOR" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "specular_anisotropy_control"
+            label   "specular_anisotropy"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:specular_anisotropy', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "specular_anisotropy"
+            label   "Specular Anisotropy"
+            type    float
+            default { "0" }
+            disablewhen "{ specular_anisotropy_control == block } { specular_anisotropy_control == none } { specular_anisotropy_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:specular_anisotropy" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "specular_rotation_control"
+            label   "specular_rotation"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:specular_rotation', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "specular_rotation"
+            label   "Specular Rotation"
+            type    float
+            default { "0" }
+            disablewhen "{ specular_rotation_control == block } { specular_rotation_control == none } { specular_rotation_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:specular_rotation" }
+            parmtag { "usdvaluetype" "float" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder0_5"
+        label   "Coat"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "coat_control"
+            label   "coat"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:coat', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "coat"
+            label   "Coat"
+            type    float
+            default { "0" }
+            disablewhen "{ coat_control == block } { coat_control == none } { coat_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "ogl_coat_intensity" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:coat" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "coat_color_control"
+            label   "coat_color"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'color3f', 'inputs:coat_color', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "coat_color"
+            label   "Color"
+            type    color
+            size    3
+            default { "1" "1" "1" }
+            disablewhen "{ coat_color_control == block } { coat_color_control == none } { coat_color_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:coat_color" }
+            parmtag { "usdvaluetype" "color3f" }
+        }
+        parm {
+            name    "coat_color_file_control"
+            label   "coat_color_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:coat_color_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "coat_color_file"
+            label   "Color Map"
+            type    image
+            default { "" }
+            disablewhen "{ coat_color_file_control == block } { coat_color_file_control == none } { coat_color_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:coat_color_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+        parm {
+            name    "coat_roughness_control"
+            label   "coat_roughness"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:coat_roughness', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "coat_roughness"
+            label   "Roughness"
+            type    float
+            default { "0.1" }
+            disablewhen "{ coat_roughness_control == block } { coat_roughness_control == none } { coat_roughness_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "ogl_coat_rough" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:coat_roughness" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "coat_roughness_file_control"
+            label   "coat_roughness_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:coat_roughness_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "coat_roughness_file"
+            label   "Roughness Map"
+            type    image
+            default { "" }
+            disablewhen "{ coat_roughness_file_control == block } { coat_roughness_file_control == none } { coat_roughness_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:coat_roughness_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder0_2"
+        label   "Transmission"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "transmission_control"
+            label   "transmission"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:transmission', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "transmission"
+            label   "Transmission"
+            type    float
+            default { "0" }
+            disablewhen "{ transmission_control == block } { transmission_control == none } { transmission_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "ogl_transparency" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:transmission" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "transmission_color_control"
+            label   "transmission_color"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'color3f', 'inputs:transmission_color', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "transmission_color"
+            label   "Transmission Color"
+            type    color
+            size    3
+            default { "1" "1" "1" }
+            disablewhen "{ transmission_color_control == block } { transmission_color_control == none } { transmission_color_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:transmission_color" }
+            parmtag { "usdvaluetype" "color3f" }
+        }
+        parm {
+            name    "transmission_color_file_control"
+            label   "transmission_color_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:transmission_color_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "transmission_color_file"
+            label   "Color Map"
+            type    image
+            default { "" }
+            disablewhen "{ transmission_color_file_control == block } { transmission_color_file_control == none } { transmission_color_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:transmission_color_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+        parm {
+            name    "transmission_color_primvar_control"
+            label   "transmission_color_primvar"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'string', 'inputs:transmission_color_primvar', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "transmission_color_primvar"
+            label   "Color Primvar"
+            type    string
+            default { "" }
+            disablewhen "{ transmission_color_primvar_control == block } { transmission_color_primvar_control == none } { transmission_color_primvar_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "sidefx::shader_isparmuniform" "1" }
+            parmtag { "usdvaluename" "inputs:transmission_color_primvar" }
+            parmtag { "usdvaluetype" "string" }
+        }
+        parm {
+            name    "transmission_depth_control"
+            label   "transmission_depth"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:transmission_depth', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "transmission_depth"
+            label   "Depth"
+            type    float
+            default { "0" }
+            disablewhen "{ transmission_depth_control == block } { transmission_depth_control == none } { transmission_depth_control == disconnectinput }"
+            range   { 0 100 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:transmission_depth" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "transmission_dispersion_control"
+            label   "transmission_dispersion"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:transmission_dispersion', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "transmission_dispersion"
+            label   "Dispersion"
+            type    float
+            default { "0" }
+            disablewhen "{ transmission_dispersion_control == block } { transmission_dispersion_control == none } { transmission_dispersion_control == disconnectinput }"
+            range   { 0 100 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:transmission_dispersion" }
+            parmtag { "usdvaluetype" "float" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder0_4"
+        label   "Sheen"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "sheen_control"
+            label   "sheen"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:sheen', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "sheen"
+            label   "Sheen"
+            type    float
+            default { "0" }
+            disablewhen "{ sheen_control == block } { sheen_control == none } { sheen_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:sheen" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "sheen_color_control"
+            label   "sheen_color"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'color3f', 'inputs:sheen_color', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "sheen_color"
+            label   "Sheen Color"
+            type    color
+            size    3
+            default { "1" "1" "1" }
+            disablewhen "{ sheen_color_control == block } { sheen_color_control == none } { sheen_color_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:sheen_color" }
+            parmtag { "usdvaluetype" "color3f" }
+        }
+        parm {
+            name    "sheen_color_file_control"
+            label   "sheen_color_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:sheen_color_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "sheen_color_file"
+            label   "Color Map"
+            type    image
+            default { "" }
+            disablewhen "{ sheen_color_file_control == block } { sheen_color_file_control == none } { sheen_color_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:sheen_color_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+        parm {
+            name    "sheen_roughness_control"
+            label   "sheen_roughness"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:sheen_roughness', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "sheen_roughness"
+            label   "Sheen Roughness"
+            type    float
+            default { "0.3" }
+            disablewhen "{ sheen_roughness_control == block } { sheen_roughness_control == none } { sheen_roughness_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:sheen_roughness" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "sheen_roughness_file_control"
+            label   "sheen_roughness_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:sheen_roughness_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "sheen_roughness_file"
+            label   "Roughness Map"
+            type    image
+            default { "" }
+            disablewhen "{ sheen_roughness_file_control == block } { sheen_roughness_file_control == none } { sheen_roughness_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:sheen_roughness_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder0_3"
+        label   "Subsurface"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "subsurface_control"
+            label   "subsurface"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:subsurface', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "subsurface"
+            label   "Subsurface"
+            type    float
+            default { "0" }
+            disablewhen "{ subsurface_control == block } { subsurface_control == none } { subsurface_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:subsurface" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "subsurface_color_control"
+            label   "subsurface_color"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'color3f', 'inputs:subsurface_color', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "subsurface_color"
+            label   "Color"
+            type    color
+            size    3
+            default { "1" "1" "1" }
+            disablewhen "{ subsurface_color_control == block } { subsurface_color_control == none } { subsurface_color_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:subsurface_color" }
+            parmtag { "usdvaluetype" "color3f" }
+        }
+        parm {
+            name    "subsurface_color_file_control"
+            label   "subsurface_color_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:subsurface_color_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "subsurface_color_file"
+            label   "Color Map"
+            type    image
+            default { "" }
+            disablewhen "{ subsurface_color_file_control == block } { subsurface_color_file_control == none } { subsurface_color_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:subsurface_color_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+        parm {
+            name    "subsurface_color_primvar_control"
+            label   "subsurface_color_primvar"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'string', 'inputs:subsurface_color_primvar', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "subsurface_color_primvar"
+            label   "Color Primvar"
+            type    string
+            default { "" }
+            disablewhen "{ subsurface_color_primvar_control == block } { subsurface_color_primvar_control == none } { subsurface_color_primvar_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "sidefx::shader_isparmuniform" "1" }
+            parmtag { "usdvaluename" "inputs:subsurface_color_primvar" }
+            parmtag { "usdvaluetype" "string" }
+        }
+        parm {
+            name    "subsurface_radius_control"
+            label   "subsurface_radius"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'color3f', 'inputs:subsurface_radius', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "subsurface_radius"
+            label   "Radius"
+            type    color
+            size    3
+            default { "1" "1" "1" }
+            disablewhen "{ subsurface_radius_control == block } { subsurface_radius_control == none } { subsurface_radius_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:subsurface_radius" }
+            parmtag { "usdvaluetype" "color3f" }
+        }
+        parm {
+            name    "subsurface_scale_control"
+            label   "subsurface_scale"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:subsurface_scale', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "subsurface_scale"
+            label   "Scale"
+            type    float
+            default { "1" }
+            disablewhen "{ subsurface_scale_control == block } { subsurface_scale_control == none } { subsurface_scale_control == disconnectinput }"
+            range   { 0 10 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:subsurface_scale" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "subsurface_scale_file_control"
+            label   "subsurface_scale_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:subsurface_scale_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "subsurface_scale_file"
+            label   "Scale Map"
+            type    image
+            default { "" }
+            disablewhen "{ subsurface_scale_file_control == block } { subsurface_scale_file_control == none } { subsurface_scale_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:subsurface_scale_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder0_7"
+        label   "Emission"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "emission_control"
+            label   "emission"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:emission', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "emission"
+            label   "Emission"
+            type    float
+            default { "0" }
+            disablewhen "{ emission_control == block } { emission_control == none } { emission_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "ogl_emit_intensity" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:emission" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "emission_color_control"
+            label   "emission_color"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'color3f', 'inputs:emission_color', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "emission_color"
+            label   "Color"
+            type    color
+            size    3
+            default { "1" "1" "1" }
+            disablewhen "{ emission_color_control == block } { emission_color_control == none } { emission_color_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "ogl_emit" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:emission_color" }
+            parmtag { "usdvaluetype" "color3f" }
+        }
+        parm {
+            name    "emission_color_file_control"
+            label   "emission_color_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:emission_color_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "emission_color_file"
+            label   "Color Map"
+            type    image
+            default { "" }
+            disablewhen "{ emission_color_file_control == block } { emission_color_file_control == none } { emission_color_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:emission_color_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+        parm {
+            name    "emission_color_primvar_control"
+            label   "emission_color_primvar"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'string', 'inputs:emission_color_primvar', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "emission_color_primvar"
+            label   "Color Primvar"
+            type    string
+            default { "" }
+            disablewhen "{ emission_color_primvar_control == block } { emission_color_primvar_control == none } { emission_color_primvar_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "sidefx::shader_isparmuniform" "1" }
+            parmtag { "usdvaluename" "inputs:emission_color_primvar" }
+            parmtag { "usdvaluetype" "string" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder3_1"
+        label   "Bump"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "bump_style_control"
+            label   "bump_style"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:bump_style', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "bump_style"
+            label   "Bump Style"
+            type    integer
+            default { "0" }
+            disablewhen "{ bump_style_control == block } { bump_style_control == none } { bump_style_control == disconnectinput }"
+            menu {
+                "0" "Height"
+                "1" "Normal"
+            }
+            range   { 0 10 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:bump_style" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "bump_height_file_control"
+            label   "bump_height_file"
+            type    string
+            default { "none" }
+            disablewhen "{ bump_style != 0 }"
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:bump_height_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "bump_height_file"
+            label   "Bump Height Map"
+            type    image
+            default { "" }
+            disablewhen "{ bump_style != 0 } { bump_height_file_control == block } { bump_height_file_control == none } { bump_height_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:bump_height_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+        parm {
+            name    "bump_normal_file_control"
+            label   "bump_normal_file"
+            type    string
+            default { "none" }
+            disablewhen "{ bump_style != 1 }"
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:bump_normal_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "bump_normal_file"
+            label   "Bump Normal Map"
+            type    image
+            default { "" }
+            disablewhen "{ bump_style != 1 } { bump_normal_file_control == block } { bump_normal_file_control == none } { bump_normal_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:bump_normal_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+        parm {
+            name    "bump_scale_control"
+            label   "bump_scale"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:bump_scale', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "bump_scale"
+            label   "Bump Scale"
+            type    float
+            default { "0.025" }
+            disablewhen "{ bump_scale_control == block } { bump_scale_control == none } { bump_scale_control == disconnectinput }"
+            range   { 0 10 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:bump_scale" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "true_displacements_control"
+            label   "true_displacements"
+            type    string
+            default { "none" }
+            disablewhen "{ bump_style != 0 }"
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'int', 'inputs:true_displacements', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "true_displacements"
+            label   "True Displacements"
+            type    toggle
+            default { [ "off" hscript-expr ] }
+            disablewhen "{ bump_style != 0 } { true_displacements_control == block } { true_displacements_control == none } { true_displacements_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:true_displacements" }
+            parmtag { "usdvaluetype" "int" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder0_6"
+        label   "Thin Film"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "thin_film_IOR_control"
+            label   "thin_film_IOR"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:thin_film_IOR', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "thin_film_IOR"
+            label   "Thin Film IOR"
+            type    float
+            default { "1.5" }
+            disablewhen "{ thin_film_IOR_control == block } { thin_film_IOR_control == none } { thin_film_IOR_control == disconnectinput }"
+            range   { 0 3 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:thin_film_IOR" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "thin_film_thickness_control"
+            label   "thin_film_thickness"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:thin_film_thickness', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "thin_film_thickness"
+            label   "Thickness"
+            type    float
+            default { "0" }
+            disablewhen "{ thin_film_thickness_control == block } { thin_film_thickness_control == none } { thin_film_thickness_control == disconnectinput }"
+            range   { 0 2000 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:thin_film_thickness" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "thin_film_thickness_primvar_control"
+            label   "thin_film_thickness_primvar"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'string', 'inputs:thin_film_thickness_primvar', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "thin_film_thickness_primvar"
+            label   "Thickness Primvar"
+            type    string
+            default { "" }
+            disablewhen "{ thin_film_thickness_primvar_control == block } { thin_film_thickness_primvar_control == none } { thin_film_thickness_primvar_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "sidefx::shader_isparmuniform" "1" }
+            parmtag { "usdvaluename" "inputs:thin_film_thickness_primvar" }
+            parmtag { "usdvaluetype" "string" }
+        }
+        parm {
+            name    "thin_film_thickness_file_control"
+            label   "thin_film_thickness_file"
+            type    string
+            default { "none" }
+            disablewhen "{ bump_style != 1 }"
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:thin_film_thickness_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "thin_film_thickness_file"
+            label   "Thickness File"
+            type    image
+            default { "" }
+            disablewhen "{ bump_style != 1 } { thin_film_thickness_file_control == block } { thin_film_thickness_file_control == none } { thin_film_thickness_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:thin_film_thickness_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder0_8"
+        label   "Geometry"
+        grouptag { "group_type" "collapsible" }
+        parmtag { "sidefx::header_parm" "thin_walled" }
+
+        parm {
+            name    "thin_walled_control"
+            label   "thin_walled"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'int', 'inputs:thin_walled', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "thin_walled"
+            label   "Thin Walled"
+            type    toggle
+            default { [ "off" hscript-expr ] }
+            disablewhen "{ thin_walled_control == block } { thin_walled_control == none } { thin_walled_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:thin_walled" }
+            parmtag { "usdvaluetype" "int" }
+        }
+        parm {
+            name    "opacity_control"
+            label   "opacity"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'color3f', 'inputs:opacity', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "opacity"
+            label   "Opacity"
+            type    color
+            size    3
+            default { "1" "1" "1" }
+            disablewhen "{ opacity_control == block } { opacity_control == none } { opacity_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:opacity" }
+            parmtag { "usdvaluetype" "color3f" }
+        }
+        parm {
+            name    "opacity_file_control"
+            label   "opacity_file"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'asset', 'inputs:opacity_file', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "opacity_file"
+            label   "Opacity Map"
+            type    image
+            default { "" }
+            disablewhen "{ opacity_file_control == block } { opacity_file_control == none } { opacity_file_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:opacity_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+        parm {
+            name    "opacity_primvar_control"
+            label   "opacity_primvar"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'string', 'inputs:opacity_primvar', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "opacity_primvar"
+            label   "Opacity Primvar"
+            type    string
+            default { "" }
+            disablewhen "{ opacity_primvar_control == block } { opacity_primvar_control == none } { opacity_primvar_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "sidefx::shader_isparmuniform" "1" }
+            parmtag { "usdvaluename" "inputs:opacity_primvar" }
+            parmtag { "usdvaluetype" "string" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder0_9"
+        label   "Maps"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "filtertype_control"
+            label   "filtertype"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'string', 'inputs:filtertype', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "filtertype"
+            label   "Image Filter Type"
+            type    string
+            default { "linear" }
+            disablewhen "{ filtertype_control == block } { filtertype_control == none } { filtertype_control == disconnectinput }"
+            menu {
+                "closest"   "closest"
+                "linear"    "linear"
+                "cubic"     "cubic"
+            }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:filtertype" }
+            parmtag { "usdvaluetype" "string" }
+        }
+        parm {
+            name    "projection_control"
+            label   "projection"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:projection', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "projection"
+            label   "Projection Type"
+            type    integer
+            default { "0" }
+            disablewhen "{ projection_control == block } { projection_control == none } { projection_control == disconnectinput }"
+            menu {
+                "0" "UV"
+                "1" "Tri-Planar"
+            }
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:projection" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "uv_offset_control"
+            label   "uv_offset"
+            type    string
+            default { "none" }
+            disablewhen "{ projection != 0 }"
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float2', 'inputs:uv_offset', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "uv_offset"
+            label   "UV Offset"
+            type    float
+            size    2
+            default { "0" "0" }
+            disablewhen "{ projection != 0 } { uv_offset_control == block } { uv_offset_control == none } { uv_offset_control == disconnectinput }"
+            range   { 0 10 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:uv_offset" }
+            parmtag { "usdvaluetype" "float2" }
+        }
+        parm {
+            name    "uv_scale_control"
+            label   "uv_scale"
+            type    string
+            default { "none" }
+            disablewhen "{ projection != 0 }"
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float2', 'inputs:uv_scale', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "uv_scale"
+            label   "UV Scale"
+            type    float
+            size    2
+            default { "1" "1" }
+            disablewhen "{ projection != 0 } { uv_scale_control == block } { uv_scale_control == none } { uv_scale_control == disconnectinput }"
+            range   { 0 10 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:uv_scale" }
+            parmtag { "usdvaluetype" "float2" }
+        }
+        parm {
+            name    "uv_primvar_control"
+            label   "uv_primvar"
+            type    string
+            default { "none" }
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'string', 'inputs:uv_primvar', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "uv_primvar"
+            label   "UV Primvar"
+            type    string
+            default { "st" }
+            disablewhen "{ uv_primvar_control == block } { uv_primvar_control == none } { uv_primvar_control == disconnectinput }"
+            parmtag { "parmvop" "1" }
+            parmtag { "sidefx::shader_isparmuniform" "1" }
+            parmtag { "usdvaluename" "inputs:uv_primvar" }
+            parmtag { "usdvaluetype" "string" }
+        }
+        parm {
+            name    "triplanar_blend_control"
+            label   "triplanar_blend"
+            type    string
+            default { "none" }
+            disablewhen "{ projection != 1 }"
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:triplanar_blend', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "triplanar_blend"
+            label   "Tri-Planar Blend"
+            type    float
+            default { "0.25" }
+            disablewhen "{ projection != 1 } { triplanar_blend_control == block } { triplanar_blend_control == none } { triplanar_blend_control == disconnectinput }"
+            range   { 0 1 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:triplanar_blend" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "triplanar_upaxis_control"
+            label   "triplanar_upaxis"
+            type    string
+            default { "none" }
+            disablewhen "{ projection != 1 }"
+            menujoin {
+                [ "import loputils" ]
+                [ "return loputils.createEditPropertiesControlMenu(" ]
+                [ "           kwargs, 'float', 'inputs:triplanar_upaxis', True, False)" ]
+                language python
+            }
+            parmtag { "sidefx::look" "icon" }
+        }
+        parm {
+            name    "triplanar_upaxis"
+            label   "Tri-Planar Up Axis"
+            type    integer
+            default { "1" }
+            disablewhen "{ projection != 1 } { triplanar_upaxis_control == block } { triplanar_upaxis_control == none } { triplanar_upaxis_control == disconnectinput }"
+            menu {
+                "0" "X"
+                "1" "Y"
+                "2" "Z"
+            }
+            range   { 0 10 }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:triplanar_upaxis" }
+            parmtag { "usdvaluetype" "float" }
+        }
+    }
+
+    parm {
+        name    "displacement_control"
+        label   "displacement_control"
+        type    string
+        invisible
+        default { [ "'none' if hou.pwd().evalParm('true_displacements')==1 else 'disconnectinput'" python ] }
+        parmtag { "sidefx::shader_isparm" "1" }
+        parmtag { "sidefx::shader_makecontrolparm" "0" }
+    }
+    parm {
+        name    "displacement"
+        label   "displacement"
+        type    string
+        invisible
+        default { "" }
+        parmtag { "sidefx::shader_makecontrolparm" "0" }
+        parmtag { "usdisconnection" "1" }
+        parmtag { "usdvaluename" "outputs:mtlx:displacement" }
+        parmtag { "usdvaluetype" "token" }
+    }
+    parm {
+        name    "maps_copnet"
+        label   "COP Textures Network"
+        type    oppath
+        default { "../quicksurfacematerial1_maps" }
+        parmtag { "oprelative" "." }
+        parmtag { "script_callback_language" "python" }
+    }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_material.chn"
+Content-Type: text/plain
+
+{
+    channel sample_f1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel sample_f2 {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel sample_f3 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = @finc }
+    }
+    channel displacement_control {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = "'none' if hou.pwd().evalParm('true_displacements')==1 else 'disconnectinput'" language = python }
+    }
+    channel primpath {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"/PROP/SasquatchCar/mat/Projection_MAT\"
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = chs(\"../mat_path\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_material.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+sample_group	[ 0	locks=0 ]	(	0	)
+sample_behavior	[ 0	locks=0 ]	(	single	)
+sample_f	[ 0	locks=0 ]	(	[ sample_f1	1 ] 	[ sample_f2	240 ] 	[ sample_f3	1 ] 	)
+sample_subframeenable	[ 0	locks=0 ]	(	"off"	)
+sample_subframegroup	[ 0	locks=0 ]	(	0	)
+sample_shuttermode	[ 0	locks=0 ]	(	manual	)
+sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
+sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
+sample_count	[ 0	locks=0 ]	(	2	)
+sample_includeframe	[ 0	locks=0 ]	(	"on"	)
+reftype	[ 0	locks=0 ]	(	reffile	)
+primtype	[ 0	locks=0 ]	(	UsdShadeMaterial	)
+classancestor	[ 0	locks=0 ]	(	""	)
+reload	[ 0	locks=0 ]	(	0	)
+reffilepath	[ 0	locks=0 ]	(	$HFS/houdini/usd/materials/quick_materials/quick_materials.usd	)
+primpattern	[ 0	locks=0 ]	(	/Materials/QuickSurfaceMaterial	)
+classprimpath	[ 0	locks=0 ]	(	/__class_mtl__/`strsplit(chs(\"primpath\"),\"/\",-1)`	)
+createparms	[ 0	locks=0 ]	(	0	)
+createoutputparms	[ 0	locks=0 ]	(	0	)
+initforedit	[ 0	locks=0 ]	(	0	)
+destinationprim_group	[ 0	locks=0 ]	(	0	)
+refparentmat	[ 0	locks=0 ]	(	"on"	)
+instanceable	[ 0	locks=0 ]	(	"on"	)
+primpath	[ 0	locks=0 ]	(	[ primpath	/materials/$OS ] 	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
+sample_group2	[ 0	locks=0 ]	(	0	)
+sample_subframegroup2	[ 0	locks=0 ]	(	0	)
+folder0	[ 0	locks=0 ]	(	0	)
+quickmaterialrefresh	[ 0	locks=0 ]	(	0	)
+destinationprim_group2	[ 0	locks=0 ]	(	0	)
+folder0_0	[ 0	locks=0 ]	(	0	)
+base_control	[ 0	locks=0 ]	(	set	)
+base	[ 0	locks=0 ]	(	1	)
+base_color_control	[ 0	locks=0 ]	(	set	)
+base_color	[ 0	locks=0 ]	(	1	1	1	)
+base_color_file_control	[ 0	locks=0 ]	(	set	)
+base_color_file	[ 8	locks=0 ]	(	op:`chsop(\"maps_copnet\")`/base_color	)
+base_color_primvar_control	[ 0	locks=0 ]	(	set	)
+base_color_primvar	[ 0	locks=0 ]	(	displayColor	)
+metalness_control	[ 0	locks=0 ]	(	set	)
+metalness	[ 0	locks=0 ]	(	0	)
+metalness_file_control	[ 0	locks=0 ]	(	none	)
+metalness_file	[ 0	locks=0 ]	(	""	)
+folder0_1	[ 0	locks=0 ]	(	0	)
+specular_control	[ 0	locks=0 ]	(	set	)
+specular	[ 0	locks=0 ]	(	1	)
+specular_color_control	[ 0	locks=0 ]	(	set	)
+specular_color	[ 0	locks=0 ]	(	1	1	1	)
+specular_color_file_control	[ 0	locks=0 ]	(	none	)
+specular_color_file	[ 0	locks=0 ]	(	""	)
+specular_roughness_control	[ 0	locks=0 ]	(	set	)
+specular_roughness	[ 0	locks=0 ]	(	0.8	)
+specular_roughness_file_control	[ 0	locks=0 ]	(	none	)
+specular_roughness_file	[ 0	locks=0 ]	(	""	)
+roughness_primvar_control	[ 0	locks=0 ]	(	set	)
+roughness_primvar	[ 0	locks=0 ]	(	""	)
+specular_IOR_control	[ 0	locks=0 ]	(	set	)
+specular_IOR	[ 0	locks=0 ]	(	1.5	)
+specular_anisotropy_control	[ 0	locks=0 ]	(	set	)
+specular_anisotropy	[ 0	locks=0 ]	(	0	)
+specular_rotation_control	[ 0	locks=0 ]	(	set	)
+specular_rotation	[ 0	locks=0 ]	(	0	)
+folder0_5	[ 0	locks=0 ]	(	0	)
+coat_control	[ 0	locks=0 ]	(	set	)
+coat	[ 0	locks=0 ]	(	0	)
+coat_color_control	[ 0	locks=0 ]	(	set	)
+coat_color	[ 0	locks=0 ]	(	1	1	1	)
+coat_color_file_control	[ 0	locks=0 ]	(	none	)
+coat_color_file	[ 8	locks=0 ]	(	""	)
+coat_roughness_control	[ 0	locks=0 ]	(	set	)
+coat_roughness	[ 0	locks=0 ]	(	0.10000000149011612	)
+coat_roughness_file_control	[ 0	locks=0 ]	(	none	)
+coat_roughness_file	[ 0	locks=0 ]	(	""	)
+folder0_2	[ 0	locks=0 ]	(	0	)
+transmission_control	[ 0	locks=0 ]	(	set	)
+transmission	[ 0	locks=0 ]	(	0	)
+transmission_color_control	[ 0	locks=0 ]	(	set	)
+transmission_color	[ 0	locks=0 ]	(	1	1	1	)
+transmission_color_file_control	[ 0	locks=0 ]	(	none	)
+transmission_color_file	[ 0	locks=0 ]	(	""	)
+transmission_color_primvar_control	[ 0	locks=0 ]	(	set	)
+transmission_color_primvar	[ 0	locks=0 ]	(	""	)
+transmission_depth_control	[ 0	locks=0 ]	(	set	)
+transmission_depth	[ 0	locks=0 ]	(	0	)
+transmission_dispersion_control	[ 0	locks=0 ]	(	set	)
+transmission_dispersion	[ 0	locks=0 ]	(	0	)
+folder0_4	[ 0	locks=0 ]	(	0	)
+sheen_control	[ 0	locks=0 ]	(	set	)
+sheen	[ 0	locks=0 ]	(	0	)
+sheen_color_control	[ 0	locks=0 ]	(	set	)
+sheen_color	[ 0	locks=0 ]	(	1	1	1	)
+sheen_color_file_control	[ 0	locks=0 ]	(	none	)
+sheen_color_file	[ 0	locks=0 ]	(	""	)
+sheen_roughness_control	[ 0	locks=0 ]	(	set	)
+sheen_roughness	[ 0	locks=0 ]	(	0.30000001192092896	)
+sheen_roughness_file_control	[ 0	locks=0 ]	(	none	)
+sheen_roughness_file	[ 0	locks=0 ]	(	""	)
+folder0_3	[ 0	locks=0 ]	(	0	)
+subsurface_control	[ 0	locks=0 ]	(	set	)
+subsurface	[ 0	locks=0 ]	(	0	)
+subsurface_color_control	[ 0	locks=0 ]	(	set	)
+subsurface_color	[ 0	locks=0 ]	(	1	1	1	)
+subsurface_color_file_control	[ 0	locks=0 ]	(	none	)
+subsurface_color_file	[ 0	locks=0 ]	(	""	)
+subsurface_color_primvar_control	[ 0	locks=0 ]	(	set	)
+subsurface_color_primvar	[ 0	locks=0 ]	(	""	)
+subsurface_radius_control	[ 0	locks=0 ]	(	set	)
+subsurface_radius	[ 0	locks=0 ]	(	1	1	1	)
+subsurface_scale_control	[ 0	locks=0 ]	(	set	)
+subsurface_scale	[ 0	locks=0 ]	(	1	)
+subsurface_scale_file_control	[ 0	locks=0 ]	(	none	)
+subsurface_scale_file	[ 0	locks=0 ]	(	""	)
+folder0_7	[ 0	locks=0 ]	(	0	)
+emission_control	[ 0	locks=0 ]	(	set	)
+emission	[ 0	locks=0 ]	(	0	)
+emission_color_control	[ 0	locks=0 ]	(	none	)
+emission_color	[ 0	locks=0 ]	(	1	1	1	)
+emission_color_file_control	[ 0	locks=0 ]	(	set	)
+emission_color_file	[ 0	locks=0 ]	(	op:`chsop(\"maps_copnet\")`/base_color	)
+emission_color_primvar_control	[ 0	locks=0 ]	(	set	)
+emission_color_primvar	[ 0	locks=0 ]	(	""	)
+folder3_1	[ 0	locks=0 ]	(	0	)
+bump_style_control	[ 0	locks=0 ]	(	set	)
+bump_style	[ 0	locks=0 ]	(	1	)
+bump_height_file_control	[ 0	locks=0 ]	(	none	)
+bump_height_file	[ 0	locks=0 ]	(	""	)
+bump_normal_file_control	[ 0	locks=0 ]	(	set	)
+bump_normal_file	[ 0	locks=0 ]	(	$HIP/texture/projected_normal.png	)
+bump_scale_control	[ 0	locks=0 ]	(	set	)
+bump_scale	[ 0	locks=0 ]	(	0.01	)
+true_displacements_control	[ 0	locks=0 ]	(	set	)
+true_displacements	[ 0	locks=0 ]	(	"off"	)
+folder0_6	[ 0	locks=0 ]	(	1	)
+thin_film_IOR_control	[ 0	locks=0 ]	(	set	)
+thin_film_IOR	[ 0	locks=0 ]	(	1.5	)
+thin_film_thickness_control	[ 0	locks=0 ]	(	set	)
+thin_film_thickness	[ 0	locks=0 ]	(	0	)
+thin_film_thickness_primvar_control	[ 0	locks=0 ]	(	set	)
+thin_film_thickness_primvar	[ 0	locks=0 ]	(	""	)
+thin_film_thickness_file_control	[ 0	locks=0 ]	(	none	)
+thin_film_thickness_file	[ 0	locks=0 ]	(	""	)
+folder0_8	[ 0	locks=0 ]	(	0	)
+thin_walled_control	[ 0	locks=0 ]	(	set	)
+thin_walled	[ 0	locks=0 ]	(	"off"	)
+opacity_control	[ 0	locks=0 ]	(	set	)
+opacity	[ 0	locks=0 ]	(	1	1	1	)
+opacity_file_control	[ 0	locks=0 ]	(	none	)
+opacity_file	[ 0	locks=0 ]	(	""	)
+opacity_primvar_control	[ 0	locks=0 ]	(	set	)
+opacity_primvar	[ 0	locks=0 ]	(	""	)
+folder0_9	[ 0	locks=0 ]	(	1	)
+filtertype_control	[ 0	locks=0 ]	(	set	)
+filtertype	[ 0	locks=0 ]	(	linear	)
+projection_control	[ 0	locks=0 ]	(	set	)
+projection	[ 0	locks=0 ]	(	0	)
+uv_offset_control	[ 0	locks=0 ]	(	set	)
+uv_offset	[ 0	locks=0 ]	(	0	0	)
+uv_scale_control	[ 0	locks=0 ]	(	set	)
+uv_scale	[ 0	locks=0 ]	(	1	1	)
+uv_primvar_control	[ 0	locks=0 ]	(	set	)
+uv_primvar	[ 0	locks=0 ]	(	st	)
+triplanar_blend_control	[ 0	locks=0 ]	(	set	)
+triplanar_blend	[ 0	locks=0 ]	(	0.25	)
+triplanar_upaxis_control	[ 0	locks=0 ]	(	set	)
+triplanar_upaxis	[ 0	locks=0 ]	(	1	)
+displacement_control	[ 0	locks=0 ]	(	[ displacement_control	"'none' if hou.pwd().evalParm('true_displacements')==1 else 'disconnectinput'" ] 	)
+displacement	[ 0	locks=0 ]	(	""	)
+maps_copnet	[ 8	locks=0 ]	(	../projection_maps	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/projection_material.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.def"
+Content-Type: text/plain
+
+comment ""
+position -1.49293e-08 1.67468
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	assignmaterial 1 1 "input1"
+}
+inputs
+{
+0 	assignmaterial 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet.init"
+Content-Type: text/plain
+
+type = objnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet.def"
+Content-Type: text/plain
+
+objflags objflags =  origin off
+pretransform UT_DMatrix4 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1
+comment ""
+position -2.99788 5.70555
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on selectable on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+stdswitcher	[ 0	locks=0 ]	(	0	0	)
+xOrd	[ 0	locks=0 ]	(	"srt"	)
+rOrd	[ 0	locks=0 ]	(	"xyz"	)
+t	[ 0	locks=0 ]	(	0	0	0	)
+r	[ 0	locks=0 ]	(	0	0	0	)
+s	[ 0	locks=0 ]	(	1	1	1	)
+p	[ 0	locks=0 ]	(	0	0	0	)
+pr	[ 0	locks=0 ]	(	0	0	0	)
+scale	[ 0	locks=0 ]	(	1	)
+pre_xform	[ 0	locks=0 ]	(	0	)
+keeppos	[ 0	locks=0 ]	(	"off"	)
+childcomp	[ 0	locks=0 ]	(	"off"	)
+constraints_on	[ 0	locks=0 ]	(	"off"	)
+constraints_path	[ 0	locks=0 ]	(	""	)
+lookatpath	[ 0	locks=0 ]	(	""	)
+lookupobjpath	[ 0	locks=0 ]	(	""	)
+lookup	[ 0	locks=0 ]	(	on	)
+pathobjpath	[ 0	locks=0 ]	(	""	)
+roll	[ 0	locks=0 ]	(	0	)
+pos	[ 0	locks=0 ]	(	0	)
+uparmtype	[ 0	locks=0 ]	(	"arc"	)
+pathorient	[ 0	locks=0 ]	(	1	)
+up	[ 0	locks=0 ]	(	0	1	0	)
+bank	[ 0	locks=0 ]	(	0	)
+label1	[ 0	locks=0 ]	(	"Sub-Network Input #1"	)
+label2	[ 0	locks=0 ]	(	"Sub-Network Input #2"	)
+label3	[ 0	locks=0 ]	(	"Sub-Network Input #3"	)
+label4	[ 0	locks=0 ]	(	"Sub-Network Input #4"	)
+tdisplay	[ 0	locks=0 ]	(	"off"	)
+display	[ 0	locks=0 ]	(	1	)
+outputobj	[ 0	locks=0 ]	(	_input1_obj_	)
+visibleobjects	[ 0	locks=0 ]	(	*	)
+picking	[ 0	locks=0 ]	(	"on"	)
+pickscript	[ 0	locks=0 ]	(	""	)
+caching	[ 0	locks=0 ]	(	"on"	)
+use_dcolor	[ 0	locks=0 ]	(	"on"	)
+dcolor	[ 0	locks=0 ]	(	1	1	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam.init"
+Content-Type: text/plain
+
+type = lopimportcam
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam.def"
+Content-Type: text/plain
+
+objflags objflags =  origin off
+pretransform UT_DMatrix4 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1
+comment ""
+position -1.19788 4.28563
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on selectable on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage python
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam.spareparmdef"
+Content-Type: text/plain
+
+    group {
+        name    "folder0"
+        label   "Main"
+
+        parm {
+            name    "loppath"
+            baseparm
+            label   "LOP Path"
+            export  all
+        }
+        parm {
+            name    "primpath"
+            baseparm
+            label   "Primitive Path"
+            export  all
+        }
+        parm {
+            name    "xformtype"
+            baseparm
+            label   "Transform Type"
+            export  all
+        }
+        parm {
+            name    "use_dcolor"
+            baseparm
+            label   "Set Wireframe Color"
+            export  none
+        }
+        parm {
+            name    "dcolor"
+            baseparm
+            label   "Wireframe Color"
+            export  none
+        }
+        parm {
+            name    "picking"
+            baseparm
+            label   "Viewport Selecting Enabled"
+            export  none
+        }
+        parm {
+            name    "pickscript"
+            baseparm
+            label   "Select Script"
+            export  none
+        }
+        parm {
+            name    "caching"
+            baseparm
+            label   "Cache Object Transform"
+            export  none
+        }
+        parm {
+            name    "xOrd"
+            baseparm
+            label   "Transform Order"
+            invisible
+            joinnext
+            export  none
+        }
+        parm {
+            name    "rOrd"
+            baseparm
+            label   "Rotate Order"
+            nolabel
+            invisible
+            export  none
+        }
+        parm {
+            name    "t"
+            baseparm
+            label   "Translate"
+            invisible
+            export  none
+        }
+        parm {
+            name    "r"
+            baseparm
+            label   "Rotate"
+            invisible
+            export  none
+        }
+        parm {
+            name    "s"
+            baseparm
+            label   "Scale"
+            invisible
+            export  none
+        }
+        parm {
+            name    "p"
+            baseparm
+            label   "Pivot Translate"
+            invisible
+            export  none
+        }
+        parm {
+            name    "pr"
+            baseparm
+            label   "Pivot Rotate"
+            invisible
+            export  none
+        }
+        parm {
+            name    "scale"
+            baseparm
+            label   "Uniform Scale"
+            invisible
+            export  none
+        }
+        parm {
+            name    "pre_xform"
+            baseparm
+            label   "Modify Pre-Transform"
+            invisible
+            export  none
+        }
+        parm {
+            name    "keeppos"
+            baseparm
+            label   "Keep Position When Parenting"
+            invisible
+            export  none
+        }
+        parm {
+            name    "childcomp"
+            baseparm
+            label   "Child Compensation"
+            invisible
+            export  none
+        }
+        parm {
+            name    "constraints_on"
+            baseparm
+            label   "Enable Constraints"
+            export  none
+        }
+        parm {
+            name    "constraints_path"
+            baseparm
+            label   "Constraints"
+            export  none
+        }
+        parm {
+            name    "lookatpath"
+            baseparm
+            label   "Look At"
+            invisible
+            export  none
+        }
+        parm {
+            name    "lookupobjpath"
+            baseparm
+            label   "Look Up Object"
+            invisible
+            export  none
+        }
+        parm {
+            name    "lookup"
+            baseparm
+            label   "Look At Up Vector"
+            invisible
+            export  none
+        }
+        parm {
+            name    "pathobjpath"
+            baseparm
+            label   "Path Object"
+            invisible
+            export  none
+        }
+        parm {
+            name    "roll"
+            baseparm
+            label   "Roll"
+            invisible
+            export  none
+        }
+        parm {
+            name    "pos"
+            baseparm
+            label   "Position"
+            invisible
+            export  none
+        }
+        parm {
+            name    "uparmtype"
+            baseparm
+            label   "Parameterization"
+            invisible
+            export  none
+        }
+        parm {
+            name    "pathorient"
+            baseparm
+            label   "Orient Along Path"
+            invisible
+            export  none
+        }
+        parm {
+            name    "up"
+            baseparm
+            label   "Orient Up Vector"
+            invisible
+            export  none
+        }
+        parm {
+            name    "bank"
+            baseparm
+            label   "Auto-Bank factor"
+            invisible
+            export  none
+        }
+        parm {
+            name    "tdisplay"
+            baseparm
+            label   "Display"
+            invisible
+            joinnext
+            export  none
+        }
+        parm {
+            name    "display"
+            baseparm
+            label   "Display"
+            invisible
+            export  none
+        }
+    }
+
+    group {
+        name    "folder0_1"
+        label   "View"
+
+        parm {
+            name    "iconscale"
+            label   "Icon Scale"
+            type    float
+            default { "1" }
+            range   { 0.001 10 }
+            parmtag { "spare_category" "View" }
+        }
+        parm {
+            name    "res"
+            label   "Resolution"
+            type    intvector2
+            joinnext
+            size    2
+            default { "1280" "720" }
+            range   { -1 1 }
+            parmtag { "cook_dependent" "1" }
+            parmtag { "spare_category" "View" }
+        }
+        parm {
+            name    "resMenu"
+            label   "Choose Resolution"
+            type    button
+            nolabel
+            default { "0" }
+            menumini {
+                [ "echo `pythonexprs(\"__import__('toolutils').parseDialogScriptMenu('FBres')\")`" ]
+            }
+            parmtag { "script_callback" "opparm . res ( `arg(\"$script_value\", 0)` `arg(\"$script_value\", 1)` aspect ( `arg(\"$script_value\", 2)` )" }
+            parmtag { "spare_category" "View" }
+        }
+        parm {
+            name    "aspect"
+            label   "Pixel Aspect Ratio"
+            type    float
+            default { "1" }
+            range   { 0.05 2 }
+            parmtag { "spare_category" "View" }
+        }
+        parm {
+            name    "projection"
+            label   "Projection"
+            type    ordinal
+            default { "perspective" }
+            menu {
+                "perspective"   "Perspective"
+                "ortho"         "Orthographic"
+                "sphere"        "Polar (panoramic)"
+                "cylinder"      "Cylindrical (panoramic)"
+                "lens"          "Lens Shader"
+            }
+            parmtag { "spare_category" "View" }
+        }
+        parm {
+            name    "vm_lensshader"
+            label   "Lens Shader"
+            type    oppath
+            default { "" }
+            disablewhen "{ projection != lens }"
+            parmtag { "oprelative" "." }
+            parmtag { "spare_category" "View" }
+        }
+        parm {
+            name    "focal"
+            label   "Focal Length"
+            type    float
+            joinnext
+            default { "50" }
+            range   { 1 100 }
+        }
+        parm {
+            name    "focalunits"
+            label   "Focal Units"
+            type    string
+            default { "mm" }
+            menu {
+                "mm"    "millimeters"
+                "m"     "meters"
+                "nm"    "nanometers"
+                "in"    "inches"
+                "ft"    "feet"
+            }
+        }
+        parm {
+            name    "aperture"
+            label   "Aperture"
+            type    float
+            default { "41.4214" }
+            range   { 1 100 }
+            parmtag { "spare_category" "View" }
+        }
+        parm {
+            name    "orthowidth"
+            label   "Ortho Width"
+            type    float
+            default { "2" }
+            disablewhen "{ projection != ortho }"
+            range   { 0.001 10 }
+            parmtag { "spare_category" "View" }
+        }
+        parm {
+            name    "near"
+            label   "Near Clipping"
+            type    float
+            default { "0.001" }
+            range   { 0 10 }
+            parmtag { "spare_category" "View" }
+        }
+        parm {
+            name    "far"
+            label   "Far Clipping"
+            type    float
+            default { "10000" }
+            range   { 1 10000 }
+            parmtag { "spare_category" "View" }
+        }
+        parm {
+            name    "vm_bgenable"
+            label   "Enable Background Image"
+            type    toggle
+            default { "1" }
+            parmtag { "mantra_class" "image" }
+            parmtag { "mantra_name" "bgenable" }
+            parmtag { "spare_category" "View" }
+        }
+        parm {
+            name    "vm_background"
+            label   "Background Image"
+            type    image
+            default { "" }
+            disablewhen "{ vm_bgenable == 0 }"
+            parmtag { "filechooser_mode" "read" }
+            parmtag { "mantra_class" "image" }
+            parmtag { "mantra_name" "background" }
+            parmtag { "sidefx::allow_video" "1" }
+            parmtag { "spare_category" "View" }
+        }
+        parm {
+            name    "win"
+            label   "Screen Window X/Y"
+            type    vector2
+            size    2
+            default { "0" "0" }
+            disablewhen "{ winmask != \"\" }"
+            range   { -1 1 }
+        }
+        parm {
+            name    "winsize"
+            label   "Screen Window Size"
+            type    vector2
+            size    2
+            default { "1" "1" }
+            disablewhen "{ winmask != \"\" }"
+            range   { 0.01 10 }
+        }
+        parm {
+            name    "winmask"
+            label   "Screen Window Mask"
+            type    oplist
+            default { "" }
+            disablewhen "{ projection != ortho projection != perspective }"
+            parmtag { "opexpand" "1" }
+            parmtag { "opfilter" "!!OBJ/GEOMETRY!!" }
+            parmtag { "oprelative" "/obj" }
+        }
+        parm {
+            name    "cropl"
+            label   "Left Crop"
+            type    float
+            default { "0" }
+            disablewhen "{ cropmask != \"\" }"
+            range   { 0 1 }
+        }
+        parm {
+            name    "cropr"
+            label   "Right Crop"
+            type    float
+            default { "1" }
+            disablewhen "{ cropmask != \"\" }"
+            range   { 0 1 }
+        }
+        parm {
+            name    "cropb"
+            label   "Bottom Crop"
+            type    float
+            default { "0" }
+            disablewhen "{ cropmask != \"\" }"
+            range   { 0 1 }
+        }
+        parm {
+            name    "cropt"
+            label   "Top Crop"
+            type    float
+            default { "1" }
+            disablewhen "{ cropmask != \"\" }"
+            range   { 0 1 }
+        }
+        parm {
+            name    "cropmask"
+            label   "Crop Mask"
+            type    oplist
+            default { "" }
+            disablewhen "{ projection != ortho projection != perspective }"
+            parmtag { "opexpand" "1" }
+            parmtag { "opfilter" "!!OBJ/GEOMETRY!!" }
+            parmtag { "oprelative" "/obj" }
+        }
+    }
+
+    group {
+        name    "folder0_2"
+        label   "Sampling"
+
+        parm {
+            name    "shutter"
+            label   "Shutter Time"
+            type    float
+            default { "0.5" }
+            disablewhen "{ allowmotionblur == 0 }"
+            range   { 0 1 }
+            parmtag { "spare_category" "Sampling" }
+        }
+        parm {
+            name    "focus"
+            label   "Focus Distance"
+            type    float
+            default { "5" }
+            disablewhen "{ vm_dof == 0 }"
+            range   { 0.001 1000 }
+            parmtag { "mantra_class" "camera" }
+            parmtag { "mantra_name" "focus" }
+            parmtag { "spare_category" "Sampling" }
+        }
+        parm {
+            name    "fstop"
+            label   "F-Stop"
+            type    log
+            default { "5.6" }
+            disablewhen "{ vm_dof == 0 }"
+            range   { 1.4 22 }
+            parmtag { "mantra_class" "camera" }
+            parmtag { "mantra_name" "fstop" }
+            parmtag { "spare_category" "Sampling" }
+        }
+        parm {
+            name    "vm_bokeh"
+            label   "Bokeh"
+            type    string
+            default { "radial" }
+            menureplace {
+                "radial"    "Radial Bokeh"
+                "file"      "Image File Bokeh"
+                "box"       "Box Filter Bokeh"
+                "null"      "Disable Bokeh"
+            }
+            parmtag { "spare_category" "Sampling" }
+        }
+        parm {
+            name    "vm_bokehfile"
+            label   "Bokeh Image File"
+            type    image
+            default { "default.pic" }
+            disablewhen "{ vm_bokeh != file }"
+            parmtag { "filechooser_mode" "read" }
+            parmtag { "mantra_class" "bokeh" }
+            parmtag { "mantra_name" "-f" }
+            parmtag { "spare_category" "Sampling" }
+        }
+        parm {
+            name    "vm_bokehrotation"
+            label   "Bokeh Rotation"
+            type    float
+            default { "0" }
+            disablewhen "{ vm_bokeh != file }"
+            range   { 0 360 }
+            parmtag { "mantra_class" "bokeh" }
+            parmtag { "mantra_name" "-r" }
+            parmtag { "spare_category" "Sampling" }
+        }
+    }
+
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam.chn"
+Content-Type: text/plain
+
+{
+    channel projection {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = "__import__('lopcamutils').getProjection(pwd(), 'loppath', 'primpath')" language = python }
+    }
+    channel focal {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 value = 50 50 expr = "__import__('lopcamutils').getFocalLength(pwd(), 'loppath', 'primpath')" language = python }
+    }
+    channel aperture {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 value = 41.421399999999998 41.421399999999998 expr = "__import__('lopcamutils').getAperture(pwd(), 'loppath', 'primpath')" language = python }
+    }
+    channel near {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 value = 0.001 0.001 expr = "__import__('lopcamutils').getClippingPlanes(pwd(), 'loppath', 'primpath')[0]" language = python }
+    }
+    channel far {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 value = 10000 10000 expr = "__import__('lopcamutils').getClippingPlanes(pwd(), 'loppath', 'primpath')[1]" language = python }
+    }
+    channel winx {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = "__import__('lopcamutils').getWindowX(pwd(), 'loppath', 'primpath')" language = python }
+    }
+    channel winy {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = "__import__('lopcamutils').getWindowY(pwd(), 'loppath', 'primpath')" language = python }
+    }
+    channel shutter {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 value = 0.5 0.5 expr = "__import__('lopcamutils').getShutterTime(pwd(), 'loppath', 'primpath')" language = python }
+    }
+    channel focus {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 value = 5 5 expr = "__import__('lopcamutils').getFocusDistance(pwd(), 'loppath', 'primpath')" language = python }
+    }
+    channel fstop {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 value = 5.5999999999999996 5.5999999999999996 expr = "__import__('lopcamutils').getFStop(pwd(), 'loppath', 'primpath')" language = python }
+    }
+    channel loppath {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = chsop(\"../../loppath\") language = python }
+    }
+    channel primpath {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../../primpath\") language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+loppath	[ 0	locks=0 ]	(	[ loppath	"" ] 	)
+primpath	[ 0	locks=0 ]	(	[ primpath	"" ] 	)
+xformtype	[ 0	locks=0 ]	(	localtoworld	)
+use_dcolor	[ 0	locks=0 ]	(	"on"	)
+dcolor	[ 0	locks=0 ]	(	1	1	1	)
+picking	[ 0	locks=0 ]	(	"on"	)
+pickscript	[ 0	locks=0 ]	(	""	)
+caching	[ 0	locks=0 ]	(	"on"	)
+xOrd	[ 0	locks=0 ]	(	"srt"	)
+rOrd	[ 0	locks=0 ]	(	"xyz"	)
+t	[ 0	locks=0 ]	(	0	0	0	)
+r	[ 0	locks=0 ]	(	0	0	0	)
+s	[ 0	locks=0 ]	(	1	1	1	)
+p	[ 0	locks=0 ]	(	0	0	0	)
+pr	[ 0	locks=0 ]	(	0	0	0	)
+scale	[ 0	locks=0 ]	(	1	)
+pre_xform	[ 0	locks=0 ]	(	0	)
+keeppos	[ 0	locks=0 ]	(	"off"	)
+childcomp	[ 0	locks=0 ]	(	"off"	)
+constraints_on	[ 0	locks=0 ]	(	"off"	)
+constraints_path	[ 0	locks=0 ]	(	""	)
+lookatpath	[ 0	locks=0 ]	(	""	)
+lookupobjpath	[ 0	locks=0 ]	(	""	)
+lookup	[ 0	locks=0 ]	(	on	)
+pathobjpath	[ 0	locks=0 ]	(	""	)
+roll	[ 0	locks=0 ]	(	0	)
+pos	[ 0	locks=0 ]	(	0	)
+uparmtype	[ 0	locks=0 ]	(	"arc"	)
+pathorient	[ 0	locks=0 ]	(	1	)
+up	[ 0	locks=0 ]	(	0	1	0	)
+bank	[ 0	locks=0 ]	(	0	)
+tdisplay	[ 0	locks=0 ]	(	"off"	)
+display	[ 0	locks=0 ]	(	1	)
+folder0	[ 0	locks=0 ]	(	0	0	0	)
+iconscale	[ 0	locks=0 ]	(	1	)
+res	[ 0	locks=0 ]	(	1920	1080	)
+resMenu	[ 0	locks=0 ]	(	0	)
+aspect	[ 0	locks=0 ]	(	1	)
+projection	[ 0	locks=0 ]	(	[ projection	0 ] 	)
+vm_lensshader	[ 0	locks=0 ]	(	""	)
+focal	[ 0	locks=0 ]	(	[ focal	50 ] 	)
+focalunits	[ 0	locks=0 ]	(	mm	)
+aperture	[ 0	locks=0 ]	(	[ aperture	41.4214 ] 	)
+orthowidth	[ 0	locks=0 ]	(	2	)
+near	[ 0	locks=0 ]	(	[ near	0.001 ] 	)
+far	[ 0	locks=0 ]	(	[ far	10000 ] 	)
+vm_bgenable	[ 0	locks=0 ]	(	"on"	)
+vm_background	[ 0	locks=0 ]	(	""	)
+win	[ 0	locks=0 ]	(	[ winx	0 ] 	[ winy	0 ] 	)
+winsize	[ 0	locks=0 ]	(	1	1	)
+winmask	[ 0	locks=0 ]	(	""	)
+cropl	[ 0	locks=0 ]	(	0	)
+cropr	[ 0	locks=0 ]	(	1	)
+cropb	[ 0	locks=0 ]	(	0	)
+cropt	[ 0	locks=0 ]	(	1	)
+cropmask	[ 0	locks=0 ]	(	""	)
+shutter	[ 0	locks=0 ]	(	[ shutter	0.5 ] 	)
+focus	[ 0	locks=0 ]	(	[ focus	5 ] 	)
+fstop	[ 0	locks=0 ]	(	[ fstop	5.6 ] 	)
+vm_bokeh	[ 0	locks=0 ]	(	radial	)
+vm_bokehfile	[ 0	locks=0 ]	(	default.pic	)
+vm_bokehrotation	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/camOrigin.init"
+Content-Type: text/plain
+
+type = add
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/camOrigin.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 2 3
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/camOrigin.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	)
+keep	[ 0	locks=0 ]	(	"off"	)
+points	[ 0	locks=0 ]	(	1	)
+remove	[ 0	locks=0 ]	(	"off"	)
+switcher	[ 0	locks=0 ]	(	0	0	)
+prims	[ 0	locks=0 ]	(	1	)
+group	[ 0	locks=0 ]	(	""	)
+add	[ 0	locks=0 ]	(	"all"	)
+inc	[ 0	locks=0 ]	(	2	)
+attrname	[ 0	locks=0 ]	(	""	)
+closedall	[ 0	locks=0 ]	(	"off"	)
+addparticlesystem	[ 0	locks=0 ]	(	"off"	)
+particlegroup	[ 0	locks=0 ]	(	""	)
+appendunusedtoparticlesystem	[ 0	locks=0 ]	(	"off"	)
+prim0	[ 0	locks=0 ]	(	""	)
+closed0	[ 0	locks=0 ]	(	"off"	)
+usept0	[ 0	locks=0 ]	(	"on"	)
+pt0	[ 0	locks=0 ]	(	0	0	0	)
+weight0	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/camOrigin.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/file1.init"
+Content-Type: text/plain
+
+type = file
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/file1.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0.18 3
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.9 0.8 0.55 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/file1.chn"
+Content-Type: text/plain
+
+{
+    channel index {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = $FF-ch(\"f1\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/file1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+filemode	[ 0	locks=0 ]	(	"read"	)
+file	[ 0	locks=0 ]	(	defcam.bgeo	)
+reload	[ 0	locks=0 ]	(	0	)
+objpattern	[ 0	locks=0 ]	(	*	)
+geodatapath	[ 0	locks=0 ]	(	""	)
+missingframe	[ 0	locks=0 ]	(	"error"	)
+loadtype	[ 0	locks=0 ]	(	"full"	)
+packedviewedit	[ 0	locks=0 ]	(	"unchanged"	)
+viewportlod	[ 0	locks=0 ]	(	"box"	)
+packexpanded	[ 0	locks=0 ]	(	"on"	)
+delayload	[ 0	locks=0 ]	(	"off"	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+cachesize	[ 0	locks=0 ]	(	0	)
+prefetch	[ 0	locks=0 ]	(	"off"	)
+f	[ 0	locks=0 ]	(	1	24	)
+index	[ 0	locks=0 ]	(	[ index	0 ] 	)
+wrap	[ 0	locks=0 ]	(	"cycle"	)
+retry	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/file1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/xform1.init"
+Content-Type: text/plain
+
+type = xform
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/xform1.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0.18 1.5
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	file1 0 1 "input1"
+}
+inputs
+{
+0 	file1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/xform1.chn"
+Content-Type: text/plain
+
+{
+    channel scale {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = "property(\"../iconscale\", 1)" }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/xform1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+group	[ 0	locks=0 ]	(	""	)
+grouptype	[ 0	locks=0 ]	(	"guess"	)
+xOrd	[ 0	locks=0 ]	(	"srt"	)
+rOrd	[ 0	locks=0 ]	(	"xyz"	)
+t	[ 0	locks=0 ]	(	0	0	0	)
+r	[ 0	locks=0 ]	(	0	0	0	)
+s	[ 0	locks=0 ]	(	1	1	1	)
+shear	[ 0	locks=0 ]	(	0	0	0	)
+scale	[ 0	locks=0 ]	(	[ scale	1 ] 	)
+parmgroup_pivotxform	[ 0	locks=0 ]	(	0	)
+p	[ 0	locks=0 ]	(	0	0	0	)
+pr	[ 0	locks=0 ]	(	0	0	0	)
+parmgroup_prexform	[ 0	locks=0 ]	(	0	)
+prexform_xOrd	[ 0	locks=0 ]	(	"srt"	)
+prexform_rOrd	[ 0	locks=0 ]	(	"xyz"	)
+prexform_t	[ 0	locks=0 ]	(	0	0	0	)
+prexform_r	[ 0	locks=0 ]	(	0	0	0	)
+prexform_s	[ 0	locks=0 ]	(	1	1	1	)
+prexform_shear	[ 0	locks=0 ]	(	0	0	0	)
+movecentroid	[ 0	locks=0 ]	(	0	)
+movepivot	[ 0	locks=0 ]	(	0	)
+attribs	[ 0	locks=0 ]	(	*	)
+updatenmls	[ 0	locks=0 ]	(	"off"	)
+updateaffectednmls	[ 0	locks=0 ]	(	"on"	)
+vlength	[ 0	locks=0 ]	(	"on"	)
+invertxform	[ 0	locks=0 ]	(	"off"	)
+addattrib	[ 0	locks=0 ]	(	"off"	)
+outputattrib	[ 0	locks=0 ]	(	xform	)
+outputmerge	[ 0	locks=0 ]	(	"post"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam/xform1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam.order"
+Content-Type: text/plain
+
+3
+camOrigin
+file1
+xform1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objnet.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.order"
+Content-Type: text/plain
+
+6
+assignmaterial
+projection_maps
+project_uvs
+projection_material
+output0
+objnet
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

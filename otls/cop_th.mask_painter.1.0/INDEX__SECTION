@@ -1,0 +1,14 @@
+Operator:     th::mask_painter::1.0
+Label:        th mask painter
+Path:         oplib:/th::Cop/mask_painter::1.0?th::Cop/mask_painter::1.0
+Icon:         COP_th-mask_painter-1.0
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Mon Nov  3 10:49:45 2025
+

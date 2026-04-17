@@ -1,0 +1,32 @@
+import hou
+
+def walk(prim, predicate):
+    if not prim.IsActive(): return
+    for subprim in prim.GetChildren():
+        if predicate(subprim):
+            yield subprim
+            continue
+        for subsubprim in walk(subprim, predicate):
+            yield subsubprim
+
+def is_tagged(prim):
+    name = prim.GetName()
+    if not '_' in name: return False
+    tag = name.split('_', 1)[0]
+    return tag.isupper()
+
+def generate():
+    node = hou.pwd()
+    stage = node.stage()
+    root = stage.GetPseudoRoot()
+    lights_prim = root.GetPrimAtPath('/lights')
+    
+    tags = set()
+    for light_prim in walk(lights_prim, is_tagged):
+        tag = light_prim.GetName().split('_')[0]
+        tags.add(tag)
+    
+    node.parm("tags").set(len(tags))
+    for i, lpe in enumerate(tags):
+        node.parm(f"lpetag{i}").set(lpe)
+        node.parm(f"primpattern{i}").set(f"/lights/{lpe}_*")

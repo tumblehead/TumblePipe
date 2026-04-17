@@ -1,0 +1,15 @@
+Operator:     th::model_validator::1.0
+Label:        th model validator
+Path:         oplib:/th::Lop/model_validator::1.0?th::Lop/model_validator::1.0
+Icon:         opdef:/th::Lop/model_validator::1.0?IconSVG
+Table:        Lop
+License:      
+Extra:        visibleoutputs=0 
+User:         
+Inputs:       1 to 2
+Outputs:      0
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Tue Jul  1 10:24:31 2025
+

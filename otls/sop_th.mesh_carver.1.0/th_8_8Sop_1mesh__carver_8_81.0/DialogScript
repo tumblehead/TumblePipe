@@ -1,0 +1,1804 @@
+# Dialog script for th::mesh_carver::1.0 automatically generated
+
+{
+    name	th::mesh_carver::1.0
+    script	th::mesh_carver::1.0
+    label	"th mesh carver"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Sub-Network Input #1"
+    inputlabel	2	"Sub-Network Input #2"
+    inputlabel	3	"Sub-Network Input #3"
+    inputlabel	4	"Sub-Network Input #4"
+
+    import {
+        label   "Import Draw Parms"
+        source  "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve"
+        enable  1
+
+        group {
+            name    "folder4"
+            label   "Folder Name"
+            invisibletab
+
+            group {
+                name    "folder1"
+                label   "Curve"
+                grouptag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                grouptag { "import_token" "folder1:Curve" }
+
+                parm {
+                    name    "createwidthattrib"
+                    label   "Create Width Attribute"
+                    type    toggle
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "createwidthattrib" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_radius"
+                    label   "Radius"
+                    type    float
+                    default { "0.0451118" }
+                    range   { 0! 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "stroke_radius" }
+                }
+                parm {
+                    name    "stroke_tool"
+                    label   "Tool"
+                    type    integer
+                    default { "0" }
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "stroke_tool" }
+                }
+                parm {
+                    name    "createcolorattrib"
+                    label   "Create Color Attribute"
+                    type    toggle
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "createcolorattrib" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_color"
+                    label   "Color"
+                    type    color
+                    size    3
+                    default { "0.075" "0.3" "0.075" }
+                    disablewhen "{ createcolorattrib == 0 }"
+                    range   { 0 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "stroke_color" }
+                }
+                parm {
+                    name    "createstrokeattribs"
+                    label   "Create Stroke Attributes"
+                    type    toggle
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "createstrokeattribs" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_opacity"
+                    label   "Opacity"
+                    type    float
+                    default { "1.006" }
+                    disablewhen "{ createstrokeattribs == 0 }"
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "stroke_opacity" }
+                }
+            }
+
+            group {
+                name    "folder1_1"
+                label   "Projection"
+                grouptag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                grouptag { "import_token" "folder1:Projection" }
+
+                parm {
+                    name    "reprojection"
+                    label   "Live Reprojection"
+                    type    ordinal
+                    default { "ray" }
+                    menu {
+                        "none"      "None"
+                        "ray"       "Send Rays"
+                        "primuv"    "Use UVs"
+                    }
+                    range   { 0 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "reprojection" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "trimcurves"
+                    label   "Trim Curves"
+                    type    toggle
+                    default { "on" }
+                    range   { 0! 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "trimcurves" }
+                }
+                parm {
+                    name    "stroke_projtype"
+                    label   "Projection"
+                    type    ordinal
+                    default { "geometry" }
+                    menu {
+                        "xy"        "XY Plane"
+                        "yz"        "YZ Plane"
+                        "zx"        "ZX Plane"
+                        "screen"    "Screen Plane"
+                        "geometry"  "Geometry"
+                    }
+                    range   { 0 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "stroke_projtype" }
+                }
+                parm {
+                    name    "showguide"
+                    label   "Show Guide Geometry"
+                    type    toggle
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "showguide" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_projcenter"
+                    label   "Projection Center"
+                    type    vector
+                    size    3
+                    default { "0" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "stroke_projcenter" }
+                }
+            }
+
+            group {
+                name    "folder1_2"
+                label   "Stroke"
+                grouptag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                grouptag { "import_token" "folder1:Stroke" }
+
+                parm {
+                    name    "cachestrokes"
+                    label   "Cache Strokes"
+                    type    toggle
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "cachestrokes" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "strokegeo"
+                    label   "Cached Strokes"
+                    type    geometrydata
+                    invisible
+                    default { "0" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "strokegeo" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                groupcollapsible {
+                    name    "snapshot"
+                    label   "Snapshot"
+                    grouptag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    grouptag { "import_token" "snapshot:Snapshot" }
+
+                    parm {
+                        name    "stashfile"
+                        label   "Geometry File"
+                        type    geometry
+                        default { "" }
+                        parmtag { "autoscope" "0000000000000000" }
+                        parmtag { "filechooser_mode" "read_and_write" }
+                        parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                        parmtag { "import_token" "stashfile" }
+                    }
+                    parm {
+                        name    "movestashtofile"
+                        label   "Move Stash to New File"
+                        type    button
+                        joinnext
+                        default { "0" }
+                        disablewhen "{ stashfile == \"\" } { stashfile =~ Error: }"
+                        parmtag { "autoscope" "0000000000000000" }
+                        parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                        parmtag { "import_token" "movestashtofile" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "loadstashfromfile"
+                        label   "Load Stash from File"
+                        type    button
+                        default { "0" }
+                        disablewhen "{ stashfile == \"\" } { stashfile =~ Error: }"
+                        parmtag { "autoscope" "0000000000000000" }
+                        parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                        parmtag { "import_token" "loadstashfromfile" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                }
+
+                multiswitcher {
+                    name    "stroke_numstrokes"
+                    label    "Number of Strokes"
+                    default 1
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_carver/drawcurve" }
+                    parmtag { "import_token" "stroke_numstrokes" }
+                    parmtag { "multistartoffset" "1" }
+
+                    parm {
+                        name    "stroke#_enable"
+                        label   "Enable Stroke"
+                        type    toggle
+                        default { "1" }
+                        range   { 0 1 }
+                    }
+                    parm {
+                        name    "stroke#_radius"
+                        label   "Radius"
+                        type    float
+                        default { "0.1" }
+                        range   { 0! 1 }
+                    }
+                    parm {
+                        name    "stroke#_tool"
+                        label   "Tool"
+                        type    integer
+                        default { "0" }
+                        range   { 0 10 }
+                    }
+                    parm {
+                        name    "stroke#_color"
+                        label   "Color"
+                        type    color
+                        size    3
+                        default { "1" "1" "1" }
+                        range   { 0 1 }
+                    }
+                    parm {
+                        name    "stroke#_opacity"
+                        label   "Opacity"
+                        type    float
+                        default { "1" }
+                        range   { 0 10 }
+                    }
+                    parm {
+                        name    "stroke#_projtype"
+                        label   "Projection"
+                        type    integer
+                        default { "0" }
+                        range   { 0 10 }
+                    }
+                    parm {
+                        name    "stroke#_projcenter"
+                        label   "Projection Center"
+                        type    vector
+                        size    3
+                        default { "0" "0" "0" }
+                        range   { -1 1 }
+                    }
+                    parm {
+                        name    "stroke#_projdir"
+                        label   "Projection Direction"
+                        type    vector
+                        size    3
+                        default { "0" "0" "0" }
+                        range   { -1 1 }
+                    }
+                    parm {
+                        name    "stroke#_data"
+                        label   "Raw Data"
+                        type    string
+                        default { "0" }
+                        range   { 0 1 }
+                    }
+                }
+
+            }
+
+        }
+
+    }
+
+    import {
+        label   "Import Curve Edit Parms"
+        source  "op:edit_curve"
+        enable  1
+
+        parm {
+            name    "interpmethod"
+            label   "Auto-Point Interpolation Method"
+            type    ordinal
+            invisible
+            default { "smoothcurvature" }
+            hidewhen "{ outputtype != bezier }"
+            menu {
+                "smoothcurvature"   "Smooth Curvature"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "import_source" "op:edit_curve" }
+            parmtag { "import_token" "interpmethod" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "enablebezierops"
+            label   "Enable Bezier Operations"
+            type    toggle
+            invisible
+            default { "off" }
+            hidewhen "{ convertcurves == 1 }"
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "import_source" "op:edit_curve" }
+            parmtag { "import_token" "enablebezierops" }
+            parmtag { "script_callback_language" "python" }
+        }
+        group {
+            name    "folder2"
+            label   "Folder Name"
+            invisibletab
+            tabbreak
+
+            parm {
+                name    "group"
+                label   "Group"
+                type    string
+                default { "" }
+                menutoggle {
+                    [ "opmenu -l -a edit_curve group" ]
+                }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "group" }
+                parmtag { "script_action" "import soputils\nkwargs['geometrytype'] = hou.geometryType.Primitives\nkwargs['inputindex'] = 0\nsoputils.selectGroupParm(kwargs)" }
+                parmtag { "script_action_help" "Select geometry from an available viewport.\nShift-click to turn on Select Groups." }
+                parmtag { "script_action_icon" "BUTTONS_reselect" }
+            }
+            parm {
+                name    "sepparm"
+                label   "Separator"
+                type    separator
+                default { "" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "sepparm3" }
+            }
+            parm {
+                name    "outputtype"
+                label   "Primitive Type"
+                type    ordinal
+                default { "polygon" }
+                menu {
+                    "polygon"   "Polygon"
+                    "nurbs"     "NURBS Curve"
+                    "bezier"    "Bezier Curve"
+                }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "outputtype" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "order"
+                label   "Order"
+                type    integer
+                default { "4" }
+                hidewhen "{ outputtype != bezier outputtype != nurbs }"
+                range   { 2! 8 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "order" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "convertcurves"
+                label   "Reinterpret Curves as Current Type and Order"
+                type    toggle
+                default { "off" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "convertcurves" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "sepparm2"
+                label   "Separator"
+                type    separator
+                default { "" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "sepparm" }
+            }
+            parm {
+                name    "mode"
+                label   "Mode"
+                type    iconstrip
+                default { "0" }
+                menureplace {
+                    "BUTTONS_curve_mode_select" "Select/Edit Mode"
+                    "BUTTONS_curve_mode_draw"   "Draw Mode"
+                    "BUTTONS_curve_mode_auto"   "Auto-Bezier Draw Mode"
+                    "SOP_twist"                 "Orient Mode"
+                }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "mode" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "operations"
+                label   "Topology Operations"
+                type    label
+                joinnext
+                default { "" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "operations" }
+            }
+            parm {
+                name    "delete"
+                label   "Delete Selected Points"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_point_delete" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "delete" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "fuse"
+                label   "Join Selected Points"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_point_join" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "fuse" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "cut"
+                label   "Cut Curves at Selected Points"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_point_split" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "cut" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "join"
+                label   "Add Segment Between Selected Endpoints"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_segment_join" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "join" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "deleteseg"
+                label   "Delete Segments Between Selected Points"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_segment_delete" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "deleteseg" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "fusebranch"
+                label   "Fuse Branch"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "SOP_fuse" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "fusebranch" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "splitbranch"
+                label   "Split Branch"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "SOP_splitpoints" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "splitbranch" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "close"
+                label   "Close Selected Curves"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_close" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "close" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "createroundedcorners"
+                label   "Create Rounded Corners"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                disablewhen "{ enablebezierops == 0 convertcurves == 0 }"
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_rounded" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "createroundedcorners" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "removeroundedcorners"
+                label   "Remove Rounded Corners"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                disablewhen "{ enablebezierops == 0 convertcurves == 0 }"
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_unrounded" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "removeroundedcorners" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "reverse"
+                label   "Reverse"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "SOP_reverse" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "reverse" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "sepparm3"
+                label   "Spacer"
+                type    separator
+                default { "" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "sepparm6" }
+                parmtag { "sidefx::layout_height" "small" }
+                parmtag { "sidefx::look" "blank" }
+            }
+            parm {
+                name    "pointoperations"
+                label   "Tangent Operations"
+                type    label
+                joinnext
+                default { "" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "pointoperations" }
+            }
+            parm {
+                name    "makecorner"
+                label   "Make Selected Points Corner"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                disablewhen "{ enablebezierops == 0 convertcurves == 0 }"
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_type_corner" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "makecorner" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "makesmooth"
+                label   "Make Selected Points Smooth"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                disablewhen "{ enablebezierops == 0 convertcurves == 0 }"
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_type_smooth" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "makesmooth" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "makebalanced"
+                label   "Make Selected Points Balanced"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                disablewhen "{ enablebezierops == 0 convertcurves == 0 }"
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_type_balanced" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "makebalanced" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "contract"
+                label   "Retract Tangents at Selected Points"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                disablewhen "{ enablebezierops == 0 convertcurves == 0 }"
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_tangents_retract" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "contract" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "expand"
+                label   "Expand Tangents at Selected Points"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                disablewhen "{ enablebezierops == 0 convertcurves == 0 }"
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_tangents_expand" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "expand" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "straightenseg"
+                label   "Make Segments Between Selected Points Straight"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                disablewhen "{ enablebezierops == 0 convertcurves == 0 }"
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 3 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_segment_makestraight" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "straightenseg" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "makeauto"
+                label   "Make Selected Points Auto"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                disablewhen "{ enablebezierops == 0 convertcurves == 0 }"
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_pointmode_auto" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "makeauto" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "makemanual"
+                label   "Make Selected Points Manual"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                disablewhen "{ enablebezierops == 0 convertcurves == 0 }"
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "button_icon" "BUTTONS_curve_pointmode_normal" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "makemanual" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "sepparm4"
+                label   "Spacer"
+                type    separator
+                default { "" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "sepparm4" }
+                parmtag { "sidefx::layout_height" "small" }
+                parmtag { "sidefx::look" "blank" }
+            }
+            parm {
+                name    "sepparm5"
+                label   "Spacer"
+                type    separator
+                default { "" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "sepparm5" }
+                parmtag { "sidefx::layout_height" "small" }
+                parmtag { "sidefx::look" "blank" }
+            }
+            parm {
+                name    "reset"
+                label   "Reset Operations"
+                type    button
+                joinnext
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "reset" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "recache"
+                label   "Recache Curves"
+                type    button
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "recache" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "updatefrominput"
+                label   "Update Curves from Input"
+                type    toggle
+                default { "on" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "updatefrominput" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "snaponclose"
+                label   "Snap Tangents when Fusing Ends in Draw Mode"
+                type    toggle
+                default { "on" }
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "snaponclose" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "maintainpoint"
+                label   "Approximate Shape on Delete"
+                type    toggle
+                default { "off" }
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order != 4 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "maintainpoint" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "approxendtangents"
+                label   "Approximate End Tangents"
+                type    toggle
+                default { "off" }
+                disablewhen "{ maintainpoint == 0 }"
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order != 4 convertcurves == 1 }"
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "approxendtangents" }
+                parmtag { "script_callback_language" "python" }
+            }
+            groupsimple {
+                name    "caching"
+                label   "Caching"
+                grouptag { "import_source" "op:edit_curve" }
+                grouptag { "import_token" "caching:Caching" }
+                grouptag { "sidefx::switcher" "caching" }
+
+                parm {
+                    name    "stashgeo"
+                    label   "Stashed Geometry"
+                    type    data
+                    invisible
+                    default { "0" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "stashgeo" }
+                    parmtag { "script_callback_language" "python" }
+                    parmtag { "sidefx::save_value" "0" }
+                }
+                parm {
+                    name    "savedstashgeo"
+                    label   "Saved Stashed Geometry"
+                    type    data
+                    invisible
+                    default { "0" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "savedstashgeo" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "parmpoints"
+                    label   "Parm Points"
+                    type    data
+                    invisible
+                    default { "0" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "parmpoints" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stashid"
+                    label   "Stash Id"
+                    type    string
+                    invisible
+                    default { "-1756940494 -625887518 0 207465 0 3;" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "stashid" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "ninputprimscached"
+                    label   "Num Input Prims Cached"
+                    type    integer
+                    invisible
+                    default { "9" }
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "ninputprimscached" }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+            parm {
+                name    "softtransform"
+                label   "Enable Soft Transform"
+                type    toggle
+                nolabel
+                joinnext
+                default { "on" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "softtransform" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "softtransformrad"
+                label   "Soft Transform Radius"
+                type    float
+                default { "0.2" }
+                disablewhen "{ softtransform == 0 }"
+                range   { 0! 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:edit_curve" }
+                parmtag { "import_token" "softtransformrad" }
+                parmtag { "script_callback_language" "python" }
+            }
+            groupcollapsible {
+                name    "output"
+                label   "Output"
+                grouptag { "import_source" "op:edit_curve" }
+                grouptag { "import_token" "output:Output" }
+                grouptag { "sidefx::switcher" "output" }
+
+                parm {
+                    name    "outputcornerpts"
+                    label   "Output Corner Points"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "outputcornerpts" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "cornerptsgroup"
+                    label   "Corner Points Group"
+                    type    string
+                    default { "corner_points" }
+                    disablewhen "{ outputcornerpts == 0 }"
+                    hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "cornerptsgroup" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "outputsmoothpts"
+                    label   "Output Smooth Points"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "outputsmoothpts" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "smoothptsgroup"
+                    label   "Smooth Points Group"
+                    type    string
+                    default { "smooth_points" }
+                    disablewhen "{ outputsmoothpts == 0 }"
+                    hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "smoothptsgroup" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "outputautopts"
+                    label   "Output Auto Points"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "outputautopts" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "autoptsgroup"
+                    label   "Auto Points Group"
+                    type    string
+                    default { "auto_points" }
+                    disablewhen "{ outputautopts == 0 }"
+                    hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "autoptsgroup" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "outputname"
+                    label   "Output Name"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "outputname" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "name"
+                    label   "Name"
+                    type    string
+                    default { "$OS" }
+                    disablewhen "{ outputname == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "name" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "nameattrib"
+                    label   "Name Attrib"
+                    type    string
+                    invisible
+                    default { "name" }
+                    disablewhen "{ outputname == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "nameattrib" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "outputxaxis"
+                    label   "Output X Axis"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "outputxaxis" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "xaxisname"
+                    label   "X Axis"
+                    type    string
+                    default { "out" }
+                    disablewhen "{ outputxaxis == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "xaxisname" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "outputyaxis"
+                    label   "Output Y Axis"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "outputyaxis" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "yaxisname"
+                    label   "Y Axis"
+                    type    string
+                    default { "up" }
+                    disablewhen "{ outputyaxis == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "yaxisname" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "outputzaxis"
+                    label   "Output Z Axis"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "outputzaxis" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "zaxisname"
+                    label   "Z Axis"
+                    type    string
+                    default { "tangent" }
+                    disablewhen "{ outputzaxis == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "zaxisname" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "outputorient"
+                    label   "Output Orient Attribute"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "outputorient" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "orientname"
+                    label   "Orient"
+                    type    string
+                    default { "orient" }
+                    disablewhen "{ outputorient == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "orientname" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "tangenttype"
+                    label   "Tangent Type"
+                    type    ordinal
+                    default { "avgdir" }
+                    hidewhen "{ outputorient == 0 outputxaxis == 0 outputyaxis == 0 outputzaxis == 0 }"
+                    menu {
+                        "avgdir"    "Average of Edge Directions"
+                        "diff"      "Central Difference"
+                        "prev"      "Previous Edge"
+                        "next"      "Next Edge"
+                        "none"      "Z Axis (Ignore Curve)"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "tangenttype" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "aligntangent"
+                    label   "Align with Curve Tangent"
+                    type    toggle
+                    default { "on" }
+                    hidewhen "{ outputorient == 0 outputxaxis == 0 outputyaxis == 0 outputzaxis == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "aligntangent" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                multiparm {
+                    name    "targetorients"
+                    label    "Target Orientations"
+                    default 0
+                    hidewhen "{ outputorient == 0 outputxaxis == 0 outputyaxis == 0 outputzaxis == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "targetorients" }
+                    parmtag { "multistartoffset" "0" }
+
+                    parm {
+                        name    "enabletargetpt#"
+                        label   "Enable Target Orientation"
+                        type    toggle
+                        nolabel
+                        joinnext
+                        default { "1" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "targetptnum#"
+                        label   "Point"
+                        type    integer
+                        default { "0" }
+                        disablewhen "{ enabletargetpt# == 0 }"
+                        range   { 0! 10 }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "targetup#"
+                        label   "Up"
+                        type    vector
+                        size    3
+                        default { "0" "1" "0" }
+                        disablewhen "{ enabletargetpt# == 0 }"
+                        range   { -1 1 }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "targettangent#"
+                        label   "Tangent"
+                        type    vector
+                        size    3
+                        default { "0" "0" "1" }
+                        disablewhen "{ enabletargetpt# == 0 }"
+                        hidewhen "{ aligntangent == 1 }"
+                        range   { -1 1 }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                }
+
+            }
+
+            groupcollapsible {
+                name    "curoperation"
+                label   "Current Operation"
+                grouptag { "import_source" "op:edit_curve" }
+                grouptag { "import_token" "curoperation:Current Operation" }
+                grouptag { "sidefx::switcher" "curoperation" }
+
+                parm {
+                    name    "optype"
+                    label   "Operation"
+                    type    ordinal
+                    invisible
+                    default { "transform" }
+                    menu {
+                        "appendpoint"           "Append Point"
+                        "balance"               "Balance"
+                        "close"                 "Close"
+                        "contract"              "Contract"
+                        "corner"                "Corner"
+                        "cut"                   "Cut"
+                        "delete"                "Delete"
+                        "expand"                "Expand"
+                        "fuse"                  "Fuse"
+                        "insert"                "Insert"
+                        "join"                  "Join"
+                        "prependpoint"          "Prepend Point"
+                        "pull"                  "Pull"
+                        "segmentcontract"       "Segment Contract"
+                        "segmentdelete"         "Segment Delete"
+                        "smooth"                "Smooth"
+                        "transform"             "Point Transform"
+                        "reverse"               "Reverse"
+                        "bezierhandlemove"      "Bezier Handle Move"
+                        "bakeroundcorners"      "Bake Round Corners"
+                        "roundcornersradius"    "Round Corners Radius"
+                        "roundcornerssplit"     "Round Corners Split"
+                        "roundcornersfuse"      "Round Corners Fuse"
+                        "evenlyspace"           "Evenly Space"
+                        "straightenselection"   "Straighten Selection"
+                        "spaceoncircle"         "Space on Circle"
+                        "flatten"               "Flatten"
+                        "relaxselection"        "Relax Selection"
+                        "nop"                   "No OP"
+                        "auto"                  "Auto"
+                        "manual"                "Manual"
+                        "convert"               "Convert"
+                        "paste"                 "Paste"
+                        "cutbranch"             "Cut Branch"
+                        "fusebranch"            "Fuse Branch"
+                        "convertthroughhulls"   "Convert through Hulls"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "optype" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "activepoints"
+                    label   "Active Points"
+                    type    string
+                    default { "" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "activepoints" }
+                    parmtag { "script_action_help" "Select geometry from an available viewport.\nShift-click to turn on Select Groups." }
+                    parmtag { "script_action_icon" "BUTTONS_reselect" }
+                }
+                parm {
+                    name    "translate"
+                    label   "Translate"
+                    type    vector
+                    size    3
+                    default { "0" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "translate" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "rotate"
+                    label   "Rotate"
+                    type    vector
+                    size    3
+                    default { "0" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "rotate" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "scale"
+                    label   "Scale"
+                    type    vector
+                    size    3
+                    default { "1" "1" "1" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "scale" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "addpts"
+                    label   "Operation Data"
+                    type    string
+                    invisible
+                    default { "" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "addpts" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "activeprim"
+                    label   "Active Prim"
+                    type    integer
+                    invisible
+                    default { "0" }
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "activeprim" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "cornerpts"
+                    label   "Corner Points"
+                    type    string
+                    default { "" }
+                    hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                    menutoggle {
+                        [ "opmenu -l -a edit_curve cornerpts" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "cornerpts" }
+                    parmtag { "script_action" "import soputils\nkwargs['geometrytype'] = hou.geometryType.Points\nkwargs['nodepath'] = '.'\nsoputils.selectGroupParm(kwargs)" }
+                    parmtag { "script_action_help" "Select geometry from an available viewport. Shift-click to turn on Select Groups." }
+                    parmtag { "script_action_icon" "BUTTONS_reselect" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "smoothpts"
+                    label   "Smooth Points"
+                    type    string
+                    default { "*" }
+                    hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                    menutoggle {
+                        [ "opmenu -l -a edit_curve smoothpts" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "smoothpts" }
+                    parmtag { "script_action" "import soputils\nkwargs['geometrytype'] = hou.geometryType.Points\nkwargs['nodepath'] = '.'\nsoputils.selectGroupParm(kwargs)" }
+                    parmtag { "script_action_help" "Select geometry from an available viewport. Shift-click to turn on Select Groups." }
+                    parmtag { "script_action_icon" "BUTTONS_reselect" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "autopts"
+                    label   "Auto Points"
+                    type    string
+                    default { "" }
+                    hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                    menutoggle {
+                        [ "opmenu -l -a edit_curve autopts" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "autopts" }
+                    parmtag { "script_action" "import soputils\nkwargs['geometrytype'] = hou.geometryType.Points\nkwargs['nodepath'] = '.'\nsoputils.selectGroupParm(kwargs)" }
+                    parmtag { "script_action_help" "Select geometry from an available viewport. Shift-click to turn on Select Groups." }
+                    parmtag { "script_action_icon" "BUTTONS_reselect" }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+            groupcollapsible {
+                name    "pivottransformfolder"
+                label   "Pivot Transform"
+                grouptag { "import_source" "op:edit_curve" }
+                grouptag { "import_token" "pivottransformfolder:Pivot Transform" }
+                grouptag { "sidefx::switcher" "pivottransformfolder" }
+
+                parm {
+                    name    "pivottranslate"
+                    label   "Pivot Translate"
+                    type    vector
+                    size    3
+                    default { "0" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "pivottranslate" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "pivotrotate"
+                    label   "Pivot Rotate"
+                    type    vector
+                    size    3
+                    default { "0" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "pivotrotate" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "pivotfixed"
+                    label   "Fixed Pivot"
+                    type    toggle
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "pivotfixed" }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+            groupcollapsible {
+                name    "roundedcornersfolder"
+                label   "Rounded Corners"
+                hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                grouptag { "import_source" "op:edit_curve" }
+                grouptag { "import_token" "roundedcornersfolder:Rounded Corners" }
+                grouptag { "sidefx::switcher" "roundedcornersfolder" }
+
+                parm {
+                    name    "viewroundcorners"
+                    label   "View Rounded Corners"
+                    type    toggle
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "viewroundcorners" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "roundcornerpts"
+                    label   "Round Corner Points"
+                    type    string
+                    default { "" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "roundcornerpts" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "roundcornerradius"
+                    label   "Round Corner Radius"
+                    type    float
+                    default { "0" }
+                    disablewhen "{ mode != 0 } { enablebezierops == 0 convertcurves == 0 }"
+                    hidewhen "{ outputtype != bezier convertcurves == 1 } { order < 4 convertcurves == 1 }"
+                    range   { 0! 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "roundcornerradius" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "bakeroundcorners"
+                    label   "Bake Selected Rounded Corners"
+                    type    button
+                    default { "0" }
+                    disablewhen "{ enablebezierops == 0 convertcurves == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "bakeroundcorners" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "showroundcornerwidget"
+                    label   "Show Rounded Corner Widget"
+                    type    toggle
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "showroundcornerwidget" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "showroundcornerlabels"
+                    label   "Show Rounded Corner Labels"
+                    type    toggle
+                    default { "on" }
+                    disablewhen "{ showroundcornerwidget == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "showroundcornerlabels" }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+            groupcollapsible {
+                name    "editedgeops"
+                label   "Edit Edge Operations"
+                grouptag { "import_source" "op:edit_curve" }
+                grouptag { "import_token" "editedgeops:Edit Edge Operations" }
+                grouptag { "sidefx::switcher" "editedgeops" }
+
+                parm {
+                    name    "planeorig"
+                    label   "Plane Origin"
+                    type    vector
+                    invisible
+                    size    3
+                    default { "0" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "planeorig" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "planenml"
+                    label   "Plane Normal"
+                    type    vector
+                    invisible
+                    size    3
+                    default { "0" "1" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "planenml" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "constrainstraighten"
+                    label   "Constrain Straighten to Plane"
+                    type    toggle
+                    invisible
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "constrainstraighten" }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+            groupcollapsible {
+                name    "handleparmsfolder"
+                label   "Handle Parms"
+                hidewhen "{ outputtype != bezier }"
+                grouptag { "import_source" "op:edit_curve" }
+                grouptag { "import_token" "handleparmsfolder:Handle Parms" }
+                grouptag { "sidefx::switcher" "handleparmsfolder" }
+
+                parm {
+                    name    "handlepts"
+                    label   "pts"
+                    type    intvector
+                    invisible
+                    size    3
+                    default { "-1" "-1" "-1" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "handlepts" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "handlep0pos"
+                    label   "P0 Pos"
+                    type    vector
+                    invisible
+                    size    3
+                    default { "-1" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "handlep0pos" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "handlep1pos"
+                    label   "P1 Pos"
+                    type    vector
+                    invisible
+                    size    3
+                    default { "0" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "handlep1pos" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "handlep2pos"
+                    label   "P2 Pos"
+                    type    vector
+                    invisible
+                    size    3
+                    default { "1" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:edit_curve" }
+                    parmtag { "import_token" "handlep2pos" }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+        }
+
+    }
+
+    groupsimple {
+        name    "folder0"
+        label   "Mesh"
+
+        parm {
+            name    "carve_group"
+            label   "Carve Group"
+            type    string
+            default { "" }
+            menutoggle {
+                [ "opmenu -l -a splitmesh group" ]
+            }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_action" "import soputils\nkwargs['geometrytype'] = kwargs['node'].parmTuple('grouptype')\nkwargs['inputindex'] = 0\nsoputils.selectGroupParm(kwargs)" }
+            parmtag { "script_action_help" "Select geometry from an available viewport." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+        }
+        parm {
+            name    "grouptype"
+            label   "Group Type"
+            type    ordinal
+            invisible
+            default { "prims" }
+            menu {
+                "guess"         "Guess from Group"
+                "breakpoints"   "Breakpoints"
+                "edges"         "Edges"
+                "points"        "Points"
+                "prims"         "Primitives"
+            }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "negate"
+            label   "Invert Selection"
+            type    toggle
+            default { "off" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "visualize_mesh"
+            label   "Show Guide Mesh"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "subdivide"
+            label   "Subdivide Carved Mesh"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "iterations"
+            label   "Mesh Subdivisions"
+            type    integer
+            default { "1" }
+            hidewhen "{ subdivide != 1 }"
+            range   { 1! 3 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "folder3"
+        label   "Carve"
+
+        parm {
+            name    "erasestrokes"
+            label   "Clear Stroke History"
+            type    button
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback" "hou.pwd().node(\"drawcurve\").parm(\"stroke_numstrokes\").set(0)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "surfaceshape"
+            label   "Carve Shape"
+            type    ordinal
+            default { "tube" }
+            menu {
+                "input"     "Second Input Cross Sections"
+                "tube"      "Round Tube"
+                "square"    "Square Tube"
+                "ribbon"    "Ribbon"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "length"
+            label   "Carve Resolution"
+            type    float
+            default { "0.05" }
+            range   { 0! 0.2 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "units" "m1" }
+        }
+        parm {
+            name    "radius"
+            label   "Carve Radius"
+            type    float
+            default { "1" }
+            range   { 0.01 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "units" "m1" }
+        }
+        parm {
+            name    "cols"
+            label   "Carve Column"
+            type    integer
+            default { "5" }
+            disablewhen "{ surfaceshape == input }"
+            hidewhen "{ surfaceshape == input }"
+            range   { 1! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "carve_depth"
+            label   "Carve Depth"
+            type    float
+            default { "0.5" }
+            range   { 0.1 1 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "triangulate"
+            label   "Triangulate Carved Faces"
+            type    toggle
+            default { "1" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "visualisze_strokes"
+            label   "Visualize Strokes"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "edit_curve"
+            label   "Edit Curve"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.ui.paneTabOfType(hou.paneTabType.SceneViewer).setCurrentState(\"curve::2.0\")" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    parm {
+        name    "shadow"
+        label   "Carve Shadow"
+        type    float
+        default { "0.5" }
+        range   { 0! 1 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "blur_itr"
+        label   "Blurring Iterations"
+        type    integer
+        default { "2" }
+        range   { 0 100 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

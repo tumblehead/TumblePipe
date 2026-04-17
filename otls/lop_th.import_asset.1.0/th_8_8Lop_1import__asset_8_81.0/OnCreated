@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini.lops import import_asset
+
+import_asset.on_created(kwargs['node'])

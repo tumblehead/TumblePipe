@@ -1,0 +1,14 @@
+Operator:     th::th_a_b_slider::1.0
+Label:        th a b slide
+Path:         oplib:/th::Cop/th_a_b_slider::1.0?th::Cop/th_a_b_slider::1.0
+Icon:         COP_th-th_a_b_slider-1.0
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 2
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Thu Jun 12 09:48:41 2025
+

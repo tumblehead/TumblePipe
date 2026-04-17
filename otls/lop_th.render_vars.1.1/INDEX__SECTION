@@ -1,0 +1,14 @@
+Operator:     th::render_vars::1.1
+Label:        th render vars
+Path:         oplib:/th::Lop/render_vars::1.1?th::Lop/render_vars::1.1
+Icon:         W:\_pipeline\pipeline\houdini\Tumblehead\resources/BuildComp.png
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Mon Dec 22 13:23:03 2025
+

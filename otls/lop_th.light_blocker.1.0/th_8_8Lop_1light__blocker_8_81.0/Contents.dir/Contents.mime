@@ -1,0 +1,3694 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Lop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::light_blocker::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+comment ""
+position -2.76263 3.46459
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2304@TH2404
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"PrismPath":{
+		"type":"string",
+		"value":"/stage/Lightblocker3"
+	},
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.inp"
+Content-Type: text/plain
+
+1
+0 1.1175870867630167e-08 8.5448451579832252 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1.init"
+Content-Type: text/plain
+
+type = sopcreate
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1.def"
+Content-Type: text/plain
+
+comment ""
+position 6.93889e-18 7.03909
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2403@TH2403
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1.chn"
+Content-Type: text/plain
+
+{
+    channel pathprefix {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"/$OS\"
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = chs(\"../path\") }
+    }
+    channel tx {
+      lefttype = extend
+      righttype = extend
+      default = 4.0540332794189453
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 4.0540332794189453 4.0540332794189453 expr = ch(\"../tx\") }
+    }
+    channel ty {
+      lefttype = extend
+      righttype = extend
+      default = 3.9258365631103516
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 3.9258365631103516 3.9258365631103516 expr = ch(\"../ty\") }
+    }
+    channel tz {
+      lefttype = extend
+      righttype = extend
+      default = 7.1870031356811523
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 7.1870031356811523 7.1870031356811523 expr = ch(\"../tz\") }
+    }
+    channel rx {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../rx\") }
+    }
+    channel ry {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../ry\") }
+    }
+    channel rz {
+      lefttype = extend
+      righttype = extend
+      default = -79.639778272869904
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = -79.639778272869904 -79.639778272869904 expr = ch(\"../rz\") }
+    }
+    channel sx {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../sx\") }
+    }
+    channel sy {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../sy\") }
+    }
+    channel sz {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../sz\") }
+    }
+    channel shear1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../shear1\") }
+    }
+    channel shear2 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../shear2\") }
+    }
+    channel shear3 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../shear3\") }
+    }
+    channel px {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../px\") }
+    }
+    channel py {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../py\") }
+    }
+    channel pz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../pz\") }
+    }
+    channel prx {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../prx\") }
+    }
+    channel pry {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../pry\") }
+    }
+    channel prz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../prz\") }
+    }
+    channel scale {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../scale\") }
+    }
+    channel xOrd {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../xOrd\") }
+    }
+    channel rOrd {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../rOrd\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+asreference	[ 0	locks=0 ]	(	"off"	)
+copycontents	[ 0	locks=0 ]	(	"on"	)
+adjustxformsforinput	[ 0	locks=0 ]	(	"on"	)
+bindmaterials	[ 0	locks=0 ]	(	nobind	)
+reftype	[ 0	locks=0 ]	(	payloadweak	)
+refprim	[ 0	locks=0 ]	(	""	)
+refprimpath	[ 0	locks=0 ]	(	""	)
+primpath	[ 0	locks=0 ]	(	/$OS	)
+instanceable	[ 0	locks=0 ]	(	"off"	)
+parentprimkind	[ 0	locks=0 ]	(	group	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
+showlopstage	[ 0	locks=0 ]	(	"`opinputpath(\".\", 0)`"	)
+sepparm	[ 0	locks=0 ]	(	)
+enable_group	[ 0	locks=0 ]	(	"off"	)
+group	[ 0	locks=0 ]	(	""	)
+enable_grouptype	[ 0	locks=0 ]	(	"off"	)
+grouptype	[ 0	locks=0 ]	(	primitive	)
+enable_pathprefix	[ 0	locks=0 ]	(	"on"	)
+pathprefix	[ 0	locks=0 ]	(	[ pathprefix	/$OS ] 	)
+enable_savepath	[ 0	locks=0 ]	(	"off"	)
+savepath	[ 0	locks=0 ]	(	""	)
+sepparm2	[ 0	locks=0 ]	(	)
+folder1	[ 0	locks=0 ]	(	0	0	0	)
+xOrd	[ 0	locks=0 ]	(	[ xOrd	0 ] 	)
+rOrd	[ 0	locks=0 ]	(	[ rOrd	0 ] 	)
+t	[ 0	locks=0 ]	(	[ tx	0 ] 	[ ty	0 ] 	[ tz	0 ] 	)
+r	[ 0	locks=0 ]	(	[ rx	0 ] 	[ ry	0 ] 	[ rz	0 ] 	)
+s	[ 0	locks=0 ]	(	[ sx	1 ] 	[ sy	1 ] 	[ sz	1 ] 	)
+shear	[ 0	locks=0 ]	(	[ shear1	0 ] 	[ shear2	0 ] 	[ shear3	0 ] 	)
+scale	[ 0	locks=0 ]	(	[ scale	1 ] 	)
+parmgroup_pivotxform	[ 0	locks=0 ]	(	0	)
+p	[ 0	locks=0 ]	(	[ px	0 ] 	[ py	0 ] 	[ pz	0 ] 	)
+pr	[ 0	locks=0 ]	(	[ prx	0 ] 	[ pry	0 ] 	[ prz	0 ] 	)
+primitivedefinitiongroup	[ 0	locks=0 ]	(	0	)
+enable_packedusdhandling	[ 0	locks=0 ]	(	"off"	)
+packedusdhandling	[ 0	locks=0 ]	(	xformandattribs	)
+enable_otherprimhandling	[ 0	locks=0 ]	(	"off"	)
+otherprimhandling	[ 0	locks=0 ]	(	define	)
+enable_defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
+defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
+enable_packedhandling	[ 0	locks=0 ]	(	"off"	)
+packedhandling	[ 0	locks=0 ]	(	nativeinstances	)
+enable_nurbscurvehandling	[ 0	locks=0 ]	(	"off"	)
+nurbscurvehandling	[ 0	locks=0 ]	(	basiscurves	)
+enable_nurbssurfhandling	[ 0	locks=0 ]	(	"off"	)
+nurbssurfhandling	[ 0	locks=0 ]	(	meshes	)
+enable_kindschema	[ 0	locks=0 ]	(	"off"	)
+kindschema	[ 0	locks=0 ]	(	component	)
+enable_pathattr	[ 0	locks=0 ]	(	"off"	)
+pathattr	[ 0	locks=0 ]	(	path,name	)
+enable_prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
+prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
+enable_heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
+heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
+geometryhandlinggroup	[ 0	locks=0 ]	(	0	)
+enable_polygonsassubd	[ 0	locks=0 ]	(	"off"	)
+polygonsassubd	[ 0	locks=0 ]	(	"off"	)
+enable_subdgroup	[ 0	locks=0 ]	(	"off"	)
+subdgroup	[ 0	locks=0 ]	(	""	)
+enable_reversepolygons	[ 0	locks=0 ]	(	"off"	)
+reversepolygons	[ 0	locks=0 ]	(	"off"	)
+enable_setmissingwidths	[ 0	locks=0 ]	(	"off"	)
+setmissingwidths	[ 0	locks=0 ]	(	0.01	)
+importdatagroup	[ 0	locks=0 ]	(	0	)
+authortimesamples	[ 0	locks=0 ]	(	auto	)
+enable_setdefaultprim	[ 0	locks=0 ]	(	"off"	)
+setdefaultprim	[ 0	locks=0 ]	(	"on"	)
+enable_topologyhandling	[ 0	locks=0 ]	(	"off"	)
+topologyhandling	[ 0	locks=0 ]	(	animated	)
+enable_attribs	[ 0	locks=0 ]	(	"off"	)
+attribs	[ 0	locks=0 ]	(	"* ^__* ^usd*"	)
+enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
+indexattribs	[ 0	locks=0 ]	(	""	)
+enable_constantattribs	[ 0	locks=0 ]	(	"off"	)
+constantattribs	[ 0	locks=0 ]	(	""	)
+enable_scalarconstantattribs	[ 0	locks=0 ]	(	"off"	)
+scalarconstantattribs	[ 0	locks=0 ]	(	""	)
+enable_boolattribs	[ 0	locks=0 ]	(	"off"	)
+boolattribs	[ 0	locks=0 ]	(	""	)
+enable_staticattribs	[ 0	locks=0 ]	(	"off"	)
+staticattribs	[ 0	locks=0 ]	(	""	)
+enable_partitionattribs	[ 0	locks=0 ]	(	"on"	)
+partitionattribs	[ 0	locks=0 ]	(	shop_materialpath	)
+enable_prefixpartitionsubsets	[ 0	locks=0 ]	(	"off"	)
+prefixpartitionsubsets	[ 0	locks=0 ]	(	"on"	)
+enable_subsetgroups	[ 0	locks=0 ]	(	"off"	)
+subsetgroups	[ 0	locks=0 ]	(	""	)
+enable_customattribs	[ 0	locks=0 ]	(	"off"	)
+customattribs	[ 0	locks=0 ]	(	""	)
+enable_translateuvtost	[ 0	locks=0 ]	(	"off"	)
+translateuvtost	[ 0	locks=0 ]	(	"on"	)
+materialsgroup	[ 0	locks=0 ]	(	0	)
+fillmaterials	[ 0	locks=0 ]	(	0	)
+materials	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1.init"
+Content-Type: text/plain
+
+type = materiallibrary
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1.def"
+Content-Type: text/plain
+
+comment ""
+position 0 5.94155
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	grid1 1 1 "input1"
+}
+inputs
+{
+0 	grid1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2403@TH2403
+  access 0777
+}
+color UT_Color RGB 0.55 0.7 0.75 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1.spareparmdef"
+Content-Type: text/plain
+
+    parm {
+        name    "genpreviewshaders"
+        baseparm
+        label   "Auto-generate Preview Surface Shaders"
+        export  none
+    }
+    parm {
+        name    "allowparmanim"
+        baseparm
+        label   "Allow Shader Parameter Animation"
+        export  none
+    }
+    parm {
+        name    "referencerendervars"
+        baseparm
+        label   "Reference Material Render Vars into Render Products"
+        export  none
+    }
+    parm {
+        name    "parentprimtype"
+        baseparm
+        label   "Parent Primitive Type"
+        export  none
+    }
+    parm {
+        name    "matpathprefix"
+        baseparm
+        label   "Material Path Prefix"
+        export  none
+    }
+    groupcollapsible {
+        name    "tabmenufolder"
+        label   "Tab Menu"
+
+        parm {
+            name    "tabmenumask"
+            label   "Tab Menu Mask"
+            type    string
+            default { "*builder parameter constant rampparm collect null subnet subnetconnector suboutput subinput genericshader" }
+            parmtag { "spare_category" "Tab Menu" }
+        }
+    }
+
+    parm {
+        name    "geometrygroup"
+        baseparm
+        label   "geometrygroup"
+        export  none
+    }
+    groupcollapsible {
+        name    "fillgroup2"
+        label   "Fill"
+        grouptag { "group_type" "collapsible" }
+        parmtag { "sidefx::header_parm" "fillmaterials" }
+
+        parm {
+            name    "matnet"
+            baseparm
+            label   "Material Network"
+            export  none
+        }
+        parm {
+            name    "containerpath"
+            baseparm
+            label   "Container Path"
+            export  none
+        }
+        parm {
+            name    "fillmaterials"
+            baseparm
+            label   "Auto-fill Materials"
+            export  none
+        }
+    }
+
+    multiparm {
+        name    "materials"
+        label    "Number of Materials"
+        baseparm
+        default 1
+        parmtag { "multistartoffset" "1" }
+
+        parm {
+            name    "enable#"
+            baseparm
+            label   "Enable"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "matflag#"
+            baseparm
+            label   "Include Only VOPs with Material Flag Set"
+            export  none
+        }
+        parm {
+            name    "matnode#"
+            baseparm
+            label   "Material VOP"
+            export  none
+        }
+        parm {
+            name    "matpath#"
+            baseparm
+            label   "Material Path"
+            export  none
+        }
+        parm {
+            name    "assign#"
+            baseparm
+            label   "Assign to Geometry"
+            export  none
+        }
+        parm {
+            name    "geopath#"
+            baseparm
+            label   "Geometry Path"
+            export  none
+        }
+    }
+
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+genpreviewshaders	[ 0	locks=0 ]	(	"on"	)
+allowparmanim	[ 0	locks=0 ]	(	"off"	)
+referencerendervars	[ 0	locks=0 ]	(	"on"	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
+matpathprefix	[ 0	locks=0 ]	(	`chs(\"../path\")`/mat/	)
+geometrygroup	[ 0	locks=0 ]	(	)
+fillgroup	[ 0	locks=0 ]	(	0	)
+matnet	[ 0	locks=0 ]	(	.	)
+containerpath	[ 0	locks=0 ]	(	/materials/	)
+fillmaterials	[ 0	locks=0 ]	(	0	)
+materials	[ 0	locks=0 ]	(	1	)
+enable1	[ 0	locks=0 ]	(	"on"	)
+matflag1	[ 0	locks=0 ]	(	"on"	)
+matnode1	[ 0	locks=0 ]	(	*	)
+matpath1	[ 0	locks=0 ]	(	""	)
+assign1	[ 0	locks=0 ]	(	"off"	)
+geopath1	[ 0	locks=0 ]	(	""	)
+tabmenufolder	[ 0	locks=0 ]	(	0	)
+tabmenumask	[ 0	locks=0 ]	(	"*builder parameter constant rampparm collect null subnet subnetconnector suboutput subinput genericshader"	)
+fillgroup2	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT.init"
+Content-Type: text/plain
+
+type = subnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT.def"
+Content-Type: text/plain
+
+language MaterialX
+comment ""
+position -1.34185 6.62238
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2403@TH2403
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT.spareparmdef"
+Content-Type: text/plain
+
+    groupcollapsible {
+        name    "folder1"
+        label   "Karma Material Builder"
+        grouptag { "sidefx::shader_isparm" "0" }
+
+        parm {
+            name    "inherit_ctrl"
+            label   "Inherit from Class"
+            type    integer
+            default { "2" }
+            menu {
+                "0" "Never"
+                "1" "Always"
+                "2" "Material Flag"
+            }
+            range   { 0 10 }
+        }
+        parm {
+            name    "shader_referencetype"
+            label   "Class Arc"
+            type    string
+            default { [ "n = hou.pwd()\nn_hasFlag = n.isMaterialFlagSet()\ni = n.evalParm('inherit_ctrl')\nr = 'none'\nif i == 1 or (n_hasFlag and i == 2):\n    r = 'inherit'\nreturn r" python ] }
+            menu {
+                "none"          "None"
+                "reference"     "Reference"
+                "inherit"       "Inherit"
+                "specialize"    "Specialize"
+                "represent"     "Represent"
+            }
+            parmtag { "sidefx::shader_isparm" "0" }
+            parmtag { "spare_category" "Shader" }
+        }
+        parm {
+            name    "shader_baseprimpath"
+            label   "Class Prim Path"
+            type    string
+            default { "/__class_mtl__/`$OS`" }
+            parmtag { "script_action" "import lopshaderutils\nlopshaderutils.selectPrimFromInputOrFile(kwargs)" }
+            parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::shader_isparm" "0" }
+            parmtag { "sidefx::usdpathtype" "prim" }
+            parmtag { "spare_category" "Shader" }
+        }
+        parm {
+            name    "separator1"
+            label   "separator1"
+            type    separator
+            default { "" }
+        }
+        parm {
+            name    "tabmenumask"
+            label   "Tab Menu Mask"
+            type    string
+            default { "karma USD ^mtlxUsd* ^mtlxramp* ^hmtlxramp* ^hmtlxcubicramp* MaterialX parameter constant collect null genericshader subnet subnetconnector suboutput subinput" }
+            parmtag { "spare_category" "Tab Menu" }
+        }
+        parm {
+            name    "shader_rendercontextname"
+            label   "Render Context Name"
+            type    string
+            default { "kma" }
+            parmtag { "sidefx::shader_isparm" "0" }
+            parmtag { "spare_category" "Shader" }
+        }
+        parm {
+            name    "shader_forcechildren"
+            label   "Force Translation of Children"
+            type    toggle
+            default { "1" }
+            parmtag { "sidefx::shader_isparm" "0" }
+            parmtag { "spare_category" "Shader" }
+        }
+    }
+
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT.chn"
+Content-Type: text/plain
+
+{
+    channel shader_referencetype {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = "n = hou.pwd()
+n_hasFlag = n.isMaterialFlagSet()
+i = n.evalParm('inherit_ctrl')
+r = 'none'
+if i == 1 or (n_hasFlag and i == 2):
+    r = 'inherit'
+return r" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+folder1	[ 0	locks=0 ]	(	0	)
+inherit_ctrl	[ 0	locks=0 ]	(	2	)
+shader_referencetype	[ 0	locks=0 ]	(	[ shader_referencetype	"n = hou.pwd()
+n_hasFlag = n.isMaterialFlagSet()
+i = n.evalParm('inherit_ctrl')
+r = 'none'
+if i == 1 or (n_hasFlag and i == 2):
+    r = 'inherit'
+return r" ] 	)
+shader_baseprimpath	[ 0	locks=0 ]	(	/__class_mtl__/`$OS`	)
+separator1	[ 0	locks=0 ]	(	)
+tabmenumask	[ 0	locks=0 ]	(	"karma USD ^mtlxUsd* ^mtlxramp* ^hmtlxramp* ^hmtlxcubicramp* MaterialX parameter constant collect null genericshader subnet subnetconnector suboutput subinput"	)
+shader_rendercontextname	[ 0	locks=0 ]	(	kma	)
+shader_forcechildren	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/inputs.init"
+Content-Type: text/plain
+
+type = subinput
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/inputs.def"
+Content-Type: text/plain
+
+comment ""
+position -4.53993 0.0376
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2403@TH2403
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/inputs.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/inputs.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/mtlxstandard_surface.init"
+Content-Type: text/plain
+
+type = mtlxstandard_surface
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/mtlxstandard_surface.def"
+Content-Type: text/plain
+
+comment ""
+position -0.2883 0.0376
+connectornextid 43
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+42 "out"
+}
+inputsNamed3
+{
+0 	"" "" 1 "base"
+1 	"" "" 1 "base_color"
+2 	"" "" 1 "diffuse_roughness"
+3 	"" "" 1 "metalness"
+4 	"" "" 1 "specular"
+5 	"" "" 1 "specular_color"
+6 	"" "" 1 "specular_roughness"
+7 	"" "" 1 "specular_IOR"
+8 	"" "" 1 "specular_anisotropy"
+9 	"" "" 1 "specular_rotation"
+10 	"" "" 1 "transmission"
+11 	"" "" 1 "transmission_color"
+12 	"" "" 1 "transmission_depth"
+13 	"" "" 1 "transmission_scatter"
+14 	"" "" 1 "transmission_scatter_anisotropy"
+15 	"" "" 1 "transmission_dispersion"
+16 	"" "" 1 "transmission_extra_roughness"
+17 	"" "" 1 "subsurface"
+18 	"" "" 1 "subsurface_color"
+19 	"" "" 1 "subsurface_radius"
+20 	"" "" 1 "subsurface_scale"
+21 	"" "" 1 "subsurface_anisotropy"
+22 	"" "" 1 "sheen"
+23 	"" "" 1 "sheen_color"
+24 	"" "" 1 "sheen_roughness"
+25 	"" "" 1 "coat"
+26 	"" "" 1 "coat_color"
+27 	"" "" 1 "coat_roughness"
+28 	"" "" 1 "coat_anisotropy"
+29 	"" "" 1 "coat_rotation"
+30 	"" "" 1 "coat_IOR"
+31 	"" "" 1 "coat_normal"
+32 	"" "" 1 "coat_affect_color"
+33 	"" "" 1 "coat_affect_roughness"
+34 	"" "" 1 "thin_film_thickness"
+35 	"" "" 1 "thin_film_IOR"
+36 	"" "" 1 "emission"
+37 	"" "" 1 "emission_color"
+38 	"" "" 1 "opacity"
+39 	"" "" 1 "thin_walled"
+40 	"" "" 1 "normal"
+41 	"" "" 1 "tangent"
+}
+inputs
+{
+0 	"" 0 1
+1 	"" 0 1
+2 	"" 0 1
+3 	"" 0 1
+4 	"" 0 1
+5 	"" 0 1
+6 	"" 0 1
+7 	"" 0 1
+8 	"" 0 1
+9 	"" 0 1
+10 	"" 0 1
+11 	"" 0 1
+12 	"" 0 1
+13 	"" 0 1
+14 	"" 0 1
+15 	"" 0 1
+16 	"" 0 1
+17 	"" 0 1
+18 	"" 0 1
+19 	"" 0 1
+20 	"" 0 1
+21 	"" 0 1
+22 	"" 0 1
+23 	"" 0 1
+24 	"" 0 1
+25 	"" 0 1
+26 	"" 0 1
+27 	"" 0 1
+28 	"" 0 1
+29 	"" 0 1
+30 	"" 0 1
+31 	"" 0 1
+32 	"" 0 1
+33 	"" 0 1
+34 	"" 0 1
+35 	"" 0 1
+36 	"" 0 1
+37 	"" 0 1
+38 	"" 0 1
+39 	"" 0 1
+40 	"" 0 1
+41 	"" 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2403@TH2403
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/mtlxstandard_surface.chn"
+Content-Type: text/plain
+
+{
+    channel opacityr {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../../../translucencyr\") }
+    }
+    channel opacityg {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../../../translucencyg\") }
+    }
+    channel opacityb {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../../../translucencyb\") }
+    }
+    channel base_colorr {
+      lefttype = extend
+      righttype = extend
+      default = 0.80000000000000004
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 0.80000000000000004 0.80000000000000004 expr = ch(\"../../../base_colorr\") }
+    }
+    channel base_colorg {
+      lefttype = extend
+      righttype = extend
+      default = 0.80000000000000004
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 0.80000000000000004 0.80000000000000004 expr = ch(\"../../../base_colorg\") }
+    }
+    channel base_colorb {
+      lefttype = extend
+      righttype = extend
+      default = 0.80000000000000004
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 0.80000000000000004 0.80000000000000004 expr = ch(\"../../../base_colorb\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/mtlxstandard_surface.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	default	)
+folder0	[ 0	locks=0 ]	(	1	)
+base	[ 0	locks=0 ]	(	1	)
+base_color	[ 0	locks=0 ]	(	[ base_colorr	0.8 ] 	[ base_colorg	0.8 ] 	[ base_colorb	0.8 ] 	)
+diffuse_roughness	[ 0	locks=0 ]	(	0	)
+metalness	[ 0	locks=0 ]	(	0	)
+folder0_1	[ 0	locks=0 ]	(	1	)
+specular	[ 0	locks=0 ]	(	0	)
+specular_color	[ 0	locks=0 ]	(	1	1	1	)
+specular_roughness	[ 0	locks=0 ]	(	0.2	)
+specular_IOR	[ 0	locks=0 ]	(	1.5	)
+specular_anisotropy	[ 0	locks=0 ]	(	0	)
+specular_rotation	[ 0	locks=0 ]	(	0	)
+folder0_5	[ 0	locks=0 ]	(	0	)
+coat	[ 0	locks=0 ]	(	0	)
+coat_color	[ 0	locks=0 ]	(	1	1	1	)
+coat_roughness	[ 0	locks=0 ]	(	0.1	)
+coat_anisotropy	[ 0	locks=0 ]	(	0	)
+coat_rotation	[ 0	locks=0 ]	(	0	)
+coat_IOR	[ 0	locks=0 ]	(	1.5	)
+coat_normal	[ 0	locks=0 ]	(	0	0	0	)
+coat_affect_color	[ 0	locks=0 ]	(	0	)
+coat_affect_roughness	[ 0	locks=0 ]	(	0	)
+folder0_2	[ 0	locks=0 ]	(	0	)
+transmission	[ 0	locks=0 ]	(	0	)
+transmission_color	[ 0	locks=0 ]	(	1	1	1	)
+transmission_depth	[ 0	locks=0 ]	(	0	)
+transmission_scatter	[ 0	locks=0 ]	(	0	0	0	)
+transmission_scatter_anisotropy	[ 0	locks=0 ]	(	0	)
+transmission_dispersion	[ 0	locks=0 ]	(	0	)
+transmission_extra_roughness	[ 0	locks=0 ]	(	0	)
+folder0_4	[ 0	locks=0 ]	(	0	)
+sheen	[ 0	locks=0 ]	(	0	)
+sheen_color	[ 0	locks=0 ]	(	1	1	1	)
+sheen_roughness	[ 0	locks=0 ]	(	0.3	)
+folder0_3	[ 0	locks=0 ]	(	0	)
+subsurface	[ 0	locks=0 ]	(	0	)
+subsurface_color	[ 0	locks=0 ]	(	1	1	1	)
+subsurface_radius	[ 0	locks=0 ]	(	1	1	1	)
+subsurface_scale	[ 0	locks=0 ]	(	1	)
+subsurface_anisotropy	[ 0	locks=0 ]	(	0	)
+folder0_7	[ 0	locks=0 ]	(	0	)
+emission	[ 0	locks=0 ]	(	0	)
+emission_color	[ 0	locks=0 ]	(	1	1	1	)
+folder0_6	[ 0	locks=0 ]	(	0	)
+thin_film_thickness	[ 0	locks=0 ]	(	0	)
+thin_film_IOR	[ 0	locks=0 ]	(	1.5	)
+folder0_8	[ 0	locks=0 ]	(	1	)
+opacity	[ 8	locks=0 ]	(	[ opacityr	1 ] 	[ opacityg	1 ] 	[ opacityb	1 ] 	)
+thin_walled	[ 0	locks=0 ]	(	"off"	)
+normal	[ 0	locks=0 ]	(	0	0	0	)
+tangent	[ 0	locks=0 ]	(	0	0	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/mtlxstandard_surface.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"__inputgroup_":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Base":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Coat":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Emission":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Geometry":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Sheen":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Specular":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Subsurface":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Thin Film":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Transmission":{
+		"type":"string",
+		"value":"collapsed"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/mtlxdisplacement.init"
+Content-Type: text/plain
+
+type = mtlxdisplacement
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/mtlxdisplacement.def"
+Content-Type: text/plain
+
+comment ""
+position -0.2883 -2.4334
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+2 "out"
+}
+inputsNamed3
+{
+0 	"" "" 1 "displacement"
+1 	"" "" 1 "scale"
+}
+inputs
+{
+0 	"" 0 1
+1 	"" 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2403@TH2403
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/mtlxdisplacement.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	default	)
+displacement	[ 0	locks=0 ]	(	0	)
+displacement_vector3	[ 0	locks=0 ]	(	0	0	0	)
+scale	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/mtlxdisplacement.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/Material_Outputs_and_AOVs.init"
+Content-Type: text/plain
+
+type = suboutput
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/Material_Outputs_and_AOVs.def"
+Content-Type: text/plain
+
+comment ""
+position 2.4426 -3.8725
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	mtlxstandard_surface 42 1 "surface"
+1 	mtlxdisplacement 2 1 "displacement"
+2 	material_properties 0 1 "properties"
+}
+inputs
+{
+0 	mtlxstandard_surface 0 1
+1 	mtlxdisplacement 0 1
+2 	material_properties 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2403@TH2403
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/Material_Outputs_and_AOVs.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+name1	[ 0	locks=0 ]	(	surface	)
+label1	[ 0	locks=0 ]	(	""	)
+name2	[ 0	locks=0 ]	(	displacement	)
+label2	[ 0	locks=0 ]	(	""	)
+name3	[ 0	locks=0 ]	(	""	)
+label3	[ 0	locks=0 ]	(	""	)
+name4	[ 0	locks=0 ]	(	""	)
+label4	[ 0	locks=0 ]	(	""	)
+name5	[ 0	locks=0 ]	(	""	)
+label5	[ 0	locks=0 ]	(	""	)
+name6	[ 0	locks=0 ]	(	""	)
+label6	[ 0	locks=0 ]	(	""	)
+name7	[ 0	locks=0 ]	(	""	)
+label7	[ 0	locks=0 ]	(	""	)
+name8	[ 0	locks=0 ]	(	""	)
+label8	[ 0	locks=0 ]	(	""	)
+name9	[ 0	locks=0 ]	(	""	)
+label9	[ 0	locks=0 ]	(	""	)
+name10	[ 0	locks=0 ]	(	""	)
+label10	[ 0	locks=0 ]	(	""	)
+name11	[ 0	locks=0 ]	(	""	)
+label11	[ 0	locks=0 ]	(	""	)
+name12	[ 0	locks=0 ]	(	""	)
+label12	[ 0	locks=0 ]	(	""	)
+name13	[ 0	locks=0 ]	(	""	)
+label13	[ 0	locks=0 ]	(	""	)
+name14	[ 0	locks=0 ]	(	""	)
+label14	[ 0	locks=0 ]	(	""	)
+name15	[ 0	locks=0 ]	(	""	)
+label15	[ 0	locks=0 ]	(	""	)
+name16	[ 0	locks=0 ]	(	""	)
+label16	[ 0	locks=0 ]	(	""	)
+name17	[ 0	locks=0 ]	(	""	)
+label17	[ 0	locks=0 ]	(	""	)
+name18	[ 0	locks=0 ]	(	""	)
+label18	[ 0	locks=0 ]	(	""	)
+name19	[ 0	locks=0 ]	(	""	)
+label19	[ 0	locks=0 ]	(	""	)
+name20	[ 0	locks=0 ]	(	""	)
+label20	[ 0	locks=0 ]	(	""	)
+name21	[ 0	locks=0 ]	(	""	)
+label21	[ 0	locks=0 ]	(	""	)
+name22	[ 0	locks=0 ]	(	""	)
+label22	[ 0	locks=0 ]	(	""	)
+name23	[ 0	locks=0 ]	(	""	)
+label23	[ 0	locks=0 ]	(	""	)
+name24	[ 0	locks=0 ]	(	""	)
+label24	[ 0	locks=0 ]	(	""	)
+name25	[ 0	locks=0 ]	(	""	)
+label25	[ 0	locks=0 ]	(	""	)
+name26	[ 0	locks=0 ]	(	""	)
+label26	[ 0	locks=0 ]	(	""	)
+name27	[ 0	locks=0 ]	(	""	)
+label27	[ 0	locks=0 ]	(	""	)
+name28	[ 0	locks=0 ]	(	""	)
+label28	[ 0	locks=0 ]	(	""	)
+name29	[ 0	locks=0 ]	(	""	)
+label29	[ 0	locks=0 ]	(	""	)
+name30	[ 0	locks=0 ]	(	""	)
+label30	[ 0	locks=0 ]	(	""	)
+name31	[ 0	locks=0 ]	(	""	)
+label31	[ 0	locks=0 ]	(	""	)
+name32	[ 0	locks=0 ]	(	""	)
+label32	[ 0	locks=0 ]	(	""	)
+name33	[ 0	locks=0 ]	(	""	)
+label33	[ 0	locks=0 ]	(	""	)
+name34	[ 0	locks=0 ]	(	""	)
+label34	[ 0	locks=0 ]	(	""	)
+name35	[ 0	locks=0 ]	(	""	)
+label35	[ 0	locks=0 ]	(	""	)
+name36	[ 0	locks=0 ]	(	""	)
+label36	[ 0	locks=0 ]	(	""	)
+name37	[ 0	locks=0 ]	(	""	)
+label37	[ 0	locks=0 ]	(	""	)
+name38	[ 0	locks=0 ]	(	""	)
+label38	[ 0	locks=0 ]	(	""	)
+name39	[ 0	locks=0 ]	(	""	)
+label39	[ 0	locks=0 ]	(	""	)
+name40	[ 0	locks=0 ]	(	""	)
+label40	[ 0	locks=0 ]	(	""	)
+name41	[ 0	locks=0 ]	(	""	)
+label41	[ 0	locks=0 ]	(	""	)
+name42	[ 0	locks=0 ]	(	""	)
+label42	[ 0	locks=0 ]	(	""	)
+name43	[ 0	locks=0 ]	(	""	)
+label43	[ 0	locks=0 ]	(	""	)
+name44	[ 0	locks=0 ]	(	""	)
+label44	[ 0	locks=0 ]	(	""	)
+name45	[ 0	locks=0 ]	(	""	)
+label45	[ 0	locks=0 ]	(	""	)
+name46	[ 0	locks=0 ]	(	""	)
+label46	[ 0	locks=0 ]	(	""	)
+name47	[ 0	locks=0 ]	(	""	)
+label47	[ 0	locks=0 ]	(	""	)
+name48	[ 0	locks=0 ]	(	""	)
+label48	[ 0	locks=0 ]	(	""	)
+name49	[ 0	locks=0 ]	(	""	)
+label49	[ 0	locks=0 ]	(	""	)
+name50	[ 0	locks=0 ]	(	""	)
+label50	[ 0	locks=0 ]	(	""	)
+name51	[ 0	locks=0 ]	(	""	)
+label51	[ 0	locks=0 ]	(	""	)
+name52	[ 0	locks=0 ]	(	""	)
+label52	[ 0	locks=0 ]	(	""	)
+name53	[ 0	locks=0 ]	(	""	)
+label53	[ 0	locks=0 ]	(	""	)
+name54	[ 0	locks=0 ]	(	""	)
+label54	[ 0	locks=0 ]	(	""	)
+name55	[ 0	locks=0 ]	(	""	)
+label55	[ 0	locks=0 ]	(	""	)
+name56	[ 0	locks=0 ]	(	""	)
+label56	[ 0	locks=0 ]	(	""	)
+name57	[ 0	locks=0 ]	(	""	)
+label57	[ 0	locks=0 ]	(	""	)
+name58	[ 0	locks=0 ]	(	""	)
+label58	[ 0	locks=0 ]	(	""	)
+name59	[ 0	locks=0 ]	(	""	)
+label59	[ 0	locks=0 ]	(	""	)
+name60	[ 0	locks=0 ]	(	""	)
+label60	[ 0	locks=0 ]	(	""	)
+name61	[ 0	locks=0 ]	(	""	)
+label61	[ 0	locks=0 ]	(	""	)
+name62	[ 0	locks=0 ]	(	""	)
+label62	[ 0	locks=0 ]	(	""	)
+name63	[ 0	locks=0 ]	(	""	)
+label63	[ 0	locks=0 ]	(	""	)
+name64	[ 0	locks=0 ]	(	""	)
+label64	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/Material_Outputs_and_AOVs.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/material_properties.init"
+Content-Type: text/plain
+
+type = kma_material_properties
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/material_properties.def"
+Content-Type: text/plain
+
+comment ""
+position -0.2883 -3.87213
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+0 "properties"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2403@TH2403
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/material_properties.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	0	)
+folder1	[ 0	locks=0 ]	(	0	)
+xn____activate__karmadiffusequality_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmadiffusequality_z6a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmareflectquality_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmareflectquality_z6a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmarefractquality_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmarefractquality_z6a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmavolumequality_8pb	[ 0	locks=0 ]	(	0	)
+xn__karmavolumequality_d5a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmasssquality_dlb	[ 0	locks=0 ]	(	0	)
+xn__karmasssquality_h0a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmavolumesteprate_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmavolumesteprate_z6a	[ 0	locks=0 ]	(	0.25	)
+xn____activate__karmalightsource_samplingquality_1dc	[ 0	locks=0 ]	(	0	)
+xn__karmalightsource_samplingquality_5sb	[ 0	locks=0 ]	(	1	)
+folder2	[ 0	locks=0 ]	(	0	)
+xn____activate__karmadiffuselimit_mob	[ 0	locks=0 ]	(	0	)
+xn__karmadiffuselimit_q3a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmareflectlimit_mob	[ 0	locks=0 ]	(	0	)
+xn__karmareflectlimit_q3a	[ 0	locks=0 ]	(	4	)
+xn____activate__karmarefractlimit_mob	[ 0	locks=0 ]	(	0	)
+xn__karmarefractlimit_q3a	[ 0	locks=0 ]	(	4	)
+xn____activate__karmavolumelimit_zmb	[ 0	locks=0 ]	(	0	)
+xn__karmavolumelimit_31a	[ 0	locks=0 ]	(	0	)
+xn____activate__karmassslimit_3hb	[ 0	locks=0 ]	(	0	)
+xn__karmassslimit_7wa	[ 0	locks=0 ]	(	0	)
+folder3	[ 0	locks=0 ]	(	0	)
+xn____activate__karmavolumeuniform_8pb	[ 0	locks=0 ]	(	0	)
+xn__karmavolumeuniform_d5a	[ 0	locks=0 ]	(	"off"	)
+xn____activate__karmavolumeuniformdensity_n1b	[ 0	locks=0 ]	(	0	)
+xn__karmavolumeuniformdensity_rhb	[ 0	locks=0 ]	(	1	)
+xn____activate__karmavolumeuniformsamples_n1b	[ 0	locks=0 ]	(	0	)
+xn__karmavolumeuniformsamples_rhb	[ 0	locks=0 ]	(	4	)
+folder4	[ 0	locks=0 ]	(	0	)
+xn____activate__karmalpetag_ueb	[ 0	locks=0 ]	(	0	)
+xn__karmalpetag_yta	[ 0	locks=0 ]	(	""	)
+xn____activate__karmadielectricpriority_eyb	[ 0	locks=0 ]	(	0	)
+xn__karmadielectricpriority_ieb	[ 0	locks=0 ]	(	0	)
+xn____activate__karmacausticsenable_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmacausticsenable_z6a	[ 0	locks=0 ]	(	"off"	)
+xn____activate__karmacausticsroughnessclamp_w4b	[ 0	locks=0 ]	(	0	)
+xn__karmacausticsroughnessclamp_0kb	[ 0	locks=0 ]	(	0.2	)
+xn____activate__karmafakecausticsbsdfenable_w4b	[ 0	locks=0 ]	(	0	)
+xn__karmafakecausticsbsdfenable_0kb	[ 0	locks=0 ]	(	"on"	)
+xn____activate__karmafakecausticscolor_rwb	[ 0	locks=0 ]	(	0	)
+xn__karmafakecausticscolor_vcb	[ 0	locks=0 ]	(	1	1	1	)
+xn____activate__karmafakecausticsopacity_0zb	[ 0	locks=0 ]	(	0	)
+xn__karmafakecausticsopacity_4fb	[ 0	locks=0 ]	(	1	1	1	)
+xn____activate__karmamtlx_imagewidth_itb	[ 0	locks=0 ]	(	0	)
+xn__karmamtlx_imagewidth_m8a	[ 0	locks=0 ]	(	0	)
+xn____activate__karmamtlx_imageblur_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmamtlx_imageblur_z6a	[ 0	locks=0 ]	(	0	)
+folder5	[ 0	locks=0 ]	(	0	)
+xn____activate__karmatreat_as_lightsource_n1b	[ 0	locks=0 ]	(	0	)
+xn__karmatreat_as_lightsource_rhb	[ 0	locks=0 ]	(	"No"	)
+xn____activate__karmalightsource_diffusescale_57b	[ 0	locks=0 ]	(	0	)
+xn__karmalightsource_diffusescale_9nb	[ 0	locks=0 ]	(	1	)
+xn____activate__karmalightsource_specularscale_s9b	[ 0	locks=0 ]	(	0	)
+xn__karmalightsource_specularscale_wpb	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT/material_properties.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1/sopnet/create.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 1.71309 4.72113
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1/sopnet/create.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+label1	[ 0	locks=0 ]	(	"Sub-Network Input #1"	)
+label2	[ 0	locks=0 ]	(	"Sub-Network Input #2"	)
+label3	[ 0	locks=0 ]	(	"Sub-Network Input #3"	)
+label4	[ 0	locks=0 ]	(	"Sub-Network Input #4"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1/sopnet/create.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1/sopnet/create.inp"
+Content-Type: text/plain
+
+4
+0 0 6 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 3 6.5 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+2 6 7 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+3 9 7.5 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1/sopnet/create/grid1.init"
+Content-Type: text/plain
+
+type = grid
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1/sopnet/create/grid1.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0 0
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2403@TH2403
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1/sopnet/create/grid1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+type	[ 0	locks=0 ]	(	"poly"	)
+surftype	[ 0	locks=0 ]	(	"quads"	)
+orient	[ 0	locks=0 ]	(	"zx"	)
+size	[ 0	locks=0 ]	(	10	10	)
+t	[ 0	locks=0 ]	(	0	0	0	)
+r	[ 0	locks=0 ]	(	0	0	0	)
+rows	[ 0	locks=0 ]	(	10	)
+cols	[ 0	locks=0 ]	(	10	)
+orderu	[ 0	locks=0 ]	(	4	)
+orderv	[ 0	locks=0 ]	(	4	)
+interpu	[ 0	locks=0 ]	(	"on"	)
+interpv	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1/sopnet/create/grid1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/grid1/sopnet/create.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT.order"
+Content-Type: text/plain
+
+5
+inputs
+mtlxstandard_surface
+mtlxdisplacement
+Material_Outputs_and_AOVs
+material_properties
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1/lightblocker_MAT.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary1.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.def"
+Content-Type: text/plain
+
+comment ""
+position 2.77556e-17 1.88108
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	rendergeometrysettings1 1 1 "input1"
+}
+inputs
+{
+0 	rendergeometrysettings1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2403@TH2403
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallinker1.init"
+Content-Type: text/plain
+
+type = materiallinker
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallinker1.def"
+Content-Type: text/plain
+
+comment ""
+position 0 4.92013
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	materiallibrary1 1 1 "input1"
+}
+inputs
+{
+0 	materiallibrary1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2403@TH2403
+  access 0777
+}
+color UT_Color RGB 0.55 0.75 0.75 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallinker1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+files_group	[ 0	locks=0 ]	(	1	)
+num_files	[ 0	locks=0 ]	(	0	)
+reload	[ 0	locks=0 ]	(	0	)
+links_group	[ 0	locks=0 ]	(	1	)
+num_links	[ 0	locks=0 ]	(	1	)
+uiconfig	[ 0	locks=0 ]	(	""	)
+link_enabled_1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	"on"	)
+link_id_1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	""	)
+link_prim_1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	`chs(\"../path\")`/mat/lightblocker_MAT	)
+link_includes_1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	`chs(\"../path\")`	)
+link_excludes_1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	""	)
+link_type_1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	materialdirect	)
+link_reversed_1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallinker1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/rendergeometrysettings1.init"
+Content-Type: text/plain
+
+type = rendergeometrysettings
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/rendergeometrysettings1.def"
+Content-Type: text/plain
+
+comment ""
+position 0 3.82787
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	materiallinker1 1 1 "input1"
+}
+inputs
+{
+0 	materiallinker1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author TH2403@TH2403
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/rendergeometrysettings1.spareparmdef"
+Content-Type: text/plain
+
+    groupcollapsible {
+        name    "sample_group2"
+        label   "Frame Range/Subframes"
+        grouptag { "group_type" "collapsible" }
+        parmtag { "sidefx::header_parm" "sample_behavior" }
+
+        parm {
+            name    "sample_behavior"
+            baseparm
+            label   "Sampling Behavior"
+            export  none
+        }
+        parm {
+            name    "sample_f"
+            baseparm
+            label   "Start/End/Inc"
+            export  none
+        }
+        parm {
+            name    "sample_subframeenable"
+            baseparm
+            label   "Subframe Sampling"
+            export  none
+        }
+        groupsimple {
+            name    "sample_subframegroup2"
+            label   "Subframe Sampling"
+            disablewhen "{ sample_subframeenable == 0 }"
+            grouptag { "group_type" "simple" }
+            parmtag { "sidefx::header_toggle" "sample_subframeenable" }
+
+            parm {
+                name    "sample_shuttermode"
+                baseparm
+                label   "Shutter"
+                export  none
+            }
+            parm {
+                name    "sample_shutterrange"
+                baseparm
+                label   "Shutter Open/Close"
+                export  none
+            }
+            parm {
+                name    "sample_cameraprim"
+                baseparm
+                label   "Camera Prim"
+                export  none
+            }
+            parm {
+                name    "sample_count"
+                baseparm
+                label   "Samples"
+                export  none
+            }
+            parm {
+                name    "sample_includeframe"
+                baseparm
+                label   "Always Include Frame Sample"
+                export  none
+            }
+        }
+
+    }
+
+    parm {
+        name    "primpattern"
+        baseparm
+        label   "Primitives"
+        export  none
+    }
+    parm {
+        name    "primpath"
+        baseparm
+        label   "Primitive Path"
+        invisible
+        export  none
+    }
+    parm {
+        name    "createprims"
+        baseparm
+        label   "Action"
+        invisible
+        export  none
+    }
+    parm {
+        name    "initforedit"
+        baseparm
+        label   "Initialize Parameters"
+        export  none
+    }
+    groupcollapsible {
+        name    "createprimsgroup3"
+        label   "Create Primitives"
+        invisibletab
+        hidewhen "{ createprims != on }"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "primcount"
+            baseparm
+            label   "Primitive Count"
+            export  none
+        }
+        parm {
+            name    "primtype"
+            baseparm
+            label   "Primitive Type"
+            export  none
+        }
+        parm {
+            name    "primkind"
+            baseparm
+            label   "Primitive Kind"
+            export  none
+        }
+        parm {
+            name    "specifier"
+            baseparm
+            label   "Primitive Specifier"
+            export  none
+        }
+        parm {
+            name    "parentprimtype"
+            baseparm
+            label   "Parent Primitive Type"
+            export  none
+        }
+    }
+
+    group {
+        name    "Karma"
+        label   "Karma"
+
+        groupcollapsible {
+            name    "xn__MotionBlur_6ja"
+            label   "Motion Blur"
+            parmtag { "group_default" "1" }
+            grouptag { "group_type" "collapsible" }
+
+            parm {
+                name    "xn__primvarskarmaobjectmblur_control_8sbfg"
+                label   "Enable Motion Blur"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'bool')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectmblur_7fbfg"
+                label   "Enable Motion Blur"
+                type    toggle
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectmblur_control_8sbfg == block } { xn__primvarskarmaobjectmblur_control_8sbfg == none }"
+                parmtag { "spare_category" "Motion Blur" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "bool" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectsamplesfromstage_control_5bcfg"
+                label   "Motion Samples from Stage"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'bool')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectsamplesfromstage_4xbfg"
+                label   "Motion Samples from Stage"
+                type    toggle
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectsamplesfromstage_control_5bcfg == block } { xn__primvarskarmaobjectsamplesfromstage_control_5bcfg == none }"
+                parmtag { "spare_category" "Motion Blur" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "bool" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvblur_control_8sbfg"
+                label   "Velocity Blur"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvblur_7fbfg"
+                label   "Velocity Blur"
+                type    ordinal
+                default { "No Velocity Blur" }
+                disablewhen "{ xn__primvarskarmaobjectvblur_control_8sbfg == block } { xn__primvarskarmaobjectvblur_control_8sbfg == none }"
+                menu {
+                    "No Velocity Blur"  "No Velocity Blur"
+                    "Velocity Blur"     "Velocity Blur"
+                    "Acceleration Blur" "Acceleration Blur"
+                }
+                parmtag { "spare_category" "Motion Blur" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectgeosamples_control_e1bfg"
+                label   "Geometry Time Samples"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectgeosamples_dobfg"
+                label   "Geometry Time Samples"
+                type    integer
+                default { "2" }
+                disablewhen "{ xn__primvarskarmaobjectgeosamples_control_e1bfg == block } { xn__primvarskarmaobjectgeosamples_control_e1bfg == none }"
+                range   { 1! 8 }
+                parmtag { "spare_category" "Motion Blur" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectxformsamples_control_n4bfg"
+                label   "Transform Time Samples"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectxformsamples_mrbfg"
+                label   "Transform Time Samples"
+                type    integer
+                default { "2" }
+                disablewhen "{ xn__primvarskarmaobjectxformsamples_control_n4bfg == block } { xn__primvarskarmaobjectxformsamples_control_n4bfg == none }"
+                range   { 1! 8 }
+                parmtag { "spare_category" "Motion Blur" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectblurstyle_control_rzbfg"
+                label   "Motion Blur Style"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectblurstyle_qmbfg"
+                label   "Motion Blur Style"
+                type    ordinal
+                default { "Rotation Blur" }
+                disablewhen "{ xn__primvarskarmaobjectblurstyle_control_rzbfg == block } { xn__primvarskarmaobjectblurstyle_control_rzbfg == none }"
+                menu {
+                    "Linear Blur"   "Linear Blur"
+                    "Rotation Blur" "Rotation Blur"
+                }
+                parmtag { "spare_category" "Motion Blur" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectinstance_vblur_control_w7bfg"
+                label   "Instance Velocity Blur"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectinstance_vblur_vubfg"
+                label   "Instance Velocity Blur"
+                type    ordinal
+                default { "No Velocity Blur" }
+                disablewhen "{ xn__primvarskarmaobjectinstance_vblur_control_w7bfg == block } { xn__primvarskarmaobjectinstance_vblur_control_w7bfg == none }"
+                menu {
+                    "No Velocity Blur"  "No Velocity Blur"
+                    "Velocity Blur"     "Velocity Blur"
+                    "Acceleration Blur" "Acceleration Blur"
+                }
+                parmtag { "spare_category" "Motion Blur" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectinstance_samples_control_5bcfg"
+                label   "Instance Motion Samples"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectinstance_samples_4xbfg"
+                label   "Instance Motion Samples"
+                type    integer
+                default { "2" }
+                disablewhen "{ xn__primvarskarmaobjectinstance_samples_control_5bcfg == block } { xn__primvarskarmaobjectinstance_samples_control_5bcfg == none }"
+                range   { 1! 8 }
+                parmtag { "spare_category" "Motion Blur" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumevblurscale_control_5bcfg"
+                label   "Volume Velocity Blur Scale"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumevblurscale_4xbfg"
+                label   "Volume Velocity Blur Scale"
+                type    float
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectvolumevblurscale_control_5bcfg == block } { xn__primvarskarmaobjectvolumevblurscale_control_5bcfg == none }"
+                range   { 0! 2 }
+                parmtag { "spare_category" "Motion Blur" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+        }
+
+        groupcollapsible {
+            name    "Sampling"
+            label   "Sampling"
+            parmtag { "group_default" "1" }
+            grouptag { "group_type" "collapsible" }
+
+            parm {
+                name    "xn__primvarskarmaobjectdiffusequality_control_w7bfg"
+                label   "Diffuse Quality"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectdiffusequality_vubfg"
+                label   "Diffuse Quality"
+                type    float
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectdiffusequality_control_w7bfg == block } { xn__primvarskarmaobjectdiffusequality_control_w7bfg == none }"
+                range   { 0! 10 }
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectreflectquality_control_w7bfg"
+                label   "Reflection Quality"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectreflectquality_vubfg"
+                label   "Reflection Quality"
+                type    float
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectreflectquality_control_w7bfg == block } { xn__primvarskarmaobjectreflectquality_control_w7bfg == none }"
+                range   { 0! 10 }
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectrefractquality_control_w7bfg"
+                label   "Refraction Quality"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectrefractquality_vubfg"
+                label   "Refraction Quality"
+                type    float
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectrefractquality_control_w7bfg == block } { xn__primvarskarmaobjectrefractquality_control_w7bfg == none }"
+                range   { 0! 10 }
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumequality_control_95bfg"
+                label   "Volume Quality"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumequality_8sbfg"
+                label   "Volume Quality"
+                type    float
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectvolumequality_control_95bfg == block } { xn__primvarskarmaobjectvolumequality_control_95bfg == none }"
+                range   { 0! 10 }
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectsssquality_control_e1bfg"
+                label   "SSS Quality"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectsssquality_dobfg"
+                label   "SSS Quality"
+                type    float
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectsssquality_control_e1bfg == block } { xn__primvarskarmaobjectsssquality_control_e1bfg == none }"
+                range   { 0! 10 }
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumesteprate_control_w7bfg"
+                label   "Volume Step Rate"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumesteprate_vubfg"
+                label   "Volume Step Rate"
+                type    float
+                default { "0.25" }
+                disablewhen "{ xn__primvarskarmaobjectvolumesteprate_control_w7bfg == block } { xn__primvarskarmaobjectvolumesteprate_control_w7bfg == none }"
+                range   { 0! 1 }
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "viewport" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumesamplingchannel_control_bkcfg"
+                label   "Volume Sampling Field"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'string')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumesamplingchannel_95bfg"
+                label   "Volume Sampling Field"
+                type    string
+                default { "density" }
+                disablewhen "{ xn__primvarskarmaobjectvolumesamplingchannel_control_bkcfg == block } { xn__primvarskarmaobjectvolumesamplingchannel_control_bkcfg == none }"
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "string" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumefilter_control_n4bfg"
+                label   "Volume Filter"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'string')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumefilter_mrbfg"
+                label   "Volume Filter"
+                type    string
+                default { "box" }
+                disablewhen "{ xn__primvarskarmaobjectvolumefilter_control_n4bfg == block } { xn__primvarskarmaobjectvolumefilter_control_n4bfg == none }"
+                menureplace {
+                    "point"     "Point"
+                    "box"       "Box Filter"
+                    "gaussian"  "Gaussian"
+                    "bartlett"  "Bartlett (triangle)"
+                    "catrom"    "Catmull-Rom"
+                    "hanning"   "Hanning"
+                    "blackman"  "Blackman"
+                    "sinc"      "Sinc (sharpening)"
+                }
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "string" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumefilterwidth_control_sdcfg"
+                label   "Volume Filter Width"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumefilterwidth_rzbfg"
+                label   "Volume Filter Width"
+                type    float
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectvolumefilterwidth_control_sdcfg == block } { xn__primvarskarmaobjectvolumefilterwidth_control_sdcfg == none }"
+                range   { 0! 5 }
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectlightsource_samplingquality_control_2tcfg"
+                label   "Light Sampling Quality"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectlightsource_samplingquality_1gcfg"
+                label   "Light Sampling Quality"
+                type    float
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectlightsource_samplingquality_control_2tcfg == block } { xn__primvarskarmaobjectlightsource_samplingquality_control_2tcfg == none }"
+                range   { 0 10 }
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvarianceaa_thresh_control_sdcfg"
+                label   " Secondary Noise Level"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvarianceaa_thresh_rzbfg"
+                label   " Secondary Noise Level"
+                type    float
+                default { "0.01" }
+                disablewhen "{ xn__primvarskarmaobjectvarianceaa_thresh_control_sdcfg == block } { xn__primvarskarmaobjectvarianceaa_thresh_control_sdcfg == none }"
+                range   { 0! 0.1 }
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvarianceaa_minsamples_control_bkcfg"
+                label   " Min Secondary Samples"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvarianceaa_minsamples_95bfg"
+                label   " Min Secondary Samples"
+                type    integer
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectvarianceaa_minsamples_control_bkcfg == block } { xn__primvarskarmaobjectvarianceaa_minsamples_control_bkcfg == none }"
+                range   { 1! 9 }
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvarianceaa_maxsamples_control_bkcfg"
+                label   " Max Secondary Samples"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvarianceaa_maxsamples_95bfg"
+                label   " Max Secondary Samples"
+                type    integer
+                default { "9" }
+                disablewhen "{ xn__primvarskarmaobjectvarianceaa_maxsamples_control_bkcfg == block } { xn__primvarskarmaobjectvarianceaa_maxsamples_control_bkcfg == none }"
+                range   { 1! 9 }
+                parmtag { "spare_category" "Sampling" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+        }
+
+        groupcollapsible {
+            name    "Limits"
+            label   "Limits"
+            parmtag { "group_default" "1" }
+            grouptag { "group_type" "collapsible" }
+
+            parm {
+                name    "xn__primvarskarmaobjectdiffuselimit_control_n4bfg"
+                label   "Diffuse Limit"
+                type    string
+                default { "none" }
+                hidewhen "{ xn__karmahydradisablelighting_rhbf == 1 }"
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectdiffuselimit_mrbfg"
+                label   "Diffuse Limit"
+                type    float
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectdiffuselimit_control_n4bfg == block } { xn__primvarskarmaobjectdiffuselimit_control_n4bfg == none }"
+                hidewhen "{ xn__karmahydradisablelighting_rhbf == 1 }"
+                range   { 0! 32 }
+                parmtag { "sidefx::slider" "snap_to_int" }
+                parmtag { "spare_category" "Limits" }
+                parmtag { "uiscope" "viewport" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectreflectlimit_control_n4bfg"
+                label   "Reflection Limit"
+                type    string
+                default { "none" }
+                hidewhen "{ xn__karmahydradisablelighting_rhbf == 1 }"
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectreflectlimit_mrbfg"
+                label   "Reflection Limit"
+                type    float
+                default { "4" }
+                disablewhen "{ xn__primvarskarmaobjectreflectlimit_control_n4bfg == block } { xn__primvarskarmaobjectreflectlimit_control_n4bfg == none }"
+                hidewhen "{ xn__karmahydradisablelighting_rhbf == 1 }"
+                range   { 0! 32 }
+                parmtag { "sidefx::slider" "snap_to_int" }
+                parmtag { "spare_category" "Limits" }
+                parmtag { "uiscope" "viewport" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectrefractlimit_control_n4bfg"
+                label   "Refraction Limit"
+                type    string
+                default { "none" }
+                hidewhen "{ xn__karmahydradisablelighting_rhbf == 1 }"
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectrefractlimit_mrbfg"
+                label   "Refraction Limit"
+                type    float
+                default { "4" }
+                disablewhen "{ xn__primvarskarmaobjectrefractlimit_control_n4bfg == block } { xn__primvarskarmaobjectrefractlimit_control_n4bfg == none }"
+                hidewhen "{ xn__karmahydradisablelighting_rhbf == 1 }"
+                range   { 0! 32 }
+                parmtag { "sidefx::slider" "snap_to_int" }
+                parmtag { "spare_category" "Limits" }
+                parmtag { "uiscope" "viewport" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumelimit_control_02bfg"
+                label   "Volume Limit"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumelimit_zpbfg"
+                label   "Volume Limit"
+                type    float
+                default { "0" }
+                disablewhen "{ xn__primvarskarmaobjectvolumelimit_control_02bfg == block } { xn__primvarskarmaobjectvolumelimit_control_02bfg == none }"
+                range   { 0! 32 }
+                parmtag { "spare_category" "Limits" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectssslimit_control_4xbfg"
+                label   "SSS Limit"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectssslimit_3kbfg"
+                label   "SSS Limit"
+                type    float
+                default { "0" }
+                disablewhen "{ xn__primvarskarmaobjectssslimit_control_4xbfg == block } { xn__primvarskarmaobjectssslimit_control_4xbfg == none }"
+                range   { 0! 32 }
+                parmtag { "spare_category" "Limits" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+        }
+
+        groupcollapsible {
+            name    "xn__UniformVolume_vma"
+            label   "Uniform Volume"
+            parmtag { "group_default" "1" }
+            grouptag { "group_type" "collapsible" }
+
+            parm {
+                name    "xn__primvarskarmaobjectvolumeuniform_control_95bfg"
+                label   "Uniform Volume"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'bool')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumeuniform_8sbfg"
+                label   "Uniform Volume"
+                type    toggle
+                default { "0" }
+                disablewhen "{ xn__primvarskarmaobjectvolumeuniform_control_95bfg == block } { xn__primvarskarmaobjectvolumeuniform_control_95bfg == none }"
+                parmtag { "spare_category" "Uniform Volume" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "bool" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumeuniformsamples_control_oicfg"
+                label   "Uniform Volume Samples"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectvolumeuniformsamples_n4bfg"
+                label   "Uniform Volume Samples"
+                type    integer
+                default { "4" }
+                disablewhen "{ xn__primvarskarmaobjectvolumeuniformsamples_control_oicfg == block } { xn__primvarskarmaobjectvolumeuniformsamples_control_oicfg == none }"
+                range   { 1! 8 }
+                parmtag { "spare_category" "Uniform Volume" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+        }
+
+        groupcollapsible {
+            name    "Shading"
+            label   "Shading"
+            parmtag { "group_default" "1" }
+            grouptag { "group_type" "collapsible" }
+
+            parm {
+                name    "xn__primvarskarmaobjectrendervisibility_control_5bcfg"
+                label   "Render Visibility"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'string')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectrendervisibility_4xbfg"
+                label   "Render Visibility"
+                type    string
+                default { "*" }
+                disablewhen "{ xn__primvarskarmaobjectrendervisibility_control_5bcfg == block } { xn__primvarskarmaobjectrendervisibility_control_5bcfg == none }"
+                menureplace {
+                    "*"                             "Visible to all"
+                    "primary"                       "Visible only to primary rays"
+                    "primary|shadow"                "Visible only to primary and shadow rays"
+                    "-primary"                      "Invisible to primary rays (Phantom)"
+                    "-diffuse"                      "Invisible to diffuse rays"
+                    "-diffuse&-reflect&-refract"    "Invisible to secondary rays"
+                    "-shadow"                       "Invisible to shadow rays"
+                    ""                              "Invisible (Unrenderable)"
+                }
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "string" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcuspangle_control_rzbfg"
+                label   "Cusp Angle"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcuspangle_qmbfg"
+                label   "Cusp Angle"
+                type    float
+                default { "60" }
+                disablewhen "{ xn__primvarskarmaobjectcuspangle_control_rzbfg == block } { xn__primvarskarmaobjectcuspangle_control_rzbfg == none }"
+                range   { 0! 90 }
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectholdoutmode_control_02bfg"
+                label   "Holdout Mode"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectholdoutmode_zpbfg"
+                label   "Holdout Mode"
+                type    ordinal
+                default { "None" }
+                disablewhen "{ xn__primvarskarmaobjectholdoutmode_control_02bfg == block } { xn__primvarskarmaobjectholdoutmode_control_02bfg == none }"
+                menu {
+                    "None"          "None"
+                    "Matte"         "Matte"
+                    "Background"    "Background"
+                }
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectsmoothp_control_iwbfg"
+                label   "Fix Shadow Terminator"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'bool')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectsmoothp_hjbfg"
+                label   "Fix Shadow Terminator"
+                type    toggle
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectsmoothp_control_iwbfg == block } { xn__primvarskarmaobjectsmoothp_control_iwbfg == none }"
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "bool" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcustom_tracesets_control_5bcfg"
+                label   "Custom Tracesets"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'string')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcustom_tracesets_4xbfg"
+                label   "Custom Tracesets"
+                type    string
+                default { "" }
+                disablewhen "{ xn__primvarskarmaobjectcustom_tracesets_control_5bcfg == block } { xn__primvarskarmaobjectcustom_tracesets_control_5bcfg == none }"
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "string" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectlpetag_control_vubfg"
+                label   "LPE Tag"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'string')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectlpetag_uhbfg"
+                label   "LPE Tag"
+                type    string
+                default { "" }
+                disablewhen "{ xn__primvarskarmaobjectlpetag_control_vubfg == block } { xn__primvarskarmaobjectlpetag_control_vubfg == none }"
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "string" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectinternalreflectenable_control_bkcfg"
+                label   " Enable Internal Reflection"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'bool')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectinternalreflectenable_95bfg"
+                label   " Enable Internal Reflection"
+                type    toggle
+                default { "0" }
+                disablewhen "{ xn__primvarskarmaobjectinternalreflectenable_control_bkcfg == block } { xn__primvarskarmaobjectinternalreflectenable_control_bkcfg == none }"
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "bool" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectlightsubset_control_02bfg"
+                label   "Direct Refraction Subset"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectlightsubset_zpbfg"
+                label   "Direct Refraction Subset"
+                type    ordinal
+                default { "Outside" }
+                disablewhen "{ xn__primvarskarmaobjectlightsubset_control_02bfg == block } { xn__primvarskarmaobjectlightsubset_control_02bfg == none }"
+                menu {
+                    "Outside"   "Outside"
+                    "Inside"    "Inside"
+                    "Both"      "Both"
+                    "None"      "None"
+                }
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectdielectricpriority_control_ffcfg"
+                label   "Dielectric Priority"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectdielectricpriority_e1bfg"
+                label   "Dielectric Priority"
+                type    integer
+                default { "0" }
+                disablewhen "{ xn__primvarskarmaobjectdielectricpriority_control_ffcfg == block } { xn__primvarskarmaobjectdielectricpriority_control_ffcfg == none }"
+                range   { 0! 16 }
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcausticsenable_control_w7bfg"
+                label   " Enable Caustics"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'bool')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcausticsenable_vubfg"
+                label   " Enable Caustics"
+                type    toggle
+                default { "0" }
+                disablewhen "{ xn__primvarskarmaobjectcausticsenable_control_w7bfg == block } { xn__primvarskarmaobjectcausticsenable_control_w7bfg == none }"
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "bool" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcausticsroughnessclamp_control_xlcfg"
+                label   " Caustics Roughness Clamp"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcausticsroughnessclamp_w7bfg"
+                label   " Caustics Roughness Clamp"
+                type    float
+                default { "0.2" }
+                disablewhen "{ xn__primvarskarmaobjectcausticsroughnessclamp_control_xlcfg == block } { xn__primvarskarmaobjectcausticsroughnessclamp_control_xlcfg == none }"
+                range   { 0! 1! }
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectfakecausticsbsdfenable_control_xlcfg"
+                label   " Evaluate BSDF On Fake Caustics"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'bool')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectfakecausticsbsdfenable_w7bfg"
+                label   " Evaluate BSDF On Fake Caustics"
+                type    toggle
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectfakecausticsbsdfenable_control_xlcfg == block } { xn__primvarskarmaobjectfakecausticsbsdfenable_control_xlcfg == none }"
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "bool" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectfakecausticscolor_control_sdcfg"
+                label   " Fake Caustics Color"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float3')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectfakecausticscolor_rzbfg"
+                label   " Fake Caustics Color"
+                type    color
+                size    3
+                default { "1" "1" "1" }
+                disablewhen "{ xn__primvarskarmaobjectfakecausticscolor_control_sdcfg == block } { xn__primvarskarmaobjectfakecausticscolor_control_sdcfg == none }"
+                range   { 0 10 }
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float3" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectfakecausticsopacity_control_1gcfg"
+                label   " Fake Caustics Opacity"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float3')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectfakecausticsopacity_02bfg"
+                label   " Fake Caustics Opacity"
+                type    color
+                size    3
+                default { "1" "1" "1" }
+                disablewhen "{ xn__primvarskarmaobjectfakecausticsopacity_control_1gcfg == block } { xn__primvarskarmaobjectfakecausticsopacity_control_1gcfg == none }"
+                range   { 0 10 }
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float3" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectbumpshadowterminator_control_oicfg"
+                label   "Bump Shadow Terminator"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectbumpshadowterminator_n4bfg"
+                label   "Bump Shadow Terminator"
+                type    float
+                default { "0" }
+                disablewhen "{ xn__primvarskarmaobjectbumpshadowterminator_control_oicfg == block } { xn__primvarskarmaobjectbumpshadowterminator_control_oicfg == none }"
+                range   { 0! 1! }
+                parmtag { "spare_category" "Shading" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+        }
+
+        groupcollapsible {
+            name    "Light"
+            label   "Light"
+            parmtag { "group_default" "1" }
+            grouptag { "group_type" "collapsible" }
+
+            parm {
+                name    "xn__primvarskarmaobjecttreat_as_lightsource_control_oicfg"
+                label   "Treat As Light Source"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjecttreat_as_lightsource_n4bfg"
+                label   "Treat As Light Source"
+                type    ordinal
+                default { "No" }
+                disablewhen "{ xn__primvarskarmaobjecttreat_as_lightsource_control_oicfg == block } { xn__primvarskarmaobjecttreat_as_lightsource_control_oicfg == none }"
+                menu {
+                    "No"    "No"
+                    "Yes"   "Yes"
+                    "Auto"  "Auto"
+                }
+                parmtag { "spare_category" "Light" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectlightsource_diffusescale_control_6ocfg"
+                label   "Light Source Diffuse Multiplier"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectlightsource_diffusescale_5bcfg"
+                label   "Light Source Diffuse Multiplier"
+                type    float
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectlightsource_diffusescale_control_6ocfg == block } { xn__primvarskarmaobjectlightsource_diffusescale_control_6ocfg == none }"
+                range   { 0 10 }
+                parmtag { "spare_category" "Light" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectlightsource_specularscale_control_tqcfg"
+                label   "Light Source Specular Multiplier"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectlightsource_specularscale_sdcfg"
+                label   "Light Source Specular Multiplier"
+                type    float
+                default { "1" }
+                disablewhen "{ xn__primvarskarmaobjectlightsource_specularscale_control_tqcfg == block } { xn__primvarskarmaobjectlightsource_specularscale_control_tqcfg == none }"
+                range   { 0 10 }
+                parmtag { "spare_category" "Light" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectisportal_control_4xbfg"
+                label   "Is Portal"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'bool')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectisportal_3kbfg"
+                label   "Is Portal"
+                type    toggle
+                default { "0" }
+                disablewhen "{ xn__primvarskarmaobjectisportal_control_4xbfg == block } { xn__primvarskarmaobjectisportal_control_4xbfg == none }"
+                parmtag { "spare_category" "Light" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "bool" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectportaldomelights_control_5bcfg"
+                label   "Portal Dome Lights"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'string')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectportaldomelights_4xbfg"
+                label   "Portal Dome Lights"
+                type    string
+                default { "*" }
+                disablewhen "{ xn__primvarskarmaobjectportaldomelights_control_5bcfg == block } { xn__primvarskarmaobjectportaldomelights_control_5bcfg == none }"
+                parmtag { "spare_category" "Light" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "string" }
+            }
+        }
+
+        groupcollapsible {
+            name    "Geometry"
+            label   "Geometry"
+            parmtag { "group_default" "1" }
+            grouptag { "group_type" "collapsible" }
+
+            parm {
+                name    "xn__primvarskarmaobjectpoint_style_control_02bfg"
+                label   "Render Points As"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectpoint_style_zpbfg"
+                label   "Render Points As"
+                type    ordinal
+                default { "Spheres" }
+                disablewhen "{ xn__primvarskarmaobjectpoint_style_control_02bfg == block } { xn__primvarskarmaobjectpoint_style_control_02bfg == none }"
+                menu {
+                    "Discs"             "Discs"
+                    "Spheres"           "Spheres"
+                    "Oriented Discs"    "Oriented Discs"
+                }
+                parmtag { "spare_category" "Geometry" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcurve_style_control_02bfg"
+                label   "Render Curves As"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcurve_style_zpbfg"
+                label   "Render Curves As"
+                type    ordinal
+                default { "Rounded Curves" }
+                disablewhen "{ xn__primvarskarmaobjectcurve_style_control_02bfg == block } { xn__primvarskarmaobjectcurve_style_control_02bfg == none }"
+                menu {
+                    "Flat Ribbons"      "Flat Ribbons"
+                    "Rounded Curves"    "Rounded Curves"
+                    "Oriented Ribbons"  "Oriented Ribbons"
+                }
+                parmtag { "spare_category" "Geometry" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcurve_basis_control_02bfg"
+                label   "Override Curves Basis"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcurve_basis_zpbfg"
+                label   "Override Curves Basis"
+                type    ordinal
+                default { "Geometry Default" }
+                disablewhen "{ xn__primvarskarmaobjectcurve_basis_control_02bfg == block } { xn__primvarskarmaobjectcurve_basis_control_02bfg == none }"
+                menu {
+                    "Geometry Default"  "Geometry Default"
+                    "Force Linear"      "Force Linear"
+                    "Force Bezier"      "Force Bezier"
+                    "Force B-Spline"    "Force B-Spline"
+                    "Force Catmull-Rom" "Force Catmull-Rom"
+                }
+                parmtag { "spare_category" "Geometry" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcull_backface_control_95bfg"
+                label   "Cull Backface"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectcull_backface_8sbfg"
+                label   "Cull Backface"
+                type    ordinal
+                default { "Off" }
+                disablewhen "{ xn__primvarskarmaobjectcull_backface_control_95bfg == block } { xn__primvarskarmaobjectcull_backface_control_95bfg == none }"
+                menu {
+                    "Off"               "Off"
+                    "Cull Backface"     "Cull Backface"
+                    "Cull Frontface"    "Cull Frontface"
+                }
+                parmtag { "spare_category" "Geometry" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+        }
+
+        groupcollapsible {
+            name    "Dicing"
+            label   "Dicing"
+            parmtag { "group_default" "1" }
+            grouptag { "group_type" "collapsible" }
+
+            parm {
+                name    "xn__primvarskarmaobjectdicingquality_control_95bfg"
+                label   "Dicing Quality"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'float')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectdicingquality_8sbfg"
+                label   "Dicing Quality"
+                type    float
+                default { "0.5" }
+                disablewhen "{ xn__primvarskarmaobjectdicingquality_control_95bfg == block } { xn__primvarskarmaobjectdicingquality_control_95bfg == none }"
+                range   { 0! 16 }
+                parmtag { "spare_category" "Dicing" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjecttruedisplace_control_n4bfg"
+                label   "True Displacements"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjecttruedisplace_mrbfg"
+                label   "True Displacements"
+                type    ordinal
+                default { "True Displacement" }
+                disablewhen "{ xn__primvarskarmaobjecttruedisplace_control_n4bfg == block } { xn__primvarskarmaobjecttruedisplace_control_n4bfg == none }"
+                menu {
+                    "Bump Mapped Displacement"      "Bump Mapped Displacement"
+                    "True Displacement"             "True Displacement"
+                    "Disable Displacement Shader"   "Disable Displacement Shader"
+                }
+                parmtag { "spare_category" "Dicing" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectdicingdepthmin_control_w7bfg"
+                label   "Dicing Minimum Depth"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectdicingdepthmin_vubfg"
+                label   "Dicing Minimum Depth"
+                type    integer
+                default { "-1" }
+                disablewhen "{ xn__primvarskarmaobjectdicingdepthmin_control_w7bfg == block } { xn__primvarskarmaobjectdicingdepthmin_control_w7bfg == none }"
+                range   { -1! 10 }
+                parmtag { "spare_category" "Dicing" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectdicingdepthmax_control_w7bfg"
+                label   "Dicing Maximum Depth"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectdicingdepthmax_vubfg"
+                label   "Dicing Maximum Depth"
+                type    integer
+                default { "-1" }
+                disablewhen "{ xn__primvarskarmaobjectdicingdepthmax_control_w7bfg == block } { xn__primvarskarmaobjectdicingdepthmax_control_w7bfg == none }"
+                range   { -1! 10 }
+                parmtag { "spare_category" "Dicing" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+        }
+
+        groupcollapsible {
+            name    "xn__TextureBaking_vma"
+            label   "Texture Baking"
+            parmtag { "group_default" "1" }
+            grouptag { "group_type" "collapsible" }
+
+            parm {
+                name    "xn__primvarskarmaobjectuvunwrap_lowres_obj_control_1gcfg"
+                label   "Low Resolution Object ID"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectuvunwrap_lowres_obj_02bfg"
+                label   "Low Resolution Object ID"
+                type    integer
+                default { "-1" }
+                disablewhen "{ xn__primvarskarmaobjectuvunwrap_lowres_obj_control_1gcfg == block } { xn__primvarskarmaobjectuvunwrap_lowres_obj_control_1gcfg == none }"
+                range   { 0 10 }
+                parmtag { "spare_category" "Texture Baking" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectuvunwrap_cage_obj_control_sdcfg"
+                label   "Cage Object ID"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectuvunwrap_cage_obj_rzbfg"
+                label   "Cage Object ID"
+                type    integer
+                default { "-1" }
+                disablewhen "{ xn__primvarskarmaobjectuvunwrap_cage_obj_control_sdcfg == block } { xn__primvarskarmaobjectuvunwrap_cage_obj_control_sdcfg == none }"
+                range   { 0 10 }
+                parmtag { "spare_category" "Texture Baking" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectuvunwrap_highres_obj_control_oicfg"
+                label   "High Resolution Object ID"
+                type    string
+                default { "none" }
+                menujoin {
+                    [ "import loputils" ]
+                    [ "return loputils.createEditPropertiesControlMenu(kwargs, 'int')" ]
+                    language python
+                }
+                parmtag { "sidefx::look" "icon" }
+            }
+            parm {
+                name    "xn__primvarskarmaobjectuvunwrap_highres_obj_n4bfg"
+                label   "High Resolution Object ID"
+                type    integer
+                default { "-1" }
+                disablewhen "{ xn__primvarskarmaobjectuvunwrap_highres_obj_control_oicfg == block } { xn__primvarskarmaobjectuvunwrap_highres_obj_control_oicfg == none }"
+                range   { 0 10 }
+                parmtag { "spare_category" "Texture Baking" }
+                parmtag { "uiscope" "None" }
+                parmtag { "usdvaluetype" "int" }
+            }
+        }
+
+    }
+
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/rendergeometrysettings1.chn"
+Content-Type: text/plain
+
+{
+    channel sample_f1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel sample_f2 {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel sample_f3 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @finc }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/rendergeometrysettings1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+sample_group	[ 0	locks=0 ]	(	0	)
+sample_behavior	[ 0	locks=0 ]	(	single	)
+sample_f	[ 0	locks=0 ]	(	[ sample_f1	1 ] 	[ sample_f2	240 ] 	[ sample_f3	1 ] 	)
+sample_subframeenable	[ 0	locks=0 ]	(	"off"	)
+sample_subframegroup	[ 0	locks=0 ]	(	0	)
+sample_shuttermode	[ 0	locks=0 ]	(	manual	)
+sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
+sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
+sample_count	[ 0	locks=0 ]	(	2	)
+sample_includeframe	[ 0	locks=0 ]	(	"on"	)
+primpattern	[ 0	locks=0 ]	(	`chs(\"../path\")`	)
+primpath	[ 0	locks=0 ]	(	/$OS	)
+createprims	[ 0	locks=0 ]	(	"off"	)
+initforedit	[ 0	locks=0 ]	(	0	)
+createprimsgroup2	[ 0	locks=0 ]	(	0	)
+primcount	[ 0	locks=0 ]	(	1	)
+primtype	[ 0	locks=0 ]	(	UsdGeomXform	)
+primkind	[ 0	locks=0 ]	(	""	)
+specifier	[ 0	locks=0 ]	(	def	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
+sample_group2	[ 0	locks=0 ]	(	0	)
+sample_subframegroup2	[ 0	locks=0 ]	(	0	)
+createprimsgroup3	[ 0	locks=0 ]	(	0	)
+Karma	[ 0	locks=0 ]	(	0	)
+xn__MotionBlur_6ja	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectmblur_control_8sbfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectmblur_7fbfg	[ 0	locks=0 ]	(	"on"	)
+xn__primvarskarmaobjectsamplesfromstage_control_5bcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectsamplesfromstage_4xbfg	[ 0	locks=0 ]	(	"on"	)
+xn__primvarskarmaobjectvblur_control_8sbfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvblur_7fbfg	[ 0	locks=0 ]	(	"No Velocity Blur"	)
+xn__primvarskarmaobjectgeosamples_control_e1bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectgeosamples_dobfg	[ 0	locks=0 ]	(	2	)
+xn__primvarskarmaobjectxformsamples_control_n4bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectxformsamples_mrbfg	[ 0	locks=0 ]	(	2	)
+xn__primvarskarmaobjectblurstyle_control_rzbfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectblurstyle_qmbfg	[ 0	locks=0 ]	(	"Rotation Blur"	)
+xn__primvarskarmaobjectinstance_vblur_control_w7bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectinstance_vblur_vubfg	[ 0	locks=0 ]	(	"No Velocity Blur"	)
+xn__primvarskarmaobjectinstance_samples_control_5bcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectinstance_samples_4xbfg	[ 0	locks=0 ]	(	2	)
+xn__primvarskarmaobjectvolumevblurscale_control_5bcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvolumevblurscale_4xbfg	[ 0	locks=0 ]	(	1	)
+Sampling	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectdiffusequality_control_w7bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectdiffusequality_vubfg	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectreflectquality_control_w7bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectreflectquality_vubfg	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectrefractquality_control_w7bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectrefractquality_vubfg	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectvolumequality_control_95bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvolumequality_8sbfg	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectsssquality_control_e1bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectsssquality_dobfg	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectvolumesteprate_control_w7bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvolumesteprate_vubfg	[ 0	locks=0 ]	(	0.25	)
+xn__primvarskarmaobjectvolumesamplingchannel_control_bkcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvolumesamplingchannel_95bfg	[ 0	locks=0 ]	(	density	)
+xn__primvarskarmaobjectvolumefilter_control_n4bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvolumefilter_mrbfg	[ 0	locks=0 ]	(	box	)
+xn__primvarskarmaobjectvolumefilterwidth_control_sdcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvolumefilterwidth_rzbfg	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectlightsource_samplingquality_control_2tcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectlightsource_samplingquality_1gcfg	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectvarianceaa_thresh_control_sdcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvarianceaa_thresh_rzbfg	[ 0	locks=0 ]	(	0.01	)
+xn__primvarskarmaobjectvarianceaa_minsamples_control_bkcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvarianceaa_minsamples_95bfg	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectvarianceaa_maxsamples_control_bkcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvarianceaa_maxsamples_95bfg	[ 0	locks=0 ]	(	9	)
+Limits	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectdiffuselimit_control_n4bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectdiffuselimit_mrbfg	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectreflectlimit_control_n4bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectreflectlimit_mrbfg	[ 0	locks=0 ]	(	4	)
+xn__primvarskarmaobjectrefractlimit_control_n4bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectrefractlimit_mrbfg	[ 0	locks=0 ]	(	4	)
+xn__primvarskarmaobjectvolumelimit_control_02bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvolumelimit_zpbfg	[ 0	locks=0 ]	(	0	)
+xn__primvarskarmaobjectssslimit_control_4xbfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectssslimit_3kbfg	[ 0	locks=0 ]	(	0	)
+xn__UniformVolume_vma	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectvolumeuniform_control_95bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvolumeuniform_8sbfg	[ 0	locks=0 ]	(	"off"	)
+xn__primvarskarmaobjectvolumeuniformsamples_control_oicfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectvolumeuniformsamples_n4bfg	[ 0	locks=0 ]	(	4	)
+Shading	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectrendervisibility_control_5bcfg	[ 0	locks=0 ]	(	set	)
+xn__primvarskarmaobjectrendervisibility_4xbfg	[ 0	locks=0 ]	(	-primary	)
+xn__primvarskarmaobjectcuspangle_control_rzbfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectcuspangle_qmbfg	[ 0	locks=0 ]	(	60	)
+xn__primvarskarmaobjectholdoutmode_control_02bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectholdoutmode_zpbfg	[ 0	locks=0 ]	(	"None"	)
+xn__primvarskarmaobjectsmoothp_control_iwbfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectsmoothp_hjbfg	[ 0	locks=0 ]	(	"on"	)
+xn__primvarskarmaobjectcustom_tracesets_control_5bcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectcustom_tracesets_4xbfg	[ 0	locks=0 ]	(	""	)
+xn__primvarskarmaobjectlpetag_control_vubfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectlpetag_uhbfg	[ 0	locks=0 ]	(	""	)
+xn__primvarskarmaobjectinternalreflectenable_control_bkcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectinternalreflectenable_95bfg	[ 0	locks=0 ]	(	"off"	)
+xn__primvarskarmaobjectlightsubset_control_02bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectlightsubset_zpbfg	[ 0	locks=0 ]	(	"Outside"	)
+xn__primvarskarmaobjectdielectricpriority_control_ffcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectdielectricpriority_e1bfg	[ 0	locks=0 ]	(	0	)
+xn__primvarskarmaobjectcausticsenable_control_w7bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectcausticsenable_vubfg	[ 0	locks=0 ]	(	"off"	)
+xn__primvarskarmaobjectcausticsroughnessclamp_control_xlcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectcausticsroughnessclamp_w7bfg	[ 0	locks=0 ]	(	0.2	)
+xn__primvarskarmaobjectfakecausticsbsdfenable_control_xlcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectfakecausticsbsdfenable_w7bfg	[ 0	locks=0 ]	(	"on"	)
+xn__primvarskarmaobjectfakecausticscolor_control_sdcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectfakecausticscolor_rzbfg	[ 0	locks=0 ]	(	1	1	1	)
+xn__primvarskarmaobjectfakecausticsopacity_control_1gcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectfakecausticsopacity_02bfg	[ 0	locks=0 ]	(	1	1	1	)
+xn__primvarskarmaobjectbumpshadowterminator_control_oicfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectbumpshadowterminator_n4bfg	[ 0	locks=0 ]	(	0	)
+Light	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjecttreat_as_lightsource_control_oicfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjecttreat_as_lightsource_n4bfg	[ 0	locks=0 ]	(	"No"	)
+xn__primvarskarmaobjectlightsource_diffusescale_control_6ocfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectlightsource_diffusescale_5bcfg	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectlightsource_specularscale_control_tqcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectlightsource_specularscale_sdcfg	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectisportal_control_4xbfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectisportal_3kbfg	[ 0	locks=0 ]	(	"off"	)
+xn__primvarskarmaobjectportaldomelights_control_5bcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectportaldomelights_4xbfg	[ 0	locks=0 ]	(	*	)
+Geometry	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectpoint_style_control_02bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectpoint_style_zpbfg	[ 0	locks=0 ]	(	"Spheres"	)
+xn__primvarskarmaobjectcurve_style_control_02bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectcurve_style_zpbfg	[ 0	locks=0 ]	(	"Rounded Curves"	)
+xn__primvarskarmaobjectcurve_basis_control_02bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectcurve_basis_zpbfg	[ 0	locks=0 ]	(	"Geometry Default"	)
+xn__primvarskarmaobjectcull_backface_control_95bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectcull_backface_8sbfg	[ 0	locks=0 ]	(	"Off"	)
+Dicing	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectdicingquality_control_95bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectdicingquality_8sbfg	[ 0	locks=0 ]	(	0.5	)
+xn__primvarskarmaobjecttruedisplace_control_n4bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjecttruedisplace_mrbfg	[ 0	locks=0 ]	(	"True Displacement"	)
+xn__primvarskarmaobjectdicingdepthmin_control_w7bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectdicingdepthmin_vubfg	[ 0	locks=0 ]	(	-1	)
+xn__primvarskarmaobjectdicingdepthmax_control_w7bfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectdicingdepthmax_vubfg	[ 0	locks=0 ]	(	-1	)
+xn__TextureBaking_vma	[ 0	locks=0 ]	(	1	)
+xn__primvarskarmaobjectuvunwrap_lowres_obj_control_1gcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectuvunwrap_lowres_obj_02bfg	[ 0	locks=0 ]	(	-1	)
+xn__primvarskarmaobjectuvunwrap_cage_obj_control_sdcfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectuvunwrap_cage_obj_rzbfg	[ 0	locks=0 ]	(	-1	)
+xn__primvarskarmaobjectuvunwrap_highres_obj_control_oicfg	[ 0	locks=0 ]	(	none	)
+xn__primvarskarmaobjectuvunwrap_highres_obj_n4bfg	[ 0	locks=0 ]	(	-1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/rendergeometrysettings1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.order"
+Content-Type: text/plain
+
+5
+grid1
+materiallibrary1
+output0
+materiallinker1
+rendergeometrysettings1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

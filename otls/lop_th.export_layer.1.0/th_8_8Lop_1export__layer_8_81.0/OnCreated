@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini.lops import export_layer
+
+export_layer.on_created(kwargs['node'])

@@ -1,0 +1,326 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Cop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::depth_cull::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+comment ""
+position 2.26971 1.50004
+connectornextid 4
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "result"
+}
+inputsNamed3
+{
+1 	fractalnoise1 0 1 "scene_depth"
+2 	fractalnoise2 0 1 "object_depth"
+3 	fractalnoise3 0 1 "object_color"
+}
+inputs
+{
+0 	fractalnoise1 0 1
+1 	fractalnoise2 0 1
+2 	fractalnoise3 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/depth_cull_shader.init"
+Content-Type: text/plain
+
+type = opencl
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/depth_cull_shader.def"
+Content-Type: text/plain
+
+comment ""
+position 3.05353 0.641572
+connectornextid 4
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+3 "output1"
+}
+inputsNamed3
+{
+0 	input1 0 1 "input1"
+1 	input1 1 1 "input2"
+2 	input1 2 1 "input3"
+}
+inputs
+{
+0 	input1 0 1
+1 	input1 1 1
+2 	input1 2 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/depth_cull_shader.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	0	)
+kernelcode	[ 0	locks=0 ]	(	"#bind layer scene_depth? float val=0
+#bind layer object_depth? float val=0
+#bind layer object_color? float val={0,0,0,1}
+#bind layer !&result float4
+
+float4 depth_cull(
+    float scene_depth,
+    float object_depth,
+    float4 object_color
+) {
+    float diff_depth = object_depth - scene_depth;
+    if (diff_depth < 0.0) {
+        return (0.0, 0.0, 0.0, 0.0);
+    }
+    if (diff_depth >= 0.01) {
+        return object_color;
+    }
+    return (
+        object_color.r,
+        object_color.g,
+        object_color.b,
+        object_color.a * (diff_depth * 100)
+    );
+}
+
+@KERNEL
+{
+    float _scene_depth = @scene_depth;
+    float _object_depth = @object_depth;
+    float4 _object_color = @object_color;
+    @result.set(depth_cull(
+        _scene_depth,
+        _object_depth,
+        _object_color
+    ));
+    
+}
+"	)
+kerneloptions	[ 0	locks=0 ]	(	""	)
+options_tile	[ 0	locks=0 ]	(	1	1	)
+options_iterations	[ 0	locks=0 ]	(	1	)
+options_iteration	[ 0	locks=0 ]	(	"off"	)
+usewritebackkernel	[ 0	locks=0 ]	(	"off"	)
+options_time	[ 0	locks=0 ]	(	"off"	)
+options_importprequel	[ 0	locks=0 ]	(	"on"	)
+options_timing	[ 0	locks=0 ]	(	"off"	)
+filter	[ 0	locks=0 ]	(	"box"	)
+options_precision	[ 0	locks=0 ]	(	"32"	)
+inputs	[ 0	locks=0 ]	(	3	)
+parm_spacerparm	[ 0	locks=0 ]	(	)
+outputs	[ 0	locks=0 ]	(	1	)
+bindings	[ 0	locks=0 ]	(	0	)
+displaycode	[ 0	locks=0 ]	(	0	)
+generatedcode	[ 0	locks=0 ]	(	""	)
+input1_name	[ 0	locks=0 ]	(	scene_depth	)
+input1_type	[ 0	locks=0 ]	(	"float"	)
+input1_optional	[ 0	locks=0 ]	(	"on"	)
+input2_name	[ 0	locks=0 ]	(	object_depth	)
+input2_type	[ 0	locks=0 ]	(	"float"	)
+input2_optional	[ 0	locks=0 ]	(	"on"	)
+input3_name	[ 0	locks=0 ]	(	object_color	)
+input3_type	[ 0	locks=0 ]	(	"float4"	)
+input3_optional	[ 0	locks=0 ]	(	"on"	)
+output1_name	[ 0	locks=0 ]	(	result	)
+output1_type	[ 0	locks=0 ]	(	"float4"	)
+output1_metadata	[ 0	locks=0 ]	(	"name"	)
+output1_precision	[ 0	locks=0 ]	(	"node"	)
+output1_typeinfo	[ 0	locks=0 ]	(	"node"	)
+output1_metaname	[ 0	locks=0 ]	(	object_color	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/depth_cull_shader.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/input1.init"
+Content-Type: text/plain
+
+type = input
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/input1.def"
+Content-Type: text/plain
+
+comment ""
+position 0.39763 0.641572
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "output1"
+1 "output2"
+2 "output3"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/input1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/input1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output1.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output1.def"
+Content-Type: text/plain
+
+comment ""
+position 5.70943 0.491572
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	depth_cull_shader 3 1 "input1"
+}
+inputs
+{
+0 	depth_cull_shader 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.order"
+Content-Type: text/plain
+
+3
+depth_cull_shader
+input1
+output1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

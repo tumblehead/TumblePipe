@@ -1,0 +1,66 @@
+# ONINPUTCHANGED
+node = kwargs['node']
+
+# ADD MULTIPARM FOR EACH INPUT
+multiparm = node.parm("shots")
+multiparm.set(len(node.inputs()))
+
+# GET INPUT NODE
+input_node_index = kwargs['input_index']
+input_node = node.input(input_node_index)
+shotblock = node.node("shotblock")
+
+if input_node:
+    node.parm(f"input{input_node_index+1}").set(input_node.path())
+
+if input_node:
+
+    # Get Input Stage and Root
+    input_stage = input_node.stage()
+    
+    if input_stage:
+        input_root = input_stage.GetPseudoRoot()
+        
+        # Get the stage's start and end timecodes
+        startTimeCode = input_root.GetMetadata("startTimeCode") or 1001
+        endTimeCode = input_root.GetMetadata("endTimeCode") or 1100
+
+        # Set start and end time parms
+        node.parm(f"start_time_code{input_node_index+1}").set(startTimeCode)
+        node.parm(f"end_time_code{input_node_index+1}").set(endTimeCode)
+        
+        # Calculate shotlenth
+        shot_length = int(endTimeCode - startTimeCode + 1)
+        shot_lengt_parm = node.parm(f"shotlength{input_node_index+1}")
+        shot_lengt_parm.set(shot_length)
+        
+        # Start frame calculation
+        startframe_parm = node.parm(f"startframe{input_node_index + 1}")
+        if startframe_parm:
+            if input_node_index == 0:
+                startframe_parm.set(0)
+            else:
+                # Previous shot's start + previous shot's length
+                prev_startframe = node.parm(f"startframe{input_node_index}").eval()
+                prev_shotlength = node.parm(f"shotlength{input_node_index}").eval()
+                startframe_parm.set(prev_startframe + prev_shotlength + 1)
+            
+            # TRIED SETTING CONTEXT BLOCK OPTIONS BUT ENABLING RESULTS IN INSTANT CRASH ON INPUT
+            '''
+            # ADD TIMEBASED OPTION AND SET FRAMERANGE TO INPUT STAGE RANGE
+            shotblock = node.node("shotblock")
+            time_options = shotblock.parm("tbsetcount")
+            time_options.set(len(node.inputs()))
+            frame_range_start = shotblock.parm(f"tboptionrange{input_node_index+1}1")
+            frame_range_end = shotblock.parm(f"tboptionrange{input_node_index+1}2")
+            
+            frame_range_start.setExpression(None)
+            frame_range_end.setExpression(None)
+            
+            frame_range_start.set(startframe_parm.eval()+startTimeCode)
+            frame_range_end.set(startframe_parm.eval()+endTimeCode)
+            
+            shotblock.parm(f"tbset{input_node_index+1}optionname1").set("shot")
+            shotblock.parm(f"tbset{input_node_index+1}optiontype1").set("float")
+            shotblock.parm(f"tbset{input_node_index+1}optionfloatvalue1").set(input_node_index)
+            '''

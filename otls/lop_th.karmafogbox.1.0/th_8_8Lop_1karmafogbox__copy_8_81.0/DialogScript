@@ -1,0 +1,178 @@
+# Dialog script for th::karmafogbox_copy::1.0 automatically generated
+
+{
+    name	th::karmafogbox_copy::1.0
+    script	karmafogbox
+    label	"th karma fog box"
+
+    help {
+	""
+    }
+    bindhandle tx boundboundingbox "FogBox" centerx ""
+    bindhandle ty boundboundingbox "FogBox" centery ""
+    bindhandle tz boundboundingbox "FogBox" centerz ""
+    bindhandle rx boundboundingbox "FogBox" rx ""
+    bindhandle ry boundboundingbox "FogBox" ry ""
+    bindhandle rz boundboundingbox "FogBox" rz ""
+    bindhandle sx boundboundingbox "FogBox" sizex ""
+    bindhandle sy boundboundingbox "FogBox" sizey ""
+    bindhandle sz boundboundingbox "FogBox" sizez ""
+    bindhandle scale boundboundingbox "FogBox" uniform_scale ""
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+    outputlabel	1	"Output Stage"
+
+    parm {
+        name    "primpath"
+        label   "Primitive Path"
+        type    string
+        default { "/volumes/`$OS`_VOL" }
+        menureplace {
+            [ "import loputils" ]
+            [ "return loputils.createPrimPathMenu()" ]
+            language python
+        }
+        parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, False)" }
+        parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nAlt-click to toggle movement of the display flag." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "sidefx::usdpathtype" "prim" }
+    }
+    parm {
+        name    "shape"
+        label   "Shape"
+        type    ordinal
+        default { "0" }
+        menu {
+            "0" "Box"
+            "1" "Sphere"
+            "2" "Tube"
+            "3" "Cone"
+            "4" "Capsule"
+            "5" "Torus"
+            "6" "Custom Shape"
+        }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "custom_shape_path"
+        label   "Custom Shape LOP Path"
+        type    oppath
+        default { "/stage/import_asset_layer1" }
+        hidewhen "{ shape != 6 }"
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "opfilter" "!!LOP!!" }
+        parmtag { "oprelative" "." }
+    }
+    parm {
+        name    "custom_shape_prim_pattern"
+        label   "Custom Shape Primitives"
+        type    string
+        default { "/PROP/DracCar" }
+        hidewhen "{ shape != 6 }"
+        menutoggle {
+            [ "opmenu -l -a sopnet/lopimport1 primpattern" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_action" "import loputils\nkwargs['ctrl'] = True\nloputils.selectPrimsInParm(kwargs, True,\n    lopparmname='loppath', allowinstanceproxies=True)" }
+        parmtag { "script_action_help" "Select primitives using the primitive picker dialog." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "sidefx::usdpathtype" "primlist" }
+    }
+    parm {
+        name    "density"
+        label   "Density"
+        type    float
+        default { "0.1" }
+        range   { 0! 2 }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "shadow"
+        label   "Shadow Density"
+        type    float
+        default { "1" }
+        range   { 0 1 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "phase"
+        label   "Scattering Phase"
+        type    float
+        default { "0" }
+        range   { -1 1 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "color"
+        label   "Color"
+        type    color
+        size    3
+        default { "1" "1" "1" }
+        range   { 0 1 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "emission_color"
+        label   "Emission Color"
+        type    color
+        size    3
+        default { "0" "0" "0" }
+        hidewhen "{ shape <= 6 }"
+        range   { 0 10 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "sidefx::shader_parmname" "value" }
+    }
+    parm {
+        name    "emission_strength"
+        label   "Emission Strength"
+        type    float
+        default { "1" }
+        hidewhen "{ shape <= 6 }"
+        range   { 0 10 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "sepparm"
+        label   "Separator"
+        type    separator
+        default { "" }
+    }
+    parm {
+        name    "t"
+        label   "Translate"
+        type    vector
+        size    3
+        default { "0" "0" "0" }
+        range   { -1 1 }
+    }
+    parm {
+        name    "r"
+        label   "Rotate"
+        type    vector
+        size    3
+        default { "0" "0" "0" }
+        range   { 0 360 }
+    }
+    parm {
+        name    "s"
+        label   "Scale"
+        type    vector
+        size    3
+        default { "1" "1" "1" }
+        range   { -1 1 }
+    }
+    parm {
+        name    "scale"
+        label   "Uniform Scale"
+        type    float
+        default { "1" }
+        range   { 0 10 }
+    }
+}

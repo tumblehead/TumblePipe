@@ -1,0 +1,553 @@
+# Dialog script for th::mesh_lasso::1.0 automatically generated
+
+{
+    name	th::mesh_lasso::1.0
+    script	th::mesh_lasso::1.0
+    label	"th mesh lasso"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Sub-Network Input #1"
+    inputlabel	2	"Sub-Network Input #2"
+    inputlabel	3	"Sub-Network Input #3"
+    inputlabel	4	"Sub-Network Input #4"
+
+    group {
+        name    "import"
+        label   "import"
+        invisibletab
+        tabbreak
+        grouptag { "import_enable" "1" }
+        grouptag { "import_source" "op:lasso" }
+
+        group {
+            name    "folder0"
+            label   "hidden"
+            invisibletab
+            tabbreak
+
+            group {
+                name    "folder1"
+                label   "Curve"
+                grouptag { "import_source" "op:lasso" }
+                grouptag { "import_token" "folder1:Curve" }
+
+                parm {
+                    name    "createwidthattrib"
+                    label   "Create Width Attribute"
+                    type    toggle
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "createwidthattrib" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_radius"
+                    label   "Radius"
+                    type    float
+                    default { "0.134785" }
+                    range   { 0! 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "stroke_radius" }
+                }
+                parm {
+                    name    "stroke_tool"
+                    label   "Tool"
+                    type    integer
+                    default { "0" }
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "stroke_tool" }
+                }
+                parm {
+                    name    "createcolorattrib"
+                    label   "Create Color Attribute"
+                    type    toggle
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "createcolorattrib" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "createstrokeattribs"
+                    label   "Create Stroke Attributes"
+                    type    toggle
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "createstrokeattribs" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_opacity"
+                    label   "Opacity"
+                    type    float
+                    default { "1" }
+                    disablewhen "{ createstrokeattribs == 0 }"
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "stroke_opacity" }
+                }
+            }
+
+            group {
+                name    "folder1_1"
+                label   "Projection"
+                grouptag { "import_source" "op:lasso" }
+                grouptag { "import_token" "folder1:Projection" }
+
+                parm {
+                    name    "reprojection"
+                    label   "Live Reprojection"
+                    type    ordinal
+                    default { "none" }
+                    menu {
+                        "none"      "None"
+                        "ray"       "Send Rays"
+                        "primuv"    "Use UVs"
+                    }
+                    range   { 0 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "reprojection" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "trimcurves"
+                    label   "Trim Curves"
+                    type    toggle
+                    default { "on" }
+                    range   { 0! 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "trimcurves" }
+                }
+                parm {
+                    name    "showguide"
+                    label   "Show Guide Geometry"
+                    type    toggle
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "showguide" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_projcenter"
+                    label   "Projection Center"
+                    type    vector
+                    size    3
+                    default { "0" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "stroke_projcenter" }
+                }
+            }
+
+            group {
+                name    "folder1_2"
+                label   "Stroke"
+                tabbreak
+                grouptag { "import_source" "op:lasso" }
+                grouptag { "import_token" "folder1:Stroke" }
+
+                parm {
+                    name    "cachestrokes"
+                    label   "Cache Strokes"
+                    type    toggle
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "cachestrokes" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "erasestrokes"
+                    label   "Clear Stroke History"
+                    type    button
+                    default { "0" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "erasestrokes" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "strokegeo"
+                    label   "Cached Strokes"
+                    type    geometrydata
+                    invisible
+                    default { "0" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "strokegeo" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                groupcollapsible {
+                    name    "snapshot"
+                    label   "Snapshot"
+                    grouptag { "import_source" "op:lasso" }
+                    grouptag { "import_token" "snapshot:Snapshot" }
+
+                    parm {
+                        name    "stashfile"
+                        label   "Geometry File"
+                        type    geometry
+                        default { "" }
+                        parmtag { "autoscope" "0000000000000000" }
+                        parmtag { "filechooser_mode" "read_and_write" }
+                        parmtag { "import_source" "op:lasso" }
+                        parmtag { "import_token" "stashfile" }
+                    }
+                    parm {
+                        name    "movestashtofile"
+                        label   "Move Stash to New File"
+                        type    button
+                        joinnext
+                        default { "0" }
+                        disablewhen "{ stashfile == \"\" } { stashfile =~ Error: }"
+                        parmtag { "autoscope" "0000000000000000" }
+                        parmtag { "import_source" "op:lasso" }
+                        parmtag { "import_token" "movestashtofile" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "loadstashfromfile"
+                        label   "Load Stash from File"
+                        type    button
+                        default { "0" }
+                        disablewhen "{ stashfile == \"\" } { stashfile =~ Error: }"
+                        parmtag { "autoscope" "0000000000000000" }
+                        parmtag { "import_source" "op:lasso" }
+                        parmtag { "import_token" "loadstashfromfile" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                }
+
+                multiswitcher {
+                    name    "stroke_numstrokes"
+                    label    "Number of Strokes"
+                    default 1
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:lasso" }
+                    parmtag { "import_token" "stroke_numstrokes" }
+                    parmtag { "multistartoffset" "1" }
+
+                    parm {
+                        name    "stroke#_enable"
+                        label   "Enable Stroke"
+                        type    toggle
+                        default { "1" }
+                        range   { 0 1 }
+                    }
+                    parm {
+                        name    "stroke#_radius"
+                        label   "Radius"
+                        type    float
+                        default { "0.1" }
+                        range   { 0! 1 }
+                    }
+                    parm {
+                        name    "stroke#_tool"
+                        label   "Tool"
+                        type    integer
+                        default { "0" }
+                        range   { 0 10 }
+                    }
+                    parm {
+                        name    "stroke#_color"
+                        label   "Color"
+                        type    color
+                        size    3
+                        default { "1" "1" "1" }
+                        range   { 0 1 }
+                    }
+                    parm {
+                        name    "stroke#_opacity"
+                        label   "Opacity"
+                        type    float
+                        default { "1" }
+                        range   { 0 10 }
+                    }
+                    parm {
+                        name    "stroke#_projtype"
+                        label   "Projection"
+                        type    integer
+                        default { "0" }
+                        range   { 0 10 }
+                    }
+                    parm {
+                        name    "stroke#_projcenter"
+                        label   "Projection Center"
+                        type    vector
+                        size    3
+                        default { "0" "0" "0" }
+                        range   { -1 1 }
+                    }
+                    parm {
+                        name    "stroke#_projdir"
+                        label   "Projection Direction"
+                        type    vector
+                        size    3
+                        default { "0" "0" "0" }
+                        range   { -1 1 }
+                    }
+                    parm {
+                        name    "stroke#_data"
+                        label   "Raw Data"
+                        type    string
+                        default { "0" }
+                        range   { 0 1 }
+                    }
+                }
+
+            }
+
+        }
+
+    }
+
+    groupsimple {
+        name    "folder4"
+        label   "Lasso"
+
+        parm {
+            name    "stroke_projtype"
+            label   "Projection"
+            type    ordinal
+            joinnext
+            default { "screen" }
+            menu {
+                "xy"        "XY Plane"
+                "yz"        "YZ Plane"
+                "zx"        "ZX Plane"
+                "screen"    "Screen Plane"
+                "geometry"  "Geometry"
+            }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "clear_strokes"
+            label   "Clear Strokes"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.pwd().node(\"lasso\").parm(\"stroke_numstrokes\").set(0)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "stroke_color"
+            label   "Color"
+            type    color
+            size    3
+            default { "1" "1" "1" }
+            disablewhen "{ createcolorattrib == 0 }"
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        groupsimple {
+            name    "folder6"
+            label   "Geometry Options"
+            hidewhen "{ stroke_projtype != geometry }"
+
+            parm {
+                name    "merge"
+                label   "Merge With Inputmesh"
+                type    toggle
+                default { "0" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "dist"
+                label   "Surface Distance"
+                type    float
+                default { "0" }
+                range   { -1 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "subdivide"
+                label   "Subdivide Input Mesh"
+                type    toggle
+                default { "0" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "subd_iterations"
+                label   "Subdivisions"
+                type    integer
+                default { "1" }
+                hidewhen "{ subdivide == 0 }"
+                range   { 0! 3 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
+    groupsimple {
+        name    "folder3"
+        label   "Mesh"
+
+        parm {
+            name    "mesh_type"
+            label   "Mesh Type"
+            type    buttonstrip
+            default { "0" }
+            menureplace {
+                "plane"     "Plane"
+                "extruded"  "Extruded"
+                "blob"      "Blob"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "mesh_res"
+            label   "Mesh Resolution"
+            type    float
+            default { "0.1" }
+            range   { 0! 5 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "units" "m1" }
+        }
+        parm {
+            name    "uv"
+            label   "Add UVS to lasso Islands"
+            type    toggle
+            default { "1" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "folder2"
+        label   "Blob Mesh Options"
+        hidewhen "{ mesh_type != 2 }"
+
+        parm {
+            name    "distance"
+            label   "Distance Scale"
+            type    float
+            default { "1" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "rad"
+            label   "Radius"
+            type    float
+            default { "4.055" }
+            range   { 0! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "bevel"
+            label   "Edge bevel"
+            type    float
+            default { "0.019" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "strength"
+            label   "Smooth Mesh Strenght"
+            type    float
+            default { "2" }
+            range   { 0! 50 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "inputmin"
+            label   "Input Min"
+            type    float
+            default { "0" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "inputmax"
+            label   "Input Max"
+            type    float
+            default { "1" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "outputmin"
+            label   "Output Min"
+            type    float
+            default { "0" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "outputmax"
+            label   "Output Max"
+            type    float
+            default { "1" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "remap"
+            label   "Remap"
+            type    ramp_flt
+            default { "2" }
+            range   { 1! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "rampfloatdefault" "1pos ( 0 ) 1value ( 0 ) 1interp ( linear ) 2pos ( 1 ) 2value ( 1 ) 2interp ( linear )" }
+        }
+    }
+
+    groupsimple {
+        name    "folder5"
+        label   "Extrude Mesh Options"
+        hidewhen "{ mesh_type != 1 }"
+
+        parm {
+            name    "extrude_dist"
+            label   "Extrude Distance Scale"
+            type    float
+            default { "1" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "bevel_offset"
+            label   "Bevel Distance"
+            type    float
+            default { "0" }
+            range   { 0! 0.1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "bevel_divisions"
+            label   "Bevel Divisions"
+            type    integer
+            default { "1" }
+            range   { 1! 20 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini.lops import set_kinds
+
+set_kinds.on_created(kwargs['node'])

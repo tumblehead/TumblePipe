@@ -1,0 +1,21 @@
+{
+	"values":["20.5.550","2"
+	],
+	"indexes":{
+		"hdaroot/constant2.userdata":0,
+		"hdaroot/curve/output0.userdata":0,
+		"hdaroot/switchifwired1.userdata":0,
+		"hdaroot/resample2.userdata":0,
+		"hdaroot/curve/reference_image.userdata":0,
+		"hdaroot/blur.userdata":0,
+		"hdaroot/output1.userdata":0,
+		"hdaroot/constant1.userdata":0,
+		"hdaroot/curve.userdata":0,
+		"hdaroot/rasterizegeo.userdata":0,
+		"hdaroot/Preview.userdata":0,
+		"hdaroot/over1.userdata":0,
+		"hdaroot/input1.userdata":0,
+		"hdaroot/curve/roto_curve.userdata":1,
+		"hdaroot/resample1.userdata":0
+	}
+}

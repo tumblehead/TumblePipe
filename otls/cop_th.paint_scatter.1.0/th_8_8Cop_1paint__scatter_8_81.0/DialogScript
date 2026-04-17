@@ -1,0 +1,191 @@
+# Dialog script for th::paint_scatter::1.0 automatically generated
+
+{
+    name	th::paint_scatter::1.0
+    script	th::paint_scatter::1.0
+    label	"th paint scatter"
+
+    output	geo	geo
+    output	basecolor	basecolor
+    output	rough	rough
+    output	normal	normal
+    output	height	ao
+    output	ao	height
+    signature	default	Default	{ }	{ Geometry RGB Mono RGB Mono Mono }
+
+    help {
+	""
+    }
+
+    parm {
+        name    "loppath"
+        label   "LOP Path"
+        type    oppath
+        default { "" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "opfilter" "!!LOP!!" }
+        parmtag { "oprelative" "." }
+    }
+    parm {
+        name    "primpattern"
+        label   "Primitives"
+        type    string
+        default { "" }
+        menutoggle {
+            [ "opmenu -l -a model/lopimport1 primpattern" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_action" "import loputils\nkwargs['ctrl'] = True\nloputils.selectPrimsInParm(kwargs, True,\n    lopparmname='loppath', allowinstanceproxies=True)" }
+        parmtag { "script_action_help" "Select primitives using the primitive picker dialog." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "sidefx::usdpathtype" "primlist" }
+    }
+    parm {
+        name    "autouv"
+        label   "Auto UVs"
+        type    toggle
+        default { "0" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "res"
+        label   "Resolution"
+        type    integer
+        default { "1024" }
+        help    "Total size of the image, if overscan not set. If not an integer, this sets the Display Window and rounded up to the next pixel for Data Window."
+        menu usetokenvalue {
+            "512"   "512"
+            "1024"  "1024"
+            "2048"  "2048"
+            "4096"  "4096"
+            "8192"  "8192"
+        }
+        range   { 512 8000 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    groupcollapsible {
+        name    "folder0"
+        label   "Brush Generation"
+
+        parm {
+            name    "seed"
+            label   "Seed"
+            type    integer
+            default { "0" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "stroke_density"
+            label   "Stroke Density"
+            type    float
+            default { "1000" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "normal_angle_scale"
+            label   "Normal Angle Scale"
+            type    float
+            default { "0.05" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "random_scale"
+            label   "Random Scale"
+            type    float
+            default { "1" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder1"
+        label   "Stamp Settings"
+
+        parm {
+            name    "stamp_scale"
+            label   "Stamp Scale"
+            type    float
+            default { "21" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "stroke_angle"
+            label   "Stroke Angle"
+            type    float
+            default { "0" }
+            range   { -180 180 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "stroke_falloff"
+            label   "Stroke Falloff"
+            type    float
+            default { "0.291" }
+            range   { 0! 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder2"
+        label   "Bristle Settings"
+
+        parm {
+            name    "bristl_size"
+            label   "Bristle Size"
+            type    log
+            default { "0.1" }
+            range   { 0.001 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "bristle_height"
+            label   "Bristle Height"
+            type    float
+            default { "0.01" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    parm {
+        name    "roughmax"
+        label   "Rough Max"
+        type    float
+        default { "1" }
+        range   { 0 1 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "roughmin"
+        label   "Rough Min"
+        type    float
+        default { "0" }
+        range   { 0 1 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "strokeColor"
+        label   "Stroke Color Multiplier"
+        type    float
+        default { "0.223" }
+        range   { 0! 1 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

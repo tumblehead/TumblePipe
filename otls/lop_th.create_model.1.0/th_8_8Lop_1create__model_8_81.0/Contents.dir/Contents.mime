@@ -1,0 +1,2452 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Lop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::create_model::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+comment ""
+position -21.9959 8.1356
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.631373 0.870588 1 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	},
+	"nodeshape":{
+		"type":"string",
+		"value":"bulge_down"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.inp"
+Content-Type: text/plain
+
+1
+0 -1.117590015990826e-08 7.085109976158142 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/assignmaterial.init"
+Content-Type: text/plain
+
+type = assignmaterial
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/assignmaterial.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 -0.82139
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	materiallibrary 1 1 "input1"
+}
+inputs
+{
+0 	materiallibrary 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/assignmaterial.multiparm"
+Content-Type: text/plain
+
+2
+primpattern# ../geopath#
+matspecpath# ../matpath#
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/assignmaterial.chn"
+Content-Type: text/plain
+
+{
+    channel nummaterials {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 expr = ch(\"../materials\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/assignmaterial.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+nummaterials	[ 8	locks=0 ]	(	[ nummaterials	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/assignmaterial.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary.init"
+Content-Type: text/plain
+
+type = materiallibrary
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 0.30811
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	set_geo_schema 1 1 "input1"
+}
+inputs
+{
+0 	set_geo_schema 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.55 0.7 0.75 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary.multiparm"
+Content-Type: text/plain
+
+2
+matnode# ../matnode#
+matpath# ../matpath#
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary.chn"
+Content-Type: text/plain
+
+{
+    channel materials {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../materials\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+genpreviewshaders	[ 0	locks=0 ]	(	"on"	)
+allowparmanim	[ 0	locks=0 ]	(	"off"	)
+referencerendervars	[ 0	locks=0 ]	(	"on"	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
+matpathprefix	[ 0	locks=0 ]	(	/materials/	)
+geometrygroup	[ 0	locks=0 ]	(	)
+fillgroup	[ 0	locks=0 ]	(	0	)
+matnet	[ 0	locks=0 ]	(	.	)
+containerpath	[ 0	locks=0 ]	(	/materials/	)
+fillmaterials	[ 0	locks=0 ]	(	0	)
+materials	[ 8	locks=0 ]	(	[ materials	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/assignmaterial.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/materiallibrary.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet.init"
+Content-Type: text/plain
+
+type = sopnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet.def"
+Content-Type: text/plain
+
+objflags objflags =  origin off
+pretransform UT_DMatrix4 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1
+comment ""
+position 3.9536 -5.33939
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on selectable on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+use_dcolor	[ 0	locks=0 ]	(	"off"	)
+dcolor	[ 0	locks=0 ]	(	1	1	1	)
+picking	[ 0	locks=0 ]	(	"on"	)
+pickscript	[ 0	locks=0 ]	(	""	)
+caching	[ 0	locks=0 ]	(	"on"	)
+vport_shadeopen	[ 0	locks=0 ]	(	"off"	)
+vport_displayassubdiv	[ 0	locks=0 ]	(	"off"	)
+shop_materialpath	[ 0	locks=0 ]	(	""	)
+shop_materialopts	[ 0	locks=0 ]	(	0	)
+tdisplay	[ 0	locks=0 ]	(	"off"	)
+display	[ 0	locks=0 ]	(	1	)
+xOrd	[ 0	locks=0 ]	(	"srt"	)
+rOrd	[ 0	locks=0 ]	(	"xyz"	)
+t	[ 0	locks=0 ]	(	0	0	0	)
+r	[ 0	locks=0 ]	(	0	0	0	)
+s	[ 0	locks=0 ]	(	1	1	1	)
+p	[ 0	locks=0 ]	(	0	0	0	)
+pr	[ 0	locks=0 ]	(	0	0	0	)
+scale	[ 0	locks=0 ]	(	1	)
+pre_xform	[ 0	locks=0 ]	(	0	)
+keeppos	[ 0	locks=0 ]	(	"off"	)
+childcomp	[ 0	locks=0 ]	(	"off"	)
+constraints_on	[ 0	locks=0 ]	(	"off"	)
+constraints_path	[ 0	locks=0 ]	(	""	)
+lookatpath	[ 0	locks=0 ]	(	""	)
+lookupobjpath	[ 0	locks=0 ]	(	""	)
+lookup	[ 0	locks=0 ]	(	on	)
+pathobjpath	[ 0	locks=0 ]	(	""	)
+roll	[ 0	locks=0 ]	(	0	)
+pos	[ 0	locks=0 ]	(	0	)
+uparmtype	[ 0	locks=0 ]	(	"arc"	)
+pathorient	[ 0	locks=0 ]	(	1	)
+up	[ 0	locks=0 ]	(	0	1	0	)
+bank	[ 0	locks=0 ]	(	0	)
+showlopstage	[ 0	locks=0 ]	(	`chsop(\"../showlopstage\")`	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create.init"
+Content-Type: text/plain
+
+type = subnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position -0.936281 3.85698
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+0 "output1"
+1 "output2"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+label1	[ 0	locks=0 ]	(	"Sub-Network Input #1"	)
+label2	[ 0	locks=0 ]	(	"Sub-Network Input #2"	)
+label3	[ 0	locks=0 ]	(	"Sub-Network Input #3"	)
+label4	[ 0	locks=0 ]	(	"Sub-Network Input #4"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create.inp"
+Content-Type: text/plain
+
+4
+0 3.7098619999999998 -0.064459999999999573 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 3.7098619999999998 1.0650400000000004 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+2 5.9690619999999992 0.38734001795291945 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+3 5.9690619999999992 1.5168400179529193 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/__stickynote2.postitinit"
+Content-Type: text/plain
+
+type = postitnote
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/__stickynote2.postitdef"
+Content-Type: text/plain
+
+text "Load model from file here"
+position 3.0771 2.99302
+size 3.00858 0.827032
+flags = minimize off
+stat
+{
+  create 1751276043
+  modify 1751276148
+  author tumblehead@gabriel-3090
+  access 0777
+}
+color UT_Color RGB 0.765 1 0.576 
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/default.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/default.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position -0.243738 -0.06446
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	OUT_GEO 1 1 "input1"
+}
+inputs
+{
+0 	OUT_GEO 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@gabriel-3090
+  access 0777
+}
+color UT_Color RGB 0.29 0.565 0.886 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/default.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/default.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/OUT_GEO.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/OUT_GEO.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position -0.243738 1.06504
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	rest 1 1 "input1"
+}
+inputs
+{
+0 	rest 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@gabriel-3090
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/OUT_GEO.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+copyinput	[ 0	locks=0 ]	(	"on"	)
+cacheinput	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/OUT_GEO.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/load_model_file.init"
+Content-Type: text/plain
+
+type = file
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/load_model_file.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position -0.243738 3.32404
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@gabriel-3090
+  access 0777
+}
+color UT_Color RGB 0.9 0.8 0.55 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/load_model_file.chn"
+Content-Type: text/plain
+
+{
+    channel index {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = $FF-ch(\"f1\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/load_model_file.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+filemode	[ 0	locks=0 ]	(	"read"	)
+file	[ 0	locks=0 ]	(	default.bgeo	)
+reload	[ 0	locks=0 ]	(	0	)
+objpattern	[ 0	locks=0 ]	(	*	)
+geodatapath	[ 0	locks=0 ]	(	""	)
+missingframe	[ 0	locks=0 ]	(	"error"	)
+loadtype	[ 0	locks=0 ]	(	"full"	)
+packedviewedit	[ 0	locks=0 ]	(	"unchanged"	)
+viewportlod	[ 0	locks=0 ]	(	"box"	)
+packexpanded	[ 0	locks=0 ]	(	"on"	)
+delayload	[ 0	locks=0 ]	(	"off"	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+cachesize	[ 0	locks=0 ]	(	0	)
+prefetch	[ 0	locks=0 ]	(	"off"	)
+f	[ 0	locks=0 ]	(	1	24	)
+index	[ 0	locks=0 ]	(	[ index	0 ] 	)
+wrap	[ 0	locks=0 ]	(	"cycle"	)
+retry	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/load_model_file.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/rest.init"
+Content-Type: text/plain
+
+type = rest
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/rest.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position -0.243738 2.19454
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	load_model_file 0 1 "input1"
+}
+inputs
+{
+0 	load_model_file 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/rest.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+mode	[ 0	locks=0 ]	(	"store"	)
+restattribname	[ 0	locks=0 ]	(	rest	)
+file	[ 0	locks=0 ]	(	""	)
+nml	[ 0	locks=0 ]	(	"on"	)
+normalattribname	[ 0	locks=0 ]	(	rnml	)
+xform	[ 0	locks=0 ]	(	"off"	)
+xformattribname	[ 0	locks=0 ]	(	restxform	)
+quadric	[ 0	locks=0 ]	(	"off"	)
+quadricattribname	[ 0	locks=0 ]	(	Pref	)
+precision	[ 0	locks=0 ]	(	"auto"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create/rest.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create.order"
+Content-Type: text/plain
+
+4
+default
+OUT_GEO
+load_model_file
+rest
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/create.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/OUT_default.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/OUT_default.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position -0.936281 2.72748
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	create 0 1 "input1"
+}
+inputs
+{
+0 	create 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/OUT_default.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+copyinput	[ 0	locks=0 ]	(	"on"	)
+cacheinput	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/OUT_default.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet.order"
+Content-Type: text/plain
+
+2
+create
+OUT_default
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopimport_default.init"
+Content-Type: text/plain
+
+type = sopimport
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopimport_default.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 2.56711
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	initialize_geo_prims 1 1 "input1"
+}
+inputs
+{
+0 	initialize_geo_prims 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopimport_default.chn"
+Content-Type: text/plain
+
+{
+    channel adjustxformsforinput {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../adjustxformsforinput\") }
+    }
+    channel asreference {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../asreference\") }
+    }
+    channel attribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = "\"* ^__* ^usd*\""
+      flags = 0
+      segment { length = 0 expr = chs(\"../attribs\") }
+    }
+    channel authortimesamples {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"auto\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../authortimesamples\") }
+    }
+    channel bindmaterials {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"nobind\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../bindmaterials\") }
+    }
+    channel boolattribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../boolattribs\") }
+    }
+    channel constantattribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../constantattribs\") }
+    }
+    channel copycontents {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../copycontents\") }
+    }
+    channel customattribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../customattribs\") }
+    }
+    channel defineonlyleafprims {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../defineonlyleafprims\") }
+    }
+    channel enable_attribs {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_attribs\") }
+    }
+    channel enable_boolattribs {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_boolattribs\") }
+    }
+    channel enable_constantattribs {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_constantattribs\") }
+    }
+    channel enable_customattribs {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_customattribs\") }
+    }
+    channel enable_defineonlyleafprims {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_defineonlyleafprims\") }
+    }
+    channel enable_group {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_group\") }
+    }
+    channel enable_grouptype {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_grouptype\") }
+    }
+    channel enable_heightfieldconvert {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_heightfieldconvert\") }
+    }
+    channel enable_indexattribs {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_indexattribs\") }
+    }
+    channel enable_kindschema {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_kindschema\") }
+    }
+    channel enable_nurbscurvehandling {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_nurbscurvehandling\") }
+    }
+    channel enable_nurbssurfhandling {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_nurbssurfhandling\") }
+    }
+    channel enable_otherprimhandling {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_otherprimhandling\") }
+    }
+    channel enable_packedhandling {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_packedhandling\") }
+    }
+    channel enable_packedusdhandling {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_packedusdhandling\") }
+    }
+    channel enable_partitionattribs {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_partitionattribs\") }
+    }
+    channel enable_pathattr {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_pathattr\") }
+    }
+    channel enable_pathprefix {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../enable_pathprefix\") }
+    }
+    channel enable_polygonsassubd {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_polygonsassubd\") }
+    }
+    channel enable_prefixabsolutepaths {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_prefixabsolutepaths\") }
+    }
+    channel enable_prefixpartitionsubsets {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_prefixpartitionsubsets\") }
+    }
+    channel enable_reversepolygons {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_reversepolygons\") }
+    }
+    channel enable_savepath {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_savepath\") }
+    }
+    channel enable_scalarconstantattribs {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_scalarconstantattribs\") }
+    }
+    channel enable_setdefaultprim {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_setdefaultprim\") }
+    }
+    channel enable_setmissingwidths {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_setmissingwidths\") }
+    }
+    channel enable_staticattribs {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_staticattribs\") }
+    }
+    channel enable_subdgroup {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_subdgroup\") }
+    }
+    channel enable_subsetgroups {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_subsetgroups\") }
+    }
+    channel enable_topologyhandling {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_topologyhandling\") }
+    }
+    channel enable_translateuvtost {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_translateuvtost\") }
+    }
+    channel enable_uint64attribs {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_uint64attribs\") }
+    }
+    channel enable_uintattribs {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../enable_uintattribs\") }
+    }
+    channel group {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../group\") }
+    }
+    channel grouptype {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"primitive\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../grouptype\") }
+    }
+    channel heightfieldconvert {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../heightfieldconvert\") }
+    }
+    channel indexattribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../indexattribs\") }
+    }
+    channel instanceable {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../instanceable\") }
+    }
+    channel kindschema {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"component\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../kindschema\") }
+    }
+    channel nurbscurvehandling {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"basiscurves\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../nurbscurvehandling\") }
+    }
+    channel nurbssurfhandling {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"meshes\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../nurbssurfhandling\") }
+    }
+    channel otherprimhandling {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"define\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../otherprimhandling\") }
+    }
+    channel packedhandling {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"xforms\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../packedhandling\") }
+    }
+    channel packedusdhandling {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"xform\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../packedusdhandling\") }
+    }
+    channel parentprimkind {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"group\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../parentprimkind\") }
+    }
+    channel parentprimtype {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"UsdGeomXform\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../parentprimtype\") }
+    }
+    channel partitionattribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../partitionattribs\") }
+    }
+    channel pathattr {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"path,name\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../pathattr\") }
+    }
+    channel pathprefix {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"/Geometry\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../pathprefix\")/geo }
+    }
+    channel polygonsassubd {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../polygonsassubd\") }
+    }
+    channel prefixabsolutepaths {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../prefixabsolutepaths\") }
+    }
+    channel prefixpartitionsubsets {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../prefixpartitionsubsets\") }
+    }
+    channel primpath {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"/$OS\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../primpath\") }
+    }
+    channel refprim {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../refprim\") }
+    }
+    channel refprimpath {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../refprimpath\") }
+    }
+    channel reftype {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"payloadweak\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../reftype\") }
+    }
+    channel reversepolygons {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../reversepolygons\") }
+    }
+    channel savepath {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../savepath\") }
+    }
+    channel scalarconstantattribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../scalarconstantattribs\") }
+    }
+    channel setdefaultprim {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../setdefaultprim\") }
+    }
+    channel setmissingwidths {
+      lefttype = extend
+      righttype = extend
+      default = 0.01
+      flags = 0
+      segment { length = 0 value = 0.01 0.01 expr = ch(\"../setmissingwidths\") }
+    }
+    channel staticattribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../staticattribs\") }
+    }
+    channel subdgroup {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../subdgroup\") }
+    }
+    channel subsetgroups {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../subsetgroups\") }
+    }
+    channel topologyhandling {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"animated\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../topologyhandling\") }
+    }
+    channel translateuvtost {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../translateuvtost\") }
+    }
+    channel uint64attribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../uint64attribs\") }
+    }
+    channel uintattribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../uintattribs\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopimport_default.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+soppath	[ 0	locks=0 ]	(	../sopnet/OUT_default	)
+asreference	[ 0	locks=0 ]	(	[ asreference	0 ] 	)
+copycontents	[ 0	locks=0 ]	(	[ copycontents	0 ] 	)
+ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
+adjustxformsforinput	[ 0	locks=0 ]	(	[ adjustxformsforinput	1 ] 	)
+bindmaterials	[ 0	locks=0 ]	(	[ bindmaterials	nobind ] 	)
+reftype	[ 0	locks=0 ]	(	[ reftype	payloadweak ] 	)
+refprim	[ 0	locks=0 ]	(	[ refprim	automaticPrim ] 	)
+refprimpath	[ 0	locks=0 ]	(	[ refprimpath	"" ] 	)
+primpath	[ 0	locks=0 ]	(	[ primpath	/$OS ] 	)
+instanceable	[ 0	locks=0 ]	(	[ instanceable	0 ] 	)
+parentprimkind	[ 0	locks=0 ]	(	[ parentprimkind	group ] 	)
+parentprimtype	[ 0	locks=0 ]	(	[ parentprimtype	UsdGeomXform ] 	)
+separator_config	[ 0	locks=0 ]	(	)
+enable_group	[ 0	locks=0 ]	(	[ enable_group	0 ] 	)
+group	[ 0	locks=0 ]	(	[ group	"" ] 	)
+enable_grouptype	[ 0	locks=0 ]	(	[ enable_grouptype	0 ] 	)
+grouptype	[ 0	locks=0 ]	(	[ grouptype	primitive ] 	)
+enable_pathprefix	[ 0	locks=0 ]	(	[ enable_pathprefix	1 ] 	)
+pathprefix	[ 8	locks=0 ]	(	[ pathprefix	/$OS ] 	)
+enable_savepath	[ 0	locks=0 ]	(	[ enable_savepath	0 ] 	)
+savepath	[ 0	locks=0 ]	(	[ savepath	"" ] 	)
+separator_extraconfig	[ 0	locks=0 ]	(	)
+primitivedefinitiongroup	[ 0	locks=0 ]	(	1	)
+enable_packedusdhandling	[ 0	locks=0 ]	(	[ enable_packedusdhandling	0 ] 	)
+packedusdhandling	[ 0	locks=0 ]	(	[ packedusdhandling	xformandattribs ] 	)
+enable_otherprimhandling	[ 0	locks=0 ]	(	[ enable_otherprimhandling	0 ] 	)
+otherprimhandling	[ 0	locks=0 ]	(	[ otherprimhandling	define ] 	)
+enable_defineonlyleafprims	[ 0	locks=0 ]	(	[ enable_defineonlyleafprims	0 ] 	)
+defineonlyleafprims	[ 0	locks=0 ]	(	[ defineonlyleafprims	0 ] 	)
+enable_packedhandling	[ 0	locks=0 ]	(	[ enable_packedhandling	0 ] 	)
+packedhandling	[ 0	locks=0 ]	(	[ packedhandling	nativeinstances ] 	)
+enable_agenthandling	[ 0	locks=0 ]	(	"off"	)
+agenthandling	[ 0	locks=0 ]	(	instancedskelroots	)
+enable_nurbscurvehandling	[ 0	locks=0 ]	(	[ enable_nurbscurvehandling	0 ] 	)
+nurbscurvehandling	[ 0	locks=0 ]	(	[ nurbscurvehandling	basiscurves ] 	)
+enable_nurbssurfhandling	[ 0	locks=0 ]	(	[ enable_nurbssurfhandling	0 ] 	)
+nurbssurfhandling	[ 0	locks=0 ]	(	[ nurbssurfhandling	meshes ] 	)
+enable_kindschema	[ 0	locks=0 ]	(	[ enable_kindschema	0 ] 	)
+kindschema	[ 0	locks=0 ]	(	[ kindschema	component ] 	)
+enable_pathattr	[ 0	locks=0 ]	(	[ enable_pathattr	0 ] 	)
+pathattr	[ 0	locks=0 ]	(	[ pathattr	path,name ] 	)
+enable_prefixabsolutepaths	[ 0	locks=0 ]	(	[ enable_prefixabsolutepaths	0 ] 	)
+prefixabsolutepaths	[ 0	locks=0 ]	(	[ prefixabsolutepaths	0 ] 	)
+enable_heightfieldconvert	[ 0	locks=0 ]	(	[ enable_heightfieldconvert	0 ] 	)
+heightfieldconvert	[ 0	locks=0 ]	(	[ heightfieldconvert	0 ] 	)
+geometryhandlinggroup	[ 0	locks=0 ]	(	0	)
+enable_polygonsassubd	[ 0	locks=0 ]	(	[ enable_polygonsassubd	0 ] 	)
+polygonsassubd	[ 0	locks=0 ]	(	[ polygonsassubd	0 ] 	)
+enable_subdgroup	[ 0	locks=0 ]	(	[ enable_subdgroup	0 ] 	)
+subdgroup	[ 0	locks=0 ]	(	[ subdgroup	"" ] 	)
+enable_reversepolygons	[ 0	locks=0 ]	(	[ enable_reversepolygons	0 ] 	)
+reversepolygons	[ 0	locks=0 ]	(	[ reversepolygons	0 ] 	)
+enable_setmissingwidths	[ 0	locks=0 ]	(	[ enable_setmissingwidths	1 ] 	)
+setmissingwidths	[ 0	locks=0 ]	(	[ setmissingwidths	0.01 ] 	)
+importdatagroup	[ 0	locks=0 ]	(	1	)
+authortimesamples	[ 0	locks=0 ]	(	[ authortimesamples	auto ] 	)
+enable_setdefaultprim	[ 0	locks=0 ]	(	[ enable_setdefaultprim	0 ] 	)
+setdefaultprim	[ 0	locks=0 ]	(	[ setdefaultprim	1 ] 	)
+enable_topologyhandling	[ 0	locks=0 ]	(	[ enable_topologyhandling	0 ] 	)
+topologyhandling	[ 0	locks=0 ]	(	[ topologyhandling	animated ] 	)
+enable_attribs	[ 0	locks=0 ]	(	[ enable_attribs	0 ] 	)
+attribs	[ 0	locks=0 ]	(	[ attribs	"* ^__* ^usd*" ] 	)
+enable_indexattribs	[ 0	locks=0 ]	(	[ enable_indexattribs	0 ] 	)
+indexattribs	[ 0	locks=0 ]	(	[ indexattribs	type:string ] 	)
+enable_constantattribs	[ 0	locks=0 ]	(	[ enable_constantattribs	0 ] 	)
+constantattribs	[ 0	locks=0 ]	(	[ constantattribs	"" ] 	)
+enable_scalarconstantattribs	[ 0	locks=0 ]	(	[ enable_scalarconstantattribs	0 ] 	)
+scalarconstantattribs	[ 0	locks=0 ]	(	[ scalarconstantattribs	"" ] 	)
+enable_boolattribs	[ 0	locks=0 ]	(	[ enable_boolattribs	0 ] 	)
+boolattribs	[ 0	locks=0 ]	(	[ boolattribs	"" ] 	)
+enable_uintattribs	[ 0	locks=0 ]	(	[ enable_uintattribs	0 ] 	)
+uintattribs	[ 0	locks=0 ]	(	[ uintattribs	"" ] 	)
+enable_uint64attribs	[ 0	locks=0 ]	(	[ enable_uint64attribs	0 ] 	)
+uint64attribs	[ 0	locks=0 ]	(	[ uint64attribs	"" ] 	)
+enable_assetpathattribs	[ 0	locks=0 ]	(	"off"	)
+assetpathattribs	[ 0	locks=0 ]	(	""	)
+enable_staticattribs	[ 0	locks=0 ]	(	[ enable_staticattribs	0 ] 	)
+staticattribs	[ 0	locks=0 ]	(	[ staticattribs	"" ] 	)
+enable_partitionattribs	[ 0	locks=0 ]	(	[ enable_partitionattribs	0 ] 	)
+partitionattribs	[ 0	locks=0 ]	(	[ partitionattribs	"" ] 	)
+enable_prefixpartitionsubsets	[ 0	locks=0 ]	(	[ enable_prefixpartitionsubsets	0 ] 	)
+prefixpartitionsubsets	[ 0	locks=0 ]	(	[ prefixpartitionsubsets	1 ] 	)
+enable_subsetgroups	[ 0	locks=0 ]	(	[ enable_subsetgroups	0 ] 	)
+subsetgroups	[ 0	locks=0 ]	(	[ subsetgroups	"" ] 	)
+enable_customattribs	[ 0	locks=0 ]	(	[ enable_customattribs	0 ] 	)
+customattribs	[ 0	locks=0 ]	(	[ customattribs	"" ] 	)
+enable_translateuvtost	[ 0	locks=0 ]	(	[ enable_translateuvtost	0 ] 	)
+translateuvtost	[ 0	locks=0 ]	(	[ translateuvtost	1 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopimport_default.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/xform.init"
+Content-Type: text/plain
+
+type = xform
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/xform.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 -3.08039
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	loftpayloadinfo1 1 1 "input1"
+}
+inputs
+{
+0 	loftpayloadinfo1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/xform.chn"
+Content-Type: text/plain
+
+{
+    channel sample_f1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel sample_f2 {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel sample_f3 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = @finc }
+    }
+    channel prx {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../prx\") }
+    }
+    channel pry {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../pry\") }
+    }
+    channel prz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../prz\") }
+    }
+    channel px {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../px\") }
+    }
+    channel py {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../py\") }
+    }
+    channel pz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../pz\") }
+    }
+    channel rOrd {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../rOrd\") }
+    }
+    channel rx {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../rx\") }
+    }
+    channel ry {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../ry\") }
+    }
+    channel rz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../rz\") }
+    }
+    channel scale {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../scale\") }
+    }
+    channel shear1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../shear1\") }
+    }
+    channel shear2 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../shear2\") }
+    }
+    channel shear3 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../shear3\") }
+    }
+    channel sx {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../sx\") }
+    }
+    channel sy {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../sy\") }
+    }
+    channel sz {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../sz\") }
+    }
+    channel tx {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../tx\") }
+    }
+    channel ty {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../ty\") }
+    }
+    channel tz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../tz\") }
+    }
+    channel xOrd {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../xOrd\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/xform.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+sample_group	[ 0	locks=0 ]	(	0	)
+sample_behavior	[ 0	locks=0 ]	(	single	)
+sample_f	[ 0	locks=0 ]	(	[ sample_f1	1 ] 	[ sample_f2	240 ] 	[ sample_f3	1 ] 	)
+sample_subframeenable	[ 0	locks=0 ]	(	"off"	)
+sample_subframegroup	[ 0	locks=0 ]	(	0	)
+sample_shuttermode	[ 0	locks=0 ]	(	manual	)
+sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
+sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
+sample_count	[ 0	locks=0 ]	(	2	)
+sample_includeframe	[ 0	locks=0 ]	(	"on"	)
+primpattern	[ 0	locks=0 ]	(	`loplastmodifiedprims('../sopimport')`	)
+xformdescription	[ 0	locks=0 ]	(	$OS	)
+xforminworldspace	[ 0	locks=0 ]	(	"on"	)
+setabsolutexform	[ 0	locks=0 ]	(	"off"	)
+xOrd	[ 0	locks=0 ]	(	[ xOrd	0 ] 	)
+rOrd	[ 0	locks=0 ]	(	[ rOrd	0 ] 	)
+t	[ 0	locks=0 ]	(	[ tx	0 ] 	[ ty	0 ] 	[ tz	0 ] 	)
+r	[ 0	locks=0 ]	(	[ rx	0 ] 	[ ry	0 ] 	[ rz	0 ] 	)
+s	[ 0	locks=0 ]	(	[ sx	1 ] 	[ sy	1 ] 	[ sz	1 ] 	)
+shear	[ 0	locks=0 ]	(	[ shear1	0 ] 	[ shear2	0 ] 	[ shear3	0 ] 	)
+scale	[ 0	locks=0 ]	(	[ scale	1 ] 	)
+parmgroup_pivotxform	[ 0	locks=0 ]	(	0	)
+p	[ 0	locks=0 ]	(	[ px	0 ] 	[ py	0 ] 	[ pz	0 ] 	)
+pr	[ 0	locks=0 ]	(	[ prx	0 ] 	[ pry	0 ] 	[ prz	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/xform.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 -5.33939
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	metadata 1 1 "input1"
+}
+inputs
+{
+0 	metadata 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_stage.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_stage.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 5.95561
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_stage.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_stage.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/loftpayloadinfo1.init"
+Content-Type: text/plain
+
+type = loftpayloadinfo
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/loftpayloadinfo1.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 -1.95089
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	assignmaterial 1 1 "input1"
+}
+inputs
+{
+0 	assignmaterial 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author nobody@nowhere
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/loftpayloadinfo1.spareparmdef"
+Content-Type: text/plain
+
+    parm {
+        name    "lop_activation"
+        label   "Activation"
+        type    integer
+        default { "1" }
+        range   { 0 1 }
+    }
+    groupcollapsible {
+        name    "sample_group2"
+        label   "Frame Range/Subframes"
+        grouptag { "group_type" "collapsible" }
+        parmtag { "sidefx::header_parm" "sample_behavior" }
+
+        parm {
+            name    "sample_behavior"
+            baseparm
+            label   "Sampling Behavior"
+            export  none
+        }
+        parm {
+            name    "sample_f"
+            baseparm
+            label   "Start/End/Inc"
+            export  none
+        }
+        parm {
+            name    "sample_subframeenable"
+            baseparm
+            label   "Subframe Sampling"
+            export  none
+        }
+        groupsimple {
+            name    "sample_subframegroup2"
+            label   "Subframe Sampling"
+            disablewhen "{ sample_subframeenable == 0 }"
+            grouptag { "group_type" "simple" }
+            parmtag { "sidefx::header_toggle" "sample_subframeenable" }
+
+            parm {
+                name    "sample_shuttermode"
+                baseparm
+                label   "Shutter"
+                export  none
+            }
+            parm {
+                name    "sample_shutterrange"
+                baseparm
+                label   "Shutter Open/Close"
+                export  none
+            }
+            parm {
+                name    "sample_cameraprim"
+                baseparm
+                label   "Camera Prim"
+                export  none
+            }
+            parm {
+                name    "sample_count"
+                baseparm
+                label   "Samples"
+                export  none
+            }
+            parm {
+                name    "sample_includeframe"
+                baseparm
+                label   "Always Include Frame Sample"
+                export  none
+            }
+        }
+
+    }
+
+    parm {
+        name    "primpattern"
+        baseparm
+        label   "Primitives"
+        export  none
+    }
+    parm {
+        name    "setstats"
+        baseparm
+        label   "Set Primitive Statistics"
+        export  none
+    }
+    parm {
+        name    "setcountstats"
+        baseparm
+        label   "Set Geometry Count Statistics"
+        export  none
+    }
+    multiparm {
+        name    "num_colors"
+        label    "Number of Colors"
+        baseparm
+        default 0
+
+        parm {
+            name    "setcolor#"
+            baseparm
+            label   "Set Color"
+            export  none
+        }
+        parm {
+            name    "color#"
+            baseparm
+            label   "Color"
+            export  none
+        }
+    }
+
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/loftpayloadinfo1.chn"
+Content-Type: text/plain
+
+{
+    channel sample_f1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel sample_f2 {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel sample_f3 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = @finc }
+    }
+    channel lop_activation {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = "ch(\"../asreference\") && strmatch(\"payload*\",chs(\"../reftype\"))" }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/loftpayloadinfo1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+sample_group	[ 0	locks=0 ]	(	0	)
+sample_behavior	[ 0	locks=0 ]	(	single	)
+sample_f	[ 0	locks=0 ]	(	[ sample_f1	1 ] 	[ sample_f2	240 ] 	[ sample_f3	1 ] 	)
+sample_subframeenable	[ 0	locks=0 ]	(	"off"	)
+sample_subframegroup	[ 0	locks=0 ]	(	0	)
+sample_shuttermode	[ 0	locks=0 ]	(	manual	)
+sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
+sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
+sample_count	[ 0	locks=0 ]	(	2	)
+sample_includeframe	[ 0	locks=0 ]	(	"on"	)
+primpattern	[ 0	locks=0 ]	(	`loplastmodifiedprims('../sopimport')`	)
+setstats	[ 0	locks=0 ]	(	"off"	)
+setcountstats	[ 0	locks=0 ]	(	"off"	)
+num_colors	[ 0	locks=0 ]	(	0	)
+lop_activation	[ 0	locks=0 ]	(	[ lop_activation	1 ] 	)
+sample_group2	[ 0	locks=0 ]	(	0	)
+sample_subframegroup2	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/loftpayloadinfo1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/initialize_geo_prims.init"
+Content-Type: text/plain
+
+type = primitive
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/initialize_geo_prims.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 3.69661
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	initialize_parent_prim 1 1 "input1"
+}
+inputs
+{
+0 	initialize_parent_prim 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@gabriel-3090
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/initialize_geo_prims.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+primpath	[ 0	locks=0 ]	(	`chs(\"../pathprefix\")`/geo	)
+primkind	[ 0	locks=0 ]	(	""	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
+primtype	[ 0	locks=0 ]	(	UsdGeomScope	)
+specifier	[ 0	locks=0 ]	(	def	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/initialize_geo_prims.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/initialize_parent_prim.init"
+Content-Type: text/plain
+
+type = primitive
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/initialize_parent_prim.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 4.82611
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	IN_stage 1 1 "input1"
+}
+inputs
+{
+0 	IN_stage 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@gabriel-3090
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/initialize_parent_prim.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+primpath	[ 0	locks=0 ]	(	`chs(\"../pathprefix\")`	)
+primkind	[ 0	locks=0 ]	(	component	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
+primtype	[ 0	locks=0 ]	(	UsdGeomXform	)
+specifier	[ 0	locks=0 ]	(	def	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/initialize_parent_prim.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/set_geo_schema.init"
+Content-Type: text/plain
+
+type = configureprimitive
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/set_geo_schema.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 1.43761
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	sopimport_default 1 1 "input1"
+}
+inputs
+{
+0 	sopimport_default 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@gabriel-3090
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/set_geo_schema.chn"
+Content-Type: text/plain
+
+{
+    channel sample_f1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel sample_f2 {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel sample_f3 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @finc }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/set_geo_schema.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+sample_group	[ 0	locks=0 ]	(	0	)
+sample_behavior	[ 0	locks=0 ]	(	single	)
+sample_f	[ 0	locks=0 ]	(	[ sample_f1	1 ] 	[ sample_f2	240 ] 	[ sample_f3	1 ] 	)
+sample_subframeenable	[ 0	locks=0 ]	(	"off"	)
+sample_subframegroup	[ 0	locks=0 ]	(	0	)
+sample_shuttermode	[ 0	locks=0 ]	(	manual	)
+sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
+sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
+sample_count	[ 0	locks=0 ]	(	2	)
+sample_includeframe	[ 0	locks=0 ]	(	"on"	)
+primpattern	[ 8	locks=0 ]	(	`chs(\"../pathprefix\")`/geo	)
+setpurpose	[ 0	locks=0 ]	(	"off"	)
+purpose	[ 0	locks=0 ]	(	default	)
+setproxy	[ 0	locks=0 ]	(	"off"	)
+proxy	[ 0	locks=0 ]	(	""	)
+setinstanceable	[ 0	locks=0 ]	(	"off"	)
+instanceable	[ 0	locks=0 ]	(	instanceable	)
+setactivation	[ 0	locks=0 ]	(	"off"	)
+activation	[ 0	locks=0 ]	(	"on"	)
+setvisibility	[ 0	locks=0 ]	(	"off"	)
+visibility	[ 0	locks=0 ]	(	inherit	)
+setextents	[ 0	locks=0 ]	(	"off"	)
+extents	[ 0	locks=0 ]	(	missing	)
+setkind	[ 0	locks=0 ]	(	"off"	)
+kind	[ 0	locks=0 ]	(	""	)
+fixkindhierarchy	[ 0	locks=0 ]	(	"off"	)
+Schema	[ 0	locks=0 ]	(	1	)
+settype	[ 0	locks=0 ]	(	"on"	)
+type	[ 0	locks=0 ]	(	UsdGeomScope	)
+setspecifier	[ 0	locks=0 ]	(	"off"	)
+specifier	[ 0	locks=0 ]	(	def	)
+setapischemas	[ 0	locks=0 ]	(	"off"	)
+apischemas	[ 0	locks=0 ]	(	""	)
+DrawMode	[ 0	locks=0 ]	(	0	)
+setapplydrawmode	[ 0	locks=0 ]	(	"off"	)
+applydrawmode	[ 0	locks=0 ]	(	"off"	)
+setdrawmode	[ 0	locks=0 ]	(	"off"	)
+drawmode	[ 0	locks=0 ]	(	default	)
+setdrawmodecolor	[ 0	locks=0 ]	(	"off"	)
+drawmodecolor	[ 0	locks=0 ]	(	0.18	0.18	0.18	)
+setcardgeometry	[ 0	locks=0 ]	(	"off"	)
+cardgeometry	[ 0	locks=0 ]	(	cross	)
+setcardtexturexneg	[ 0	locks=0 ]	(	"off"	)
+cardtexturexneg	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`XNeg.png	)
+setcardtexturexpos	[ 0	locks=0 ]	(	"off"	)
+cardtexturexpos	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`XPos.png	)
+setcardtextureyneg	[ 0	locks=0 ]	(	"off"	)
+cardtextureyneg	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`YNeg.png	)
+setcardtextureypos	[ 0	locks=0 ]	(	"off"	)
+cardtextureypos	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`YPos.png	)
+setcardtexturezneg	[ 0	locks=0 ]	(	"off"	)
+cardtexturezneg	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`ZNeg.png	)
+setcardtexturezpos	[ 0	locks=0 ]	(	"off"	)
+cardtexturezpos	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`ZPos.png	)
+AssetInfo	[ 0	locks=0 ]	(	0	)
+setassetidentifier	[ 0	locks=0 ]	(	"off"	)
+assetidentifier	[ 0	locks=0 ]	(	""	)
+setassetname	[ 0	locks=0 ]	(	"off"	)
+assetname	[ 0	locks=0 ]	(	""	)
+setassetthumbnail	[ 0	locks=0 ]	(	"off"	)
+assetthumbnail	[ 0	locks=0 ]	(	""	)
+setassetversion	[ 0	locks=0 ]	(	"off"	)
+assetversion	[ 0	locks=0 ]	(	""	)
+setassetdependencies	[ 0	locks=0 ]	(	"off"	)
+assetdependencies	[ 0	locks=0 ]	(	""	)
+assetinfocount	[ 0	locks=0 ]	(	0	)
+Interface	[ 0	locks=0 ]	(	0	)
+seticon	[ 0	locks=0 ]	(	"off"	)
+icon	[ 0	locks=0 ]	(	""	)
+setcatalogparentpath	[ 0	locks=0 ]	(	"off"	)
+catalogparentpath	[ 0	locks=0 ]	(	""	)
+seteditable	[ 0	locks=0 ]	(	"off"	)
+editable	[ 0	locks=0 ]	(	"on"	)
+setselectable	[ 0	locks=0 ]	(	"off"	)
+selectable	[ 0	locks=0 ]	(	"on"	)
+sethideinui	[ 0	locks=0 ]	(	"off"	)
+hideinui	[ 0	locks=0 ]	(	"off"	)
+CustomData	[ 0	locks=0 ]	(	0	)
+customdatacount	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/set_geo_schema.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/metadata.init"
+Content-Type: text/plain
+
+type = pythonscript
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/metadata.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 -4.20989
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	xform 1 1 "input1"
+}
+inputs
+{
+0 	xform 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/metadata.chn"
+Content-Type: text/plain
+
+{
+    channel python {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = chs(\"../metadata_python\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/metadata.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+python	[ 0	locks=0 ]	(	[ python	"# Use the drop down menu to select example code snippets.
+node = hou.pwd()
+
+# Add code to fetch node parameters and evaluate primitive patterns.
+# This should be done before calling editableStage or editableLayer.
+# paths = hou.LopSelectionRule(\"/*\").expandedPaths(node.input(0))
+
+# Add code to modify the stage.
+stage = node.editableStage()
+" ] 	)
+maintainstate	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/metadata.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.order"
+Content-Type: text/plain
+
+12
+assignmaterial
+materiallibrary
+sopnet
+sopimport_default
+xform
+output
+IN_stage
+loftpayloadinfo1
+initialize_geo_prims
+initialize_parent_prim
+set_geo_schema
+metadata
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

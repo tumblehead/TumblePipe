@@ -1,0 +1,15 @@
+Operator:     th::archive::1.0
+Label:        th archive
+Path:         oplib:/th::Lop/archive::1.0?th::Lop/archive::1.0
+Icon:         LOP_subnet
+Table:        Lop
+License:      
+Extra:        visibleoutputs=0 
+User:         
+Inputs:       1 to 1
+Outputs:      0
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Wed Sep 24 10:25:01 2025
+

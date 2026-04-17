@@ -1,0 +1,165 @@
+# Dialog script for th::mask_painter::1.0 automatically generated
+
+{
+    name	th::mask_painter::1.0
+    script	th::mask_painter::1.0
+    label	"th mask painter"
+
+    input	input1	geometry
+    output	output1	source
+    signature	default	Default	{ Geometry }	{ Mono }
+
+    help {
+	""
+    }
+
+    parm {
+        name    "stash"
+        label   "Geometry Stash"
+        type    geometrydata
+        invisible
+        default { "0" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "brushopon"
+        label   "Operation On"
+        type    toggle
+        invisible
+        nolabel
+        default { "on" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "import_enable" "1" }
+        parmtag { "import_mask" "" }
+        parmtag { "import_source" "op:mask_volume/texturemaskpaint" }
+        parmtag { "import_token" "brushopon" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "brushspaceon"
+        label   "Space On"
+        type    toggle
+        invisible
+        nolabel
+        default { "on" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "brushradiuson"
+        label   "Radius On"
+        type    toggle
+        invisible
+        nolabel
+        default { "on" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "brushfgvalueon"
+        label   "Foreground Value On"
+        type    toggle
+        invisible
+        nolabel
+        default { "on" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "brushbgvalueon"
+        label   "Background Value On"
+        type    toggle
+        invisible
+        nolabel
+        default { "on" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "brushspacingon"
+        label   "Spacing On"
+        type    toggle
+        invisible
+        nolabel
+        default { "on" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "brushopacityon"
+        label   "Opacity On"
+        type    toggle
+        invisible
+        nolabel
+        default { "on" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "brushsoftedgeon"
+        label   "Soft Edge On"
+        type    toggle
+        invisible
+        nolabel
+        default { "on" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "brushalphascaleon"
+        label   "Alpha Scale On"
+        type    toggle
+        invisible
+        nolabel
+        default { "off" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "brushalpharotateon"
+        label   "Alpha Rotate On"
+        type    toggle
+        invisible
+        nolabel
+        default { "off" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "brushalphaimagefileon"
+        label   "Alpha Image File On"
+        type    toggle
+        invisible
+        nolabel
+        default { "off" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "import_enable" "1" }
+        parmtag { "import_mask" "" }
+        parmtag { "import_source" "op:mask_volume/texturemaskpaint" }
+        parmtag { "import_token" "brushalphaimagefileon" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "brushes"
+        label   "Brushes"
+        type    geometrydata
+        invisible
+        default { "0" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "import_enable" "1" }
+        parmtag { "import_mask" "" }
+        parmtag { "import_source" "op:mask_volume/texturemaskpaint" }
+        parmtag { "import_token" "brushes" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "alpha"
+        label   "Alpha"
+        type    geometrydata
+        invisible
+        default { "0" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

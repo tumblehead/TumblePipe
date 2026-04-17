@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini.lops import playblast
+
+playblast.on_created(kwargs['node'])

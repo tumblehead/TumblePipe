@@ -1,0 +1,14 @@
+Operator:     th::light_streaks::1.4
+Label:        th light streaks
+Path:         oplib:/th::Lop/light_streaks::1.4?th::Lop/light_streaks::1.4
+Icon:         opdef:/th::Lop/light_streaks::1.4?IconSVG
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Mon Sep 29 13:24:11 2025
+

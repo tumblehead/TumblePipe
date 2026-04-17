@@ -1,0 +1,14 @@
+Operator:     th::export_layer::1.0
+Label:        th export layer
+Path:         oplib:/th::Lop/export_layer::1.0?th::Lop/export_layer::1.0
+Icon:         $TH_PIPELINE_PATH\houdini\Tumblehead\resources/ExportShotLayer.png
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Wed Dec 17 16:52:03 2025
+

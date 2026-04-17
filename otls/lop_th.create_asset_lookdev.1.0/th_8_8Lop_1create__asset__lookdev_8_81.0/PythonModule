@@ -1,0 +1,129 @@
+def _sync_variants(node):
+    """Reconcile null and output nodes with the current multiparm state.
+
+    Manages both:
+    - Output nodes inside lookdev_subnet (outputidx-keyed)
+    - VARIANT{N}_OUT null nodes in lookdev_variant_subnet
+    Removes orphans and fixes indices on add/remove/reorder.
+    """
+    count = node.parm("variants").eval()
+    variant_subnet = node.node("lookdev_variant_subnet")
+    lookdev_subnet = variant_subnet.node("lookdev_subnet")
+
+    # --- Collect existing output nodes in lookdev_subnet keyed by outputidx ---
+    existing_outputs = {}
+    for n in lookdev_subnet.children():
+        if n.type().name() == "output":
+            existing_outputs[n.evalParm("outputidx")] = n
+
+    # --- Collect existing null nodes keyed by their wired output index ---
+    existing_nulls = {}
+    for n in variant_subnet.children():
+        if n.type().name() == "null" and n.name().startswith("VARIANT"):
+            inputs = n.inputs()
+            if inputs and inputs[0] is not None and inputs[0] == lookdev_subnet:
+                for conn in n.inputConnections():
+                    if conn.inputNode() == lookdev_subnet:
+                        existing_nulls[conn.outputIndex()] = n
+                        break
+            else:
+                # Null not wired — track by name
+                name = n.name()
+                try:
+                    idx = int(name.replace("VARIANT", "").replace("_OUT", "")) - 1
+                    existing_nulls[idx] = n
+                except ValueError:
+                    pass
+
+    # --- Determine desired vs existing ---
+    desired = set(range(count))
+    have_outputs = set(existing_outputs.keys())
+    have_nulls = set(existing_nulls.keys())
+
+    # Remove orphaned nodes
+    for idx in have_outputs - desired:
+        existing_outputs[idx].destroy()
+    for idx in have_nulls - desired:
+        existing_nulls[idx].destroy()
+
+    # --- Create missing nodes and fix indices ---
+    for i in range(count):
+        variant_idx = i + 1  # 1-based multiparm index
+
+        # Output node in lookdev_subnet
+        if i in existing_outputs:
+            out_node = existing_outputs[i]
+        else:
+            out_node = lookdev_subnet.createNode("output", f"output{i}")
+            out_node.parm("outputidx").set(i)
+            out_node.moveToGoodPosition()
+
+        # Ensure outputidx is correct
+        if out_node.evalParm("outputidx") != i:
+            out_node.parm("outputidx").set(i)
+
+        # Null node in lookdev_variant_subnet
+        if i in existing_nulls:
+            null_node = existing_nulls[i]
+        else:
+            null_node = variant_subnet.createNode("null", f"VARIANT{variant_idx}_OUT")
+
+        # Ensure null is wired to correct lookdev_subnet output
+        null_node.setInput(0, lookdev_subnet, output_index=i)
+
+        # Rename null to match variant index
+        try:
+            null_node.setName(f"VARIANT{variant_idx}_OUT")
+        except hou.OperationFailed:
+            pass
+
+    variant_subnet.layoutChildren()
+    lookdev_subnet.layoutChildren()
+
+
+def _get_node(kwargs):
+    """Get the HDA node from kwargs, falling back to hou.pwd()."""
+    node = kwargs.get("node")
+    if node is None:
+        node = hou.pwd()
+    return node
+
+
+def _deferred_sync(node_path):
+    """One-shot event loop callback to run sync after the callback returns."""
+    def _do_sync():
+        hou.ui.removeEventLoopCallback(_do_sync)
+        node = hou.node(node_path)
+        if node is not None:
+            _sync_variants(node)
+    return _do_sync
+
+
+def add_variant(kwargs):
+    """Multiparm callback — fires on both add and remove.
+
+    Defers the actual sync to after the callback returns to avoid
+    crashes from modifying the node graph mid-callback.
+    """
+    node = _get_node(kwargs)
+    hou.ui.addEventLoopCallback(_deferred_sync(node.path()))
+
+
+def on_variant_name(kwargs):
+    """Variant name changed — rename the corresponding output node."""
+    variant_idx = kwargs.get("script_multiparm_index")
+    variant_name = kwargs.get("script_value")
+
+    node = _get_node(kwargs)
+    variant_subnet = node.node("lookdev_variant_subnet")
+    lookdev_subnet = variant_subnet.node("lookdev_subnet")
+
+    # Find output node by its outputidx
+    target_idx = int(variant_idx) - 1
+    for n in lookdev_subnet.children():
+        if n.type().name() == "output" and n.evalParm("outputidx") == target_idx:
+            try:
+                n.setName(f"OUT_{variant_name}")
+            except hou.OperationFailed:
+                pass
+            break

@@ -1,0 +1,16 @@
+{
+	"hdaroot/grid1/sopnet/create.def":1717771653,
+	"hdaroot/materiallibrary1/lightblocker_MAT/Material_Outputs_and_AOVs.def":1717673860,
+	"hdaroot/grid1.def":1725355333,
+	"hdaroot/materiallibrary1/lightblocker_MAT/mtlxdisplacement.def":1717667286,
+	"hdaroot/materiallibrary1/lightblocker_MAT/material_properties.def":1717667287,
+	"hdaroot/output0.def":1717673904,
+	"hdaroot/grid1/sopnet/create/grid1.def":1710490644,
+	"hdaroot/materiallibrary1/lightblocker_MAT.def":1717673860,
+	"hdaroot/materiallinker1.def":1725355333,
+	"hdaroot/materiallibrary1.def":1725355333,
+	"hdaroot.def":1725355431,
+	"hdaroot/materiallibrary1/lightblocker_MAT/mtlxstandard_surface.def":1725355333,
+	"hdaroot/materiallibrary1/lightblocker_MAT/inputs.def":1717667295,
+	"hdaroot/rendergeometrysettings1.def":1725355333
+}

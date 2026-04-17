@@ -1,0 +1,1079 @@
+# Dialog script for th::mesh_blender::1.0 automatically generated
+
+{
+    name	th::mesh_blender::1.0
+    script	th::mesh_blender::1.0
+    label	"th mesh blender"
+
+    help {
+	""
+    }
+    bindhandle domirror vector "mirror_direction" onoff ""
+    bindhandle mirror_tx vector "mirror_direction" tx ""
+    bindhandle mirror_ty vector "mirror_direction" ty ""
+    bindhandle mirror_tz vector "mirror_direction" tz ""
+    bindhandle mirror_dirx vector "mirror_direction" vx ""
+    bindhandle mirror_diry vector "mirror_direction" vy ""
+    bindhandle mirror_dirz vector "mirror_direction" vz ""
+
+    inputlabel	1	"Sub-Network Input #1"
+    inputlabel	2	"Sub-Network Input #2"
+    inputlabel	3	"Sub-Network Input #3"
+    inputlabel	4	"Sub-Network Input #4"
+
+    parm {
+        name    "reset"
+        label   "Reset All Changes"
+        type    button
+        default { "0" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    import {
+        label   Import
+        source  "op:/stage/create_model/sopnet/create/th_mesh_blender/blend"
+        enable  1
+
+        group {
+            name    "folder2"
+            label   "Folder Name"
+            invisibletab
+
+            parm {
+                name    "stroke_group"
+                label   "Group"
+                type    string
+                invisible
+                default { "" }
+                menutoggle {
+                    [ "opmenu -l -a /stage/create_model/sopnet/create/th_mesh_blender/blend stroke_group" ]
+                }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                parmtag { "import_token" "stroke_group" }
+                parmtag { "script_action" "import soputils; kwargs['geometrytype'] = hou.geometryType.Points; kwargs['inputindex'] = 0; soputils.selectGroupParm(kwargs)" }
+                parmtag { "script_action_help" "Select geometry from an available viewport." }
+                parmtag { "script_action_icon" "BUTTONS_reselect" }
+            }
+            parm {
+                name    "displaygroup"
+                label   "Display Group"
+                type    toggle
+                invisible
+                default { "off" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                parmtag { "import_token" "displaygroup" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "usedisplay"
+                label   "Paint on Displayed Node"
+                type    toggle
+                invisible
+                default { "off" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                parmtag { "import_token" "usedisplay" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "attribute"
+                label   "Attribute"
+                type    integer
+                invisible
+                default { "0" }
+                menu {
+                    [ "opmenu -l -a /stage/create_model/sopnet/create/th_mesh_blender/blend attribute" ]
+                }
+                range   { 0 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                parmtag { "import_token" "attribute" }
+                parmtag { "script_action" "kwargs['node'].hdaViewerStateModule().visualize(kwargs)" }
+                parmtag { "script_action_help" "Toggle visualization\nCtrl-LMB: Open the visualization editor" }
+                parmtag { "script_action_icon" "VIEW_visualization" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "stroke_attrib"
+                label   "Attribute Name"
+                type    string
+                invisible
+                joinnext
+                default { "blend" }
+                menutoggle {
+                    [ "opmenu -l -a /stage/create_model/sopnet/create/th_mesh_blender/blend stroke_attrib" ]
+                }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                parmtag { "import_token" "stroke_attrib" }
+                parmtag { "script_action" "from soputils import actionToggleVisualizer; actionToggleVisualizer(kwargs)" }
+                parmtag { "script_action_icon" "VIEW_visualization" }
+            }
+            parm {
+                name    "stroke_attribtype"
+                label   "Attribute Type"
+                type    ordinal
+                invisible
+                default { "float" }
+                menu {
+                    "color"     "Color"
+                    "float"     "Float"
+                    "integer"   "Integer"
+                }
+                range   { 0 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                parmtag { "import_token" "stroke_attribtype" }
+                parmtag { "script_callback_language" "python" }
+            }
+            group {
+                name    "folder0_1"
+                label   "Brush"
+                invisibletab
+                grouptag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                grouptag { "import_token" "folder0_1:Brush" }
+
+                parm {
+                    name    "lmboperation"
+                    label   "LMB Operation"
+                    type    ordinal
+                    joinnext
+                    default { "paint" }
+                    menu {
+                        "paint"     "Paint FG"
+                        "smooth"    "Smooth"
+                        "erase"     "Erase"
+                        "sample"    "Sample FG"
+                        "paintbg"   "Paint BG"
+                        "samplebg"  "Sample BG"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "lmboperation" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "lmboperation2"
+                    label   "Shift"
+                    type    ordinal
+                    joinnext
+                    default { "smooth" }
+                    menu {
+                        "paint"     "Paint FG"
+                        "smooth"    "Smooth"
+                        "erase"     "Erase"
+                        "sample"    "Sample FG"
+                        "paintbg"   "Paint BG"
+                        "samplebg"  "Sample BG"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "lmboperation2" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "lmboperation3"
+                    label   "Ctrl"
+                    type    ordinal
+                    default { "paintbg" }
+                    menu {
+                        "paint"     "Paint FG"
+                        "smooth"    "Smooth"
+                        "erase"     "Erase"
+                        "sample"    "Sample FG"
+                        "paintbg"   "Paint BG"
+                        "samplebg"  "Sample BG"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "lmboperation3" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "mmboperation"
+                    label   "MMB Operation"
+                    type    ordinal
+                    joinnext
+                    default { "sample" }
+                    menu {
+                        "paint"     "Paint FG"
+                        "smooth"    "Smooth"
+                        "erase"     "Erase"
+                        "sample"    "Sample FG"
+                        "paintbg"   "Paint BG"
+                        "samplebg"  "Sample BG"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "mmboperation" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "mmboperation2"
+                    label   "Shift"
+                    type    ordinal
+                    joinnext
+                    default { "samplebg" }
+                    menu {
+                        "paint"     "Paint FG"
+                        "smooth"    "Smooth"
+                        "erase"     "Erase"
+                        "sample"    "Sample FG"
+                        "paintbg"   "Paint BG"
+                        "samplebg"  "Sample BG"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "mmboperation2" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "mmboperation3"
+                    label   "Ctrl"
+                    type    ordinal
+                    default { "erase" }
+                    menu {
+                        "paint"     "Paint FG"
+                        "smooth"    "Smooth"
+                        "erase"     "Erase"
+                        "sample"    "Sample FG"
+                        "paintbg"   "Paint BG"
+                        "samplebg"  "Sample BG"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "mmboperation3" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_operation"
+                    label   "Operation"
+                    type    ordinal
+                    invisible
+                    default { "paint" }
+                    menu {
+                        "paint"     "Paint FG"
+                        "smooth"    "Smooth"
+                        "erase"     "Erase"
+                        "sample"    "Sample FG"
+                        "paintbg"   "Paint BG"
+                        "samplebg"  "Sample BG"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_operation" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_paintmode"
+                    label   "Paint Mode"
+                    type    ordinal
+                    default { "over" }
+                    menu {
+                        "over"  "Over"
+                        "add"   "Add"
+                        "max"   "Maximum"
+                        "min"   "Minimum"
+                        "mul"   "Multiply"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_paintmode" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_shape"
+                    label   "Shape"
+                    type    ordinal
+                    default { "sphere" }
+                    menu {
+                        "sphere"    "Volume"
+                        "surface"   "Surface"
+                        "screen"    "Screen"
+                        "fill"      "Fill"
+                        "nearest"   "Nearest Point"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_shape" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "fgcolor"
+                    label   "FG Color"
+                    type    color
+                    size    3
+                    default { "1" "1" "1" }
+                    hidewhen "{ stroke_attribtype != color }"
+                    range   { 0 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "fgcolor" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "bgcolor"
+                    label   "BG Color"
+                    type    color
+                    size    3
+                    default { "0" "0" "0" }
+                    hidewhen "{ stroke_attribtype != color }"
+                    range   { 0 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "bgcolor" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "fgfloat"
+                    label   "FG Float"
+                    type    float
+                    default { "1" }
+                    hidewhen "{ stroke_attribtype != float }"
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "fgfloat" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "bgfloat"
+                    label   "BG Float"
+                    type    float
+                    default { "0" }
+                    hidewhen "{ stroke_attribtype != float }"
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "bgfloat" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "fgint"
+                    label   "FG Integer"
+                    type    integer
+                    default { "1" }
+                    hidewhen "{ stroke_attribtype != integer }"
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "fgint" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "bgint"
+                    label   "BG Integer"
+                    type    integer
+                    default { "0" }
+                    hidewhen "{ stroke_attribtype != integer }"
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "bgint" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_radius"
+                    label   "Radius"
+                    type    float
+                    default { "0.0608039" }
+                    hidewhen "{ stroke_shape == screen } { stroke_shape == flood } { stroke_shape == nearest }"
+                    range   { 0! 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_radius" }
+                }
+                parm {
+                    name    "stroke_screensize"
+                    label   "Spray Size"
+                    type    float
+                    default { "15" }
+                    hidewhen "{ stroke_shape != screen }"
+                    range   { 0! 100 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_screensize" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_opacity"
+                    label   "Opacity"
+                    type    float
+                    default { "1" }
+                    range   { 0! 1! }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_opacity" }
+                }
+                parm {
+                    name    "stroke_softedge"
+                    label   "Soft Edge"
+                    type    float
+                    default { "0.5" }
+                    range   { 0! 1! }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_softedge" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_connectivity"
+                    label   "Connected Only"
+                    type    toggle
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_connectivity" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_frontface"
+                    label   "Front Face Only"
+                    type    toggle
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_frontface" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_visibility"
+                    label   "Visible Only"
+                    type    toggle
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_visibility" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "visibilitybias"
+                    label   "Visibility Bias"
+                    type    log
+                    default { "0.001" }
+                    hidewhen "{ stroke_visibility == 0 }"
+                    range   { 0.001 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "visibilitybias" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_opacitypressure"
+                    label   "Opacity Pressure"
+                    type    float
+                    default { "1" }
+                    range   { 0! 1! }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_opacitypressure" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_radiuspressure"
+                    label   "Radius Pressure"
+                    type    float
+                    default { "1" }
+                    range   { 0! 1! }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_radiuspressure" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "showpath"
+                    label   "Show Brush Path"
+                    type    toggle
+                    default { "off" }
+                    range   { 0! 1! }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "showpath" }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+            group {
+                name    "folder0_1_1"
+                label   "Stroke"
+                invisibletab
+                grouptag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                grouptag { "import_token" "folder0_1:Stroke" }
+
+                parm {
+                    name    "stroke_tool"
+                    label   "Tool"
+                    type    integer
+                    invisible
+                    default { "0" }
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_tool" }
+                }
+                parm {
+                    name    "stroke_color"
+                    label   "Stroke Color"
+                    type    color
+                    invisible
+                    size    3
+                    default { "0" "0" "0" }
+                    hidewhen "{ stroke_attribtype != color }"
+                    range   { 0 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_color" }
+                }
+                parm {
+                    name    "stroke_projtype"
+                    label   "Projection"
+                    type    ordinal
+                    invisible
+                    default { "geometry" }
+                    menu {
+                        "xy"        "XY Plane"
+                        "yz"        "YZ Plane"
+                        "zx"        "ZX Plane"
+                        "screen"    "Screen Plane"
+                        "geometry"  "Geometry"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_projtype" }
+                }
+                parm {
+                    name    "stroke_projcenter"
+                    label   "Projection Center"
+                    type    vector
+                    invisible
+                    size    3
+                    default { "0" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_projcenter" }
+                }
+                parm {
+                    name    "stroke_float"
+                    label   "Stroke Float"
+                    type    float
+                    invisible
+                    default { "0" }
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_float" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "stroke_int"
+                    label   "Stroke Integer"
+                    type    integer
+                    invisible
+                    default { "0" }
+                    range   { 0 10 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_int" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                multiswitcher {
+                    name    "stroke_numstrokes"
+                    label    "Number of Strokes"
+                    default 0
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "stroke_numstrokes" }
+                    parmtag { "multistartoffset" "1" }
+
+                    parm {
+                        name    "stroke#_enable"
+                        label   "Enable Stroke"
+                        type    toggle
+                        default { "1" }
+                    }
+                    parm {
+                        name    "stroke#_radius"
+                        label   "Radius"
+                        type    float
+                        default { "0.1" }
+                        range   { 0! 1 }
+                    }
+                    parm {
+                        name    "stroke#_tool"
+                        label   "Tool"
+                        type    integer
+                        default { "0" }
+                        range   { 0 10 }
+                    }
+                    parm {
+                        name    "stroke#_color"
+                        label   "Color"
+                        type    color
+                        invisible
+                        size    3
+                        default { "1" "1" "1" }
+                        range   { 0 1 }
+                    }
+                    parm {
+                        name    "stroke#_opacity"
+                        label   "Opacity"
+                        type    float
+                        default { "1" }
+                        range   { 0 10 }
+                    }
+                    parm {
+                        name    "stroke#_projtype"
+                        label   "Projection"
+                        type    integer
+                        default { "0" }
+                        range   { 0 10 }
+                    }
+                    parm {
+                        name    "stroke#_projcenter"
+                        label   "Projection Center"
+                        type    vector
+                        size    3
+                        default { "0" "0" "0" }
+                        range   { -1 1 }
+                    }
+                    parm {
+                        name    "stroke#_projdir"
+                        label   "Projection Direction"
+                        type    vector
+                        size    3
+                        default { "0" "0" "0" }
+                        range   { -1 1 }
+                    }
+                    parm {
+                        name    "stroke#_data"
+                        label   "Raw Data"
+                        type    string
+                        default { "" }
+                    }
+                    parm {
+                        name    "stroke#_metadata"
+                        label   "Meta Data"
+                        type    string
+                        default { "" }
+                    }
+                }
+
+            }
+
+            group {
+                name    "folder0_1_2"
+                label   "Attributes"
+                invisibletab
+                grouptag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                grouptag { "import_token" "folder0_1:Attributes" }
+
+                multiparm {
+                    name    "numattribs"
+                    label    "Attributes"
+                    default 1
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "numattribs" }
+                    parmtag { "multistartoffset" "1" }
+                    parmtag { "script_callback_language" "python" }
+
+                    parm {
+                        name    "attribpainted#"
+                        label   "Attribute Painted"
+                        type    integer
+                        invisible
+                        default { [ "phm().isattribpainted(pwd(), pwd().parm( expandString('$CH') ).multiParmInstanceIndices()[0])" python ] }
+                        range   { 0 10 }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "attribtype#"
+                        label   "Attribute Type"
+                        type    ordinal
+                        nolabel
+                        joinnext
+                        default { "float" }
+                        disablewhen "{ attribpainted# != 0 }"
+                        menu {
+                            "color"     "Color"
+                            "float"     "Float"
+                            "integer"   "Integer"
+                        }
+                        parmtag { "script_callback" "kwargs['node'].hdaViewerStateModule().updateattribute(kwargs['node'])" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "attribname#"
+                        label   "Attribute Name"
+                        type    string
+                        nolabel
+                        joinnext
+                        default { "blend" }
+                        disablewhen "{ attribpainted# != 0 }"
+                        parmtag { "script_callback" "hou.phm().updateattrib(kwargs)" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "attribrename#"
+                        label   "Rename"
+                        type    button
+                        joinnext
+                        default { "0" }
+                        disablewhen "{ attribpainted# == 0 }"
+                        parmtag { "script_callback" "hou.phm().renameattrib(kwargs)" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "attribreset#"
+                        label   "Reset"
+                        type    button
+                        default { "0" }
+                        disablewhen "{ attribpainted# == 0 }"
+                        parmtag { "script_callback" "hou.phm().resetattrib(kwargs)" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                }
+
+            }
+
+            group {
+                name    "folder0_1_3"
+                label   "Symmetry"
+                invisibletab
+                grouptag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                grouptag { "import_token" "folder0_1:Symmetry" }
+
+                parm {
+                    name    "domirror"
+                    label   "Enable Mirroring"
+                    type    toggle
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "domirror" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "mirror_t"
+                    label   "Origin"
+                    type    vector
+                    size    3
+                    default { "0" "0" "0" }
+                    disablewhen "{ domirror == 0 }"
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "mirror_t" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "mirror_dir"
+                    label   "Direction"
+                    type    vector
+                    size    3
+                    default { "1" "0" "0" }
+                    disablewhen "{ domirror == 0 }"
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "mirror_dir" }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+            group {
+                name    "folder0_1_4"
+                label   "Recache"
+                invisibletab
+                grouptag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                grouptag { "import_token" "folder0_1:Recache" }
+
+                parm {
+                    name    "recachemethod"
+                    label   "Recache Method"
+                    type    ordinal
+                    invisible
+                    joinnext
+                    default { "original" }
+                    menu {
+                        "original"  "Original Values"
+                        "ray"       "Re-Send Rays"
+                        "primuv"    "Primitive UV"
+                        "texuv"     "Texture UV"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "recachemethod" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "recache"
+                    label   "Recache Strokes"
+                    type    button
+                    invisible
+                    default { "0" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "recache" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "savecache"
+                    label   "Save Point Cache to Hip File"
+                    type    toggle
+                    invisible
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "savecache" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "livemode"
+                    label   "Bypass Point Cache"
+                    type    toggle
+                    invisible
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "livemode" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "docaching"
+                    label   "Update Point Cache on Stroke"
+                    type    toggle
+                    invisible
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "docaching" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "erasestrokes"
+                    label   "Clear Stroke History"
+                    type    button
+                    invisible
+                    default { "0" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "erasestrokes" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                groupcollapsible {
+                    name    "folder1"
+                    label   "Snapshot"
+                    invisibletab
+                    grouptag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    grouptag { "import_token" "folder0:Snapshot" }
+
+                    parm {
+                        name    "movestashtofile"
+                        label   "Move Stash to New File"
+                        type    button
+                        invisible
+                        joinnext
+                        default { "0" }
+                        disablewhen "{ strokegeo == \"\" }"
+                        parmtag { "autoscope" "0000000000000000" }
+                        parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                        parmtag { "import_token" "movestashtofile" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "loadstashfromfile"
+                        label   "Load Stash from File"
+                        type    button
+                        invisible
+                        default { "0" }
+                        disablewhen "{ strokegeo != \"\" } { strokegeofile == \"\" } { strokegeofile == ~= }"
+                        parmtag { "autoscope" "0000000000000000" }
+                        parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                        parmtag { "import_token" "loadstashfromfile" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "strokegeo"
+                        label   "Strokes"
+                        type    geometrydata
+                        invisible
+                        default { "0" }
+                        parmtag { "autoscope" "0000000000000000" }
+                        parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                        parmtag { "import_token" "strokegeo" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "strokegeofile"
+                        label   "Strokes File"
+                        type    geometry
+                        invisible
+                        default { "" }
+                        parmtag { "autoscope" "0000000000000000" }
+                        parmtag { "filechooser_mode" "read_and_write" }
+                        parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                        parmtag { "import_token" "strokegeofile" }
+                    }
+                    parm {
+                        name    "bakedgeo"
+                        label   "Baked Geometry"
+                        type    geometrydata
+                        invisible
+                        default { "0" }
+                        parmtag { "autoscope" "0000000000000000" }
+                        parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                        parmtag { "import_token" "bakedgeo" }
+                        parmtag { "script_callback_language" "python" }
+                    }
+                    parm {
+                        name    "bakedgeofile"
+                        label   "Baked Geometry File"
+                        type    geometry
+                        invisible
+                        default { "" }
+                        parmtag { "autoscope" "0000000000000000" }
+                        parmtag { "filechooser_mode" "read_and_write" }
+                        parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                        parmtag { "import_token" "bakedgeofile" }
+                    }
+                }
+
+                parm {
+                    name    "isectgeo"
+                    label   "Intersect Geometry"
+                    type    geometrydata
+                    invisible
+                    default { "0" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "isectgeo" }
+                    parmtag { "sidefx::save_value" "0" }
+                }
+                parm {
+                    name    "activestrokegeo"
+                    label   "Active Stroke Stencil Geometry"
+                    type    data
+                    invisible
+                    default { "0" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "activestrokegeo" }
+                    parmtag { "sidefx::save_value" "0" }
+                }
+                parm {
+                    name    "unsavedbakedgeo"
+                    label   "Unsaved Baked Geometry"
+                    type    data
+                    invisible
+                    default { "0" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "import_source" "op:/stage/create_model/sopnet/create/th_mesh_blender/blend" }
+                    parmtag { "import_token" "unsavedbakedgeo" }
+                    parmtag { "sidefx::save_value" "0" }
+                }
+            }
+
+        }
+
+    }
+
+    parm {
+        name    "group"
+        label   "Mesh Explude Group"
+        type    string
+        default { "" }
+        menutoggle {
+            [ "opmenu -l -a blast group" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_action" "import soputils\nkwargs['geometrytype'] = kwargs['node'].parmTuple('grouptype')\nkwargs['inputindex'] = 0\nsoputils.selectGroupParm(kwargs)" }
+        parmtag { "script_action_help" "Select geometry from an available viewport.\nShift-click to turn on Select Groups." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+    }
+    parm {
+        name    "iterations"
+        label   "Blurring Iterations"
+        type    integer
+        default { "3" }
+        range   { 0 100 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "voxelsize"
+        label   "Voxel Size"
+        type    float
+        default { "0.021" }
+        range   { 0! 5 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "isovalue"
+        label   "Isovalue"
+        type    float
+        default { "0.01" }
+        range   { -1 1 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "targetsize"
+        label   "Target Size"
+        type    float
+        default { "0.1" }
+        range   { 0! 1 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "guide"
+        label   "Visualize Blended Mesh"
+        type    toggle
+        default { "0" }
+        parmtag { "script_callback_language" "python" }
+    }
+    groupcollapsible {
+        name    "attributes"
+        label   "Attributes"
+
+        parm {
+            name    "primattriblist"
+            label   "Primitives"
+            type    string
+            default { "" }
+            menutoggle {
+                [ "opmenu -l -a attribtransfer3 primattriblist" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "sop_input" "1" }
+        }
+        parm {
+            name    "pointattriblist"
+            label   "Points"
+            type    string
+            default { "Cd" }
+            menutoggle {
+                [ "opmenu -l -a attribtransfer3 pointattriblist" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "sop_input" "1" }
+        }
+        parm {
+            name    "vertexattriblist"
+            label   "Vertices"
+            type    string
+            default { "N" }
+            menutoggle {
+                [ "opmenu -l -a attribtransfer3 vertexattriblist" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "sop_input" "1" }
+        }
+    }
+
+}

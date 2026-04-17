@@ -1,0 +1,20 @@
+{
+	"values":["21.0.559"
+	],
+	"indexes":{
+		"hdaroot/playblast/render.userdata":0,
+		"hdaroot/objects/camera.userdata":0,
+		"hdaroot/objects/from_stage/unpack.userdata":0,
+		"hdaroot/objects/camera/camOrigin.userdata":0,
+		"hdaroot/objects/camera/file1.userdata":0,
+		"hdaroot/objects/from_stage.userdata":0,
+		"hdaroot/objects/from_scene/from_scene.userdata":0,
+		"hdaroot/objects.userdata":0,
+		"hdaroot/playblast.userdata":0,
+		"hdaroot/objects/from_scene.userdata":0,
+		"hdaroot/IN_scene.userdata":0,
+		"hdaroot/objects/from_stage/visibility.userdata":0,
+		"hdaroot/objects/camera/xform1.userdata":0,
+		"hdaroot/objects/from_stage/scene.userdata":0
+	}
+}

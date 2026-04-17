@@ -1,0 +1,26 @@
+import hou
+
+def paint() -> None:
+    node = hou.pwd()
+    curve_node = node.node("paint_sop")
+    roto_node = curve_node.node("draw")
+    floating_sceneviewer = create_floating_sceneviewer(roto_node.path())
+    reference_image = curve_node.node("reference_image")
+    reference_image.setDisplayFlag(True)
+    roto_node.setCurrent(True)
+    floating_sceneviewer.enterCurrentNodeState()
+    
+def create_floating_sceneviewer(path: str)->hou.SceneViewer:
+    desktop = hou.ui.curDesktop()
+    uv_panel = desktop.createFloatingPanel(hou.paneTabType.SceneViewer)
+    uv_panel.setName(f"Draw")
+    uv_pane = uv_panel.panes()[0]
+    uv_pane.showPaneTabs(False)
+    uv_tab = uv_pane.tabs()[0]
+    uv_tab.showNetworkControls(False)
+    uv_tab.cd(path)
+    uv_viewport = uv_tab.viewports()[-1]
+    uv_viewport.changeType(hou.geometryViewportType.Front)
+    return uv_tab
+    
+    

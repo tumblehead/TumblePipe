@@ -1,0 +1,14 @@
+Operator:     th::light_blocker::1.0
+Label:        th light blocker
+Path:         oplib:/th::Lop/light_blocker::1.0?th::Lop/light_blocker::1.0
+Icon:         LOP_subnet
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Tue Sep  3 11:22:18 2024
+

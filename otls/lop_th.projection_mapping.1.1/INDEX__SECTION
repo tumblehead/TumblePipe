@@ -1,0 +1,14 @@
+Operator:     th::projection_mapping::1.1
+Label:        th projection mapping
+Path:         oplib:/th::Lop/projection_mapping::1.1?th::Lop/projection_mapping::1.1
+Icon:         LOP_subnet
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Thu Jul  3 11:24:23 2025
+

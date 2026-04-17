@@ -1,0 +1,18 @@
+{
+	"values":["21.0.559","1.0"
+	],
+	"indexes":{
+		"hdaroot/attribtransfer4.userdata":0,
+		"hdaroot/OUT_GUIDES.userdata":0,
+		"hdaroot/attribtransfer3.userdata":0,
+		"hdaroot/normal.userdata":0,
+		"hdaroot/convertvdb1.userdata":0,
+		"hdaroot/guide.userdata":0,
+		"hdaroot/attribblur.userdata":1,
+		"hdaroot/vdbfrompolygons1.userdata":0,
+		"hdaroot/output0.userdata":0,
+		"hdaroot/remesh.userdata":0,
+		"hdaroot/blast.userdata":0,
+		"hdaroot/empty_guide.userdata":0
+	}
+}

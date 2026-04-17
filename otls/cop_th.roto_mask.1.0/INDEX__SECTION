@@ -1,0 +1,15 @@
+Operator:     th::roto_mask::1.0
+Label:        th roto mask
+Path:         oplib:/th::Cop/roto_mask::1.0?th::Cop/roto_mask::1.0
+Icon:         COP_th-roto_mask-1.0
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Outputs:      2
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Sun Jun 22 16:34:05 2025
+

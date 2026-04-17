@@ -1,0 +1,4 @@
+from tumblepipe.pipe.houdini.lops import render_debug
+
+def execute():
+    render_debug.execute()

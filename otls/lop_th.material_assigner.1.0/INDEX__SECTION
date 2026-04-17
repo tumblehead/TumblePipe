@@ -1,0 +1,14 @@
+Operator:     th::material_assigner::1.0
+Label:        th material assigner
+Path:         oplib:/th::Lop/material_assigner::1.0?th::Lop/material_assigner::1.0
+Icon:         SHELF_assign_material
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Fri Dec  5 14:17:35 2025
+

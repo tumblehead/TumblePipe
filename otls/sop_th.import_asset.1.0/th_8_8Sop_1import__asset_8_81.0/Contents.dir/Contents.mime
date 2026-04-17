@@ -1,0 +1,1021 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Sop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::import_asset::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0.103774 2.58934
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.init"
+Content-Type: text/plain
+
+type = lopnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 5.01746
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 1 0.986 0.65 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+expansioneffect	[ 0	locks=0 ]	(	none	)
+modifiedprimcounttostartnewlayer	[ 0	locks=0 ]	(	0	)
+pinnedprims	[ 0	locks=0 ]	(	""	)
+resolvercontextassetpath	[ 0	locks=0 ]	(	""	)
+resolvercontextstringcount	[ 0	locks=0 ]	(	0	)
+variantselectioncount	[ 0	locks=0 ]	(	0	)
+insertionpointdescriptor	[ 0	locks=0 ]	(	""	)
+rendergallerysource	[ 0	locks=0 ]	(	$HIP/galleries/$HIPNAME.$OS/rendergallery.db	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.datablocks"
+Content-Type: application/octet-stream
+Content-Transfer-Encoding: base64
+
+AAAAAAAAAAMAFF9fb25sb2FkX18uZXhwYW5zaW9uAAlleHBhbnNpb24AAAAAAAAAGnsKCSJleHBhbmRlZHBhdGhzIjp0cnVlCn0KABRfX29ubG9hZF9fLmxvYWRtYXNrcwAJbG9hZG1hc2tzAAAAAAAAAHp7CgkicG9wdWxhdGU=
+YWxsIjp0cnVlLAoJInBvcHVsYXRlcGF0aHMiOlsKCV0sCgkibXV0ZWxheWVycyI6WwoJXSwKCSJsb2FkYWxsIjp0cnVlLAoJImxvYWRwYXRocyI6WwoJXSwKCSJmYWxsYmFja3MiOnsKCX0KfQoAFF9fb25sb2FkX18ub3ZlcnI=
+aWRlcwAJb3ZlcnJpZGVzAAAAAAAAAL57CgkiY3VzdG9tIjoiI3NkZiAxLjQuMzJcblxuIiwKCSJwdXJwb3NlIjoiI3NkZiAxLjQuMzJcblxuIiwKCSJzb2xvbGlnaHRzIjoiI3NkZiAxLjQuMzJcblxuIiwKCSJzb2xvZ2VvbWU=
+dHJ5IjoiI3NkZiAxLjQuMzJcblxuIiwKCSJzZWxlY3RhYmxlIjoiI3NkZiAxLjQuMzJcblxuIiwKCSJiYXNlIjoiI3NkZiAxLjQuMzJcblxuIgp9Cg==
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset.init"
+Content-Type: text/plain
+
+type = th::import_asset::1.0
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset.def"
+Content-Type: text/plain
+
+comment ""
+position 1.5 6.38609
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault off exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.631373 0.870588 1 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset.chn"
+Content-Type: text/plain
+
+{
+    channel category {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"CHAR\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../../category\") }
+    }
+    channel asset {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"Snail\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../../asset\") }
+    }
+    channel departments {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../../departments\") }
+    }
+    channel include_layerbreak {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../../include_layerbreak\") }
+    }
+    channel import {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../import\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+selection	[ 0	locks=0 ]	(	1	)
+category	[ 0	locks=0 ]	(	[ category	"" ] 	)
+asset	[ 0	locks=0 ]	(	[ asset	"" ] 	)
+settings	[ 0	locks=0 ]	(	0	)
+departments	[ 0	locks=0 ]	(	[ departments	"" ] 	)
+include_layerbreak	[ 0	locks=0 ]	(	[ include_layerbreak	1 ] 	)
+actions	[ 0	locks=0 ]	(	0	)
+import	[ 0	locks=0 ]	(	[ import	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"nodeshape":{
+		"type":"string",
+		"value":"bulge_down"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive.def"
+Content-Type: text/plain
+
+comment ""
+position -3.56527 6.35812
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive.inp"
+Content-Type: text/plain
+
+4
+0 3.9535999999999998 -1.1294999999999999 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 3.9535999999999998 -5.5511151231257827e-17 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+2 6.2127999999999997 -0.67769998204708104 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+3 6.2127999999999997 0.45180001795291885 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive/output.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive/output.def"
+Content-Type: text/plain
+
+comment ""
+position 0 -1.1295
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	CHAR_Snail_lookdev 1 1 "input1"
+}
+inputs
+{
+0 	CHAR_Snail_lookdev 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive/output.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive/output.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive/CHAR_Snail_model.init"
+Content-Type: text/plain
+
+type = th::import_asset_layer::1.0
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive/CHAR_Snail_model.def"
+Content-Type: text/plain
+
+comment ""
+position 0 1.1295
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on debug off
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.631373 0.870588 1 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive/CHAR_Snail_model.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+promoted_parms	[ 0	locks=0 ]	(	0	)
+import_parms	[ 0	locks=0 ]	(	0	)
+import_filepath1	[ 0	locks=0 ]	(	P:/RND/export/assets/CHAR/Snail/model/v0005/CHAR_Snail_model_v0005.usd	)
+metaprim_parms	[ 0	locks=0 ]	(	0	)
+metaprim_primpath	[ 0	locks=0 ]	(	/METADATA/asset/CHAR/Snail	)
+metadata_parms	[ 0	locks=0 ]	(	0	)
+metadata_python	[ 0	locks=0 ]	(	"import hou
+
+from tumblepipe.pipe.houdini import util
+
+node = hou.pwd()
+stage = node.editableStage()
+root = stage.GetPseudoRoot()
+
+def update(root):
+    prim = root.GetPrimAtPath('/METADATA/asset/CHAR/Snail')
+    if not prim.IsValid(): return
+    metadata = util.get_metadata(prim)
+    
+    if metadata is None:
+        metadata = {
+            'context': 'asset',
+            'category': 'CHAR',
+            'asset': 'Snail',
+            'instance': 'Snail',
+            'inputs': []
+        }
+    
+    util.add_metadata_input(metadata, {
+        'context': 'asset',
+        'category': 'CHAR',
+        'asset': 'Snail',
+        'department': 'model',
+        'version': 'v0005',
+    })
+    
+    util.set_metadata(prim, metadata)
+    
+update(root)
+"	)
+bypass_parms	[ 0	locks=0 ]	(	0	)
+bypass_input	[ 0	locks=0 ]	(	1	)
+selection	[ 0	locks=0 ]	(	0	)
+refresh	[ 0	locks=0 ]	(	0	)
+category	[ 0	locks=0 ]	(	CHAR	)
+asset	[ 0	locks=0 ]	(	Snail	)
+department	[ 0	locks=0 ]	(	model	)
+version	[ 0	locks=0 ]	(	v0005	)
+latest	[ 0	locks=0 ]	(	0	)
+settings	[ 0	locks=0 ]	(	0	)
+include_layerbreak	[ 0	locks=0 ]	(	"off"	)
+actions	[ 0	locks=0 ]	(	0	)
+import	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive/CHAR_Snail_model.userdata"
+Content-Type: text/plain
+
+{
+	"PrismPath":{
+		"type":"string",
+		"value":"/stage/th_load_base"
+	},
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"nodeshape":{
+		"type":"string",
+		"value":"bulge_down"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive/CHAR_Snail_lookdev.init"
+Content-Type: text/plain
+
+type = th::import_asset_layer::1.0
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive/CHAR_Snail_lookdev.def"
+Content-Type: text/plain
+
+comment ""
+position 0 -5.55112e-17
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	CHAR_Snail_model 0 1 "input1"
+}
+inputs
+{
+0 	CHAR_Snail_model 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.631373 0.870588 1 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive/CHAR_Snail_lookdev.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+promoted_parms	[ 0	locks=0 ]	(	0	)
+import_parms	[ 0	locks=0 ]	(	0	)
+import_filepath1	[ 0	locks=0 ]	(	P:/RND/export/assets/CHAR/Snail/lookdev/v0009/CHAR_Snail_lookdev_v0009.usd	)
+metaprim_parms	[ 0	locks=0 ]	(	0	)
+metaprim_primpath	[ 0	locks=0 ]	(	/METADATA/asset/CHAR/Snail	)
+metadata_parms	[ 0	locks=0 ]	(	0	)
+metadata_python	[ 0	locks=0 ]	(	"import hou
+
+from tumblepipe.pipe.houdini import util
+
+node = hou.pwd()
+stage = node.editableStage()
+root = stage.GetPseudoRoot()
+
+def update(root):
+    prim = root.GetPrimAtPath('/METADATA/asset/CHAR/Snail')
+    if not prim.IsValid(): return
+    metadata = util.get_metadata(prim)
+    
+    if metadata is None:
+        metadata = {
+            'context': 'asset',
+            'category': 'CHAR',
+            'asset': 'Snail',
+            'instance': 'Snail',
+            'inputs': []
+        }
+    
+    util.add_metadata_input(metadata, {
+        'context': 'asset',
+        'category': 'CHAR',
+        'asset': 'Snail',
+        'department': 'lookdev',
+        'version': 'v0009',
+    })
+    
+    util.set_metadata(prim, metadata)
+    
+update(root)
+"	)
+bypass_parms	[ 0	locks=0 ]	(	0	)
+bypass_input	[ 0	locks=0 ]	(	1	)
+selection	[ 0	locks=0 ]	(	0	)
+refresh	[ 0	locks=0 ]	(	0	)
+category	[ 0	locks=0 ]	(	CHAR	)
+asset	[ 0	locks=0 ]	(	Snail	)
+department	[ 0	locks=0 ]	(	lookdev	)
+version	[ 0	locks=0 ]	(	v0009	)
+latest	[ 0	locks=0 ]	(	0	)
+settings	[ 0	locks=0 ]	(	0	)
+include_layerbreak	[ 0	locks=0 ]	(	"off"	)
+actions	[ 0	locks=0 ]	(	0	)
+import	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive/CHAR_Snail_lookdev.userdata"
+Content-Type: text/plain
+
+{
+	"PrismPath":{
+		"type":"string",
+		"value":"/stage/th_load_base"
+	},
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"nodeshape":{
+		"type":"string",
+		"value":"bulge_down"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive.order"
+Content-Type: text/plain
+
+3
+output
+CHAR_Snail_model
+CHAR_Snail_lookdev
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/dive.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/switch.def"
+Content-Type: text/plain
+
+comment ""
+position -2.43567 4.92742
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	dive 0 1 "input1"
+1 	layerbreak 1 1 "input2"
+}
+inputs
+{
+0 	dive 0 1
+1 	layerbreak 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 1 0.7 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/switch.editableinputdata"
+Content-Type: text/plain
+
+[
+	{
+	},
+	{
+	}
+]
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/switch.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+chooseinputbyname	[ 0	locks=0 ]	(	"off"	)
+input	[ 0	locks=0 ]	(	1	)
+selectinputname	[ 0	locks=0 ]	(	""	)
+selectinputvalue	[ 0	locks=0 ]	(	""	)
+config_separator	[ 0	locks=0 ]	(	)
+badinput	[ 0	locks=0 ]	(	ignore	)
+fallback	[ 0	locks=0 ]	(	0	)
+selectfallbackname	[ 0	locks=0 ]	(	""	)
+inputname	[ 0	locks=0 ]	(	"`opinput(\".\", @input)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_asset/switch.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopimport.init"
+Content-Type: text/plain
+
+type = lopimport::2.0
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopimport.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 2.56604 5.01746
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopimport.chn"
+Content-Type: text/plain
+
+{
+    channel importframe {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = $FF }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopimport.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+loppath	[ 0	locks=0 ]	(	../lopnet/import_asset	)
+primpattern	[ 0	locks=0 ]	(	"%type:Mesh %type:Boundable"	)
+excludeinactiveprims	[ 0	locks=0 ]	(	"on"	)
+purpose	[ 0	locks=0 ]	(	proxy	)
+importtraversal	[ 0	locks=0 ]	(	none	)
+striplayers	[ 0	locks=0 ]	(	"off"	)
+timesample	[ 0	locks=0 ]	(	"animated"	)
+importframe	[ 0	locks=0 ]	(	[ importframe	0 ] 	)
+staticimportframe	[ 0	locks=0 ]	(	1001	)
+sepparm	[ 0	locks=0 ]	(	)
+addpathattrib	[ 0	locks=0 ]	(	"on"	)
+pathattrib	[ 0	locks=0 ]	(	path	)
+addnameattrib	[ 0	locks=0 ]	(	"on"	)
+nameattrib	[ 0	locks=0 ]	(	name	)
+viewportlod	[ 0	locks=0 ]	(	"full"	)
+pivot	[ 0	locks=0 ]	(	"centroid"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopimport.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 2.56604 1.76345
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	unpack_switch 1 1 "input1"
+}
+inputs
+{
+0 	unpack_switch 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/unpackusd.init"
+Content-Type: text/plain
+
+type = unpackusd::2.0
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/unpackusd.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 3.74529 3.80118
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	lopimport 0 1 "input1"
+}
+inputs
+{
+0 	lopimport 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/unpackusd.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+group	[ 0	locks=0 ]	(	""	)
+deleteorig	[ 0	locks=0 ]	(	"on"	)
+unpacktraversal	[ 0	locks=0 ]	(	std:boundables	)
+group_unpack	[ 0	locks=0 ]	(	0	)
+output	[ 0	locks=0 ]	(	"polygons"	)
+limititerations	[ 8	locks=0 ]	(	"on"	)
+iterations	[ 0	locks=0 ]	(	1	)
+pivot	[ 0	locks=0 ]	(	"centroid"	)
+addpathattrib	[ 0	locks=0 ]	(	"on"	)
+pathattrib	[ 0	locks=0 ]	(	path	)
+addnameattrib	[ 0	locks=0 ]	(	"on"	)
+nameattrib	[ 0	locks=0 ]	(	name	)
+addfilepathattrib	[ 0	locks=0 ]	(	"on"	)
+filepathattrib	[ 0	locks=0 ]	(	usdpath	)
+addinstancelevelattrib	[ 0	locks=0 ]	(	"off"	)
+instancelevelattrib	[ 0	locks=0 ]	(	instancelevel	)
+transferattributes	[ 0	locks=0 ]	(	""	)
+transfergroups	[ 0	locks=0 ]	(	""	)
+group_import	[ 0	locks=0 ]	(	0	)
+importprimvars	[ 0	locks=0 ]	(	*	)
+importinheritedprimvars	[ 0	locks=0 ]	(	"off"	)
+importcomputedvisibility	[ 0	locks=0 ]	(	"off"	)
+importattributes	[ 0	locks=0 ]	(	""	)
+nontransformingprimvars	[ 0	locks=0 ]	(	rest	)
+translatesttouv	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/unpackusd.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/unpack_switch.init"
+Content-Type: text/plain
+
+type = switch
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/unpack_switch.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 2.56604 2.85241
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	lopimport 0 1 "input1"
+2 	unpackusd 1 1 "input2"
+}
+inputs
+{
+0 	lopimport 0 1
+1 	unpackusd 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 1 0.7 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/unpack_switch.chn"
+Content-Type: text/plain
+
+{
+    channel input {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../unpack\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/unpack_switch.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+input	[ 8	locks=0 ]	(	[ input	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/unpack_switch.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.order"
+Content-Type: text/plain
+
+5
+lopnet
+lopimport
+output0
+unpackusd
+unpack_switch
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

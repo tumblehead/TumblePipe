@@ -1,0 +1,14 @@
+Operator:     th::image_plane_painter::1.0
+Label:        th image plane painter
+Path:         oplib:/th::Lop/image_plane_painter::1.0?th::Lop/image_plane_painter::1.0
+Icon:         opdef:/th::Lop/image_plane_painter::1.0?IconImage
+Table:        Lop
+License:      
+Extra:        guide=image/sopnet/create/GUIDE 
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Fri Feb  6 14:10:19 2026
+

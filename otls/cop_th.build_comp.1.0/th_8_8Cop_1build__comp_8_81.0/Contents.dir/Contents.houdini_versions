@@ -1,0 +1,32 @@
+{
+	"values":["21.0.559","2","3","4","1"
+	],
+	"indexes":{
+		"hdaroot/proxy/export_mono.userdata":0,
+		"hdaroot/preview.userdata":0,
+		"hdaroot/proxy/tops/update.userdata":3,
+		"hdaroot/proxy/tops/SKIP.userdata":0,
+		"hdaroot/proxy/OUT_RGBA.userdata":0,
+		"hdaroot/proxy/tops/fetch_mono.userdata":2,
+		"hdaroot/render.userdata":0,
+		"hdaroot/proxy/tops.userdata":0,
+		"hdaroot/proxy/import_rgba.userdata":0,
+		"hdaroot/proxy/OUT_RGB.userdata":0,
+		"hdaroot/proxy/tops/wait.userdata":4,
+		"hdaroot/dive.userdata":0,
+		"hdaroot/proxy/tops/gpu_scheduler.userdata":1,
+		"hdaroot/dive/output.userdata":0,
+		"hdaroot/proxy/OUT_MONO.userdata":0,
+		"hdaroot/output.userdata":0,
+		"hdaroot/proxy/tops/fetch_rgba.userdata":2,
+		"hdaroot/proxy/import_rgb.userdata":0,
+		"hdaroot/proxy/export_rgb.userdata":0,
+		"hdaroot/proxy/tops/localscheduler.userdata":1,
+		"hdaroot/proxy/export_rgba.userdata":0,
+		"hdaroot/proxy/tops/output.userdata":0,
+		"hdaroot/proxy.userdata":0,
+		"hdaroot/proxy/tops/empty_task.userdata":4,
+		"hdaroot/proxy/tops/fetch_rgb.userdata":2,
+		"hdaroot/proxy/import_mono.userdata":0
+	}
+}

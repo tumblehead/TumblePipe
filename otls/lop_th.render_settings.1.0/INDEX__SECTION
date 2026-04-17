@@ -1,0 +1,14 @@
+Operator:     th::render_settings::1.0
+Label:        th render settings
+Path:         oplib:/th::Lop/render_settings::1.0?th::Lop/render_settings::1.0
+Icon:         W:\_pipeline\pipeline\houdini\Tumblehead\resources/ExportRenderPreset.png
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Thu Oct  9 15:17:21 2025
+

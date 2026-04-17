@@ -1,0 +1,353 @@
+# Dialog script for th::image_plane_painter::1.1 automatically generated
+
+{
+    name	th::image_plane_painter::1.1
+    script	th::image_plane_painter::1.0
+    label	"th image plane painter"
+
+    help {
+	""
+    }
+    bindhandle rx xform "Transformer" rx ""
+    bindhandle ry xform "Transformer" ry ""
+    bindhandle rz xform "Transformer" rz ""
+    bindhandle sx xform "Transformer" sx ""
+    bindhandle sy xform "Transformer" sy ""
+    bindhandle sz xform "Transformer" sz ""
+    bindhandle tx xform "Transformer" tx ""
+    bindhandle ty xform "Transformer" ty ""
+    bindhandle tz xform "Transformer" tz ""
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    groupsimple {
+        name    "folder8"
+        label   "Primtive Properties"
+
+        parm {
+            name    "prim_name"
+            label   "Trace Container"
+            type    string
+            default { "$OS" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "import_prefix"
+            label   "Path Prefix"
+            type    string
+            invisible
+            default { "/" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "folder2"
+        label   "Image"
+
+        parm {
+            name    "image_save_path"
+            label   "Image Save Path"
+            type    string
+            default { "$HIP/images" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "image_name"
+            label   "Image Name"
+            type    string
+            default { "$OS" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "image_resolution"
+            label   "Image Resolution"
+            type    intvector2
+            size    2
+            default { "1000" [ "node = hou.pwd()\nx_res = node.evalParm(\"image_resolutionx\")\nplane_x = node.evalParm(\"plane_sizex\")\nplane_y = node.evalParm(\"plane_sizey\")\n\nreturn x_res * (plane_x/plane_y)" python ] }
+            range   { -1 1 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "editor"
+            label   "Image Editor"
+            type    file
+            default { "C:/Program Files/Krita (x64)/bin/krita.exe" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "sepparm2"
+            label   "Spacer"
+            type    separator
+            default { "" }
+            parmtag { "sidefx::layout_height" "medium" }
+            parmtag { "sidefx::look" "blank" }
+        }
+        groupsimple {
+            name    "folder3"
+            label   "buttons"
+            grouptag { "sidefx::look" "blank" }
+
+            parm {
+                name    "open_editor"
+                label   "Edit Image"
+                type    button
+                joinnext
+                default { "0" }
+                export  all
+                parmtag { "script_callback" "hou.phm().main()" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "reload"
+                label   "Reload Image"
+                type    button
+                joinnext
+                default { "0" }
+                export  all
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback" "hou.phm().reload()" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "open_location"
+                label   "Open Image Location"
+                type    button
+                default { "0" }
+                export  all
+                parmtag { "script_callback" "hou.phm().open_location()" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        parm {
+            name    "sepparm3"
+            label   "Spacer"
+            type    separator
+            default { "" }
+            parmtag { "sidefx::layout_height" "medium" }
+            parmtag { "sidefx::look" "blank" }
+        }
+    }
+
+    groupsimple {
+        name    "folder7"
+        label   "Mesh Properties"
+
+        parm {
+            name    "mode"
+            label   "Mesh Method"
+            type    buttonstrip
+            joinnext
+            default { "0" }
+            menureplace {
+                "0" "Image Plane"
+                "2" "Convex Image"
+                "1" "Trace Image"
+            }
+            export  all
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "split_layers"
+            label   "Seperate Prim Per PSD Layer"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "layer_distance"
+            label   "Layer Offset"
+            type    float
+            default { "0.001" }
+            hidewhen "{ split_layers == 0 }"
+            range   { 0.001 1 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "sepparm"
+            label   "Spacer"
+            type    separator
+            default { "" }
+            parmtag { "sidefx::layout_height" "medium" }
+            parmtag { "sidefx::look" "blank" }
+        }
+        groupsimple {
+            name    "folder0"
+            label   "Image Properties"
+            hidewhen "{ mode != 0 }"
+            grouptag { "sidefx::look" "blank" }
+
+            parm {
+                name    "plane_size"
+                label   "Plane Size"
+                type    vector2
+                size    2
+                default { "1" "1" }
+                range   { -1 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        groupsimple {
+            name    "folder6"
+            label   "Convex Properties"
+            hidewhen "{ mode != 1 }"
+            grouptag { "sidefx::look" "blank" }
+
+            parm {
+                name    "shrinkamount"
+                label   "Dilude/Erode Amount"
+                type    float
+                default { "0.01" }
+                range   { -1 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "remeshsize"
+                label   "Mesh Resolution"
+                type    float
+                default { "0.2" }
+                range   { 0! 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        groupsimple {
+            name    "folder5"
+            label   "Trace Propeties"
+            hidewhen "{ mode != 2 }"
+            grouptag { "sidefx::look" "blank" }
+
+            parm {
+                name    "expand"
+                label   "Expand Mesh"
+                type    float
+                default { "0.1" }
+                range   { 0! 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "step"
+                label   "Edge Poly Lenght"
+                type    float
+                default { "50" }
+                range   { 1 100 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "remesh_size"
+                label   "Mesh Size"
+                type    float
+                default { "0.03" }
+                range   { 0.01! 0.5 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "thresh"
+                label   "Threshold"
+                type    float
+                default { "0.5" }
+                range   { 0 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
+    groupcollapsible {
+        name    "folder1"
+        label   "Material Properties"
+
+        parm {
+            name    "emission"
+            label   "Emission"
+            type    float
+            default { "0" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "roughness"
+            label   "Roughness"
+            type    float
+            default { "0.8" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "reverse"
+            label   "Reverse Normals"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "color_points"
+            label   "Add Point Colors from image"
+            type    toggle
+            default { "1" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder4"
+        label   "Transform"
+
+        parm {
+            name    "t"
+            label   "Translate"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "r"
+            label   "Rotate"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            range   { 0 360 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "s"
+            label   "Scale"
+            type    vector
+            size    3
+            default { "1" "1" "1" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "scale"
+            label   "Uniform Scale"
+            type    float
+            default { "1" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

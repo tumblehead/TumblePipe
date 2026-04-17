@@ -1,0 +1,24 @@
+# Dialog script for tumblehead::th_cop_material_library::1.0 automatically generated
+
+{
+    name	tumblehead::th_cop_material_library::1.0
+    script	tumblehead::th_cop_material_library::1.0
+    label	"th cop material library"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "material_container"
+        label   "Material Container"
+        type    string
+        default { "/materials/" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

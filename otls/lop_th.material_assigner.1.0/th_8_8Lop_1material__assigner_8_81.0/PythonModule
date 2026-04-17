@@ -1,0 +1,46 @@
+from pxr import Usd, UsdShade
+import hou
+
+def init_materials(kwargs):
+
+    node = hou.pwd()
+    stage = node.stage()
+    assignments = node.parm('assignments')
+    
+    # Collect all material paths
+    materials = [prim for prim in stage.Traverse() if prim.IsA(UsdShade.Material)]
+    
+    # Choose which material to init if control clicked
+    if kwargs.get('ctrlclick'):
+        selection = hou.ui.selectFromList([material.GetName() for material in materials])
+        selected_material_paths = [str(materials[s].GetPath()) for s in selection]
+        
+        assignments.set(len(selected_material_paths))
+        for i, material_path in enumerate(selected_material_paths):
+            node.parm(f'matspecpath{i+1}').set(material_path)
+        return
+    
+    # Default to init all scene materials
+    assignments.set(len(materials))
+    for i, material in enumerate(materials):
+        node.parm(f'matspecpath{i+1}').set(str(material.GetPath()))
+        
+def update_material_paths():
+
+    node = hou.pwd()
+    stage = node.stage()
+    materials = [prim for prim in stage.Traverse() if prim.IsA(UsdShade.Material)]
+    
+    # Create Material name: path lookup table
+    material_lut = {mat.GetName(): str(mat.GetPath()) for mat in materials}
+    
+    # Set entry to looked up path given the material name
+    assignments = node.parm('assignments')
+    for i in range(assignments.eval()):
+        entry = node.parm(f'matspecpath{i+1}')
+        entry_path = entry.eval()
+        entry_material_name = entry_path.split('/')[-1]
+        if entry_material_name in material_lut:
+            entry.set(material_lut[entry_material_name])
+        else:
+            print(f"[update_material_paths] Warning: '{current_name}' not found in stage materials")

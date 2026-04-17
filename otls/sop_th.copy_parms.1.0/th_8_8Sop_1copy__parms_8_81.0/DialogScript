@@ -1,0 +1,41 @@
+# Dialog script for th::copy_parms::1.0 automatically generated
+
+{
+    name	th::copy_parms::1.0
+    script	th::copy_parms::1.0
+    label	"th copy parms"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Sub-Network Input #1"
+    inputlabel	2	"Sub-Network Input #2"
+    inputlabel	3	"Sub-Network Input #3"
+    inputlabel	4	"Sub-Network Input #4"
+
+    parm {
+        name    "source"
+        label   "Source"
+        type    oppath
+        default { "" }
+        parmtag { "oprelative" "." }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "destination"
+        label   "Destination"
+        type    oppath
+        default { "" }
+        parmtag { "oprelative" "." }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "transfer"
+        label   "Transfer"
+        type    button
+        default { "0" }
+        parmtag { "script_callback" "hou.phm().transfer()" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

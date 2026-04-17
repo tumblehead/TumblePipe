@@ -1,0 +1,10 @@
+{
+	"values":["21.0.512"
+	],
+	"indexes":{
+		"hdaroot/metadata.userdata":0,
+		"hdaroot/stage_IN.userdata":0,
+		"hdaroot/ropnet/render.userdata":0,
+		"hdaroot/ropnet.userdata":0
+	}
+}

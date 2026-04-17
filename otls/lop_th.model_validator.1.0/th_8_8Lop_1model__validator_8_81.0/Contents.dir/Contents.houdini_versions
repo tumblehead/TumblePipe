@@ -1,0 +1,26 @@
+{
+	"values":["20.5.613"
+	],
+	"indexes":{
+		"hdaroot/validator/lopimport1.userdata":0,
+		"hdaroot/output0.userdata":0,
+		"hdaroot/validator/merge1.userdata":0,
+		"hdaroot/validator/output0.userdata":0,
+		"hdaroot/validator/dive_target/VISUALIZE_DIFFERENT_NAMES.userdata":0,
+		"hdaroot/validator.userdata":0,
+		"hdaroot/sopimport1.userdata":0,
+		"hdaroot/validator/unpackusd1.userdata":0,
+		"hdaroot/validator/attribpromote3.userdata":0,
+		"hdaroot/validator/attribpromote1.userdata":0,
+		"hdaroot/IN_PREVIOUS.userdata":0,
+		"hdaroot/validator/dive_target.userdata":0,
+		"hdaroot/IN_CURRENT.userdata":0,
+		"hdaroot/validator/max_different_names.userdata":0,
+		"hdaroot/validator/add1.userdata":0,
+		"hdaroot/validator/blast_if_no_different_names.userdata":0,
+		"hdaroot/validator/attribpromote2.userdata":0,
+		"hdaroot/validator/unpackusd.userdata":0,
+		"hdaroot/validator/dive_target/output0.userdata":0,
+		"hdaroot/validator/lopimport.userdata":0
+	}
+}

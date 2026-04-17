@@ -1,0 +1,29 @@
+{
+	"values":["21.0.559","2","1.0"
+	],
+	"indexes":{
+		"hdaroot/mesh_guide.userdata":0,
+		"hdaroot/sweep.userdata":0,
+		"hdaroot/merge1.userdata":0,
+		"hdaroot/ray.userdata":0,
+		"hdaroot/output0.userdata":0,
+		"hdaroot/triangulate_switch.userdata":0,
+		"hdaroot/cut_faces.userdata":0,
+		"hdaroot/subdivide.userdata":0,
+		"hdaroot/resample.userdata":0,
+		"hdaroot/color_blur.userdata":2,
+		"hdaroot/null1.userdata":0,
+		"hdaroot/guide_switch.userdata":0,
+		"hdaroot/subdivide_mesh.userdata":0,
+		"hdaroot/connectivity.userdata":0,
+		"hdaroot/OUT_GUIDES.userdata":0,
+		"hdaroot/merge2.userdata":0,
+		"hdaroot/edit_curve.userdata":1,
+		"hdaroot/transfer_color.userdata":0,
+		"hdaroot/switchif.userdata":0,
+		"hdaroot/cut_out_strokes.userdata":0,
+		"hdaroot/promote.userdata":0,
+		"hdaroot/triangulate.userdata":0,
+		"hdaroot/subdivide1.userdata":0
+	}
+}

@@ -1,0 +1,281 @@
+# Dialog script for th::build_comp::1.0 automatically generated
+
+{
+    name	th::build_comp::1.0
+    script	th::build_comp::1.0
+    label	"th build comp"
+
+    output	C	C
+    signature	default	Default	{ }	{ RGB }
+
+    help {
+	""
+    }
+
+    parm {
+        name    "targettopnetwork"
+        label   "Top Network"
+        type    oppath
+        invisible
+        default { "proxy/tops/merge" }
+        parmtag { "opfilter" "!!TOP!!" }
+        parmtag { "oprelative" "." }
+        parmtag { "script_callback" "" }
+        parmtag { "script_callback_language" "python" }
+        parmtag { "spare_category" "TOPCookControls" }
+    }
+    parm {
+        name    "built"
+        label   "Built"
+        type    toggle
+        invisible
+        default { "0" }
+        parmtag { "script_callback_language" "python" }
+    }
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        parm {
+            name    "shot"
+            label   "Shot"
+            type    string
+            joinnext
+            default { "from_context" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.cops import build_comp" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = build_comp.BuildComp(hou.pwd())" ]
+                [ "items = node.list_shot_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "shot_label"
+            label   ""
+            type    label
+            nolabel
+            default { "" }
+        }
+        parm {
+            name    "render_department"
+            label   "Input"
+            type    string
+            default { "denoise" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.cops import build_comp" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = build_comp.BuildComp(hou.pwd())" ]
+                [ "items = node.list_render_department_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "source"
+            label   "Quality"
+            type    string
+            default { "render" }
+            menu {
+                "render"    "Render"
+                "proxy"     "Proxy"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "proxy_resolution"
+            label   "Proxy Resolution"
+            type    string
+            default { "full" }
+            disablewhen "{ source != proxy }"
+            menu {
+                "full"      "Full Size"
+                "half"      "Half Size"
+                "quarter"   "Quarter Size"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "farm"
+        label   "Farm"
+
+        parm {
+            name    "pool"
+            label   "Pool"
+            type    string
+            default { "" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.cops import build_comp" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = build_comp.BuildComp(hou.pwd())" ]
+                [ "items = node.list_pool_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "priority"
+            label   "Priority"
+            type    integer
+            default { "50" }
+            range   { 0! 100! }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "render_layer"
+            label   "Render Layer"
+            type    string
+            default { "all" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.cops import build_comp" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = build_comp.BuildComp(hou.pwd())" ]
+                [ "items = ['all'] + node.list_render_layer_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "jobs"
+        label   "Jobs"
+        grouptag { "sidefx::switcher" "jobs" }
+
+        parm {
+            name    "submit_partial"
+            label   "Submit Partial"
+            type    toggle
+            default { "1" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "submit_full"
+            label   "Submit Full"
+            type    toggle
+            default { "1" }
+            parmtag { "script_callback_language" "python" }
+        }
+        groupcollapsible {
+            name    "partial_render"
+            label   "Partial Render"
+            hidewhen "{ submit_partial == 0 }"
+
+            parm {
+                name    "specific_frames"
+                label   "Start/Middle/End-Frame"
+                type    intvector
+                size    3
+                default { [ "hou.pwd().parm('frame_settingsx').eval()" python ] [ "hou.pwd().parm('frame_settingsx').eval() + ((hou.pwd().parm('frame_settingsy').eval() - hou.pwd().parm('frame_settingsx').eval()) // 2)" python ] [ "hou.pwd().parm('frame_settingsy').eval()" python ] }
+                range   { -1 1 }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        groupcollapsible {
+            name    "full_render"
+            label   "Full Render"
+            hidewhen "{ submit_full == 0 }"
+
+            parm {
+                name    "frame_range"
+                label   "Frame Range"
+                type    string
+                default { "from_config" }
+                menu {
+                    "from_config"   "From Config"
+                    "from_settings" "From Settings"
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "frame_settings"
+                label   "Start/End-Frame"
+                type    intvector2
+                size    2
+                default { [ "import hou\n\nfrom tumblepipe.api import default_client\nfrom tumblepipe.pipe.houdini.lops import submit_render\n\napi = default_client()\n\nnode = submit_render.SubmitRender(hou.pwd())\nsequence_name = node.get_sequence_name()\nshot_name = node.get_shot_name()\n\nframe_range = api.config.get_frame_range(sequence_name, shot_name)\nreturn frame_range.start_frame" python ] [ "import hou\n\nfrom tumblepipe.api import default_client\nfrom tumblepipe.pipe.houdini.lops import submit_render\n\napi = default_client()\n\nnode = submit_render.SubmitRender(hou.pwd())\nsequence_name = node.get_sequence_name()\nshot_name = node.get_shot_name()\n\nframe_range = api.config.get_frame_range(sequence_name, shot_name)\nreturn frame_range.end_frame" python ] }
+                disablewhen "{ frame_range == from_config }"
+                range   { 1! 999999! }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "roll_settings"
+                label   "Pre/Post-Roll"
+                type    intvector2
+                size    2
+                default { [ "import hou\n\nfrom tumblepipe.api import default_client\nfrom tumblepipe.pipe.houdini.lops import submit_render\n\napi = default_client()\n\nnode = submit_render.SubmitRender(hou.pwd())\nsequence_name = node.get_sequence_name()\nshot_name = node.get_shot_name()\n\nframe_range = api.config.get_frame_range(sequence_name, shot_name)\nreturn frame_range.start_roll" python ] [ "import hou\n\nfrom tumblepipe.api import default_client\nfrom tumblepipe.pipe.houdini.lops import submit_render\n\napi = default_client()\n\nnode = submit_render.SubmitRender(hou.pwd())\nsequence_name = node.get_sequence_name()\nshot_name = node.get_shot_name()\n\nframe_range = api.config.get_frame_range(sequence_name, shot_name)\nreturn frame_range.end_roll" python ] }
+                disablewhen "{ frame_range == from_config }"
+                range   { 0! 999999! }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "stepsize"
+                label   "Step size"
+                type    integer
+                default { "0" }
+                range   { 1! 10 }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "batchsize"
+                label   "Batch size"
+                type    integer
+                default { "5" }
+                range   { 1! 10 }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
+    groupsimple {
+        name    "actions"
+        label   "Actions"
+
+        parm {
+            name    "update"
+            label   "Update COP network"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().update()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "stop"
+            label   "Stop"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().stop()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "preview"
+            label   "Render to mplay"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().preview()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "submit"
+            label   "Submit to farm"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().submit()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

@@ -1,0 +1,14 @@
+Operator:     th::gradient_map::1.0
+Label:        th gradient map
+Path:         oplib:/th::Cop/gradient_map::1.0?th::Cop/gradient_map::1.0
+Icon:         COP_th-gradient_map-1.0
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Wed Jun  4 14:13:52 2025
+

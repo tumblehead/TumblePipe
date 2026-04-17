@@ -1,0 +1,22 @@
+{
+	"values":["21.0.591"
+	],
+	"indexes":{
+		"hdaroot/output0.userdata":0,
+		"hdaroot/setvariant.userdata":0,
+		"hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/inputs.userdata":0,
+		"hdaroot/fetch_variant.userdata":0,
+		"hdaroot/lookdev_variant_subnet.userdata":0,
+		"hdaroot/CONFIG_GEO_SCOPE_PRIM.userdata":0,
+		"hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/Material_Outputs_and_AOVs.userdata":0,
+		"hdaroot/configurelayer.userdata":0,
+		"hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.userdata":0,
+		"hdaroot/foreach_end1.userdata":0,
+		"hdaroot/add_lookdev_variants.userdata":0,
+		"hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.userdata":0,
+		"hdaroot/setvariant1.userdata":0,
+		"hdaroot/INPUT.userdata":0,
+		"hdaroot/lookdev_variant_subnet/lookdev_subnet.userdata":0,
+		"hdaroot/foreach_begin.userdata":0
+	}
+}

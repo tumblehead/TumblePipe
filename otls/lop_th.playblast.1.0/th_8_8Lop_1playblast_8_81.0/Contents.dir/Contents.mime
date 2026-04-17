@@ -1,0 +1,741 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Lop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::playblast::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+comment ""
+position -2.90319 2.62904
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.631373 0.870588 1 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"nodeshape":{
+		"type":"string",
+		"value":"bulge"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.inp"
+Content-Type: text/plain
+
+1
+0 1.0352899999999998 6.5609123317100009 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/cache.init"
+Content-Type: text/plain
+
+type = filecache
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/cache.def"
+Content-Type: text/plain
+
+comment ""
+position 1.03529 3.17241
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	stage_IN 1 1 "input1"
+}
+inputs
+{
+0 	stage_IN 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/cache.chn"
+Content-Type: text/plain
+
+{
+    channel descriptivelabel {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = ifs(ch(\"filemethod\"),chsraw(\"file\"),chs(\"cachename\")) }
+    }
+    channel lopoutput {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = "{
+    if(ch('filemethod'))
+    {
+        return chs('file');
+    }
+    else
+    {
+        return chs('cachedir') + '/' + chs('cachename');
+    }
+}" }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/cache.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+loadfromdisk	[ 0	locks=0 ]	(	"off"	)
+reload	[ 0	locks=0 ]	(	0	)
+filemethod	[ 0	locks=0 ]	(	"explicit"	)
+basename	[ 0	locks=0 ]	(	$OS	)
+filetype	[ 0	locks=0 ]	(	".usd"	)
+file	[ 0	locks=0 ]	(	""	)
+openfiledir	[ 0	locks=0 ]	(	0	)
+basedir	[ 0	locks=0 ]	(	$HIP/usd	)
+openbasedir	[ 0	locks=0 ]	(	0	)
+enableversion	[ 0	locks=0 ]	(	"on"	)
+version	[ 0	locks=0 ]	(	1	)
+sepparm6	[ 0	locks=0 ]	(	)
+folder1	[ 0	locks=0 ]	(	2	2	2	2	)
+folder15	[ 0	locks=0 ]	(	1	)
+execute	[ 0	locks=0 ]	(	0	)
+cookoutputnode	[ 0	locks=0 ]	(	0	)
+dirtyall	[ 0	locks=0 ]	(	0	)
+folder3	[ 0	locks=0 ]	(	1	)
+trange	[ 0	locks=0 ]	(	"range"	)
+f	[ 0	locks=0 ]	(	1001	1100	1	)
+fmenu	[ 0	locks=0 ]	(	"fstartend"	)
+substeps	[ 0	locks=0 ]	(	1	)
+useframeoverride	[ 0	locks=0 ]	(	"off"	)
+frameoverride	[ 0	locks=0 ]	(	1	)
+specificrange	[ 0	locks=0 ]	(	`chs(\"f1\")`-`chs(\"f2\")`:`chs(\"f3\")`	)
+targettopnetwork	[ 0	locks=0 ]	(	topnet1	)
+Local	[ 0	locks=0 ]	(	1	)
+topscheduler	[ 0	locks=0 ]	(	""	)
+folder0	[ 0	locks=0 ]	(	1	)
+savestyle	[ 0	locks=0 ]	(	flattenimplicitlayers	)
+fileperframe	[ 0	locks=0 ]	(	"off"	)
+errorsavingimplicitpaths	[ 0	locks=0 ]	(	"on"	)
+striplayerbreaks	[ 0	locks=0 ]	(	"off"	)
+folder4	[ 0	locks=0 ]	(	1	)
+enableoutputprocessor_simplerelativepaths	[ 0	locks=0 ]	(	"on"	)
+enableoutputprocessor_savetodirectory	[ 0	locks=0 ]	(	"off"	)
+enableoutputprocessor_savepathsrelativetooutput	[ 0	locks=0 ]	(	"off"	)
+enableoutputprocessor_usesearchpaths	[ 0	locks=0 ]	(	"off"	)
+enableoutputprocessor_matchoutputextension	[ 0	locks=0 ]	(	"off"	)
+contextoptions_group2	[ 0	locks=0 ]	(	1	)
+optioncount	[ 0	locks=0 ]	(	0	)
+folder5	[ 0	locks=0 ]	(	0	)
+loadfromdiskonsave	[ 0	locks=0 ]	(	"on"	)
+hardenbasename	[ 0	locks=0 ]	(	"on"	)
+sepparm3	[ 0	locks=0 ]	(	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+initsim	[ 0	locks=0 ]	(	"off"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+savebackground	[ 0	locks=0 ]	(	"on"	)
+saveretry	[ 0	locks=0 ]	(	0	)
+savebackuphip	[ 0	locks=0 ]	(	"off"	)
+savethumbnails	[ 0	locks=0 ]	(	"off"	)
+sepparm2	[ 0	locks=0 ]	(	)
+take	[ 0	locks=0 ]	(	_current_	)
+folder11	[ 0	locks=0 ]	(	0	)
+missingfile	[ 0	locks=0 ]	(	"warn"	)
+loadretry	[ 0	locks=0 ]	(	0	)
+cachesize	[ 0	locks=0 ]	(	0	)
+prefetch	[ 0	locks=0 ]	(	"off"	)
+folder9	[ 0	locks=0 ]	(	0	)
+tprerender	[ 0	locks=0 ]	(	"off"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"off"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"off"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"off"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+folder12	[ 0	locks=0 ]	(	0	)
+versionstr	[ 0	locks=0 ]	(	v`chs(\"version\")`	)
+sepparm9	[ 0	locks=0 ]	(	)
+cachedir	[ 0	locks=0 ]	(	"`chs(\"basedir\") + \"/\" + chs(\"basename\")``ifs(ch(\"enableversion\"), \"/\" + chs(\"versionstr\"),\"\")`"	)
+cachename	[ 0	locks=0 ]	(	"`chs(\"basename\")``ifs(ch(\"enableversion\"), \"_\" + chs(\"versionstr\"),\"\")``chs(\"filetype\")`"	)
+descriptivelabel	[ 0	locks=0 ]	(	[ descriptivelabel	ifs(ch(\"filemethod\"),chsraw(\"file\"),chs(\"cachename\")) ] 	)
+lopoutput	[ 0	locks=0 ]	(	[ lopoutput	"{
+    if(ch('filemethod'))
+    {
+        return chs('file');
+    }
+    else
+    {
+        return chs('cachedir') + '/' + chs('cachename');
+    }
+}" ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/cache.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ropnet.init"
+Content-Type: text/plain
+
+type = ropnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ropnet.def"
+Content-Type: text/plain
+
+comment ""
+position 4.98889 3.17241
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.55 0.3 0.4 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ropnet.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+execute	[ 0	locks=0 ]	(	0	)
+renderdialog	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ropnet.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ropnet/render.init"
+Content-Type: text/plain
+
+type = flipbook
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ropnet/render.def"
+Content-Type: text/plain
+
+comment ""
+position -0.681914 -0.433572
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ropnet/render.chn"
+Content-Type: text/plain
+
+{
+    channel shadingmode {
+      lefttype = extend
+      righttype = extend
+      default = 8
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 8 8 expr = ch(\"../../shadingmode\") }
+    }
+    channel lighting {
+      lefttype = extend
+      righttype = extend
+      default = 3
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 3 3 expr = ch(\"../../lighting\") }
+    }
+    channel res1 {
+      lefttype = extend
+      righttype = extend
+      default = 1280
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1280 1280 expr = ch(\"../../res1\") }
+    }
+    channel res2 {
+      lefttype = extend
+      righttype = extend
+      default = 720
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 720 720 expr = ch(\"../../res2\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ropnet/render.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+execute	[ 0	locks=0 ]	(	0	)
+renderdialog	[ 0	locks=0 ]	(	0	)
+take	[ 0	locks=0 ]	(	""	)
+trange	[ 0	locks=0 ]	(	"normal"	)
+f	[ 0	locks=0 ]	(	1100	1100	1	)
+stdswitch	[ 0	locks=0 ]	(	0	0	0	0	0	0	0	0	)
+opsource	[ 0	locks=0 ]	(	"lop"	)
+camera	[ 8	locks=0 ]	(	""	)
+scenepath	[ 0	locks=0 ]	(	""	)
+sopsource	[ 0	locks=0 ]	(	"render"	)
+vobjects	[ 0	locks=0 ]	(	*	)
+forceobjects	[ 0	locks=0 ]	(	""	)
+excludeobjects	[ 0	locks=0 ]	(	""	)
+alights	[ 0	locks=0 ]	(	*	)
+forcelights	[ 0	locks=0 ]	(	""	)
+excludelights	[ 0	locks=0 ]	(	""	)
+loppath	[ 0	locks=0 ]	(	../../cache	)
+cameraprim	[ 0	locks=0 ]	(	/cameras/shotCam/shotCam	)
+purposerender	[ 0	locks=0 ]	(	"off"	)
+purposeproxy	[ 0	locks=0 ]	(	"on"	)
+purposeguide	[ 0	locks=0 ]	(	"off"	)
+soho_initsim	[ 0	locks=0 ]	(	"off"	)
+soho_viewport_menu	[ 0	locks=0 ]	(	"on"	)
+tres	[ 0	locks=0 ]	(	"on"	)
+res	[ 8	locks=0 ]	(	[ res1	1280 ] 	[ res2	720 ] 	)
+aspect	[ 0	locks=0 ]	(	1	)
+bgimage	[ 0	locks=0 ]	(	""	)
+vpcomment	[ 0	locks=0 ]	(	""	)
+picture	[ 0	locks=0 ]	(	C:/users/tumblehead/th_temp/cazoo/tmpdohzyar1/jpg/playblast.$F4.jpg	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+saveretry	[ 0	locks=0 ]	(	0	)
+imagetype	[ 0	locks=0 ]	(	"image2d"	)
+sheetsize	[ 0	locks=0 ]	(	2	2	)
+colorcorrect	[ 0	locks=0 ]	(	"ocio"	)
+ociocolorspace	[ 0	locks=0 ]	(	ACEScg	)
+ociolooks	[ 0	locks=0 ]	(	"ACES 1.3 Reference Gamut Compression"	)
+ociodisplay	[ 0	locks=0 ]	(	"sRGB - Display"	)
+ocioview	[ 0	locks=0 ]	(	"ACES 1.0 - SDR Video"	)
+vm_image_artist	[ 0	locks=0 ]	(	""	)
+vm_image_comment	[ 0	locks=0 ]	(	""	)
+vm_image_hostname	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_label	[ 0	locks=0 ]	(	""	)
+vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
+vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
+vm_image_exr_compression	[ 0	locks=0 ]	(	"piz"	)
+useraytrace	[ 0	locks=0 ]	(	"on"	)
+shadingmode	[ 0	locks=0 ]	(	[ shadingmode	8 ] 	)
+matcapimage	[ 0	locks=0 ]	(	MatCap/OilClay.pic	)
+matcapintensity	[ 0	locks=0 ]	(	1	)
+lighting	[ 0	locks=0 ]	(	[ lighting	3 ] 	)
+worklighttype	[ 0	locks=0 ]	(	"headlight"	)
+headlightrotate	[ 0	locks=0 ]	(	22	22	)
+headlightint	[ 0	locks=0 ]	(	0.4	)
+headlightspec	[ 0	locks=0 ]	(	"on"	)
+headlightsoft	[ 0	locks=0 ]	(	0	)
+domelightmap	[ 0	locks=0 ]	(	""	)
+domelightintensity	[ 0	locks=0 ]	(	1	)
+domelightexposure	[ 0	locks=0 ]	(	0	)
+domelighttint	[ 0	locks=0 ]	(	1	1	1	)
+domelightrotate	[ 0	locks=0 ]	(	0	0	0	)
+skyazimuth	[ 0	locks=0 ]	(	0	)
+skyaltitude	[ 0	locks=0 ]	(	45	)
+skyintensity	[ 0	locks=0 ]	(	1	)
+skyexposure	[ 0	locks=0 ]	(	0	)
+skyusesun	[ 0	locks=0 ]	(	"on"	)
+skysunintensity	[ 0	locks=0 ]	(	1	)
+skysunsize	[ 0	locks=0 ]	(	0.51	)
+skyusesky	[ 0	locks=0 ]	(	"on"	)
+skyskyintensity	[ 0	locks=0 ]	(	1	)
+skyturbidity	[ 0	locks=0 ]	(	3	)
+skyground	[ 0	locks=0 ]	(	0.2	0.2	0.2	)
+skyhorizonblur	[ 0	locks=0 ]	(	0.5	)
+tpkeycolor	[ 0	locks=0 ]	(	1	1	1	)
+tpkeyintensity	[ 0	locks=0 ]	(	1	)
+tpkeyexposure	[ 0	locks=0 ]	(	0	)
+tpkeyazimuth	[ 0	locks=0 ]	(	22	)
+tpkeyaltitude	[ 0	locks=0 ]	(	22	)
+tpfillcolor	[ 0	locks=0 ]	(	1	1	1	)
+tpfillintensity	[ 0	locks=0 ]	(	0.25	)
+tpfillexposure	[ 0	locks=0 ]	(	0	)
+tpfillazimuth	[ 0	locks=0 ]	(	-30	)
+tpfillaltitude	[ 0	locks=0 ]	(	0	)
+tpbackcolor	[ 0	locks=0 ]	(	1	1	1	)
+tpbackintensity	[ 0	locks=0 ]	(	0.25	)
+tpbackexposure	[ 0	locks=0 ]	(	0	)
+tpbackazimuth	[ 0	locks=0 ]	(	-135	)
+tpbackaltitude	[ 0	locks=0 ]	(	30	)
+worklightshadows	[ 0	locks=0 ]	(	"off"	)
+ambocclusion	[ 0	locks=0 ]	(	"off"	)
+occlweight	[ 0	locks=0 ]	(	1	)
+occldist	[ 0	locks=0 ]	(	1	)
+occlspread	[ 0	locks=0 ]	(	1	)
+lightsamples	[ 0	locks=0 ]	(	32	)
+shadowquality	[ 0	locks=0 ]	(	"areaaa"	)
+shadowmap	[ 0	locks=0 ]	(	2048	)
+aamode	[ 0	locks=0 ]	(	"aa8"	)
+usehdr	[ 0	locks=0 ]	(	"fp16"	)
+usematerials	[ 0	locks=0 ]	(	"on"	)
+usetextures	[ 0	locks=0 ]	(	"on"	)
+transparency	[ 0	locks=0 ]	(	"high"	)
+motionblur	[ 0	locks=0 ]	(	"off"	)
+motionblurframes	[ 0	locks=0 ]	(	5	)
+displacement	[ 0	locks=0 ]	(	"on"	)
+displacequality	[ 0	locks=0 ]	(	4	)
+backfacecull	[ 0	locks=0 ]	(	"off"	)
+fognode	[ 0	locks=0 ]	(	""	)
+uniformfog	[ 0	locks=0 ]	(	"off"	)
+fogdensity	[ 0	locks=0 ]	(	0.001	)
+fogopacity	[ 0	locks=0 ]	(	1	)
+fogcolor	[ 0	locks=0 ]	(	0.5	0.5	0.5	)
+fogrange	[ 0	locks=0 ]	(	0	1000	)
+fogclipdistance	[ 0	locks=0 ]	(	1e6	)
+fogheightmode	[ 0	locks=0 ]	(	"off"	)
+fogheight	[ 0	locks=0 ]	(	100	)
+fogheightfalloff	[ 0	locks=0 ]	(	100	)
+fogsunenable	[ 0	locks=0 ]	(	"on"	)
+fogsunbloom	[ 0	locks=0 ]	(	5	)
+fogintensity	[ 0	locks=0 ]	(	1	)
+bloom	[ 0	locks=0 ]	(	"off"	)
+bloomscale	[ 0	locks=0 ]	(	10	)
+bloomintensity	[ 0	locks=0 ]	(	1	)
+bloomthreshold	[ 0	locks=0 ]	(	0.95	)
+dof	[ 0	locks=0 ]	(	"off"	)
+bokeh	[ 0	locks=0 ]	(	"none"	)
+bokehfile	[ 0	locks=0 ]	(	$HH/pic/bokeh_8.pic	)
+bokehcop	[ 0	locks=0 ]	(	""	)
+bokehaspect	[ 0	locks=0 ]	(	1	)
+bokehboost	[ 0	locks=0 ]	(	1	)
+usegeocolor	[ 0	locks=0 ]	(	"on"	)
+volumequality	[ 0	locks=0 ]	(	"high"	)
+gennormal	[ 0	locks=0 ]	(	"vertex"	)
+cuspnormals	[ 0	locks=0 ]	(	60	)
+createtangents	[ 0	locks=0 ]	(	"on"	)
+lod	[ 0	locks=0 ]	(	1	)
+wirewidth	[ 0	locks=0 ]	(	1	)
+wireblend	[ 0	locks=0 ]	(	0.5	)
+particle	[ 0	locks=0 ]	(	"points"	)
+pointsize	[ 0	locks=0 ]	(	3	)
+discsize	[ 0	locks=0 ]	(	0.05	)
+orientton	[ 0	locks=0 ]	(	"off"	)
+usesprites	[ 0	locks=0 ]	(	"on"	)
+apexdeform	[ 0	locks=0 ]	(	"on"	)
+tex2dlimit	[ 0	locks=0 ]	(	"none"	)
+tex2dres	[ 0	locks=0 ]	(	2048	)
+tex2dformat	[ 0	locks=0 ]	(	"format16fp"	)
+tex3dlimit	[ 0	locks=0 ]	(	"none"	)
+tex3dres	[ 0	locks=0 ]	(	384	)
+tex3dformat	[ 0	locks=0 ]	(	"format16fp"	)
+spritetexmaxres	[ 0	locks=0 ]	(	128	128	)
+tprerender	[ 0	locks=0 ]	(	"on"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"on"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"on"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"on"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ropnet/render.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ropnet.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage_IN.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage_IN.def"
+Content-Type: text/plain
+
+comment ""
+position 1.03529 4.30191
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	metadata 1 1 "input1"
+}
+inputs
+{
+0 	metadata 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage_IN.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage_IN.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/metadata.init"
+Content-Type: text/plain
+
+type = configurelayer
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/metadata.def"
+Content-Type: text/plain
+
+comment ""
+position 1.03529 5.43141
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@Abraham-3090
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/metadata.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+setsavepath	[ 0	locks=0 ]	(	"off"	)
+savepath	[ 0	locks=0 ]	(	""	)
+setdefaultprim	[ 0	locks=0 ]	(	"off"	)
+defaultprim	[ 0	locks=0 ]	(	""	)
+setcomment	[ 0	locks=0 ]	(	"off"	)
+comment	[ 0	locks=0 ]	(	""	)
+setstarttime	[ 0	locks=0 ]	(	"on"	)
+starttime	[ 0	locks=0 ]	(	1001	)
+setendtime	[ 0	locks=0 ]	(	"on"	)
+endtime	[ 0	locks=0 ]	(	1001	)
+settimepersecond	[ 0	locks=0 ]	(	"on"	)
+timepersecond	[ 0	locks=0 ]	(	24	)
+setframespersecond	[ 0	locks=0 ]	(	"on"	)
+framespersecond	[ 0	locks=0 ]	(	24	)
+separator_metrics	[ 0	locks=0 ]	(	)
+setupaxis	[ 0	locks=0 ]	(	"off"	)
+upaxis	[ 0	locks=0 ]	(	z	)
+setmetersperunit	[ 0	locks=0 ]	(	"off"	)
+metersperunit	[ 0	locks=0 ]	(	0.01	)
+separator_colorconfig	[ 0	locks=0 ]	(	)
+setcolorconfig	[ 0	locks=0 ]	(	"off"	)
+colorconfig	[ 0	locks=0 ]	(	""	)
+setcolormanagementsystem	[ 0	locks=0 ]	(	"off"	)
+colormanagementsystem	[ 0	locks=0 ]	(	OpenColorIO	)
+separator_rendersettings	[ 0	locks=0 ]	(	)
+setrendersettings	[ 0	locks=0 ]	(	"off"	)
+rendersettings	[ 0	locks=0 ]	(	""	)
+separator_customdata	[ 0	locks=0 ]	(	)
+customdatacount	[ 0	locks=0 ]	(	0	)
+separator_stagevariables	[ 0	locks=0 ]	(	)
+stagevariablescount	[ 0	locks=0 ]	(	0	)
+separator_newlayer	[ 0	locks=0 ]	(	)
+setstagemetadata	[ 0	locks=0 ]	(	"on"	)
+flattenop	[ 0	locks=0 ]	(	none	)
+startnewlayer	[ 0	locks=0 ]	(	"off"	)
+setinputlayerexplicit	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/metadata.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.order"
+Content-Type: text/plain
+
+4
+ropnet
+stage_IN
+cache
+metadata
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

@@ -1,0 +1,14 @@
+Operator:     th::animate::2.0
+Label:        th animate
+Path:         oplib:/th::Lop/animate::2.0?th::Lop/animate::2.0
+Icon:         $TH_PIPELINE_PATH/resources/Animate.png
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Tue Dec  2 13:14:12 2025
+

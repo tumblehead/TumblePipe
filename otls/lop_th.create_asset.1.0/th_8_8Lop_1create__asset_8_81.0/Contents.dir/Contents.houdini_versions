@@ -1,0 +1,10 @@
+{
+	"values":["1.0","21.0.559"
+	],
+	"indexes":{
+		"hdaroot/output0.userdata":1,
+		"hdaroot/INIT_ASSET_PRIM.userdata":0,
+		"hdaroot/CONFIG_ASSET_PRIM.userdata":1,
+		"hdaroot/configurelayer.userdata":1
+	}
+}

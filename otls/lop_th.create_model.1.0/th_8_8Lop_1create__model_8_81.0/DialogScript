@@ -1,0 +1,1128 @@
+# Dialog script for th::create_model::1.0 automatically generated
+
+{
+    name	th::create_model::1.0
+    script	sopcreate
+    label	"th create model"
+
+    help {
+	""
+    }
+    bindhandle prx xform "Transformer" pivot_rx ""
+    bindhandle pry xform "Transformer" pivot_ry ""
+    bindhandle prz xform "Transformer" pivot_rz ""
+    bindhandle px xform "Transformer" px ""
+    bindhandle py xform "Transformer" py ""
+    bindhandle pz xform "Transformer" pz ""
+    bindhandle rx xform "Transformer" rx ""
+    bindhandle ry xform "Transformer" ry ""
+    bindhandle rz xform "Transformer" rz ""
+    bindhandle shear1 xform "Transformer" shear_xy ""
+    bindhandle shear2 xform "Transformer" shear_xz ""
+    bindhandle shear3 xform "Transformer" shear_yz ""
+    bindhandle sx xform "Transformer" sx ""
+    bindhandle sy xform "Transformer" sy ""
+    bindhandle sz xform "Transformer" sz ""
+    bindhandle xOrd xform "Transformer" trs_order ""
+    bindhandle tx xform "Transformer" tx ""
+    bindhandle ty xform "Transformer" ty ""
+    bindhandle tz xform "Transformer" tz ""
+    bindhandle scale xform "Transformer" uniform_scale ""
+    bindhandle rOrd xform "Transformer" xyz_order ""
+
+    inputlabel	1	"Input Stage"
+
+    groupsimple {
+        name    "promoted_parms"
+        label   "Promoted Parms"
+        invisibletab
+
+        parm {
+            name    "enable_pathprefix"
+            label   "Enable Import Path Prefix"
+            type    toggle
+            nolabel
+            joinnext
+            default { "on" }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "pathprefix"
+            label   "Import Path Prefix"
+            type    string
+            default { [ "from tumblepipe.pipe.houdini.lops import create_model\nfrom tumblepipe.pipe.houdini.util import uri_to_prim_path\n\nnode = create_model.CreateModel(hou.pwd())\nasset_uri = node.get_asset_uri()\nif asset_uri is None: return ''\nreturn uri_to_prim_path(asset_uri)" python ] }
+            disablewhen "{ enable_pathprefix == 0 }"
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        groupsimple {
+            name    "metadata_parms"
+            label   "metadata"
+
+            parm {
+                name    "metadata_python"
+                label   "Python Code"
+                type    string
+                default { "" }
+                menureplace {
+                    [ "opmenu -l -a metadata python" ]
+                }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "editor" "1" }
+                parmtag { "editorlang" "python" }
+                parmtag { "editorlines" "20-50" }
+            }
+        }
+
+    }
+
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        parm {
+            name    "asset"
+            label   "Asset"
+            type    string
+            joinnext
+            default { "from_context" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import create_model" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = create_model.CreateModel(hou.pwd())" ]
+                [ "items = node.list_asset_uris()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "asset_label"
+            label   ""
+            type    label
+            nolabel
+            default { "" }
+        }
+    }
+
+    groupsimple {
+        name    "settings"
+        label   "Settings"
+
+        parm {
+            name    "asreference"
+            label   "Load As Reference"
+            type    toggle
+            default { "off" }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "copycontents"
+            label   "Sublayer Style"
+            type    ordinal
+            default { "on" }
+            hidewhen "{ asreference == 1 }"
+            menu {
+                "off"   "Add SOP Layer As New Sublayer"
+                "merge" "Merge SOP Layer Into Existing Active Layer"
+                "on"    "Copy SOP Layer Into New Active Layer"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "adjustxformsforinput"
+            label   "Adjust Transforms for Input Hierarchy"
+            type    toggle
+            default { "on" }
+            hidewhen "{ asreference == 1 }"
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "bindmaterials"
+            label   "Bind Materials"
+            type    string
+            default { "nobind" }
+            menu {
+                [ "opmenu -l -a sopimport bindmaterials" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "reftype"
+            label   "Reference Type"
+            type    string
+            default { "payloadweak" }
+            hidewhen "{ asreference == 0 }"
+            menu {
+                [ "opmenu -l -a sopimport reftype" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "refprim"
+            label   "Reference Primitive"
+            type    string
+            default { "" }
+            hidewhen "{ asreference == 0 }"
+            menu {
+                [ "opmenu -l -a sopimport refprim" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "refprimpath"
+            label   "Reference Primitive Path"
+            type    string
+            default { "" }
+            disablewhen "{ refprim != \"\" }"
+            hidewhen "{ asreference == 0 }"
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "primpath"
+            label   "Primitive Path"
+            type    string
+            default { "/$OS" }
+            hidewhen "{ asreference == 0 }"
+            menureplace {
+                [ "opmenu -l -a sopimport primpath" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, False)" }
+            parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nAlt-click to toggle movement of the display flag." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::usdpathtype" "prim" }
+        }
+        parm {
+            name    "instanceable"
+            label   "Make Instanceable"
+            type    toggle
+            default { "off" }
+            hidewhen "{ asreference == 0 }"
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "parentprimkind"
+            label   "Parent Primitive Kind"
+            type    string
+            default { "group" }
+            hidewhen "{ asreference == 0 }"
+            menu {
+                [ "opmenu -l -a sopimport parentprimkind" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "parentprimtype"
+            label   "Parent Primitive Type"
+            type    string
+            default { "UsdGeomXform" }
+            hidewhen "{ asreference == 0 }"
+            menu {
+                [ "opmenu -l -a sopimport parentprimtype" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "showlopstage"
+            label   "Show LOP Stage in SOPs"
+            type    oppath
+            default { "`opinputpath(\".\", 0)`" }
+            parmtag { "opfilter" "!!LOP!!" }
+            parmtag { "oprelative" "." }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "sepparm"
+            label   "Separator"
+            type    separator
+            default { "" }
+        }
+        parm {
+            name    "enable_group"
+            label   "Enable Import Group"
+            type    toggle
+            nolabel
+            joinnext
+            default { "off" }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "group"
+            label   "Import Group"
+            type    string
+            default { "" }
+            disablewhen "{ enable_group == 0 }"
+            menutoggle {
+                [ "opmenu -l -a sopimport group" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "enable_grouptype"
+            label   "Enable Import Group Type"
+            type    toggle
+            nolabel
+            joinnext
+            default { "off" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "grouptype"
+            label   "Import Group Type"
+            type    string
+            default { "primitive" }
+            disablewhen "{ enable_grouptype == 0 }"
+            menu {
+                "primitive" "Primitives"
+                "point"     "Points"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "enable_savepath"
+            label   "Enable Layer Save Path"
+            type    toggle
+            nolabel
+            joinnext
+            default { "off" }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "savepath"
+            label   "Layer Save Path"
+            type    file
+            default { "" }
+            disablewhen "{ enable_savepath == 0 }"
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "filechooser_mode" "write" }
+        }
+        parm {
+            name    "sepparm2"
+            label   "Separator"
+            type    separator
+            default { "" }
+        }
+        group {
+            name    "folder1"
+            label   "Transform"
+
+            parm {
+                name    "xOrd"
+                label   "Transform Order"
+                type    ordinal
+                joinnext
+                default { "srt" }
+                menu {
+                    "srt"   "Scale Rot Trans"
+                    "str"   "Scale Trans Rot"
+                    "rst"   "Rot Scale Trans"
+                    "rts"   "Rot Trans Scale"
+                    "tsr"   "Trans Scale Rot"
+                    "trs"   "Trans Rot Scale"
+                }
+                parmtag { "autoscope" "0000000000000000" }
+            }
+            parm {
+                name    "rOrd"
+                label   "Rotate Order"
+                type    ordinal
+                nolabel
+                default { "xyz" }
+                menu {
+                    "xyz"   "Rx Ry Rz"
+                    "xzy"   "Rx Rz Ry"
+                    "yxz"   "Ry Rx Rz"
+                    "yzx"   "Ry Rz Rx"
+                    "zxy"   "Rz Rx Ry"
+                    "zyx"   "Rz Ry Rx"
+                }
+                parmtag { "autoscope" "0000000000000000" }
+            }
+            parm {
+                name    "t"
+                label   "Translate"
+                type    vector
+                size    3
+                default { "0" "0" "0" }
+                range   { -1 1 }
+                parmtag { "autoscope" "0000000000000000" }
+            }
+            parm {
+                name    "r"
+                label   "Rotate"
+                type    vector
+                size    3
+                default { "0" "0" "0" }
+                range   { 0 360 }
+                parmtag { "autoscope" "0000000000000000" }
+            }
+            parm {
+                name    "s"
+                label   "Scale"
+                type    vector
+                size    3
+                default { "1" "1" "1" }
+                range   { -1 1 }
+                parmtag { "autoscope" "0000000000000000" }
+            }
+            parm {
+                name    "shear"
+                label   "Shear"
+                type    float
+                size    3
+                default { "0" "0" "0" }
+                range   { 0 10 }
+                parmtag { "autoscope" "0000000000000000" }
+            }
+            parm {
+                name    "scale"
+                label   "Uniform Scale"
+                type    float
+                default { "1" }
+                range   { 0 10 }
+                parmtag { "autoscope" "0000000000000000" }
+            }
+            groupcollapsible {
+                name    "parmgroup_pivotxform"
+                label   "Pivot Transform"
+
+                parm {
+                    name    "p"
+                    label   "Pivot Translate"
+                    type    vector
+                    size    3
+                    default { "0" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "pr"
+                    label   "Pivot Rotate"
+                    type    vector
+                    size    3
+                    default { "0" "0" "0" }
+                    range   { -1 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+            }
+
+        }
+
+        group {
+            name    "folder1_1"
+            label   "Import from SOPs"
+
+            groupcollapsible {
+                name    "primitivedefinitiongroup"
+                label   "Primitive Definition"
+
+                parm {
+                    name    "enable_packedusdhandling"
+                    label   "Enable Packed USD Primitives"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "packedusdhandling"
+                    label   "Packed USD Primitives"
+                    type    string
+                    default { "xformandattribs" }
+                    disablewhen "{ enable_packedusdhandling == 0 }"
+                    menu {
+                        "ignore"            "Ignore"
+                        "xform"             "Overlay Transforms"
+                        "xformandattribs"   "Overlay Transforms and Attributes"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_otherprimhandling"
+                    label   "Enable Other Primitives"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "otherprimhandling"
+                    label   "Other Primitives"
+                    type    string
+                    default { "define" }
+                    disablewhen "{ enable_otherprimhandling == 0 }"
+                    menu {
+                        "define"    "Define"
+                        "overlay"   "Overlay"
+                        "xform"     "Overlay Transforms"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_defineonlyleafprims"
+                    label   "Enable Define Only Leaf Primitives"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "defineonlyleafprims"
+                    label   "Define Only Leaf Primitives"
+                    type    toggle
+                    default { "off" }
+                    disablewhen "{ enable_defineonlyleafprims == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "enable_packedhandling"
+                    label   "Enable Packed Primitives"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "packedhandling"
+                    label   "Packed Primitives"
+                    type    string
+                    default { "pointinstancer" }
+                    disablewhen "{ enable_packedhandling == 0 }"
+                    menu {
+                        "xforms"            "Create Xforms"
+                        "pointinstancer"    "Create Point Instancer"
+                        "nativeinstances"   "Create Native Instances"
+                        "unpack"            "Unpack"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_nurbscurvehandling"
+                    label   "Enable NURBS Curves"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "nurbscurvehandling"
+                    label   "NURBS Curves"
+                    type    string
+                    default { "basiscurves" }
+                    disablewhen "{ enable_nurbscurvehandling == 0 }"
+                    menu {
+                        "basiscurves"   "Convert to Basis Curves"
+                        "nurbscurves"   "Create NURBS Curves"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "enable_nurbssurfhandling"
+                    label   "Enable NURBS Surfaces"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "nurbssurfhandling"
+                    label   "NURBS Surfaces"
+                    type    string
+                    default { "meshes" }
+                    disablewhen "{ enable_nurbssurfhandling == 0 }"
+                    menu {
+                        "meshes"        "Convert to Meshes"
+                        "nurbspatches"  "Create NURBS Patches"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "enable_kindschema"
+                    label   "Enable Kind Authoring"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "kindschema"
+                    label   "Kind Authoring"
+                    type    string
+                    default { "none" }
+                    disablewhen "{ enable_kindschema == 0 }"
+                    menu {
+                        "none"              "None"
+                        "component"         "All geometry is one component"
+                        "nestedgroup"       "Nested groups and components"
+                        "nestedassembly"    "Nested assembly, groups, and components"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_pathattr"
+                    label   "Enable Path Attributes"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "pathattr"
+                    label   "Path Attributes"
+                    type    string
+                    default { "path,name" }
+                    disablewhen "{ enable_pathattr == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport pathattr" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_prefixabsolutepaths"
+                    label   "Prefix Absolute Paths"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "prefixabsolutepaths"
+                    label   "Prefix Absolute Paths"
+                    type    toggle
+                    default { "on" }
+                    disablewhen "{ enable_prefixabsolutepaths == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "enable_heightfieldconvert"
+                    label   "Enable Import Height Fields as Mesh"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "heightfieldconvert"
+                    label   "Import Height Fields as Mesh"
+                    type    toggle
+                    default { "off" }
+                    disablewhen "{ enable_heightfieldconvert == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+            groupcollapsible {
+                name    "geometryhandlinggroup"
+                label   "Geometry Handling"
+
+                parm {
+                    name    "enable_polygonsassubd"
+                    label   "Enable Treat Polygons as Subdivision Surfaces"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "polygonsassubd"
+                    label   "Treat Polygons as Subdivision Surfaces"
+                    type    toggle
+                    default { "off" }
+                    disablewhen "{ enable_polygonsassubd == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_subdgroup"
+                    label   "Enable Subdivision Group"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "subdgroup"
+                    label   "Subdivision Group"
+                    type    string
+                    default { "" }
+                    disablewhen "{ enable_subdgroup == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport subdgroup" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "enable_reversepolygons"
+                    label   "Enable Reverse Polygon Vertex Ordering"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "reversepolygons"
+                    label   "Reverse Polygon Vertex Ordering"
+                    type    toggle
+                    default { "off" }
+                    disablewhen "{ enable_reversepolygons == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_setmissingwidths"
+                    label   "Enable Set Missing Widths"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "setmissingwidths"
+                    label   "Set Missing Widths"
+                    type    log
+                    default { "0.01" }
+                    disablewhen "{ enable_setmissingwidths == 0 }"
+                    range   { 0 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+            groupcollapsible {
+                name    "importdatagroup"
+                label   "Import Data"
+
+                parm {
+                    name    "authortimesamples"
+                    label   "Author Time Samples"
+                    type    string
+                    default { "never" }
+                    menu {
+                        "never"     "Never"
+                        "auto"      "If SOP is Time Dependent"
+                        "always"    "If Not Specifically Excluded"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_setdefaultprim"
+                    label   "Enable Set Default Primitive"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "setdefaultprim"
+                    label   "Set Default Primitive"
+                    type    toggle
+                    default { "on" }
+                    disablewhen "{ enable_setdefaultprim == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "enable_topologyhandling"
+                    label   "Enable Topology Attributes"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "topologyhandling"
+                    label   "Topology Attributes"
+                    type    string
+                    default { "static" }
+                    disablewhen "{ enable_topologyhandling == 0 }"
+                    menu {
+                        "animated"  "Animated"
+                        "static"    "Static"
+                        "none"      "None"
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_attribs"
+                    label   "Enable Attributes"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "attribs"
+                    label   "Attributes"
+                    type    string
+                    default { "* ^__* ^usd*" }
+                    disablewhen "{ enable_attribs == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport attribs" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_indexattribs"
+                    label   "Enable Indexed Attributes"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "indexattribs"
+                    label   "Indexed Attributes"
+                    type    string
+                    default { "" }
+                    disablewhen "{ enable_indexattribs == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport indexattribs" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_constantattribs"
+                    label   "Enable Import as Single Element Array"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "constantattribs"
+                    label   "Import as Single Element Array"
+                    type    string
+                    default { "" }
+                    disablewhen "{ enable_constantattribs == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport constantattribs" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_scalarconstantattribs"
+                    label   "Enable Import as Single Value"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "scalarconstantattribs"
+                    label   "Import as Single Value"
+                    type    string
+                    default { "" }
+                    disablewhen "{ enable_scalarconstantattribs == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport scalarconstantattribs" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "enable_boolattribs"
+                    label   "Enable Boolean Attributes"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "boolattribs"
+                    label   "Boolean Attributes"
+                    type    string
+                    default { "" }
+                    disablewhen "{ enable_boolattribs == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport boolattribs" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "enable_uintattribs"
+                    label   "Enable Unsigned 32-bit Attributes"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "uintattribs"
+                    label   "Unsigned 32-bit Attributes"
+                    type    string
+                    default { "" }
+                    disablewhen "{ enable_uintattribs == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport uintattribs" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "enable_uint64attribs"
+                    label   "Enable Unsigned 64-bit Attributes"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "uint64attribs"
+                    label   "Unsigned 64-bit Attributes"
+                    type    string
+                    default { "" }
+                    disablewhen "{ enable_uint64attribs == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport uint64attribs" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "enable_staticattribs"
+                    label   "Enable Set Default Values"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "staticattribs"
+                    label   "Set Default Values"
+                    type    string
+                    default { "" }
+                    disablewhen "{ enable_staticattribs == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport staticattribs" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_partitionattribs"
+                    label   "Enable Partition Attributes"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "partitionattribs"
+                    label   "Partition Attributes"
+                    type    string
+                    default { "shop_materialpath" }
+                    disablewhen "{ enable_partitionattribs == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport partitionattribs" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_prefixpartitionsubsets"
+                    label   "Enable Prefix Subsets with Attribute Name"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "prefixpartitionsubsets"
+                    label   "Prefix Subsets with Attribute Name"
+                    type    toggle
+                    default { "on" }
+                    disablewhen "{ enable_prefixpartitionsubsets == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "enable_subsetgroups"
+                    label   "Enable Subset Groups"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "subsetgroups"
+                    label   "Subset Groups"
+                    type    string
+                    default { "" }
+                    disablewhen "{ enable_subsetgroups == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport subsetgroups" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "enable_customattribs"
+                    label   "Enable USD Custom Attributes"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "customattribs"
+                    label   "USD Custom Attributes"
+                    type    string
+                    default { "" }
+                    disablewhen "{ enable_customattribs == 0 }"
+                    menutoggle {
+                        [ "opmenu -l -a sopimport customattribs" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "enable_translateuvtost"
+                    label   "Enable Translate UV Attribute to ST"
+                    type    toggle
+                    nolabel
+                    joinnext
+                    default { "off" }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "translateuvtost"
+                    label   "Translate UV Attribute to ST"
+                    type    toggle
+                    default { "on" }
+                    disablewhen "{ enable_translateuvtost == 0 }"
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+            }
+
+            groupcollapsible {
+                name    "materialsgroup"
+                label   "Materials"
+
+            }
+
+        }
+
+        group {
+            name    "folder1_2"
+            label   "Materials"
+            tabbreak
+
+            parm {
+                name    "fillmaterials"
+                label   "Auto-fill Materials"
+                type    button
+                default { "0" }
+                parmtag { "script_callback" "kwargs['node'].hm().fillmaterials(kwargs)" }
+                parmtag { "script_callback_language" "python" }
+            }
+            multiparm {
+                name    "materials"
+                label    "Number of Materials"
+                default 0
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "multistartoffset" "1" }
+
+                parm {
+                    name    "matnode#"
+                    label   "Material VOP"
+                    type    oppath
+                    default { "" }
+                    disablewhen "{ enable# == 0 }"
+                    parmtag { "opfilter" "!!CUSTOM/MATERIAL!!" }
+                    parmtag { "oprelative" "." }
+                }
+                parm {
+                    name    "matpath#"
+                    label   "Material Path"
+                    type    string
+                    default { "" }
+                    disablewhen "{ enable# == 0 }"
+                    parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, False)" }
+                    parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nAlt-click to toggle movement of the display flag." }
+                    parmtag { "script_action_icon" "BUTTONS_reselect" }
+                    parmtag { "sidefx::usdpathtype" "prim" }
+                }
+                parm {
+                    name    "geopath#"
+                    label   "Geometry Path"
+                    type    string
+                    default { "" }
+                    disablewhen "{ enable# == 0 } { assign# == 0 }"
+                    menutoggle {
+                        [ "import loputils" ]
+                        [ "return loputils.createPrimPatternMenu(kwargs['node'], 0)" ]
+                        language python
+                    }
+                    parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
+                    parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nShift-click to select using the primitive pattern editor.\nAlt-click to toggle movement of the display flag." }
+                    parmtag { "script_action_icon" "BUTTONS_reselect" }
+                    parmtag { "sidefx::usdpathtype" "primlist" }
+                }
+            }
+
+        }
+
+    }
+
+    groupsimple {
+        name    "actions"
+        label   "Actions"
+
+        parm {
+            name    "update"
+            label   "Update"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

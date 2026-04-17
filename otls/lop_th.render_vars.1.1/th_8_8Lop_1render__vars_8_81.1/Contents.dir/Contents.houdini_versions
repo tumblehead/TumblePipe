@@ -1,0 +1,23 @@
+{
+	"values":["21.0.559","2.0"
+	],
+	"indexes":{
+		"hdaroot/output0.userdata":0,
+		"hdaroot/volume.userdata":1,
+		"hdaroot/beauty.userdata":1,
+		"hdaroot/samples.userdata":1,
+		"hdaroot/position.userdata":1,
+		"hdaroot/depth.userdata":1,
+		"hdaroot/uv.userdata":1,
+		"hdaroot/albedo.userdata":1,
+		"hdaroot/albedo_mse.userdata":1,
+		"hdaroot/alpha.userdata":1,
+		"hdaroot/specular.userdata":1,
+		"hdaroot/beauty_mse.userdata":1,
+		"hdaroot/normal.userdata":1,
+		"hdaroot/emission.userdata":1,
+		"hdaroot/diffuse.userdata":1,
+		"hdaroot/normal_mse.userdata":1,
+		"hdaroot/update_renderproducts.userdata":0
+	}
+}

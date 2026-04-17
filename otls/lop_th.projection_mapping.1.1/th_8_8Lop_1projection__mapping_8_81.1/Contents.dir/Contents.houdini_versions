@@ -1,0 +1,25 @@
+{
+	"values":["20.5.550","4"
+	],
+	"indexes":{
+		"hdaroot/output0.userdata":0,
+		"hdaroot/project_uvs.userdata":1,
+		"hdaroot/projection_material.userdata":0,
+		"hdaroot/project_uvs/modify/modify/attribcopy.userdata":0,
+		"hdaroot/objnet.userdata":0,
+		"hdaroot/projection_maps/checkerboard.userdata":0,
+		"hdaroot/project_uvs/modify/modify/store_rest.userdata":0,
+		"hdaroot/assignmaterial.userdata":0,
+		"hdaroot/objnet/lopimportcam/xform1.userdata":0,
+		"hdaroot/projection_maps/base_color.userdata":0,
+		"hdaroot/objnet/lopimportcam/file1.userdata":0,
+		"hdaroot/objnet/lopimportcam/camOrigin.userdata":0,
+		"hdaroot/projection_maps.userdata":0,
+		"hdaroot/projection_maps/render_projection.userdata":0,
+		"hdaroot/objnet/lopimportcam.userdata":0,
+		"hdaroot/project_uvs/modify/modify/OUT.userdata":0,
+		"hdaroot/project_uvs/modify/modify.userdata":0,
+		"hdaroot/project_uvs/modify/modify/uv_project.userdata":0,
+		"hdaroot/project_uvs/modify/modify/swap_rest.userdata":0
+	}
+}

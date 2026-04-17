@@ -1,0 +1,190 @@
+# Dialog script for th::import_assets::2.0 automatically generated
+
+{
+    name	th::import_assets::2.0
+    script	th::import_assets::1.0
+    label	"th import assets"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    groupsimple {
+        name    "hidden_parms"
+        label   "hidden_parms"
+        invisibletab
+
+        groupsimple {
+            name    "set_metadata_parms"
+            label   "set_metadata"
+
+            parm {
+                name    "set_metadata_python"
+                label   "Python Code"
+                type    string
+                default { "" }
+                menureplace {
+                    [ "opmenu -l -a set_metadata python" ]
+                }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "editor" "1" }
+                parmtag { "editorlang" "python" }
+                parmtag { "editorlines" "20-50" }
+            }
+        }
+
+    }
+
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        multiparm {
+            name    "asset_imports"
+            label    "Asset Imports"
+
+            parm {
+                name    "entity_select#"
+                label   "Entity"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
+                parmtag { "script_callback" "hou.phm().select(kwargs['parm'].multiParmInstanceIndices()[0])" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "entity#"
+                label   "Entity"
+                type    string
+                invisible
+                nolabel
+                joinnext
+                default { "" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "entity_label#"
+                label   "entity_label"
+                type    label
+                nolabel
+                joinnext
+                default { "" }
+            }
+            parm {
+                name    "variant#"
+                label   "Variant"
+                type    string
+                nolabel
+                joinnext
+                default { "default" }
+                menu {
+                    [ "from tumblepipe.pipe.houdini.lops import import_assets" ]
+                    [ "from tumblepipe.pipe.houdini import util" ]
+                    [ "" ]
+                    [ "index = int(kwargs['parm'].name()[len('variant'):])" ]
+                    [ "node = import_assets.ImportAssets(hou.pwd())" ]
+                    [ "variant_names = node.list_variant_names(index)" ]
+                    [ "variant_name = node.get_variant_name(index)" ]
+                    [ "if variant_name is None or variant_name not in variant_names:" ]
+                    [ "    node.set_variant_name(index, variant_names[0])" ]
+                    [ "return util.list_to_menu(variant_names)" ]
+                    language python
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "version#"
+                label   "Version"
+                type    string
+                nolabel
+                joinnext
+                default { "latest" }
+                menu {
+                    [ "from tumblepipe.pipe.houdini.lops import import_assets" ]
+                    [ "from tumblepipe.pipe.houdini import util" ]
+                    [ "" ]
+                    [ "index = int(kwargs['parm'].name()[len('version'):])" ]
+                    [ "node = import_assets.ImportAssets(hou.pwd())" ]
+                    [ "version_names = node.list_version_names(index)" ]
+                    [ "version_name = node.get_version_name(index)" ]
+                    [ "if version_name is None or version_name not in version_names:" ]
+                    [ "    node.set_version_name(index, version_names[0])" ]
+                    [ "return util.list_to_menu(version_names)" ]
+                    language python
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "version_label#"
+                label   "version_label#"
+                type    label
+                nolabel
+                joinnext
+                default { "" }
+            }
+            parm {
+                name    "instances#"
+                label   "Instances"
+                type    integer
+                nolabel
+                default { "1" }
+                range   { 1! 10 }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
+    groupsimple {
+        name    "settings"
+        label   "Settings"
+
+        parm {
+            name    "departments"
+            label   "Exclude departments"
+            type    string
+            default { "" }
+            menutoggle {
+                [ "from tumblepipe.pipe.houdini.lops import import_assets" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = import_assets.ImportAssets(hou.pwd())" ]
+                [ "return util.list_to_checked_menu(" ]
+                [ "    node.list_department_names()," ]
+                [ "    node.get_exclude_department_names()" ]
+                [ ")" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "include_layerbreak"
+            label   "Include layerbreak"
+            type    toggle
+            default { "on" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "actions"
+        label   "Actions"
+
+        parm {
+            name    "import"
+            label   "Import"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

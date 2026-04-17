@@ -1,0 +1,34 @@
+# Dialog script for th::gradient_map::1.0 automatically generated
+
+{
+    name	th::gradient_map::1.0
+    script	th::gradient_map::1.0
+    label	"th gradient map"
+
+    input	source	source
+    output	output1	source
+    signature	default	Default	{ RGBA }	{ RGBA }
+
+    help {
+	""
+    }
+
+    parm {
+        name    "equalize"
+        label   "Equalize Input"
+        type    toggle
+        default { "0" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "gradient"
+        label   "Gradient Map"
+        type    ramp_rgb
+        default { "3" }
+        range   { 1! 10 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "rampcolordefault" "1pos ( 0 ) 1c ( 1 0 0 ) 1interp ( linear ) 2pos ( 0.5 ) 2c ( 0 1 0 ) 2interp ( linear ) 3pos ( 1 ) 3c ( 0 0 1 ) 3interp ( linear )" }
+        parmtag { "rampshowcontrolsdefault" "0" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

@@ -1,0 +1,14 @@
+Operator:     th::import_asset::1.0
+Label:        th import asset
+Path:         oplib:/th::Lop/import_asset::1.0?th::Lop/import_asset::1.0
+Icon:         W:\_pipeline\pipeline\houdini\Tumblehead\resources/ImportAsset.png
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 0
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Thu Dec 11 16:18:03 2025
+

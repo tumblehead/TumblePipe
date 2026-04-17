@@ -1,0 +1,234 @@
+# Dialog script for th::shot_sequencer::1.0 automatically generated
+
+{
+    name	th::shot_sequencer::1.0
+    script	th::shot_sequencer::1.0
+    label	"th shot sequencer"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+    inputlabel	5	"Input #5"
+    inputlabel	6	"Input #6"
+    inputlabel	7	"Input #7"
+    inputlabel	8	"Input #8"
+    inputlabel	9	"Input #9"
+    inputlabel	10	"Input #10"
+    inputlabel	11	"Input #11"
+    inputlabel	12	"Input #12"
+    inputlabel	13	"Input #13"
+    inputlabel	14	"Input #14"
+    inputlabel	15	"Input #15"
+    inputlabel	16	"Input #16"
+    inputlabel	17	"Input #17"
+    inputlabel	18	"Input #18"
+    inputlabel	19	"Input #19"
+    inputlabel	20	"Input #20"
+    inputlabel	21	"Input #21"
+    inputlabel	22	"Input #22"
+    inputlabel	23	"Input #23"
+    inputlabel	24	"Input #24"
+    inputlabel	25	"Input #25"
+    inputlabel	26	"Input #26"
+    inputlabel	27	"Input #27"
+    inputlabel	28	"Input #28"
+    inputlabel	29	"Input #29"
+    inputlabel	30	"Input #30"
+    inputlabel	31	"Input #31"
+    inputlabel	32	"Input #32"
+    inputlabel	33	"Input #33"
+    inputlabel	34	"Input #34"
+    inputlabel	35	"Input #35"
+    inputlabel	36	"Input #36"
+    inputlabel	37	"Input #37"
+    inputlabel	38	"Input #38"
+    inputlabel	39	"Input #39"
+    inputlabel	40	"Input #40"
+    inputlabel	41	"Input #41"
+    inputlabel	42	"Input #42"
+    inputlabel	43	"Input #43"
+    inputlabel	44	"Input #44"
+    inputlabel	45	"Input #45"
+    inputlabel	46	"Input #46"
+    inputlabel	47	"Input #47"
+    inputlabel	48	"Input #48"
+    inputlabel	49	"Input #49"
+    inputlabel	50	"Input #50"
+    inputlabel	51	"Input #51"
+    inputlabel	52	"Input #52"
+    inputlabel	53	"Input #53"
+    inputlabel	54	"Input #54"
+    inputlabel	55	"Input #55"
+    inputlabel	56	"Input #56"
+    inputlabel	57	"Input #57"
+    inputlabel	58	"Input #58"
+    inputlabel	59	"Input #59"
+    inputlabel	60	"Input #60"
+    inputlabel	61	"Input #61"
+    inputlabel	62	"Input #62"
+    inputlabel	63	"Input #63"
+    inputlabel	64	"Input #64"
+    inputlabel	65	"Input #65"
+    inputlabel	66	"Input #66"
+    inputlabel	67	"Input #67"
+    inputlabel	68	"Input #68"
+    inputlabel	69	"Input #69"
+    inputlabel	70	"Input #70"
+    inputlabel	71	"Input #71"
+    inputlabel	72	"Input #72"
+    inputlabel	73	"Input #73"
+    inputlabel	74	"Input #74"
+    inputlabel	75	"Input #75"
+    inputlabel	76	"Input #76"
+    inputlabel	77	"Input #77"
+    inputlabel	78	"Input #78"
+    inputlabel	79	"Input #79"
+    inputlabel	80	"Input #80"
+    inputlabel	81	"Input #81"
+    inputlabel	82	"Input #82"
+    inputlabel	83	"Input #83"
+    inputlabel	84	"Input #84"
+    inputlabel	85	"Input #85"
+    inputlabel	86	"Input #86"
+    inputlabel	87	"Input #87"
+    inputlabel	88	"Input #88"
+    inputlabel	89	"Input #89"
+    inputlabel	90	"Input #90"
+    inputlabel	91	"Input #91"
+    inputlabel	92	"Input #92"
+    inputlabel	93	"Input #93"
+    inputlabel	94	"Input #94"
+    inputlabel	95	"Input #95"
+    inputlabel	96	"Input #96"
+    inputlabel	97	"Input #97"
+    inputlabel	98	"Input #98"
+    inputlabel	99	"Input #99"
+
+    parm {
+        name    "sepparm3"
+        label   "Spacer"
+        type    separator
+        default { "" }
+        parmtag { "sidefx::layout_height" "small" }
+        parmtag { "sidefx::look" "blank" }
+    }
+    parm {
+        name    "mode"
+        label   "Mode"
+        type    buttonstrip
+        default { "0" }
+        menureplace {
+            "0" "  Root Switch  "
+            "1" "  Shot Primitives  "
+            "2" "  Sequence Variants  "
+        }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "seq_startframe"
+        label   "Sequence Start Frame"
+        type    integer
+        default { "1001" }
+        range   { 0 10 }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "reload"
+        label   "Reload Shot Info"
+        type    button
+        default { "0" }
+        parmtag { "script_callback" "hou.phm().reload_shotinfo()" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "sepparm2"
+        label   "Spacer"
+        type    separator
+        default { "" }
+        parmtag { "sidefx::layout_height" "medium" }
+        parmtag { "sidefx::look" "blank" }
+    }
+    groupsimple {
+        name    "folder0"
+        label   "Shots"
+
+        multiparm {
+            name    "shots"
+            label    "shots"
+            invisible
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "autoselect" "0000000000000000" }
+
+            groupcollapsible {
+                name    "shot_#"
+                label   "shot_#"
+                grouptag { "sidefx::multi_label" "" }
+
+                parm {
+                    name    "input#"
+                    label   "Input Node"
+                    type    oppath
+                    default { "" }
+                    parmtag { "oprelative" "." }
+                    parmtag { "script_callback_language" "hscript" }
+                }
+                parm {
+                    name    "start_time_code#"
+                    label   "Start Time Code"
+                    type    integer
+                    default { "0" }
+                    range   { 0 10 }
+                    parmtag { "script_callback_language" "python" }
+                    parmtag { "sidefx::slider" "none" }
+                    parmtag { "units" "Frame" }
+                }
+                parm {
+                    name    "end_time_code#"
+                    label   "End Time Code"
+                    type    integer
+                    default { "0" }
+                    range   { 0 10 }
+                    parmtag { "script_callback_language" "python" }
+                    parmtag { "sidefx::slider" "none" }
+                    parmtag { "units" "Frame" }
+                }
+                parm {
+                    name    "shotlength#"
+                    label   "Shot Length"
+                    type    integer
+                    default { "0" }
+                    range   { 0 10 }
+                    parmtag { "script_callback_language" "python" }
+                    parmtag { "sidefx::slider" "none" }
+                    parmtag { "units" "Frames" }
+                }
+                parm {
+                    name    "startframe#"
+                    label   "Start Frame"
+                    type    integer
+                    default { "0" }
+                    range   { 0 10 }
+                    parmtag { "script_callback_language" "python" }
+                    parmtag { "sidefx::slider" "none" }
+                    parmtag { "units" "Frame" }
+                }
+            }
+
+        }
+
+    }
+
+    parm {
+        name    "sepparm"
+        label   "Spacer"
+        type    separator
+        default { "" }
+        parmtag { "sidefx::layout_height" "large" }
+        parmtag { "sidefx::look" "blank" }
+    }
+}

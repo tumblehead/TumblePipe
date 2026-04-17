@@ -1,0 +1,6 @@
+from tumblepipe.pipe.houdini.lops import lookdev_studio
+
+lookdev_studio.on_created(kwargs['node'])
+
+node = kwargs.get('node')
+node.setOutputForViewFlag(1)

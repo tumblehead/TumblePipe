@@ -1,0 +1,25 @@
+{
+	"values":["21.0.559"
+	],
+	"indexes":{
+		"hdaroot/foreach_input_shot.userdata":0,
+		"hdaroot/shotblock.userdata":0,
+		"hdaroot/configure_sequence.userdata":0,
+		"hdaroot/Activate_active_shot.userdata":0,
+		"hdaroot/output0.userdata":0,
+		"hdaroot/timeshift_shot.userdata":0,
+		"hdaroot/fetch_shot1.userdata":0,
+		"hdaroot/timeshift_shot1.userdata":0,
+		"hdaroot/foreach_input_shot2.userdata":0,
+		"hdaroot/Set_shot_variant.userdata":0,
+		"hdaroot/configure_shot.userdata":0,
+		"hdaroot/fetch_shot.userdata":0,
+		"hdaroot/sequence_variant.userdata":0,
+		"hdaroot/fetch_shot2.userdata":0,
+		"hdaroot/timeshift_shot2.userdata":0,
+		"hdaroot/mode_switch.userdata":0,
+		"hdaroot/foreach_input_shot1.userdata":0,
+		"hdaroot/graft_shot.userdata":0,
+		"hdaroot/set_stage_framerange.userdata":0
+	}
+}

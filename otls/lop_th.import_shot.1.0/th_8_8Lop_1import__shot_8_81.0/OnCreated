@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini.lops import import_shot
+
+import_shot.on_created(kwargs['node'])

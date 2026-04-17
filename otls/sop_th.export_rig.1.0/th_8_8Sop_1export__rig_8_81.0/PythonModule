@@ -1,0 +1,4 @@
+from tumblepipe.pipe.houdini.sops import export_rig
+
+def execute():
+    export_rig.execute()

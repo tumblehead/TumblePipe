@@ -1,0 +1,14 @@
+Operator:     th::lop_import::1.0
+Label:        th lop import
+Path:         oplib:/th::Cop/lop_import::1.0?th::Cop/lop_import::1.0
+Icon:         SOP_lopimport-2.0
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 0
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Mon Nov  3 11:30:13 2025
+

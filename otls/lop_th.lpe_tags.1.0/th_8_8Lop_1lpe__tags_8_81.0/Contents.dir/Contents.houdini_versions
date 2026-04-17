@@ -1,0 +1,37 @@
+{
+	"values":["21.0.559","2.0"
+	],
+	"indexes":{
+		"hdaroot/update_lpe_aovs/specular/switch.userdata":0,
+		"hdaroot/update_lpe_aovs/diffuse/output0.userdata":0,
+		"hdaroot/update_lpe_aovs/specular.userdata":0,
+		"hdaroot/update_lpe_aovs/diffuse.userdata":0,
+		"hdaroot/update_lpe_aovs/diffuse/lpe_render_var.userdata":1,
+		"hdaroot/update_lpe_aovs/beauty/switch.userdata":0,
+		"hdaroot/update_lpe_aovs/merge_aovs.userdata":0,
+		"hdaroot/update_lpe_aovs/specular/IN_stage.userdata":0,
+		"hdaroot/update_lpe_aovs/loop_tags_begin.userdata":0,
+		"hdaroot/update_lpe_aovs/volume/output0.userdata":0,
+		"hdaroot/update_lpe_aovs.userdata":0,
+		"hdaroot/update_lpe_aovs/reorder_aovs.userdata":0,
+		"hdaroot/update_lpe_aovs/beauty/lpe_render_var.userdata":1,
+		"hdaroot/update_lpe_aovs/diffuse/IN_stage.userdata":0,
+		"hdaroot/update_lpe_aovs/beauty/IN_stage.userdata":0,
+		"hdaroot/output.userdata":0,
+		"hdaroot/update_lpe_aovs/volume/lpe_render_var.userdata":1,
+		"hdaroot/update_lpe_aovs/merge.userdata":0,
+		"hdaroot/update_lpe_aovs/beauty/output0.userdata":0,
+		"hdaroot/update_lpe_aovs/IN_stage.userdata":0,
+		"hdaroot/update_lpe_aovs/diffuse/switch.userdata":0,
+		"hdaroot/update_lpe_aovs/volume/IN_stage.userdata":0,
+		"hdaroot/update_lpe_aovs/beauty.userdata":0,
+		"hdaroot/update_lpe_aovs/loop_tags_end.userdata":0,
+		"hdaroot/update_denoiser_settings.userdata":1,
+		"hdaroot/update_lpe_aovs/volume.userdata":0,
+		"hdaroot/update_lpe_aovs/output0.userdata":0,
+		"hdaroot/update_lpe_aovs/specular/output0.userdata":0,
+		"hdaroot/update_lpe_aovs/time_independent.userdata":0,
+		"hdaroot/update_lpe_aovs/specular/lpe_render_var.userdata":1,
+		"hdaroot/update_lpe_aovs/volume/switch.userdata":0
+	}
+}

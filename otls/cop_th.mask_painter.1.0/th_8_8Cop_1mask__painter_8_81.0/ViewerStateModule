@@ -1,0 +1,40 @@
+"""
+State:          Th::mask painter::1.0
+State type:     th::mask_painter::1.0
+Description:    Th::mask painter::1.0
+Author:         tumblehead
+Date Created:   November 03, 2025 - 10:31:16
+"""
+
+import hou
+import viewerstate.utils as su
+
+class State(object):
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+    def onEnter(self,kwargs):
+        """ Called on node bound states when it starts
+        """
+        node = kwargs["node"]
+        state_parms = kwargs["state_parms"]
+
+        sceneviewer = hou.ui.paneTabOfType(hou.paneTabType.SceneViewer)
+        
+        paint_node = node.node("mask_volume/mask_painter")
+        paint_node.setCurrent(True)
+        sceneviewer.enterCurrentNodeState()
+
+def createViewerStateTemplate():
+    """ Mandatory entry point to create and return the viewer state 
+        template to register. """
+
+    state_typename = kwargs["type"].definition().sections()["DefaultState"].contents()
+    state_label = "Th::mask painter::1.0"
+    state_cat = hou.copNodeTypeCategory()
+
+    template = hou.ViewerStateTemplate(state_typename, state_label, state_cat)
+    template.bindFactory(State)
+    template.bindIcon(kwargs["type"].icon())
+
+    return template

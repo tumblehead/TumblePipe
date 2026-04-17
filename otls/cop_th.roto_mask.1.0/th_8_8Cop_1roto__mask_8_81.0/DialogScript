@@ -1,0 +1,34 @@
+# Dialog script for th::roto_mask::1.0 automatically generated
+
+{
+    name	th::roto_mask::1.0
+    script	th::roto_mask::1.0
+    label	"th roto mask"
+
+    input	source	source
+    output	source	source
+    output	mask	mask
+    signature	default	Default	{ RGBA }	{ RGBA Mono }
+
+    help {
+	""
+    }
+
+    parm {
+        name    "roto_mask"
+        label   "Roto Mask"
+        type    button
+        default { "0" }
+        parmtag { "script_callback" "hou.phm().roto_mask()" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "feather"
+        label   "Feather Mask"
+        type    float
+        default { "0" }
+        range   { 0! 0.05 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

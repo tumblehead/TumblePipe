@@ -1,0 +1,15 @@
+Operator:     th::triplanar_projection::1.0
+Label:        th triplanar projection
+Path:         oplib:/th::Vop/triplanar_projection::1.0?th::Vop/triplanar_projection::1.0
+Icon:         VOP_th-triplanar_projection-1.0
+Table:        Vop
+License:      
+Extra:        shadertype=<Not Applicable> visibleoutputs=0 vopnetmask='_LOOKDEV' 
+User:         
+Inputs:       0 to 0
+Outputs:      2048
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Sun Sep 14 19:47:12 2025
+

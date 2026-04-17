@@ -1,0 +1,40 @@
+# Dialog script for th::th_a_b_slider::1.0 automatically generated
+
+{
+    name	th::th_a_b_slider::1.0
+    script	th::th_a_b_slider::1.0
+    label	"th a b slide"
+
+    input	input1	A
+    input	input2	B
+    output	output1	out
+    signature	default	Default	{ RGBA RGBA }	{ RGBA }
+
+    help {
+	""
+    }
+
+    parm {
+        name    "rampType"
+        label   "Direction"
+        type    ordinal
+        default { "horizontal" }
+        menu {
+            "horizontal"    "Horizontal"
+            "vertical"      "Vertical"
+            "radial"        "Radial"
+            "concentric"    "Concentric"
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "rampmono2pos"
+        label   "Position"
+        type    float
+        default { "0.5" }
+        range   { 0! 1! }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

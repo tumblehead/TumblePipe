@@ -1,0 +1,104 @@
+from tumblepipe.pipe.houdini.lops import lookdev_studio
+
+def set_view_transform():
+    desktop = hou.ui.curDesktop()
+    scene_viewer = desktop.paneTabOfType(hou.paneTabType.SceneViewer)
+    scene_viewer.setUsingOCIO(True)
+    scene_viewer.setOCIODisplayView(display="sRGB - Display", view="ACES 1.0 - SDR Video")
+
+def dive_to_node(node_path, kwargs):
+    node = hou.pwd().node(node_path)
+    network_editor = hou.ui.curDesktop().paneTabOfType(hou.paneTabType.NetworkEditor)
+    if network_editor:
+        panel_size = (1500, 1500)
+        desktop = hou.ui.curDesktop()
+        light_panel = desktop.createFloatingPanel(hou.paneTabType.NetworkEditor)
+        light_panel.setName("Edit Turntable Lights")
+        light_panel.setSize(panel_size)
+        
+        light_pane = light_panel.panes()[-1]
+        light_pane.setShowPaneTabs(False)
+        light_pane.showPaneTabsStow(False)
+        
+        light_tab = light_panel.paneTabs()[-1]
+        light_tab.setPwd(node.parent())
+        light_tab.setShowNetworkControls(False)
+
+def toggle_render_view():
+    # render names: 'Houdini VK', 'Karma CPU', 'Karma XPU', 'Storm'
+    scene_viewer = hou.ui.curDesktop().paneTabOfType(hou.paneTabType.SceneViewer)
+    if scene_viewer.currentHydraRenderer() == "Houdini VK":
+        scene_viewer.setHydraRenderer('Karma XPU')
+    else:
+        scene_viewer.setHydraRenderer('Houdini VK') 
+
+def set_timeline_to_loop():
+    node = hou.pwd()
+    hou.playbar.setFrameRange(node.evalParm("asset_turn_framerangemin"), node.evalParm("light_turn_framerangemax"))
+    hou.playbar.setPlaybackRange(node.evalParm("asset_turn_framerangemin"), node.evalParm("light_turn_framerangemax"))
+
+def playblast() -> None:
+
+    node = hou.pwd()
+    set_view_camera()
+    
+    scene_viewer = hou.ui.paneTabOfType(hou.paneTabType.SceneViewer)
+    viewport = scene_viewer.curViewport()
+    viewport_settings = viewport.settings()
+    flipbook_options = scene_viewer.flipbookSettings()
+    
+    # Define playblast settings
+    flipbook_options.useResolution(True)  # Enable custom resolution
+    flipbook_options.resolution((node.evalParm("render_resolutionx"), node.evalParm("render_resolutiony")))  # Set resolution (adjust as needed)
+    flipbook_options.frameRange((node.evalParm("asset_turn_framerangemin"), node.evalParm("light_turn_framerangemax")))  # Use current playback range
+    flipbook_options.output("")  # Empty means send to MPlay
+    flipbook_options.appendFramesToCurrent(True)
+    flipbook_options.antialias(hou.flipbookAntialias.Good)
+    
+    # Set Viewport Settings
+    viewport_settings.setLighting(hou.viewportLighting.HighQualityWithShadows)
+    
+    # Start the playblast
+    scene_viewer.flipbook(viewport, flipbook_options)
+    
+def apply_slapcomp():
+    scene_viewer = hou.ui.paneTabOfType(hou.paneTabType.SceneViewer)
+    
+    if scene_viewer:
+        viewport = scene_viewer.curViewport()
+        
+        slapcomp_image_path = hou.pwd().path 
+        viewport.setSlapcomp(slapcomp_image_path)
+    
+def set_view_camera():
+    desktop = hou.ui.curDesktop()
+    scene_viewer = desktop.paneTabOfType(hou.paneTabType.SceneViewer)
+    viewport = scene_viewer.viewports()[-1]
+    viewport.setCamera("/cameras/turntable_camera")
+
+def reset_transforms():
+    node = hou.pwd()
+    # camera translate/rotate and asset rotate
+    parm_names: list[str] = [
+    "Translate_Camerax", 
+    "Translate_Cameray",
+    "Translate_Cameraz",
+    "rotate_camerax",
+    "rotate_cameray",
+    "rotate_camerax", 
+    "asset_angle",
+    "light_rotation",
+    "asset_offsetx",
+    "asset_offsety",
+    "asset_offsetz"]
+    
+    for parm_name in parm_names:
+        node.parm(parm_name).set(0)
+    
+    node.parm("focalLength").set(35)
+        
+def submit_to_farm():
+    batchrender_switch = hou.pwd().parm("batchrender")
+    batchrender_switch.set(1)
+    lookdev_studio.submit()
+    batchrender_switch.set(0)

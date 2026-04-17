@@ -1,0 +1,14 @@
+Operator:     th::mesh_carver::1.0
+Label:        th mesh carver
+Path:         oplib:/th::Sop/mesh_carver::1.0?th::Sop/mesh_carver::1.0
+Icon:         MISC_sculpting
+Table:        Sop
+License:      
+Extra:        guide=OUT_GUIDES inputcolors='1 "RGB 0.627584 0.627584 0.627584" ' outputcolors='1 "RGB 0.627584 0.627584 0.627584" ' 
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Wed Feb  4 16:20:29 2026
+

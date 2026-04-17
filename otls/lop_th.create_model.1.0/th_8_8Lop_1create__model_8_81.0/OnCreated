@@ -1,0 +1,4 @@
+from tumblepipe.pipe.houdini.lops import create_model
+
+create_model.on_created(kwargs['node'])
+create_model.fill_materials(kwargs['node'])

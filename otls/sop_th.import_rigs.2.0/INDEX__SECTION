@@ -1,0 +1,14 @@
+Operator:     th::import_rigs::2.0
+Label:        th import rigs
+Path:         oplib:/th::Sop/import_rigs::2.0?th::Sop/import_rigs::2.0
+Icon:         $TH_PIPELINE_PATH/resources/ImportAssets.png
+Table:        Sop
+License:      
+Extra:        inputcolors='0 ' outputcolors='1 "RGB 0.700195 0.700195 0.700195" ' 
+User:         
+Inputs:       0 to 0
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Fri Dec 12 13:56:26 2025
+

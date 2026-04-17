@@ -1,0 +1,164 @@
+# Dialog script for th::light_blocker::1.0 automatically generated
+
+{
+    name	th::light_blocker::1.0
+    script	prism::Lightblocker::1
+    label	"th light blocker"
+
+    help {
+	""
+    }
+    bindhandle prx xform "Transformer" pivot_rx "ownerop('grid1')"
+    bindhandle pry xform "Transformer" pivot_ry "ownerop('grid1')"
+    bindhandle prz xform "Transformer" pivot_rz "ownerop('grid1')"
+    bindhandle px xform "Transformer" px "ownerop('grid1')"
+    bindhandle py xform "Transformer" py "ownerop('grid1')"
+    bindhandle pz xform "Transformer" pz "ownerop('grid1')"
+    bindhandle rx xform "Transformer" rx "ownerop('grid1')"
+    bindhandle ry xform "Transformer" ry "ownerop('grid1')"
+    bindhandle rz xform "Transformer" rz "ownerop('grid1')"
+    bindhandle shear1 xform "Transformer" shear_xy "ownerop('grid1')"
+    bindhandle shear2 xform "Transformer" shear_xz "ownerop('grid1')"
+    bindhandle shear3 xform "Transformer" shear_yz "ownerop('grid1')"
+    bindhandle sx xform "Transformer" sx "ownerop('grid1')"
+    bindhandle sy xform "Transformer" sy "ownerop('grid1')"
+    bindhandle sz xform "Transformer" sz "ownerop('grid1')"
+    bindhandle xOrd xform "Transformer" trs_order "ownerop('grid1')"
+    bindhandle tx xform "Transformer" tx "ownerop('grid1')"
+    bindhandle ty xform "Transformer" ty "ownerop('grid1')"
+    bindhandle tz xform "Transformer" tz "ownerop('grid1')"
+    bindhandle scale xform "Transformer" uniform_scale "ownerop('grid1')"
+    bindhandle rOrd xform "Transformer" xyz_order "ownerop('grid1')"
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "path"
+        label   "Path"
+        type    string
+        default { "/lights/lightblockers/$OS" }
+        parmtag { "autoscope" "0000000000000000" }
+    }
+    parm {
+        name    "translucency"
+        label   "Translucency"
+        type    color
+        size    3
+        default { "1" "1" "1" }
+        range   { 0 1 }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "base_color"
+        label   "Color"
+        type    color
+        size    3
+        default { "0.8" "0.8" "0.8" }
+        range   { 0 10 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "ogl_diff" "1" }
+    }
+    group {
+        name    "transform"
+        label   "Transform"
+
+        parm {
+            name    "t"
+            label   "Translate"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "r"
+            label   "Rotate"
+            type    vector
+            size    3
+            default { "0" "0" "90" }
+            range   { 0 360 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "s"
+            label   "Scale"
+            type    vector
+            size    3
+            default { "1" "1" "1" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "shear"
+            label   "Shear"
+            type    float
+            size    3
+            default { "0" "0" "0" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "p"
+            label   "Pivot Translate"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "pr"
+            label   "Pivot Rotate"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "scale"
+            label   "Uniform Scale"
+            type    float
+            default { "1" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "xOrd"
+            label   "Transform Order"
+            type    ordinal
+            joinnext
+            default { "srt" }
+            menu {
+                "srt"   "Scale Rot Trans"
+                "str"   "Scale Trans Rot"
+                "rst"   "Rot Scale Trans"
+                "rts"   "Rot Trans Scale"
+                "tsr"   "Trans Scale Rot"
+                "trs"   "Trans Rot Scale"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "rOrd"
+            label   "Rotate Order"
+            type    ordinal
+            nolabel
+            default { "xyz" }
+            menu {
+                "xyz"   "Rx Ry Rz"
+                "xzy"   "Rx Rz Ry"
+                "yxz"   "Ry Rx Rz"
+                "yzx"   "Ry Rz Rx"
+                "zxy"   "Rz Rx Ry"
+                "zyx"   "Rz Ry Rx"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+    }
+
+}

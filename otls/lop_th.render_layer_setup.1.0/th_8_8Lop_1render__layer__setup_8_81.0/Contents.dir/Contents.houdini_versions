@@ -1,0 +1,22 @@
+{
+	"values":["20.5.445","2.0","1.0"
+	],
+	"indexes":{
+		"hdaroot/materiallibrary_overwrite.userdata":0,
+		"hdaroot/output0.userdata":0,
+		"hdaroot/rendergeometrysettings_Include_overwrite.userdata":2,
+		"hdaroot/geometry_overwrite.userdata":0,
+		"hdaroot/materiallibrary_overwrite/overwrite_material/inputs.userdata":0,
+		"hdaroot/switch1.userdata":0,
+		"hdaroot/disable_materials.userdata":0,
+		"hdaroot/Deactivate_materials.userdata":0,
+		"hdaroot/materiallibrary_overwrite/overwrite_material.userdata":0,
+		"hdaroot/materiallibrary_overwrite/overwrite_material/Material_Outputs_and_AOVs.userdata":0,
+		"hdaroot/prune_include.userdata":0,
+		"hdaroot/rendersettings_overwrite.userdata":1,
+		"hdaroot/collection_include.userdata":0,
+		"hdaroot/assignmaterial_overwrite.userdata":0,
+		"hdaroot/settings_overwrite.userdata":0,
+		"hdaroot/material_overwrite.userdata":0
+	}
+}

@@ -1,0 +1,3980 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Cop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::build_comp::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+comment ""
+position -22.362 7.39688
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output.def"
+Content-Type: text/plain
+
+comment ""
+position -18.8048 -8.77182
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	dive 0 1 "input1"
+}
+inputs
+{
+0 	dive 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive.init"
+Content-Type: text/plain
+
+type = subnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive.def"
+Content-Type: text/plain
+
+comment ""
+position -21.117 -8.77182
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+inputs	[ 0	locks=0 ]	(	0	)
+outputs	[ 0	locks=0 ]	(	1	)
+outputlabel1	[ 0	locks=0 ]	(	C	)
+outputtype1	[ 0	locks=0 ]	(	"vector"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/output.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/output.def"
+Content-Type: text/plain
+
+comment ""
+position -20.7509 -7.44169
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/output.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/output.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy.init"
+Content-Type: text/plain
+
+type = subnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy.def"
+Content-Type: text/plain
+
+comment ""
+position -21.117 -11.0852
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+inputs	[ 0	locks=0 ]	(	0	)
+outputs	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_rgba.init"
+Content-Type: text/plain
+
+type = file
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_rgba.def"
+Content-Type: text/plain
+
+comment ""
+position -29.4217 -4.66904
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.9 0.8 0.55 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_rgba.chn"
+Content-Type: text/plain
+
+{
+    channel videoframestart {
+      lefttype = extend
+      righttype = extend
+      default = 1001
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1001 1001 expr = @start_frame }
+    }
+    channel videoframe {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = $F }
+    }
+    channel filename {
+      lefttype = extend
+      righttype = extend
+      defaultString = @import_path
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = @import_path }
+    }
+    channel aov1 {
+      lefttype = extend
+      righttype = extend
+      defaultString = @aov_name
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = @aov_name }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_rgba.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+source	[ 0	locks=0 ]	(	"file"	)
+filename	[ 8	locks=0 ]	(	[ filename	default.pic ] 	)
+clonename	[ 0	locks=0 ]	(	""	)
+clonesession	[ 0	locks=0 ]	(	""	)
+clonemenu	[ 0	locks=0 ]	(	""	)
+liverenderpath	[ 0	locks=0 ]	(	""	)
+liverenderstart	[ 0	locks=0 ]	(	0	)
+liverenderstop	[ 0	locks=0 ]	(	0	)
+reload	[ 0	locks=0 ]	(	0	)
+videoframemethod	[ 0	locks=0 ]	(	"start"	)
+videoframestart	[ 8	locks=0 ]	(	[ videoframestart	0 ] 	)
+videoframe	[ 0	locks=0 ]	(	[ videoframe	0 ] 	)
+setudim	[ 0	locks=0 ]	(	"off"	)
+udim	[ 0	locks=0 ]	(	1001	)
+border	[ 0	locks=0 ]	(	"default"	)
+missingdata	[ 0	locks=0 ]	(	"error"	)
+missingcolor	[ 0	locks=0 ]	(	0	0	0	1	)
+colorspace	[ 0	locks=0 ]	(	"raw"	)
+premultiplied	[ 0	locks=0 ]	(	"on"	)
+loadcamera	[ 0	locks=0 ]	(	"off"	)
+addaovs	[ 0	locks=0 ]	(	0	)
+aovs	[ 0	locks=0 ]	(	1	)
+aov1	[ 8	locks=0 ]	(	[ aov1	"" ] 	)
+type1	[ 0	locks=0 ]	(	"vector4"	)
+precision1	[ 0	locks=0 ]	(	"default"	)
+raw1	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_rgba.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/OUT_RGBA.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/OUT_RGBA.def"
+Content-Type: text/plain
+
+comment ""
+position -20.2751 -4.66904
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	import_rgba 0 1 "input1"
+}
+inputs
+{
+0 	import_rgba 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/OUT_RGBA.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputs	[ 0	locks=0 ]	(	1	)
+outputname1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/OUT_RGBA.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_rgb.init"
+Content-Type: text/plain
+
+type = file
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_rgb.def"
+Content-Type: text/plain
+
+comment ""
+position -29.4217 -1.51736
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.9 0.8 0.55 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_rgb.chn"
+Content-Type: text/plain
+
+{
+    channel videoframestart {
+      lefttype = extend
+      righttype = extend
+      default = 1001
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1001 1001 expr = @start_frame }
+    }
+    channel videoframe {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = $F }
+    }
+    channel filename {
+      lefttype = extend
+      righttype = extend
+      defaultString = @import_path
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = @import_path }
+    }
+    channel aov1 {
+      lefttype = extend
+      righttype = extend
+      defaultString = @aov_name
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = @aov_name }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_rgb.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+source	[ 0	locks=0 ]	(	"file"	)
+filename	[ 8	locks=0 ]	(	[ filename	default.pic ] 	)
+clonename	[ 0	locks=0 ]	(	""	)
+clonesession	[ 0	locks=0 ]	(	""	)
+clonemenu	[ 0	locks=0 ]	(	""	)
+liverenderpath	[ 0	locks=0 ]	(	""	)
+liverenderstart	[ 0	locks=0 ]	(	0	)
+liverenderstop	[ 0	locks=0 ]	(	0	)
+reload	[ 0	locks=0 ]	(	0	)
+videoframemethod	[ 0	locks=0 ]	(	"start"	)
+videoframestart	[ 8	locks=0 ]	(	[ videoframestart	0 ] 	)
+videoframe	[ 0	locks=0 ]	(	[ videoframe	0 ] 	)
+setudim	[ 0	locks=0 ]	(	"off"	)
+udim	[ 0	locks=0 ]	(	1001	)
+border	[ 0	locks=0 ]	(	"default"	)
+missingdata	[ 0	locks=0 ]	(	"error"	)
+missingcolor	[ 0	locks=0 ]	(	0	0	0	1	)
+colorspace	[ 0	locks=0 ]	(	"raw"	)
+premultiplied	[ 0	locks=0 ]	(	"on"	)
+loadcamera	[ 0	locks=0 ]	(	"off"	)
+addaovs	[ 0	locks=0 ]	(	0	)
+aovs	[ 0	locks=0 ]	(	1	)
+aov1	[ 8	locks=0 ]	(	[ aov1	"" ] 	)
+type1	[ 0	locks=0 ]	(	"vector"	)
+precision1	[ 0	locks=0 ]	(	"default"	)
+raw1	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_rgb.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/OUT_RGB.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/OUT_RGB.def"
+Content-Type: text/plain
+
+comment ""
+position -20.2751 -1.51736
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	import_rgb 0 1 "input1"
+}
+inputs
+{
+0 	import_rgb 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/OUT_RGB.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputs	[ 0	locks=0 ]	(	1	)
+outputname1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/OUT_RGB.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_mono.init"
+Content-Type: text/plain
+
+type = file
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_mono.def"
+Content-Type: text/plain
+
+comment ""
+position -29.4217 1.87196
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.9 0.8 0.55 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_mono.chn"
+Content-Type: text/plain
+
+{
+    channel videoframestart {
+      lefttype = extend
+      righttype = extend
+      default = 1001
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1001 1001 expr = @start_frame }
+    }
+    channel videoframe {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = $F }
+    }
+    channel filename {
+      lefttype = extend
+      righttype = extend
+      defaultString = @import_path
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = @import_path }
+    }
+    channel aov1 {
+      lefttype = extend
+      righttype = extend
+      defaultString = @aov_name
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = @aov_name }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_mono.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+source	[ 0	locks=0 ]	(	"file"	)
+filename	[ 8	locks=0 ]	(	[ filename	default.pic ] 	)
+clonename	[ 0	locks=0 ]	(	""	)
+clonesession	[ 0	locks=0 ]	(	""	)
+clonemenu	[ 0	locks=0 ]	(	""	)
+liverenderpath	[ 0	locks=0 ]	(	""	)
+liverenderstart	[ 0	locks=0 ]	(	0	)
+liverenderstop	[ 0	locks=0 ]	(	0	)
+reload	[ 0	locks=0 ]	(	0	)
+videoframemethod	[ 0	locks=0 ]	(	"start"	)
+videoframestart	[ 0	locks=0 ]	(	[ videoframestart	0 ] 	)
+videoframe	[ 0	locks=0 ]	(	[ videoframe	0 ] 	)
+setudim	[ 0	locks=0 ]	(	"off"	)
+udim	[ 0	locks=0 ]	(	1001	)
+border	[ 0	locks=0 ]	(	"default"	)
+missingdata	[ 0	locks=0 ]	(	"error"	)
+missingcolor	[ 0	locks=0 ]	(	0	0	0	1	)
+colorspace	[ 0	locks=0 ]	(	"raw"	)
+premultiplied	[ 0	locks=0 ]	(	"on"	)
+loadcamera	[ 0	locks=0 ]	(	"off"	)
+addaovs	[ 0	locks=0 ]	(	0	)
+aovs	[ 0	locks=0 ]	(	1	)
+aov1	[ 8	locks=0 ]	(	[ aov1	"" ] 	)
+type1	[ 0	locks=0 ]	(	"float"	)
+precision1	[ 0	locks=0 ]	(	"default"	)
+raw1	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/import_mono.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_mono.init"
+Content-Type: text/plain
+
+type = rop_image
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_mono.def"
+Content-Type: text/plain
+
+comment ""
+position -17.6026 1.10696
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.65 0.4 0.5 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_mono.chn"
+Content-Type: text/plain
+
+{
+    channel pixelscale {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @scale }
+    }
+    channel aov1 {
+      lefttype = extend
+      righttype = extend
+      defaultString = @aov_name
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = @aov_name }
+    }
+    channel copoutput {
+      lefttype = extend
+      righttype = extend
+      defaultString = "@export_path+\" \""
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = @export_path }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_mono.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+execute	[ 0	locks=0 ]	(	0	)
+renderpreview	[ 0	locks=0 ]	(	0	)
+executebackground	[ 0	locks=0 ]	(	0	)
+renderdialog	[ 0	locks=0 ]	(	0	)
+trange	[ 0	locks=0 ]	(	"off"	)
+f	[ 0	locks=0 ]	(	0	0	1	)
+setudim	[ 0	locks=0 ]	(	"off"	)
+udim	[ 0	locks=0 ]	(	1001	1001	)
+take	[ 0	locks=0 ]	(	_current_	)
+coppath	[ 0	locks=0 ]	(	../OUT_MONO	)
+copoutput	[ 8	locks=0 ]	(	[ copoutput	$HIP/comp/$HIPNAME.$OS.$F4.exr ] 	)
+docompile	[ 0	locks=0 ]	(	"off"	)
+setres	[ 0	locks=0 ]	(	"off"	)
+res	[ 0	locks=0 ]	(	1024	1024	)
+resmenu	[ 0	locks=0 ]	(	"none"	)
+setpixelscale	[ 0	locks=0 ]	(	"on"	)
+pixelscale	[ 0	locks=0 ]	(	[ pixelscale	1 ] 	)
+setborder	[ 0	locks=0 ]	(	"off"	)
+border	[ 0	locks=0 ]	(	"wrap"	)
+setprecision	[ 0	locks=0 ]	(	"on"	)
+precision	[ 0	locks=0 ]	(	"b32"	)
+colorconversion	[ 0	locks=0 ]	(	"raw"	)
+ociocolorspace	[ 0	locks=0 ]	(	Automatic	)
+ociolook	[ 0	locks=0 ]	(	None	)
+ociodisplay	[ 0	locks=0 ]	(	Default	)
+ocioview	[ 0	locks=0 ]	(	Default	)
+saveretry	[ 0	locks=0 ]	(	0	)
+reloadfiles	[ 0	locks=0 ]	(	"off"	)
+stdswitcher	[ 0	locks=0 ]	(	2	2	2	2	0	)
+addaovs	[ 0	locks=0 ]	(	0	)
+outputaovs	[ 0	locks=0 ]	(	1	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+savebackground	[ 0	locks=0 ]	(	"on"	)
+exportattribs	[ 0	locks=0 ]	(	"on"	)
+attribfilter	[ 0	locks=0 ]	(	""	)
+vm_image_artist	[ 0	locks=0 ]	(	""	)
+vm_image_comment	[ 0	locks=0 ]	(	""	)
+vm_image_hostname	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_label	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
+mktx	[ 0	locks=0 ]	(	"off"	)
+txtilesize	[ 0	locks=0 ]	(	64	64	)
+txmipmapfilter	[ 0	locks=0 ]	(	box	)
+vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
+vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
+vm_image_exr_compression	[ 0	locks=0 ]	(	"dwab"	)
+dwa_compression	[ 0	locks=0 ]	(	85	)
+pngtga_alpha_multiplication	[ 0	locks=0 ]	(	"premult"	)
+tprerender	[ 0	locks=0 ]	(	"on"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"on"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"on"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostwrite	[ 0	locks=0 ]	(	"on"	)
+postwrite	[ 0	locks=0 ]	(	""	)
+lpostwrite	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"on"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+aov1	[ 8	locks=0 ]	(	[ aov1	"" ] 	)
+size1	[ 0	locks=0 ]	(	"auto"	)
+raw1	[ 0	locks=0 ]	(	"off"	)
+useport1	[ 0	locks=0 ]	(	"off"	)
+port1	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_mono.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/OUT_MONO.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/OUT_MONO.def"
+Content-Type: text/plain
+
+comment ""
+position -20.2751 1.87196
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	import_mono 0 1 "input1"
+}
+inputs
+{
+0 	import_mono 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/OUT_MONO.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputs	[ 0	locks=0 ]	(	1	)
+outputname1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/OUT_MONO.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_rgb.init"
+Content-Type: text/plain
+
+type = rop_image
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_rgb.def"
+Content-Type: text/plain
+
+comment ""
+position -17.6026 -2.28236
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.65 0.4 0.5 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_rgb.chn"
+Content-Type: text/plain
+
+{
+    channel pixelscale {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @scale }
+    }
+    channel aov1 {
+      lefttype = extend
+      righttype = extend
+      defaultString = @aov_name
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = @aov_name }
+    }
+    channel copoutput {
+      lefttype = extend
+      righttype = extend
+      defaultString = "@export_path+\" \""
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = @export_path }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_rgb.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+execute	[ 0	locks=0 ]	(	0	)
+renderpreview	[ 0	locks=0 ]	(	0	)
+executebackground	[ 0	locks=0 ]	(	0	)
+renderdialog	[ 0	locks=0 ]	(	0	)
+trange	[ 0	locks=0 ]	(	"off"	)
+f	[ 0	locks=0 ]	(	0	0	1	)
+setudim	[ 0	locks=0 ]	(	"off"	)
+udim	[ 0	locks=0 ]	(	1001	1001	)
+take	[ 0	locks=0 ]	(	_current_	)
+coppath	[ 0	locks=0 ]	(	../OUT_RGB	)
+copoutput	[ 8	locks=0 ]	(	[ copoutput	$HIP/comp/$HIPNAME.$OS.$F4.exr ] 	)
+docompile	[ 0	locks=0 ]	(	"off"	)
+setres	[ 0	locks=0 ]	(	"off"	)
+res	[ 0	locks=0 ]	(	1024	1024	)
+resmenu	[ 0	locks=0 ]	(	"none"	)
+setpixelscale	[ 0	locks=0 ]	(	"on"	)
+pixelscale	[ 0	locks=0 ]	(	[ pixelscale	1 ] 	)
+setborder	[ 0	locks=0 ]	(	"off"	)
+border	[ 0	locks=0 ]	(	"wrap"	)
+setprecision	[ 0	locks=0 ]	(	"on"	)
+precision	[ 0	locks=0 ]	(	"b32"	)
+colorconversion	[ 0	locks=0 ]	(	"raw"	)
+ociocolorspace	[ 0	locks=0 ]	(	Automatic	)
+ociolook	[ 0	locks=0 ]	(	None	)
+ociodisplay	[ 0	locks=0 ]	(	Default	)
+ocioview	[ 0	locks=0 ]	(	Default	)
+saveretry	[ 0	locks=0 ]	(	0	)
+reloadfiles	[ 0	locks=0 ]	(	"off"	)
+stdswitcher	[ 0	locks=0 ]	(	2	2	2	2	0	)
+addaovs	[ 0	locks=0 ]	(	0	)
+outputaovs	[ 0	locks=0 ]	(	1	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+savebackground	[ 0	locks=0 ]	(	"on"	)
+exportattribs	[ 0	locks=0 ]	(	"on"	)
+attribfilter	[ 0	locks=0 ]	(	""	)
+vm_image_artist	[ 0	locks=0 ]	(	""	)
+vm_image_comment	[ 0	locks=0 ]	(	""	)
+vm_image_hostname	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_label	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
+mktx	[ 0	locks=0 ]	(	"off"	)
+txtilesize	[ 0	locks=0 ]	(	64	64	)
+txmipmapfilter	[ 0	locks=0 ]	(	box	)
+vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
+vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
+vm_image_exr_compression	[ 0	locks=0 ]	(	"dwab"	)
+dwa_compression	[ 0	locks=0 ]	(	85	)
+pngtga_alpha_multiplication	[ 0	locks=0 ]	(	"premult"	)
+tprerender	[ 0	locks=0 ]	(	"on"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"on"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"on"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostwrite	[ 0	locks=0 ]	(	"on"	)
+postwrite	[ 0	locks=0 ]	(	""	)
+lpostwrite	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"on"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+aov1	[ 8	locks=0 ]	(	[ aov1	"" ] 	)
+size1	[ 0	locks=0 ]	(	"auto"	)
+raw1	[ 0	locks=0 ]	(	"off"	)
+useport1	[ 0	locks=0 ]	(	"off"	)
+port1	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_rgb.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_rgba.init"
+Content-Type: text/plain
+
+type = rop_image
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_rgba.def"
+Content-Type: text/plain
+
+comment ""
+position -17.6026 -5.43404
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.65 0.4 0.5 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_rgba.chn"
+Content-Type: text/plain
+
+{
+    channel pixelscale {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @scale }
+    }
+    channel aov1 {
+      lefttype = extend
+      righttype = extend
+      defaultString = @aov_name
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = @aov_name }
+    }
+    channel copoutput {
+      lefttype = extend
+      righttype = extend
+      defaultString = "@export_path+\" \""
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = @export_path }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_rgba.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+execute	[ 0	locks=0 ]	(	0	)
+renderpreview	[ 0	locks=0 ]	(	0	)
+executebackground	[ 0	locks=0 ]	(	0	)
+renderdialog	[ 0	locks=0 ]	(	0	)
+trange	[ 0	locks=0 ]	(	"off"	)
+f	[ 0	locks=0 ]	(	0	0	1	)
+setudim	[ 0	locks=0 ]	(	"off"	)
+udim	[ 0	locks=0 ]	(	1001	1001	)
+take	[ 0	locks=0 ]	(	_current_	)
+coppath	[ 0	locks=0 ]	(	../OUT_RGBA	)
+copoutput	[ 8	locks=0 ]	(	[ copoutput	$HIP/comp/$HIPNAME.$OS.$F4.exr ] 	)
+docompile	[ 0	locks=0 ]	(	"off"	)
+setres	[ 0	locks=0 ]	(	"off"	)
+res	[ 0	locks=0 ]	(	1024	1024	)
+resmenu	[ 0	locks=0 ]	(	"none"	)
+setpixelscale	[ 0	locks=0 ]	(	"on"	)
+pixelscale	[ 0	locks=0 ]	(	[ pixelscale	1 ] 	)
+setborder	[ 0	locks=0 ]	(	"off"	)
+border	[ 0	locks=0 ]	(	"wrap"	)
+setprecision	[ 0	locks=0 ]	(	"on"	)
+precision	[ 0	locks=0 ]	(	"b32"	)
+colorconversion	[ 0	locks=0 ]	(	"raw"	)
+ociocolorspace	[ 0	locks=0 ]	(	Automatic	)
+ociolook	[ 0	locks=0 ]	(	None	)
+ociodisplay	[ 0	locks=0 ]	(	Default	)
+ocioview	[ 0	locks=0 ]	(	Default	)
+saveretry	[ 0	locks=0 ]	(	0	)
+reloadfiles	[ 0	locks=0 ]	(	"off"	)
+stdswitcher	[ 0	locks=0 ]	(	2	2	2	2	0	)
+addaovs	[ 0	locks=0 ]	(	0	)
+outputaovs	[ 0	locks=0 ]	(	1	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+savebackground	[ 0	locks=0 ]	(	"on"	)
+exportattribs	[ 0	locks=0 ]	(	"on"	)
+attribfilter	[ 0	locks=0 ]	(	""	)
+vm_image_artist	[ 0	locks=0 ]	(	""	)
+vm_image_comment	[ 0	locks=0 ]	(	""	)
+vm_image_hostname	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_label	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
+mktx	[ 0	locks=0 ]	(	"off"	)
+txtilesize	[ 0	locks=0 ]	(	64	64	)
+txmipmapfilter	[ 0	locks=0 ]	(	box	)
+vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
+vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
+vm_image_exr_compression	[ 0	locks=0 ]	(	"dwab"	)
+dwa_compression	[ 0	locks=0 ]	(	85	)
+pngtga_alpha_multiplication	[ 0	locks=0 ]	(	"premult"	)
+tprerender	[ 0	locks=0 ]	(	"on"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"on"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"on"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostwrite	[ 0	locks=0 ]	(	"on"	)
+postwrite	[ 0	locks=0 ]	(	""	)
+lpostwrite	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"on"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+aov1	[ 8	locks=0 ]	(	[ aov1	"" ] 	)
+size1	[ 0	locks=0 ]	(	"auto"	)
+raw1	[ 0	locks=0 ]	(	"off"	)
+useport1	[ 0	locks=0 ]	(	"off"	)
+port1	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/export_rgba.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops.init"
+Content-Type: text/plain
+
+type = topnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops.def"
+Content-Type: text/plain
+
+comment ""
+position -24.4709 4.03922
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+cookcontrolssection	[ 0	locks=0 ]	(	0	)
+generatestatic	[ 0	locks=0 ]	(	0	)
+cookbutton	[ 0	locks=0 ]	(	0	)
+dirtybutton	[ 0	locks=0 ]	(	0	)
+cancelbutton	[ 0	locks=0 ]	(	0	)
+taskgraphsection	[ 0	locks=0 ]	(	0	)
+checkpointformat	[ 0	locks=0 ]	(	"1"	)
+taskgraphfile	[ 0	locks=0 ]	(	$HIP/$HIPNAME.taskgraph.$F.py	)
+savetaskgraph	[ 0	locks=0 ]	(	0	)
+loadtaskgraph	[ 0	locks=0 ]	(	0	)
+taskgraphautosave	[ 0	locks=0 ]	(	"off"	)
+taskgraphsaverate	[ 0	locks=0 ]	(	10	)
+checkpointfile	[ 0	locks=0 ]	(	$HIP/$HIPNAME.checkpoint.json	)
+loadcheckpoint	[ 0	locks=0 ]	(	0	)
+checkpointload	[ 0	locks=0 ]	(	"0"	)
+checkpointenabled	[ 0	locks=0 ]	(	"off"	)
+checkpointrate	[ 0	locks=0 ]	(	10	)
+sep2	[ 0	locks=0 ]	(	)
+savegraphattribs	[ 0	locks=0 ]	(	"on"	)
+schedulersection	[ 0	locks=0 ]	(	0	)
+topscheduler	[ 0	locks=0 ]	(	localscheduler	)
+usedefaultlabel	[ 0	locks=0 ]	(	"off"	)
+defaultlabel	[ 0	locks=0 ]	(	$OS.`@pdg_index`	)
+sep1	[ 0	locks=0 ]	(	)
+regenerationtype	[ 0	locks=0 ]	(	"0"	)
+evaluationtime	[ 0	locks=0 ]	(	"0"	)
+customtime	[ 0	locks=0 ]	(	0	)
+savescenefile	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/localscheduler.init"
+Content-Type: text/plain
+
+type = localscheduler
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/localscheduler.def"
+Content-Type: text/plain
+
+comment ""
+position 1.38977e-09 -1.91305
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.478 0.478 0.478 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/localscheduler.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+folder0	[ 0	locks=0 ]	(	0	0	0	)
+folder5	[ 0	locks=0 ]	(	0	)
+maxprocsmenu	[ 0	locks=0 ]	(	"0"	)
+maxprocs	[ 0	locks=0 ]	(	1	)
+pdg_usemaxtasks	[ 0	locks=0 ]	(	"off"	)
+pdg_maxtasks	[ 0	locks=0 ]	(	0	)
+verbose	[ 0	locks=0 ]	(	"off"	)
+pdg_waitforfailures	[ 0	locks=0 ]	(	"off"	)
+folder4	[ 0	locks=0 ]	(	0	)
+pdg_workingdir	[ 0	locks=0 ]	(	$HIP	)
+uselogfilename	[ 0	locks=0 ]	(	"off"	)
+logfilename	[ 0	locks=0 ]	(	`@pdg_name`.log	)
+hythonbin	[ 0	locks=0 ]	(	"0"	)
+hythonbincustomuniversal	[ 0	locks=0 ]	(	""	)
+pdg_workitemdatasource	[ 0	locks=0 ]	(	"0"	)
+pdg_compressworkitemdata	[ 0	locks=0 ]	(	"on"	)
+pdg_validateoutputs	[ 0	locks=0 ]	(	"on"	)
+pdg_checkexpectedoutputs	[ 0	locks=0 ]	(	"on"	)
+sepparm2	[ 0	locks=0 ]	(	)
+pdg_mapmode	[ 0	locks=0 ]	(	"0"	)
+pdg_usemapzone	[ 0	locks=0 ]	(	"off"	)
+pdg_mapzone	[ 0	locks=0 ]	(	$PDG_PATHMAP_ZONE	)
+sepparm6	[ 0	locks=0 ]	(	)
+pdg_transfertype	[ 0	locks=0 ]	(	"0"	)
+pdg_transferroot	[ 0	locks=0 ]	(	$HIP	)
+folder1	[ 0	locks=0 ]	(	0	)
+tempdirmenu	[ 0	locks=0 ]	(	"1"	)
+tempdirappendpid	[ 0	locks=0 ]	(	"on"	)
+tempdircustom	[ 0	locks=0 ]	(	$HOUDINI_TEMP_DIR/$HIPNAME/pdgtemp	)
+pdg_deletetempdir	[ 0	locks=0 ]	(	"0"	)
+socketcallbacks	[ 0	locks=0 ]	(	1	)
+pdg_rpcignoreerrors	[ 0	locks=0 ]	(	"0"	)
+pdg_rpcmaxerrors	[ 0	locks=0 ]	(	5	)
+pdg_rpctimeout	[ 0	locks=0 ]	(	4	)
+pdg_rpcretries	[ 0	locks=0 ]	(	2	)
+pdg_rpcbackoff	[ 0	locks=0 ]	(	2	)
+pdg_rpcbatch	[ 0	locks=0 ]	(	1	)
+pdg_rpcrelease	[ 0	locks=0 ]	(	"on"	)
+folder0_3	[ 0	locks=0 ]	(	0	)
+local_single	[ 0	locks=0 ]	(	"off"	)
+local_is_CPU_number_set	[ 0	locks=0 ]	(	"off"	)
+local_CPUs_to_use	[ 0	locks=0 ]	(	1	)
+folder6	[ 0	locks=0 ]	(	0	)
+local_useminfreemem	[ 0	locks=0 ]	(	"0"	)
+local_minfreemem	[ 0	locks=0 ]	(	0	)
+local_minfreemempct	[ 0	locks=0 ]	(	0	)
+folder2	[ 0	locks=0 ]	(	0	)
+local_enabletimeout	[ 0	locks=0 ]	(	"off"	)
+local_maxtime	[ 0	locks=0 ]	(	0	)
+local_handletimeout	[ 0	locks=0 ]	(	"0"	)
+sepparm4	[ 0	locks=0 ]	(	)
+local_enablemaxmemory	[ 0	locks=0 ]	(	"off"	)
+local_maxmemory	[ 0	locks=0 ]	(	0	)
+local_handlememory	[ 0	locks=0 ]	(	"0"	)
+sepparm5	[ 0	locks=0 ]	(	)
+local_echandleby	[ 0	locks=0 ]	(	"0"	)
+local_echandleall	[ 0	locks=0 ]	(	"on"	)
+local_eccustomcode	[ 0	locks=0 ]	(	1	)
+sepparm	[ 0	locks=0 ]	(	)
+local_maximumretries	[ 0	locks=0 ]	(	3	)
+local_addfailcountattr	[ 0	locks=0 ]	(	"off"	)
+local_failcountattr	[ 0	locks=0 ]	(	failurecount	)
+folder3	[ 0	locks=0 ]	(	0	)
+local_usehoudinimaxthreads	[ 0	locks=0 ]	(	"off"	)
+local_houdinimaxthreads	[ 0	locks=0 ]	(	0	)
+local_requireswindow	[ 0	locks=0 ]	(	"off"	)
+local_skippackages	[ 0	locks=0 ]	(	"on"	)
+local_envunset	[ 0	locks=0 ]	(	""	)
+local_env_file	[ 0	locks=0 ]	(	""	)
+local_envmulti	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/localscheduler.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/generate.init"
+Content-Type: text/plain
+
+type = pythonprocessor
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/generate.def"
+Content-Type: text/plain
+
+comment ""
+position 0.00125003 -3.16131
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/generate.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+savenodescript	[ 0	locks=0 ]	(	0	)
+savenodehda	[ 0	locks=0 ]	(	0	)
+sepparm2	[ 0	locks=0 ]	(	)
+processor	[ 0	locks=0 ]	(	0	0	0	)
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+pdg_command	[ 0	locks=0 ]	(	""	)
+sepparm	[ 0	locks=0 ]	(	)
+callbacks	[ 0	locks=0 ]	(	0	0	0	0	0	)
+generate	[ 0	locks=0 ]	(	"import hou
+
+from tumblepipe.pipe.houdini.cops import build_comp
+from tumblepipe.pipe.paths import get_render, get_aov_frame_path
+from tumblepipe.api import path_str, default_client
+
+api = default_client()
+context = build_comp.BuildComp(hou.pwd().parent().parent().parent())
+
+sequence_name = context.get_sequence_name()
+shot_name = context.get_shot_name()
+render_department_name = context.get_render_department_name()
+resolution_name = context.get_proxy_resolution()
+start_frame, end_frame = api.config.get_frame_range(sequence_name, shot_name)
+render_layer_names = api.config.list_render_layer_names(sequence_name, shot_name)
+
+def _aov_included(aov_name):
+    if aov_name.startswith('C_'): return True
+    if aov_name.startswith('objid_'): return True
+    if aov_name == 'C': return True
+    if aov_name == 'N': return True
+    if aov_name == 'P': return True
+    if aov_name == 'Z': return True
+    if aov_name == 'A': return True
+    if aov_name == 'albedo': return True
+    if aov_name == 'color': return True
+    if aov_name == 'normal': return True
+    if aov_name == 'position': return True
+    if aov_name == 'depth': return True
+    if aov_name == 'alpha': return True
+    return False
+
+def _task_type(aov_name):
+    if aov_name.startswith('C_'): return 'rgba'
+    if aov_name == 'sampleCount': return 'mono'
+    if aov_name == 'C': return 'rgba'
+    return 'rgb'
+
+def _scale(resolution):
+    match resolution:
+        case 'full': return 1.0
+        case 'half': return 2.0
+        case 'quarter': return 4.0
+        case _: assert False, f'Unknown resolution {resolution}'
+
+import_render = get_render(
+    sequence_name,
+    shot_name,
+    render_department_name,
+    purpose = 'render'
+)
+
+for render_layer_name in render_layer_names:
+    if import_render is None: continue
+    
+    render_layer = import_render.get_latest_complete_layer(render_layer_name)
+    if render_layer is None: continue
+    
+    import_normal_path = render_layer.get_aov_frame_path('normal', '$F')
+    import_albedo_path = render_layer.get_aov_frame_path('albedo', '$F')
+    
+    for aov_name, aov in render_layer.aovs.items():
+    
+        if not _aov_included(aov_name): continue
+    
+        export_aov_path = get_aov_frame_path(
+            sequence_name,
+            shot_name,
+            resolution_name,
+            render_layer_name,
+            aov_name,
+            render_layer.version,
+            '$F',
+            purpose = 'proxy'
+        )
+        if export_aov_path.exists(): continue
+        
+        import_aov_path = aov.get_aov_frame_path('$F')
+        
+        task = item_holder.addWorkItem()
+        task.addAttrib('task_type', pdg.attribType.String)
+        task.addAttrib('import_path', pdg.attribType.String)
+        task.addAttrib('import_normal_path', pdg.attribType.String)
+        task.addAttrib('import_albedo_path', pdg.attribType.String)
+        task.addAttrib('export_path', pdg.attribType.String)
+        task.addAttrib('aov_name', pdg.attribType.String)
+        task.addAttrib('scale', pdg.attribType.Float)
+        task.addAttrib('start_frame', pdg.attribType.Int)
+        task.addAttrib('end_frame', pdg.attribType.Int)
+        
+        task_type = _task_type(aov_name)
+        task.setStringAttrib('task_type', task_type)
+        task.setStringAttrib('import_path', path_str(import_aov_path))
+        if task_type == 'lpe':
+            task.setStringAttrib('import_normal_path', path_str(import_normal_path))
+            task.setStringAttrib('import_albedo_path', path_str(import_albedo_path))
+        task.setStringAttrib('export_path', path_str(export_aov_path))
+        task.setStringAttrib('aov_name', aov_name)
+        task.setFloatAttrib('scale', _scale(resolution_name))
+        task.setIntAttrib('start_frame', start_frame)
+        task.setIntAttrib('end_frame', end_frame)"	)
+useregeneratestatic	[ 0	locks=0 ]	(	"off"	)
+regeneratestatic	[ 0	locks=0 ]	(	"# Called when this node may need to regenerate existing work items
+#
+# self           -   A reference to the current pdg.Node instance
+# item_holder    -   A pdg.WorkItemHolder for constructing and adding new work items
+# existing_items -   The existing work items in the node
+# upstream_items -   The list of work items in the node above, or empty list
+# generation_type -   The type of generation, e.g. pdg.generationType.Static, Dynamic, or Regenerate"	)
+addinternaldependencies	[ 0	locks=0 ]	(	"# Called when the node has generated work items so that dependencies can
+# be added between work items in this node.
+#
+# self              -   A reference to the current pdg.Node instance
+# dependency_holder -   A pdg.WorkItemHolder for adding pairs of items that should have a dependency
+# internal_items    -   The list of items, either all static items or a group of dynamic items
+# is_static         -   Boolean indicating if the items list contains static items
+"	)
+cooktask	[ 0	locks=0 ]	(	"# Called when an in process work item needs to cook. In process work items
+# are created by passing the `inProcess=True` flag when constructing the item in
+# the `Generate` callback
+#
+# self              -   A reference to the current pdg.Node instance
+# work_item         -   The work item being cooked by this callback"	)
+servicename	[ 0	locks=0 ]	(	""	)
+sepparm3	[ 0	locks=0 ]	(	)
+alwaysregenerate	[ 0	locks=0 ]	(	"off"	)
+dirtyonregenerate	[ 0	locks=0 ]	(	"off"	)
+dirtyonincomplete	[ 0	locks=0 ]	(	"off"	)
+sepparm4	[ 0	locks=0 ]	(	)
+requiresgeneratedinputs	[ 0	locks=0 ]	(	"off"	)
+requirescookedinputs	[ 0	locks=0 ]	(	"off"	)
+requiresscenefile	[ 0	locks=0 ]	(	"off"	)
+requiresinputdata	[ 0	locks=0 ]	(	"off"	)
+sepparm6	[ 0	locks=0 ]	(	)
+usesdynamicbatching	[ 0	locks=0 ]	(	"off"	)
+sepparm7	[ 0	locks=0 ]	(	)
+usestatefilter	[ 0	locks=0 ]	(	"off"	)
+statefilter	[ 0	locks=0 ]	(	"0"	)
+clearfailures	[ 0	locks=0 ]	(	"off"	)
+pdgnodedeps	[ 0	locks=0 ]	(	1	)
+topscheduler	[ 0	locks=0 ]	(	""	)
+addjobparms	[ 0	locks=0 ]	(	0	)
+pdg_useschedulewhen	[ 0	locks=0 ]	(	"off"	)
+pdg_schedulewhen	[ 0	locks=0 ]	(	1	)
+sepparm5	[ 0	locks=0 ]	(	)
+pdg_workitemlabel	[ 0	locks=0 ]	(	"0"	)
+pdg_workitemlabelexpr	[ 0	locks=0 ]	(	""	)
+pdg_workitempriority	[ 0	locks=0 ]	(	"0"	)
+pdg_workitempriorityexpr	[ 0	locks=0 ]	(	0	)
+pdgnodedep1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/generate.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"___toolcount___":{
+		"type":"string",
+		"value":"1"
+	},
+	"___toolid___":{
+		"type":"string",
+		"value":"object_cop2plane"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/fetch_rgba.init"
+Content-Type: text/plain
+
+type = ropfetch
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/fetch_rgba.def"
+Content-Type: text/plain
+
+comment ""
+position -2.35462 -17.596
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	frames_rgba 1 1 "input1"
+}
+inputs
+{
+0 	frames_rgba 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/fetch_rgba.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+rop	[ 0	locks=0 ]	(	1	1	1	)
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+pdg_cachemode	[ 0	locks=0 ]	(	"0"	)
+expandinputs	[ 0	locks=0 ]	(	"off"	)
+enablepdgservice	[ 0	locks=0 ]	(	"off"	)
+pdg_cooktype	[ 0	locks=0 ]	(	"3"	)
+pdgservicename	[ 0	locks=0 ]	(	ropfetch	)
+pdg_servicename	[ 0	locks=0 ]	(	ropfetch	)
+manageservices	[ 0	locks=0 ]	(	0	)
+sepparm2	[ 0	locks=0 ]	(	)
+folder0	[ 0	locks=0 ]	(	2	2	2	2	2	)
+roporder	[ 0	locks=0 ]	(	"1"	)
+roppath	[ 0	locks=0 ]	(	../../export_rgba	)
+usecustombutton	[ 0	locks=0 ]	(	"off"	)
+custombutton	[ 0	locks=0 ]	(	execute	)
+usereloadpath	[ 0	locks=0 ]	(	"off"	)
+reloadpath	[ 0	locks=0 ]	(	""	)
+useoppath	[ 0	locks=0 ]	(	"off"	)
+oppath	[ 0	locks=0 ]	(	""	)
+useexternalhip	[ 0	locks=0 ]	(	"off"	)
+externalhip	[ 0	locks=0 ]	(	""	)
+sethip	[ 0	locks=0 ]	(	"off"	)
+ignoreerrors	[ 0	locks=0 ]	(	"off"	)
+cookinputrops	[ 0	locks=0 ]	(	"on"	)
+unlocktargetrop	[ 0	locks=0 ]	(	"on"	)
+outputsfrom	[ 0	locks=0 ]	(	"0"	)
+usefiletag	[ 0	locks=0 ]	(	"off"	)
+filetag	[ 0	locks=0 ]	(	""	)
+usecustomoutput	[ 0	locks=0 ]	(	"off"	)
+customoutput	[ 0	locks=0 ]	(	""	)
+outputpaths	[ 0	locks=0 ]	(	0	)
+sepparm3	[ 0	locks=0 ]	(	)
+logoutput	[ 0	locks=0 ]	(	"1"	)
+uselogformat	[ 0	locks=0 ]	(	"off"	)
+logformat	[ 0	locks=0 ]	(	OUTPUT_FILE:(.*);(.*)	)
+framegeneration	[ 0	locks=0 ]	(	"0"	)
+useframeoverride	[ 0	locks=0 ]	(	"off"	)
+frameoverride	[ 0	locks=0 ]	(	1	)
+range	[ 0	locks=0 ]	(	0	0	1	)
+singletask	[ 0	locks=0 ]	(	"off"	)
+sepparm	[ 0	locks=0 ]	(	)
+batchall	[ 0	locks=0 ]	(	"off"	)
+framesperbatch	[ 0	locks=0 ]	(	1	)
+cookwhen	[ 0	locks=0 ]	(	"0"	)
+fixedframecount	[ 0	locks=0 ]	(	0	)
+percentframes	[ 0	locks=0 ]	(	100	)
+setframes	[ 0	locks=0 ]	(	"off"	)
+resumebatch	[ 0	locks=0 ]	(	"off"	)
+distribute	[ 0	locks=0 ]	(	"off"	)
+control	[ 0	locks=0 ]	(	""	)
+hostname	[ 0	locks=0 ]	(	"0"	)
+usetrackerport	[ 0	locks=0 ]	(	"off"	)
+trackerport	[ 0	locks=0 ]	(	0	)
+usewebport	[ 0	locks=0 ]	(	"off"	)
+webport	[ 0	locks=0 ]	(	0	)
+verbosetracker	[ 0	locks=0 ]	(	"off"	)
+sepparm6	[ 0	locks=0 ]	(	)
+slicetype	[ 0	locks=0 ]	(	"0"	)
+slicecount	[ 0	locks=0 ]	(	2	)
+slicedivs	[ 0	locks=0 ]	(	0	0	0	)
+enableperfmon	[ 0	locks=0 ]	(	"off"	)
+saveperffile	[ 0	locks=0 ]	(	"on"	)
+perffile	[ 0	locks=0 ]	(	$HIP/$OS.performance.$F.hperf	)
+savedebughip	[ 0	locks=0 ]	(	"off"	)
+debughip	[ 0	locks=0 ]	(	$HIP/$OS.debug.$F.hip	)
+debugoutputs	[ 0	locks=0 ]	(	"off"	)
+topscheduler	[ 0	locks=0 ]	(	../gpu_scheduler	)
+addjobparms	[ 0	locks=0 ]	(	0	)
+pdg_useschedulewhen	[ 0	locks=0 ]	(	"off"	)
+pdg_schedulewhen	[ 0	locks=0 ]	(	1	)
+sepparm7	[ 0	locks=0 ]	(	)
+pdg_workitemlabel	[ 0	locks=0 ]	(	"0"	)
+pdg_workitemlabelexpr	[ 0	locks=0 ]	(	""	)
+pdg_workitempriority	[ 0	locks=0 ]	(	"2"	)
+pdg_workitempriorityexpr	[ 0	locks=0 ]	(	0	)
+pdg_commandtype	[ 0	locks=0 ]	(	"0"	)
+pdg_command	[ 0	locks=0 ]	(	""	)
+pdgnodedeps	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/fetch_rgba.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	},
+	"___toolcount___":{
+		"type":"string",
+		"value":"1"
+	},
+	"___toolid___":{
+		"type":"string",
+		"value":"object_cop2plane"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_rgba.init"
+Content-Type: text/plain
+
+type = split
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_rgba.def"
+Content-Type: text/plain
+
+comment ""
+position 1.78793 -6.27235
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+2 "output2"
+}
+inputsNamed3
+{
+0 	generate 0 1 "input1"
+}
+inputs
+{
+0 	generate 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_rgba.chn"
+Content-Type: text/plain
+
+{
+    channel splitexpression {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = "work_item = pdg.workItem()
+aov_name = work_item.attribValue('task_type')
+return 1 if aov_name == 'rgba' else 0" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_rgba.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+splitexpression	[ 0	locks=0 ]	(	[ splitexpression	0 ] 	)
+invertselection	[ 0	locks=0 ]	(	"off"	)
+sepparm	[ 0	locks=0 ]	(	)
+displayoutputs	[ 0	locks=0 ]	(	"0"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_rgba.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_mono.init"
+Content-Type: text/plain
+
+type = split
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_mono.def"
+Content-Type: text/plain
+
+comment ""
+position 5.09218 -8.60827
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+2 "output2"
+}
+inputsNamed3
+{
+0 	split_rgb 2 1 "input1"
+}
+inputs
+{
+0 	split_rgb 1 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_mono.chn"
+Content-Type: text/plain
+
+{
+    channel splitexpression {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = "work_item = pdg.workItem()
+aov_name = work_item.attribValue('task_type')
+return 1 if aov_name == 'mono' else 0" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_mono.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+splitexpression	[ 0	locks=0 ]	(	[ splitexpression	0 ] 	)
+invertselection	[ 0	locks=0 ]	(	"off"	)
+sepparm	[ 0	locks=0 ]	(	)
+displayoutputs	[ 0	locks=0 ]	(	"0"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_mono.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/fetch_mono.init"
+Content-Type: text/plain
+
+type = ropfetch
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/fetch_mono.def"
+Content-Type: text/plain
+
+comment ""
+position 5.16861 -17.596
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	frames_mono 1 1 "input1"
+}
+inputs
+{
+0 	frames_mono 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/fetch_mono.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+rop	[ 0	locks=0 ]	(	1	1	1	)
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+pdg_cachemode	[ 0	locks=0 ]	(	"0"	)
+expandinputs	[ 0	locks=0 ]	(	"off"	)
+enablepdgservice	[ 0	locks=0 ]	(	"off"	)
+pdg_cooktype	[ 0	locks=0 ]	(	"3"	)
+pdgservicename	[ 0	locks=0 ]	(	ropfetch	)
+pdg_servicename	[ 0	locks=0 ]	(	ropfetch	)
+manageservices	[ 0	locks=0 ]	(	0	)
+sepparm2	[ 0	locks=0 ]	(	)
+folder0	[ 0	locks=0 ]	(	2	2	2	2	2	)
+roporder	[ 0	locks=0 ]	(	"1"	)
+roppath	[ 0	locks=0 ]	(	../../export_mono	)
+usecustombutton	[ 0	locks=0 ]	(	"off"	)
+custombutton	[ 0	locks=0 ]	(	execute	)
+usereloadpath	[ 0	locks=0 ]	(	"off"	)
+reloadpath	[ 0	locks=0 ]	(	""	)
+useoppath	[ 0	locks=0 ]	(	"off"	)
+oppath	[ 0	locks=0 ]	(	""	)
+useexternalhip	[ 0	locks=0 ]	(	"off"	)
+externalhip	[ 0	locks=0 ]	(	""	)
+sethip	[ 0	locks=0 ]	(	"off"	)
+ignoreerrors	[ 0	locks=0 ]	(	"off"	)
+cookinputrops	[ 0	locks=0 ]	(	"on"	)
+unlocktargetrop	[ 0	locks=0 ]	(	"on"	)
+outputsfrom	[ 0	locks=0 ]	(	"0"	)
+usefiletag	[ 0	locks=0 ]	(	"off"	)
+filetag	[ 0	locks=0 ]	(	""	)
+usecustomoutput	[ 0	locks=0 ]	(	"off"	)
+customoutput	[ 0	locks=0 ]	(	""	)
+outputpaths	[ 0	locks=0 ]	(	0	)
+sepparm3	[ 0	locks=0 ]	(	)
+logoutput	[ 0	locks=0 ]	(	"1"	)
+uselogformat	[ 0	locks=0 ]	(	"off"	)
+logformat	[ 0	locks=0 ]	(	OUTPUT_FILE:(.*);(.*)	)
+framegeneration	[ 0	locks=0 ]	(	"0"	)
+useframeoverride	[ 0	locks=0 ]	(	"off"	)
+frameoverride	[ 0	locks=0 ]	(	1	)
+range	[ 0	locks=0 ]	(	0	0	1	)
+singletask	[ 0	locks=0 ]	(	"off"	)
+sepparm	[ 0	locks=0 ]	(	)
+batchall	[ 0	locks=0 ]	(	"off"	)
+framesperbatch	[ 0	locks=0 ]	(	1	)
+cookwhen	[ 0	locks=0 ]	(	"0"	)
+fixedframecount	[ 0	locks=0 ]	(	0	)
+percentframes	[ 0	locks=0 ]	(	100	)
+setframes	[ 0	locks=0 ]	(	"off"	)
+resumebatch	[ 0	locks=0 ]	(	"off"	)
+distribute	[ 0	locks=0 ]	(	"off"	)
+control	[ 0	locks=0 ]	(	""	)
+hostname	[ 0	locks=0 ]	(	"0"	)
+usetrackerport	[ 0	locks=0 ]	(	"off"	)
+trackerport	[ 0	locks=0 ]	(	0	)
+usewebport	[ 0	locks=0 ]	(	"off"	)
+webport	[ 0	locks=0 ]	(	0	)
+verbosetracker	[ 0	locks=0 ]	(	"off"	)
+sepparm6	[ 0	locks=0 ]	(	)
+slicetype	[ 0	locks=0 ]	(	"0"	)
+slicecount	[ 0	locks=0 ]	(	2	)
+slicedivs	[ 0	locks=0 ]	(	0	0	0	)
+enableperfmon	[ 0	locks=0 ]	(	"off"	)
+saveperffile	[ 0	locks=0 ]	(	"on"	)
+perffile	[ 0	locks=0 ]	(	$HIP/$OS.performance.$F.hperf	)
+savedebughip	[ 0	locks=0 ]	(	"off"	)
+debughip	[ 0	locks=0 ]	(	$HIP/$OS.debug.$F.hip	)
+debugoutputs	[ 0	locks=0 ]	(	"off"	)
+topscheduler	[ 0	locks=0 ]	(	../gpu_scheduler	)
+addjobparms	[ 0	locks=0 ]	(	0	)
+pdg_useschedulewhen	[ 0	locks=0 ]	(	"off"	)
+pdg_schedulewhen	[ 0	locks=0 ]	(	1	)
+sepparm7	[ 0	locks=0 ]	(	)
+pdg_workitemlabel	[ 0	locks=0 ]	(	"0"	)
+pdg_workitemlabelexpr	[ 0	locks=0 ]	(	""	)
+pdg_workitempriority	[ 0	locks=0 ]	(	"2"	)
+pdg_workitempriorityexpr	[ 0	locks=0 ]	(	0	)
+pdg_commandtype	[ 0	locks=0 ]	(	"0"	)
+pdg_command	[ 0	locks=0 ]	(	""	)
+pdgnodedeps	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/fetch_mono.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	},
+	"___toolcount___":{
+		"type":"string",
+		"value":"1"
+	},
+	"___toolid___":{
+		"type":"string",
+		"value":"object_cop2plane"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_rgb.init"
+Content-Type: text/plain
+
+type = split
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_rgb.def"
+Content-Type: text/plain
+
+comment ""
+position 3.45836 -7.40185
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+2 "output2"
+}
+inputsNamed3
+{
+0 	split_rgba 2 1 "input1"
+}
+inputs
+{
+0 	split_rgba 1 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_rgb.chn"
+Content-Type: text/plain
+
+{
+    channel splitexpression {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = "work_item = pdg.workItem()
+aov_name = work_item.attribValue('task_type')
+return 1 if aov_name == 'rgb' else 0" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_rgb.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+splitexpression	[ 0	locks=0 ]	(	[ splitexpression	0 ] 	)
+invertselection	[ 0	locks=0 ]	(	"off"	)
+sepparm	[ 0	locks=0 ]	(	)
+displayoutputs	[ 0	locks=0 ]	(	"0"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/split_rgb.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/fetch_rgb.init"
+Content-Type: text/plain
+
+type = ropfetch
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/fetch_rgb.def"
+Content-Type: text/plain
+
+comment ""
+position 1.61348 -17.596
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	frames_rgb 1 1 "input1"
+}
+inputs
+{
+0 	frames_rgb 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/fetch_rgb.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+rop	[ 0	locks=0 ]	(	1	1	1	)
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+pdg_cachemode	[ 0	locks=0 ]	(	"0"	)
+expandinputs	[ 0	locks=0 ]	(	"off"	)
+enablepdgservice	[ 0	locks=0 ]	(	"off"	)
+pdg_cooktype	[ 0	locks=0 ]	(	"3"	)
+pdgservicename	[ 0	locks=0 ]	(	ropfetch	)
+pdg_servicename	[ 0	locks=0 ]	(	ropfetch	)
+manageservices	[ 0	locks=0 ]	(	0	)
+sepparm2	[ 0	locks=0 ]	(	)
+folder0	[ 0	locks=0 ]	(	2	2	2	2	2	)
+roporder	[ 0	locks=0 ]	(	"1"	)
+roppath	[ 0	locks=0 ]	(	../../export_rgb	)
+usecustombutton	[ 0	locks=0 ]	(	"off"	)
+custombutton	[ 0	locks=0 ]	(	execute	)
+usereloadpath	[ 0	locks=0 ]	(	"off"	)
+reloadpath	[ 0	locks=0 ]	(	""	)
+useoppath	[ 0	locks=0 ]	(	"off"	)
+oppath	[ 0	locks=0 ]	(	""	)
+useexternalhip	[ 0	locks=0 ]	(	"off"	)
+externalhip	[ 0	locks=0 ]	(	""	)
+sethip	[ 0	locks=0 ]	(	"off"	)
+ignoreerrors	[ 0	locks=0 ]	(	"off"	)
+cookinputrops	[ 0	locks=0 ]	(	"on"	)
+unlocktargetrop	[ 0	locks=0 ]	(	"on"	)
+outputsfrom	[ 0	locks=0 ]	(	"0"	)
+usefiletag	[ 0	locks=0 ]	(	"off"	)
+filetag	[ 0	locks=0 ]	(	""	)
+usecustomoutput	[ 0	locks=0 ]	(	"off"	)
+customoutput	[ 0	locks=0 ]	(	""	)
+outputpaths	[ 0	locks=0 ]	(	0	)
+sepparm3	[ 0	locks=0 ]	(	)
+logoutput	[ 0	locks=0 ]	(	"1"	)
+uselogformat	[ 0	locks=0 ]	(	"off"	)
+logformat	[ 0	locks=0 ]	(	OUTPUT_FILE:(.*);(.*)	)
+framegeneration	[ 0	locks=0 ]	(	"0"	)
+useframeoverride	[ 0	locks=0 ]	(	"off"	)
+frameoverride	[ 0	locks=0 ]	(	1	)
+range	[ 0	locks=0 ]	(	0	0	1	)
+singletask	[ 0	locks=0 ]	(	"off"	)
+sepparm	[ 0	locks=0 ]	(	)
+batchall	[ 0	locks=0 ]	(	"off"	)
+framesperbatch	[ 0	locks=0 ]	(	1	)
+cookwhen	[ 0	locks=0 ]	(	"0"	)
+fixedframecount	[ 0	locks=0 ]	(	0	)
+percentframes	[ 0	locks=0 ]	(	100	)
+setframes	[ 0	locks=0 ]	(	"off"	)
+resumebatch	[ 0	locks=0 ]	(	"off"	)
+distribute	[ 0	locks=0 ]	(	"off"	)
+control	[ 0	locks=0 ]	(	""	)
+hostname	[ 0	locks=0 ]	(	"0"	)
+usetrackerport	[ 0	locks=0 ]	(	"off"	)
+trackerport	[ 0	locks=0 ]	(	0	)
+usewebport	[ 0	locks=0 ]	(	"off"	)
+webport	[ 0	locks=0 ]	(	0	)
+verbosetracker	[ 0	locks=0 ]	(	"off"	)
+sepparm6	[ 0	locks=0 ]	(	)
+slicetype	[ 0	locks=0 ]	(	"0"	)
+slicecount	[ 0	locks=0 ]	(	2	)
+slicedivs	[ 0	locks=0 ]	(	0	0	0	)
+enableperfmon	[ 0	locks=0 ]	(	"off"	)
+saveperffile	[ 0	locks=0 ]	(	"on"	)
+perffile	[ 0	locks=0 ]	(	$HIP/$OS.performance.$F.hperf	)
+savedebughip	[ 0	locks=0 ]	(	"off"	)
+debughip	[ 0	locks=0 ]	(	$HIP/$OS.debug.$F.hip	)
+debugoutputs	[ 0	locks=0 ]	(	"off"	)
+topscheduler	[ 0	locks=0 ]	(	../gpu_scheduler	)
+addjobparms	[ 0	locks=0 ]	(	0	)
+pdg_useschedulewhen	[ 0	locks=0 ]	(	"off"	)
+pdg_schedulewhen	[ 0	locks=0 ]	(	1	)
+sepparm7	[ 0	locks=0 ]	(	)
+pdg_workitemlabel	[ 0	locks=0 ]	(	"0"	)
+pdg_workitemlabelexpr	[ 0	locks=0 ]	(	""	)
+pdg_workitempriority	[ 0	locks=0 ]	(	"2"	)
+pdg_workitempriorityexpr	[ 0	locks=0 ]	(	0	)
+pdg_commandtype	[ 0	locks=0 ]	(	"0"	)
+pdg_command	[ 0	locks=0 ]	(	""	)
+pdgnodedeps	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/fetch_rgb.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	},
+	"___toolcount___":{
+		"type":"string",
+		"value":"1"
+	},
+	"___toolid___":{
+		"type":"string",
+		"value":"object_cop2plane"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/SKIP.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/SKIP.def"
+Content-Type: text/plain
+
+comment ""
+position 6.28867 -9.75442
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	split_mono 2 1 "input1"
+}
+inputs
+{
+0 	split_mono 1 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/SKIP.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/SKIP.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/output.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/output.def"
+Content-Type: text/plain
+
+comment ""
+position 3.2484 -26.3127
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	stop_service 1 1 "input1"
+}
+inputs
+{
+0 	stop_service 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/output.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+pdg_workitemlabel	[ 0	locks=0 ]	(	"0"	)
+pdg_workitemlabelexpr	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/output.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/frames_rgba.init"
+Content-Type: text/plain
+
+type = pythonprocessor
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/frames_rgba.def"
+Content-Type: text/plain
+
+comment ""
+position -5.20906 -13.1078
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	split_rgba 1 1 "input1"
+}
+inputs
+{
+0 	split_rgba 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/frames_rgba.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+savenodescript	[ 0	locks=0 ]	(	0	)
+savenodehda	[ 0	locks=0 ]	(	0	)
+sepparm2	[ 0	locks=0 ]	(	)
+processor	[ 0	locks=0 ]	(	0	0	0	)
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+pdg_command	[ 0	locks=0 ]	(	""	)
+sepparm	[ 0	locks=0 ]	(	)
+callbacks	[ 0	locks=0 ]	(	0	0	0	0	0	)
+generate	[ 0	locks=0 ]	(	"# Called when this node should generate new work items from upstream items.
+#
+# self             -   A reference to the current pdg.Node instance
+# item_holder      -   A pdg.WorkItemHolder for constructing and adding work items
+# upstream_items   -   The list of work items in the node above, or empty list if there are no inputs
+# generation_type  -   The type of generation, e.g. pdg.generationType.Static, Dynamic, or Regenerate
+from pathlib import Path
+
+for upstream_item in upstream_items:
+
+    start_frame = upstream_item.intAttribValue('start_frame')
+    end_frame = upstream_item.intAttribValue('end_frame')
+    import_path = upstream_item.stringAttribValue('import_path')
+    export_path = upstream_item.stringAttribValue('export_path')
+    aov_name = upstream_item.stringAttribValue('aov_name')
+    scale = upstream_item.floatAttribValue('scale')
+    
+    for frame_index in range(start_frame, end_frame + 1):
+        frame_name = str(frame_index).zfill(4)
+        
+        task_import_path = import_path.replace('$F', frame_name)
+        task_export_path = export_path.replace('$F', frame_name)
+        
+        if Path(task_export_path).exists(): continue
+        
+        task = item_holder.addWorkItem(parent=upstream_item)
+        task.addAttrib('import_path', pdg.attribType.String)
+        task.addAttrib('export_path', pdg.attribType.String)
+        task.addAttrib('aov_name', pdg.attribType.String)
+        task.addAttrib('scale', pdg.attribType.Float)
+        
+        task.setStringAttrib('import_path', task_import_path)
+        task.setStringAttrib('export_path', task_export_path)
+        task.setStringAttrib('aov_name', aov_name)
+        task.setFloatAttrib('scale', scale)"	)
+useregeneratestatic	[ 0	locks=0 ]	(	"off"	)
+regeneratestatic	[ 0	locks=0 ]	(	"# Called when this node may need to regenerate existing work items
+#
+# self           -   A reference to the current pdg.Node instance
+# item_holder    -   A pdg.WorkItemHolder for constructing and adding new work items
+# existing_items -   The existing work items in the node
+# upstream_items -   The list of work items in the node above, or empty list
+# generation_type -   The type of generation, e.g. pdg.generationType.Static, Dynamic, or Regenerate"	)
+addinternaldependencies	[ 0	locks=0 ]	(	"# Called when the node has generated work items so that dependencies can
+# be added between work items in this node.
+#
+# self              -   A reference to the current pdg.Node instance
+# dependency_holder -   A pdg.WorkItemHolder for adding pairs of items that should have a dependency
+# internal_items    -   The list of items, either all static items or a group of dynamic items
+# is_static         -   Boolean indicating if the items list contains static items
+"	)
+cooktask	[ 0	locks=0 ]	(	"# Called when an in process work item needs to cook. In process work items
+# are created by passing the `inProcess=True` flag when constructing the item in
+# the `Generate` callback
+#
+# self              -   A reference to the current pdg.Node instance
+# work_item         -   The work item being cooked by this callback"	)
+servicename	[ 0	locks=0 ]	(	""	)
+sepparm3	[ 0	locks=0 ]	(	)
+alwaysregenerate	[ 0	locks=0 ]	(	"off"	)
+dirtyonregenerate	[ 0	locks=0 ]	(	"off"	)
+dirtyonincomplete	[ 0	locks=0 ]	(	"off"	)
+sepparm4	[ 0	locks=0 ]	(	)
+requiresgeneratedinputs	[ 0	locks=0 ]	(	"off"	)
+requirescookedinputs	[ 0	locks=0 ]	(	"off"	)
+requiresscenefile	[ 0	locks=0 ]	(	"off"	)
+requiresinputdata	[ 0	locks=0 ]	(	"off"	)
+sepparm6	[ 0	locks=0 ]	(	)
+usesdynamicbatching	[ 0	locks=0 ]	(	"off"	)
+sepparm7	[ 0	locks=0 ]	(	)
+usestatefilter	[ 0	locks=0 ]	(	"off"	)
+statefilter	[ 0	locks=0 ]	(	"0"	)
+clearfailures	[ 0	locks=0 ]	(	"off"	)
+pdgnodedeps	[ 0	locks=0 ]	(	1	)
+topscheduler	[ 0	locks=0 ]	(	""	)
+addjobparms	[ 0	locks=0 ]	(	0	)
+pdg_useschedulewhen	[ 0	locks=0 ]	(	"off"	)
+pdg_schedulewhen	[ 0	locks=0 ]	(	1	)
+sepparm5	[ 0	locks=0 ]	(	)
+pdg_workitemlabel	[ 0	locks=0 ]	(	"0"	)
+pdg_workitemlabelexpr	[ 0	locks=0 ]	(	""	)
+pdg_workitempriority	[ 0	locks=0 ]	(	"0"	)
+pdg_workitempriorityexpr	[ 0	locks=0 ]	(	0	)
+pdgnodedep1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/frames_rgba.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"___toolcount___":{
+		"type":"string",
+		"value":"1"
+	},
+	"___toolid___":{
+		"type":"string",
+		"value":"object_cop2plane"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/frames_rgb.init"
+Content-Type: text/plain
+
+type = pythonprocessor
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/frames_rgb.def"
+Content-Type: text/plain
+
+comment ""
+position -1.07441 -13.1078
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	split_rgb 1 1 "input1"
+}
+inputs
+{
+0 	split_rgb 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/frames_rgb.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+savenodescript	[ 0	locks=0 ]	(	0	)
+savenodehda	[ 0	locks=0 ]	(	0	)
+sepparm2	[ 0	locks=0 ]	(	)
+processor	[ 0	locks=0 ]	(	0	0	0	)
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+pdg_command	[ 0	locks=0 ]	(	""	)
+sepparm	[ 0	locks=0 ]	(	)
+callbacks	[ 0	locks=0 ]	(	0	0	0	0	0	)
+generate	[ 0	locks=0 ]	(	"# Called when this node should generate new work items from upstream items.
+#
+# self             -   A reference to the current pdg.Node instance
+# item_holder      -   A pdg.WorkItemHolder for constructing and adding work items
+# upstream_items   -   The list of work items in the node above, or empty list if there are no inputs
+# generation_type  -   The type of generation, e.g. pdg.generationType.Static, Dynamic, or Regenerate
+from pathlib import Path
+
+for upstream_item in upstream_items:
+
+    start_frame = upstream_item.intAttribValue('start_frame')
+    end_frame = upstream_item.intAttribValue('end_frame')
+    import_path = upstream_item.stringAttribValue('import_path')
+    export_path = upstream_item.stringAttribValue('export_path')
+    aov_name = upstream_item.stringAttribValue('aov_name')
+    scale = upstream_item.floatAttribValue('scale')
+    
+    for frame_index in range(start_frame, end_frame + 1):
+        frame_name = str(frame_index).zfill(4)
+        
+        task_import_path = import_path.replace('$F', frame_name)
+        task_export_path = export_path.replace('$F', frame_name)
+        
+        if Path(task_export_path).exists(): continue
+        
+        task = item_holder.addWorkItem(parent=upstream_item)
+        task.addAttrib('import_path', pdg.attribType.String)
+        task.addAttrib('export_path', pdg.attribType.String)
+        task.addAttrib('aov_name', pdg.attribType.String)
+        task.addAttrib('scale', pdg.attribType.Float)
+        
+        task.setStringAttrib('import_path', task_import_path)
+        task.setStringAttrib('export_path', task_export_path)
+        task.setStringAttrib('aov_name', aov_name)
+        task.setFloatAttrib('scale', scale)"	)
+useregeneratestatic	[ 0	locks=0 ]	(	"off"	)
+regeneratestatic	[ 0	locks=0 ]	(	"# Called when this node may need to regenerate existing work items
+#
+# self           -   A reference to the current pdg.Node instance
+# item_holder    -   A pdg.WorkItemHolder for constructing and adding new work items
+# existing_items -   The existing work items in the node
+# upstream_items -   The list of work items in the node above, or empty list
+# generation_type -   The type of generation, e.g. pdg.generationType.Static, Dynamic, or Regenerate"	)
+addinternaldependencies	[ 0	locks=0 ]	(	"# Called when the node has generated work items so that dependencies can
+# be added between work items in this node.
+#
+# self              -   A reference to the current pdg.Node instance
+# dependency_holder -   A pdg.WorkItemHolder for adding pairs of items that should have a dependency
+# internal_items    -   The list of items, either all static items or a group of dynamic items
+# is_static         -   Boolean indicating if the items list contains static items
+"	)
+cooktask	[ 0	locks=0 ]	(	"# Called when an in process work item needs to cook. In process work items
+# are created by passing the `inProcess=True` flag when constructing the item in
+# the `Generate` callback
+#
+# self              -   A reference to the current pdg.Node instance
+# work_item         -   The work item being cooked by this callback"	)
+servicename	[ 0	locks=0 ]	(	""	)
+sepparm3	[ 0	locks=0 ]	(	)
+alwaysregenerate	[ 0	locks=0 ]	(	"off"	)
+dirtyonregenerate	[ 0	locks=0 ]	(	"off"	)
+dirtyonincomplete	[ 0	locks=0 ]	(	"off"	)
+sepparm4	[ 0	locks=0 ]	(	)
+requiresgeneratedinputs	[ 0	locks=0 ]	(	"off"	)
+requirescookedinputs	[ 0	locks=0 ]	(	"off"	)
+requiresscenefile	[ 0	locks=0 ]	(	"off"	)
+requiresinputdata	[ 0	locks=0 ]	(	"off"	)
+sepparm6	[ 0	locks=0 ]	(	)
+usesdynamicbatching	[ 0	locks=0 ]	(	"off"	)
+sepparm7	[ 0	locks=0 ]	(	)
+usestatefilter	[ 0	locks=0 ]	(	"off"	)
+statefilter	[ 0	locks=0 ]	(	"0"	)
+clearfailures	[ 0	locks=0 ]	(	"off"	)
+pdgnodedeps	[ 0	locks=0 ]	(	1	)
+topscheduler	[ 0	locks=0 ]	(	""	)
+addjobparms	[ 0	locks=0 ]	(	0	)
+pdg_useschedulewhen	[ 0	locks=0 ]	(	"off"	)
+pdg_schedulewhen	[ 0	locks=0 ]	(	1	)
+sepparm5	[ 0	locks=0 ]	(	)
+pdg_workitemlabel	[ 0	locks=0 ]	(	"0"	)
+pdg_workitemlabelexpr	[ 0	locks=0 ]	(	""	)
+pdg_workitempriority	[ 0	locks=0 ]	(	"0"	)
+pdg_workitempriorityexpr	[ 0	locks=0 ]	(	0	)
+pdgnodedep1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/frames_rgb.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"___toolcount___":{
+		"type":"string",
+		"value":"1"
+	},
+	"___toolid___":{
+		"type":"string",
+		"value":"object_cop2plane"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/frames_mono.init"
+Content-Type: text/plain
+
+type = pythonprocessor
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/frames_mono.def"
+Content-Type: text/plain
+
+comment ""
+position 2.51621 -13.1078
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	split_mono 1 1 "input1"
+}
+inputs
+{
+0 	split_mono 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/frames_mono.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+savenodescript	[ 0	locks=0 ]	(	0	)
+savenodehda	[ 0	locks=0 ]	(	0	)
+sepparm2	[ 0	locks=0 ]	(	)
+processor	[ 0	locks=0 ]	(	0	0	0	)
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+pdg_command	[ 0	locks=0 ]	(	""	)
+sepparm	[ 0	locks=0 ]	(	)
+callbacks	[ 0	locks=0 ]	(	0	0	0	0	0	)
+generate	[ 0	locks=0 ]	(	"# Called when this node should generate new work items from upstream items.
+#
+# self             -   A reference to the current pdg.Node instance
+# item_holder      -   A pdg.WorkItemHolder for constructing and adding work items
+# upstream_items   -   The list of work items in the node above, or empty list if there are no inputs
+# generation_type  -   The type of generation, e.g. pdg.generationType.Static, Dynamic, or Regenerate
+from pathlib import Path
+
+for upstream_item in upstream_items:
+
+    start_frame = upstream_item.intAttribValue('start_frame')
+    end_frame = upstream_item.intAttribValue('end_frame')
+    import_path = upstream_item.stringAttribValue('import_path')
+    export_path = upstream_item.stringAttribValue('export_path')
+    aov_name = upstream_item.stringAttribValue('aov_name')
+    scale = upstream_item.floatAttribValue('scale')
+    
+    for frame_index in range(start_frame, end_frame + 1):
+        frame_name = str(frame_index).zfill(4)
+        
+        task_import_path = import_path.replace('$F', frame_name)
+        task_export_path = export_path.replace('$F', frame_name)
+        
+        if Path(task_export_path).exists(): continue
+        
+        task = item_holder.addWorkItem(parent=upstream_item)
+        task.addAttrib('import_path', pdg.attribType.String)
+        task.addAttrib('export_path', pdg.attribType.String)
+        task.addAttrib('aov_name', pdg.attribType.String)
+        task.addAttrib('scale', pdg.attribType.Float)
+        
+        task.setStringAttrib('import_path', task_import_path)
+        task.setStringAttrib('export_path', task_export_path)
+        task.setStringAttrib('aov_name', aov_name)
+        task.setFloatAttrib('scale', scale)"	)
+useregeneratestatic	[ 0	locks=0 ]	(	"off"	)
+regeneratestatic	[ 0	locks=0 ]	(	"# Called when this node may need to regenerate existing work items
+#
+# self           -   A reference to the current pdg.Node instance
+# item_holder    -   A pdg.WorkItemHolder for constructing and adding new work items
+# existing_items -   The existing work items in the node
+# upstream_items -   The list of work items in the node above, or empty list
+# generation_type -   The type of generation, e.g. pdg.generationType.Static, Dynamic, or Regenerate"	)
+addinternaldependencies	[ 0	locks=0 ]	(	"# Called when the node has generated work items so that dependencies can
+# be added between work items in this node.
+#
+# self              -   A reference to the current pdg.Node instance
+# dependency_holder -   A pdg.WorkItemHolder for adding pairs of items that should have a dependency
+# internal_items    -   The list of items, either all static items or a group of dynamic items
+# is_static         -   Boolean indicating if the items list contains static items
+"	)
+cooktask	[ 0	locks=0 ]	(	"# Called when an in process work item needs to cook. In process work items
+# are created by passing the `inProcess=True` flag when constructing the item in
+# the `Generate` callback
+#
+# self              -   A reference to the current pdg.Node instance
+# work_item         -   The work item being cooked by this callback"	)
+servicename	[ 0	locks=0 ]	(	""	)
+sepparm3	[ 0	locks=0 ]	(	)
+alwaysregenerate	[ 0	locks=0 ]	(	"off"	)
+dirtyonregenerate	[ 0	locks=0 ]	(	"off"	)
+dirtyonincomplete	[ 0	locks=0 ]	(	"off"	)
+sepparm4	[ 0	locks=0 ]	(	)
+requiresgeneratedinputs	[ 0	locks=0 ]	(	"off"	)
+requirescookedinputs	[ 0	locks=0 ]	(	"off"	)
+requiresscenefile	[ 0	locks=0 ]	(	"off"	)
+requiresinputdata	[ 0	locks=0 ]	(	"off"	)
+sepparm6	[ 0	locks=0 ]	(	)
+usesdynamicbatching	[ 0	locks=0 ]	(	"off"	)
+sepparm7	[ 0	locks=0 ]	(	)
+usestatefilter	[ 0	locks=0 ]	(	"off"	)
+statefilter	[ 0	locks=0 ]	(	"0"	)
+clearfailures	[ 0	locks=0 ]	(	"off"	)
+pdgnodedeps	[ 0	locks=0 ]	(	1	)
+topscheduler	[ 0	locks=0 ]	(	""	)
+addjobparms	[ 0	locks=0 ]	(	0	)
+pdg_useschedulewhen	[ 0	locks=0 ]	(	"off"	)
+pdg_schedulewhen	[ 0	locks=0 ]	(	1	)
+sepparm5	[ 0	locks=0 ]	(	)
+pdg_workitemlabel	[ 0	locks=0 ]	(	"0"	)
+pdg_workitemlabelexpr	[ 0	locks=0 ]	(	""	)
+pdg_workitempriority	[ 0	locks=0 ]	(	"0"	)
+pdg_workitempriorityexpr	[ 0	locks=0 ]	(	0	)
+pdgnodedep1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/frames_mono.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"___toolcount___":{
+		"type":"string",
+		"value":"1"
+	},
+	"___toolid___":{
+		"type":"string",
+		"value":"object_cop2plane"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/merge.init"
+Content-Type: text/plain
+
+type = merge
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/merge.def"
+Content-Type: text/plain
+
+comment ""
+position 0.236966 -22.4575
+connectornextid 5
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+4 "output1"
+}
+inputsNamed3
+{
+0 	generate 0 1 "input1"
+1 	fetch_rgba 1 1 "input2"
+2 	fetch_rgb 1 1 "input3"
+3 	fetch_mono 1 1 "input4"
+}
+inputs
+{
+0 	generate 0 1
+1 	fetch_rgba 0 1
+2 	fetch_rgb 0 1
+3 	fetch_mono 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/merge.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+keepfailed	[ 0	locks=0 ]	(	"off"	)
+sepparm	[ 0	locks=0 ]	(	)
+extrainputs	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/merge.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/update.init"
+Content-Type: text/plain
+
+type = pythonscript
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/update.def"
+Content-Type: text/plain
+
+comment ""
+position 3.2484 -23.9659
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	wait 1 1 "input1"
+}
+inputs
+{
+0 	wait 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/update.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+folder0	[ 0	locks=0 ]	(	0	0	0	)
+inprocess	[ 0	locks=0 ]	(	"on"	)
+pdgservicename	[ 0	locks=0 ]	(	pythonscript	)
+sepparm2	[ 0	locks=0 ]	(	)
+evaluation	[ 0	locks=0 ]	(	1	)
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+pdg_cooktype	[ 0	locks=0 ]	(	"1"	)
+pdg_useserviceblock	[ 0	locks=0 ]	(	"1"	)
+pdg_servicename	[ 0	locks=0 ]	(	pythonscript	)
+manageservices	[ 0	locks=0 ]	(	0	)
+pdg_servicereset	[ 0	locks=0 ]	(	"0"	)
+pdg_serviceresetwhen	[ 0	locks=0 ]	(	"1"	)
+exectuable	[ 0	locks=0 ]	(	0	)
+pythonbin	[ 0	locks=0 ]	(	"0"	)
+python	[ 0	locks=0 ]	(	__PDG_PYTHON__	)
+pythonvenv	[ 0	locks=0 ]	(	`@venvroot`	)
+resetpython	[ 0	locks=0 ]	(	"off"	)
+nativeworkitem	[ 0	locks=0 ]	(	"off"	)
+sepparm3	[ 0	locks=0 ]	(	)
+pythonargs	[ 0	locks=0 ]	(	-u	)
+extraargs	[ 0	locks=0 ]	(	""	)
+sepparm	[ 0	locks=0 ]	(	)
+pythonpaths	[ 0	locks=0 ]	(	0	)
+batching	[ 0	locks=0 ]	(	0	)
+batchtype	[ 0	locks=0 ]	(	"0"	)
+scripttype	[ 0	locks=0 ]	(	"0"	)
+batchactivation	[ 0	locks=0 ]	(	"0"	)
+usebatchframes	[ 0	locks=0 ]	(	"off"	)
+batchframes	[ 0	locks=0 ]	(	1	)
+batchsize	[ 0	locks=0 ]	(	1	)
+prescript	[ 0	locks=0 ]	(	"# Script code that runs once before a batch begins.
+#
+# The following variables are available:
+# work_item    - the work item currently running 
+# graph        - the graph attributes for the current work item
+#
+# In addition to the above, in-process scripts can also access:
+# self         - the current PDG node
+# parent_item  - the parent work item, if it exists
+"	)
+expansion	[ 0	locks=0 ]	(	0	)
+expandscript	[ 0	locks=0 ]	(	"off"	)
+expandstrings	[ 0	locks=0 ]	(	"off"	)
+scriptsource	[ 0	locks=0 ]	(	"0"	)
+script	[ 0	locks=0 ]	(	"from importlib import reload
+import hou
+
+from tumblepipe.pipe.houdini.cops import build_comp
+reload(build_comp)
+
+context = build_comp.BuildComp(hou.pwd().parent().parent().parent())
+context._update()"	)
+scriptfile	[ 0	locks=0 ]	(	$HIP/script.py	)
+pdg_cachemode	[ 0	locks=0 ]	(	"0"	)
+copyoutputs	[ 0	locks=0 ]	(	"2"	)
+sepparm5	[ 0	locks=0 ]	(	)
+expectedoutputsfrom	[ 0	locks=0 ]	(	"0"	)
+expectedoutputattr	[ 0	locks=0 ]	(	""	)
+useexpectedoutputtag	[ 0	locks=0 ]	(	"off"	)
+expectedoutputtag	[ 0	locks=0 ]	(	file	)
+expectedoutputfiles	[ 0	locks=0 ]	(	0	)
+expectedscript	[ 0	locks=0 ]	(	"# Script code that runs for each task to assign expectd outputs
+#
+# The following variables are available:
+# work_item    - the work item currently running 
+# graph        - the graph attributes for the current work item
+# self         - the current PDG node
+# parent_item  - the parent work item, if it exists
+#
+# For example:
+#
+# work_item.addExpectedOutputFile(
+#     \"example.{}.txt\".format(work_item.index),
+#     tag=\"file/txt\")"	)
+topscheduler	[ 0	locks=0 ]	(	""	)
+addjobparms	[ 0	locks=0 ]	(	0	)
+pdg_useschedulewhen	[ 0	locks=0 ]	(	"off"	)
+pdg_schedulewhen	[ 0	locks=0 ]	(	1	)
+sepparm4	[ 0	locks=0 ]	(	)
+pdg_workitemlabel	[ 0	locks=0 ]	(	"0"	)
+pdg_workitemlabelexpr	[ 0	locks=0 ]	(	""	)
+pdg_workitempriority	[ 0	locks=0 ]	(	"0"	)
+pdg_workitempriorityexpr	[ 0	locks=0 ]	(	0	)
+pdg_commandtype	[ 0	locks=0 ]	(	"0"	)
+pdg_command	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/update.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	},
+	"___toolcount___":{
+		"type":"string",
+		"value":"1"
+	},
+	"___toolid___":{
+		"type":"string",
+		"value":"object_cop2plane"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/wait.init"
+Content-Type: text/plain
+
+type = waitforall
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/wait.def"
+Content-Type: text/plain
+
+comment ""
+position 3.2484 -22.646
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	merge 4 1 "input1"
+2 	empty_task 0 1 "input2"
+}
+inputs
+{
+0 	merge 0 1
+1 	empty_task 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/wait.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+attributes	[ 0	locks=0 ]	(	0	0	)
+pdg_partitionmerge	[ 0	locks=0 ]	(	"off"	)
+pdg_partitionmergeoutputs	[ 0	locks=0 ]	(	"4"	)
+pdg_partitionmergeattributes	[ 0	locks=0 ]	(	1	)
+pdg_partitionwhen	[ 0	locks=0 ]	(	"0"	)
+pdg_partitiontargettype	[ 0	locks=0 ]	(	"0"	)
+pdg_partitiontarget	[ 0	locks=0 ]	(	""	)
+pdg_partitionignorefailures	[ 0	locks=0 ]	(	"off"	)
+sepparm2	[ 0	locks=0 ]	(	)
+pdg_partitionsplit	[ 0	locks=0 ]	(	"off"	)
+pdg_partitionsplitattrib	[ 0	locks=0 ]	(	""	)
+pdg_partitionsplitmissing	[ 0	locks=0 ]	(	"0"	)
+pdg_partitionsplitdefault	[ 0	locks=0 ]	(	""	)
+pdg_partitionsplitpartial	[ 0	locks=0 ]	(	"off"	)
+sepparm	[ 0	locks=0 ]	(	)
+pdg_partitionframe	[ 0	locks=0 ]	(	"1"	)
+pdg_partitionsort	[ 0	locks=0 ]	(	"1"	)
+pdg_partitionsortdirection	[ 0	locks=0 ]	(	"0"	)
+pdg_partitionsortattrib	[ 0	locks=0 ]	(	""	)
+pdg_partitionstoreids	[ 0	locks=0 ]	(	"off"	)
+pdg_partitionidattrib	[ 0	locks=0 ]	(	partitionitems	)
+pdg_partitionmergeoperation1	[ 0	locks=0 ]	(	"1"	)
+pdg_partitionmergepattern1	[ 0	locks=0 ]	(	*	)
+pdg_partitionmergepreserve1	[ 0	locks=0 ]	(	"off"	)
+sepparm3_1	[ 0	locks=0 ]	(	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/wait.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/empty_task.init"
+Content-Type: text/plain
+
+type = genericgenerator
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/empty_task.def"
+Content-Type: text/plain
+
+comment ""
+position 3.39042 -21.2273
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/empty_task.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+processor_0	[ 0	locks=0 ]	(	0	0	0	)
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+pdg_cachemode	[ 0	locks=0 ]	(	"0"	)
+sequential	[ 0	locks=0 ]	(	"off"	)
+copyinputs	[ 0	locks=0 ]	(	"off"	)
+flattenindices	[ 0	locks=0 ]	(	"off"	)
+sepparm2	[ 0	locks=0 ]	(	)
+itemcount	[ 0	locks=0 ]	(	1	)
+useindex	[ 0	locks=0 ]	(	"off"	)
+index	[ 0	locks=0 ]	(	0	)
+useframe	[ 0	locks=0 ]	(	"off"	)
+frame	[ 0	locks=0 ]	(	0	)
+usepriority	[ 0	locks=0 ]	(	"off"	)
+priority	[ 0	locks=0 ]	(	0	)
+sepparm	[ 0	locks=0 ]	(	)
+folder0	[ 0	locks=0 ]	(	0	0	)
+usedelay	[ 0	locks=0 ]	(	"off"	)
+delay	[ 0	locks=0 ]	(	1	)
+platformcommand	[ 0	locks=0 ]	(	"off"	)
+pdg_command	[ 0	locks=0 ]	(	""	)
+linuxcommand	[ 0	locks=0 ]	(	""	)
+maccommand	[ 0	locks=0 ]	(	""	)
+windowscommand	[ 0	locks=0 ]	(	""	)
+basecommand	[ 0	locks=0 ]	(	""	)
+shellcommand	[ 0	locks=0 ]	(	"off"	)
+sepparm3	[ 0	locks=0 ]	(	)
+extraargs	[ 0	locks=0 ]	(	0	)
+expectedoutputsfrom	[ 0	locks=0 ]	(	"0"	)
+expectedoutputattr	[ 0	locks=0 ]	(	""	)
+useexpectedoutputtag	[ 0	locks=0 ]	(	"off"	)
+expectedoutputtag	[ 0	locks=0 ]	(	file	)
+expectedoutputfiles	[ 0	locks=0 ]	(	0	)
+topscheduler	[ 0	locks=0 ]	(	""	)
+addjobparms	[ 0	locks=0 ]	(	0	)
+pdg_useschedulewhen	[ 0	locks=0 ]	(	"off"	)
+pdg_schedulewhen	[ 0	locks=0 ]	(	1	)
+sepparm4	[ 0	locks=0 ]	(	)
+pdg_workitemlabel	[ 0	locks=0 ]	(	"0"	)
+pdg_workitemlabelexpr	[ 0	locks=0 ]	(	""	)
+pdg_workitempriority	[ 0	locks=0 ]	(	"0"	)
+pdg_workitempriorityexpr	[ 0	locks=0 ]	(	0	)
+pdgnodedeps	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/empty_task.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/gpu_scheduler.init"
+Content-Type: text/plain
+
+type = localscheduler
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/gpu_scheduler.def"
+Content-Type: text/plain
+
+comment ""
+position 3.69393 -1.91113
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.478 0.478 0.478 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/gpu_scheduler.chn"
+Content-Type: text/plain
+
+{
+    channel maxprocs {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = "import nvsmi
+import os
+
+def _total_vram():
+    return int(sum(
+        gpu.mem_total
+        for gpu in nvsmi.get_gpus()
+    )) // 1024
+
+num_cpu_workers = os.cpu_count() - 1
+num_gpu_workers = _total_vram() // 2
+return min(num_cpu_workers, num_gpu_workers)" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/gpu_scheduler.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+folder0	[ 0	locks=0 ]	(	0	0	0	)
+folder5	[ 0	locks=0 ]	(	0	)
+maxprocsmenu	[ 0	locks=0 ]	(	"1"	)
+maxprocs	[ 0	locks=0 ]	(	[ maxprocs	1 ] 	)
+pdg_usemaxtasks	[ 0	locks=0 ]	(	"off"	)
+pdg_maxtasks	[ 0	locks=0 ]	(	0	)
+verbose	[ 0	locks=0 ]	(	"off"	)
+pdg_waitforfailures	[ 0	locks=0 ]	(	"off"	)
+folder4	[ 0	locks=0 ]	(	0	)
+pdg_workingdir	[ 0	locks=0 ]	(	$HIP	)
+uselogfilename	[ 0	locks=0 ]	(	"off"	)
+logfilename	[ 0	locks=0 ]	(	`@pdg_name`.log	)
+hythonbin	[ 0	locks=0 ]	(	"0"	)
+hythonbincustomuniversal	[ 0	locks=0 ]	(	""	)
+pdg_workitemdatasource	[ 0	locks=0 ]	(	"0"	)
+pdg_compressworkitemdata	[ 0	locks=0 ]	(	"on"	)
+pdg_validateoutputs	[ 0	locks=0 ]	(	"on"	)
+pdg_checkexpectedoutputs	[ 0	locks=0 ]	(	"on"	)
+sepparm2	[ 0	locks=0 ]	(	)
+pdg_mapmode	[ 0	locks=0 ]	(	"0"	)
+pdg_usemapzone	[ 0	locks=0 ]	(	"off"	)
+pdg_mapzone	[ 0	locks=0 ]	(	$PDG_PATHMAP_ZONE	)
+sepparm6	[ 0	locks=0 ]	(	)
+pdg_transfertype	[ 0	locks=0 ]	(	"0"	)
+pdg_transferroot	[ 0	locks=0 ]	(	$HIP	)
+folder1	[ 0	locks=0 ]	(	0	)
+tempdirmenu	[ 0	locks=0 ]	(	"1"	)
+tempdirappendpid	[ 0	locks=0 ]	(	"on"	)
+tempdircustom	[ 0	locks=0 ]	(	$HOUDINI_TEMP_DIR/$HIPNAME/pdgtemp	)
+pdg_deletetempdir	[ 0	locks=0 ]	(	"0"	)
+socketcallbacks	[ 0	locks=0 ]	(	1	)
+pdg_rpcignoreerrors	[ 0	locks=0 ]	(	"0"	)
+pdg_rpcmaxerrors	[ 0	locks=0 ]	(	5	)
+pdg_rpctimeout	[ 0	locks=0 ]	(	4	)
+pdg_rpcretries	[ 0	locks=0 ]	(	2	)
+pdg_rpcbackoff	[ 0	locks=0 ]	(	2	)
+pdg_rpcbatch	[ 0	locks=0 ]	(	1	)
+pdg_rpcrelease	[ 0	locks=0 ]	(	"on"	)
+folder0_3	[ 0	locks=0 ]	(	0	)
+local_single	[ 0	locks=0 ]	(	"off"	)
+local_is_CPU_number_set	[ 0	locks=0 ]	(	"off"	)
+local_CPUs_to_use	[ 0	locks=0 ]	(	1	)
+folder6	[ 0	locks=0 ]	(	0	)
+local_useminfreemem	[ 0	locks=0 ]	(	"0"	)
+local_minfreemem	[ 0	locks=0 ]	(	0	)
+local_minfreemempct	[ 0	locks=0 ]	(	0	)
+folder2	[ 0	locks=0 ]	(	0	)
+local_enabletimeout	[ 0	locks=0 ]	(	"off"	)
+local_maxtime	[ 0	locks=0 ]	(	0	)
+local_handletimeout	[ 0	locks=0 ]	(	"0"	)
+sepparm4	[ 0	locks=0 ]	(	)
+local_enablemaxmemory	[ 0	locks=0 ]	(	"off"	)
+local_maxmemory	[ 0	locks=0 ]	(	0	)
+local_handlememory	[ 0	locks=0 ]	(	"0"	)
+sepparm5	[ 0	locks=0 ]	(	)
+local_echandleby	[ 0	locks=0 ]	(	"0"	)
+local_echandleall	[ 0	locks=0 ]	(	"on"	)
+local_eccustomcode	[ 0	locks=0 ]	(	1	)
+sepparm	[ 0	locks=0 ]	(	)
+local_maximumretries	[ 0	locks=0 ]	(	3	)
+local_addfailcountattr	[ 0	locks=0 ]	(	"off"	)
+local_failcountattr	[ 0	locks=0 ]	(	failurecount	)
+folder3	[ 0	locks=0 ]	(	0	)
+local_usehoudinimaxthreads	[ 0	locks=0 ]	(	"off"	)
+local_houdinimaxthreads	[ 0	locks=0 ]	(	0	)
+local_requireswindow	[ 0	locks=0 ]	(	"off"	)
+local_skippackages	[ 0	locks=0 ]	(	"on"	)
+local_envunset	[ 0	locks=0 ]	(	""	)
+local_env_file	[ 0	locks=0 ]	(	""	)
+local_envmulti	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/gpu_scheduler.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/stop_service.init"
+Content-Type: text/plain
+
+type = servicestop
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/stop_service.def"
+Content-Type: text/plain
+
+comment ""
+position 3.2484 -25.1923
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	update 1 1 "input1"
+}
+inputs
+{
+0 	update 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/stop_service.chn"
+Content-Type: text/plain
+
+{
+    channel addjobparms {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = In-Process }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/stop_service.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+servicedata	[ 0	locks=0 ]	(	0	0	)
+openpdgservicepanel	[ 0	locks=0 ]	(	0	)
+sepparm2	[ 0	locks=0 ]	(	)
+pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
+pdg_cooktype	[ 0	locks=0 ]	(	"1"	)
+servicestopped	[ 0	locks=0 ]	(	"0"	)
+copyoutputs	[ 0	locks=0 ]	(	"off"	)
+sepparm	[ 0	locks=0 ]	(	)
+servicename	[ 0	locks=0 ]	(	ropfetch	)
+topscheduler	[ 0	locks=0 ]	(	""	)
+addjobparms	[ 0	locks=0 ]	(	[ addjobparms	3 ] 	)
+pdg_useschedulewhen	[ 0	locks=0 ]	(	"off"	)
+pdg_schedulewhen	[ 0	locks=0 ]	(	1	)
+sepparm3	[ 0	locks=0 ]	(	)
+pdg_workitemlabel	[ 0	locks=0 ]	(	"0"	)
+pdg_workitemlabelexpr	[ 0	locks=0 ]	(	""	)
+pdg_workitempriority	[ 0	locks=0 ]	(	"0"	)
+pdg_workitempriorityexpr	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops/stop_service.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops.order"
+Content-Type: text/plain
+
+19
+localscheduler
+generate
+fetch_rgba
+split_rgba
+split_mono
+fetch_mono
+split_rgb
+fetch_rgb
+SKIP
+output
+frames_rgba
+frames_rgb
+frames_mono
+merge
+update
+wait
+empty_task
+gpu_scheduler
+stop_service
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy/tops.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy.order"
+Content-Type: text/plain
+
+10
+import_rgba
+OUT_RGBA
+import_rgb
+OUT_RGB
+import_mono
+export_mono
+OUT_MONO
+export_rgb
+export_rgba
+tops
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/proxy.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/preview.init"
+Content-Type: text/plain
+
+type = rop_image
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/preview.def"
+Content-Type: text/plain
+
+comment ""
+position -18.8048 -11.3621
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.65 0.4 0.5 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/preview.chn"
+Content-Type: text/plain
+
+{
+    channel f1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $FSTART }
+    }
+    channel f2 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $FEND }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/preview.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+execute	[ 0	locks=0 ]	(	0	)
+renderpreview	[ 0	locks=0 ]	(	0	)
+executebackground	[ 0	locks=0 ]	(	0	)
+renderdialog	[ 0	locks=0 ]	(	0	)
+trange	[ 0	locks=0 ]	(	"normal"	)
+f	[ 0	locks=0 ]	(	[ f1	0 ] 	[ f2	0 ] 	1	)
+setudim	[ 0	locks=0 ]	(	"off"	)
+udim	[ 0	locks=0 ]	(	1001	1001	)
+take	[ 0	locks=0 ]	(	_current_	)
+coppath	[ 0	locks=0 ]	(	../dive	)
+copoutput	[ 0	locks=0 ]	(	$HIP/render/$HIPNAME.$OS.$F4.exr	)
+docompile	[ 0	locks=0 ]	(	"off"	)
+setres	[ 0	locks=0 ]	(	"off"	)
+res	[ 0	locks=0 ]	(	1024	1024	)
+resmenu	[ 0	locks=0 ]	(	"none"	)
+setpixelscale	[ 0	locks=0 ]	(	"off"	)
+pixelscale	[ 0	locks=0 ]	(	1	)
+setborder	[ 0	locks=0 ]	(	"off"	)
+border	[ 0	locks=0 ]	(	"wrap"	)
+setprecision	[ 0	locks=0 ]	(	"off"	)
+precision	[ 0	locks=0 ]	(	"b32"	)
+colorconversion	[ 0	locks=0 ]	(	"ocio"	)
+ociocolorspace	[ 0	locks=0 ]	(	Automatic	)
+ociolook	[ 0	locks=0 ]	(	None	)
+ociodisplay	[ 0	locks=0 ]	(	"sRGB - Display"	)
+ocioview	[ 0	locks=0 ]	(	"ACES 1.0 - SDR Video"	)
+saveretry	[ 0	locks=0 ]	(	0	)
+reloadfiles	[ 0	locks=0 ]	(	"off"	)
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	0	)
+addaovs	[ 0	locks=0 ]	(	0	)
+outputaovs	[ 0	locks=0 ]	(	1	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+savebackground	[ 0	locks=0 ]	(	"on"	)
+exportattribs	[ 0	locks=0 ]	(	"on"	)
+attribfilter	[ 0	locks=0 ]	(	""	)
+vm_image_artist	[ 0	locks=0 ]	(	""	)
+vm_image_comment	[ 0	locks=0 ]	(	""	)
+vm_image_hostname	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_label	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
+mktx	[ 0	locks=0 ]	(	"off"	)
+txtilesize	[ 0	locks=0 ]	(	64	64	)
+txmipmapfilter	[ 0	locks=0 ]	(	box	)
+vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
+vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
+vm_image_exr_compression	[ 0	locks=0 ]	(	"dwab"	)
+dwa_compression	[ 0	locks=0 ]	(	85	)
+pngtga_alpha_multiplication	[ 0	locks=0 ]	(	"premult"	)
+tprerender	[ 0	locks=0 ]	(	"on"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"on"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"on"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostwrite	[ 0	locks=0 ]	(	"on"	)
+postwrite	[ 0	locks=0 ]	(	""	)
+lpostwrite	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"on"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+aov1	[ 0	locks=0 ]	(	beauty	)
+size1	[ 0	locks=0 ]	(	"float16"	)
+raw1	[ 0	locks=0 ]	(	"off"	)
+useport1	[ 0	locks=0 ]	(	"off"	)
+port1	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/preview.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/render.init"
+Content-Type: text/plain
+
+type = rop_image
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/render.def"
+Content-Type: text/plain
+
+comment ""
+position -18.8048 -12.1741
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.65 0.4 0.5 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/render.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+execute	[ 0	locks=0 ]	(	0	)
+renderpreview	[ 0	locks=0 ]	(	0	)
+executebackground	[ 0	locks=0 ]	(	0	)
+renderdialog	[ 0	locks=0 ]	(	0	)
+trange	[ 0	locks=0 ]	(	"normal"	)
+f	[ 0	locks=0 ]	(	1001	1001	1	)
+setudim	[ 0	locks=0 ]	(	"off"	)
+udim	[ 0	locks=0 ]	(	1001	1001	)
+take	[ 0	locks=0 ]	(	_current_	)
+coppath	[ 0	locks=0 ]	(	../dive	)
+copoutput	[ 0	locks=0 ]	(	""	)
+docompile	[ 0	locks=0 ]	(	"off"	)
+setres	[ 0	locks=0 ]	(	"off"	)
+res	[ 0	locks=0 ]	(	1024	1024	)
+resmenu	[ 0	locks=0 ]	(	"none"	)
+setpixelscale	[ 0	locks=0 ]	(	"off"	)
+pixelscale	[ 0	locks=0 ]	(	1	)
+setborder	[ 0	locks=0 ]	(	"off"	)
+border	[ 0	locks=0 ]	(	"wrap"	)
+setprecision	[ 0	locks=0 ]	(	"off"	)
+precision	[ 0	locks=0 ]	(	"b32"	)
+colorconversion	[ 0	locks=0 ]	(	"ocio"	)
+ociocolorspace	[ 0	locks=0 ]	(	Automatic	)
+ociolook	[ 0	locks=0 ]	(	None	)
+ociodisplay	[ 0	locks=0 ]	(	Default	)
+ocioview	[ 0	locks=0 ]	(	Default	)
+saveretry	[ 0	locks=0 ]	(	0	)
+reloadfiles	[ 0	locks=0 ]	(	"off"	)
+stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	0	)
+addaovs	[ 0	locks=0 ]	(	0	)
+outputaovs	[ 0	locks=0 ]	(	1	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+savebackground	[ 0	locks=0 ]	(	"on"	)
+exportattribs	[ 0	locks=0 ]	(	"on"	)
+attribfilter	[ 0	locks=0 ]	(	""	)
+vm_image_artist	[ 0	locks=0 ]	(	""	)
+vm_image_comment	[ 0	locks=0 ]	(	""	)
+vm_image_hostname	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_label	[ 0	locks=0 ]	(	""	)
+vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
+mktx	[ 0	locks=0 ]	(	"off"	)
+txtilesize	[ 0	locks=0 ]	(	64	64	)
+txmipmapfilter	[ 0	locks=0 ]	(	box	)
+vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
+vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
+vm_image_exr_compression	[ 0	locks=0 ]	(	"dwab"	)
+dwa_compression	[ 0	locks=0 ]	(	85	)
+pngtga_alpha_multiplication	[ 0	locks=0 ]	(	"premult"	)
+tprerender	[ 0	locks=0 ]	(	"on"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"on"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"on"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostwrite	[ 0	locks=0 ]	(	"on"	)
+postwrite	[ 0	locks=0 ]	(	""	)
+lpostwrite	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"on"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+aov1	[ 0	locks=0 ]	(	beauty	)
+size1	[ 0	locks=0 ]	(	"float32"	)
+raw1	[ 0	locks=0 ]	(	"off"	)
+useport1	[ 0	locks=0 ]	(	"on"	)
+port1	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/render.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.order"
+Content-Type: text/plain
+
+5
+output
+dive
+proxy
+preview
+render
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

@@ -1,0 +1,33 @@
+# Dialog script for th::rename_packed::1.0 automatically generated
+
+{
+    name	th::rename_packed::1.0
+    script	th::rename_packed::1.0
+    label	"th rename packed"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Sub-Network Input #1"
+    inputlabel	2	"Sub-Network Input #2"
+    inputlabel	3	"Sub-Network Input #3"
+    inputlabel	4	"Sub-Network Input #4"
+
+    parm {
+        name    "from0"
+        label   "From"
+        type    string
+        default { "" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "to0"
+        label   "To"
+        type    string
+        default { "" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini.sops import import_rigs
+
+import_rigs.on_created(kwargs['node'])

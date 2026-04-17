@@ -1,0 +1,14 @@
+Operator:     th::import_lop_camera::1.0
+Label:        th import lop camera
+Path:         oplib:/th::Cop/import_lop_camera::1.0?th::Cop/import_lop_camera::1.0
+Icon:         COP_th-import_lop_camera-1.0
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 0
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Sat Jun 14 13:23:22 2025
+

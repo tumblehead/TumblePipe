@@ -1,0 +1,14 @@
+Operator:     th::import_layer::1.0
+Label:        th import layer
+Path:         oplib:/th::Lop/import_layer::1.0?th::Lop/import_layer::1.0
+Icon:         $TH_PIPELINE_PATH/resources/ImportShotLayer.png
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Thu Dec 11 16:53:22 2025
+

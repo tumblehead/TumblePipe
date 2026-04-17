@@ -1,0 +1,10 @@
+from tumblepipe.pipe.houdini.lops import import_layer
+
+def execute():
+    import_layer.execute()
+
+def select():
+    import_layer.select()
+    
+def open_location():
+    import_layer.open_location()

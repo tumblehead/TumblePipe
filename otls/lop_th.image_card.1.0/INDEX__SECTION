@@ -1,0 +1,14 @@
+Operator:     th::image_card::1.0
+Label:        th image card
+Path:         oplib:/th::Lop/image_card::1.0?th::Lop/image_card::1.0
+Icon:         hicon:/SVGIcons.index?PARTS_image.svg
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Mon Sep 29 13:25:35 2025
+

@@ -1,0 +1,7 @@
+from tumblepipe.pipe.houdini.sops import import_rig
+
+def execute():
+    import_rig.execute()
+
+def select():
+    import_rig.select()

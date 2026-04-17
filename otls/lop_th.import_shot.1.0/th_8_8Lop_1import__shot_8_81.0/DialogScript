@@ -1,0 +1,150 @@
+# Dialog script for th::import_shot::1.0 automatically generated
+
+{
+    name	th::import_shot::1.0
+    script	th::import_shot::1.0
+    label	"th import shot"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        parm {
+            name    "entity_select"
+            label   "Entity"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
+            parmtag { "script_callback" "hou.phm().select()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity"
+            label   "Entity"
+            type    string
+            invisible
+            joinnext
+            default { "from_context" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity_label"
+            label   "shot_label"
+            type    label
+            nolabel
+            default { "from_context: none" }
+        }
+        parm {
+            name    "variant"
+            label   "Variant"
+            type    string
+            default { "default" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import import_shot" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = import_shot.ImportShot(hou.pwd())" ]
+                [ "items = node.list_variant_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "department"
+            label   "Department"
+            type    string
+            joinnext
+            default { "from_context" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import import_shot" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = import_shot.ImportShot(hou.pwd())" ]
+                [ "items = node.list_department_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "department_label"
+            label   "department_label"
+            type    label
+            nolabel
+            default { "" }
+        }
+        parm {
+            name    "version"
+            label   "Version"
+            type    string
+            joinnext
+            default { "latest" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import import_shot" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = import_shot.ImportShot(hou.pwd())" ]
+                [ "items = node.list_version_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback" "" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "version_label"
+            label   "version_label"
+            type    label
+            nolabel
+            default { "" }
+        }
+    }
+
+    groupsimple {
+        name    "settings"
+        label   "Settings"
+
+        parm {
+            name    "include_procedurals"
+            label   "Include procedurals"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback" "" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "loadpayloads"
+            label   "Load Payloads"
+            type    toggle
+            default { "on" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "actions"
+        label   "Actions"
+
+        parm {
+            name    "import"
+            label   "Import"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

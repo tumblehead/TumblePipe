@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini.sops import rename_packed
+
+rename_packed.on_created(kwargs['node'])

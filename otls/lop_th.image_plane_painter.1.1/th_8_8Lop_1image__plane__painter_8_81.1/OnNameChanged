@@ -1,0 +1,33 @@
+import nodegraphutils
+
+# GET NEW AND OLD NAMES
+old_name = kwargs.get('old_name')
+new_name = kwargs.get('node').name()
+
+# GET NEW AND OLD PATHS
+new_path = kwargs.get('node').path()
+old_path = new_path.replace(new_name, old_name)
+
+def update_thumbnail_path():
+    desktop = hou.ui.curDesktop()
+    editor = desktop.paneTabOfType(hou.paneTabType.NetworkEditor)
+    
+    # GET ALL IMAGES
+    images = list(editor.backgroundImages())
+    
+    # ATTACH IMAGE WITH OLD PATH TO NEW PATH 
+    for image in images:
+        if image.relativeToPath() == old_path:
+            image.setRelativeToPath(new_path)
+    
+    # SAVE NETWORK IMAGES
+    editor.setBackgroundImages(images)
+    nodegraphutils.saveBackgroundImages(editor.pwd(), editor.backgroundImages())
+    nodegraphutils.loadBackgroundImages(editor.pwd())
+     
+update_thumbnail_path()
+
+# Reload Thumbnail
+node = kwargs['node']
+reload_button = node.parm("reload")
+reload_button.pressButton()

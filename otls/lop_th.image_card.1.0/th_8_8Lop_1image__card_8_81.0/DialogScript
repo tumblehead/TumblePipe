@@ -1,0 +1,30 @@
+# Dialog script for th::image_card::1.0 automatically generated
+
+{
+    name	th::image_card::1.0
+    script	th::th_image_card::1.0
+    label	"th image card"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "base_color_file"
+        label   "Color Map"
+        type    image
+        default { "uvgrid_grey.pic" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "parmvop" "1" }
+        parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+        parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+        parmtag { "script_action_icon" "NETWORKS_cop" }
+        parmtag { "usdvaluename" "inputs:base_color_file" }
+        parmtag { "usdvaluetype" "asset" }
+    }
+}

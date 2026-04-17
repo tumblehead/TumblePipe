@@ -1,0 +1,62 @@
+# Dialog script for th::puzzlemattes::4.0 automatically generated
+
+{
+    name	th::puzzlemattes::4.0
+    script	th::puzzlemattes::1.0
+    label	"th puzzle mattes"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "name"
+        label   "Name"
+        type    string
+        default { "$OS" }
+        parmtag { "script_callback_language" "python" }
+    }
+    groupsimple {
+        name    "channels_"
+        label   "Channels"
+
+        parm {
+            name    "red"
+            label   "Red"
+            type    string
+            default { "" }
+            menutoggle {
+            }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
+            parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane. Ctrl-click to select using the primitive picker dialog." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::usdpathtype" "primslist" }
+        }
+        parm {
+            name    "green"
+            label   "Green"
+            type    string
+            default { "" }
+            menutoggle {
+            }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+        }
+        parm {
+            name    "blue"
+            label   "Blue"
+            type    string
+            default { "" }
+            menutoggle {
+            }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+        }
+    }
+
+}

@@ -1,0 +1,199 @@
+# Dialog script for th::playblast::1.0 automatically generated
+
+{
+    name	th::playblast::1.0
+    script	th::playblast::1.0
+    label	"th playblast"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        parm {
+            name    "entity_source"
+            label   "Entity"
+            type    string
+            default { "from_context" }
+            menu {
+                "from_context"  "From context"
+                "from_settings" "From settings"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "shot"
+            label   "Shot"
+            type    string
+            default { "" }
+            disablewhen "{ entity_source != from_settings }"
+            hidewhen "{ entity_source != from_settings }"
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import playblast" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = playblast.Playblast(hou.pwd())" ]
+                [ "items = node.list_shot_uris()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "department"
+            label   "Department"
+            type    string
+            default { "" }
+            disablewhen "{ entity_source != from_settings }"
+            hidewhen "{ entity_source != from_settings }"
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import playblast" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = playblast.Playblast(hou.pwd())" ]
+                [ "items = node.list_department_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "camera"
+            label   "Camera"
+            type    string
+            default { "" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import playblast" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = playblast.Playblast(hou.pwd())" ]
+                [ "items = node.list_camera_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "settings"
+        label   "Settings"
+
+        parm {
+            name    "shadingmode"
+            label   "Shading Mode"
+            type    ordinal
+            default { "smooth" }
+            menu {
+                "wire"          "Wireframe"
+                "wireghost"     "Wireframe Ghost"
+                "hidden"        "Hidden Line"
+                "ghost"         "Hidden Line Ghost"
+                "matcap"        "MatCap Shaded"
+                "matcapwire"    "MatCap Wire Shaded"
+                "flat"          "Flat Shaded"
+                "flatwire"      "Flat Wire Shaded"
+                "smooth"        "Smooth Shaded"
+                "smoothwire"    "Smooth Wire Shaded"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "lighting"
+            label   "Lighting"
+            type    ordinal
+            default { "headlight" }
+            menu {
+                "off"           "Off"
+                "headlight"     "Headlight Only"
+                "full"          "Full"
+                "fullshadows"   "Full with Shadows"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "frame_range"
+            label   "Frame Range"
+            type    string
+            default { "from_config" }
+            menu {
+                "from_config"   "From Config"
+                "from_settings" "From Settings"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "frame_settings"
+            label   "First/Last-Frame"
+            type    intvector2
+            size    2
+            default { "1001" "1001" }
+            disablewhen "{ frame_range != from_settings }"
+            range   { 1! 999999! }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "roll_settings"
+            label   "Pre/Post-Roll"
+            type    intvector2
+            size    2
+            default { "0" "0" }
+            disablewhen "{ frame_range != from_settings }"
+            range   { 0! 999999! }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "res"
+            label   "Resolution"
+            type    integer
+            size    2
+            default { "1280" "720" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "actions"
+        label   "Actions"
+
+        parm {
+            name    "playblast"
+            label   "Playblast"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().export()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "view_latest"
+            label   "View latest"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().view_latest()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "open_location"
+            label   "Browse All"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().open_location()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

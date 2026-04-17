@@ -1,0 +1,7 @@
+from tumblepipe.pipe.houdini.lops import render_settings
+
+def load():
+    render_settings.load()
+
+def save():
+    render_settings.save()

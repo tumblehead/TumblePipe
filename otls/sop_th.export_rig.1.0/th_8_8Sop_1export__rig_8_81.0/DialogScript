@@ -1,0 +1,69 @@
+# Dialog script for th::export_rig::1.0 automatically generated
+
+{
+    name	th::export_rig::1.0
+    script	th::th_export_rig::1.0
+    label	"th export rig"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Sub-Network Input #1"
+    inputlabel	2	"Sub-Network Input #2"
+    inputlabel	3	"Sub-Network Input #3"
+    inputlabel	4	"Sub-Network Input #4"
+
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        parm {
+            name    "entity"
+            label   "Entity"
+            type    string
+            default { "from_context" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.sops import export_rig" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = export_rig.ExportRig(hou.pwd())" ]
+                [ "items = node.list_entity_uris()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "variant"
+            label   "Variant"
+            type    string
+            default { "default" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.sops import export_rig" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = export_rig.ExportRig(hou.pwd())" ]
+                [ "items = node.list_variant_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "action"
+        label   "Action"
+
+        parm {
+            name    "export"
+            label   "Export"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

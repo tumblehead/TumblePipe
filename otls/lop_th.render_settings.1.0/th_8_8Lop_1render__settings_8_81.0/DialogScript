@@ -1,0 +1,249 @@
+# Dialog script for th::render_settings::1.0 automatically generated
+
+{
+    name	th::render_settings::1.0
+    script	Tumblehead::th_export_render_preset::1.0
+    label	"th render settings"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    groupsimple {
+        name    "presets"
+        label   "Presets"
+
+        parm {
+            name    "preset"
+            label   "Preset Name"
+            type    string
+            joinnext
+            default { "default" }
+            menureplace {
+                [ "from tumblepipe.pipe.houdini.lops import render_settings" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = render_settings.RenderSettings(hou.pwd())" ]
+                [ "items = node.list_preset_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "load_preset"
+            label   "Load Preset"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().load()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "save_preset"
+            label   "Save Preset"
+            type    button
+            joinnext
+            default { "0" }
+            disablewhen "{ unlock_save == 0 }"
+            parmtag { "script_callback" "hou.phm().save()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "unlock_save"
+            label   "unlock_save"
+            type    toggle
+            nolabel
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "settings"
+        label   "Settings"
+
+        parm {
+            name    "camera"
+            label   "Camera"
+            type    string
+            default { "/cameras/render_camera" }
+            menureplace {
+                [ "opmenu -l -a settings camera" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, False)\n" }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::usdpathinput" "0" }
+            parmtag { "sidefx::usdpathtype" "prim" }
+        }
+        parm {
+            name    "resolution"
+            label   "Width/Height-Pixels"
+            type    intvector2
+            size    2
+            default { "1920" "1080" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "overscan"
+            label   "Width/Hight-Overscan"
+            type    vector2
+            invisible
+            size    2
+            default { "0" "0" }
+            range   { 0! 1 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "pathtracedsamples"
+            label   "Path Traced Samples"
+            type    integer
+            default { "64" }
+            range   { 1! 256 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "spare_category" "Sampling" }
+            parmtag { "uiscope" "viewport" }
+            parmtag { "usdvaluetype" "int" }
+        }
+        parm {
+            name    "diffuselimit"
+            label   "Diffuse Limit"
+            type    float
+            default { "2" }
+            range   { 0! 32 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "sidefx::slider" "snap_to_int" }
+            parmtag { "spare_category" "Limits" }
+            parmtag { "uiscope" "viewport" }
+            parmtag { "usdapischema" "KarmaRenderSettingsAPI" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "reflectionlimit"
+            label   "Reflection Limit"
+            type    float
+            default { "4" }
+            range   { 0! 32 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "sidefx::slider" "snap_to_int" }
+            parmtag { "spare_category" "Limits" }
+            parmtag { "uiscope" "viewport" }
+            parmtag { "usdapischema" "KarmaRenderSettingsAPI" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "refractionlimit"
+            label   "Refraction Limit"
+            type    float
+            default { "4" }
+            range   { 0! 32 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "sidefx::slider" "snap_to_int" }
+            parmtag { "spare_category" "Limits" }
+            parmtag { "uiscope" "viewport" }
+            parmtag { "usdapischema" "KarmaRenderSettingsAPI" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "volumelimit"
+            label   "Volume Limit"
+            type    float
+            default { "0" }
+            range   { 0! 32 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "sidefx::slider" "snap_to_int" }
+            parmtag { "spare_category" "Limits" }
+            parmtag { "uiscope" "None" }
+            parmtag { "usdapischema" "KarmaRenderSettingsAPI" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "ssslimit"
+            label   "SSS Limit"
+            type    float
+            default { "1" }
+            range   { 0! 32 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "sidefx::slider" "snap_to_int" }
+            parmtag { "spare_category" "Limits" }
+            parmtag { "uiscope" "None" }
+            parmtag { "usdapischema" "KarmaRenderSettingsAPI" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "enabledof"
+            label   "Enable Depth of Field"
+            type    toggle
+            default { "on" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "spare_category" "Sampling" }
+            parmtag { "uiscope" "viewport" }
+            parmtag { "usdapischema" "KarmaRenderSettingsAPI" }
+            parmtag { "usdvaluetype" "bool" }
+        }
+        parm {
+            name    "enablemblur"
+            label   "Enable Motion Blur"
+            type    toggle
+            default { "on" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "spare_category" "Sampling" }
+            parmtag { "uiscope" "viewport" }
+            parmtag { "usdapischema" "KarmaRenderSettingsAPI" }
+            parmtag { "usdvaluetype" "bool" }
+        }
+        groupsimple {
+            name    "dicing"
+            label   "Dicing"
+
+            parm {
+                name    "usedicingcamera"
+                label   "Dicing Camera"
+                type    toggle
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "dicingframe"
+                label   "Source Frame"
+                type    integer
+                default { "1001" }
+                disablewhen "{ usedicingcamera == 0 }"
+                range   { 901! 1201 }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "dicingfocallength"
+                label   "Add Focal Length"
+                type    float
+                default { "0" }
+                disablewhen "{ usedicingcamera == 0 }"
+                range   { -0.1 0.1 }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "dicingqualityscale"
+                label   "Quality Scale"
+                type    float
+                default { "0.5" }
+                range   { 0! 16 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "spare_category" "Dicing" }
+                parmtag { "uiscope" "viewport" }
+                parmtag { "usdapischema" "KarmaRenderSettingsAPI" }
+                parmtag { "usdvaluetype" "float" }
+            }
+        }
+
+    }
+
+}

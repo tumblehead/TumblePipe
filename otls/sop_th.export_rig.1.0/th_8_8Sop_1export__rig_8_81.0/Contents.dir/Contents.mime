@@ -1,0 +1,323 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Sop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::export_rig::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 3.99691 -22.8174
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.631373 0.870588 1 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"nodeshape":{
+		"type":"string",
+		"value":"bulge"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.inp"
+Content-Type: text/plain
+
+1
+0 2.8842699999999999 4.4625999999999992 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/export.init"
+Content-Type: text/plain
+
+type = filecache::2.0
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/export.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 2.88427 3.3331
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.9 0.8 0.55 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/export.chn"
+Content-Type: text/plain
+
+{
+    channel f1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $FSTART }
+    }
+    channel f2 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $FEND }
+    }
+    channel clampfirst {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"f1\") }
+    }
+    channel clamplast {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"f2\") }
+    }
+    channel index {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $FF-1 }
+    }
+    channel frame {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = "{
+    if(ch(\"timedependent\"))
+    {
+        rawframe = $T * $FPS + 1;
+        rawframe -= ch(\"f1\");
+        rawframe *= ch(\"substeps\") / ch(\"f3\");
+        rawframe = rint(rawframe);
+        rawframe /= ch(\"substeps\") / ch(\"f3\");
+        rawframe += ch(\"f1\");
+        if(ch(\"doclampfirst\") && ch(\"doclamplast\")) return clamp(rawframe,ch(\"clampfirst\"),ch(\"clamplast\"));
+        if(ch(\"doclampfirst\")) return max(ch(\"clampfirst\"),rawframe);
+        if(ch(\"doclamplast\")) return min(ch(\"clamplast\"),rawframe);
+        return rawframe;
+    }
+    else
+    {
+        return 1;
+    }
+}" }
+    }
+    channel descriptivelabel {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = "ifs(ch(\"filemethod\"),chsraw(\"file\"),strreplace(strreplace(chs(\"cachename\"),chs(\"basename\"),chsraw(\"basename\")),chs(\"framestr\"),\".\" + '$F' + 4))" }
+    }
+    channel sopoutput {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = "{
+    if(ch('filemethod'))
+    {
+        return chs('file');
+    }
+    else
+    {
+        return chs('cachedir') + '/' + chs('cachename');
+    }
+}" }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/export.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+loadfromdisk	[ 0	locks=0 ]	(	"off"	)
+reload	[ 0	locks=0 ]	(	0	)
+filemethod	[ 0	locks=0 ]	(	"explicit"	)
+timedependent	[ 0	locks=0 ]	(	"on"	)
+basename	[ 0	locks=0 ]	(	$HIPNAME.$OS	)
+filetype	[ 0	locks=0 ]	(	".bgeo.sc"	)
+file	[ 0	locks=0 ]	(	""	)
+openfiledir	[ 0	locks=0 ]	(	0	)
+basedir	[ 0	locks=0 ]	(	$HIP/geo	)
+openbasedir	[ 0	locks=0 ]	(	0	)
+enableversion	[ 0	locks=0 ]	(	"on"	)
+version	[ 0	locks=0 ]	(	1	)
+sepparm4	[ 0	locks=0 ]	(	)
+folder1	[ 0	locks=0 ]	(	0	0	0	0	)
+folder3	[ 0	locks=0 ]	(	1	)
+execute	[ 0	locks=0 ]	(	0	)
+cookoutputnode	[ 0	locks=0 ]	(	0	)
+dirtyall	[ 0	locks=0 ]	(	0	)
+folder2	[ 0	locks=0 ]	(	1	)
+trange	[ 0	locks=0 ]	(	"off"	)
+cachesim	[ 0	locks=0 ]	(	"on"	)
+f	[ 0	locks=0 ]	(	[ f1	0 ] 	[ f2	0 ] 	1	)
+fmenu	[ 0	locks=0 ]	(	"fstartend"	)
+substeps	[ 0	locks=0 ]	(	1	)
+useframeoverride	[ 0	locks=0 ]	(	"off"	)
+frameoverride	[ 0	locks=0 ]	(	1	)
+folder1_2	[ 0	locks=0 ]	(	0	)
+doclampfirst	[ 0	locks=0 ]	(	"off"	)
+clampfirst	[ 0	locks=0 ]	(	[ clampfirst	0 ] 	)
+doclamplast	[ 0	locks=0 ]	(	"off"	)
+clamplast	[ 0	locks=0 ]	(	[ clamplast	0 ] 	)
+sepparm3	[ 0	locks=0 ]	(	)
+loadtype	[ 0	locks=0 ]	(	"full"	)
+packedviewedit	[ 0	locks=0 ]	(	"unchanged"	)
+viewportlod	[ 0	locks=0 ]	(	"box"	)
+packexpanded	[ 0	locks=0 ]	(	"on"	)
+delayload	[ 0	locks=0 ]	(	"off"	)
+index	[ 0	locks=0 ]	(	[ index	0 ] 	)
+wrap	[ 0	locks=0 ]	(	"cycle"	)
+targettopnetwork	[ 0	locks=0 ]	(	topnet1	)
+topscheduler	[ 0	locks=0 ]	(	""	)
+deleteattributes	[ 0	locks=0 ]	(	""	)
+deletegroups	[ 0	locks=0 ]	(	""	)
+numcasts	[ 0	locks=0 ]	(	0	)
+folder7	[ 0	locks=0 ]	(	0	)
+loadfromdiskonsave	[ 0	locks=0 ]	(	"on"	)
+hardenbasename	[ 0	locks=0 ]	(	"on"	)
+sepparm	[ 0	locks=0 ]	(	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+initsim	[ 0	locks=0 ]	(	"off"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+savebackground	[ 0	locks=0 ]	(	"on"	)
+saveretry	[ 0	locks=0 ]	(	0	)
+sepparm2	[ 0	locks=0 ]	(	)
+take	[ 0	locks=0 ]	(	_current_	)
+folder8	[ 0	locks=0 ]	(	0	)
+missingframe	[ 0	locks=0 ]	(	"empty"	)
+loadretry	[ 0	locks=0 ]	(	0	)
+cachesize	[ 0	locks=0 ]	(	0	)
+prefetch	[ 0	locks=0 ]	(	"off"	)
+folder6	[ 0	locks=0 ]	(	0	)
+tprerender	[ 0	locks=0 ]	(	"off"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"off"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"off"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostwrite	[ 0	locks=0 ]	(	"off"	)
+postwrite	[ 0	locks=0 ]	(	""	)
+lpostwrite	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"off"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+folder9	[ 0	locks=0 ]	(	1	)
+frame	[ 0	locks=0 ]	(	[ frame	0 ] 	)
+framestr	[ 0	locks=0 ]	(	"`ifs (ch(\"timedependent\"), \".\" + fpadzero(4, if(ch(\"substeps\")>1, 3, 0), ch(\"frame\")), \"\")`"	)
+versionstr	[ 0	locks=0 ]	(	v`chs(\"version\")`	)
+sepparm8	[ 0	locks=0 ]	(	)
+cachedir	[ 0	locks=0 ]	(	"`chs(\"basedir\") + \"/\" + chs(\"basename\")``ifs(ch(\"enableversion\"), \"/\" + chs(\"versionstr\"),\"\")`"	)
+cachename	[ 0	locks=0 ]	(	"`chs(\"basename\")``ifs(ch(\"enableversion\"), \"_\" + chs(\"versionstr\"),\"\")``chs(\"framestr\")``chs(\"filetype\")`"	)
+descriptivelabel	[ 0	locks=0 ]	(	[ descriptivelabel	"ifs(ch(\"filemethod\"),chsraw(\"file\"),strreplace(strreplace(chs(\"cachename\"),chs(\"basename\"),chsraw(\"basename\")),chs(\"framestr\"),\".\" + '$F' + 4))" ] 	)
+sopoutput	[ 0	locks=0 ]	(	[ sopoutput	"{
+    if(ch('filemethod'))
+    {
+        return chs('file');
+    }
+    else
+    {
+        return chs('cachedir') + '/' + chs('cachename');
+    }
+}" ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/export.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

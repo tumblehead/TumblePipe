@@ -1,0 +1,14 @@
+Operator:     th::puzzlemattes::4.0
+Label:        th puzzle mattes
+Path:         oplib:/th::Lop/puzzlemattes::4.0?th::Lop/puzzlemattes::4.0
+Icon:         W:\_pipeline\pipeline\houdini\Tumblehead\resources/PuzzleMattes.png
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Wed Oct  1 15:37:38 2025
+

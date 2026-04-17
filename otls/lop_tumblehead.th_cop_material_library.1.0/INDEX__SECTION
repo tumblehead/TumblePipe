@@ -1,0 +1,14 @@
+Operator:     tumblehead::th_cop_material_library::1.0
+Label:        th cop material library
+Path:         oplib:/tumblehead::Lop/th_cop_material_library::1.0?tumblehead::Lop/th_cop_material_library::1.0
+Icon:         NETWORKS_mat
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Sat Oct 11 18:01:23 2025
+

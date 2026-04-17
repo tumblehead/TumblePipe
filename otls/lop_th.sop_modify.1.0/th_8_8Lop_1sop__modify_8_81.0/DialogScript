@@ -1,0 +1,239 @@
+# Dialog script for th::sop_modify::1.0 automatically generated
+
+{
+    name	th::sop_modify::1.0
+    script	th::sop_modify::1.0
+    label	"th sop modify"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    groupsimple {
+        name    "settings_parms"
+        label   "Settings"
+
+        parm {
+            name    "prim_paths"
+            label   "Import Prim Paths"
+            type    string
+            default { "" }
+            help    "None"
+            hidewhen "{ createprims == on }"
+            menutoggle {
+                [ "import loputils" ]
+                [ "return loputils.createPrimPatternMenu(kwargs['node'], 0)" ]
+                language python
+            }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
+            parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane. Ctrl-click to select using the primitive picker dialog." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::usdpathtype" "primlist" }
+            parmtag { "spare_category" "USD Prims" }
+        }
+        parm {
+            name    "bypass_cache"
+            label   "Bypass Cache"
+            type    toggle
+            default { "on" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "settings_caching_parms"
+        label   "Caching"
+        disablewhen "{ bypass_cache != off }"
+
+        parm {
+            name    "name"
+            label   "Cache Name"
+            type    string
+            joinnext
+            default { "$OS" }
+            menureplace {
+                [ "from tumblepipe.pipe.houdini.lops import sop_modify" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = sop_modify.SopModify(hou.pwd())" ]
+                [ "items = node.list_cache_names()" ]
+                [ "menu = list()" ]
+                [ "for item in items:" ]
+                [ "    menu.append(item)" ]
+                [ "    menu.append(item)" ]
+                [ "return menu" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "version"
+            label   "Version"
+            type    string
+            nolabel
+            joinnext
+            default { "" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import sop_modify" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = sop_modify.SopModify(hou.pwd())" ]
+                [ "items = node.list_version_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "latest"
+            label   "Latest"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().latest()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "frame_range"
+            label   "Frame Range"
+            type    string
+            default { "playback_range" }
+            menu {
+                "playback_range"    "Playback Range"
+                "from_settings"     "From Settings"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "frame_settings"
+            label   "First/Last/Step-Frame"
+            type    intvector
+            size    3
+            default { "1001" "1001" "1" }
+            disablewhen "{ frame_range != from_settings }"
+            range   { 0! 999999! }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "roll_settings"
+            label   "Pre/Post-Roll"
+            type    intvector2
+            size    2
+            default { "0" "0" }
+            disablewhen "{ frame_range != from_settings }"
+            range   { 0! 999999! }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        multiparm {
+            name    "exports"
+            label    "Exports"
+            parmtag { "multistartoffset" "0" }
+
+            groupcollapsible {
+                name    "export_parms#"
+                label   "Export"
+
+                parm {
+                    name    "export_name#"
+                    label   "Export Name"
+                    type    string
+                    default { "" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "export_prim_path#"
+                    label   "Prim Path"
+                    type    string
+                    default { "" }
+                    help    "None"
+                    hidewhen "{ createprims == on }"
+                    menureplace {
+                        [ "import loputils" ]
+                        [ "return loputils.createPrimPatternMenu(kwargs['node'], 0)" ]
+                        language python
+                    }
+                    parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
+                    parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane. Ctrl-click to select using the primitive picker dialog." }
+                    parmtag { "script_action_icon" "BUTTONS_reselect" }
+                    parmtag { "sidefx::usdpathtype" "primlist" }
+                    parmtag { "spare_category" "USD Prims" }
+                }
+                parm {
+                    name    "export_point_attribs#"
+                    label   "Point Attributes"
+                    type    string
+                    default { "" }
+                    range   { 0 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "export_vertex_attribs#"
+                    label   "Vertex Attributes"
+                    type    string
+                    default { "" }
+                    range   { 0 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "export_primitive_attribs#"
+                    label   "Primitive Attributes"
+                    type    string
+                    default { "" }
+                    range   { 0 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "export_detail_attribs#"
+                    label   "Detail Attributes"
+                    type    string
+                    default { "" }
+                    range   { 0 1 }
+                    parmtag { "autoscope" "0000000000000000" }
+                }
+                parm {
+                    name    "export_simulation#"
+                    label   "Simulation"
+                    type    toggle
+                    default { "on" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+        }
+
+        groupsimple {
+            name    "actions_parms"
+            label   "Actions"
+
+            parm {
+                name    "cache"
+                label   "Cache"
+                type    button
+                joinnext
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback" "hou.phm().cache()" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "load"
+                label   "Load"
+                type    button
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback" "hou.phm().load()" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
+}

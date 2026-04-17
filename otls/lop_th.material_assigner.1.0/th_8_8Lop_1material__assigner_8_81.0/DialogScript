@@ -1,0 +1,125 @@
+# Dialog script for th::material_assigner::1.0 automatically generated
+
+{
+    name	th::material_assigner::1.0
+    script	th::material_assigner::1.0
+    label	"th material assigner"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "init_"
+        label   "Initialize Scene Materials"
+        type    button
+        joinnext
+        default { "0" }
+        parmtag { "script_callback" "hou.phm().init_materials(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "update"
+        label   "Update Materials Paths"
+        type    button
+        default { "0" }
+        parmtag { "script_callback" "hou.phm().update_material_paths()" }
+        parmtag { "script_callback_language" "python" }
+    }
+    multiscroll {
+        name    "assignments"
+        label    "Material Assignments"
+        default 1
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "multistartoffset" "1" }
+
+        groupcollapsible {
+            name    "assignment_#"
+            label   "Assignment #"
+
+            parm {
+                name    "global#"
+                label   "Global"
+                type    toggle
+                invisible
+                default { "0" }
+                help    "When enabled Material will be applied to all mesh primitives, except Intance Proxies"
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "primpattern#"
+                label   "Primitives"
+                type    string
+                default { "" }
+                hidewhen "{ global# == 1 }"
+                menutoggle {
+                    "%type:Mesh ^%instanceproxy()"  "Meshes"
+                    "%type:Volume"                  "Volumes"
+                }
+                parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True, allowinstanceproxies=True)" }
+                parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nShift-click to select using the primitive pattern editor.\nAlt-click to toggle movement of the display flag." }
+                parmtag { "script_action_icon" "BUTTONS_reselect" }
+                parmtag { "sidefx::usdpathtype" "primlist" }
+            }
+            parm {
+                name    "matspecpath#"
+                label   "Material"
+                type    string
+                default { "" }
+                menureplace {
+                    [ "from pxr import Usd, UsdShade" ]
+                    [ "import hou" ]
+                    [ "" ]
+                    [ "menu = list()" ]
+                    [ "" ]
+                    [ "node = kwargs['node']" ]
+                    [ "stage = node.stage()" ]
+                    [ "" ]
+                    [ "# Collect all material paths" ]
+                    [ "materials = [prim for prim in stage.Traverse() if prim.IsA(UsdShade.Material)]" ]
+                    [ "" ]
+                    [ "# Append Materials to menu" ]
+                    [ "if materials:" ]
+                    [ "    for mat in materials:" ]
+                    [ "        path_str = str(mat.GetPath())   # Full USD path" ]
+                    [ "        name_str = mat.GetName()        # Just the prim name" ]
+                    [ "        menu.append(path_str)           # token" ]
+                    [ "        menu.append(name_str)           # label" ]
+                    [ "else:" ]
+                    [ "    print(\"No materials found in stage.\")" ]
+                    [ "" ]
+                    [ "# chosen_material = hou.ui.selectFromList([str(mat.GetName()) for mat in materials], " ]
+                    [ "# title=\"Select Material to Assign\")," ]
+                    [ "# exlcusive=True," ]
+                    [ "# num_visible_rows = len(materials)" ]
+                    [ "#" ]
+                    [ "# menu[chosen_material]" ]
+                    [ "" ]
+                    [ "return menu" ]
+                    language python
+                }
+                parmtag { "script_action" "import loputils\nkwargs['ctrl'] = True\nloputils.selectPrimsInParm(kwargs, True, allowinstanceproxies=True)" }
+                parmtag { "script_action_help" "Select a primitive using the primitive picker dialog." }
+                parmtag { "script_action_icon" "BUTTONS_reselect" }
+                parmtag { "sidefx::usdpathtype" "prim" }
+            }
+            parm {
+                name    "bindpurpose#"
+                label   "Purpose"
+                type    string
+                default { "full" }
+                menu {
+                    "full"      "Render"
+                    "preview"   "Preview"
+                }
+            }
+        }
+
+    }
+
+}

@@ -1,0 +1,555 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Lop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::cache::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+comment ""
+position -16.2001 -4.60716
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.631373 0.870588 1 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"nodeshape":{
+		"type":"string",
+		"value":"rect"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.inp"
+Content-Type: text/plain
+
+1
+0 -0.39622639460524267 7.6808075800596542 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/cache.init"
+Content-Type: text/plain
+
+type = filecache
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/cache.def"
+Content-Type: text/plain
+
+comment ""
+position -0.396226 6.71105
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/cache.chn"
+Content-Type: text/plain
+
+{
+    channel f1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../f1\") }
+    }
+    channel f2 {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      segment { length = 0 value = 240 240 expr = ch(\"../f2\") }
+    }
+    channel descriptivelabel {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = ifs(ch(\"filemethod\"),chsraw(\"file\"),chs(\"cachename\")) }
+    }
+    channel lopoutput {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = "{
+    if(ch('filemethod'))
+    {
+        return chs('file');
+    }
+    else
+    {
+        return chs('cachedir') + '/' + chs('cachename');
+    }
+}" }
+    }
+    channel loadfromdisk {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../loadfromdisk\") }
+    }
+    channel file {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../file\") }
+    }
+    channel execute {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../execute\") }
+    }
+    channel f3 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../f3\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/cache.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+loadfromdisk	[ 0	locks=0 ]	(	[ loadfromdisk	0 ] 	)
+reload	[ 0	locks=0 ]	(	0	)
+filemethod	[ 0	locks=0 ]	(	"explicit"	)
+basename	[ 0	locks=0 ]	(	$OS	)
+filetype	[ 0	locks=0 ]	(	".usd"	)
+file	[ 0	locks=0 ]	(	[ file	$HIP/usd/$OS.usd ] 	)
+openfiledir	[ 0	locks=0 ]	(	0	)
+basedir	[ 0	locks=0 ]	(	$HIP/usd	)
+openbasedir	[ 0	locks=0 ]	(	0	)
+enableversion	[ 0	locks=0 ]	(	"on"	)
+version	[ 0	locks=0 ]	(	1	)
+sepparm6	[ 0	locks=0 ]	(	)
+folder1	[ 0	locks=0 ]	(	0	0	0	0	)
+folder15	[ 0	locks=0 ]	(	1	)
+execute	[ 0	locks=0 ]	(	[ execute	0 ] 	)
+cookoutputnode	[ 0	locks=0 ]	(	0	)
+dirtyall	[ 0	locks=0 ]	(	0	)
+folder3	[ 0	locks=0 ]	(	1	)
+trange	[ 0	locks=0 ]	(	"range"	)
+f	[ 0	locks=0 ]	(	[ f1	0 ] 	[ f2	0 ] 	[ f3	1 ] 	)
+fmenu	[ 0	locks=0 ]	(	"fstartend"	)
+substeps	[ 0	locks=0 ]	(	1	)
+useframeoverride	[ 0	locks=0 ]	(	"off"	)
+frameoverride	[ 0	locks=0 ]	(	1	)
+specificrange	[ 0	locks=0 ]	(	`chs(\"f1\")`-`chs(\"f2\")`:`chs(\"f3\")`	)
+targettopnetwork	[ 0	locks=0 ]	(	topnet1	)
+Local	[ 0	locks=0 ]	(	1	)
+topscheduler	[ 0	locks=0 ]	(	""	)
+folder0	[ 0	locks=0 ]	(	1	)
+savestyle	[ 0	locks=0 ]	(	flattenstage	)
+fileperframe	[ 0	locks=0 ]	(	"off"	)
+errorsavingimplicitpaths	[ 0	locks=0 ]	(	"off"	)
+striplayerbreaks	[ 0	locks=0 ]	(	"off"	)
+folder4	[ 0	locks=0 ]	(	1	)
+enableoutputprocessor_simplerelativepaths	[ 0	locks=0 ]	(	"on"	)
+enableoutputprocessor_savetodirectory	[ 0	locks=0 ]	(	"off"	)
+enableoutputprocessor_savepathsrelativetooutput	[ 0	locks=0 ]	(	"on"	)
+enableoutputprocessor_usesearchpaths	[ 0	locks=0 ]	(	"off"	)
+enableoutputprocessor_matchoutputextension	[ 0	locks=0 ]	(	"off"	)
+contextoptions_group2	[ 0	locks=0 ]	(	1	)
+optioncount	[ 0	locks=0 ]	(	0	)
+folder5	[ 0	locks=0 ]	(	0	)
+loadfromdiskonsave	[ 0	locks=0 ]	(	"on"	)
+hardenbasename	[ 0	locks=0 ]	(	"on"	)
+sepparm3	[ 0	locks=0 ]	(	)
+mkpath	[ 0	locks=0 ]	(	"on"	)
+initsim	[ 0	locks=0 ]	(	"off"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+savebackground	[ 0	locks=0 ]	(	"on"	)
+saveretry	[ 0	locks=0 ]	(	0	)
+savebackuphip	[ 0	locks=0 ]	(	"off"	)
+savethumbnails	[ 0	locks=0 ]	(	"off"	)
+sepparm2	[ 0	locks=0 ]	(	)
+take	[ 0	locks=0 ]	(	_current_	)
+folder11	[ 0	locks=0 ]	(	0	)
+missingfile	[ 0	locks=0 ]	(	"warn"	)
+loadretry	[ 0	locks=0 ]	(	0	)
+cachesize	[ 0	locks=0 ]	(	0	)
+prefetch	[ 0	locks=0 ]	(	"off"	)
+folder9	[ 0	locks=0 ]	(	0	)
+tprerender	[ 0	locks=0 ]	(	"off"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"off"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"off"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"off"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+folder12	[ 0	locks=0 ]	(	0	)
+versionstr	[ 0	locks=0 ]	(	v`chs(\"version\")`	)
+sepparm9	[ 0	locks=0 ]	(	)
+cachedir	[ 0	locks=0 ]	(	"`chs(\"basedir\") + \"/\" + chs(\"basename\")``ifs(ch(\"enableversion\"), \"/\" + chs(\"versionstr\"),\"\")`"	)
+cachename	[ 0	locks=0 ]	(	"`chs(\"basename\")``ifs(ch(\"enableversion\"), \"_\" + chs(\"versionstr\"),\"\")``chs(\"filetype\")`"	)
+descriptivelabel	[ 0	locks=0 ]	(	[ descriptivelabel	ifs(ch(\"filemethod\"),chsraw(\"file\"),chs(\"cachename\")) ] 	)
+lopoutput	[ 0	locks=0 ]	(	[ lopoutput	"{
+    if(ch('filemethod'))
+    {
+        return chs('file');
+    }
+    else
+    {
+        return chs('cachedir') + '/' + chs('cachename');
+    }
+}" ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/cache.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.def"
+Content-Type: text/plain
+
+comment ""
+position -0.396226 2.95942
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	switch 0 1 "input1"
+}
+inputs
+{
+0 	switch 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/timeshift.init"
+Content-Type: text/plain
+
+type = timeshift
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/timeshift.def"
+Content-Type: text/plain
+
+comment ""
+position -1.83882 5.24575
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+1 	cache 1 1 "input1"
+}
+inputs
+{
+0 	cache 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/timeshift.chn"
+Content-Type: text/plain
+
+{
+    channel frame {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../frame\") }
+    }
+    channel time {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $T }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/timeshift.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+inputtimegroup	[ 0	locks=0 ]	(	0	)
+cookinputattime	[ 0	locks=0 ]	(	"on"	)
+attribtimegroup	[ 0	locks=0 ]	(	0	)
+evalattribsattime	[ 0	locks=0 ]	(	"on"	)
+primpattern	[ 0	locks=0 ]	(	"`lopinputprims('.', 0)`"	)
+proppattern	[ 0	locks=0 ]	(	*	)
+getattribdefault	[ 0	locks=0 ]	(	"off"	)
+setattribdefault	[ 0	locks=0 ]	(	"off"	)
+timegroup	[ 0	locks=0 ]	(	0	)
+method	[ 0	locks=0 ]	(	byframe	)
+frame	[ 0	locks=0 ]	(	[ frame	0 ] 	)
+integerframes	[ 0	locks=0 ]	(	"on"	)
+time	[ 0	locks=0 ]	(	[ time	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/timeshift.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/switch.init"
+Content-Type: text/plain
+
+type = switch
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/switch.def"
+Content-Type: text/plain
+
+comment ""
+position -0.396226 4.08892
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+1 	timeshift 0 1 "input1"
+2 	cache 1 1 "input2"
+}
+inputs
+{
+0 	timeshift 0 1
+1 	cache 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 1 0.7 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/switch.editableinputdata"
+Content-Type: text/plain
+
+[
+	{
+	},
+	{
+	}
+]
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/switch.chn"
+Content-Type: text/plain
+
+{
+    channel input {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../input\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/switch.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+chooseinputbyname	[ 0	locks=0 ]	(	"off"	)
+input	[ 0	locks=0 ]	(	[ input	0 ] 	)
+selectinputname	[ 0	locks=0 ]	(	""	)
+selectinputvalue	[ 0	locks=0 ]	(	""	)
+config_separator	[ 0	locks=0 ]	(	)
+badinput	[ 0	locks=0 ]	(	ignore	)
+fallback	[ 0	locks=0 ]	(	0	)
+selectfallbackname	[ 0	locks=0 ]	(	""	)
+inputname	[ 0	locks=0 ]	(	"`opinput(\".\", @input)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/switch.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.order"
+Content-Type: text/plain
+
+4
+output0
+cache
+timeshift
+switch
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

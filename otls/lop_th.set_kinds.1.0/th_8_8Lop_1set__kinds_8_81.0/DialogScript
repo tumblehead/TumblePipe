@@ -1,0 +1,44 @@
+# Dialog script for th::set_kinds::1.0 automatically generated
+
+{
+    name	th::set_kinds::1.0
+    script	th::set_kinds::1.0
+    label	"th set kinds"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        parm {
+            name    "prim_path"
+            label   "Primitive"
+            type    string
+            default { "" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "action"
+        label   "Action"
+
+        parm {
+            name    "apply"
+            label   "Apply"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

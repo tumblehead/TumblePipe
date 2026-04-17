@@ -1,0 +1,10 @@
+{
+	"values":["20.5.550"
+	],
+	"indexes":{
+		"hdaroot/input.userdata":0,
+		"hdaroot/equalize_switch.userdata":0,
+		"hdaroot/output.userdata":0,
+		"hdaroot/ramp.userdata":0
+	}
+}

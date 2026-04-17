@@ -1,0 +1,216 @@
+# Dialog script for th::render_layer_setup::1.0 automatically generated
+
+{
+    name	th::render_layer_setup::1.0
+    script	th::render_layer_setup::1.0
+    label	"th render layer setup"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "geometry_overwrite___"
+        label   "Geometry Overwrite"
+        type    toggle
+        default { "0" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "overwrite_materials___"
+        label   "Material Overwrite"
+        type    toggle
+        default { "0" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "settings_overwrite"
+        label   "Overwrite settings"
+        type    toggle
+        default { "0" }
+        parmtag { "script_callback_language" "python" }
+    }
+    groupcollapsible {
+        name    "folder2"
+        label   "Render Settings Overwrites"
+        hidewhentab "{ settings_overwrite==false }"
+        hidewhen "{ settings_overwrite==false }"
+
+        parm {
+            name    "deatctive_materials"
+            label   "Deactive Materials"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "xn__karmaglobaldisable_lighting_0kbg"
+            label   "Disable Lighting"
+            type    toggle
+            default { "on" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "spare_category" "Ambient Occlusion" }
+            parmtag { "uiscope" "None" }
+            parmtag { "usdapischema" "KarmaRenderSettingsAPI" }
+            parmtag { "usdvaluetype" "bool" }
+        }
+    }
+
+    multiparm {
+        name    "overwrites"
+        label    "Overwrites"
+
+        groupcollapsible {
+            name    "layyer_#"
+            label   "Layer #"
+
+            groupsimple {
+                name    "geometry_overwrite_#"
+                label   "Geometry Overwrite"
+
+                multiparm {
+                    name    "folder0_#"
+                    label    "Geometry Overwrites"
+
+                    groupsimple {
+                        name    "folder3_#_#"
+                        label   "Include"
+
+                        parm {
+                            name    "includepattern1_#_#"
+                            label   "Primitives"
+                            type    string
+                            default { "" }
+                            menutoggle {
+                                [ "opmenu -l -a collection_include includepattern1" ]
+                            }
+                            parmtag { "autoscope" "0000000000000000" }
+                            parmtag { "editor" "0" }
+                            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True, allowinstanceproxies=True)" }
+                            parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nShift-click to select using the primitive pattern editor.\nAlt-click to toggle movement of the display flag." }
+                            parmtag { "script_action_icon" "BUTTONS_reselect" }
+                            parmtag { "sidefx::usdpathtype" "primlist" }
+                        }
+                        parm {
+                            name    "xn__primvarskarmaobjectrendervisibility_4xbfg#_#"
+                            label   "Render Visibility"
+                            type    string
+                            default { "-primary" }
+                            menureplace {
+                                "*"                             "Visible to all"
+                                "primary"                       "Visible only to primary rays"
+                                "primary|shadow"                "Visible only to primary and shadow rays"
+                                "-primary"                      "Invisible to primary rays (Phantom)"
+                                "-diffuse"                      "Invisible to diffuse rays"
+                                "-diffuse&-reflect&-refract"    "Invisible to secondary rays"
+                                "-shadow"                       "Invisible to shadow rays"
+                                ""                              "Invisible (Unrenderable)"
+                            }
+                            parmtag { "autoscope" "0000000000000000" }
+                            parmtag { "spare_category" "Shading" }
+                            parmtag { "uiscope" "None" }
+                            parmtag { "usdvaluetype" "string" }
+                        }
+                        parm {
+                            name    "xn__primvarskarmaobjectholdoutmode_zpbfg#_#"
+                            label   "Holdout Mode"
+                            type    ordinal
+                            default { "None" }
+                            menu {
+                                "None"          "None"
+                                "Matte"         "Matte"
+                                "Background"    "Background"
+                            }
+                            parmtag { "autoscope" "0000000000000000" }
+                            parmtag { "spare_category" "Shading" }
+                            parmtag { "uiscope" "None" }
+                            parmtag { "usdvaluetype" "int" }
+                        }
+                    }
+
+                    groupsimple {
+                        name    "folder4_#_#"
+                        label   "Exclude"
+
+                        parm {
+                            name    "xn__primvarskarmaobjectrendervisibility2_rzbfg#_#"
+                            label   "Render Visibility"
+                            type    string
+                            default { "-diffuse&-reflect&-refract" }
+                            menureplace {
+                                "*"                             "Visible to all"
+                                "primary"                       "Visible only to primary rays"
+                                "primary|shadow"                "Visible only to primary and shadow rays"
+                                "-primary"                      "Invisible to primary rays (Phantom)"
+                                "-diffuse"                      "Invisible to diffuse rays"
+                                "-diffuse&-reflect&-refract"    "Invisible to secondary rays"
+                                "-shadow"                       "Invisible to shadow rays"
+                                ""                              "Invisible (Unrenderable)"
+                            }
+                            parmtag { "autoscope" "0000000000000000" }
+                            parmtag { "spare_category" "Shading" }
+                            parmtag { "uiscope" "None" }
+                            parmtag { "usdvaluetype" "string" }
+                        }
+                        parm {
+                            name    "xn__primvarskarmaobjectholdoutmode2_mrbfg#_#"
+                            label   "Holdout Mode"
+                            type    ordinal
+                            default { "None" }
+                            menu {
+                                "None"          "None"
+                                "Matte"         "Matte"
+                                "Background"    "Background"
+                            }
+                            parmtag { "autoscope" "0000000000000000" }
+                            parmtag { "spare_category" "Shading" }
+                            parmtag { "uiscope" "None" }
+                            parmtag { "usdvaluetype" "int" }
+                        }
+                    }
+
+                }
+
+            }
+
+            groupsimple {
+                name    "folder1_#"
+                label   "Material Overwrites"
+
+                parm {
+                    name    "matspecpath1___#"
+                    label   "Material Path"
+                    type    string
+                    default { "" }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_action" "import loputils\nkwargs['ctrl'] = True\nloputils.selectPrimsInParm(kwargs, False)" }
+                    parmtag { "script_action_help" "Select a primitive using the primitive picker dialog." }
+                    parmtag { "script_action_icon" "BUTTONS_reselect" }
+                    parmtag { "sidefx::usdpathtype" "prim" }
+                }
+                parm {
+                    name    "primitives__#"
+                    label   "Primitives"
+                    type    string
+                    default { "" }
+                    menutoggle {
+                        [ "opmenu -l -a assignmaterial1 primpattern1" ]
+                    }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True, allowinstanceproxies=True)" }
+                    parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nShift-click to select using the primitive pattern editor.\nAlt-click to toggle movement of the display flag." }
+                    parmtag { "script_action_icon" "BUTTONS_reselect" }
+                    parmtag { "sidefx::usdpathtype" "primlist" }
+                }
+            }
+
+        }
+
+    }
+
+}

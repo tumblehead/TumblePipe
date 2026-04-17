@@ -1,0 +1,69 @@
+# Dialog script for th::render_debug::1.0 automatically generated
+
+{
+    name	th::render_debug::1.0
+    script	th::render_debug::1.0
+    label	"th render debug"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        parm {
+            name    "shot"
+            label   "Shot"
+            type    string
+            default { "" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import render_debug" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = render_debug.RenderDebug(hou.pwd())" ]
+                [ "items = node.list_shot_uris()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "render_layer"
+            label   "Render Layer"
+            type    string
+            default { "" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import render_debug" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = render_debug.RenderDebug(hou.pwd())" ]
+                [ "items = node.list_render_layer_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "action"
+        label   "Action"
+
+        parm {
+            name    "build"
+            label   "Build"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

@@ -1,0 +1,14 @@
+Operator:     th::cop_material::1.0
+Label:        th cop material
+Path:         oplib:/th::Cop/cop_material::1.0?th::Cop/cop_material::1.0
+Icon:         COP_th-cop_material-1.0
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 3
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Sat Oct 11 17:56:42 2025
+

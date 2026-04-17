@@ -1,0 +1,21 @@
+{
+	"values":["20.5.550"
+	],
+	"indexes":{
+		"hdaroot/file2.userdata":0,
+		"hdaroot/multiply_color.userdata":0,
+		"hdaroot/switchifwired1.userdata":0,
+		"hdaroot/paint_sop/stroke_id.userdata":0,
+		"hdaroot/paint_sop/output0.userdata":0,
+		"hdaroot/output1.userdata":0,
+		"hdaroot/mono1.userdata":0,
+		"hdaroot/constant1.userdata":0,
+		"hdaroot/paint_sop/reference_image.userdata":0,
+		"hdaroot/paint_sop/sweep.userdata":0,
+		"hdaroot/paint_sop.userdata":0,
+		"hdaroot/Preview.userdata":0,
+		"hdaroot/blend1.userdata":0,
+		"hdaroot/input1.userdata":0,
+		"hdaroot/rasterizegeo1.userdata":0
+	}
+}

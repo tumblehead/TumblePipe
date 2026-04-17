@@ -1,0 +1,203 @@
+{
+    "parmtemplates": {
+        "comment": "Use this to generate the DS file folder for the brushes",
+        "list": ["space", "radius", "fgvalue", "bgvalue", "spacing", "opacity", "softedge", "alphascale", "alpharotate", "alphaimagefile"],
+        "base": {
+            "base": null,
+            "parms": {}
+        },
+        "basetoggle": {
+            "base": "base",
+            "parms": {
+                "type": "toggle",
+                "defaultvalue": false,
+                "labelhidden": true,
+                "joinwithnext": true
+            }
+        },
+        "basemenu": {
+            "base": "base",
+            "parms": {
+                "type": "menu",
+                "items": [],
+                "labels": []
+            }
+        },
+        "basefloat": {
+            "base": "base",
+            "parms": {
+                "type": "float",
+                "defaultvalue": 1,
+                "ncomps": 1,
+                "min": 0.0,
+                "max": 1.0,
+                "min_is_strict": false,
+                "max_is_strict": false 
+            }
+        },
+        "basestring": {
+            "base": "base",
+            "parms": {
+                "type": "string",
+                "stringtype": "file",
+                "defaultvalue": "",
+                "ncomps": 1
+            }
+        },
+        "space":       { "base": "basemenu", "parms": { "defaultvalue": "world", "label": "Space",
+            "items": ["world", "screen"],
+            "labels": ["World", "Screen"] 
+        } },
+        "radius":      { "base": "basefloat", "parms": { "defaultvalue": 0.1 , "label": "Radius", "min": 1e-6, "min_is_strict": true } },
+        "fgvalue":     { "base": "basefloat", "parms": { "defaultvalue": 1.0 , "label": "Foreground Value" } },
+        "bgvalue":     { "base": "basefloat", "parms": { "defaultvalue": 0.0 , "label": "Background Value" } },
+        "spacing":     { "base": "basefloat", "parms": { "defaultvalue": 0.1 , "label": "Spacing", "min": 0.001, "min_is_strict": true } },
+        "opacity":     { "base": "basefloat", "parms": { "defaultvalue": 1.0 , "label": "Opacity", "min_is_strict": true, "max_is_strict": true } },
+        "softedge":     { "base": "basefloat", "parms": { "defaultvalue": 0.5 , "label": "Soft Edge", "min_is_strict": true, "max_is_strict": true } },
+        "alphascale":  { "base": "basefloat", "parms": { "defaultvalue": 1.0 , "label": "Alpha Scale", "min": 0.001, "min_is_strict": true } },
+        "alpharotate":  { "base": "basefloat", "parms": { "defaultvalue": 0.0 , "label": "Alpha Rotate" } },
+        "alphaimagefile":  { "base": "basestring", "parms": { "defaultvalue": "Mandril.pic", "label": "Alpha Image File" } }
+    },
+    "brushes": {
+        "base": {
+            "base": null,
+            "data": {
+                "alphanodepath": "ALPHA_STANDARD",
+                "available_ops": [],
+                "parms": {
+                    "spaceon": false,
+                    "space": 0,
+                    "opon": false,
+                    "op": 0,
+                    "radiuson": false,
+                    "radius": 0.1,
+                    "fgvalueon": false,
+                    "fgvalue": 1.0,
+                    "bgvalueon": false,
+                    "bgvalue": 0.0,
+                    "spacingon": false,
+                    "spacing": 0.1,
+                    "opacityon": false,
+                    "opacity": 1,
+                    "softedgeon": false,
+                    "softedge": 0.5,
+                    "alphascaleon": false,
+                    "alphascale": 1,
+                    "alpharotateon": false,
+                    "alpharotate": 0,
+                    "alphaimagefileon": false,
+                    "alphaimagefile": "Mandril.pic"
+                }
+            }
+        },
+        "paint": {
+            "base": "base",
+            "data": {
+                "available_ops": ["over", "add", "multiply"],
+                "parms": {
+                    "radiuson": true,
+                    "opacityon": true,
+                    "fgvalueon": true,
+                    "bgvalueon": true,
+                    "spaceon": true,
+                    "spacingon": true,
+                    "softedgeon": true,
+                    "opon": true
+                }
+            }
+        },
+        "erase": {
+            "base": "base",
+            "data": {
+                "available_ops": ["erase"],
+                "parms": {
+                    "radiuson": true,
+                    "opacityon": true,
+                    "spaceon": true,
+                    "spacingon": true
+                }
+            }
+        },
+        "smooth": {
+            "base": "base",
+            "data": {
+                "available_ops": ["smooth"],
+                "parms": {
+                    "radiuson": true,
+                    "opacityon": true,
+                    "spacingon": true,
+                    "spaceon": true
+                }
+            }
+        },
+        "smudge": {
+            "base": "base",
+            "data": {
+                "available_ops": ["smudge"],
+                "parms": {
+                    "radiuson": true,
+                    "opacityon": true,
+                    "spacingon": true,
+                    "spaceon": true
+                }
+            }
+        },
+        "alpha": {
+            "base": "paint",
+            "data": {
+                "parms": {
+                    "alphascaleon": true,
+                    "alpharotateon": true,
+                    "spacing": 0.5
+                }
+            }
+        },
+        "noise": {
+            "base": "alpha",
+            "data": {
+                "parms": {
+                    "alphascale": 0.1
+                }
+            }
+        },
+        "cloud": {
+            "base": "noise",
+            "data": {
+                "alphanodepath": "ALPHA_CLOUD",
+                "parms": {}
+            }
+        },
+        "dirt": {
+            "base": "noise",
+            "data": {
+                "alphanodepath": "ALPHA_ROUGH",
+                "parms": {}
+            }
+        },
+        "image": {
+            "base": "alpha",
+            "data": {
+                "parms": {
+                    "alphaimagefileon": true,
+                    "alphascale": 1.0
+                }
+            }
+        },
+        "stamp": {
+            "base": "image",
+            "data": {
+                "alphanodepath": "ALPHA_IMAGE",
+                "parms": {}
+            }
+        },
+        "texture": {
+            "base": "image",
+            "data": {
+                "alphanodepath": "ALPHA_TEXTURE",
+                "parms": {}
+            }
+        }
+    },
+    "brushlist": ["paint", "erase", "smooth", "smudge", "texture", "stamp", "dirt", "cloud"],
+    "oplist": ["over", "add", "erase", "multiply", "smooth", "smudge"]
+}

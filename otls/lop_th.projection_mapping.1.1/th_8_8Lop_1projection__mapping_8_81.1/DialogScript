@@ -1,0 +1,69 @@
+# Dialog script for th::projection_mapping::1.1 automatically generated
+
+{
+    name	th::projection_mapping::1.1
+    script	th::projection_mapping::1.0
+    label	"th projection mapping"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "loppath"
+        label   "Camera LOP Path"
+        type    oppath
+        default { "`lopinputprims('.', 0)`" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "opfilter" "!!LOP!!" }
+        parmtag { "oprelative" "." }
+    }
+    parm {
+        name    "primpath"
+        label   "Camera Prim Path"
+        type    string
+        default { "" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_action" "import loputils\nkwargs['ctrl'] = True\nloputils.selectPrimsInParm(kwargs, False, lopparmname='loppath')" }
+        parmtag { "script_action_help" "Select primitives using the primitive picker dialog." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "sidefx::usdpathtype" "prim" }
+    }
+    parm {
+        name    "projected_prim"
+        label   "Projected Prim"
+        type    string
+        default { "`lopinputprims('.', 0)`" }
+        help    "None"
+        hidewhen "{ createprims == on }"
+        menutoggle {
+            [ "import loputils" ]
+            [ "return loputils.createPrimPatternMenu(kwargs['node'], 0)" ]
+            language python
+        }
+        parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
+        parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane. Ctrl-click to select using the primitive picker dialog." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "sidefx::usdpathtype" "primlist" }
+        parmtag { "spare_category" "USD Prims" }
+    }
+    parm {
+        name    "mat_path"
+        label   "Material Path"
+        type    string
+        default { "/scene/mat/Projection_MAT" }
+        menureplace {
+            [ "opmenu -l -a projection_material primpath" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_action" "import loputils\nkwargs['ctrl'] = True\nloputils.selectPrimsInParm(kwargs, False)" }
+        parmtag { "script_action_help" "Select a primitive using the primitive picker dialog." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "sidefx::usdpathtype" "prim" }
+    }
+}

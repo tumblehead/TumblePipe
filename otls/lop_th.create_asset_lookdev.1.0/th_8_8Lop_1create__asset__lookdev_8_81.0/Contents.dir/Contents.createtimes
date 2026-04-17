@@ -1,0 +1,23 @@
+{
+	"hdaroot/lookdev_variant_subnet/lookdev_subnet/__netbox1.netboxinit":1774018442,
+	"hdaroot/setvariant.def":1774015395,
+	"hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxstandard_surface.def":1774018653,
+	"hdaroot/foreach_end1.def":1774011352,
+	"hdaroot/setvariant1.def":1774271375,
+	"hdaroot/fetch_variant.def":1774193831,
+	"hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.def":1774018653,
+	"hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/Material_Outputs_and_AOVs.def":1774018653,
+	"hdaroot/lookdev_variant_subnet.def":1774018422,
+	"hdaroot/output0.def":1774010377,
+	"hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/inputs.def":1774018653,
+	"hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxdisplacement.def":1774018653,
+	"hdaroot/INPUT.def":1774018338,
+	"hdaroot/foreach_begin.def":1774011352,
+	"hdaroot/configurelayer.def":1774268892,
+	"hdaroot/lookdev_variant_subnet/lookdev_subnet.def":1774193698,
+	"hdaroot/CONFIG_GEO_SCOPE_PRIM.def":1770122621,
+	"hdaroot/add_lookdev_variants.def":1768825456,
+	"hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/material_properties.def":1774018653,
+	"hdaroot.def":1774277916,
+	"hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.def":1774018648
+}

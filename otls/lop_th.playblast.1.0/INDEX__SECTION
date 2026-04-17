@@ -1,0 +1,15 @@
+Operator:     th::playblast::1.0
+Label:        th playblast
+Path:         oplib:/th::Lop/playblast::1.0?th::Lop/playblast::1.0
+Icon:         opdef:/th::Lop/playblast::1.0?IconImage
+Table:        Lop
+License:      
+Extra:        visibleoutputs=0 
+User:         
+Inputs:       0 to 1
+Outputs:      0
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Tue Nov 25 13:42:22 2025
+

@@ -1,0 +1,57 @@
+# Dialog script for th::cop_paint::1.0 automatically generated
+
+{
+    name	th::cop_paint::1.0
+    script	th::cop_paint::1.0
+    label	"th cop paint"
+
+    input	source	source
+    output	source	source
+    signature	default	Default	{ RGBA }	{ RGBA }
+
+    help {
+	""
+    }
+
+    parm {
+        name    "paint"
+        label   "Paint"
+        type    button
+        default { "0" }
+        parmtag { "script_callback" "hou.phm().paint()" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "clear"
+        label   "Clear"
+        type    button
+        default { "0" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "stroke_radius"
+        label   "Radius"
+        type    float
+        default { "0.134888" }
+        range   { 0! 1 }
+        parmtag { "autoscope" "0000000000000000" }
+    }
+    parm {
+        name    "stroke_opacity"
+        label   "Opacity"
+        type    float
+        default { "1" }
+        range   { 0 10 }
+        parmtag { "autoscope" "0000000000000000" }
+    }
+    parm {
+        name    "stroke_color"
+        label   "Color"
+        type    color
+        size    3
+        default { "1" "1" "1" }
+        range   { 0 1 }
+        parmtag { "autoscope" "0000000000000000" }
+    }
+}

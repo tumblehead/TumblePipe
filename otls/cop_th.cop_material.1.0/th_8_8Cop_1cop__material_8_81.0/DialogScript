@@ -1,0 +1,18 @@
+# Dialog script for th::cop_material::1.0 automatically generated
+
+{
+    name	th::cop_material::1.0
+    script	th::cop_material::1.0
+    label	"th cop material"
+
+    input	basecolor	basecolor
+    input	rough	roughness
+    input	height	height
+    output	output1	mat
+    signature	default	Default	{ RGBA Mono Mono }	{ Geometry }
+
+    help {
+	""
+    }
+
+}

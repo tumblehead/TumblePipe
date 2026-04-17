@@ -1,0 +1,20 @@
+{
+	"hdaroot/volume.def":1685732457,
+	"hdaroot/normal.def":1688673503,
+	"hdaroot/albedo_mse.def":1688673339,
+	"hdaroot/emission.def":1685732457,
+	"hdaroot/specular.def":1688673563,
+	"hdaroot/alpha.def":1688673316,
+	"hdaroot/samples.def":1688673563,
+	"hdaroot/beauty_mse.def":1688673441,
+	"hdaroot/albedo.def":1688673339,
+	"hdaroot/output0.def":1742200235,
+	"hdaroot/depth.def":1688673610,
+	"hdaroot/normal_mse.def":1688673503,
+	"hdaroot/uv.def":1742206053,
+	"hdaroot/beauty.def":1688673316,
+	"hdaroot/position.def":1742206053,
+	"hdaroot/diffuse.def":1688673391,
+	"hdaroot/update_renderproducts.def":1766500000,
+	"hdaroot.def":1766406181
+}

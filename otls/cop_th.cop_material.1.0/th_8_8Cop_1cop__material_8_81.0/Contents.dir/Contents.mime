@@ -1,0 +1,2435 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Cop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::cop_material::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+comment ""
+position -4.33507 3.23177
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	fractalnoise 0 1 "basecolor"
+1 	checkerboard1 0 1 "rough"
+}
+inputs
+{
+0 	fractalnoise 0 1
+1 	checkerboard1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.init"
+Content-Type: text/plain
+
+type = lopnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.def"
+Content-Type: text/plain
+
+comment ""
+position 3.30152 4.05792
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 1 0.986 0.65 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+expansioneffect	[ 0	locks=0 ]	(	none	)
+modifiedprimcounttostartnewlayer	[ 0	locks=0 ]	(	0	)
+pinnedprims	[ 0	locks=0 ]	(	""	)
+resolvercontextassetpath	[ 0	locks=0 ]	(	""	)
+resolvercontextstringcount	[ 0	locks=0 ]	(	0	)
+variantselectioncount	[ 0	locks=0 ]	(	0	)
+insertionpointdescriptor	[ 0	locks=0 ]	(	""	)
+rendergallerysource	[ 0	locks=0 ]	(	$HIP/galleries/$HIPNAME.$OS/rendergallery.db	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.datablocks"
+Content-Type: application/octet-stream
+Content-Transfer-Encoding: base64
+
+AAAAAAAAAAMAFF9fb25sb2FkX18uZXhwYW5zaW9uAAlleHBhbnNpb24AAAAAAAAAQXsKCSJleHBhbmRlZHBhdGhzIjp7CgkJIm1hdGVyaWFscyI6ewoJCQkibWF0ZXJpYWwiOnRydWUKCQl9Cgl9Cn0KABRfX29ubG9hZF9fLmw=
+b2FkbWFza3MACWxvYWRtYXNrcwAAAAAAAAB6ewoJInBvcHVsYXRlYWxsIjp0cnVlLAoJInBvcHVsYXRlcGF0aHMiOlsKCV0sCgkibXV0ZWxheWVycyI6WwoJXSwKCSJsb2FkYWxsIjp0cnVlLAoJImxvYWRwYXRocyI6WwoJXSw=
+CgkiZmFsbGJhY2tzIjp7Cgl9Cn0KABRfX29ubG9hZF9fLm92ZXJyaWRlcwAJb3ZlcnJpZGVzAAAAAAAAAL57CgkiY3VzdG9tIjoiI3NkZiAxLjQuMzJcblxuIiwKCSJwdXJwb3NlIjoiI3NkZiAxLjQuMzJcblxuIiwKCSJzb2w=
+b2xpZ2h0cyI6IiNzZGYgMS40LjMyXG5cbiIsCgkic29sb2dlb21ldHJ5IjoiI3NkZiAxLjQuMzJcblxuIiwKCSJzZWxlY3RhYmxlIjoiI3NkZiAxLjQuMzJcblxuIiwKCSJiYXNlIjoiI3NkZiAxLjQuMzJcblxuIgp9Cg==
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary.init"
+Content-Type: text/plain
+
+type = materiallibrary
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary.def"
+Content-Type: text/plain
+
+comment ""
+position 3.75448 0.355306
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.55 0.7 0.75 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary.spareparmdef"
+Content-Type: text/plain
+
+    parm {
+        name    "genpreviewshaders"
+        baseparm
+        label   "Auto-generate Preview Surface Shaders"
+        export  none
+    }
+    parm {
+        name    "allowparmanim"
+        baseparm
+        label   "Allow Shader Parameter Animation"
+        export  none
+    }
+    parm {
+        name    "referencerendervars"
+        baseparm
+        label   "Reference Material Render Vars into Render Products"
+        export  none
+    }
+    parm {
+        name    "parentprimtype"
+        baseparm
+        label   "Parent Primitive Type"
+        export  none
+    }
+    parm {
+        name    "matpathprefix"
+        baseparm
+        label   "Material Path Prefix"
+        export  none
+    }
+    groupcollapsible {
+        name    "tabmenufolder"
+        label   "Tab Menu"
+
+        parm {
+            name    "tabmenumask"
+            label   "Tab Menu Mask"
+            type    string
+            default { "*builder parameter constant rampparm collect null subnet subnetconnector suboutput subinput genericshader" }
+            parmtag { "spare_category" "Tab Menu" }
+        }
+    }
+
+    parm {
+        name    "geometrygroup"
+        baseparm
+        label   "geometrygroup"
+        export  none
+    }
+    groupcollapsible {
+        name    "fillgroup2"
+        label   "Fill"
+        grouptag { "group_type" "collapsible" }
+        parmtag { "sidefx::header_parm" "fillmaterials" }
+
+        parm {
+            name    "matnet"
+            baseparm
+            label   "Material Network"
+            export  none
+        }
+        parm {
+            name    "containerpath"
+            baseparm
+            label   "Container Path"
+            export  none
+        }
+        parm {
+            name    "fillmaterials"
+            baseparm
+            label   "Auto-fill Materials"
+            export  none
+        }
+    }
+
+    multiparm {
+        name    "materials"
+        label    "Number of Materials"
+        baseparm
+        default 1
+        parmtag { "multistartoffset" "1" }
+
+        parm {
+            name    "enable#"
+            baseparm
+            label   "Enable"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "matflag#"
+            baseparm
+            label   "Include Only VOPs with Material Flag Set"
+            export  none
+        }
+        parm {
+            name    "matnode#"
+            baseparm
+            label   "Material VOP"
+            export  none
+        }
+        parm {
+            name    "matpath#"
+            baseparm
+            label   "Material Path"
+            export  none
+        }
+        parm {
+            name    "assign#"
+            baseparm
+            label   "Assign to Geometry"
+            export  none
+        }
+        parm {
+            name    "geopath#"
+            baseparm
+            label   "Geometry Path"
+            export  none
+        }
+    }
+
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+genpreviewshaders	[ 0	locks=0 ]	(	"on"	)
+allowparmanim	[ 0	locks=0 ]	(	"off"	)
+referencerendervars	[ 0	locks=0 ]	(	"on"	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
+matpathprefix	[ 8	locks=0 ]	(	`chs(\"../../../../material_container\")`	)
+geometrygroup	[ 0	locks=0 ]	(	)
+fillgroup	[ 0	locks=0 ]	(	0	)
+matnet	[ 0	locks=0 ]	(	.	)
+containerpath	[ 0	locks=0 ]	(	/materials/	)
+fillmaterials	[ 0	locks=0 ]	(	0	)
+materials	[ 0	locks=0 ]	(	1	)
+enable1	[ 0	locks=0 ]	(	"on"	)
+matflag1	[ 0	locks=0 ]	(	"on"	)
+matnode1	[ 0	locks=0 ]	(	material	)
+matpath1	[ 0	locks=0 ]	(	`opname(\"../..\")`	)
+assign1	[ 0	locks=0 ]	(	"off"	)
+geopath1	[ 0	locks=0 ]	(	""	)
+tabmenufolder	[ 0	locks=0 ]	(	0	)
+tabmenumask	[ 0	locks=0 ]	(	"*builder parameter constant rampparm collect null subnet subnetconnector suboutput subinput genericshader"	)
+fillgroup2	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material.init"
+Content-Type: text/plain
+
+type = subnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material.def"
+Content-Type: text/plain
+
+language MaterialX
+comment ""
+position 4.0486 1.05176
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material.spareparmdef"
+Content-Type: text/plain
+
+    groupcollapsible {
+        name    "folder1"
+        label   "Karma Material Builder"
+        grouptag { "sidefx::shader_isparm" "0" }
+
+        parm {
+            name    "inherit_ctrl"
+            label   "Inherit from Class"
+            type    integer
+            default { "2" }
+            menu {
+                "0" "Never"
+                "1" "Always"
+                "2" "Material Flag"
+            }
+            range   { 0 10 }
+        }
+        parm {
+            name    "shader_referencetype"
+            label   "Class Arc"
+            type    string
+            default { [ "n = hou.pwd()\nn_hasFlag = n.isMaterialFlagSet()\ni = n.evalParm('inherit_ctrl')\nr = 'none'\nif i == 1 or (n_hasFlag and i == 2):\n    r = 'inherit'\nreturn r" python ] }
+            menu {
+                "none"          "None"
+                "reference"     "Reference"
+                "inherit"       "Inherit"
+                "specialize"    "Specialize"
+                "represent"     "Represent"
+            }
+            parmtag { "sidefx::shader_isparm" "0" }
+            parmtag { "spare_category" "Shader" }
+        }
+        parm {
+            name    "shader_baseprimpath"
+            label   "Class Prim Path"
+            type    string
+            default { "/__class_mtl__/`$OS`" }
+            parmtag { "script_action" "import lopshaderutils\nlopshaderutils.selectPrimFromInputOrFile(kwargs)" }
+            parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::shader_isparm" "0" }
+            parmtag { "sidefx::usdpathtype" "prim" }
+            parmtag { "spare_category" "Shader" }
+        }
+        parm {
+            name    "separator1"
+            label   "separator1"
+            type    separator
+            default { "" }
+        }
+        parm {
+            name    "tabmenumask"
+            label   "Tab Menu Mask"
+            type    string
+            default { "karma USD ^mtlxUsd* ^mtlxramp* ^hmtlxramp* ^hmtlxcubicramp* MaterialX parameter constant collect null genericshader subnet subnetconnector suboutput subinput" }
+            parmtag { "spare_category" "Tab Menu" }
+        }
+        parm {
+            name    "shader_rendercontextname"
+            label   "Render Context Name"
+            type    string
+            default { "kma" }
+            parmtag { "sidefx::shader_isparm" "0" }
+            parmtag { "spare_category" "Shader" }
+        }
+        parm {
+            name    "shader_forcechildren"
+            label   "Force Translation of Children"
+            type    toggle
+            default { "1" }
+            parmtag { "sidefx::shader_isparm" "0" }
+            parmtag { "spare_category" "Shader" }
+        }
+    }
+
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material.chn"
+Content-Type: text/plain
+
+{
+    channel shader_referencetype {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = 'specialize' language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+folder1	[ 0	locks=0 ]	(	1	)
+inherit_ctrl	[ 0	locks=0 ]	(	2	)
+shader_referencetype	[ 0	locks=0 ]	(	[ shader_referencetype	"n = hou.pwd()
+n_hasFlag = n.isMaterialFlagSet()
+i = n.evalParm('inherit_ctrl')
+r = 'none'
+if i == 1 or (n_hasFlag and i == 2):
+    r = 'inherit'
+return r" ] 	)
+shader_baseprimpath	[ 0	locks=0 ]	(	/__class_mtl__/`$OS`	)
+separator1	[ 0	locks=0 ]	(	)
+tabmenumask	[ 0	locks=0 ]	(	"karma _LOOKDEV USD ^mtlxUsd* ^mtlxramp* ^hmtlxramp* ^hmtlxcubicramp* MaterialX parameter constant collect null genericshader subnet subnetconnector suboutput subinput"	)
+shader_rendercontextname	[ 0	locks=0 ]	(	kma	)
+shader_forcechildren	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/inputs.init"
+Content-Type: text/plain
+
+type = subinput
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/inputs.def"
+Content-Type: text/plain
+
+comment ""
+position -5.84321 5.34646
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/inputs.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/inputs.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/mtlxstandard_surface.init"
+Content-Type: text/plain
+
+type = mtlxstandard_surface
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/mtlxstandard_surface.def"
+Content-Type: text/plain
+
+comment ""
+position -0.138591 -0.386574
+connectornextid 43
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+42 "out"
+}
+inputsNamed3
+{
+0 	"" "" 1 "base"
+1 	base_color_triplanar 15 1 "base_color"
+2 	"" "" 1 "diffuse_roughness"
+3 	"" "" 1 "metalness"
+4 	"" "" 1 "specular"
+5 	"" "" 1 "specular_color"
+6 	rough_triplanar 15 1 "specular_roughness"
+7 	"" "" 1 "specular_IOR"
+8 	"" "" 1 "specular_anisotropy"
+9 	"" "" 1 "specular_rotation"
+10 	"" "" 1 "transmission"
+11 	"" "" 1 "transmission_color"
+12 	"" "" 1 "transmission_depth"
+13 	"" "" 1 "transmission_scatter"
+14 	"" "" 1 "transmission_scatter_anisotropy"
+15 	"" "" 1 "transmission_dispersion"
+16 	"" "" 1 "transmission_extra_roughness"
+17 	"" "" 1 "subsurface"
+18 	"" "" 1 "subsurface_color"
+19 	"" "" 1 "subsurface_radius"
+20 	"" "" 1 "subsurface_scale"
+21 	"" "" 1 "subsurface_anisotropy"
+22 	"" "" 1 "sheen"
+23 	"" "" 1 "sheen_color"
+24 	"" "" 1 "sheen_roughness"
+25 	"" "" 1 "coat"
+26 	"" "" 1 "coat_color"
+27 	"" "" 1 "coat_roughness"
+28 	"" "" 1 "coat_anisotropy"
+29 	"" "" 1 "coat_rotation"
+30 	"" "" 1 "coat_IOR"
+31 	"" "" 1 "coat_normal"
+32 	"" "" 1 "coat_affect_color"
+33 	"" "" 1 "coat_affect_roughness"
+34 	"" "" 1 "thin_film_thickness"
+35 	"" "" 1 "thin_film_IOR"
+36 	"" "" 1 "emission"
+37 	"" "" 1 "emission_color"
+38 	"" "" 1 "opacity"
+39 	"" "" 1 "thin_walled"
+40 	bump 5 1 "normal"
+41 	"" "" 1 "tangent"
+}
+inputs
+{
+0 	"" 0 1
+1 	base_color_triplanar 0 1
+2 	"" 0 1
+3 	"" 0 1
+4 	"" 0 1
+5 	"" 0 1
+6 	rough_triplanar 0 1
+7 	"" 0 1
+8 	"" 0 1
+9 	"" 0 1
+10 	"" 0 1
+11 	"" 0 1
+12 	"" 0 1
+13 	"" 0 1
+14 	"" 0 1
+15 	"" 0 1
+16 	"" 0 1
+17 	"" 0 1
+18 	"" 0 1
+19 	"" 0 1
+20 	"" 0 1
+21 	"" 0 1
+22 	"" 0 1
+23 	"" 0 1
+24 	"" 0 1
+25 	"" 0 1
+26 	"" 0 1
+27 	"" 0 1
+28 	"" 0 1
+29 	"" 0 1
+30 	"" 0 1
+31 	"" 0 1
+32 	"" 0 1
+33 	"" 0 1
+34 	"" 0 1
+35 	"" 0 1
+36 	"" 0 1
+37 	"" 0 1
+38 	"" 0 1
+39 	"" 0 1
+40 	bump 0 1
+41 	"" 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/mtlxstandard_surface.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	default	)
+folder0	[ 0	locks=0 ]	(	1	)
+base	[ 0	locks=0 ]	(	1	)
+base_color	[ 0	locks=0 ]	(	0.8	0.8	0.8	)
+diffuse_roughness	[ 0	locks=0 ]	(	0	)
+metalness	[ 0	locks=0 ]	(	0	)
+folder0_1	[ 0	locks=0 ]	(	0	)
+specular	[ 0	locks=0 ]	(	1	)
+specular_color	[ 0	locks=0 ]	(	1	1	1	)
+specular_roughness	[ 0	locks=0 ]	(	0.2	)
+specular_IOR	[ 0	locks=0 ]	(	1.5	)
+specular_anisotropy	[ 0	locks=0 ]	(	0	)
+specular_rotation	[ 0	locks=0 ]	(	0	)
+folder0_5	[ 0	locks=0 ]	(	0	)
+coat	[ 0	locks=0 ]	(	0	)
+coat_color	[ 0	locks=0 ]	(	1	1	1	)
+coat_roughness	[ 0	locks=0 ]	(	0.1	)
+coat_anisotropy	[ 0	locks=0 ]	(	0	)
+coat_rotation	[ 0	locks=0 ]	(	0	)
+coat_IOR	[ 0	locks=0 ]	(	1.5	)
+coat_normal	[ 0	locks=0 ]	(	0	0	0	)
+coat_affect_color	[ 0	locks=0 ]	(	0	)
+coat_affect_roughness	[ 0	locks=0 ]	(	0	)
+folder0_2	[ 0	locks=0 ]	(	0	)
+transmission	[ 0	locks=0 ]	(	0	)
+transmission_color	[ 0	locks=0 ]	(	1	1	1	)
+transmission_depth	[ 0	locks=0 ]	(	0	)
+transmission_scatter	[ 0	locks=0 ]	(	0	0	0	)
+transmission_scatter_anisotropy	[ 0	locks=0 ]	(	0	)
+transmission_dispersion	[ 0	locks=0 ]	(	0	)
+transmission_extra_roughness	[ 0	locks=0 ]	(	0	)
+folder0_4	[ 0	locks=0 ]	(	0	)
+sheen	[ 0	locks=0 ]	(	0	)
+sheen_color	[ 0	locks=0 ]	(	1	1	1	)
+sheen_roughness	[ 0	locks=0 ]	(	0.3	)
+folder0_3	[ 0	locks=0 ]	(	0	)
+subsurface	[ 0	locks=0 ]	(	0	)
+subsurface_color	[ 0	locks=0 ]	(	1	1	1	)
+subsurface_radius	[ 0	locks=0 ]	(	1	1	1	)
+subsurface_scale	[ 0	locks=0 ]	(	1	)
+subsurface_anisotropy	[ 0	locks=0 ]	(	0	)
+folder0_7	[ 0	locks=0 ]	(	0	)
+emission	[ 0	locks=0 ]	(	0	)
+emission_color	[ 0	locks=0 ]	(	1	1	1	)
+folder0_6	[ 0	locks=0 ]	(	0	)
+thin_film_thickness	[ 0	locks=0 ]	(	0	)
+thin_film_IOR	[ 0	locks=0 ]	(	1.5	)
+folder0_8	[ 0	locks=0 ]	(	0	)
+opacity	[ 0	locks=0 ]	(	1	1	1	)
+thin_walled	[ 0	locks=0 ]	(	"off"	)
+normal	[ 0	locks=0 ]	(	0	0	0	)
+tangent	[ 0	locks=0 ]	(	0	0	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/mtlxstandard_surface.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"__inputgroup_":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Base":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Coat":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Emission":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Geometry":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Sheen":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Specular":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Subsurface":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Thin Film":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Transmission":{
+		"type":"string",
+		"value":"collapsed"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/mtlxdisplacement.init"
+Content-Type: text/plain
+
+type = mtlxdisplacement
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/mtlxdisplacement.def"
+Content-Type: text/plain
+
+comment ""
+position -0.487379 -5.52177
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+2 "out"
+}
+inputsNamed3
+{
+0 	"" "" 1 "displacement"
+1 	"" "" 1 "scale"
+}
+inputs
+{
+0 	"" 0 1
+1 	"" 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/mtlxdisplacement.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	default	)
+displacement	[ 0	locks=0 ]	(	0	)
+displacement_vector3	[ 0	locks=0 ]	(	0	0	0	)
+scale	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/mtlxdisplacement.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/Material_Outputs_and_AOVs.init"
+Content-Type: text/plain
+
+type = suboutput
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/Material_Outputs_and_AOVs.def"
+Content-Type: text/plain
+
+comment ""
+position 2.4426 -3.8725
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	mtlxstandard_surface 42 1 "surface"
+1 	mtlxdisplacement 2 1 "displacement"
+2 	material_properties 0 1 "properties"
+}
+inputs
+{
+0 	mtlxstandard_surface 0 1
+1 	mtlxdisplacement 0 1
+2 	material_properties 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/Material_Outputs_and_AOVs.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+name1	[ 0	locks=0 ]	(	surface	)
+label1	[ 0	locks=0 ]	(	""	)
+name2	[ 0	locks=0 ]	(	displacement	)
+label2	[ 0	locks=0 ]	(	""	)
+name3	[ 0	locks=0 ]	(	""	)
+label3	[ 0	locks=0 ]	(	""	)
+name4	[ 0	locks=0 ]	(	""	)
+label4	[ 0	locks=0 ]	(	""	)
+name5	[ 0	locks=0 ]	(	""	)
+label5	[ 0	locks=0 ]	(	""	)
+name6	[ 0	locks=0 ]	(	""	)
+label6	[ 0	locks=0 ]	(	""	)
+name7	[ 0	locks=0 ]	(	""	)
+label7	[ 0	locks=0 ]	(	""	)
+name8	[ 0	locks=0 ]	(	""	)
+label8	[ 0	locks=0 ]	(	""	)
+name9	[ 0	locks=0 ]	(	""	)
+label9	[ 0	locks=0 ]	(	""	)
+name10	[ 0	locks=0 ]	(	""	)
+label10	[ 0	locks=0 ]	(	""	)
+name11	[ 0	locks=0 ]	(	""	)
+label11	[ 0	locks=0 ]	(	""	)
+name12	[ 0	locks=0 ]	(	""	)
+label12	[ 0	locks=0 ]	(	""	)
+name13	[ 0	locks=0 ]	(	""	)
+label13	[ 0	locks=0 ]	(	""	)
+name14	[ 0	locks=0 ]	(	""	)
+label14	[ 0	locks=0 ]	(	""	)
+name15	[ 0	locks=0 ]	(	""	)
+label15	[ 0	locks=0 ]	(	""	)
+name16	[ 0	locks=0 ]	(	""	)
+label16	[ 0	locks=0 ]	(	""	)
+name17	[ 0	locks=0 ]	(	""	)
+label17	[ 0	locks=0 ]	(	""	)
+name18	[ 0	locks=0 ]	(	""	)
+label18	[ 0	locks=0 ]	(	""	)
+name19	[ 0	locks=0 ]	(	""	)
+label19	[ 0	locks=0 ]	(	""	)
+name20	[ 0	locks=0 ]	(	""	)
+label20	[ 0	locks=0 ]	(	""	)
+name21	[ 0	locks=0 ]	(	""	)
+label21	[ 0	locks=0 ]	(	""	)
+name22	[ 0	locks=0 ]	(	""	)
+label22	[ 0	locks=0 ]	(	""	)
+name23	[ 0	locks=0 ]	(	""	)
+label23	[ 0	locks=0 ]	(	""	)
+name24	[ 0	locks=0 ]	(	""	)
+label24	[ 0	locks=0 ]	(	""	)
+name25	[ 0	locks=0 ]	(	""	)
+label25	[ 0	locks=0 ]	(	""	)
+name26	[ 0	locks=0 ]	(	""	)
+label26	[ 0	locks=0 ]	(	""	)
+name27	[ 0	locks=0 ]	(	""	)
+label27	[ 0	locks=0 ]	(	""	)
+name28	[ 0	locks=0 ]	(	""	)
+label28	[ 0	locks=0 ]	(	""	)
+name29	[ 0	locks=0 ]	(	""	)
+label29	[ 0	locks=0 ]	(	""	)
+name30	[ 0	locks=0 ]	(	""	)
+label30	[ 0	locks=0 ]	(	""	)
+name31	[ 0	locks=0 ]	(	""	)
+label31	[ 0	locks=0 ]	(	""	)
+name32	[ 0	locks=0 ]	(	""	)
+label32	[ 0	locks=0 ]	(	""	)
+name33	[ 0	locks=0 ]	(	""	)
+label33	[ 0	locks=0 ]	(	""	)
+name34	[ 0	locks=0 ]	(	""	)
+label34	[ 0	locks=0 ]	(	""	)
+name35	[ 0	locks=0 ]	(	""	)
+label35	[ 0	locks=0 ]	(	""	)
+name36	[ 0	locks=0 ]	(	""	)
+label36	[ 0	locks=0 ]	(	""	)
+name37	[ 0	locks=0 ]	(	""	)
+label37	[ 0	locks=0 ]	(	""	)
+name38	[ 0	locks=0 ]	(	""	)
+label38	[ 0	locks=0 ]	(	""	)
+name39	[ 0	locks=0 ]	(	""	)
+label39	[ 0	locks=0 ]	(	""	)
+name40	[ 0	locks=0 ]	(	""	)
+label40	[ 0	locks=0 ]	(	""	)
+name41	[ 0	locks=0 ]	(	""	)
+label41	[ 0	locks=0 ]	(	""	)
+name42	[ 0	locks=0 ]	(	""	)
+label42	[ 0	locks=0 ]	(	""	)
+name43	[ 0	locks=0 ]	(	""	)
+label43	[ 0	locks=0 ]	(	""	)
+name44	[ 0	locks=0 ]	(	""	)
+label44	[ 0	locks=0 ]	(	""	)
+name45	[ 0	locks=0 ]	(	""	)
+label45	[ 0	locks=0 ]	(	""	)
+name46	[ 0	locks=0 ]	(	""	)
+label46	[ 0	locks=0 ]	(	""	)
+name47	[ 0	locks=0 ]	(	""	)
+label47	[ 0	locks=0 ]	(	""	)
+name48	[ 0	locks=0 ]	(	""	)
+label48	[ 0	locks=0 ]	(	""	)
+name49	[ 0	locks=0 ]	(	""	)
+label49	[ 0	locks=0 ]	(	""	)
+name50	[ 0	locks=0 ]	(	""	)
+label50	[ 0	locks=0 ]	(	""	)
+name51	[ 0	locks=0 ]	(	""	)
+label51	[ 0	locks=0 ]	(	""	)
+name52	[ 0	locks=0 ]	(	""	)
+label52	[ 0	locks=0 ]	(	""	)
+name53	[ 0	locks=0 ]	(	""	)
+label53	[ 0	locks=0 ]	(	""	)
+name54	[ 0	locks=0 ]	(	""	)
+label54	[ 0	locks=0 ]	(	""	)
+name55	[ 0	locks=0 ]	(	""	)
+label55	[ 0	locks=0 ]	(	""	)
+name56	[ 0	locks=0 ]	(	""	)
+label56	[ 0	locks=0 ]	(	""	)
+name57	[ 0	locks=0 ]	(	""	)
+label57	[ 0	locks=0 ]	(	""	)
+name58	[ 0	locks=0 ]	(	""	)
+label58	[ 0	locks=0 ]	(	""	)
+name59	[ 0	locks=0 ]	(	""	)
+label59	[ 0	locks=0 ]	(	""	)
+name60	[ 0	locks=0 ]	(	""	)
+label60	[ 0	locks=0 ]	(	""	)
+name61	[ 0	locks=0 ]	(	""	)
+label61	[ 0	locks=0 ]	(	""	)
+name62	[ 0	locks=0 ]	(	""	)
+label62	[ 0	locks=0 ]	(	""	)
+name63	[ 0	locks=0 ]	(	""	)
+label63	[ 0	locks=0 ]	(	""	)
+name64	[ 0	locks=0 ]	(	""	)
+label64	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/Material_Outputs_and_AOVs.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/material_properties.init"
+Content-Type: text/plain
+
+type = kma_material_properties
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/material_properties.def"
+Content-Type: text/plain
+
+comment ""
+position -0.487379 -6.9605
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+0 "properties"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/material_properties.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	0	)
+folder1	[ 0	locks=0 ]	(	0	)
+xn____activate__karmadiffusequality_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmadiffusequality_z6a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmareflectquality_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmareflectquality_z6a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmarefractquality_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmarefractquality_z6a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmavolumequality_8pb	[ 0	locks=0 ]	(	0	)
+xn__karmavolumequality_d5a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmasssquality_dlb	[ 0	locks=0 ]	(	0	)
+xn__karmasssquality_h0a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmavolumesteprate_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmavolumesteprate_z6a	[ 0	locks=0 ]	(	0.25	)
+folder2	[ 0	locks=0 ]	(	0	)
+xn____activate__karmadiffuselimit_mob	[ 0	locks=0 ]	(	0	)
+xn__karmadiffuselimit_q3a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmareflectlimit_mob	[ 0	locks=0 ]	(	0	)
+xn__karmareflectlimit_q3a	[ 0	locks=0 ]	(	4	)
+xn____activate__karmarefractlimit_mob	[ 0	locks=0 ]	(	0	)
+xn__karmarefractlimit_q3a	[ 0	locks=0 ]	(	4	)
+xn____activate__karmavolumelimit_zmb	[ 0	locks=0 ]	(	0	)
+xn__karmavolumelimit_31a	[ 0	locks=0 ]	(	0	)
+xn____activate__karmassslimit_3hb	[ 0	locks=0 ]	(	0	)
+xn__karmassslimit_7wa	[ 0	locks=0 ]	(	0	)
+folder3	[ 0	locks=0 ]	(	0	)
+xn____activate__karmavolumeuniform_8pb	[ 0	locks=0 ]	(	0	)
+xn__karmavolumeuniform_d5a	[ 0	locks=0 ]	(	"off"	)
+xn____activate__karmavolumeuniformdensity_n1b	[ 0	locks=0 ]	(	0	)
+xn__karmavolumeuniformdensity_rhb	[ 0	locks=0 ]	(	1	)
+xn____activate__karmavolumeuniformsamples_n1b	[ 0	locks=0 ]	(	0	)
+xn__karmavolumeuniformsamples_rhb	[ 0	locks=0 ]	(	4	)
+folder4	[ 0	locks=0 ]	(	0	)
+xn____activate__karmalpetag_ueb	[ 0	locks=0 ]	(	0	)
+xn__karmalpetag_yta	[ 0	locks=0 ]	(	""	)
+xn____activate__karmadielectricpriority_eyb	[ 0	locks=0 ]	(	0	)
+xn__karmadielectricpriority_ieb	[ 0	locks=0 ]	(	0	)
+xn____activate__karmamtlx_imagewidth_itb	[ 0	locks=0 ]	(	0	)
+xn__karmamtlx_imagewidth_m8a	[ 0	locks=0 ]	(	0	)
+xn____activate__karmamtlx_imageblur_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmamtlx_imageblur_z6a	[ 0	locks=0 ]	(	0	)
+xn____activate__karmathinwallatrefractlimit_w4b	[ 0	locks=0 ]	(	0	)
+xn__karmathinwallatrefractlimit_0kb	[ 0	locks=0 ]	(	"off"	)
+__section_Caustics	[ 0	locks=0 ]	(	0	)
+xn____activate__karmacausticsenable_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmacausticsenable_z6a	[ 0	locks=0 ]	(	"off"	)
+xn____activate__karmacausticsroughnessclamp_w4b	[ 0	locks=0 ]	(	0	)
+xn__karmacausticsroughnessclamp_0kb	[ 0	locks=0 ]	(	0.2	)
+__section_FakeCaustics	[ 0	locks=0 ]	(	0	)
+xn____activate__karmafakecausticsbsdfenable_w4b	[ 0	locks=0 ]	(	0	)
+xn__karmafakecausticsbsdfenable_0kb	[ 0	locks=0 ]	(	"on"	)
+xn____activate__karmafakecausticscolor_rwb	[ 0	locks=0 ]	(	0	)
+xn__karmafakecausticscolor_vcb	[ 0	locks=0 ]	(	1	1	1	)
+xn____activate__karmafakecausticsopacity_0zb	[ 0	locks=0 ]	(	0	)
+xn__karmafakecausticsopacity_4fb	[ 0	locks=0 ]	(	1	1	1	)
+xn____activate__karmafakecausticsfresneldarken_s9b	[ 0	locks=0 ]	(	0	)
+xn__karmafakecausticsfresneldarken_wpb	[ 0	locks=0 ]	(	0	)
+folder5	[ 0	locks=0 ]	(	0	)
+xn____activate__karmatreat_as_lightsource_n1b	[ 0	locks=0 ]	(	0	)
+xn__karmatreat_as_lightsource_rhb	[ 0	locks=0 ]	(	"No"	)
+xn____activate__karmalightsource_samplingquality_1dc	[ 0	locks=0 ]	(	0	)
+xn__karmalightsource_samplingquality_5sb	[ 0	locks=0 ]	(	1	)
+xn____activate__karmalightsource_diffusescale_57b	[ 0	locks=0 ]	(	0	)
+xn__karmalightsource_diffusescale_9nb	[ 0	locks=0 ]	(	1	)
+xn____activate__karmalightsource_specularscale_s9b	[ 0	locks=0 ]	(	0	)
+xn__karmalightsource_specularscale_wpb	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/material_properties.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/bump.init"
+Content-Type: text/plain
+
+type = mtlxbump
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/bump.def"
+Content-Type: text/plain
+
+comment ""
+position -2.72005 -2.92207
+connectornextid 6
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+5 "out"
+}
+inputsNamed3
+{
+0 	height_triplanar 15 1 "height"
+1 	"" "" 1 "scale"
+2 	"" "" 1 "normal"
+3 	"" "" 1 "tangent"
+4 	"" "" 1 "bitangent"
+}
+inputs
+{
+0 	height_triplanar 0 1
+1 	"" 0 1
+2 	"" 0 1
+3 	"" 0 1
+4 	"" 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/bump.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+height	[ 0	locks=0 ]	(	0	)
+scale	[ 0	locks=0 ]	(	1	)
+normal	[ 0	locks=0 ]	(	0	0	0	)
+tangent	[ 0	locks=0 ]	(	0	0	0	)
+bitangent	[ 0	locks=0 ]	(	0	0	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/bump.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/base_color_triplanar.init"
+Content-Type: text/plain
+
+type = mtlxtriplanarprojection
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/base_color_triplanar.def"
+Content-Type: text/plain
+
+comment ""
+position -5.7105 3.36242
+connectornextid 16
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+15 "out"
+}
+inputsNamed3
+{
+0 	base_color1 0 1 "filex"
+1 	base_color1 0 1 "filey"
+2 	base_color1 0 1 "filez"
+3 	"" "" 1 "layerx"
+4 	"" "" 1 "layery"
+5 	"" "" 1 "layerz"
+6 	"" "" 1 "default"
+7 	"" "" 1 "position"
+8 	"" "" 1 "normal"
+9 	"" "" 1 "upaxis"
+10 	"" "" 1 "blend"
+11 	"" "" 1 "filtertype"
+12 	"" "" 1 "framerange"
+13 	"" "" 1 "frameoffset"
+14 	"" "" 1 "frameendaction"
+}
+inputs
+{
+0 	base_color1 0 1
+1 	base_color1 0 1
+2 	base_color1 0 1
+3 	"" 0 1
+4 	"" 0 1
+5 	"" 0 1
+6 	"" 0 1
+7 	"" 0 1
+8 	"" 0 1
+9 	"" 0 1
+10 	"" 0 1
+11 	"" 0 1
+12 	"" 0 1
+13 	"" 0 1
+14 	"" 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/base_color_triplanar.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	color3	)
+filex	[ 0	locks=0 ]	(	""	)
+filexcolorspace	[ 0	locks=0 ]	(	""	)
+filey	[ 0	locks=0 ]	(	""	)
+fileycolorspace	[ 0	locks=0 ]	(	""	)
+filez	[ 0	locks=0 ]	(	""	)
+filezcolorspace	[ 0	locks=0 ]	(	""	)
+layerx	[ 0	locks=0 ]	(	""	)
+layery	[ 0	locks=0 ]	(	""	)
+layerz	[ 0	locks=0 ]	(	""	)
+default	[ 0	locks=0 ]	(	0	)
+default_color3	[ 0	locks=0 ]	(	0	0	0	)
+default_color4	[ 0	locks=0 ]	(	0	0	0	0	)
+default_vector2	[ 0	locks=0 ]	(	0	0	)
+default_vector3	[ 0	locks=0 ]	(	0	0	0	)
+default_vector4	[ 0	locks=0 ]	(	0	0	0	0	)
+position	[ 0	locks=0 ]	(	0	0	0	)
+normal	[ 0	locks=0 ]	(	0	0	0	)
+upaxis	[ 0	locks=0 ]	(	2	)
+blend	[ 0	locks=0 ]	(	1	)
+filtertype	[ 0	locks=0 ]	(	linear	)
+framerange	[ 0	locks=0 ]	(	""	)
+frameoffset	[ 0	locks=0 ]	(	0	)
+frameendaction	[ 0	locks=0 ]	(	constant	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/base_color_triplanar.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/base_color1.init"
+Content-Type: text/plain
+
+type = constant
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/base_color1.def"
+Content-Type: text/plain
+
+comment ""
+position -9.31069 3.24414
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+0 "basecolor"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0 0 0 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/base_color1.chn"
+Content-Type: text/plain
+
+{
+    channel filedef {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = "node = hou.pwd()
+input = node.node('../../../../IN_basecolor')
+path = input.path()
+expression = f'op:{path}'
+
+return expression" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/base_color1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+consttype	[ 0	locks=0 ]	(	"file"	)
+floatdef	[ 0	locks=0 ]	(	0	)
+intdef	[ 0	locks=0 ]	(	0	)
+toggledef	[ 0	locks=0 ]	(	"off"	)
+angledef	[ 0	locks=0 ]	(	0	)
+logfloatdef	[ 0	locks=0 ]	(	0	)
+float2def	[ 0	locks=0 ]	(	0	0	)
+float3def	[ 0	locks=0 ]	(	0	0	0	)
+vectordef	[ 0	locks=0 ]	(	0	0	0	)
+normaldef	[ 0	locks=0 ]	(	0	0	0	)
+pointdef	[ 0	locks=0 ]	(	0	0	0	)
+directiondef	[ 0	locks=0 ]	(	1	0	0	)
+float4def	[ 0	locks=0 ]	(	0	0	0	0	)
+floatm2def	[ 0	locks=0 ]	(	1	0	0	1	)
+float9def	[ 0	locks=0 ]	(	1	0	0	0	1	0	0	0	1	)
+float16def	[ 0	locks=0 ]	(	1	0	0	0	0	1	0	0	0	0	1	0	0	0	0	1	)
+stringdef	[ 0	locks=0 ]	(	""	)
+filedef	[ 0	locks=0 ]	(	[ filedef	"" ] 	)
+imagedef	[ 0	locks=0 ]	(	""	)
+geometrydef	[ 0	locks=0 ]	(	""	)
+colordef	[ 0	locks=0 ]	(	0	0	0	)
+color4def	[ 0	locks=0 ]	(	0	0	0	0	)
+bsdfdef	[ 0	locks=0 ]	(	""	)
+dictdef	[ 0	locks=0 ]	(	""	)
+coshaderdef	[ 0	locks=0 ]	(	""	)
+surfacedef	[ 0	locks=0 ]	(	""	)
+displacementdef	[ 0	locks=0 ]	(	""	)
+atmospheredef	[ 0	locks=0 ]	(	""	)
+lightdef	[ 0	locks=0 ]	(	""	)
+lightfilterdef	[ 0	locks=0 ]	(	""	)
+floatadef	[ 0	locks=0 ]	(	)
+intadef	[ 0	locks=0 ]	(	)
+vector2adef	[ 0	locks=0 ]	(	)
+vectoradef	[ 0	locks=0 ]	(	)
+pointadef	[ 0	locks=0 ]	(	)
+normaladef	[ 0	locks=0 ]	(	)
+coloradef	[ 0	locks=0 ]	(	)
+floatm2adef	[ 0	locks=0 ]	(	)
+float4adef	[ 0	locks=0 ]	(	)
+float9adef	[ 0	locks=0 ]	(	)
+float16adef	[ 0	locks=0 ]	(	)
+stringadef	[ 0	locks=0 ]	(	)
+dictadef	[ 0	locks=0 ]	(	)
+coshaderadef	[ 0	locks=0 ]	(	""	)
+structdef	[ 0	locks=0 ]	(	""	)
+parmuniform	[ 0	locks=0 ]	(	"on"	)
+constname	[ 0	locks=0 ]	(	basecolor	)
+constlabel	[ 0	locks=0 ]	(	Constant	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/base_color1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough_triplanar.init"
+Content-Type: text/plain
+
+type = mtlxtriplanarprojection
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough_triplanar.def"
+Content-Type: text/plain
+
+comment ""
+position -5.7105 -0.492459
+connectornextid 16
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+15 "out"
+}
+inputsNamed3
+{
+0 	rough 0 1 "filex"
+1 	rough 0 1 "filey"
+2 	rough 0 1 "filez"
+3 	"" "" 1 "layerx"
+4 	"" "" 1 "layery"
+5 	"" "" 1 "layerz"
+6 	"" "" 1 "default"
+7 	"" "" 1 "position"
+8 	"" "" 1 "normal"
+9 	"" "" 1 "upaxis"
+10 	"" "" 1 "blend"
+11 	"" "" 1 "filtertype"
+12 	"" "" 1 "framerange"
+13 	"" "" 1 "frameoffset"
+14 	"" "" 1 "frameendaction"
+}
+inputs
+{
+0 	rough 0 1
+1 	rough 0 1
+2 	rough 0 1
+3 	"" 0 1
+4 	"" 0 1
+5 	"" 0 1
+6 	"" 0 1
+7 	"" 0 1
+8 	"" 0 1
+9 	"" 0 1
+10 	"" 0 1
+11 	"" 0 1
+12 	"" 0 1
+13 	"" 0 1
+14 	"" 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough_triplanar.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	default	)
+filex	[ 0	locks=0 ]	(	""	)
+filexcolorspace	[ 0	locks=0 ]	(	""	)
+filey	[ 0	locks=0 ]	(	""	)
+fileycolorspace	[ 0	locks=0 ]	(	""	)
+filez	[ 0	locks=0 ]	(	""	)
+filezcolorspace	[ 0	locks=0 ]	(	""	)
+layerx	[ 0	locks=0 ]	(	""	)
+layery	[ 0	locks=0 ]	(	""	)
+layerz	[ 0	locks=0 ]	(	""	)
+default	[ 0	locks=0 ]	(	0	)
+default_color3	[ 0	locks=0 ]	(	0	0	0	)
+default_color4	[ 0	locks=0 ]	(	0	0	0	0	)
+default_vector2	[ 0	locks=0 ]	(	0	0	)
+default_vector3	[ 0	locks=0 ]	(	0	0	0	)
+default_vector4	[ 0	locks=0 ]	(	0	0	0	0	)
+position	[ 0	locks=0 ]	(	0	0	0	)
+normal	[ 0	locks=0 ]	(	0	0	0	)
+upaxis	[ 0	locks=0 ]	(	2	)
+blend	[ 0	locks=0 ]	(	1	)
+filtertype	[ 0	locks=0 ]	(	linear	)
+framerange	[ 0	locks=0 ]	(	""	)
+frameoffset	[ 0	locks=0 ]	(	0	)
+frameendaction	[ 0	locks=0 ]	(	constant	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough_triplanar.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough.init"
+Content-Type: text/plain
+
+type = constant
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough.def"
+Content-Type: text/plain
+
+comment ""
+position -9.31068 -0.685991
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+0 "rough"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0 0 0 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough.chn"
+Content-Type: text/plain
+
+{
+    channel filedef {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = "node = hou.pwd()
+input = node.node('../../../../IN_rough')
+path = input.path()
+expression = f'op:{path}'
+
+return expression" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+consttype	[ 0	locks=0 ]	(	"file"	)
+floatdef	[ 0	locks=0 ]	(	0	)
+intdef	[ 0	locks=0 ]	(	0	)
+toggledef	[ 0	locks=0 ]	(	"off"	)
+angledef	[ 0	locks=0 ]	(	0	)
+logfloatdef	[ 0	locks=0 ]	(	0	)
+float2def	[ 0	locks=0 ]	(	0	0	)
+float3def	[ 0	locks=0 ]	(	0	0	0	)
+vectordef	[ 0	locks=0 ]	(	0	0	0	)
+normaldef	[ 0	locks=0 ]	(	0	0	0	)
+pointdef	[ 0	locks=0 ]	(	0	0	0	)
+directiondef	[ 0	locks=0 ]	(	1	0	0	)
+float4def	[ 0	locks=0 ]	(	0	0	0	0	)
+floatm2def	[ 0	locks=0 ]	(	1	0	0	1	)
+float9def	[ 0	locks=0 ]	(	1	0	0	0	1	0	0	0	1	)
+float16def	[ 0	locks=0 ]	(	1	0	0	0	0	1	0	0	0	0	1	0	0	0	0	1	)
+stringdef	[ 0	locks=0 ]	(	""	)
+filedef	[ 0	locks=0 ]	(	[ filedef	"" ] 	)
+imagedef	[ 0	locks=0 ]	(	""	)
+geometrydef	[ 0	locks=0 ]	(	""	)
+colordef	[ 0	locks=0 ]	(	0	0	0	)
+color4def	[ 0	locks=0 ]	(	0	0	0	0	)
+bsdfdef	[ 0	locks=0 ]	(	""	)
+dictdef	[ 0	locks=0 ]	(	""	)
+coshaderdef	[ 0	locks=0 ]	(	""	)
+surfacedef	[ 0	locks=0 ]	(	""	)
+displacementdef	[ 0	locks=0 ]	(	""	)
+atmospheredef	[ 0	locks=0 ]	(	""	)
+lightdef	[ 0	locks=0 ]	(	""	)
+lightfilterdef	[ 0	locks=0 ]	(	""	)
+floatadef	[ 0	locks=0 ]	(	)
+intadef	[ 0	locks=0 ]	(	)
+vector2adef	[ 0	locks=0 ]	(	)
+vectoradef	[ 0	locks=0 ]	(	)
+pointadef	[ 0	locks=0 ]	(	)
+normaladef	[ 0	locks=0 ]	(	)
+coloradef	[ 0	locks=0 ]	(	)
+floatm2adef	[ 0	locks=0 ]	(	)
+float4adef	[ 0	locks=0 ]	(	)
+float9adef	[ 0	locks=0 ]	(	)
+float16adef	[ 0	locks=0 ]	(	)
+stringadef	[ 0	locks=0 ]	(	)
+dictadef	[ 0	locks=0 ]	(	)
+coshaderadef	[ 0	locks=0 ]	(	""	)
+structdef	[ 0	locks=0 ]	(	""	)
+parmuniform	[ 0	locks=0 ]	(	"on"	)
+constname	[ 0	locks=0 ]	(	rough	)
+constlabel	[ 0	locks=0 ]	(	Constant	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough1.init"
+Content-Type: text/plain
+
+type = constant
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough1.def"
+Content-Type: text/plain
+
+comment ""
+position -9.31068 -4.7403
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+0 "rough"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0 0 0 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough1.chn"
+Content-Type: text/plain
+
+{
+    channel filedef {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = "node = hou.pwd()
+input = node.node('../../../../IN_height')
+path = input.path()
+expression = f'op:{path}'
+
+return expression" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+consttype	[ 0	locks=0 ]	(	"file"	)
+floatdef	[ 0	locks=0 ]	(	0	)
+intdef	[ 0	locks=0 ]	(	0	)
+toggledef	[ 0	locks=0 ]	(	"off"	)
+angledef	[ 0	locks=0 ]	(	0	)
+logfloatdef	[ 0	locks=0 ]	(	0	)
+float2def	[ 0	locks=0 ]	(	0	0	)
+float3def	[ 0	locks=0 ]	(	0	0	0	)
+vectordef	[ 0	locks=0 ]	(	0	0	0	)
+normaldef	[ 0	locks=0 ]	(	0	0	0	)
+pointdef	[ 0	locks=0 ]	(	0	0	0	)
+directiondef	[ 0	locks=0 ]	(	1	0	0	)
+float4def	[ 0	locks=0 ]	(	0	0	0	0	)
+floatm2def	[ 0	locks=0 ]	(	1	0	0	1	)
+float9def	[ 0	locks=0 ]	(	1	0	0	0	1	0	0	0	1	)
+float16def	[ 0	locks=0 ]	(	1	0	0	0	0	1	0	0	0	0	1	0	0	0	0	1	)
+stringdef	[ 0	locks=0 ]	(	""	)
+filedef	[ 0	locks=0 ]	(	[ filedef	"" ] 	)
+imagedef	[ 0	locks=0 ]	(	""	)
+geometrydef	[ 0	locks=0 ]	(	""	)
+colordef	[ 0	locks=0 ]	(	0	0	0	)
+color4def	[ 0	locks=0 ]	(	0	0	0	0	)
+bsdfdef	[ 0	locks=0 ]	(	""	)
+dictdef	[ 0	locks=0 ]	(	""	)
+coshaderdef	[ 0	locks=0 ]	(	""	)
+surfacedef	[ 0	locks=0 ]	(	""	)
+displacementdef	[ 0	locks=0 ]	(	""	)
+atmospheredef	[ 0	locks=0 ]	(	""	)
+lightdef	[ 0	locks=0 ]	(	""	)
+lightfilterdef	[ 0	locks=0 ]	(	""	)
+floatadef	[ 0	locks=0 ]	(	)
+intadef	[ 0	locks=0 ]	(	)
+vector2adef	[ 0	locks=0 ]	(	)
+vectoradef	[ 0	locks=0 ]	(	)
+pointadef	[ 0	locks=0 ]	(	)
+normaladef	[ 0	locks=0 ]	(	)
+coloradef	[ 0	locks=0 ]	(	)
+floatm2adef	[ 0	locks=0 ]	(	)
+float4adef	[ 0	locks=0 ]	(	)
+float9adef	[ 0	locks=0 ]	(	)
+float16adef	[ 0	locks=0 ]	(	)
+stringadef	[ 0	locks=0 ]	(	)
+dictadef	[ 0	locks=0 ]	(	)
+coshaderadef	[ 0	locks=0 ]	(	""	)
+structdef	[ 0	locks=0 ]	(	""	)
+parmuniform	[ 0	locks=0 ]	(	"on"	)
+constname	[ 0	locks=0 ]	(	rough	)
+constlabel	[ 0	locks=0 ]	(	Constant	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/rough1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/height_triplanar.init"
+Content-Type: text/plain
+
+type = mtlxtriplanarprojection
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/height_triplanar.def"
+Content-Type: text/plain
+
+comment ""
+position -5.7105 -4.54677
+connectornextid 16
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+15 "out"
+}
+inputsNamed3
+{
+0 	rough1 0 1 "filex"
+1 	rough1 0 1 "filey"
+2 	rough1 0 1 "filez"
+3 	"" "" 1 "layerx"
+4 	"" "" 1 "layery"
+5 	"" "" 1 "layerz"
+6 	"" "" 1 "default"
+7 	"" "" 1 "position"
+8 	"" "" 1 "normal"
+9 	"" "" 1 "upaxis"
+10 	"" "" 1 "blend"
+11 	"" "" 1 "filtertype"
+12 	"" "" 1 "framerange"
+13 	"" "" 1 "frameoffset"
+14 	"" "" 1 "frameendaction"
+}
+inputs
+{
+0 	rough1 0 1
+1 	rough1 0 1
+2 	rough1 0 1
+3 	"" 0 1
+4 	"" 0 1
+5 	"" 0 1
+6 	"" 0 1
+7 	"" 0 1
+8 	"" 0 1
+9 	"" 0 1
+10 	"" 0 1
+11 	"" 0 1
+12 	"" 0 1
+13 	"" 0 1
+14 	"" 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/height_triplanar.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	default	)
+filex	[ 0	locks=0 ]	(	""	)
+filexcolorspace	[ 0	locks=0 ]	(	""	)
+filey	[ 0	locks=0 ]	(	""	)
+fileycolorspace	[ 0	locks=0 ]	(	""	)
+filez	[ 0	locks=0 ]	(	""	)
+filezcolorspace	[ 0	locks=0 ]	(	""	)
+layerx	[ 0	locks=0 ]	(	""	)
+layery	[ 0	locks=0 ]	(	""	)
+layerz	[ 0	locks=0 ]	(	""	)
+default	[ 0	locks=0 ]	(	0	)
+default_color3	[ 0	locks=0 ]	(	0	0	0	)
+default_color4	[ 0	locks=0 ]	(	0	0	0	0	)
+default_vector2	[ 0	locks=0 ]	(	0	0	)
+default_vector3	[ 0	locks=0 ]	(	0	0	0	)
+default_vector4	[ 0	locks=0 ]	(	0	0	0	0	)
+position	[ 0	locks=0 ]	(	0	0	0	)
+normal	[ 0	locks=0 ]	(	0	0	0	)
+upaxis	[ 0	locks=0 ]	(	2	)
+blend	[ 0	locks=0 ]	(	1	)
+filtertype	[ 0	locks=0 ]	(	linear	)
+framerange	[ 0	locks=0 ]	(	""	)
+frameoffset	[ 0	locks=0 ]	(	0	)
+frameendaction	[ 0	locks=0 ]	(	constant	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material/height_triplanar.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/previewmaterial.init"
+Content-Type: text/plain
+
+type = previewmaterial
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/previewmaterial.def"
+Content-Type: text/plain
+
+comment ""
+position 5.06411 1.575
+connectornextid 18
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+17 "geo"
+}
+inputsNamed3
+{
+0 	"" "" 1 "geo"
+1 	IN_basecolor 1 1 "basecolor"
+2 	"" "" 1 "metalness"
+3 	IN_rough 1 1 "specular"
+4 	"" "" 1 "spec_color"
+5 	"" "" 1 "roughness"
+6 	"" "" 1 "coat"
+7 	"" "" 1 "coat_color"
+8 	"" "" 1 "coat_roughness"
+9 	"" "" 1 "sheen"
+10 	"" "" 1 "sheen_color"
+11 	"" "" 1 "sheen_rougness"
+12 	"" "" 1 "emission"
+13 	"" "" 1 "emission_color"
+14 	"" "" 1 "opacity"
+15 	"" "" 1 "normal"
+16 	IN_height 1 1 "height"
+}
+inputs
+{
+0 	"" 0 1
+1 	IN_basecolor 0 1
+2 	"" 0 1
+3 	IN_rough 0 1
+4 	"" 0 1
+5 	"" 0 1
+6 	"" 0 1
+7 	"" 0 1
+8 	"" 0 1
+9 	"" 0 1
+10 	"" 0 1
+11 	"" 0 1
+12 	"" 0 1
+13 	"" 0 1
+14 	"" 0 1
+15 	"" 0 1
+16 	IN_height 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/previewmaterial.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+geotype	[ 0	locks=0 ]	(	"grid"	)
+t	[ 0	locks=0 ]	(	0	0	0	)
+r	[ 0	locks=0 ]	(	0	0	0	)
+geoscale	[ 0	locks=0 ]	(	1	)
+geouvscale	[ 0	locks=0 ]	(	1	)
+geores	[ 0	locks=0 ]	(	10	)
+geowaviness	[ 0	locks=0 ]	(	0	)
+georemovecaps	[ 0	locks=0 ]	(	"off"	)
+geobevel	[ 0	locks=0 ]	(	"off"	)
+geobevelshape	[ 0	locks=0 ]	(	"round"	)
+geobeveloffset	[ 0	locks=0 ]	(	0.1	)
+sepparm	[ 0	locks=0 ]	(	)
+default_basecolor	[ 0	locks=0 ]	(	1	1	1	)
+tintwithcdswitch	[ 0	locks=0 ]	(	"on"	)
+folder8	[ 0	locks=0 ]	(	0	)
+default_metalness	[ 0	locks=0 ]	(	0	)
+metalnessscale	[ 0	locks=0 ]	(	1	)
+folder0	[ 0	locks=0 ]	(	0	)
+default_specular	[ 0	locks=0 ]	(	1	)
+default_spec_color	[ 0	locks=0 ]	(	1	1	1	)
+default_specular_roughness	[ 0	locks=0 ]	(	0.5	)
+specularroughnessscale	[ 0	locks=0 ]	(	1	)
+specular_IOR	[ 0	locks=0 ]	(	1.5	)
+folder1	[ 0	locks=0 ]	(	0	)
+default_coat_amount	[ 0	locks=0 ]	(	0	)
+default_coat_color	[ 0	locks=0 ]	(	1	1	1	)
+default_coat_roughness	[ 0	locks=0 ]	(	0.3	)
+coatroughnessscale	[ 0	locks=0 ]	(	1	)
+folder2	[ 0	locks=0 ]	(	0	)
+default_sheen_amount	[ 0	locks=0 ]	(	0	)
+default_sheen_color	[ 0	locks=0 ]	(	1	1	1	)
+default_sheen_roughness	[ 0	locks=0 ]	(	0.25	)
+sheenroughnessscale	[ 0	locks=0 ]	(	1	)
+folder3	[ 0	locks=0 ]	(	0	)
+default_emission_amount	[ 0	locks=0 ]	(	0	)
+emissionscale	[ 0	locks=0 ]	(	1	)
+default_emission_color	[ 0	locks=0 ]	(	1	1	1	)
+folder7	[ 0	locks=0 ]	(	0	)
+normalmap_scale	[ 0	locks=0 ]	(	1	)
+karma_mikkt	[ 0	locks=0 ]	(	"off"	)
+heightscale	[ 0	locks=0 ]	(	1	)
+folder5	[ 0	locks=0 ]	(	0	)
+default_transmission_amount	[ 0	locks=0 ]	(	0	)
+default_transmission_color	[ 0	locks=0 ]	(	1	1	1	)
+folder4	[ 0	locks=0 ]	(	0	)
+default_sss_amount	[ 0	locks=0 ]	(	0	)
+default_sss_color	[ 0	locks=0 ]	(	1	0	0	)
+default_sss_radius	[ 0	locks=0 ]	(	1	0	0	)
+sss_radius_scale	[ 0	locks=0 ]	(	1	)
+folder6	[ 0	locks=0 ]	(	0	)
+default_opacity_amount	[ 0	locks=0 ]	(	1	)
+opacityscale	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/previewmaterial.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/inputs.init"
+Content-Type: text/plain
+
+type = input
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/inputs.def"
+Content-Type: text/plain
+
+comment ""
+position -1.20873 -1.35438
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "output1"
+1 "output2"
+2 "output3"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/inputs.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/inputs.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/outputs.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/outputs.def"
+Content-Type: text/plain
+
+comment ""
+position 8.51615 1.575
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	previewmaterial 17 1 "input1"
+}
+inputs
+{
+0 	previewmaterial 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/outputs.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/outputs.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_basecolor.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_basecolor.def"
+Content-Type: text/plain
+
+comment ""
+position 1.7618 1.32972
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	inputs 0 1 "input1"
+}
+inputs
+{
+0 	inputs 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_basecolor.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputs	[ 0	locks=0 ]	(	1	)
+outputname1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_basecolor.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_rough.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_rough.def"
+Content-Type: text/plain
+
+comment ""
+position 1.7618 -1.50438
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	inputs 1 1 "input1"
+}
+inputs
+{
+0 	inputs 1 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_rough.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputs	[ 0	locks=0 ]	(	1	)
+outputname1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_rough.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_height.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_height.def"
+Content-Type: text/plain
+
+comment ""
+position 1.7618 -4.6496
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	inputs 2 1 "input1"
+}
+inputs
+{
+0 	inputs 2 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_height.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputs	[ 0	locks=0 ]	(	1	)
+outputname1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_height.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material.order"
+Content-Type: text/plain
+
+12
+inputs
+mtlxstandard_surface
+mtlxdisplacement
+Material_Outputs_and_AOVs
+material_properties
+bump
+base_color_triplanar
+base_color1
+rough_triplanar
+rough
+rough1
+height_triplanar
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary/material.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/materiallibrary.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.order"
+Content-Type: text/plain
+
+7
+inputs
+outputs
+IN_basecolor
+IN_rough
+IN_height
+lopnet
+previewmaterial
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

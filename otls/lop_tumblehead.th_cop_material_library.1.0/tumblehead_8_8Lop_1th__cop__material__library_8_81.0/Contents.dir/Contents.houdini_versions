@@ -1,0 +1,14 @@
+{
+	"values":["21.0.559"
+	],
+	"indexes":{
+		"hdaroot/merge_materials.userdata":0,
+		"hdaroot/foreach_begin.userdata":0,
+		"hdaroot/copnet.userdata":0,
+		"hdaroot/foreach_end.userdata":0,
+		"hdaroot/output0.userdata":0,
+		"hdaroot/merge_material_layers.userdata":0,
+		"hdaroot/copnet/checkerboard1.userdata":0,
+		"hdaroot/fetch_material.userdata":0
+	}
+}

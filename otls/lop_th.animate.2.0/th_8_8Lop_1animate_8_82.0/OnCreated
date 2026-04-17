@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini.lops import animate
+
+animate.on_created(kwargs['node'])

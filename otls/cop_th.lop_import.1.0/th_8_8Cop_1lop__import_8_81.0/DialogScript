@@ -1,0 +1,38 @@
+# Dialog script for th::lop_import::1.0 automatically generated
+
+{
+    name	th::lop_import::1.0
+    script	th::lop_import::1.0
+    label	"th lop import"
+
+    output	geometry	geometry
+    signature	default	Default	{ }	{ Geometry }
+
+    help {
+	""
+    }
+
+    parm {
+        name    "loppath"
+        label   "LOP Path"
+        type    oppath
+        default { "" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "opfilter" "!!LOP!!" }
+        parmtag { "oprelative" "." }
+    }
+    parm {
+        name    "primpattern"
+        label   "Primitives"
+        type    string
+        default { "" }
+        menutoggle {
+            [ "opmenu -l -a lop_geometry/lopimport primpattern" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_action" "import loputils\nkwargs['ctrl'] = True\nloputils.selectPrimsInParm(kwargs, True,\n    lopparmname='loppath', allowinstanceproxies=True)" }
+        parmtag { "script_action_help" "Select primitives using the primitive picker dialog." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "sidefx::usdpathtype" "primlist" }
+    }
+}

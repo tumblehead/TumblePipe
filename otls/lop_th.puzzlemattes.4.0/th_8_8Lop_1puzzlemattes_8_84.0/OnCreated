@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini.lops import puzzle_mattes
+
+puzzle_mattes.on_created(kwargs['node'])

@@ -1,0 +1,11 @@
+from tumblepipe.pipe.houdini.lops import import_shot
+
+def execute():
+    import_shot.execute()
+
+def select():
+    import_shot.select()
+
+def on_parm_changed(parm_name):
+    node = import_shot.ImportShot(hou.pwd())
+    node.on_parm_changed(parm_name)

@@ -1,0 +1,92 @@
+# Dialog script for th::import_asset::1.0 automatically generated
+
+{
+    name	th::import_asset::1.0
+    script	th::import_asset::1.0
+    label	"th import asset"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Sub-Network Input #1"
+    inputlabel	2	"Sub-Network Input #2"
+    inputlabel	3	"Sub-Network Input #3"
+    inputlabel	4	"Sub-Network Input #4"
+
+    groupsimple {
+        name    "folder0"
+        label   "Selection"
+
+        parm {
+            name    "category"
+            label   "Category"
+            type    string
+            default { "" }
+            menu {
+                [ "opmenu -l -a lopnet/import_asset category" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "asset"
+            label   "Asset"
+            type    string
+            default { "" }
+            menu {
+                [ "opmenu -l -a lopnet/import_asset asset" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "folder0_1"
+        label   "Settings"
+
+        parm {
+            name    "departments"
+            label   "Exclude departments"
+            type    string
+            default { "" }
+            menutoggle {
+                [ "opmenu -l -a lopnet/import_asset departments" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "include_layerbreak"
+            label   "Include layerbreak"
+            type    toggle
+            default { "on" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "folder0_2"
+        label   "Actions"
+
+        parm {
+            name    "import"
+            label   "Import"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "unpack"
+            label   "Unpack To Polygons"
+            type    toggle
+            default { "1" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

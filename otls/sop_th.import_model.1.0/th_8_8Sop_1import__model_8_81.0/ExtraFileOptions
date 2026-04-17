@@ -1,0 +1,14 @@
+{
+	"OnCreated/IsPython":{
+		"type":"bool",
+		"value":true
+	},
+	"OnCreated/IsScript":{
+		"type":"bool",
+		"value":true
+	},
+	"PythonModule/IsPython":{
+		"type":"bool",
+		"value":true
+	}
+}

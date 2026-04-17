@@ -1,0 +1,14 @@
+Operator:     th::asset_payload::1.0
+Label:        th asset payload
+Path:         oplib:/th::Lop/asset_payload::1.0?th::Lop/asset_payload::1.0
+Icon:         LOP_payload
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Mon Mar 23 14:37:37 2026
+

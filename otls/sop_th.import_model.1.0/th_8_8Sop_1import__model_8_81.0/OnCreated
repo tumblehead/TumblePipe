@@ -1,0 +1,10 @@
+import tumblepipe.pipe.houdini.nodes as ns
+
+node = kwargs['node']
+node.setColor(ns.COLOR_NODE_DEFAULT)
+node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
+
+# Set department to model on the internal import_layer
+il_node = node.node('lopnet/import_layer')
+if il_node:
+    il_node.parm('department').set('model')

@@ -1,0 +1,15 @@
+Operator:     th::paint_scatter::1.0
+Label:        th paint scatter
+Path:         oplib:/th::Cop/paint_scatter::1.0?th::Cop/paint_scatter::1.0
+Icon:         COP_th-paint_scatter-1.0
+Table:        Cop
+License:      
+Extra:        visibleoutputs=6 
+User:         
+Inputs:       0 to 0
+Outputs:      6
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Thu May 29 15:21:40 2025
+

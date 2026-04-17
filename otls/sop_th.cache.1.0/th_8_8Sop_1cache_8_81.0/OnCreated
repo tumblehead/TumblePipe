@@ -1,0 +1,3 @@
+import tumblepipe.pipe.houdini.sops.cache as th_cache
+
+th_cache.on_created(kwargs['node'])

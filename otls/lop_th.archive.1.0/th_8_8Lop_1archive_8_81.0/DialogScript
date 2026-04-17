@@ -1,0 +1,110 @@
+# Dialog script for th::archive::1.0 automatically generated
+
+{
+    name	th::archive::1.0
+    script	th::archive::1.0
+    label	"th archive"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    group {
+        name    "hidden"
+        label   "Hidden"
+        invisibletab
+        tabbreak
+
+        parm {
+            name    "stage_path"
+            label   "stage_path"
+            type    string
+            nolabel
+            default { "" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "extra_path"
+            label   "extra_path"
+            type    string
+            nolabel
+            default { "" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "frame_range"
+            label   "frame_range"
+            type    intvector2
+            nolabel
+            size    2
+            default { "1001" "1001" }
+            range   { 1! 9999 }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "settings"
+        label   "Settings"
+
+        parm {
+            name    "archive_path"
+            label   "Archive Path"
+            type    file
+            default { "" }
+            parmtag { "filechooser_pattern" "*.usd" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "range_type"
+            label   "Frame Range"
+            type    string
+            default { "single_frame" }
+            menu {
+                "single_frame"  "Single Frame"
+                "from_settings" "From Settings"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "frame_settings"
+            label   "Start/End Frame"
+            type    intvector2
+            size    2
+            default { [ "$FSTART" hscript-expr ] [ "$FEND" hscript-expr ] }
+            disablewhen "{ range_type != from_settings }"
+            range   { 1! 9999 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "roll_settings"
+            label   "Pre/Post Roll"
+            type    intvector2
+            size    2
+            default { "0" "0" }
+            disablewhen "{ range_type != from_settings }"
+            range   { 0! 9999 }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "actions"
+        label   "Actions"
+
+        parm {
+            name    "export"
+            label   "Export Archive"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().export()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

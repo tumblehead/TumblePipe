@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini.lops import sop_modify
+
+sop_modify.on_created(kwargs['node'])

@@ -1,0 +1,7 @@
+from tumblepipe.pipe.houdini.lops import import_assets
+
+def execute():
+    import_assets.execute()
+
+def select(index):
+    import_assets.select(index)

@@ -1,0 +1,22 @@
+{
+	"hdaroot/disable_materials.def":1737457708,
+	"hdaroot/materiallibrary_overwrite/overwrite_material/mtlxstandard_surface.def":1736931798,
+	"hdaroot/material_overwrite.def":1737457686,
+	"hdaroot/collection_include.def":1737457681,
+	"hdaroot/assignmaterial_overwrite.def":1737457692,
+	"hdaroot/materiallibrary_overwrite.def":1737457692,
+	"hdaroot/prune_include.def":1737457654,
+	"hdaroot/rendergeometrysettings_Include_overwrite.def":1737457676,
+	"hdaroot/Deactivate_materials.def":1736933655,
+	"hdaroot/materiallibrary_overwrite/overwrite_material/mtlxdisplacement.def":1736931807,
+	"hdaroot/geometry_overwrite.def":1737457663,
+	"hdaroot/materiallibrary_overwrite/overwrite_material/Material_Outputs_and_AOVs.def":1736931807,
+	"hdaroot/output0.def":1737457667,
+	"hdaroot/settings_overwrite.def":1736933557,
+	"hdaroot/materiallibrary_overwrite/overwrite_material/inputs.def":1736931807,
+	"hdaroot/switch1.def":1737457672,
+	"hdaroot/materiallibrary_overwrite/overwrite_material/material_properties.def":1736931788,
+	"hdaroot/materiallibrary_overwrite/overwrite_material.def":1736934360,
+	"hdaroot/rendersettings_overwrite.def":1736933863,
+	"hdaroot.def":1737457784
+}

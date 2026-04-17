@@ -1,0 +1,99 @@
+"""
+State:          Puzzle Matte State
+State type:     th::puzzlemattes::2.0
+Description:    Th::puzzlemattes::2.0
+Author:         TH2402
+Date Created:   October 03, 2024 - 13:52:58
+"""
+
+
+import hou
+import viewerstate.utils as su
+
+class State(object):
+    def __init__(self, state_name, scene_viewer):
+        self.state_name = state_name
+        self.scene_viewer = scene_viewer
+
+        self.node = None
+        self.geo = None
+
+    def onEnter(self,kwargs):
+        """ Called on node bound states when it starts
+        """
+        self.node = kwargs["node"]
+        state_parms = kwargs["state_parms"]
+
+        inputPrims = self.node.inputPrims(0)
+
+        # Create a Drawable object
+
+        #drawable = hou.SimpleDrawable(self.scene_viewer, inputGeo, "InputGeometry")
+        #drawable.setDisplayMode(hou.drawableDisplayMode.WireframeMode)
+        # Enable and show the drawable geometry
+        #drawable.enable(True)
+        #drawable.show(True)
+
+
+    def onMouseEvent(self, kwargs):
+        """ Process mouse and tablet events
+        """
+        ui_event = kwargs["ui_event"]
+        dev = ui_event.device()
+
+        # Must return True to consume the event
+        return False
+
+    def onMenuAction(self, kwargs):
+        """ Callback implementing the actions of a bound menu. Called 
+        when a menu item has been selected. 
+        """
+
+        menu_item = kwargs["menu_item"]
+        state_parms = kwargs["state_parms"]
+
+    def onDraw(self, kwargs):
+        """ Called for rendering a state e.g. required for 
+        hou.AdvancedDrawable objects
+        """
+        draw_handle = kwargs["draw_handle"]
+
+    def onSelection(self, kwargs):
+        """ Called when a selector has selected something
+        """
+        selection = kwargs["selection"]
+        state_parms = kwargs["state_parms"]
+
+        self.log(selection)
+
+        # Add multiparm entri on custom Mattes
+        # set selection as group name
+
+        # Must return True to accept the selection
+        return False
+
+def createViewerStateTemplate():
+    """ Mandatory entry point to create and return the viewer state 
+        template to register. """
+
+    state_typename = kwargs["type"].definition().sections()["DefaultState"].contents()
+    state_label = "Puzzle Matte State"
+    state_cat = hou.lopNodeTypeCategory()
+
+    extra_contexts = [hou.sopNodeTypeCategory()]
+    template = hou.ViewerStateTemplate(state_typename, state_label, state_cat, contexts=extra_contexts)
+    template.bindFactory(State)
+    template.bindIcon(kwargs["type"].icon())
+
+    menu = hou.ViewerStateMenu('rendervars_menu', "Render Vars Menu")
+
+    menu.addToggleItem("render_var_viz", "Visualize Render Vars", default_value=False)
+
+    menu.addRadioStrip("rendervars_strip", "Render Vars",  "default")
+
+    menu.addRadioStripItem("rendervars_strip", "default", "Default")
+
+    # Bind Menu to Templat
+    template.bindMenu(menu)
+
+    return template

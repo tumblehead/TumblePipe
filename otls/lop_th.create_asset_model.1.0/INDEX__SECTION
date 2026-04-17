@@ -1,0 +1,14 @@
+Operator:     th::create_asset_model::1.0
+Label:        th create asset model
+Path:         oplib:/th::Lop/create_asset_model::1.0?th::Lop/create_asset_model::1.0
+Icon:         LOP_componentgeometry
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Tue Mar 24 09:24:06 2026
+

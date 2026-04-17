@@ -1,0 +1,14 @@
+Operator:     th::sop_modify::1.0
+Label:        th sop modify
+Path:         oplib:/th::Lop/sop_modify::1.0?th::Lop/sop_modify::1.0
+Icon:         OBJ_geo
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Fri Oct  3 14:19:20 2025
+

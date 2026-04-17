@@ -1,0 +1,455 @@
+# Dialog script for th::light_streaks::1.4 automatically generated
+
+{
+    name	th::light_streaks::1.4
+    script	th::th_light_streaks::1.0
+    label	"th light streaks"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    group {
+        name    "settings"
+        label   "Settings"
+
+        parm {
+            name    "prim_name"
+            label   "Primitive Name"
+            type    string
+            default { "$OS" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "base"
+            label   "Base"
+            type    float
+            default { "0.025" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "ogl_diff_intensity" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:base" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "emission"
+            label   "Emission"
+            type    float
+            default { "1" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "ogl_emit_intensity" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:emission" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "emission_color"
+            label   "Color"
+            type    color
+            size    3
+            default { "1" "0.565367" "0.233" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "ogl_emit" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:emission_color" }
+            parmtag { "usdvaluetype" "color3f" }
+        }
+        parm {
+            name    "opacity"
+            label   "Opacity"
+            type    color
+            size    3
+            default { "0.4" "0.4" "0.4" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:opacity" }
+            parmtag { "usdvaluetype" "color3f" }
+        }
+        parm {
+            name    "opacity_file"
+            label   "Opacity Map"
+            type    image
+            default { "" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "parmvop" "1" }
+            parmtag { "script_action" "import loptoolutils;loptoolutils.setupCopNetForMap(kwargs=kwargs)" }
+            parmtag { "script_action_help" "Create COP texture for this map. Hold Ctrl/Cmd to start a new copnet." }
+            parmtag { "script_action_icon" "NETWORKS_cop" }
+            parmtag { "usdvaluename" "inputs:opacity_file" }
+            parmtag { "usdvaluetype" "asset" }
+        }
+        parm {
+            name    "sepparm"
+            label   "Separator"
+            type    separator
+            default { "" }
+        }
+        parm {
+            name    "specular"
+            label   "Specular"
+            type    float
+            default { "0" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "ogl_spec_intensity" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:specular" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "specular_roughness"
+            label   "Roughness"
+            type    float
+            default { "0.5" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "ogl_rough" "1" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:specular_roughness" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "bump_scale"
+            label   "Bump Scale"
+            type    float
+            default { "0.25" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "parmvop" "1" }
+            parmtag { "usdvaluename" "inputs:bump_scale" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "displacement_scale"
+            label   "Displacement Scale"
+            type    float
+            default { "0" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "parmvop" "1" }
+            parmtag { "shaderparmcontexts" "cvex" }
+        }
+        parm {
+            name    "sepparm2"
+            label   "Separator"
+            type    separator
+            default { "" }
+        }
+        parm {
+            name    "mask_by_edges"
+            label   "Mask by Edges"
+            type    toggle
+            default { "0" }
+            range   { 0! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "enable_mask"
+            label   "Enable Y Mask"
+            type    toggle
+            default { "0" }
+            range   { 0! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "enable_bbox_colors"
+            label   "Enable Y Colors"
+            type    toggle
+            default { "0" }
+            range   { 0! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "cloudy_normals"
+            label   "Cloudy Normals"
+            type    toggle
+            invisible
+            default { "0" }
+            range   { 0! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        group {
+            name    "folder0"
+            label   "Mask by Bounding Box"
+            disablewhentab "{ enable_mask != 1 }"
+            hidewhentab "{ enable_mask != 1 }"
+
+            parm {
+                name    "y_min"
+                label   "Y Minimum"
+                type    float
+                default { "0" }
+                range   { 0 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "parmvop" "1" }
+                parmtag { "shaderparmcontexts" "cvex" }
+            }
+            parm {
+                name    "y_max"
+                label   "Y Maximum"
+                type    float
+                default { "1" }
+                range   { 0 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "parmvop" "1" }
+                parmtag { "shaderparmcontexts" "cvex" }
+            }
+            parm {
+                name    "ramp_mask"
+                label   "Ramp Mask"
+                type    ramp_flt
+                default { "2" }
+                range   { 1! 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "parmvop" "1" }
+                parmtag { "rampbasis_var" "ramp_the_basis_strings" }
+                parmtag { "rampbasisdefault" "linear" }
+                parmtag { "rampfloatdefault" "1pos ( 0 ) 1value ( 0 ) 1interp ( linear ) 2pos ( 1 ) 2value ( 1 ) 2interp ( linear )" }
+                parmtag { "rampkeys_var" "ramp_the_key_positions" }
+                parmtag { "rampshowcontrolsdefault" "1" }
+                parmtag { "rampvalues_var" "ramp_the_key_values" }
+                parmtag { "shaderparmcontexts" "cvex" }
+            }
+        }
+
+        group {
+            name    "folder0_1"
+            label   "Color by Bounding Box"
+            disablewhentab "{ enable_bbox_colors != 1 }"
+            hidewhentab "{ enable_bbox_colors != 1 }"
+
+            parm {
+                name    "for_each_cd"
+                label   "For Each Connected Piece"
+                type    toggle
+                default { "0" }
+                range   { 0! 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "colorramp"
+                label   "Color Ramp"
+                type    ramp_rgb
+                default { "2" }
+                range   { 1! 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "rampcolordefault" "1pos ( 0.19361276924610138 ) 1c ( 0 0 0 ) 1interp ( linear ) 2pos ( 1 ) 2c ( 1 1 1 ) 2interp ( linear )" }
+                parmtag { "rampshowcontrolsdefault" "0" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "noise_amount"
+                label   "Noise Amount"
+                type    float
+                default { "0" }
+                range   { 0! 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "noise_size"
+                label   "Noise Size"
+                type    float
+                default { "1" }
+                range   { 0! 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "noise_offset"
+                label   "Noise Offset"
+                type    float
+                default { "0" }
+                range   { 0 50 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "parmvop" "1" }
+                parmtag { "shaderparmcontexts" "cvex" }
+            }
+            parm {
+                name    "noise_roughness"
+                label   "Noise Roughness"
+                type    float
+                default { "0.5" }
+                range   { 0! 1! }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "parmvop" "1" }
+                parmtag { "shaderparmcontexts" "cvex" }
+            }
+        }
+
+        group {
+            name    "folder0_2"
+            label   "Cloudy Normals"
+            invisibletab
+            hidewhentab "{ cloudy_normals != 1 }"
+
+            parm {
+                name    "sphere_amount"
+                label   "Sphere Amount"
+                type    intlog
+                default { "7" }
+                range   { 1 100000 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "seed"
+                label   "Seed"
+                type    float
+                default { "0" }
+                range   { 0 100 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "sidefx::slider" "snap_to_int" }
+            }
+            parm {
+                name    "rand_min_scale"
+                label   "Random Minimum Scale"
+                type    float
+                default { "0" }
+                range   { 0.1 2 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "rand_max_scale"
+                label   "Random Max Scale"
+                type    float
+                default { "1" }
+                range   { 1 5 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "scale_ramp"
+                label   "Scale Ramp"
+                type    ramp_flt
+                default { "3" }
+                range   { 1! 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "rampbasisdefault" "monotonecubic" }
+                parmtag { "rampfloatdefault" "1pos ( 0 ) 1value ( 0 ) 1interp ( monotonecubic ) 2pos ( 0.5 ) 2value ( 0.5 ) 2interp ( monotonecubic ) 3pos ( 1 ) 3value ( 1 ) 3interp ( monotonecubic )" }
+            }
+            parm {
+                name    "blend_with_normal"
+                label   "Blend With Normal"
+                type    float
+                default { "0" }
+                range   { 0! 1! }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        group {
+            name    "folder0_3"
+            label   "Mask by Edges"
+            disablewhentab "{ mask_by_edges != 1 }"
+            hidewhentab "{ mask_by_edges != 1 }"
+
+            parm {
+                name    "radiusfrom"
+                label   "Radius From"
+                type    ordinal
+                default { "maxdist" }
+                menu {
+                    "parm"      "Parameter"
+                    "maxdist"   "Maximum Distance"
+                }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "rad"
+                label   "Radius"
+                type    float
+                default { "1" }
+                hidewhen "{ radiusfrom != parm }"
+                range   { 0 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "remap_edge_mask"
+                label   "Remap"
+                type    ramp_flt
+                default { "2" }
+                range   { 1! 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "rampfloatdefault" "1pos ( 0 ) 1value ( 0 ) 1interp ( monotonecubic ) 2pos ( 1 ) 2value ( 1 ) 2interp ( monotonecubic )" }
+            }
+            parm {
+                name    "subdivide"
+                label   "Subdivide"
+                type    integer
+                default { "0" }
+                range   { 0! 3 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
+    group {
+        name    "settings_1"
+        label   "Advanced"
+
+        parm {
+            name    "cast_shadows"
+            label   "Cast Shadows"
+            type    toggle
+            default { "0" }
+            range   { 0! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "clip_by_opacity_texture"
+            label   "Clip by Opacity Texture"
+            type    toggle
+            default { "0" }
+            range   { 0! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "clip_below"
+            label   "Clip Below"
+            type    float
+            default { "0.0001" }
+            disablewhen "{ clip_by_opacity_texture != 1 }"
+            range   { -5 5 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "primpath"
+            label   "Primitive Path"
+            type    string
+            default { "/lights/lightStreaks" }
+            menureplace {
+                [ "opmenu -l -a graftbranches1 primpath" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, False)" }
+            parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nAlt-click to toggle movement of the display flag." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::usdpathtype" "prim" }
+        }
+    }
+
+}

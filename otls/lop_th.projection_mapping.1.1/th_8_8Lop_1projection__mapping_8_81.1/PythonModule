@@ -1,0 +1,76 @@
+import hou
+node = hou.pwd()
+import math
+from pxr import Usd, UsdGeom, Gf
+
+def init_projection_cam()->None:
+    node = hou.pwd()
+    camera_prim_path = node.parm("camera_prim").eval()
+    camera_prim = node.stage().GetPrimAtPath(camera_prim_path)
+    
+    camera_focal_length = camera_prim.GetAttribute("focalLength").Get()  # Convert to meters
+    camera_aperture = camera_prim.GetAttribute("horizontalAperture").Get() # Convert to meters
+    
+    camera_xformable = UsdGeom.Xformable(camera_prim)
+    camera_transform = camera_xformable.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+    camera_translation = camera_transform.ExtractTranslation()
+    
+    rotation_quat = camera_transform.ExtractRotationQuat()
+
+    # Extract quaternion values
+    x = rotation_quat.GetImaginary()[0]
+    y = rotation_quat.GetImaginary()[1]
+    z = rotation_quat.GetImaginary()[2]
+    w = rotation_quat.GetReal()
+
+    camera_rotation = quaternion_to_euler_degrees(x, y, z, w)
+
+    # Create /obj Projection Camera if none already exists
+    p_cam = hou.node("/obj/p_cam")
+    if p_cam == None:
+        p_cam = hou.node("/obj").createNode("cam", "p_cam")
+
+    print(camera_translation, camera_rotation, camera_focal_length, camera_aperture)
+    # Copy stage camera Parms
+    p_cam.parmTuple("t").set(camera_translation)
+    p_cam.parmTuple("r").set(camera_rotation)
+    p_cam.parm("focal").set(camera_focal_length)
+    p_cam.parm("aperture").set(camera_aperture)
+    p_cam.parmTuple("res").set((2000, 2000))
+
+def flipbook_camera()->None:
+    import os
+    hip_proj_dir = hou.expandString("$HIP/projection")
+    os.makedirs(hip_proj_dir, exist_ok=True) # Create directory if it doesn't exist
+
+    viewport = hou.ui.paneTabOfType(hou.paneTabType.SceneViewer)
+    settings = viewport.flipbookSettings()
+    settings.frameRange((hou.frame(), hou.frame()))  # Single frame
+    settings.outputToMPlay(False)
+    settings.output("$HIP/projection/Projection.$F4.jpg")
+    settings.useResolution(True)
+    settings.resolution((2000, 2000))  # Your desired resolution
+    viewport.flipbook(settings=settings)
+
+def quaternion_to_euler_degrees(x, y, z, w):
+    # Step 1: Convert to Euler angles in radians
+    sinr_cosp = 2 * (w * x + y * z)
+    cosr_cosp = 1 - 2 * (x * x + y * y)
+    roll = math.atan2(sinr_cosp, cosr_cosp)
+
+    sinp = 2 * (w * y - z * x)
+    if abs(sinp) >= 1:
+        pitch = math.copysign(math.pi / 2, sinp)
+    else:
+        pitch = math.asin(sinp)
+
+    siny_cosp = 2 * (w * z + x * y)
+    cosy_cosp = 1 - 2 * (y * y + z * z)
+    yaw = math.atan2(siny_cosp, cosy_cosp)
+
+    # Step 2: Convert to degrees
+    roll_deg = math.degrees(roll)
+    pitch_deg = math.degrees(pitch)
+    yaw_deg = math.degrees(yaw)
+
+    return roll_deg, pitch_deg, yaw_deg

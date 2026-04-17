@@ -1,0 +1,19 @@
+def jump_to_cop():
+    node = hou.pwd()
+    copnet = node.node("copnet")
+    desktop = hou.ui.curDesktop()
+    network_editor = desktop.createFloatingPane(hou.paneTabType.NetworkEditor)
+    network_editor.setPwd(copnet)
+    network_editor.setPin(True)
+    copnet.setCurrent(copnet.node("TEXTURE_OUTPUT"))
+
+def paint_thickness():
+    paint_node = hou.pwd().node("outline/sopnet/create/paint_thickness")
+    paint_display = paint_node.node("../OUT_DISPLAY")
+    
+    scene_viewer = hou.ui.paneTabOfType(hou.paneTabType.SceneViewer)
+    scene_viewer.setIsCurrentTab()
+    scene_viewer.setPwd(paint_node.parent())
+    
+    paint_node.setCurrent(True)
+    scene_viewer.enterCurrentNodeState()

@@ -1,0 +1,14 @@
+Operator:     th::build_comp::1.0
+Label:        th build comp
+Path:         oplib:/th::Cop/build_comp::1.0?th::Cop/build_comp::1.0
+Icon:         $TH_PIPELINE_PATH/resources/BuildComp.png
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 0
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Wed Dec 10 13:29:10 2025
+

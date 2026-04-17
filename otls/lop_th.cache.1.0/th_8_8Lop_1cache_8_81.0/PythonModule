@@ -1,0 +1,10 @@
+import tumblepipe.pipe.houdini.lops.cache as th_cache
+
+def latest():
+    th_cache.latest()
+
+def cache():
+    th_cache.cache()
+
+def load():
+    th_cache.load()

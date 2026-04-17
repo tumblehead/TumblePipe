@@ -1,0 +1,16 @@
+# Automatically generated script
+\set noalias = 1
+#
+#  Creation script for th::import_layer::1.0 operator
+#
+
+if ( "$arg1" == "" ) then
+    echo This script is intended as a creation script
+    exit
+endif
+
+# Node $arg1 (th::Lop/import_layer::1.0)
+opexprlanguage -s hscript $arg1
+opuserdata -n 'PrismPath' -v '/stage/th_load_base' $arg1
+opuserdata -n '___Version___' -v '' $arg1
+opuserdata -n 'nodeshape' -v 'bulge_down' $arg1

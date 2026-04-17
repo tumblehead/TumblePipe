@@ -1,0 +1,17 @@
+# Dialog script for th::animate::2.0 automatically generated
+
+{
+    name	th::animate::2.0
+    script	prism::th_animate::1
+    label	"th animate"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+}

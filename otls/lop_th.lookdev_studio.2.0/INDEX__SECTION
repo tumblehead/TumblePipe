@@ -1,0 +1,14 @@
+Operator:     th::lookdev_studio::2.0
+Label:        th lookdev studio
+Path:         oplib:/th::Lop/lookdev_studio::2.0?th::Lop/lookdev_studio::2.0
+Icon:         W:\_pipeline\pipeline\houdini\Tumblehead\resources/LookDevStudio.png
+Table:        Lop
+License:      
+Extra:        guide=BOUNDING_BOX_GUIDE/modify/modify/BOUNDING_BOX 
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Mon Sep 29 14:03:18 2025
+

@@ -1,0 +1,15 @@
+Operator:     th::export_rig::1.0
+Label:        th export rig
+Path:         oplib:/th::Sop/export_rig::1.0?th::Sop/export_rig::1.0
+Icon:         SOP_subnet
+Table:        Sop
+License:      
+Extra:        inputcolors='1 "RGB 0.700195 0.700195 0.700195" ' outputcolors='0 ' visibleoutputs=0 
+User:         
+Inputs:       0 to 1
+Outputs:      0
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Thu Dec 11 14:45:36 2025
+

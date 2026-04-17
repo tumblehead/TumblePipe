@@ -1,0 +1,226 @@
+# Dialog script for th::cache::1.0 automatically generated
+
+{
+    name	th::cache::1.0
+    script	th::cache::1.0
+    label	"th cache"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "uid"
+        label   "UID"
+        type    string
+        invisible
+        default { "" }
+        parmtag { "script_callback_language" "python" }
+    }
+    groupsimple {
+        name    "cache2"
+        label   "cache"
+        invisibletab
+
+        parm {
+            name    "loadfromdisk"
+            label   "Load from Disk         "
+            type    toggle
+            default { "off" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "file"
+            label   "Geometry File"
+            type    geometry
+            default { "" }
+            menureplace {
+                [ "opmenu -l -a cache file" ]
+            }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "filechooser_mode" "write" }
+        }
+        parm {
+            name    "f"
+            label   "Start/End/Inc"
+            type    float
+            size    3
+            default { "1001" "1001" "1" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "execute"
+            label   "Save to Disk"
+            type    button
+            default { "0" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+            parmtag { "takecontrol" "always" }
+        }
+    }
+
+    groupsimple {
+        name    "timeshift"
+        label   "timeshift"
+        invisibletab
+
+        parm {
+            name    "frame"
+            label   "Frame"
+            type    float
+            default { "1001" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "switch"
+        label   "switch"
+        invisibletab
+
+        parm {
+            name    "input"
+            label   "Select Input"
+            type    integer
+            default { "0" }
+            range   { 0! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        parm {
+            name    "name"
+            label   "Name"
+            type    string
+            default { "$OS" }
+            menureplace {
+                [ "import tumblepipe.pipe.houdini.sops.cache as th_cache" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = th_cache.Cache(hou.pwd())" ]
+                [ "items = node.list_cache_names()" ]
+                [ "menu = list()" ]
+                [ "for item in items:" ]
+                [ "    menu.append(item)" ]
+                [ "    menu.append(item)" ]
+                [ "return menu" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "version"
+            label   "Version"
+            type    string
+            joinnext
+            default { "" }
+            menu {
+                [ "import tumblepipe.pipe.houdini.sops.cache as th_cache" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = th_cache.Cache(hou.pwd())" ]
+                [ "items = node.list_version_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "latest"
+            label   "Latest"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().latest()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "settings"
+        label   "Settings"
+
+        parm {
+            name    "location"
+            label   "Location"
+            type    string
+            default { "project" }
+            menu {
+                "project"   "Project"
+                "proxy"     "Proxy"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "frame_range"
+            label   "Frame Range"
+            type    string
+            default { "single_frame" }
+            menu {
+                "single_frame"      "Single Frame"
+                "playback_range"    "Playback Range"
+                "from_settings"     "From Settings"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "frame_settings"
+            label   "First/Last/Step-Frame"
+            type    intvector
+            size    3
+            default { "1001" "1001" "1" }
+            disablewhen "{ frame_range != from_settings }"
+            range   { 0! 999999! }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "roll_settings"
+            label   "Pre/Post-Roll"
+            type    intvector2
+            size    2
+            default { "0" "0" }
+            disablewhen "{ frame_range != from_settings }"
+            range   { 0! 999999! }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "action"
+        label   "Action"
+
+        parm {
+            name    "cache"
+            label   "Cache"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().cache()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "load"
+            label   "Load"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().load()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

@@ -1,0 +1,13 @@
+from tumblepipe.pipe.houdini.sops import playblast
+
+def export():
+    playblast.export()
+
+def select():
+    playblast.select()
+    
+def view_latest():
+    playblast.view_latest()
+
+def open_location():
+    playblast.open_location()

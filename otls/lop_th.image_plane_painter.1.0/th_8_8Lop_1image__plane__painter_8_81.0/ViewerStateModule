@@ -1,0 +1,63 @@
+"""
+State:          Th::image plane painter::1.0
+State type:     th::image_plane_painter::1.0
+Description:    Th::image plane painter::1.0
+Author:         tumblehead
+Date Created:   January 16, 2026 - 19:44:21
+"""
+
+import hou
+import viewerstate.utils as su
+
+class State(object):
+
+    HUD_TEMPLATE = {
+        "title": "IMAGE PLANE PAINTER",
+        "rows": [
+            {"label": "Edit image", "key": "p"},
+            {"label": "Reload image", "key": "j"},
+        ]
+    }
+
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+    def onEnter(self,kwargs):
+        self.node = kwargs["node"]
+        state_parms = kwargs["state_parms"]
+        
+        self.scene_viewer.hudInfo(template=State.HUD_TEMPLATE)
+
+    def onKeyEvent(self, kwargs):
+        """ Called for processing a keyboard event
+        """
+        ui_event = kwargs["ui_event"]
+        state_parms = kwargs["state_parms"]
+        pressed_key = ui_event.device().keyString()
+        
+        if pressed_key == "p":
+            open_editor_button = self.node.parm("open_editor")
+            open_editor_button.pressButton()
+            return True
+        
+        if pressed_key == "j":
+            reload_button = self.node.parm("reload")
+            reload_button.pressButton()
+            return True
+            
+        # Must returns True to consume the event
+        return False
+
+def createViewerStateTemplate():
+    """ Mandatory entry point to create and return the viewer state 
+        template to register. """
+
+    state_typename = kwargs["type"].definition().sections()["DefaultState"].contents()
+    state_label = "Th::image plane painter::1.0"
+    state_cat = hou.lopNodeTypeCategory()
+
+    template = hou.ViewerStateTemplate(state_typename, state_label, state_cat)
+    template.bindFactory(State)
+    template.bindIcon(kwargs["type"].icon())
+
+    return template

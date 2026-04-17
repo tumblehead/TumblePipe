@@ -1,0 +1,11 @@
+{
+	"values":["21.0.522"
+	],
+	"indexes":{
+		"hdaroot/lop_geometry/lopimport.userdata":0,
+		"hdaroot/output.userdata":0,
+		"hdaroot/lop_geometry.userdata":0,
+		"hdaroot/lop_geometry/output.userdata":0,
+		"hdaroot/lop_geometry/unpackusd.userdata":0
+	}
+}

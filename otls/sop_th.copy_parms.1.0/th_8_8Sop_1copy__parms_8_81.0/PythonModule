@@ -1,0 +1,25 @@
+import hou
+
+def transfer():
+    
+    node = hou.pwd()
+    source_path = node.parm('source').eval()
+    destination_path = node.parm('destination').eval()
+    
+    source_node = hou.node(source_path)
+    destination_node = hou.node(destination_path)
+    
+    for source_parm in source_node.parms():
+        parm_name = source_parm.name()
+        destination_parm = destination_node.parm(parm_name)
+        if destination_parm is None:
+            print(f'missing parm {destination_path}:{parm_name}')
+            continue
+        destination_parm.set(source_parm.eval())
+        
+        
+        destination_parm.deleteAllKeyframes()
+        for key in source_parm.keyframes():
+            destination_parm.setKeyframe(key)
+        for key in source_parm.keyframes():
+            destination_parm.setKeyframe(key)

@@ -1,0 +1,279 @@
+import hou
+import viewerstate.utils as su
+
+def normalize(value, min_value, max_value):
+    return (value - min_value) / (max_value - min_value)
+
+class State(object):
+
+    HUD_TEMPLATE = {
+    "title": "LookdevStudio", "icon": kwargs["type"].icon(),
+    "rows": [
+        {"id": "setup_name", "label": "Light Setup:", "key": "0-5", "value": "Studio", "color": (1,0,0)},
+        {"type": "choicegraph", "id": "light_setup", "label": "Lights", "count": 6, "value": 0 },
+        {"type": "divider"},
+        {"id": "rotate_asset", "label": "Rotate Asset", "key": "LMB"},
+        {"id": "translate_asset", "label": "Offset Asset", "key": "Ctrl LMB"},
+        {"id": "rotate_lights", "label": "Rotate Lights", "key": "Shift LMB"},
+        {"type": "divider"},
+        {"id": "set_focal", "label": "Adjust Focal Length", "key": "mousewheel", "value": "35"},
+        {"id": "focal_bar", "type": "bargraph", "value": normalize(35, 16, 200)},
+        {"id": "dolly_cam", "label": "Dolly camera", "key": "Shift mousewheel"},
+        {"type": "divider"},
+        {"id": "exposure", "label": "Adjust Light Exposure", "key": "MMB"},
+        {"id": "translate_camera", "label": "Translate Camera", "key": "Shift MMB"},
+        {"id": "rotate_camera", "label": "Rotate Camera", "key": "Ctrl MMB"},
+        { "type": "divider" },
+        {"id": "reset", "label": "Reset Transformations", "key": "backspace"},
+        {"id": "lookat", "label": "Look At Asset", "key": "l", "value": "on"},
+        {"id": "show_guides", "label": "Show Guides", "key": "b", "value": "off"},
+        {"id": "show_utils", "label": "Show Utilities", "key": "u", "value": "off"}
+        ]
+    }
+
+    def __init__(self, state_name, scene_viewer):
+        self.state_name = state_name
+        self.scene_viewer = scene_viewer
+        self.node = None
+
+        self.LIGHT_SETUPS: list[str] = ["None", "Studio", "Neutral", "Sun", "Morning", "Spotlight"]
+        self.prev_posx = None
+        self.prev_camerapos = None
+        self.current_renderer = None
+
+    def onEnter(self,kwargs):
+        """ Called on node bound states when it starts
+        """
+        self.node = kwargs["node"]
+        state_parms = kwargs["state_parms"]
+        self.scene_viewer.hudInfo(template=State.HUD_TEMPLATE)
+
+        self.update_info_panel_values()
+
+        # Set to Turntable Camera
+        self.node.parm("turntable_camera").pressButton()
+
+    def onMouseEvent(self, kwargs):
+        """ Process mouse and tablet events
+        """
+        ui_event = kwargs["ui_event"]
+        reason = ui_event.reason()
+        dev = ui_event.device()
+
+        # Switch to Houdini VK renderer when rotating the asset
+        if reason == hou.uiEventReason.Start:
+            self.current_renderer = self.scene_viewer.currentHydraRenderer()
+            if self.current_renderer == 'Karma XPU':
+                self.scene_viewer.setHydraRenderer('Houdini VK')
+                self.scene_viewer.viewports()[-1].settings().setLighting(hou.viewportLighting.Off)
+        if reason == hou.uiEventReason.Changed:
+            if self.current_renderer == 'Karma XPU':
+                self.scene_viewer.setHydraRenderer('Karma XPU')
+        
+        # -----------------------
+        # ROTATE ASSETS AND LIGHT
+        # -----------------------
+        
+        # Check if the left mouse button is pressed
+        if dev.isLeftButton():
+        
+            current_posx = dev.mouseX()
+            current_posy = dev.mouseX()
+
+            if self.prev_posx is not None:
+                pos_delta = (current_posx - self.prev_posx) * .3 # rotate sensitivity
+                
+                if dev.isShiftKey():
+                    self.node.parm("light_rotation").set(self.node.evalParm("light_rotation") + pos_delta)
+                elif dev.isCtrlKey():
+                    pos_delta*=.01
+                    self.node.parm("asset_offsetx").set(self.node.evalParm("asset_offsetx") + pos_delta)
+                else:
+                    self.node.parm("asset_angle").set(self.node.evalParm("asset_angle") + pos_delta)
+
+            # Update previous position for next frame
+            self.prev_posx = current_posx
+
+        # Reset when the button is released
+        if dev.isLeftButtonReleased():
+            self.prev_posx = None  # Reset tracking
+
+        # --------------------
+        # TRANSLATE CAMERA
+        # --------------------    
+
+        # Check if the middle mouse button is pressed
+        if dev.isMiddleButton():
+            current_camerapos = hou.Vector2(dev.mouseX(), dev.mouseY())
+            
+            if self.prev_camerapos is not None:
+                pos_delta = (current_camerapos - self.prev_camerapos) * 0.002 # translate sensitivity
+                pos_delta *= -1
+
+                if dev.isCtrlKey():
+                    pos_delta*=10
+                    self.node.parm("rotate_camerax").set(self.node.evalParm("rotate_camerax") - pos_delta[1])
+                    self.node.parm("rotate_cameray").set(self.node.evalParm("rotate_cameray") + pos_delta[0])
+                else:
+                    self.node.parm("Translate_Camerax").set(self.node.evalParm("Translate_Camerax") + pos_delta[0])
+                    self.node.parm("Translate_Cameray").set(self.node.evalParm("Translate_Cameray") + pos_delta[1])
+
+            # Update previous position for next frame
+            self.prev_camerapos = current_camerapos
+
+        if dev.isMiddleButtonReleased():
+            self.prev_camerapos = None  # Reset tracking
+            
+        # Must return True to consume the event
+        return False
+
+    def onMouseWheelEvent(self, kwargs):
+        ui_event = kwargs["ui_event"]
+        state_parms = kwargs["state_parms"]
+        dev = ui_event.device()
+        
+        focal_zoom_sensitivity = 3
+        dolly_sensitivity = -.1
+        mouse_wheel_delta = -1 * dev.mouseWheel()
+        
+        if dev.isShiftKey():
+            self.node.parm("Translate_Cameraz").set(self.node.evalParm("Translate_Cameraz") + mouse_wheel_delta * dolly_sensitivity)
+        else:
+            self.node.parm("focalLength").set(self.node.evalParm("focalLength") - mouse_wheel_delta * focal_zoom_sensitivity)
+
+        hud_updates = {"set_focal": self.node.evalParm("focalLength"), "focal_bar": normalize(self.node.evalParm("focalLength"), 16, 200)}
+        self.scene_viewer.hudInfo(hud_values=hud_updates)
+        return False
+
+    def on_off_bool(self, input: bool)->str:
+        if input:
+            return "on"
+        else:
+            return "off"
+
+    def onHandleToState(self, kwargs):
+        # Called when the user manipulates a handle
+
+        handle_name = kwargs["handle"]
+        parms = kwargs["parms"]
+        prev_parms = kwargs["prev_parms"]
+
+        print(handle_name)
+        print(parms)
+
+    def onMenuAction(self, kwargs):
+        """ Callback implementing the actions of a bound menu. Called 
+        when a menu item has been selected. 
+        """
+
+        menu_item = kwargs["menu_item"]
+        state_parms = kwargs["state_parms"]
+
+    def onMenuPreOpen(self, kwargs):
+        """ Implement this callback to update the menu content before 
+        it is drawn. 
+        """
+        menu_states = kwargs["menu_states"]
+        menu_item_states = kwargs["menu_item_states"]
+
+    def onParmChangeEvent(self, kwargs):
+        parm_name = kwargs["parm_name"]
+        parm_value = kwargs["parm_value"]
+        state_parms = kwargs["state_parms"]
+        ui_event = kwargs["ui_event"]
+
+        self.update_info_panel_values()
+
+    def update_info_panel_values(self):
+        hud_updates = { "light_setup": self.node.evalParm("light_setup2"), 
+                        "setup_name": self.LIGHT_SETUPS[self.node.evalParm("light_setup2")], 
+                        "set_focal": self.node.evalParm("focalLength"),
+                        "lookat": self.on_off_bool(self.node.evalParm("look_at_asset")),
+                        "show_guides": self.on_off_bool(self.node.evalParm("show_bounding_box")),
+                        "show_utils": self.on_off_bool(self.node.evalParm("show_balls")),}
+        self.scene_viewer.hudInfo(hud_values=hud_updates)
+
+    def onKeyEvent(self, kwargs):
+        ui_event = kwargs["ui_event"]
+        state_parms = kwargs["state_parms"]
+        dev = ui_event.device()
+        pressed_key = dev.keyString()
+
+        match(pressed_key):
+            case "0":
+                self.node.parm("light_setup2").set(0)
+                hud_updates = {"light_setup": self.node.evalParm("light_setup2"), "setup_name": "None"}
+                self.scene_viewer.hudInfo(hud_values=hud_updates)
+                return True
+            case "1":
+                self.node.parm("light_setup2").set(1)
+                hud_updates = {"light_setup": self.node.evalParm("light_setup2"), "setup_name": "Studio"}
+                self.scene_viewer.hudInfo(hud_values=hud_updates)
+                return True
+            case "2":
+                self.node.parm("light_setup2").set(2)
+                hud_updates = {"light_setup": self.node.evalParm("light_setup2"), "setup_name": "Neutral"}
+                self.scene_viewer.hudInfo(hud_values=hud_updates)
+                return True
+            case "3":
+                self.node.parm("light_setup2").set(3)
+                hud_updates = {"light_setup": self.node.evalParm("light_setup2"), "setup_name": "Sun"}
+                self.scene_viewer.hudInfo(hud_values=hud_updates)
+                return True
+            case "4":
+                self.node.parm("light_setup2").set(4)
+                hud_updates = {"light_setup": self.node.evalParm("light_setup2"), "setup_name": "Morning"}
+                self.scene_viewer.hudInfo(hud_values=hud_updates)
+                return True
+            case "5":
+                self.node.parm("light_setup2").set(5)
+                hud_updates = {"light_setup": self.node.evalParm("light_setup2"), "setup_name": "Spotlight"}
+                self.scene_viewer.hudInfo(hud_values=hud_updates)
+                return True
+        
+        if pressed_key == "l":
+            self.node.parm("look_at_asset").set(not self.node.evalParm("look_at_asset"))
+            hud_updates = {"lookat": self.on_off_bool(self.node.evalParm("look_at_asset"))}
+            self.scene_viewer.hudInfo(hud_values=hud_updates)
+            return True
+
+        if pressed_key == "backspace":
+            self.node.parm("reset_transforms").pressButton()
+            self.update_info_panel_values()
+            return True
+        
+        if pressed_key == "b":
+            self.node.parm("show_bounding_box").set(not self.node.evalParm("show_bounding_box"))
+            hud_updates = {"show_guides": self.on_off_bool(self.node.evalParm("show_bounding_box"))}
+            self.scene_viewer.hudInfo(hud_values=hud_updates)
+            return True
+
+        if pressed_key == "u":
+            self.node.parm("show_balls").set(not self.node.evalParm("show_balls"))
+            self.node.parm("scale_ref").set(not self.node.evalParm("scale_ref"))
+            hud_updates = {"show_utils": self.on_off_bool(self.node.evalParm("show_balls"))}
+            self.scene_viewer.hudInfo(hud_values=hud_updates)
+
+        return False
+    
+    def onDraw(self, kwargs):
+        draw_handle = kwargs["draw_handle"]
+
+    def onNodeChangeEvent(self, kwargs):
+        event_type = kwargs["event_type"]
+        node = kwargs["node"]
+        parm_tuple = kwargs["parm_tuple"]
+
+def createViewerStateTemplate():
+    state_typename = kwargs["type"].definition().sections()["DefaultState"].contents()
+    state_label = "Th::th LookDevStudio::4.0"
+    state_cat = hou.lopNodeTypeCategory()
+
+    template = hou.ViewerStateTemplate(state_typename, state_label, state_cat)
+    template.bindFactory(State)
+    template.bindIcon(kwargs["type"].icon())
+
+    template.bindNodeChangeEvent([hou.nodeEventType.ParmTupleChanged])
+    template.bindHandleStatic("hudslider", "Exposure", [("light_exposure", "value")])
+
+    return template

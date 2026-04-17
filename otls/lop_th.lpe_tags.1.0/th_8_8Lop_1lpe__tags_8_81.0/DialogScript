@@ -1,0 +1,68 @@
+# Dialog script for th::lpe_tags::1.0 automatically generated
+
+{
+    name	th::lpe_tags::1.0
+    script	th::lpe_tags::1.0
+    label	"th lpe tags"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "generate_lpes"
+        label   "Generate LPEs from scene"
+        type    button
+        default { "0" }
+        parmtag { "script_callback" "hou.phm().generate()" }
+        parmtag { "script_callback_language" "python" }
+    }
+    multiparm {
+        name    "tags"
+        label    "Tags"
+        default 0
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "multistartoffset" "0" }
+
+        parm {
+            name    "enable#"
+            label   "Enable"
+            type    toggle
+            invisible
+            default { "1" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "lpetag#"
+            label   "LPE Tag"
+            type    string
+            joinnext
+            default { "light_group#" }
+            disablewhen "{ enable# == 0 }"
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "usdapischema" "KarmaLightAPI" }
+            parmtag { "usdvaluetype" "string" }
+        }
+        parm {
+            name    "primpattern#"
+            label   "Lights"
+            type    string
+            default { "`lopinputprims(\".\", 0)`" }
+            disablewhen "{ enable# == 0 }"
+            menutoggle {
+                [ "opmenu -l -a edit_lpetag primpattern" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
+            parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nShift-click to select using the primitive pattern editor.\nAlt-click to toggle movement of the display flag." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::usdpathtype" "primlist" }
+        }
+    }
+
+}

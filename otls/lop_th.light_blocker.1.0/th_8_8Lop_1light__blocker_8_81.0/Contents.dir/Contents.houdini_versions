@@ -1,0 +1,16 @@
+{
+	"values":["2","20.5.332","1.0"
+	],
+	"indexes":{
+		"hdaroot/materiallibrary1/lightblocker_MAT.userdata":1,
+		"hdaroot/grid1/sopnet/create.userdata":1,
+		"hdaroot/materiallibrary1/lightblocker_MAT/Material_Outputs_and_AOVs.userdata":1,
+		"hdaroot/materiallibrary1.userdata":1,
+		"hdaroot/grid1/sopnet/create/grid1.userdata":1,
+		"hdaroot/grid1.userdata":0,
+		"hdaroot/output0.userdata":1,
+		"hdaroot/materiallibrary1/lightblocker_MAT/inputs.userdata":1,
+		"hdaroot/materiallinker1.userdata":1,
+		"hdaroot/rendergeometrysettings1.userdata":2
+	}
+}

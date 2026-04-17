@@ -1,0 +1,14 @@
+Operator:     th::create_asset::1.0
+Label:        th create asset
+Path:         oplib:/th::Lop/create_asset::1.0?th::Lop/create_asset::1.0
+Icon:         COMMON_component
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Mon Mar 23 14:38:15 2026
+

@@ -1,0 +1,14 @@
+Operator:     th::maps_baker::1.0
+Label:        th maps baker
+Path:         oplib:/th::Sop/maps_baker::1.0?th::Sop/maps_baker::1.0
+Icon:         $TH_PIPELINE_PATH/resources/MapsBaker.png
+Table:        Sop
+License:      
+Extra:        inputcolors='2 "RGB 0.700195 0.700195 0.700195" "RGB 0.700195 0.700195 0.700195" ' outputcolors='1 "RGB 0.700195 0.700195 0.700195" ' 
+User:         
+Inputs:       1 to 2
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Fri Dec 13 15:26:59 2024
+

@@ -1,0 +1,14 @@
+Operator:     th::duplicate::1.0
+Label:        th duplicate
+Path:         oplib:/th::Lop/duplicate::1.0?th::Lop/duplicate::1.0
+Icon:         LOP_subnet
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Mon Oct 13 11:47:06 2025
+

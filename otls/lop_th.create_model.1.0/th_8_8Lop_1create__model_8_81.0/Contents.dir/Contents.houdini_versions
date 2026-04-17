@@ -1,0 +1,25 @@
+{
+	"values":["2","21.0.559"
+	],
+	"indexes":{
+		"hdaroot/sopimport_default.userdata":1,
+		"hdaroot/initialize_parent_prim.userdata":1,
+		"hdaroot/sopnet/create.userdata":1,
+		"hdaroot/sopnet/create/default.userdata":1,
+		"hdaroot/sopnet/create/load_model_file.userdata":1,
+		"hdaroot/materiallibrary.userdata":1,
+		"hdaroot/initialize_geo_prims.userdata":1,
+		"hdaroot/assignmaterial.userdata":1,
+		"hdaroot/IN_stage.userdata":1,
+		"hdaroot/sopnet.userdata":1,
+		"hdaroot/loftpayloadinfo1.userdata":1,
+		"hdaroot/set_geo_schema.userdata":1,
+		"hdaroot/xform.userdata":1,
+		"hdaroot/metadata.userdata":1,
+		"hdaroot/sopnet/create/rest.userdata":1,
+		"hdaroot/sopnet/create/OUT_GEO.userdata":1,
+		"hdaroot/sopnet/OUT_default.userdata":1,
+		"hdaroot.userdata":0,
+		"hdaroot/output.userdata":1
+	}
+}

@@ -1,0 +1,286 @@
+# Dialog script for th::export_layer::1.0 automatically generated
+
+{
+    name	th::export_layer::1.0
+    script	Tumblehead::th_export_layer::1.0
+    label	"th export layer"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    groupsimple {
+        name    "promoted_parms"
+        label   "Promoted Parms"
+        invisibletab
+
+        groupsimple {
+            name    "set_metadata_parms"
+            label   "set_metadata"
+
+            parm {
+                name    "set_metadata_fps"
+                label   "fps"
+                type    color
+                size    1
+                default { "24" }
+                range   { 0 1 }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        groupsimple {
+            name    "export_parms"
+            label   "export"
+
+            parm {
+                name    "export_f"
+                label   "Start/End/Inc"
+                type    float
+                size    3
+                default { "1001" "1001" "1" }
+                range   { 0 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "export_lopoutput"
+                label   "Output File"
+                type    file
+                default { "" }
+                menureplace {
+                    [ "opmenu -l -a export lopoutput" ]
+                }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "filechooser_mode" "write" }
+            }
+            parm {
+                name    "export_execute"
+                label   "Save to Disk"
+                type    button
+                default { "0" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "takecontrol" "always" }
+            }
+        }
+
+    }
+
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        parm {
+            name    "entity_select"
+            label   "Entity"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
+            parmtag { "script_callback" "hou.phm().select()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity"
+            label   "Entity"
+            type    string
+            invisible
+            nolabel
+            joinnext
+            default { "from_context" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity_label"
+            label   "entity_label"
+            type    label
+            nolabel
+            default { "from_context: none" }
+        }
+        parm {
+            name    "variant"
+            label   "Variant"
+            type    string
+            default { "default" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import export_layer" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = export_layer.ExportLayer(hou.pwd())" ]
+                [ "items = node.list_variant_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "department"
+            label   "Department"
+            type    string
+            joinnext
+            default { "from_context" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import export_layer" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = export_layer.ExportLayer(hou.pwd())" ]
+                [ "items = node.list_department_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "department_label"
+            label   "department_label"
+            type    label
+            nolabel
+            default { "" }
+        }
+    }
+
+    groupsimple {
+        name    "scene_settings"
+        label   "Scene Settings"
+
+        parm {
+            name    "frame_range"
+            label   "Frame Range"
+            type    string
+            default { "from_context" }
+            menu {
+                "from_context"  "From context"
+                "from_settings" "From settings"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "frame_settings"
+            label   "First/Last/Step-Frame"
+            type    intvector
+            size    3
+            default { "1001" "1001" "1" }
+            disablewhen "{ frame_range != from_settings }"
+            range   { 0! 999999! }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "roll_settings"
+            label   "Pre/Post-Roll"
+            type    intvector2
+            size    2
+            default { "0" "0" }
+            disablewhen "{ frame_range != from_settings }"
+            range   { 0! 999999! }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "export_settings"
+        label   "Export Settings"
+
+        parm {
+            name    "export_type"
+            label   "Type"
+            type    string
+            default { "local" }
+            menu {
+                "local" "Local"
+                "farm"  "Farm"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "export_departments"
+            label   "Downstream Exports"
+            type    string
+            default { "" }
+            disablewhen "{ export_type != farm }"
+            menutoggle {
+                [ "from tumblepipe.pipe.houdini.lops import export_layer" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = export_layer.ExportLayer(hou.pwd())" ]
+                [ "return util.list_to_checked_menu(" ]
+                [ "    node.list_downstream_department_names()," ]
+                [ "    node.get_downstream_department_names()" ]
+                [ ")" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "export_pool"
+            label   "Pool"
+            type    string
+            default { "" }
+            disablewhen "{ export_type != farm }"
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import export_layer" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = export_layer.ExportLayer(hou.pwd())" ]
+                [ "items = node.list_pool_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "export_priority"
+            label   "Priority"
+            type    integer
+            default { "50" }
+            disablewhen "{ export_type != farm }"
+            range   { 1 100 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "batch_size"
+            label   "Batch"
+            type    integer
+            default { "0" }
+            range   { 0! 100 }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "actions"
+        label   "Actions"
+
+        parm {
+            name    "validate"
+            label   "Validate"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().validate()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "export"
+            label   "Export"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "open_location"
+            label   "Open Location"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().open_location()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

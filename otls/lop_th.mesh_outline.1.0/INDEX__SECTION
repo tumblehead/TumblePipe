@@ -1,0 +1,14 @@
+Operator:     th::mesh_outline::1.0
+Label:        th mesh outline
+Path:         oplib:/th::Lop/mesh_outline::1.0?th::Lop/mesh_outline::1.0
+Icon:         VIEW_hiddenline
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Thu Feb 12 18:13:58 2026
+

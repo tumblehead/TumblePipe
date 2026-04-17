@@ -1,0 +1,34 @@
+def reload_shotinfo():
+    node = hou.pwd()
+    multiparm = node.parm("shots")
+    
+    for i in range(multiparm.eval()):
+        input_node = node.node(node.evalParm(f"input{i+1}"))
+        input_stage = input_node.stage()
+        
+        if input_stage:
+            input_root = input_stage.GetPseudoRoot()
+            
+            # Get the stage's start and end timecodes
+            startTimeCode = input_root.GetMetadata("startTimeCode") or 1001
+            endTimeCode = input_root.GetMetadata("endTimeCode") or 1100
+    
+            # Set start and end time parms
+            node.parm(f"start_time_code{i+1}").set(startTimeCode)
+            node.parm(f"end_time_code{i+1}").set(endTimeCode)
+            
+            # Calculate shotlenth
+            shot_length = int(endTimeCode - startTimeCode + 1)
+            shot_lengt_parm = node.parm(f"shotlength{i+1}")
+            shot_lengt_parm.set(shot_length)
+            
+            # Start frame calculation
+            startframe_parm = node.parm(f"startframe{i + 1}")
+            if startframe_parm:
+                if i == 0:
+                    startframe_parm.set(0)
+                else:
+                    # Previous shot's start + previous shot's length
+                    prev_startframe = node.parm(f"startframe{i}").eval()
+                    prev_shotlength = node.parm(f"shotlength{i}").eval()
+                    startframe_parm.set(prev_startframe + prev_shotlength + 1)

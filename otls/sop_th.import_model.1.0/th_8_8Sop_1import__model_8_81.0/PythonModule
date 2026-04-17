@@ -1,0 +1,77 @@
+import hou
+
+
+def _get_import_layer_node():
+    """Get the internal import_layer LOP node."""
+    return hou.pwd().node('lopnet/import_layer')
+
+
+def _update_labels():
+    """Copy label values from internal import_layer to SOP HDA."""
+    sop_node = hou.pwd()
+    il_node = _get_import_layer_node()
+    if not il_node:
+        return
+
+    # Copy entity_label
+    il_label = il_node.parm('entity_label')
+    sop_label = sop_node.parm('entity_label')
+    if il_label and sop_label:
+        sop_label.set(il_label.eval())
+
+    # Copy version_label
+    il_vlabel = il_node.parm('version_label')
+    sop_vlabel = sop_node.parm('version_label')
+    if il_vlabel and sop_vlabel:
+        sop_vlabel.set(il_vlabel.eval())
+
+
+def execute():
+    """Import button callback - triggers the internal import_layer."""
+    from tumblepipe.pipe.houdini.lops import import_layer
+
+    il_node = _get_import_layer_node()
+    if il_node:
+        node = import_layer.ImportLayer(il_node)
+        node.execute()
+        _update_labels()
+
+
+def open_location():
+    """Open Location button callback."""
+    from tumblepipe.pipe.houdini.lops import import_layer
+
+    il_node = _get_import_layer_node()
+    if il_node:
+        node = import_layer.ImportLayer(il_node)
+        node.open_location()
+
+
+def select():
+    """Entity picker button callback - opens asset selector dialog."""
+    from tumblepipe.pipe.houdini.lops import import_layer
+    from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
+    from tumblepipe.api import default_client
+
+    api = default_client()
+    sop_node = hou.pwd()
+    il_node = _get_import_layer_node()
+    if not il_node:
+        return
+
+    node = import_layer.ImportLayer(il_node)
+
+    dialog = EntitySelectorDialog(
+        api=api,
+        entity_filter='assets',
+        include_from_context=True,
+        current_selection=sop_node.parm('entity').eval(),
+        title="Select Asset",
+        parent=hou.qt.mainWindow()
+    )
+
+    if dialog.exec_():
+        selected_uri = dialog.get_selected_uri()
+        if selected_uri:
+            sop_node.parm('entity').set(selected_uri)
+            execute()

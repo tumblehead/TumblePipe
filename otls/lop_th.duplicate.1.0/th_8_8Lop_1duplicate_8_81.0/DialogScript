@@ -1,0 +1,49 @@
+# Dialog script for th::duplicate::1.0 automatically generated
+
+{
+    name	th::duplicate::1.0
+    script	th::duplicate::1.0
+    label	"th duplicate"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    groupsimple {
+        name    "settings"
+        label   "Settings"
+
+        parm {
+            name    "prim_path"
+            label   "Primitive Path"
+            type    string
+            default { "" }
+            help    "None"
+            hidewhen "{ createprims == on }"
+            menutoggle {
+                [ "import loputils" ]
+                [ "return loputils.createPrimPatternMenu(kwargs['node'], 0)" ]
+                language python
+            }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
+            parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane. Ctrl-click to select using the primitive picker dialog." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::usdpathtype" "primlist" }
+            parmtag { "spare_category" "USD Prims" }
+        }
+        parm {
+            name    "instances"
+            label   "Instances"
+            type    integer
+            default { "2" }
+            range   { 2 99 }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

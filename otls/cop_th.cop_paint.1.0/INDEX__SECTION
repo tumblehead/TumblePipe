@@ -1,0 +1,14 @@
+Operator:     th::cop_paint::1.0
+Label:        th cop paint
+Path:         oplib:/th::Cop/cop_paint::1.0?th::Cop/cop_paint::1.0
+Icon:         COP_th-cop_paint-1.0
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Fri May 30 18:57:46 2025
+

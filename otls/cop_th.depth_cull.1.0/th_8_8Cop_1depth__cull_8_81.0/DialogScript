@@ -1,0 +1,18 @@
+# Dialog script for th::depth_cull::1.0 automatically generated
+
+{
+    name	th::depth_cull::1.0
+    script	th::depth_cull::1.0
+    label	"th depth cull"
+
+    input	scene_depth	scene_depth
+    input	object_depth	object_depth
+    input	object_color	object_color
+    output	result	result
+    signature	default	Default	{ Mono Mono RGBA }	{ RGBA }
+
+    help {
+	""
+    }
+
+}

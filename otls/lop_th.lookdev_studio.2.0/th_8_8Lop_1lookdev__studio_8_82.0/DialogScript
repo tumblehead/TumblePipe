@@ -1,0 +1,946 @@
+# Dialog script for th::lookdev_studio::2.0 automatically generated
+
+{
+    name	th::lookdev_studio::2.0
+    script	prism::th_LookDevStudio::1
+    label	"th lookdev studio"
+
+    help {
+	""
+    }
+    bindhandle light_exposure hudslider "Exposure" value ""
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	Camera
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+    outputlabel	1	"Turntable Stage"
+    outputlabel	2	Passthrough
+
+    groupsimple {
+        name    "folder10"
+        label   "_Invis"
+        invisibletab
+        grouptag { "sidefx::look" "blank" }
+
+        parm {
+            name    "batchrender"
+            label   "batchrender"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "bounding_height"
+            label   "Bounding Height"
+            type    float
+            default { "0" }
+            range   { 0 10 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "frame_z_dist"
+            label   "Frame Z Distance"
+            type    float
+            default { "0" }
+            range   { 0 10 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "dolly_offset"
+            label   "Dolly Offset"
+            type    float
+            default { [ "from pxr import Usd, Gf, UsdGeom\nimport math\n\nnode = hou.pwd()\n\nfocal_length = node.node(\"turntable_camera\").parm(\"focalLength\").eval()\nframed_z_dist = node.parm(\"frame_z_dist\").eval()\noffset_z_dist = node.node(\"transform_camera_z\").parm(\"tz\").eval()\n\ndolly_offset = (framed_z_dist - offset_z_dist) / (math.tan(math.radians(35 / 2)) / math.tan(math.radians(focal_length)))\ndolly_offset = focal_length * (framed_z_dist * (.1 * ((offset_z_dist+1.5)/10)))\nreturn dolly_offset" python ] }
+            range   { 0 10 }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "folder13"
+        label   "Selection"
+
+        parm {
+            name    "primpattern"
+            label   "Primitives"
+            type    string
+            default { "" }
+            help    "These are the primitives that will be put in the turntable stage"
+            menutoggle {
+                [ "opmenu -l -a ground_asset primpattern" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
+            parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane. Ctrl-click to select using the primitive picker dialog. Shift-click to select using the primitive pattern editor. Alt-click to toggle movement of the display flag." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "script_callback_language" "python" }
+            parmtag { "sidefx::usdpathinput" "0" }
+            parmtag { "sidefx::usdpathtype" "primlist" }
+        }
+        parm {
+            name    "excludeprimpattern"
+            label   "Exclude Primitives"
+            type    string
+            default { "" }
+            menutoggle {
+                [ "opmenu -l -a prune_prim excludeprimpattern1" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
+            parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nShift-click to select using the primitive pattern editor.\nAlt-click to toggle movement of the display flag." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::usdpathtype" "primlist" }
+        }
+        parm {
+            name    "sepparm8"
+            label   "Spacer"
+            type    separator
+            default { "" }
+            parmtag { "sidefx::layout_height" "small" }
+            parmtag { "sidefx::look" "blank" }
+        }
+        parm {
+            name    "framing_method"
+            label   "Framing Method"
+            type    integer
+            joinnext
+            default { "0" }
+            help    "By default the turntable camera will frame to the bounding box of the input primitives. You can change it to frame different primitives than the input primitives or you can frame to a box with customizable size"
+            menu {
+                "0" "Input Prims"
+                "1" "Box"
+            }
+            range   { 0 10 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "size"
+            label   "Size"
+            type    vector
+            nolabel
+            joinnext
+            size    3
+            default { "1" "1" "1" }
+            hidewhen "{ framing_method != 1 }"
+            range   { -1 1 }
+            export  all
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "show_bounding_box"
+            label   "Show BBox"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "folder9"
+        label   "Viewport"
+
+        parm {
+            name    "pass"
+            label   "Render Pass"
+            type    integer
+            nolabel
+            joinnext
+            default { "0" }
+            help    "Set The Viewport Render Pass"
+            menu {
+                "0" "beauty"
+                "1" "clay"
+                "2" "wireframe"
+                "3" "uv"
+            }
+            range   { 0 10 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "turntable_camera"
+            label   "Turntable Camera"
+            type    button
+            nolabel
+            joinnext
+            default { "0" }
+            help    "Set the sceneviewer to look through the turntable camera"
+            export  all
+            parmtag { "button_icon" "LOP_camera" }
+            parmtag { "script_callback" "hou.phm().set_view_camera()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "timeline"
+            label   "Timeline"
+            type    button
+            nolabel
+            joinnext
+            default { "0" }
+            help    "Set the timeline start and end frames to the turntable loop"
+            export  all
+            parmtag { "button_icon" "PLAYBAR_play_loop" }
+            parmtag { "script_callback" "hou.phm().set_timeline_to_loop()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "view_transform"
+            label   "OCIO"
+            type    button
+            nolabel
+            joinnext
+            default { "0" }
+            help    "Set Display to 'sRGB - Display' and View to 'ACES1.0 - SDR Video'"
+            export  all
+            parmtag { "button_icon" "COMMON_colorspace" }
+            parmtag { "script_callback" "hou.phm().set_view_transform()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "render_view"
+            label   "Render view"
+            type    button
+            nolabel
+            joinnext
+            default { "0" }
+            export  all
+            parmtag { "button_icon" "NETVIEW_render_flag" }
+            parmtag { "script_callback" "hou.phm().toggle_render_view()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "reset_transforms"
+            label   "Reset"
+            type    button
+            default { "0" }
+            export  all
+            parmtag { "button_icon" "" }
+            parmtag { "script_callback" "hou.phm().reset_transforms()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder0"
+        label   "Camera"
+
+        parm {
+            name    "focalLength"
+            label   "Focal Length"
+            type    float
+            default { "35" }
+            range   { 16! 200! }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "usdvaluename" "" }
+        }
+        parm {
+            name    "focal_point"
+            label   "Focal Point"
+            type    float
+            default { "0" }
+            range   { -1 1 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "fStop"
+            label   "F-Stop"
+            type    float
+            default { "0" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "look_at_asset"
+            label   "Look At Asset"
+            type    toggle
+            default { "1" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "Circle_Focus"
+            label   "Look at point"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            hidewhen "{ look_at_asset == 0 }"
+            range   { -1 1 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "Translate_Camera"
+            label   "Translate Camera"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "rotate_camera"
+            label   "Rotate Camera"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            range   { 0 360 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        groupcollapsible {
+            name    "xn__camerashake_2ka"
+            label   "Camera shake"
+
+            parm {
+                name    "camera_shake"
+                label   "Camera Shake"
+                type    toggle
+                default { "off" }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "shake_freq"
+                label   "Shake Frequency"
+                type    float
+                default { "2.47" }
+                range   { 0! 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "shake_amp"
+                label   "Shake Amplitude"
+                type    float
+                default { "0.05" }
+                range   { 0 0.1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
+    groupcollapsible {
+        name    "folder11"
+        label   "Asset"
+
+        parm {
+            name    "animated_asset"
+            label   "Animated Asset"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "freeze_frame"
+            label   "Freeze Frame"
+            type    integer
+            default { "1001" }
+            hidewhen "{ animated_asset == 1 }"
+            range   { 1001 1200 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "sepparm7"
+            label   "Spacer"
+            type    separator
+            default { "" }
+            parmtag { "sidefx::layout_height" "small" }
+            parmtag { "sidefx::look" "blank" }
+        }
+        parm {
+            name    "asset_angle"
+            label   "Asset Angle"
+            type    float
+            default { "0" }
+            range   { 0 180 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "asset_offset"
+            label   "Asset Offset"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder1"
+        label   "Turntable"
+
+        groupcollapsible {
+            name    "folder12"
+            label   "Motion"
+
+            parm {
+                name    "motion_type"
+                label   "Motion Type"
+                type    integer
+                joinnext
+                default { "0" }
+                menu {
+                    "0" "rotate asset"
+                    "1" "swivel camera"
+                    "2" "circle"
+                }
+                range   { 0 1 }
+                export  all
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "swivel_amp"
+                label   "Amplitude"
+                type    float
+                default { "30" }
+                hidewhen "{ motion_type != 1 }"
+                range   { 0 10 }
+                export  all
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "circle_amp"
+                label   "Amplitude"
+                type    float
+                default { "5" }
+                hidewhen "{ motion_type != 2 }"
+                range   { 0 5 }
+                export  all
+                parmtag { "script_callback_language" "python" }
+            }
+            groupsimple {
+                name    "folder2"
+                label   "Frame Range"
+
+                parm {
+                    name    "asset_turn_framerange"
+                    label   "Asset Turn Framerange"
+                    type    int_minmax
+                    size    2
+                    default { "1001" "1101" }
+                    range   { 0 10 }
+                    export  all
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "light_turn_framerange"
+                    label   "Light Turn Framerange"
+                    type    int_minmax
+                    size    2
+                    default { "ch(\"asset_turn_framerangemax\")+1" "ch(\"asset_turn_framerangemin\")+(ch(\"asset_turn_framerangemax\")-ch(\"asset_turn_framerangemin\"))*2+1" }
+                    range   { 0 10 }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+        }
+
+        groupcollapsible {
+            name    "folder5"
+            label   "Lighting"
+
+            groupsimple {
+                name    "folder15"
+                label   "Environment"
+
+                parm {
+                    name    "hdri_exposure"
+                    label   "Exposure"
+                    type    float
+                    default { "0" }
+                    range   { -2 2 }
+                    parmtag { "autoscope" "0000000000000000" }
+                    parmtag { "usdvaluetype" "float" }
+                }
+                parm {
+                    name    "file_path"
+                    label   "Use file path"
+                    type    toggle
+                    default { "0" }
+                    help    "By default, LookDev Studio will use a internal Studio HDRI Environment Light. Toggle on to chose file from disk"
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "environment"
+                    label   "Environment"
+                    type    image
+                    default { "" }
+                    hidewhen "{ file_path == 0 }"
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
+            parm {
+                name    "sepparm2"
+                label   "Separator"
+                type    separator
+                default { "" }
+            }
+            parm {
+                name    "light_setup2"
+                label   "Lights"
+                type    buttonstrip
+                joinnext
+                default { "1" }
+                menureplace {
+                    "-1"    "None"
+                    "0"     "Studio"
+                    "1"     "Neutral"
+                    "3"     "Sun"
+                    "4"     "Morning"
+                    "5"     "Spotlight"
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "edit_lights"
+                label   "Edit Lights"
+                type    button
+                nolabel
+                default { "0" }
+                help    "Dive to subnet where you can make manuel edits to the currently selected light setup. Or you can set light setup to \"None\" and build you own setup"
+                export  all
+                parmtag { "button_icon" "LOP_lightmixer" }
+                parmtag { "script_callback" "hou.phm().dive_to_node(\"CUSTOM_LIGHTS/CUSTOM_LIGHTS_OUT\", kwargs)" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "light_exposure"
+                label   "Lights Exposure"
+                type    float
+                default { "0" }
+                range   { -2! 2 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "usdvaluetype" "float" }
+            }
+            parm {
+                name    "light_rotation"
+                label   "Light Rotation"
+                type    float
+                default { "0" }
+                range   { 0 360 }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        groupcollapsible {
+            name    "folder6"
+            label   "Staging"
+
+            parm {
+                name    "scale_elements"
+                label   "Scaled Elements"
+                type    buttonstrip
+                default { "31" }
+                menutoggle {
+                    "0" "podium"
+                    "1" "balls"
+                    "2" "chart"
+                    "3" "lights"
+                    "4" "background"
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "background_color"
+                label   "Background Color"
+                type    color
+                size    3
+                default { "0.4" "0.4" "0.4" }
+                range   { 0 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "colortype" "hsv" }
+                parmtag { "ogl_diff" "1" }
+                parmtag { "parmvop" "1" }
+                parmtag { "usdvaluename" "inputs:base_color" }
+                parmtag { "usdvaluetype" "color3f" }
+            }
+            parm {
+                name    "bg_dist"
+                label   "Background Distance"
+                type    float
+                default { "0" }
+                range   { -10 10 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "podium"
+                label   "Podium"
+                type    buttonstrip
+                default { "0" }
+                menureplace {
+                    "0" "None"
+                    "1" "Disk"
+                    "2" "Slab"
+                    "3" "Box"
+                    "4" "Cylinder"
+                }
+                export  all
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "podium_scale"
+                label   "Podium Scale"
+                type    float
+                default { "1" }
+                hidewhen "{ podium == 0 }"
+                range   { 0 2 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        groupcollapsible {
+            name    "folder4"
+            label   "Utilities"
+
+            parm {
+                name    "show_background"
+                label   "Show Background"
+                type    toggle
+                default { "1" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "show_balls"
+                label   "Show spheres"
+                type    toggle
+                joinnext
+                default { "0" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "ball_position"
+                label   "Ball Position"
+                type    vector2
+                nolabel
+                size    2
+                default { "0" "0" }
+                range   { -1 1 }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "sepparm"
+                label   "Spacer"
+                type    separator
+                default { "" }
+                parmtag { "sidefx::layout_height" "small" }
+                parmtag { "sidefx::look" "blank" }
+            }
+            parm {
+                name    "scale_ref"
+                label   "Show Scale Ref"
+                type    toggle
+                default { "0" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "scale_ref_height"
+                label   "Scale Ref Height"
+                type    float
+                default { "1.8" }
+                range   { 0 10 }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
+    groupcollapsible {
+        name    "folder8"
+        label   "Slapcomp"
+
+        parm {
+            name    "jump_to_slapcomp"
+            label   "Jump To Slapcomp"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().dive_to_node(\"comp_sopnet/slapcomp/slapcomp_end\", kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "apply_slapcomp"
+            label   "Apply Slapcomp"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().apply_slapcomp()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "sepparm9"
+            label   "Separator"
+            type    separator
+            default { "" }
+        }
+        parm {
+            name    "slapcomp_path"
+            label   "Slapcomp Path"
+            type    file
+            default { "$HIP/slapcomp/$OS.bgeo.sc" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "save_slapcomp"
+            label   "Save Slapcomp To Disk"
+            type    button
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "takecontrol" "always" }
+        }
+        groupsimple {
+            name    "folder14"
+            label   "Vignette"
+
+            parm {
+                name    "vignette_blend"
+                label   "Blend"
+                type    float
+                default { "1" }
+                range   { 0! 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "vignette_scale"
+                label   "Scale"
+                type    vector2
+                size    2
+                default { "1.3" "1.3" }
+                range   { -1 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "vignette_strength"
+                label   "Distance"
+                type    float
+                default { "0.1" }
+                range   { 0 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "vignette_blur"
+                label   "Blur"
+                type    float
+                default { "0.015" }
+                range   { 0! 0.05 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        parm {
+            name    "chromatic_abberation"
+            label   "Chromatic Abberation"
+            type    float
+            default { "0.02" }
+            range   { 0 0.1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "lense_distortion"
+            label   "Lense Distortion"
+            type    float
+            default { "-0.01" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder7"
+        label   "Render"
+
+        parm {
+            name    "render_resolution"
+            label   "Resolution"
+            type    intvector2
+            joinnext
+            size    2
+            default { "2048" "2048" }
+            range   { -1 1 }
+        }
+        parm {
+            name    "resolutionMenu"
+            label   "Choose Resolution"
+            type    button
+            nolabel
+            default { "0" }
+            menumini {
+                [ "echo `pythonexprs(\"__import__('toolutils').parseDialogScriptMenu('FBres')\")`" ]
+            }
+            parmtag { "script_callback" "opparm . render_resolution ( `arg(\"$script_value\", 0)` `arg(\"$script_value\", 1)` pixelAspectRatio ( `arg(\"$script_value\", 2)` )" }
+        }
+        parm {
+            name    "render_samples"
+            label   "Path Traced Samples"
+            type    integer
+            default { "64" }
+            range   { 1! 256 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "spare_category" "Sampling" }
+            parmtag { "uiscope" "viewport" }
+            parmtag { "usdvaluetype" "int" }
+        }
+        parm {
+            name    "sepparm5"
+            label   "Spacer"
+            type    separator
+            default { "" }
+            parmtag { "sidefx::layout_height" "small" }
+            parmtag { "sidefx::look" "blank" }
+        }
+        parm {
+            name    "playblast"
+            label   "Playblast To MPlay"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().playblast()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "executebackground"
+            label   "Render to Disk in Background"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "takecontrol" "always" }
+        }
+        parm {
+            name    "renderpreview"
+            label   "Render to MPlay"
+            type    button
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "takecontrol" "always" }
+        }
+        parm {
+            name    "trange"
+            label   "Frame Range"
+            type    ordinal
+            default { "normal" }
+            menu {
+                "off"       "Render Current Frame"
+                "normal"    "Render Specific Frame Range"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "f"
+            label   "Start/End/Inc"
+            type    float
+            size    2
+            default { [ "ch('asset_turn_framerangemin')" hscript-expr ] [ "ch('light_turn_framerangemax')" hscript-expr ] }
+            hidewhen "{ trange == off }"
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "sepparm6"
+            label   "Spacer"
+            type    separator
+            default { "" }
+            parmtag { "sidefx::layout_height" "small" }
+            parmtag { "sidefx::look" "blank" }
+        }
+        parm {
+            name    "outputimage"
+            label   "Output"
+            type    directory
+            default { "$HIP/turntable/$OS.$F4.exr" }
+            menureplace {
+                [ "opmenu -l -a usdrender_rop1 outputimage" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "render_slapcomp"
+            label   "Render With Slapcomp"
+            type    toggle
+            default { "on" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupcollapsible {
+        name    "folder3"
+        label   "Farm"
+
+        parm {
+            name    "farm_pool"
+            label   "Pool"
+            type    string
+            default { "" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import lookdev_studio" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = lookdev_studio.LookdevStudio(hou.pwd())" ]
+                [ "items = node.list_pool_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "farm_frame_settings"
+            label   "Start/End-Frame"
+            type    intvector2
+            size    2
+            default { [ "first_frame = hou.parm('asset_turn_framerangemin').eval()\nreturn first_frame" python ] [ "first_frame = hou.parm('asset_turn_framerangemin').eval()\nlast_frame = hou.parm('light_turn_framerangemax').eval()\nframe_count = (last_frame - first_frame) + 1\nreturn first_frame + (frame_count * 5)" python ] }
+            range   { 1! 999999! }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "farm_priority"
+            label   "Priority"
+            type    integer
+            default { "50" }
+            range   { 0! 100! }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "farm_stepsize"
+            label   "Step size"
+            type    integer
+            default { "10" }
+            range   { 1! 10 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "farm_batchsize"
+            label   "Batch size"
+            type    integer
+            default { "5" }
+            range   { 1! 10 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "farm_submit"
+            label   "Submit Render To Farm"
+            type    button
+            default { "0" }
+            parmtag { "button_icon" "" }
+            parmtag { "script_callback" "hou.phm().submit_to_farm()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

@@ -1,0 +1,34 @@
+# Dialog script for th::geo_path_builder::1.0 automatically generated
+
+{
+    name	th::geo_path_builder::1.0
+    script	th::geo_path_builder::1.0
+    label	"th geo path builder"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Sub-Network Input #1"
+    inputlabel	2	"Sub-Network Input #2"
+    inputlabel	3	"Sub-Network Input #3"
+    inputlabel	4	"Sub-Network Input #4"
+
+    parm {
+        name    "path"
+        label   ""
+        type    label
+        nolabel
+        joinnext
+        default { "" }
+    }
+    parm {
+        name    "name"
+        label   ""
+        type    string
+        nolabel
+        default { "road_lines" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

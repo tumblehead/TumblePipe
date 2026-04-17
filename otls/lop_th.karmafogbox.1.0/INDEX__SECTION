@@ -1,0 +1,14 @@
+Operator:     th::karmafogbox_copy::1.0
+Label:        th karma fog box
+Path:         oplib:/th::Lop/karmafogbox_copy::1.0?th::Lop/karmafogbox_copy::1.0
+Icon:         LOP_karmafogbox
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Tue Jul  1 10:22:45 2025
+

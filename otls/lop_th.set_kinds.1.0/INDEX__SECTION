@@ -1,0 +1,14 @@
+Operator:     th::set_kinds::1.0
+Label:        th set kinds
+Path:         oplib:/th::Lop/set_kinds::1.0?th::Lop/set_kinds::1.0
+Icon:         LOP_subnet
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Thu Nov 27 15:35:17 2025
+

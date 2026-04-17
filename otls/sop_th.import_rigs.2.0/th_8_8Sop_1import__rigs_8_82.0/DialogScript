@@ -1,0 +1,133 @@
+# Dialog script for th::import_rigs::2.0 automatically generated
+
+{
+    name	th::import_rigs::2.0
+    script	th::import_rigs::1.0
+    label	"th import rigs"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Sub-Network Input #1"
+    inputlabel	2	"Sub-Network Input #2"
+    inputlabel	3	"Sub-Network Input #3"
+    inputlabel	4	"Sub-Network Input #4"
+
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        multiparm {
+            name    "rig_imports"
+            label    "Rig imports"
+
+            parm {
+                name    "entity_select#"
+                label   "Entity"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
+                parmtag { "script_callback" "hou.phm().select(kwargs['parm'].multiParmInstanceIndices()[0])" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "entity#"
+                label   "Entity"
+                type    string
+                invisible
+                nolabel
+                joinnext
+                default { "" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "entity_label#"
+                label   "entity_label"
+                type    label
+                nolabel
+                joinnext
+                default { "" }
+            }
+            parm {
+                name    "variant#"
+                label   "Variant"
+                type    string
+                nolabel
+                joinnext
+                default { "default" }
+                menu {
+                    [ "from tumblepipe.pipe.houdini.sops import import_rigs" ]
+                    [ "from tumblepipe.pipe.houdini import util" ]
+                    [ "" ]
+                    [ "index = int(kwargs['parm'].name()[len('variant'):])" ]
+                    [ "node = import_rigs.ImportRigs(hou.pwd())" ]
+                    [ "variant_names = node.list_variant_names(index)" ]
+                    [ "variant_name = node.get_variant_name(index)" ]
+                    [ "if variant_name is None or variant_name not in variant_names:" ]
+                    [ "    node.set_variant_name(index, variant_names[0])" ]
+                    [ "return util.list_to_menu(variant_names)" ]
+                    language python
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "version#"
+                label   "Version"
+                type    string
+                nolabel
+                joinnext
+                default { "latest" }
+                menu {
+                    [ "from tumblepipe.pipe.houdini.sops import import_rigs" ]
+                    [ "from tumblepipe.pipe.houdini import util" ]
+                    [ "" ]
+                    [ "index = int(kwargs['parm'].name()[len('version'):])" ]
+                    [ "node = import_rigs.ImportRigs(hou.pwd())" ]
+                    [ "version_names = node.list_version_names(index)" ]
+                    [ "version_name = node.get_version_name(index)" ]
+                    [ "if version_name is None or version_name not in version_names:" ]
+                    [ "    node.set_version_name(index, version_names[0])" ]
+                    [ "return util.list_to_menu(version_names)" ]
+                    language python
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "version_label#"
+                label   "version_label#"
+                type    label
+                nolabel
+                joinnext
+                default { "" }
+            }
+            parm {
+                name    "instances#"
+                label   "Instances"
+                type    integer
+                nolabel
+                default { "1" }
+                range   { 1! 10 }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
+    groupsimple {
+        name    "actions"
+        label   "Actions"
+
+        parm {
+            name    "import"
+            label   "Import"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

@@ -1,0 +1,378 @@
+# Dialog script for th::submit_render::1.0 automatically generated
+
+{
+    name	th::submit_render::1.0
+    script	Tumblehead::th_submit_render::1.0
+    label	"th submit render"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+    outputlabel	1	empty
+    outputlabel	2	preview
+
+    groupsimple {
+        name    "promoted_parms"
+        label   "Promoted Parms"
+        invisibletab
+
+        groupsimple {
+            name    "preview"
+            label   "Preview"
+
+            parm {
+                name    "preview_sequence"
+                label   "Sequence"
+                type    string
+                default { "" }
+                menu {
+                    [ "opmenu -l -a preview sequence" ]
+                }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "preview_shot"
+                label   "Shot"
+                type    string
+                default { "" }
+                menu {
+                    [ "opmenu -l -a preview shot" ]
+                }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "preview_render_layer"
+                label   "Render Layer"
+                type    string
+                default { "" }
+                menu {
+                    [ "opmenu -l -a preview render_layer" ]
+                }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        parm {
+            name    "shot"
+            label   "Shot"
+            type    string
+            joinnext
+            default { "from_context" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import submit_render" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = submit_render.SubmitRender(hou.pwd())" ]
+                [ "items = node.list_shot_uris()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "shot_label"
+            label   ""
+            type    label
+            nolabel
+            default { "" }
+        }
+        parm {
+            name    "variant"
+            label   "Variant"
+            type    string
+            default { "default" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import submit_render" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = submit_render.SubmitRender(hou.pwd())" ]
+                [ "items = ['all'] + node.list_render_layer_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "shot_department"
+            label   "Shot Department"
+            type    string
+            joinnext
+            default { "from_context" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import submit_render" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = submit_render.SubmitRender(hou.pwd())" ]
+                [ "items = node.list_shot_department_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "shot_department_label"
+            label   ""
+            type    label
+            nolabel
+            default { "" }
+        }
+    }
+
+    groupsimple {
+        name    "farm_settings"
+        label   "Farm"
+
+        parm {
+            name    "pool"
+            label   "Pool"
+            type    string
+            default { "" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import submit_render" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = submit_render.SubmitRender(hou.pwd())" ]
+                [ "items = node.list_pool_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "render_department"
+            label   "Render Department"
+            type    string
+            default { "" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import submit_render" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = submit_render.SubmitRender(hou.pwd())" ]
+                [ "items = node.list_render_department_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "settings"
+        label   "Settings"
+
+        parm {
+            name    "render_settings"
+            label   "Render Settings"
+            type    string
+            default { "from_export" }
+            menu {
+                "from_export"   "From Export"
+                "from_settings" "From Settings"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "samples"
+            label   "Samples"
+            type    integer
+            default { "128" }
+            disablewhen "{ render_settings != from_settings }"
+            range   { 1! 512 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "slapcomp_mode"
+            label   "Slapcomp"
+            type    string
+            joinnext
+            default { "none" }
+            menu {
+                "none"  "None"
+                "cops"  "From COPs"
+                "file"  "From File"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "slapcomp_path"
+            label   "Slapcomp Path"
+            type    string
+            nolabel
+            default { "" }
+            disablewhen "{ slapcomp_mode == none }"
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "tile_count"
+            label   "Tile Count"
+            type    string
+            default { "1" }
+            menu {
+                "1"     "1"
+                "4"     "4"
+                "16"    "16"
+                "64"    "64"
+                "256"   "256"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "jobs"
+        label   "Jobs"
+
+        parm {
+            name    "submit_partial"
+            label   "Submit Partial"
+            type    toggle
+            default { "1" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "submit_full"
+            label   "Submit Full"
+            type    toggle
+            default { "1" }
+            parmtag { "script_callback_language" "python" }
+        }
+        groupcollapsible {
+            name    "partial_render"
+            label   "Partial Render"
+            hidewhen "{ submit_partial == 0 }"
+
+            parm {
+                name    "specific_frames"
+                label   "Start/Middle/End-Frame"
+                type    intvector
+                size    3
+                default { [ "hou.pwd().parm('frame_settingsx').eval()" python ] [ "hou.pwd().parm('frame_settingsx').eval() + ((hou.pwd().parm('frame_settingsy').eval() - hou.pwd().parm('frame_settingsx').eval()) // 2)" python ] [ "hou.pwd().parm('frame_settingsy').eval()" python ] }
+                range   { -1 1 }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "partial_priority"
+                label   "Priority"
+                type    integer
+                default { "90" }
+                range   { 0! 100! }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "partial_denoise_task"
+                label   "Denoise"
+                type    toggle
+                default { "1" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        groupcollapsible {
+            name    "full_render"
+            label   "Full Render"
+            hidewhen "{ submit_full == 0 }"
+
+            parm {
+                name    "frame_range"
+                label   "Frame Range"
+                type    string
+                default { "from_config" }
+                menu {
+                    "from_config"   "From Config"
+                    "from_settings" "From Settings"
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "frame_settings"
+                label   "Start/End-Frame"
+                type    intvector2
+                size    2
+                default { [ "import hou\n\nfrom tumblepipe.api import default_client\nfrom tumblepipe.pipe.houdini.lops import submit_render\n\napi = default_client()\n\nnode = submit_render.SubmitRender(hou.pwd())\nsequence_name = node.get_sequence_name()\nshot_name = node.get_shot_name()\n\nframe_range = api.config.get_frame_range(sequence_name, shot_name)\nreturn frame_range.start_frame" python ] [ "import hou\n\nfrom tumblepipe.api import default_client\nfrom tumblepipe.pipe.houdini.lops import submit_render\n\napi = default_client()\n\nnode = submit_render.SubmitRender(hou.pwd())\nsequence_name = node.get_sequence_name()\nshot_name = node.get_shot_name()\n\nframe_range = api.config.get_frame_range(sequence_name, shot_name)\nreturn frame_range.end_frame" python ] }
+                disablewhen "{ frame_range == from_config }"
+                range   { 1! 999999! }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "roll_settings"
+                label   "Pre/Post-Roll"
+                type    intvector2
+                size    2
+                default { [ "import hou\n\nfrom tumblepipe.api import default_client\nfrom tumblepipe.pipe.houdini.lops import submit_render\n\napi = default_client()\n\nnode = submit_render.SubmitRender(hou.pwd())\nsequence_name = node.get_sequence_name()\nshot_name = node.get_shot_name()\n\nframe_range = api.config.get_frame_range(sequence_name, shot_name)\nreturn frame_range.start_roll" python ] [ "import hou\n\nfrom tumblepipe.api import default_client\nfrom tumblepipe.pipe.houdini.lops import submit_render\n\napi = default_client()\n\nnode = submit_render.SubmitRender(hou.pwd())\nsequence_name = node.get_sequence_name()\nshot_name = node.get_shot_name()\n\nframe_range = api.config.get_frame_range(sequence_name, shot_name)\nreturn frame_range.end_roll" python ] }
+                disablewhen "{ frame_range == from_config }"
+                range   { 0! 999999! }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "stepsize"
+                label   "Step size"
+                type    integer
+                default { "0" }
+                range   { 1! 10 }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "batchsize"
+                label   "Batch size"
+                type    integer
+                default { "5" }
+                range   { 1! 10 }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "full_priority"
+                label   "Priority"
+                type    integer
+                default { "50" }
+                range   { 0! 100! }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "full_denoise_task"
+                label   "Denoise"
+                type    toggle
+                default { "1" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
+    groupsimple {
+        name    "actions"
+        label   "Actions"
+
+        parm {
+            name    "build_preview"
+            label   "Build Preview"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().build_preview()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "submit_farm"
+            label   "Submit To Farm"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().submit_farm()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

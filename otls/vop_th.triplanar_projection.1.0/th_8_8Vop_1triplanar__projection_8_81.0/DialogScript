@@ -1,0 +1,58 @@
+# Dialog script for th::triplanar_projection::1.0 automatically generated
+
+{
+    name	th::triplanar_projection::1.0
+    script	th::triplanar_projection::1.0
+    label	"th triplanar projection"
+
+    output	vector	output	output
+    outputflags	output	2
+    signature	"Default Inputs"	default	{ vector }
+
+    outputoverrides	default
+    {
+	___begin	auto
+			(0,0,0)
+    }
+
+    help {
+	""
+    }
+
+    parm {
+        name    "projection"
+        label   "Projection"
+        type    ordinal
+        default { "0" }
+        menu {
+            "0" "UV"
+            "1" "Tri-Planar"
+            "2" "Hex-Planar"
+        }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "axis"
+        label   "Axis"
+        type    buttonstrip
+        default { "7" }
+        hidewhen "{ if == projection != == 1 }"
+        menutoggle {
+            "x" "X"
+            "y" "Y"
+            "z" "Z"
+        }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "image"
+        label   "Image"
+        type    image
+        default { "" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "filechooser_mode" "read" }
+        parmtag { "script_action" "from tumblepipe.tools import utils\n\nutils.create_cop_reference('image', kwargs)" }
+        parmtag { "script_action_icon" "NETWORKS_cop" }
+        parmtag { "sidefx::shader_isparmuniform" "1" }
+    }
+}

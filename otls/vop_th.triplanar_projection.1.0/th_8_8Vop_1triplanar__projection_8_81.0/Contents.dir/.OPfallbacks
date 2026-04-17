@@ -1,0 +1,12 @@
+Vop/kma_hextiled_triplanar C:/PROGRA~1/SIDEEF~1/HOUDIN~1.440/houdini/otls/OPlibVop.hda
+Vop/kma_hextiled_triplanar otls/OPlibVop.hda
+Vop/mtlxconstant C:/PROGRA~1/SIDEEF~1/HOUDIN~1.440/houdini/otls/MaterialX.hda
+Vop/mtlxconstant otls/MaterialX.hda
+Vop/mtlxgeompropvalue C:/PROGRA~1/SIDEEF~1/HOUDIN~1.440/houdini/otls/MaterialX.hda
+Vop/mtlxgeompropvalue otls/MaterialX.hda
+Vop/mtlxswitch C:/PROGRA~1/SIDEEF~1/HOUDIN~1.440/houdini/otls/MaterialX.hda
+Vop/mtlxswitch otls/MaterialX.hda
+Vop/mtlxtiledimage C:/PROGRA~1/SIDEEF~1/HOUDIN~1.440/houdini/otls/MaterialX.hda
+Vop/mtlxtiledimage otls/MaterialX.hda
+Vop/mtlxtriplanarprojection C:/PROGRA~1/SIDEEF~1/HOUDIN~1.440/houdini/otls/MaterialX.hda
+Vop/mtlxtriplanarprojection otls/MaterialX.hda

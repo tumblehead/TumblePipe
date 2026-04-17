@@ -1,0 +1,88 @@
+# Dialog script for th::import_lop_camera::1.0 automatically generated
+
+{
+    name	th::import_lop_camera::1.0
+    script	th::import_lop_camera::1.0
+    label	"th import lop camera"
+
+    output	camera	camera
+    signature	default	Default	{ }	{ Mono }
+
+    help {
+	""
+    }
+
+    parm {
+        name    "sequence"
+        label   "Sequence"
+        type    string
+        default { "020" }
+        menu {
+            [ "opmenu -l -a lopnet/import_camera sequence" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "shot"
+        label   "Shot"
+        type    string
+        default { "030" }
+        menu {
+            [ "opmenu -l -a lopnet/import_camera shot" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "department"
+        label   "Department"
+        type    string
+        default { "animation" }
+        menu {
+            [ "opmenu -l -a lopnet/import_camera department" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "version"
+        label   "Version"
+        type    string
+        default { "v0023" }
+        menu {
+            [ "opmenu -l -a lopnet/import_camera version" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "latest"
+        label   "Latest"
+        type    button
+        default { "0" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "import"
+        label   "Import"
+        type    button
+        default { "0" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "xformtype"
+        label   "Transform Type"
+        type    string
+        default { "local" }
+        menu {
+            "localtoworld"  "Local to World"
+            "local"         "Local"
+            "parenttoworld" "Parent to World"
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

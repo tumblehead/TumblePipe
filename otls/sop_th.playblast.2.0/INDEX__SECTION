@@ -1,0 +1,15 @@
+Operator:     th::playblast::2.0
+Label:        th playblast
+Path:         oplib:/th::Sop/playblast::2.0?th::Sop/playblast::2.0
+Icon:         $TH_PIPELINE_PATH\houdini\Tumblehead\resources/Playblast.png
+Table:        Sop
+License:      
+Extra:        inputcolors='1 "RGB 0.700195 0.700195 0.700195" ' outputcolors='0 ' visibleoutputs=0 
+User:         
+Inputs:       0 to 1
+Outputs:      0
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Fri Dec 12 12:46:37 2025
+

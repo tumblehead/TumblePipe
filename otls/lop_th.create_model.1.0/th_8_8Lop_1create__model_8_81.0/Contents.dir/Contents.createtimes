@@ -1,0 +1,21 @@
+{
+	"hdaroot/xform.def":1556746712,
+	"hdaroot/sopnet.def":1556667104,
+	"hdaroot/sopnet/create/load_model_file.def":1751276115,
+	"hdaroot/sopnet/create/OUT_GEO.def":1751276000,
+	"hdaroot/output.def":1556746822,
+	"hdaroot/materiallibrary.def":1571453182,
+	"hdaroot/set_geo_schema.def":1751271219,
+	"hdaroot/initialize_geo_prims.def":1751271317,
+	"hdaroot/sopnet/create/default.def":1751270205,
+	"hdaroot/sopnet/create/rest.def":1751367505,
+	"hdaroot/sopimport_default.def":1556667113,
+	"hdaroot/assignmaterial.def":1571452776,
+	"hdaroot/sopnet/OUT_default.def":1568428769,
+	"hdaroot/metadata.def":1764784530,
+	"hdaroot/sopnet/create.def":1568428761,
+	"hdaroot/IN_stage.def":1565394948,
+	"hdaroot/initialize_parent_prim.def":1751273834,
+	"hdaroot/loftpayloadinfo1.def":1706734013,
+	"hdaroot.def":1765369287
+}

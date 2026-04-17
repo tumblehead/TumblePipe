@@ -1,0 +1,19 @@
+{
+	"values":["21.0.559"
+	],
+	"indexes":{
+		"hdaroot/lopnet/materiallibrary/material/rough1.userdata":0,
+		"hdaroot/lopnet/materiallibrary/material/base_color1.userdata":0,
+		"hdaroot/lopnet.userdata":0,
+		"hdaroot/lopnet/materiallibrary.userdata":0,
+		"hdaroot/inputs.userdata":0,
+		"hdaroot/lopnet/materiallibrary/material/inputs.userdata":0,
+		"hdaroot/lopnet/materiallibrary/material.userdata":0,
+		"hdaroot/lopnet/materiallibrary/material/Material_Outputs_and_AOVs.userdata":0,
+		"hdaroot/lopnet/materiallibrary/material/rough.userdata":0,
+		"hdaroot/IN_height.userdata":0,
+		"hdaroot/IN_rough.userdata":0,
+		"hdaroot/IN_basecolor.userdata":0,
+		"hdaroot/outputs.userdata":0
+	}
+}

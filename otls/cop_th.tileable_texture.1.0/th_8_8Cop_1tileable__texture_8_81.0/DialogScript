@@ -1,0 +1,49 @@
+# Dialog script for th::tileable_texture::1.0 automatically generated
+
+{
+    name	th::tileable_texture::1.0
+    script	th::tileable_texture::1.0
+    label	"th tileable texture"
+
+    input	source	source
+    output	source	source
+    signature	default	Default	{ RGBA }	{ RGBA }
+
+    help {
+	""
+    }
+
+    parm {
+        name    "horizontal_ramp"
+        label   "Horizontal Ramp"
+        type    ramp_flt
+        default { "4" }
+        range   { 1! 10 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "rampfloatdefault" "1pos ( 0 ) 1value ( 1 ) 1interp ( linear ) 2pos ( 0.11556603759527206 ) 2value ( 0 ) 2interp ( linear ) 3pos ( 0.8608490824699402 ) 3value ( 0 ) 3interp ( linear ) 4pos ( 1 ) 4value ( 1 ) 4interp ( linear )" }
+        parmtag { "rampshowcontrolsdefault" "0" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "vertical_ramp"
+        label   "Vertical Ramp"
+        type    ramp_flt
+        default { "4" }
+        range   { 1! 10 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "rampfloatdefault" "1pos ( 0 ) 1value ( 1 ) 1interp ( linear ) 2pos ( 0.08579465746879578 ) 2value ( 0 ) 2interp ( linear ) 3pos ( 0.8902953863143921 ) 3value ( 0 ) 3interp ( linear ) 4pos ( 1 ) 4value ( 1 ) 4interp ( linear )" }
+        parmtag { "rampshowcontrolsdefault" "0" }
+        parmtag { "script_callback_language" "python" }
+        parmtag { "sidefx::ramp_grayscale_default" "0" }
+    }
+    parm {
+        name    "texture_scale"
+        label   "Texture Scale"
+        type    vector2
+        size    2
+        default { "1" "1" }
+        range   { -1 1 }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

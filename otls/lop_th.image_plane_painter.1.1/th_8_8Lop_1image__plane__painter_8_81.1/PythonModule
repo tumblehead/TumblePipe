@@ -1,0 +1,150 @@
+import os
+import subprocess
+from PIL import Image
+from pathlib import Path
+import shutil
+import nodegraphutils
+import hou
+
+psd_template = r"W:\_pipeline\pipeline\krita\blank_template.psd"
+
+def open_location():
+    image_path = hou.expandString(hou.evalParm("image_save_path"))
+    os.startfile(image_path)
+    
+def get_image_paths():
+    """Get the image name and full path for the current node."""
+    node = hou.pwd()
+    
+    try:
+        referenced_file = node.node('cop_sopnet/copnet/image').evalParm('filename')
+        image_name = node.evalParm("image_name")
+        image_save_path = node.evalParm("image_save_path")
+        IMAGE_PATH = f"{image_save_path}/{image_name}.psd"
+        return referenced_file, IMAGE_PATH, image_name
+    except Exception as e:
+        hou.ui.displayMessage(f"Error getting image path: {e}")
+        return None, None, None
+
+def file_exists(image: str) -> bool:
+    """Check if image file exists."""
+    return bool(image) and Path(image).exists()
+
+def create_krita_file(destination: str):
+    try:
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        
+        resolution = hou.pwd().evalParmTuple("image_resolution")
+        width = int(resolution[0])
+        height = int(resolution[1])
+
+        copied_file = shutil.copy(psd_template, destination)
+        
+        return True
+    except Exception as e:
+        hou.ui.displayMessage(f"Failed to create PSD file: {e}")
+        return False        
+        
+def open_krita(image: str) -> None:
+    """Open image in Krita."""
+    try:
+        # Get editor path at runtime, not at module load
+        editor_exe = hou.pwd().evalParm("editor")
+        subprocess.Popen([editor_exe, image])
+    except Exception as e:
+        hou.ui.displayMessage(f"Failed to open editor: {e}")
+
+def reference_image(image_path: str) -> None:
+    """Set the image path in the COP file node."""
+    node = hou.pwd()
+    image_node = node.node('cop_sopnet/copnet/image')
+    
+    if image_node:
+        image_node.parm("filename").set(image_path)
+    else:
+        hou.ui.displayMessage("Could not find copnet/editor_file node")
+
+def reload_cop_node(node: hou.Node):
+    reload_button = node.parm("reload")
+    reload_button.pressButton()
+    node.parm("aovs").set(0)
+    node.parm("addaovs").pressButton()
+    
+def create_null_inputs(node: hou.Node) -> list[hou.Node]:
+
+    # CLEAR INPUTS
+    for output_node in node.outputs():
+        output_node.destroy()
+        
+    # CREATE NEW INPUTS
+    created_nodes = list()
+    for i, output in enumerate(node.outputNames()):
+        null = node.parent().createNode("null", output)
+        null.setInput(0, node, i)
+        created_nodes.append(null)
+    layout_nodes = created_nodes
+    layout_nodes.append(node)
+    node.parent().layoutChildren(layout_nodes)
+    return created_nodes
+
+def setup_layer_modify():
+    modify_node = hou.pwd().node("MODIFY_LAYERS")
+    modify_network = modify_node.node("modify/modify")
+    layer_prims = modify_node.evalParm("primpattern")
+    split_layer_null = modify_network.node("SPLIT_LAYERS")
+    merge_player_node = modify_network.node("MERGE_LAYERS")
+    for i, prim in enumerate(layer_prims.split()):
+        blast_node = modify_network.createNode("blast", f"{prim.split('/')[-1]}")
+        blast_node.setInput(0, split_layer_null)
+        blast_node.parm("negate").set(1)
+        blast_node.parm("group").set(f"@path={prim}/*")
+        merge_player_node.setInput(i, blast_node)
+        blast_node.moveToGoodPosition()
+    
+#--------------------
+# MAIN
+#--------------------
+def main():
+    referenced_file, IMAGE_PATH, image_name = get_image_paths()
+    
+    # Exit if we couldn't get the paths
+    if IMAGE_PATH is None:
+        return
+    
+    if file_exists(referenced_file):
+        # File exists, just open it
+        open_krita(referenced_file)
+    else:
+        # Create new PSD file at specified resolution
+        if create_krita_file(IMAGE_PATH):
+            # Open in editor
+            open_krita(IMAGE_PATH)
+
+def reload():
+    cop_image_node = hou.pwd().node("cop_sopnet/copnet/image")
+    reload_cop_node(cop_image_node)
+    create_null_inputs(cop_image_node)
+    thumbnail()
+            
+def thumbnail():
+    desktop = hou.ui.curDesktop()
+    editor = desktop.paneTabOfType(hou.paneTabType.NetworkEditor)
+    thumbnail_path = f"{hou.pwd().evalParm('image_save_path')}/{hou.pwd().evalParm('image_name')}.psd"
+    
+    # GET ALL IMAGES
+    images = list(editor.backgroundImages())
+    
+    # REMOVE ATTACHED THUMBNAIL
+    images = [img for img in images if img.relativeToPath() != hou.pwd().path()]
+    editor.setBackgroundImages(images)
+    
+    # CREATE NEW THUMBNAIL
+    image = hou.NetworkImage(thumbnail_path, hou.BoundingRect(-4, -1.25, 1, 1))
+    image.setRelativeToPath(hou.pwd().path())
+
+    images.append(image)
+
+    # APPLY AND SAVE BACKGROUND IMAGES
+    editor.setBackgroundImages(images)
+    nodegraphutils.saveBackgroundImages(editor.pwd(), editor.backgroundImages())
+    nodegraphutils.loadBackgroundImages(editor.pwd())

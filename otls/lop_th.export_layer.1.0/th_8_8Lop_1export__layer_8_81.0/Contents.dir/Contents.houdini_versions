@@ -1,0 +1,12 @@
+{
+	"values":["21.0.559"
+	],
+	"indexes":{
+		"hdaroot/export.userdata":0,
+		"hdaroot/layerbreak.userdata":0,
+		"hdaroot/output.userdata":0,
+		"hdaroot/IN_stage.userdata":0,
+		"hdaroot/update_renderproducts.userdata":0,
+		"hdaroot/set_metadata.userdata":0
+	}
+}

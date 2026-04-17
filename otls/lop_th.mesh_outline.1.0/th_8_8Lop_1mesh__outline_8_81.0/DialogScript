@@ -1,0 +1,421 @@
+# Dialog script for th::mesh_outline::1.0 automatically generated
+
+{
+    name	th::mesh_outline::1.0
+    script	th::mesh_outline::1.0
+    label	"th mesh outline"
+
+    help {
+	""
+    }
+    bindhandle domirror vector "mirror_direction" onoff ""
+    bindhandle mirror_tx vector "mirror_direction" tx ""
+    bindhandle mirror_ty vector "mirror_direction" ty ""
+    bindhandle mirror_tz vector "mirror_direction" tz ""
+    bindhandle mirror_dirx vector "mirror_direction" vx ""
+    bindhandle mirror_diry vector "mirror_direction" vy ""
+    bindhandle mirror_dirz vector "mirror_direction" vz ""
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "primpattern"
+        label   "Outlined Primitives"
+        type    string
+        default { "%type:Mesh" }
+        menutoggle {
+            [ "opmenu -l -a outline/sopnet/create/lopimport primpattern" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_action" "import loputils\nkwargs['ctrl'] = True\nloputils.selectPrimsInParm(kwargs, True,\n    lopparmname='loppath', allowinstanceproxies=True)" }
+        parmtag { "script_action_help" "Select primitives using the primitive picker dialog." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "sidefx::usdpathtype" "primlist" }
+    }
+    parm {
+        name    "dstprimpath"
+        label   "Outline Prim Path"
+        type    string
+        default { "/" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "timesample"
+        label   "Time Sample"
+        type    ordinal
+        default { "static" }
+        menu {
+            "static"    "Static"
+            "animated"  "Animated"
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    groupsimple {
+        name    "folder1"
+        label   "Line Thickness"
+
+        parm {
+            name    "dist"
+            label   "Line Thickness"
+            type    float
+            default { "0.007" }
+            range   { 0! 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "outputmin"
+            label   "Shrink near Intersection"
+            type    float
+            default { "0.1547" }
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "thickness_mult"
+            label   "Shrink Near Thinness"
+            type    float
+            default { "0" }
+            range   { 0! 1! }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "thickness_mult2"
+            label   "Shrink Near Concavavity"
+            type    float
+            default { "0" }
+            range   { 0! 1! }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "thickness_paint"
+            label   "Paint Thickness"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().paint_thickness()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "stroke_attrib"
+            label   "Attribute Name"
+            type    string
+            invisible
+            joinnext
+            default { "line_thickness" }
+            menutoggle {
+                [ "opmenu -l -a /stage/mesh_outline1/outline/sopnet/create/paint_thickness stroke_attrib" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_action" "from soputils import actionToggleVisualizer; actionToggleVisualizer(kwargs)" }
+            parmtag { "script_action_icon" "VIEW_visualization" }
+        }
+        parm {
+            name    "stroke_attribtype"
+            label   "Attribute Type"
+            type    ordinal
+            invisible
+            default { "float" }
+            menu {
+                "color"     "Color"
+                "float"     "Float"
+                "integer"   "Integer"
+            }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "stroke_operation"
+            label   "Operation"
+            type    ordinal
+            invisible
+            default { "smooth" }
+            menu {
+                "paint"     "Paint FG"
+                "smooth"    "Smooth"
+                "erase"     "Erase"
+                "sample"    "Sample FG"
+                "paintbg"   "Paint BG"
+                "samplebg"  "Sample BG"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "stroke_tool"
+            label   "Tool"
+            type    integer
+            invisible
+            default { "0" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "stroke_color"
+            label   "Stroke Color"
+            type    color
+            invisible
+            size    3
+            default { "1" "1" "1" }
+            hidewhen "{ stroke_attribtype != color }"
+            range   { 0 1 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "stroke_projtype"
+            label   "Projection"
+            type    ordinal
+            invisible
+            default { "geometry" }
+            menu {
+                "xy"        "XY Plane"
+                "yz"        "YZ Plane"
+                "zx"        "ZX Plane"
+                "screen"    "Screen Plane"
+                "geometry"  "Geometry"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "stroke_projcenter"
+            label   "Projection Center"
+            type    vector
+            invisible
+            size    3
+            default { "0" "0" "0" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+        }
+        parm {
+            name    "stroke_float"
+            label   "Stroke Float"
+            type    float
+            invisible
+            default { "1" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "stroke_int"
+            label   "Stroke Integer"
+            type    integer
+            invisible
+            default { "1" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "stroke__color"
+            label   "Color"
+            type    color
+            invisible
+            size    3
+            default { "1" "1" "1" }
+            range   { 0 1 }
+        }
+        parm {
+            name    "attribpainted_"
+            label   "Attribute Painted"
+            type    integer
+            invisible
+            default { [ "phm().isattribpainted(pwd(), pwd().parm( expandString('$CH') ).multiParmInstanceIndices()[0])" python ] }
+            range   { 0 10 }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "strokegeo"
+            label   "Strokes"
+            type    geometrydata
+            invisible
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "bakedgeo"
+            label   "Baked Geometry"
+            type    geometrydata
+            invisible
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "isectgeo"
+            label   "Intersect Geometry"
+            type    geometrydata
+            invisible
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "sidefx::save_value" "0" }
+        }
+        parm {
+            name    "activestrokegeo"
+            label   "Active Stroke Stencil Geometry"
+            type    data
+            invisible
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "sidefx::save_value" "0" }
+        }
+        parm {
+            name    "unsavedbakedgeo"
+            label   "Unsaved Baked Geometry"
+            type    data
+            invisible
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "sidefx::save_value" "0" }
+        }
+    }
+
+    groupsimple {
+        name    "folder0"
+        label   "Line Color"
+
+        parm {
+            name    "base"
+            label   "Line Diffuse"
+            type    float
+            default { "1" }
+            range   { 0! 1! }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "ogl_diff_intensity" "1" }
+        }
+        parm {
+            name    "color_mode"
+            label   "Color Mode"
+            type    buttonstrip
+            default { "0" }
+            menureplace {
+                "contant"   "Constant"
+                "geometry"  "Geometry Color"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "singlevalue"
+            label   "Constant Color"
+            type    color
+            size    3
+            default { "0" "0" "0" }
+            hidewhen "{ color_mode == 1 }"
+            range   { 0! 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "hueshift"
+            label   "Hue Shift"
+            type    float
+            default { "0" }
+            hidewhen "{ color_mode == 0 }"
+            range   { -180 180 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "sat"
+            label   "Saturation"
+            type    float
+            default { "1.5" }
+            hidewhen "{ color_mode == 0 }"
+            range   { 0! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "val"
+            label   "Value"
+            type    float
+            default { "0.2" }
+            hidewhen "{ color_mode == 0 }"
+            range   { 0! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "gamma"
+            label   "Gamma"
+            type    float
+            default { "1" }
+            hidewhen "{ color_mode == 0 }"
+            range   { 0.1 3 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "brightness"
+            label   "Brightness"
+            type    float
+            default { "0" }
+            hidewhen "{ color_mode == 0 }"
+            range   { 0! 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "folder2"
+        label   "Line Texture"
+
+        parm {
+            name    "texture_mode"
+            label   "Texture mode"
+            type    buttonstrip
+            default { "0" }
+            menureplace {
+                "none"      "None"
+                "copnet"    "Copnet"
+                "file"      "File"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "filex"
+            label   "Line Texture File"
+            type    image
+            default { "op:/stage/mesh_outline1/copnet/OUT_TEXTURE" }
+            hidewhen "{ texture_mode != 2 }"
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "sidefx::shader_isparmuniform" "1" }
+        }
+        parm {
+            name    "jump_to_copnet"
+            label   "Edit Copnet Texture"
+            type    button
+            default { "0" }
+            hidewhen "{ texture_mode != 1 }"
+            parmtag { "script_callback" "hou.phm().jump_to_cop()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "xn__inputstexture_offset_n8a"
+            label   "Texture Offset"
+            type    float
+            default { "0" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
+            name    "xn__inputstexture_scale_06a"
+            label   "Texture Scale"
+            type    float
+            default { "1" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "usdvaluetype" "float" }
+        }
+    }
+
+}

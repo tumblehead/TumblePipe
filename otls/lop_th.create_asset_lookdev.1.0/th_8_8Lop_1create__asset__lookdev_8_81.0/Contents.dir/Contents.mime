@@ -1,0 +1,2231 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Lop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::create_asset_lookdev::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+comment ""
+position -0.749622 7.27493
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	create_asset_model 1 1 "input1"
+}
+inputs
+{
+0 	create_asset_model 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"wirestyle":{
+		"type":"string",
+		"value":"rounded"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.inp"
+Content-Type: text/plain
+
+1
+0 0.80850403978610053 12.453096202167318 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.init"
+Content-Type: text/plain
+
+type = subnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.def"
+Content-Type: text/plain
+
+comment ""
+position 5.4838 3.40641
+connectornextid 4
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+2 "output2"
+3 "output3"
+}
+inputsNamed3
+{
+0 	foreach_begin 0 1 "input1"
+}
+inputs
+{
+0 	foreach_begin 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.inp"
+Content-Type: text/plain
+
+4
+0 8.0182400000000005 11.763100000000001 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 15.219440000000001 9.5041000000000011 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+2 15.219440000000001 10.633600000000001 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+3 17.478639999999999 9.9559000179529207 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet.init"
+Content-Type: text/plain
+
+type = subnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet.def"
+Content-Type: text/plain
+
+comment ""
+position 8.01824 10.6336
+connectornextid 4
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+2 "output2"
+3 "output3"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/__netbox1.netboxinit"
+Content-Type: text/plain
+
+2
+2
+{
+	autofit := 0;
+	color := "UT_Color RGB 0 0 0 ";
+	comment := INPUTS;
+	height := 1.7471698172812182;
+	minimized := 1;
+	width := 7.9245283078472575;
+	x_position := -1.6944027568134175;
+	y_position := 6.788155347192868;
+}
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet.inp"
+Content-Type: text/plain
+
+4
+0 -6.9896582913165259 3.1807044873949581 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 -0.92677175983469962 7.6950402570076886 2 0 __netbox1 "FROMOUTPUT"
+2 1.2732282148333267 7.6950402570076886 2 0 __netbox1 "FROMOUTPUT"
+3 3.4732281895013521 7.6950402570076886 2 0 __netbox1 "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.init"
+Content-Type: text/plain
+
+type = materiallibrary
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.def"
+Content-Type: text/plain
+
+comment ""
+position -6.98966 1.13115
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.55 0.7 0.75 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.spareparmdef"
+Content-Type: text/plain
+
+    parm {
+        name    "genpreviewshaders"
+        baseparm
+        label   "Auto-generate Preview Surface Shaders"
+        export  none
+    }
+    parm {
+        name    "allowparmanim"
+        baseparm
+        label   "Allow Shader Parameter Animation"
+        export  none
+    }
+    parm {
+        name    "referencerendervars"
+        baseparm
+        label   "Reference Material Render Vars into Render Products"
+        export  none
+    }
+    parm {
+        name    "parentprimtype"
+        baseparm
+        label   "Parent Primitive Type"
+        export  none
+    }
+    parm {
+        name    "matpathprefix"
+        baseparm
+        label   "Material Path Prefix"
+        export  none
+    }
+    groupcollapsible {
+        name    "tabmenufolder"
+        label   "Tab Menu"
+
+        parm {
+            name    "tabmenumask"
+            label   "Tab Menu Mask"
+            type    string
+            default { "*builder parameter constant rampparm collect null subnet subnetconnector suboutput subinput genericshader" }
+            parmtag { "spare_category" "Tab Menu" }
+        }
+    }
+
+    parm {
+        name    "geometrygroup"
+        baseparm
+        label   "geometrygroup"
+        export  none
+    }
+    groupcollapsible {
+        name    "fillgroup2"
+        label   "Fill"
+        grouptag { "group_type" "collapsible" }
+        parmtag { "sidefx::header_parm" "fillmaterials" }
+
+        parm {
+            name    "matnet"
+            baseparm
+            label   "Material Network"
+            export  none
+        }
+        parm {
+            name    "containerpath"
+            baseparm
+            label   "Container Path"
+            export  none
+        }
+        parm {
+            name    "fillmaterials"
+            baseparm
+            label   "Auto-fill Materials"
+            export  none
+        }
+    }
+
+    multiparm {
+        name    "materials"
+        label    "Number of Materials"
+        baseparm
+        default 1
+        parmtag { "multistartoffset" "1" }
+
+        parm {
+            name    "enable#"
+            baseparm
+            label   "Enable"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "matflag#"
+            baseparm
+            label   "Include Only VOPs with Material Flag Set"
+            export  none
+        }
+        parm {
+            name    "matnode#"
+            baseparm
+            label   "Material VOP"
+            export  none
+        }
+        parm {
+            name    "matpath#"
+            baseparm
+            label   "Material Path"
+            export  none
+        }
+        parm {
+            name    "assign#"
+            baseparm
+            label   "Assign to Geometry"
+            export  none
+        }
+        parm {
+            name    "geopath#"
+            baseparm
+            label   "Geometry Path"
+            export  none
+        }
+    }
+
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+genpreviewshaders	[ 0	locks=0 ]	(	"on"	)
+allowparmanim	[ 0	locks=0 ]	(	"off"	)
+referencerendervars	[ 0	locks=0 ]	(	"on"	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
+matpathprefix	[ 0	locks=0 ]	(	"`lopinputprims('.', 0)`/mtl/"	)
+geometrygroup	[ 0	locks=0 ]	(	)
+fillgroup	[ 0	locks=0 ]	(	0	)
+matnet	[ 0	locks=0 ]	(	.	)
+containerpath	[ 0	locks=0 ]	(	/materials/	)
+fillmaterials	[ 0	locks=0 ]	(	0	)
+materials	[ 0	locks=0 ]	(	1	)
+enable1	[ 0	locks=0 ]	(	"on"	)
+matflag1	[ 0	locks=0 ]	(	"on"	)
+matnode1	[ 0	locks=0 ]	(	*	)
+matpath1	[ 0	locks=0 ]	(	""	)
+assign1	[ 0	locks=0 ]	(	"on"	)
+geopath1	[ 0	locks=0 ]	(	"`lopinputprims('.', 0)`"	)
+tabmenufolder	[ 0	locks=0 ]	(	0	)
+tabmenumask	[ 0	locks=0 ]	(	"*builder parameter constant rampparm collect null subnet subnetconnector suboutput subinput genericshader"	)
+fillgroup2	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.init"
+Content-Type: text/plain
+
+type = subnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.def"
+Content-Type: text/plain
+
+language MaterialX
+comment ""
+position 0.912906 12.7413
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.spareparmdef"
+Content-Type: text/plain
+
+    groupcollapsible {
+        name    "folder1"
+        label   "Karma Material Builder"
+        grouptag { "sidefx::shader_isparm" "0" }
+
+        parm {
+            name    "inherit_ctrl"
+            label   "Inherit from Class"
+            type    integer
+            default { "2" }
+            menu {
+                "0" "Never"
+                "1" "Always"
+                "2" "Material Flag"
+            }
+            range   { 0 10 }
+        }
+        parm {
+            name    "shader_referencetype"
+            label   "Class Arc"
+            type    string
+            default { [ "n = hou.pwd()\nn_hasFlag = n.isMaterialFlagSet()\ni = n.evalParm('inherit_ctrl')\nr = 'none'\nif i == 1 or (n_hasFlag and i == 2):\n    r = 'inherit'\nreturn r" python ] }
+            menu {
+                "none"          "None"
+                "reference"     "Reference"
+                "inherit"       "Inherit"
+                "specialize"    "Specialize"
+                "represent"     "Represent"
+            }
+            parmtag { "sidefx::shader_isparm" "0" }
+            parmtag { "spare_category" "Shader" }
+        }
+        parm {
+            name    "shader_baseprimpath"
+            label   "Class Prim Path"
+            type    string
+            default { "/__class_mtl__/`$OS`" }
+            parmtag { "script_action" "import lopshaderutils\nlopshaderutils.selectPrimFromInputOrFile(kwargs)" }
+            parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::shader_isparm" "0" }
+            parmtag { "sidefx::usdpathtype" "prim" }
+            parmtag { "spare_category" "Shader" }
+        }
+        parm {
+            name    "separator1"
+            label   "separator1"
+            type    separator
+            default { "" }
+        }
+        parm {
+            name    "tabmenumask"
+            label   "Tab Menu Mask"
+            type    string
+            default { "karma USD ^mtlxUsd* ^mtlxramp* ^hmtlxramp* ^hmtlxcubicramp* MaterialX parameter constant collect null genericshader subnet subnetconnector suboutput subinput" }
+            parmtag { "spare_category" "Tab Menu" }
+        }
+        parm {
+            name    "shader_rendercontextname"
+            label   "Render Context Name"
+            type    string
+            default { "kma" }
+            parmtag { "sidefx::shader_isparm" "0" }
+            parmtag { "spare_category" "Shader" }
+        }
+        parm {
+            name    "shader_forcechildren"
+            label   "Force Translation of Children"
+            type    toggle
+            default { "1" }
+            parmtag { "sidefx::shader_isparm" "0" }
+            parmtag { "spare_category" "Shader" }
+        }
+    }
+
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.chn"
+Content-Type: text/plain
+
+{
+    channel shader_referencetype {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = "n = hou.pwd()
+n_hasFlag = n.isMaterialFlagSet()
+i = n.evalParm('inherit_ctrl')
+r = 'none'
+if i == 1 or (n_hasFlag and i == 2):
+    r = 'inherit'
+return r" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+folder1	[ 0	locks=0 ]	(	1	)
+inherit_ctrl	[ 0	locks=0 ]	(	2	)
+shader_referencetype	[ 0	locks=0 ]	(	[ shader_referencetype	"n = hou.pwd()
+n_hasFlag = n.isMaterialFlagSet()
+i = n.evalParm('inherit_ctrl')
+r = 'none'
+if i == 1 or (n_hasFlag and i == 2):
+    r = 'inherit'
+return r" ] 	)
+shader_baseprimpath	[ 0	locks=0 ]	(	/__class_mtl__/`$OS`	)
+separator1	[ 0	locks=0 ]	(	)
+tabmenumask	[ 0	locks=0 ]	(	"karma USD ^mtlxUsd* ^mtlxramp* ^hmtlxramp* ^hmtlxcubicramp* MaterialX parameter constant collect null genericshader subnet subnetconnector suboutput subinput"	)
+shader_rendercontextname	[ 0	locks=0 ]	(	kma	)
+shader_forcechildren	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/inputs.init"
+Content-Type: text/plain
+
+type = subinput
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/inputs.def"
+Content-Type: text/plain
+
+comment ""
+position -4.53993 0.0376
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/inputs.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/inputs.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxstandard_surface.init"
+Content-Type: text/plain
+
+type = mtlxstandard_surface
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxstandard_surface.def"
+Content-Type: text/plain
+
+comment ""
+position -0.2883 0.0376
+connectornextid 43
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+42 "out"
+}
+inputsNamed3
+{
+0 	"" "" 1 "base"
+1 	"" "" 1 "base_color"
+2 	"" "" 1 "diffuse_roughness"
+3 	"" "" 1 "metalness"
+4 	"" "" 1 "specular"
+5 	"" "" 1 "specular_color"
+6 	"" "" 1 "specular_roughness"
+7 	"" "" 1 "specular_IOR"
+8 	"" "" 1 "specular_anisotropy"
+9 	"" "" 1 "specular_rotation"
+10 	"" "" 1 "transmission"
+11 	"" "" 1 "transmission_color"
+12 	"" "" 1 "transmission_depth"
+13 	"" "" 1 "transmission_scatter"
+14 	"" "" 1 "transmission_scatter_anisotropy"
+15 	"" "" 1 "transmission_dispersion"
+16 	"" "" 1 "transmission_extra_roughness"
+17 	"" "" 1 "subsurface"
+18 	"" "" 1 "subsurface_color"
+19 	"" "" 1 "subsurface_radius"
+20 	"" "" 1 "subsurface_scale"
+21 	"" "" 1 "subsurface_anisotropy"
+22 	"" "" 1 "sheen"
+23 	"" "" 1 "sheen_color"
+24 	"" "" 1 "sheen_roughness"
+25 	"" "" 1 "coat"
+26 	"" "" 1 "coat_color"
+27 	"" "" 1 "coat_roughness"
+28 	"" "" 1 "coat_anisotropy"
+29 	"" "" 1 "coat_rotation"
+30 	"" "" 1 "coat_IOR"
+31 	"" "" 1 "coat_normal"
+32 	"" "" 1 "coat_affect_color"
+33 	"" "" 1 "coat_affect_roughness"
+34 	"" "" 1 "thin_film_thickness"
+35 	"" "" 1 "thin_film_IOR"
+36 	"" "" 1 "emission"
+37 	"" "" 1 "emission_color"
+38 	"" "" 1 "opacity"
+39 	"" "" 1 "thin_walled"
+40 	"" "" 1 "normal"
+41 	"" "" 1 "tangent"
+}
+inputs
+{
+0 	"" 0 1
+1 	"" 0 1
+2 	"" 0 1
+3 	"" 0 1
+4 	"" 0 1
+5 	"" 0 1
+6 	"" 0 1
+7 	"" 0 1
+8 	"" 0 1
+9 	"" 0 1
+10 	"" 0 1
+11 	"" 0 1
+12 	"" 0 1
+13 	"" 0 1
+14 	"" 0 1
+15 	"" 0 1
+16 	"" 0 1
+17 	"" 0 1
+18 	"" 0 1
+19 	"" 0 1
+20 	"" 0 1
+21 	"" 0 1
+22 	"" 0 1
+23 	"" 0 1
+24 	"" 0 1
+25 	"" 0 1
+26 	"" 0 1
+27 	"" 0 1
+28 	"" 0 1
+29 	"" 0 1
+30 	"" 0 1
+31 	"" 0 1
+32 	"" 0 1
+33 	"" 0 1
+34 	"" 0 1
+35 	"" 0 1
+36 	"" 0 1
+37 	"" 0 1
+38 	"" 0 1
+39 	"" 0 1
+40 	"" 0 1
+41 	"" 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxstandard_surface.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	default	)
+folder0	[ 0	locks=0 ]	(	1	)
+base	[ 0	locks=0 ]	(	1	)
+base_color	[ 0	locks=0 ]	(	0	0.5	0	)
+diffuse_roughness	[ 0	locks=0 ]	(	0	)
+metalness	[ 0	locks=0 ]	(	0	)
+folder0_1	[ 0	locks=0 ]	(	0	)
+specular	[ 0	locks=0 ]	(	1	)
+specular_color	[ 0	locks=0 ]	(	1	1	1	)
+specular_roughness	[ 0	locks=0 ]	(	0.2	)
+specular_IOR	[ 0	locks=0 ]	(	1.5	)
+specular_anisotropy	[ 0	locks=0 ]	(	0	)
+specular_rotation	[ 0	locks=0 ]	(	0	)
+folder0_5	[ 0	locks=0 ]	(	0	)
+coat	[ 0	locks=0 ]	(	0	)
+coat_color	[ 0	locks=0 ]	(	1	1	1	)
+coat_roughness	[ 0	locks=0 ]	(	0.1	)
+coat_anisotropy	[ 0	locks=0 ]	(	0	)
+coat_rotation	[ 0	locks=0 ]	(	0	)
+coat_IOR	[ 0	locks=0 ]	(	1.5	)
+coat_normal	[ 0	locks=0 ]	(	0	0	0	)
+coat_affect_color	[ 0	locks=0 ]	(	0	)
+coat_affect_roughness	[ 0	locks=0 ]	(	0	)
+folder0_2	[ 0	locks=0 ]	(	0	)
+transmission	[ 0	locks=0 ]	(	0	)
+transmission_color	[ 0	locks=0 ]	(	1	1	1	)
+transmission_depth	[ 0	locks=0 ]	(	0	)
+transmission_scatter	[ 0	locks=0 ]	(	0	0	0	)
+transmission_scatter_anisotropy	[ 0	locks=0 ]	(	0	)
+transmission_dispersion	[ 0	locks=0 ]	(	0	)
+transmission_extra_roughness	[ 0	locks=0 ]	(	0	)
+folder0_4	[ 0	locks=0 ]	(	0	)
+sheen	[ 0	locks=0 ]	(	0	)
+sheen_color	[ 0	locks=0 ]	(	1	1	1	)
+sheen_roughness	[ 0	locks=0 ]	(	0.3	)
+folder0_3	[ 0	locks=0 ]	(	0	)
+subsurface	[ 0	locks=0 ]	(	0	)
+subsurface_color	[ 0	locks=0 ]	(	1	1	1	)
+subsurface_radius	[ 0	locks=0 ]	(	1	1	1	)
+subsurface_scale	[ 0	locks=0 ]	(	1	)
+subsurface_anisotropy	[ 0	locks=0 ]	(	0	)
+folder0_7	[ 0	locks=0 ]	(	0	)
+emission	[ 0	locks=0 ]	(	0	)
+emission_color	[ 0	locks=0 ]	(	1	1	1	)
+folder0_6	[ 0	locks=0 ]	(	0	)
+thin_film_thickness	[ 0	locks=0 ]	(	0	)
+thin_film_IOR	[ 0	locks=0 ]	(	1.5	)
+folder0_8	[ 0	locks=0 ]	(	0	)
+opacity	[ 0	locks=0 ]	(	1	1	1	)
+thin_walled	[ 0	locks=0 ]	(	"off"	)
+normal	[ 0	locks=0 ]	(	0	0	0	)
+tangent	[ 0	locks=0 ]	(	0	0	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxstandard_surface.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"__inputgroup_":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Base":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Coat":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Emission":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Geometry":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Sheen":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Specular":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Subsurface":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Thin Film":{
+		"type":"string",
+		"value":"collapsed"
+	},
+	"__inputgroup_Transmission":{
+		"type":"string",
+		"value":"collapsed"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxdisplacement.init"
+Content-Type: text/plain
+
+type = mtlxdisplacement
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxdisplacement.def"
+Content-Type: text/plain
+
+comment ""
+position -0.2883 -2.4334
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+2 "out"
+}
+inputsNamed3
+{
+0 	"" "" 1 "displacement"
+1 	"" "" 1 "scale"
+}
+inputs
+{
+0 	"" 0 1
+1 	"" 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxdisplacement.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	default	)
+displacement	[ 0	locks=0 ]	(	0	)
+displacement_vector3	[ 0	locks=0 ]	(	0	0	0	)
+scale	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxdisplacement.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/Material_Outputs_and_AOVs.init"
+Content-Type: text/plain
+
+type = suboutput
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/Material_Outputs_and_AOVs.def"
+Content-Type: text/plain
+
+comment ""
+position 2.4426 -3.8725
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	mtlxstandard_surface 42 1 "surface"
+1 	mtlxdisplacement 2 1 "displacement"
+2 	material_properties 0 1 "properties"
+}
+inputs
+{
+0 	mtlxstandard_surface 0 1
+1 	mtlxdisplacement 0 1
+2 	material_properties 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/Material_Outputs_and_AOVs.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+name1	[ 0	locks=0 ]	(	surface	)
+label1	[ 0	locks=0 ]	(	""	)
+name2	[ 0	locks=0 ]	(	displacement	)
+label2	[ 0	locks=0 ]	(	""	)
+name3	[ 0	locks=0 ]	(	""	)
+label3	[ 0	locks=0 ]	(	""	)
+name4	[ 0	locks=0 ]	(	""	)
+label4	[ 0	locks=0 ]	(	""	)
+name5	[ 0	locks=0 ]	(	""	)
+label5	[ 0	locks=0 ]	(	""	)
+name6	[ 0	locks=0 ]	(	""	)
+label6	[ 0	locks=0 ]	(	""	)
+name7	[ 0	locks=0 ]	(	""	)
+label7	[ 0	locks=0 ]	(	""	)
+name8	[ 0	locks=0 ]	(	""	)
+label8	[ 0	locks=0 ]	(	""	)
+name9	[ 0	locks=0 ]	(	""	)
+label9	[ 0	locks=0 ]	(	""	)
+name10	[ 0	locks=0 ]	(	""	)
+label10	[ 0	locks=0 ]	(	""	)
+name11	[ 0	locks=0 ]	(	""	)
+label11	[ 0	locks=0 ]	(	""	)
+name12	[ 0	locks=0 ]	(	""	)
+label12	[ 0	locks=0 ]	(	""	)
+name13	[ 0	locks=0 ]	(	""	)
+label13	[ 0	locks=0 ]	(	""	)
+name14	[ 0	locks=0 ]	(	""	)
+label14	[ 0	locks=0 ]	(	""	)
+name15	[ 0	locks=0 ]	(	""	)
+label15	[ 0	locks=0 ]	(	""	)
+name16	[ 0	locks=0 ]	(	""	)
+label16	[ 0	locks=0 ]	(	""	)
+name17	[ 0	locks=0 ]	(	""	)
+label17	[ 0	locks=0 ]	(	""	)
+name18	[ 0	locks=0 ]	(	""	)
+label18	[ 0	locks=0 ]	(	""	)
+name19	[ 0	locks=0 ]	(	""	)
+label19	[ 0	locks=0 ]	(	""	)
+name20	[ 0	locks=0 ]	(	""	)
+label20	[ 0	locks=0 ]	(	""	)
+name21	[ 0	locks=0 ]	(	""	)
+label21	[ 0	locks=0 ]	(	""	)
+name22	[ 0	locks=0 ]	(	""	)
+label22	[ 0	locks=0 ]	(	""	)
+name23	[ 0	locks=0 ]	(	""	)
+label23	[ 0	locks=0 ]	(	""	)
+name24	[ 0	locks=0 ]	(	""	)
+label24	[ 0	locks=0 ]	(	""	)
+name25	[ 0	locks=0 ]	(	""	)
+label25	[ 0	locks=0 ]	(	""	)
+name26	[ 0	locks=0 ]	(	""	)
+label26	[ 0	locks=0 ]	(	""	)
+name27	[ 0	locks=0 ]	(	""	)
+label27	[ 0	locks=0 ]	(	""	)
+name28	[ 0	locks=0 ]	(	""	)
+label28	[ 0	locks=0 ]	(	""	)
+name29	[ 0	locks=0 ]	(	""	)
+label29	[ 0	locks=0 ]	(	""	)
+name30	[ 0	locks=0 ]	(	""	)
+label30	[ 0	locks=0 ]	(	""	)
+name31	[ 0	locks=0 ]	(	""	)
+label31	[ 0	locks=0 ]	(	""	)
+name32	[ 0	locks=0 ]	(	""	)
+label32	[ 0	locks=0 ]	(	""	)
+name33	[ 0	locks=0 ]	(	""	)
+label33	[ 0	locks=0 ]	(	""	)
+name34	[ 0	locks=0 ]	(	""	)
+label34	[ 0	locks=0 ]	(	""	)
+name35	[ 0	locks=0 ]	(	""	)
+label35	[ 0	locks=0 ]	(	""	)
+name36	[ 0	locks=0 ]	(	""	)
+label36	[ 0	locks=0 ]	(	""	)
+name37	[ 0	locks=0 ]	(	""	)
+label37	[ 0	locks=0 ]	(	""	)
+name38	[ 0	locks=0 ]	(	""	)
+label38	[ 0	locks=0 ]	(	""	)
+name39	[ 0	locks=0 ]	(	""	)
+label39	[ 0	locks=0 ]	(	""	)
+name40	[ 0	locks=0 ]	(	""	)
+label40	[ 0	locks=0 ]	(	""	)
+name41	[ 0	locks=0 ]	(	""	)
+label41	[ 0	locks=0 ]	(	""	)
+name42	[ 0	locks=0 ]	(	""	)
+label42	[ 0	locks=0 ]	(	""	)
+name43	[ 0	locks=0 ]	(	""	)
+label43	[ 0	locks=0 ]	(	""	)
+name44	[ 0	locks=0 ]	(	""	)
+label44	[ 0	locks=0 ]	(	""	)
+name45	[ 0	locks=0 ]	(	""	)
+label45	[ 0	locks=0 ]	(	""	)
+name46	[ 0	locks=0 ]	(	""	)
+label46	[ 0	locks=0 ]	(	""	)
+name47	[ 0	locks=0 ]	(	""	)
+label47	[ 0	locks=0 ]	(	""	)
+name48	[ 0	locks=0 ]	(	""	)
+label48	[ 0	locks=0 ]	(	""	)
+name49	[ 0	locks=0 ]	(	""	)
+label49	[ 0	locks=0 ]	(	""	)
+name50	[ 0	locks=0 ]	(	""	)
+label50	[ 0	locks=0 ]	(	""	)
+name51	[ 0	locks=0 ]	(	""	)
+label51	[ 0	locks=0 ]	(	""	)
+name52	[ 0	locks=0 ]	(	""	)
+label52	[ 0	locks=0 ]	(	""	)
+name53	[ 0	locks=0 ]	(	""	)
+label53	[ 0	locks=0 ]	(	""	)
+name54	[ 0	locks=0 ]	(	""	)
+label54	[ 0	locks=0 ]	(	""	)
+name55	[ 0	locks=0 ]	(	""	)
+label55	[ 0	locks=0 ]	(	""	)
+name56	[ 0	locks=0 ]	(	""	)
+label56	[ 0	locks=0 ]	(	""	)
+name57	[ 0	locks=0 ]	(	""	)
+label57	[ 0	locks=0 ]	(	""	)
+name58	[ 0	locks=0 ]	(	""	)
+label58	[ 0	locks=0 ]	(	""	)
+name59	[ 0	locks=0 ]	(	""	)
+label59	[ 0	locks=0 ]	(	""	)
+name60	[ 0	locks=0 ]	(	""	)
+label60	[ 0	locks=0 ]	(	""	)
+name61	[ 0	locks=0 ]	(	""	)
+label61	[ 0	locks=0 ]	(	""	)
+name62	[ 0	locks=0 ]	(	""	)
+label62	[ 0	locks=0 ]	(	""	)
+name63	[ 0	locks=0 ]	(	""	)
+label63	[ 0	locks=0 ]	(	""	)
+name64	[ 0	locks=0 ]	(	""	)
+label64	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/Material_Outputs_and_AOVs.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/material_properties.init"
+Content-Type: text/plain
+
+type = kma_material_properties
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/material_properties.def"
+Content-Type: text/plain
+
+comment ""
+position -0.2883 -3.87213
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material off
+outputsNamed3
+{
+0 "properties"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/material_properties.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	0	)
+folder1	[ 0	locks=0 ]	(	0	)
+xn____activate__karmadiffusequality_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmadiffusequality_z6a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmareflectquality_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmareflectquality_z6a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmarefractquality_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmarefractquality_z6a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmavolumequality_8pb	[ 0	locks=0 ]	(	0	)
+xn__karmavolumequality_d5a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmasssquality_dlb	[ 0	locks=0 ]	(	0	)
+xn__karmasssquality_h0a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmavolumesteprate_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmavolumesteprate_z6a	[ 0	locks=0 ]	(	0.25	)
+folder2	[ 0	locks=0 ]	(	0	)
+xn____activate__karmadiffuselimit_mob	[ 0	locks=0 ]	(	0	)
+xn__karmadiffuselimit_q3a	[ 0	locks=0 ]	(	1	)
+xn____activate__karmareflectlimit_mob	[ 0	locks=0 ]	(	0	)
+xn__karmareflectlimit_q3a	[ 0	locks=0 ]	(	4	)
+xn____activate__karmarefractlimit_mob	[ 0	locks=0 ]	(	0	)
+xn__karmarefractlimit_q3a	[ 0	locks=0 ]	(	4	)
+xn____activate__karmavolumelimit_zmb	[ 0	locks=0 ]	(	0	)
+xn__karmavolumelimit_31a	[ 0	locks=0 ]	(	0	)
+xn____activate__karmassslimit_3hb	[ 0	locks=0 ]	(	0	)
+xn__karmassslimit_7wa	[ 0	locks=0 ]	(	0	)
+folder3	[ 0	locks=0 ]	(	0	)
+xn____activate__karmavolumeuniform_8pb	[ 0	locks=0 ]	(	0	)
+xn__karmavolumeuniform_d5a	[ 0	locks=0 ]	(	"off"	)
+xn____activate__karmavolumeuniformdensity_n1b	[ 0	locks=0 ]	(	0	)
+xn__karmavolumeuniformdensity_rhb	[ 0	locks=0 ]	(	1	)
+xn____activate__karmavolumeuniformsamples_n1b	[ 0	locks=0 ]	(	0	)
+xn__karmavolumeuniformsamples_rhb	[ 0	locks=0 ]	(	4	)
+folder4	[ 0	locks=0 ]	(	0	)
+xn____activate__karmalpetag_ueb	[ 0	locks=0 ]	(	0	)
+xn__karmalpetag_yta	[ 0	locks=0 ]	(	""	)
+xn____activate__karmadielectricpriority_eyb	[ 0	locks=0 ]	(	0	)
+xn__karmadielectricpriority_ieb	[ 0	locks=0 ]	(	0	)
+xn____activate__karmamtlx_imagewidth_itb	[ 0	locks=0 ]	(	0	)
+xn__karmamtlx_imagewidth_m8a	[ 0	locks=0 ]	(	0	)
+xn____activate__karmamtlx_imageblur_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmamtlx_imageblur_z6a	[ 0	locks=0 ]	(	0	)
+xn____activate__karmathinwallatrefractlimit_w4b	[ 0	locks=0 ]	(	0	)
+xn__karmathinwallatrefractlimit_0kb	[ 0	locks=0 ]	(	"off"	)
+__section_Caustics	[ 0	locks=0 ]	(	0	)
+xn____activate__karmacausticsenable_vrb	[ 0	locks=0 ]	(	0	)
+xn__karmacausticsenable_z6a	[ 0	locks=0 ]	(	"off"	)
+xn____activate__karmacausticsroughnessclamp_w4b	[ 0	locks=0 ]	(	0	)
+xn__karmacausticsroughnessclamp_0kb	[ 0	locks=0 ]	(	0.2	)
+__section_FakeCaustics	[ 0	locks=0 ]	(	0	)
+xn____activate__karmafakecausticsbsdfenable_w4b	[ 0	locks=0 ]	(	0	)
+xn__karmafakecausticsbsdfenable_0kb	[ 0	locks=0 ]	(	"on"	)
+xn____activate__karmafakecausticscolor_rwb	[ 0	locks=0 ]	(	0	)
+xn__karmafakecausticscolor_vcb	[ 0	locks=0 ]	(	1	1	1	)
+xn____activate__karmafakecausticsopacity_0zb	[ 0	locks=0 ]	(	0	)
+xn__karmafakecausticsopacity_4fb	[ 0	locks=0 ]	(	1	1	1	)
+xn____activate__karmafakecausticsfresneldarken_s9b	[ 0	locks=0 ]	(	0	)
+xn__karmafakecausticsfresneldarken_wpb	[ 0	locks=0 ]	(	0	)
+folder5	[ 0	locks=0 ]	(	0	)
+xn____activate__karmatreat_as_lightsource_n1b	[ 0	locks=0 ]	(	0	)
+xn__karmatreat_as_lightsource_rhb	[ 0	locks=0 ]	(	"No"	)
+xn____activate__karmalightsource_samplingquality_1dc	[ 0	locks=0 ]	(	0	)
+xn__karmalightsource_samplingquality_5sb	[ 0	locks=0 ]	(	1	)
+xn____activate__karmalightsource_diffusescale_57b	[ 0	locks=0 ]	(	0	)
+xn__karmalightsource_diffusescale_9nb	[ 0	locks=0 ]	(	1	)
+xn____activate__karmalightsource_specularscale_s9b	[ 0	locks=0 ]	(	0	)
+xn__karmalightsource_specularscale_wpb	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/material_properties.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/CONFIG_GEO_SCOPE_PRIM.init"
+Content-Type: text/plain
+
+type = configureprimitive
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/CONFIG_GEO_SCOPE_PRIM.def"
+Content-Type: text/plain
+
+comment ""
+position 0.808504 -2.24105
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	setvariant1 1 1 "input1"
+}
+inputs
+{
+0 	setvariant1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/CONFIG_GEO_SCOPE_PRIM.chn"
+Content-Type: text/plain
+
+{
+    channel sample_f1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel sample_f2 {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel sample_f3 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @finc }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/CONFIG_GEO_SCOPE_PRIM.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+sample_group	[ 0	locks=0 ]	(	0	)
+sample_behavior	[ 0	locks=0 ]	(	single	)
+sample_f	[ 0	locks=0 ]	(	[ sample_f1	1 ] 	[ sample_f2	240 ] 	[ sample_f3	1 ] 	)
+sample_subframeenable	[ 0	locks=0 ]	(	"off"	)
+sample_subframegroup	[ 0	locks=0 ]	(	0	)
+sample_shuttermode	[ 0	locks=0 ]	(	manual	)
+sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
+sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
+sample_count	[ 0	locks=0 ]	(	2	)
+sample_includeframe	[ 0	locks=0 ]	(	"on"	)
+primpattern	[ 8	locks=0 ]	(	"`lopinputprims('.', 0)`"	)
+setpurpose	[ 0	locks=0 ]	(	"off"	)
+purpose	[ 0	locks=0 ]	(	default	)
+setproxy	[ 0	locks=0 ]	(	"off"	)
+proxy	[ 0	locks=0 ]	(	""	)
+setinstanceable	[ 0	locks=0 ]	(	"off"	)
+instanceable	[ 0	locks=0 ]	(	instanceable	)
+setactivation	[ 0	locks=0 ]	(	"off"	)
+activation	[ 0	locks=0 ]	(	"on"	)
+setvisibility	[ 0	locks=0 ]	(	"off"	)
+visibility	[ 0	locks=0 ]	(	inherit	)
+setextents	[ 0	locks=0 ]	(	"off"	)
+extents	[ 0	locks=0 ]	(	missing	)
+setkind	[ 0	locks=0 ]	(	"off"	)
+kind	[ 0	locks=0 ]	(	""	)
+fixkindhierarchy	[ 0	locks=0 ]	(	"off"	)
+Schema	[ 0	locks=0 ]	(	0	)
+settype	[ 0	locks=0 ]	(	"off"	)
+type	[ 0	locks=0 ]	(	""	)
+setspecifier	[ 0	locks=0 ]	(	"off"	)
+specifier	[ 0	locks=0 ]	(	def	)
+setapischemas	[ 0	locks=0 ]	(	"off"	)
+apischemas	[ 0	locks=0 ]	(	""	)
+DrawMode	[ 0	locks=0 ]	(	0	)
+setapplydrawmode	[ 0	locks=0 ]	(	"off"	)
+applydrawmode	[ 0	locks=0 ]	(	"off"	)
+setdrawmode	[ 0	locks=0 ]	(	"off"	)
+drawmode	[ 0	locks=0 ]	(	default	)
+setdrawmodecolor	[ 0	locks=0 ]	(	"off"	)
+drawmodecolor	[ 0	locks=0 ]	(	0.18	0.18	0.18	)
+setcardgeometry	[ 0	locks=0 ]	(	"off"	)
+cardgeometry	[ 0	locks=0 ]	(	cross	)
+setcardtexturexneg	[ 0	locks=0 ]	(	"off"	)
+cardtexturexneg	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`XNeg.png	)
+setcardtexturexpos	[ 0	locks=0 ]	(	"off"	)
+cardtexturexpos	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`XPos.png	)
+setcardtextureyneg	[ 0	locks=0 ]	(	"off"	)
+cardtextureyneg	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`YNeg.png	)
+setcardtextureypos	[ 0	locks=0 ]	(	"off"	)
+cardtextureypos	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`YPos.png	)
+setcardtexturezneg	[ 0	locks=0 ]	(	"off"	)
+cardtexturezneg	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`ZNeg.png	)
+setcardtexturezpos	[ 0	locks=0 ]	(	"off"	)
+cardtexturezpos	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`ZPos.png	)
+AssetInfo	[ 0	locks=0 ]	(	0	)
+setassetidentifier	[ 0	locks=0 ]	(	"off"	)
+assetidentifier	[ 0	locks=0 ]	(	""	)
+setassetname	[ 0	locks=0 ]	(	"off"	)
+assetname	[ 0	locks=0 ]	(	""	)
+setassetthumbnail	[ 0	locks=0 ]	(	"off"	)
+assetthumbnail	[ 0	locks=0 ]	(	""	)
+setassetversion	[ 0	locks=0 ]	(	"off"	)
+assetversion	[ 0	locks=0 ]	(	""	)
+setassetdependencies	[ 0	locks=0 ]	(	"off"	)
+assetdependencies	[ 0	locks=0 ]	(	""	)
+assetinfocount	[ 0	locks=0 ]	(	0	)
+Interface	[ 0	locks=0 ]	(	1	)
+seticon	[ 0	locks=0 ]	(	"on"	)
+icon	[ 0	locks=0 ]	(	LOP_componentmaterial	)
+setcatalogparentpath	[ 0	locks=0 ]	(	"off"	)
+catalogparentpath	[ 0	locks=0 ]	(	""	)
+seteditable	[ 0	locks=0 ]	(	"off"	)
+editable	[ 0	locks=0 ]	(	"on"	)
+setselectable	[ 0	locks=0 ]	(	"off"	)
+selectable	[ 0	locks=0 ]	(	"on"	)
+sethideinui	[ 0	locks=0 ]	(	"off"	)
+hideinui	[ 0	locks=0 ]	(	"off"	)
+CustomData	[ 0	locks=0 ]	(	0	)
+customdatacount	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/CONFIG_GEO_SCOPE_PRIM.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.def"
+Content-Type: text/plain
+
+comment ""
+position 0.808504 -6.64314
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	configurelayer 1 1 "input1"
+}
+inputs
+{
+0 	configurelayer 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+modifiedprims	[ 0	locks=0 ]	(	`chs(\"../primpath\")`	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output0.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/foreach_end1.init"
+Content-Type: text/plain
+
+type = foreach
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/foreach_end1.def"
+Content-Type: text/plain
+
+comment ""
+position 0.811704 0.00565563
+connectornextid 4
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+3 "output1"
+}
+inputsNamed3
+{
+0 	add_lookdev_variants 3 1 "input1"
+1 	"" "" 1 "input2"
+2 	add_lookdev_variants 3 1 "input3"
+}
+inputs
+{
+0 	add_lookdev_variants 0 1
+1 	"" 0 1
+2 	add_lookdev_variants 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.75 0.4 0 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/foreach_end1.chn"
+Content-Type: text/plain
+
+{
+    channel strings {
+      lefttype = extend
+      righttype = extend
+      defaultString = "\"box sphere torus\""
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = "node = hou.pwd()
+num_variants = node.parent().parm('variants').eval()
+variants = []
+for i in range(1, num_variants + 1):
+    val = node.parent().parm(f'variant_name{i}').eval()  # adjust parm name to match yours
+    variants.append(str(val))
+
+variant_string= ' '.join(variants)
+return variant_string" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/foreach_end1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+itermethod	[ 0	locks=0 ]	(	strings	)
+iterations	[ 0	locks=0 ]	(	1	)
+primpattern	[ 0	locks=0 ]	(	"`lopinputprims('.', 0)`"	)
+allowinstanceproxies	[ 0	locks=0 ]	(	"off"	)
+variantset	[ 0	locks=0 ]	(	""	)
+strings	[ 0	locks=0 ]	(	[ strings	"" ] 	)
+combineiterations	[ 0	locks=0 ]	(	flattenloplayers	)
+ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block. Flattening Into First Input's Active Layer."	)
+striplayerbreaks	[ 0	locks=0 ]	(	"on"	)
+lastmodifiedfromiteration	[ 0	locks=0 ]	(	"off"	)
+separator_options	[ 0	locks=0 ]	(	)
+iterationname	[ 0	locks=0 ]	(	ITERATION	)
+iterationcountname	[ 0	locks=0 ]	(	NUMITERATIONS	)
+valuename	[ 0	locks=0 ]	(	ITERATIONVALUE	)
+separator_range	[ 0	locks=0 ]	(	)
+iterrange	[ 0	locks=0 ]	(	all	)
+firstiteration	[ 0	locks=0 ]	(	0	)
+lastiteration	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/foreach_end1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/foreach_begin.init"
+Content-Type: text/plain
+
+type = begincontextoptionsblock
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/foreach_begin.def"
+Content-Type: text/plain
+
+comment ""
+position 0.810104 6.01141
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on debug off
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+1 	INPUT 1 1 "input1"
+}
+inputs
+{
+0 	INPUT 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.75 0.4 0 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/foreach_begin.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+layerbreak	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/foreach_begin.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/add_lookdev_variants.init"
+Content-Type: text/plain
+
+type = addvariant
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/add_lookdev_variants.def"
+Content-Type: text/plain
+
+comment ""
+position 0.807254 2.01073
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
+outputsNamed3
+{
+3 "output1"
+}
+inputsNamed3
+{
+0 	foreach_begin 0 1 "input1"
+1 	fetch_variant 0 1 "input2"
+}
+inputs
+{
+0 	foreach_begin 0 1
+1 	fetch_variant 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.649 0.57 0.87 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/add_lookdev_variants.editableinputdata"
+Content-Type: text/plain
+
+[
+	{
+	},
+	{
+	}
+]
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/add_lookdev_variants.chn"
+Content-Type: text/plain
+
+{
+    channel variantset {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"model\"
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = chs(\"../variantset\") }
+    }
+    channel primpath {
+      lefttype = extend
+      righttype = extend
+      defaultString = "lopinputprim('.', 0)"
+      flags = 0
+      segment { length = 0 expr = chs(\"../primpath\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/add_lookdev_variants.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+primpath	[ 8	locks=0 ]	(	[ primpath	/$OS ] 	)
+sourceprim	[ 0	locks=0 ]	(	"off"	)
+sourceprimpath	[ 0	locks=0 ]	(	"`lopinputprim('.', 0)`"	)
+checkopinions	[ 0	locks=0 ]	(	"on"	)
+primkind	[ 0	locks=0 ]	(	assembly	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
+createoptionsblock	[ 0	locks=0 ]	(	"on"	)
+variantset	[ 0	locks=0 ]	(	[ variantset	model ] 	)
+variantsetstrength	[ 0	locks=0 ]	(	appendfront	)
+variantprimpath	[ 8	locks=0 ]	(	"`lopinputprim('.', 0)`"	)
+variantname	[ 8	locks=0 ]	(	`@ITERATIONVALUE`	)
+setvariantselection	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/add_lookdev_variants.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/setvariant.init"
+Content-Type: text/plain
+
+type = setvariant
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/setvariant.def"
+Content-Type: text/plain
+
+comment ""
+position 0.808504 -3.49915
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	CONFIG_GEO_SCOPE_PRIM 1 1 "input1"
+}
+inputs
+{
+0 	CONFIG_GEO_SCOPE_PRIM 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/setvariant.chn"
+Content-Type: text/plain
+
+{
+    channel variantnameindex1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = chs(\"../active_variant\")-1 }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/setvariant.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+num_variants	[ 0	locks=0 ]	(	1	)
+enable1	[ 0	locks=0 ]	(	"on"	)
+primpattern1	[ 8	locks=0 ]	(	"`lopinputprims('.', 0)`"	)
+variantsetuseindex1	[ 0	locks=0 ]	(	"off"	)
+variantset1	[ 0	locks=0 ]	(	`chs(\"../variantset\")`	)
+variantsetindex1	[ 0	locks=0 ]	(	0	)
+variantnameuseindex1	[ 0	locks=0 ]	(	"off"	)
+variantname1	[ 0	locks=0 ]	(	`chs(\"../active_variant\")`	)
+variantnameindex1	[ 0	locks=0 ]	(	[ variantnameindex1	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/setvariant.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/INPUT.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/INPUT.def"
+Content-Type: text/plain
+
+comment ""
+position 0.808504 10.2575
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault off exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0 0 0 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/INPUT.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/INPUT.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.order"
+Content-Type: text/plain
+
+5
+inputs
+mtlxstandard_surface
+mtlxdisplacement
+Material_Outputs_and_AOVs
+material_properties
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/fetch_variant.init"
+Content-Type: text/plain
+
+type = fetch
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/fetch_variant.def"
+Content-Type: text/plain
+
+comment ""
+position 2.37065 3.40641
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/fetch_variant.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+loppath	[ 0	locks=0 ]	(	../lookdev_variant_subnet/VARIANT`@ITERATION+1`_OUT	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/fetch_variant.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/configurelayer.init"
+Content-Type: text/plain
+
+type = configurelayer
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/configurelayer.def"
+Content-Type: text/plain
+
+comment ""
+position 0.808504 -4.89034
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	setvariant 1 1 "input1"
+}
+inputs
+{
+0 	setvariant 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/configurelayer.chn"
+Content-Type: text/plain
+
+{
+    channel starttime {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel endtime {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel timepersecond {
+      lefttype = extend
+      righttype = extend
+      default = 24
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 24 24 expr = $FPS }
+    }
+    channel framespersecond {
+      lefttype = extend
+      righttype = extend
+      default = 24
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 24 24 expr = $FPS }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/configurelayer.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+setsavepath	[ 0	locks=0 ]	(	"on"	)
+savepath	[ 0	locks=0 ]	(	lookdev.usdc	)
+setdefaultprim	[ 0	locks=0 ]	(	"off"	)
+defaultprim	[ 0	locks=0 ]	(	""	)
+setcomment	[ 0	locks=0 ]	(	"off"	)
+comment	[ 0	locks=0 ]	(	""	)
+setstarttime	[ 0	locks=0 ]	(	"off"	)
+starttime	[ 0	locks=0 ]	(	[ starttime	1 ] 	)
+setendtime	[ 0	locks=0 ]	(	"off"	)
+endtime	[ 0	locks=0 ]	(	[ endtime	240 ] 	)
+settimepersecond	[ 0	locks=0 ]	(	"off"	)
+timepersecond	[ 0	locks=0 ]	(	[ timepersecond	24 ] 	)
+setframespersecond	[ 0	locks=0 ]	(	"off"	)
+framespersecond	[ 0	locks=0 ]	(	[ framespersecond	24 ] 	)
+separator_metrics	[ 0	locks=0 ]	(	)
+setupaxis	[ 0	locks=0 ]	(	"off"	)
+upaxis	[ 0	locks=0 ]	(	z	)
+setmetersperunit	[ 0	locks=0 ]	(	"off"	)
+metersperunit	[ 0	locks=0 ]	(	0.01	)
+separator_colorconfig	[ 0	locks=0 ]	(	)
+setcolorconfig	[ 0	locks=0 ]	(	"off"	)
+colorconfig	[ 0	locks=0 ]	(	""	)
+setcolormanagementsystem	[ 0	locks=0 ]	(	"off"	)
+colormanagementsystem	[ 0	locks=0 ]	(	OpenColorIO	)
+separator_rendersettings	[ 0	locks=0 ]	(	)
+setrendersettings	[ 0	locks=0 ]	(	"off"	)
+rendersettings	[ 0	locks=0 ]	(	""	)
+separator_customdata	[ 0	locks=0 ]	(	)
+customdatacount	[ 0	locks=0 ]	(	0	)
+separator_stagevariables	[ 0	locks=0 ]	(	)
+stagevariablescount	[ 0	locks=0 ]	(	0	)
+separator_newlayer	[ 0	locks=0 ]	(	)
+setstagemetadata	[ 0	locks=0 ]	(	"on"	)
+flattenop	[ 0	locks=0 ]	(	none	)
+startnewlayer	[ 0	locks=0 ]	(	"on"	)
+setinputlayerexplicit	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/configurelayer.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/setvariant1.init"
+Content-Type: text/plain
+
+type = setvariant
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/setvariant1.def"
+Content-Type: text/plain
+
+comment ""
+position 0.810104 -1.11117
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	foreach_end1 3 1 "input1"
+}
+inputs
+{
+0 	foreach_end1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/setvariant1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+num_variants	[ 0	locks=0 ]	(	1	)
+enable1	[ 0	locks=0 ]	(	"on"	)
+primpattern1	[ 0	locks=0 ]	(	/Asset/mtl	)
+variantsetuseindex1	[ 0	locks=0 ]	(	"off"	)
+variantset1	[ 0	locks=0 ]	(	lookdev	)
+variantsetindex1	[ 0	locks=0 ]	(	0	)
+variantnameuseindex1	[ 0	locks=0 ]	(	"off"	)
+variantname1	[ 0	locks=0 ]	(	green	)
+variantnameindex1	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/setvariant1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.order"
+Content-Type: text/plain
+
+11
+CONFIG_GEO_SCOPE_PRIM
+output0
+foreach_end1
+foreach_begin
+add_lookdev_variants
+setvariant
+INPUT
+lookdev_variant_subnet
+fetch_variant
+configurelayer
+setvariant1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

@@ -1,0 +1,14 @@
+Operator:     th::geo_path_builder::1.0
+Label:        th geo path builder
+Path:         oplib:/th::Sop/geo_path_builder::1.0?th::Sop/geo_path_builder::1.0
+Icon:         VIEW_display_objectnames_path
+Table:        Sop
+License:      
+Extra:        inputcolors='1 "RGB 0.700195 0.700195 0.700195" ' outputcolors='1 "RGB 0.700195 0.700195 0.700195" ' 
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Fri Sep  5 15:50:00 2025
+

@@ -1,0 +1,14 @@
+{
+	"hdaroot/copnet/fractalnoise.def":1760198460,
+	"hdaroot/fetch_material.def":1760197452,
+	"hdaroot/merge_material_layers.def":1760198457,
+	"hdaroot/copnet/cop_material1.def":1760198460,
+	"hdaroot/merge_materials.def":1760198457,
+	"hdaroot/copnet/bubblenoise1.def":1760198445,
+	"hdaroot/output0.def":1760194117,
+	"hdaroot/foreach_begin.def":1760196934,
+	"hdaroot.def":1760198454,
+	"hdaroot/foreach_end.def":1760198476,
+	"hdaroot/copnet.def":1760198441,
+	"hdaroot/copnet/checkerboard1.def":1760198422
+}

@@ -1,0 +1,14 @@
+Operator:     th::lpe_tags::1.0
+Label:        th lpe tags
+Path:         oplib:/th::Lop/lpe_tags::1.0?th::Lop/lpe_tags::1.0
+Icon:         W:\_pipeline\pipeline\houdini\Tumblehead\resources/lpeTags.png
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Wed Oct  1 15:36:48 2025
+

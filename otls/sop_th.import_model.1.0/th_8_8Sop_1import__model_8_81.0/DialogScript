@@ -1,0 +1,117 @@
+# Dialog script for th::import_model::1.0 automatically generated
+
+{
+    name	th::import_model::1.0
+    script	th::import_model::1.0
+    label	"th import model"
+
+    help {
+    }
+
+    inputlabel	1	"Sub-Network Input #1"
+    inputlabel	2	"Sub-Network Input #2"
+    inputlabel	3	"Sub-Network Input #3"
+    inputlabel	4	"Sub-Network Input #4"
+
+    groupsimple {
+        name    "selection"
+        label   "Selection"
+
+        parm {
+            name    "entity_select"
+            label   "Entity"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
+            parmtag { "script_callback" "hou.phm().select()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity"
+            label   "Entity"
+            type    string
+            invisible
+            joinnext
+            default { "from_context" }
+        }
+        parm {
+            name    "entity_label"
+            label   "entity_label"
+            type    label
+            nolabel
+            default { "from_context: none" }
+        }
+        parm {
+            name    "variant"
+            label   "Variant"
+            type    string
+            default { "default" }
+            menu {
+                [ "opmenu -l -a lopnet/import_layer variant" ]
+            }
+        }
+        parm {
+            name    "version"
+            label   "Version"
+            type    string
+            joinnext
+            default { "current" }
+            menu {
+                [ "opmenu -l -a lopnet/import_layer version" ]
+            }
+        }
+        parm {
+            name    "version_label"
+            label   "version_label"
+            type    label
+            nolabel
+            default { "" }
+        }
+    }
+
+    groupsimple {
+        name    "settings"
+        label   "Settings"
+
+        parm {
+            name    "model_variant"
+            label   "Model Variant"
+            type    string
+            default { "" }
+            menu {
+                [ "opmenu -l -a lopnet/set_variant variantname1" ]
+            }
+        }
+        parm {
+            name    "unpack"
+            label   "Unpack To Polygons"
+            type    toggle
+            default { "1" }
+        }
+    }
+
+    groupsimple {
+        name    "actions"
+        label   "Actions"
+
+        parm {
+            name    "import"
+            label   "Import"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "open_location"
+            label   "Open Location"
+            type    button
+            default { "0" }
+            parmtag { "script_callback" "hou.phm().open_location()" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

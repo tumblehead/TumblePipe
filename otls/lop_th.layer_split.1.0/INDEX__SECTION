@@ -1,0 +1,14 @@
+Operator:     th::layer_split::1.0
+Label:        th layer split
+Path:         oplib:/th::Lop/layer_split::1.0?th::Lop/layer_split::1.0
+Icon:         LOP_subnet
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Wed Dec 17 18:10:22 2025
+

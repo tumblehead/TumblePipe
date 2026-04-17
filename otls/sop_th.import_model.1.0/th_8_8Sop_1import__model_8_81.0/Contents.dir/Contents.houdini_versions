@@ -1,0 +1,12 @@
+{
+	"values":["21.0.591"
+	],
+	"indexes":{
+		"hdaroot/lopimport.userdata":0,
+		"hdaroot/output0.userdata":0,
+		"hdaroot/unpackusd.userdata":0,
+		"hdaroot/unpack_switch.userdata":0,
+		"hdaroot/lopnet.userdata":0,
+		"hdaroot/lopnet/set_variant.userdata":0
+	}
+}

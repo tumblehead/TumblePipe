@@ -1,0 +1,16 @@
+{
+	"values":["21.0.559","2.0"
+	],
+	"indexes":{
+		"hdaroot/red/sopnet/modify/from_lops.userdata":0,
+		"hdaroot/update_denoiser_settings.userdata":1,
+		"hdaroot/red/sopnet/modify.userdata":0,
+		"hdaroot/update_renderproducts.userdata":0,
+		"hdaroot/blue/sopnet/modify.userdata":0,
+		"hdaroot/green/sopnet/modify.userdata":0,
+		"hdaroot/merge.userdata":0,
+		"hdaroot/output0.userdata":0,
+		"hdaroot/green/sopnet/modify/from_lops.userdata":0,
+		"hdaroot/blue/sopnet/modify/from_lops.userdata":0
+	}
+}

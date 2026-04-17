@@ -1,0 +1,17 @@
+{
+	"values":["20.5.550"
+	],
+	"indexes":{
+		"hdaroot/lopnet/import_camera/switch.userdata":0,
+		"hdaroot/lopnet/import_camera/import.userdata":0,
+		"hdaroot/lopnet/import_camera/bypass.userdata":0,
+		"hdaroot/objnet.userdata":0,
+		"hdaroot/objnet/lopimportcam/file1.userdata":0,
+		"hdaroot/output1.userdata":0,
+		"hdaroot/objnet/lopimportcam.userdata":0,
+		"hdaroot/lopnet.userdata":0,
+		"hdaroot/objnet/lopimportcam/xform1.userdata":0,
+		"hdaroot/objnet/lopimportcam/camOrigin.userdata":0,
+		"hdaroot/cameraimport.userdata":0
+	}
+}
