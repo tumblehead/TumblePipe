@@ -1,0 +1,2 @@
+# Discord notifications for farm task completion
+discord.py

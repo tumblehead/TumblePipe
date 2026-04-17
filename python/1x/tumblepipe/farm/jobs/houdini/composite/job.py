@@ -1,0 +1,992 @@
+from tempfile import TemporaryDirectory
+from functools import partial
+from pathlib import Path
+import datetime as dt
+import logging
+import sys
+
+# Add tumblehead python packages path
+tumblehead_packages_path = Path(__file__).parent.parent.parent.parent
+if tumblehead_packages_path not in sys.path:
+    sys.path.append(str(tumblehead_packages_path))
+
+from tumblepipe.api import (
+    get_project_name,
+    to_windows_path,
+    fix_path,
+    path_str,
+    default_client
+)
+from tumblepipe.util.io import (
+    load_json,
+    store_json
+)
+from tumblepipe.util.uri import Uri
+from tumblepipe.config.timeline import BlockRange
+from tumblepipe.config.department import list_departments
+from tumblepipe.config.variants import list_variants
+from tumblepipe.apps.deadline import (
+    Deadline,
+    Batch,
+    Job
+)
+from tumblepipe.pipe.paths import (
+    get_frame_path,
+    get_next_frame_path,
+    get_aov_frame_path,
+    get_playblast_path,
+    get_daily_path,
+    get_layer_playblast_path,
+    get_layer_daily_path,
+    get_render_context
+)
+import tumblepipe.farm.tasks.composite.task as composite_job
+import tumblepipe.farm.tasks.slapcomp.task as slapcomp_job
+import tumblepipe.farm.tasks.mp4.task as mp4_job
+import tumblepipe.farm.tasks.notify.task as notify_job
+import tumblepipe.farm.tasks.edit.task as edit_task
+
+from importlib import reload
+reload(composite_job)
+reload(slapcomp_job)
+reload(mp4_job)
+reload(notify_job)
+reload(edit_task)
+
+api = default_client()
+
+def _error(msg):
+    logging.error(msg)
+    return 1
+
+"""
+config = {
+    'entity': {
+        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
+        'department': 'string'
+    },
+    'settings': {
+        'user_name': 'string',
+        'purpose': 'string',
+        'priority': 'int',
+        'pool_name': 'string',
+        'input_path': 'string',
+        'node_path': 'string',
+        'layer_names': ['main', 'mirror'],
+        'aov_names': ['beauty', 'alpha'],
+        'first_frame': 'int',
+        'last_frame': 'int',
+        'step_size': 'int',
+        'batch_size': 'int',
+    },
+    'tasks': {
+        'partial_composite': {
+            'channel_name': 'string'
+        },
+        'full_composite': {
+            'channel_name': 'string'
+        }
+    }
+}
+"""
+
+def _is_valid_config(config):
+
+    def _is_str(datum):
+        return isinstance(datum, str)
+    
+    def _is_int(datum):
+        return isinstance(datum, int)
+
+    def _check(value_checker, data, key):
+        if key not in data: return False
+        if not value_checker(data[key]): return False
+        return True
+    
+    _check_str = partial(_check, _is_str)
+    _check_int = partial(_check, _is_int)
+
+    def _valid_entity(entity):
+        if not isinstance(entity, dict): return False
+        if not _check_str(entity, 'uri'): return False
+        if not _check_str(entity, 'department'): return False
+        return True
+    
+    def _valid_settings(settings):
+        if not isinstance(settings, dict): return False
+        if not _check_str(settings, 'user_name'): return False
+        if not _check_str(settings, 'purpose'): return False
+        if not _check_int(settings, 'priority'): return False
+        if not _check_str(settings, 'pool_name'): return False
+        if not _check_str(settings, 'input_path'): return False
+        if not _check_str(settings, 'node_path'): return False
+        if 'layer_names' in settings:
+            if not isinstance(settings['layer_names'], list): return False
+            if len(settings['layer_names']) == 0: return False
+        if not _check_int(settings, 'first_frame'): return False
+        if not _check_int(settings, 'last_frame'): return False
+        if not _check_int(settings, 'step_size'): return False
+        if not _check_int(settings, 'batch_size'): return False
+        return True
+    
+    def _valid_jobs(tasks):
+
+        def _valid_partial_composite(partial_composite):
+            if not isinstance(partial_composite, dict): return False
+            if not _check_str(partial_composite, 'channel_name'): return False
+            return True
+    
+        def _valid_full_composite(full_composite):
+            if not isinstance(full_composite, dict): return False
+            if not _check_str(full_composite, 'channel_name'): return False
+            return True
+        
+        if not isinstance(tasks, dict): return False
+        if 'partial_composite' in tasks:
+            if not _valid_partial_composite(tasks['partial_composite']): return False
+        if 'full_composite' in tasks:
+            if not _valid_full_composite(tasks['full_composite']): return False
+        return True
+    
+    if not isinstance(config, dict): return False
+    if 'entity' not in config: return False
+    if not _valid_entity(config['entity']): return False
+    if 'settings' not in config: return False
+    if not _valid_settings(config['settings']): return False
+    if 'tasks' not in config: return False
+    if not _valid_jobs(config['tasks']): return False
+    return True
+
+def _build_partial_composite_job(
+    config: dict,
+    paths: dict[Path, Path],
+    staging_path: Path
+    ):
+    logging.debug('Creating partial composite task')
+
+    # Config
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    department_name = config['entity']['department']
+    purpose = config['settings']['purpose']
+    pool_name = config['settings']['pool_name']
+    input_path = config['settings']['input_path']
+    node_path = config['settings']['node_path']
+    layer_names = config['settings']['layer_names']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+
+    # Find the middle frame
+    frame_range = BlockRange(
+        first_frame,
+        last_frame,
+        step_size
+    )
+    middle_frame = frame_range.frame(0.5)
+
+    # Get version name from first layer
+    first_layer = layer_names[0]
+    receipt_path = get_next_frame_path(
+        entity_uri,
+        'composite',
+        first_layer,
+        '####',
+        'json',
+        purpose
+    )
+    version_name = receipt_path.parent.name
+    title = (
+        'partial composite '
+        f'{version_name}'
+    )
+
+    # Create output paths for each layer (beauty RGBA)
+    output_paths = {}
+    for layer_name in layer_names:
+        output_paths[layer_name] = get_aov_frame_path(
+            entity_uri,
+            'composite',
+            layer_name,
+            version_name,
+            'beauty',
+            '####',
+            'exr',
+            purpose
+        )
+
+    # Create the task
+    task = composite_job.build(dict(
+        entity = str(entity_uri),
+        department = department_name,
+        title = title,
+        priority = 90,
+        pool_name = pool_name,
+        first_frame = first_frame,
+        last_frame = last_frame,
+        frames = [first_frame, middle_frame, last_frame],
+        step_size = 1,
+        batch_size = 1,
+        receipt_path = path_str(to_windows_path(receipt_path)),
+        input_path = path_str(to_windows_path(input_path)),
+        node_path = node_path,
+        layer_names = layer_names,
+        output_paths = {
+            output_key: path_str(to_windows_path(aov_path))
+            for output_key, aov_path in output_paths.items()
+        }
+    ), paths, staging_path)
+
+    # Create the framestack context file for each layer
+    for layer_name in layer_names:
+        layer_receipt_path = get_frame_path(
+            entity_uri,
+            'composite',
+            layer_name,
+            version_name,
+            '####',
+            'json',
+            purpose
+        )
+        context_path = layer_receipt_path.parent / 'context.json'
+        store_json(context_path, dict(
+            entity = str(entity_uri),
+        department = department_name,
+            variant = layer_name,
+            render_department_name = 'composite',
+            version_name = version_name,
+            first_frame = first_frame,
+            last_frame = last_frame,
+            step_size = step_size
+        ))
+
+    # Done
+    return task, version_name
+
+def _build_full_composite_job(
+    config: dict,
+    paths: dict[Path, Path],
+    staging_path: Path,
+    version_name: str
+    ):
+    logging.debug('Creating full composite task')
+
+    # Config
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    department_name = config['entity']['department']
+    purpose = config['settings']['purpose']
+    priority = config['settings']['priority']
+    pool_name = config['settings']['pool_name']
+    input_path = Path(config['settings']['input_path'])
+    node_path = config['settings']['node_path']
+    layer_names = config['settings']['layer_names']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+    batch_size = config['settings']['batch_size']
+
+    # Find receipt path and version name using first layer
+    first_layer = layer_names[0]
+    def _receipt_path(version_name):
+        if version_name is None:
+            output_frame_path = get_next_frame_path(
+                entity_uri,
+                'composite',
+                first_layer,
+                '####',
+                'json',
+                purpose
+            )
+            version_name = output_frame_path.parent.name
+            return output_frame_path, version_name
+        else:
+            output_frame_path = get_frame_path(
+                entity_uri,
+                'composite',
+                first_layer,
+                version_name,
+                '####',
+                'json',
+                purpose
+            )
+            return output_frame_path, version_name
+
+    # Parameters
+    receipt_path, version_name = _receipt_path(version_name)
+    title = (
+        f'full composite '
+        f'{version_name}'
+    )
+
+    # Create output paths for each layer (beauty RGBA)
+    output_paths = {}
+    for layer_name in layer_names:
+        output_paths[layer_name] = get_aov_frame_path(
+            entity_uri,
+            'composite',
+            layer_name,
+            version_name,
+            'beauty',
+            '####',
+            'exr',
+            purpose
+        )
+
+    # Create the task
+    task = composite_job.build(dict(
+        entity = str(entity_uri),
+        title = title,
+        priority = priority,
+        pool_name = pool_name,
+        first_frame = first_frame,
+        last_frame = last_frame,
+        frames = [],
+        step_size = step_size,
+        batch_size = batch_size,
+        receipt_path = path_str(to_windows_path(receipt_path)),
+        input_path = path_str(to_windows_path(input_path)),
+        node_path = node_path,
+        layer_names = layer_names,
+        output_paths = {
+            output_key: path_str(to_windows_path(aov_path))
+            for output_key, aov_path in output_paths.items()
+        }
+    ), paths, staging_path)
+
+    # Create the framestack context file for each layer
+    for layer_name in layer_names:
+        layer_receipt_path = get_frame_path(
+            entity_uri,
+            'composite',
+            layer_name,
+            version_name,
+            '####',
+            'json',
+            purpose
+        )
+        context_path = layer_receipt_path.parent / 'context.json'
+        store_json(context_path, dict(
+            entity = str(entity_uri),
+        department = department_name,
+            variant = layer_name,
+            render_department_name = 'composite',
+            version_name = version_name,
+            first_frame = first_frame,
+            last_frame = last_frame,
+            step_size = step_size
+        ))
+
+    # Done
+    return task, version_name
+
+def _should_sync_aov(aov_name: str) -> bool:
+    """Check if an AOV should be synced to edit"""
+    if aov_name == 'beauty':
+        return True
+    if aov_name.startswith('objid_'):
+        return True
+    if aov_name.startswith('holdout_'):
+        return True
+    return False
+
+def _build_edit_job(
+    config: dict,
+    staging_path: Path
+    ):
+    """Build single edit job that will resolve and sync all layer/AOV combinations at runtime.
+
+    The AOV resolution happens at task execution time (not submission time) so that newly
+    rendered frames are included in the resolution.
+    """
+    logging.debug('Creating edit task')
+
+    # Config
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    assert entity_uri is not None, 'Invalid entity in config'
+    purpose = config['settings']['purpose']
+    pool_name = config['settings']['pool_name']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+
+    # Extract entity fields
+    if entity_uri.segments[0] != 'shots':
+        assert False, f'Edit task only supports shot entities: {entity_uri}'
+
+    # Create single edit task that will resolve AOVs at runtime
+    title = f'edit {entity_uri}'
+    task = edit_task.build(dict(
+        title = title,
+        priority = 90,
+        pool_name = pool_name,
+        entity_uri = str(entity_uri),
+        first_frame = first_frame,
+        last_frame = last_frame,
+        purpose = purpose
+    ), dict(), staging_path)
+
+    # Done
+    return task
+
+def _build_slapcomp_job(
+    config: dict,
+    staging_path: Path,
+    version_name: str
+    ):
+    logging.debug('Creating slapcomp task')
+
+    # Config
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    purpose = config['settings']['purpose']
+    priority = config['settings']['priority']
+    pool_name = config['settings']['pool_name']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+
+    # Get render context to resolve AOV paths across departments
+    if entity_uri.segments[0] != 'shots':
+        raise NotImplementedError(f"Slapcomp not implemented for entity type: {entity_uri}")
+
+    render_context = get_render_context(entity_uri, purpose=purpose)
+
+    # Get department priorities for AOV resolution
+    shot_departments = [d.name for d in list_departments('shots')]
+    render_departments = [d.name for d in list_departments('render')]
+
+    # Resolve latest beauty and alpha AOVs across all departments
+    # This will find the best available version of each AOV (prioritizing higher departments)
+    latest_aovs = render_context.resolve_latest_aovs(
+        shot_departments,
+        render_departments,
+        min_shot_department=None,
+        min_render_department=None,
+        aov_filter=lambda aov_name: aov_name in ['beauty', 'alpha']
+    )
+
+    # Build input_paths from resolved AOVs in correct layer order
+    # Get variant names in order (background to foreground)
+    variant_names = list_variants(entity_uri)
+
+    # Build ordered input_paths dict using variant order
+    input_paths = {}
+    for layer_name in variant_names:
+        if layer_name not in latest_aovs:
+            continue
+        layer_aovs = latest_aovs[layer_name]
+        input_paths[layer_name] = {}
+        for aov_name, (render_dept, aov_version, aov, shot_dept) in layer_aovs.items():
+            # Get the frame path pattern with ####
+            aov_frame_path = aov.get_aov_frame_path('####')
+            input_paths[layer_name][aov_name] = aov_frame_path
+            logging.debug(f'  Resolved {layer_name}/{aov_name}: {render_dept}/{aov_version}')
+
+    if not input_paths:
+        raise RuntimeError('No AOVs resolved for slapcomp. Ensure layers have been rendered.')
+
+    # Output paths
+    receipt_path = get_next_frame_path(
+        entity_uri,
+        'composite',
+        'slapcomp',
+        '####',
+        'json',
+        purpose
+    )
+    slapcomp_version_name = receipt_path.parent.name
+    title = (
+        f'slapcomp composite '
+        f'{slapcomp_version_name}'
+    )
+    output_path = get_frame_path(
+        entity_uri,
+        'composite',
+        'slapcomp',
+        slapcomp_version_name,
+        '####',
+        'exr',
+        purpose
+    )
+
+    # Create the task
+    task = slapcomp_job.build(dict(
+        title = title,
+        priority = priority,
+        pool_name = pool_name,
+        first_frame = first_frame,
+        last_frame = last_frame,
+        step_size = step_size,
+        input_paths = {
+            layer_name: {
+                aov_name: path_str(to_windows_path(aov_path))
+                for aov_name, aov_path in aov_paths.items()
+            }
+            for layer_name, aov_paths in input_paths.items()
+        },
+        receipt_path = path_str(to_windows_path(receipt_path)),
+        output_path = path_str(to_windows_path(output_path))
+    ), dict(), staging_path)
+
+    # Create the framestack context file
+    context_path = receipt_path.parent / 'context.json'
+    store_json(context_path, dict(
+        entity = str(entity_uri),
+        render_department_name = 'composite',
+        variant = 'slapcomp',
+        version_name = slapcomp_version_name,
+        first_frame = first_frame,
+        last_frame = last_frame,
+        step_size = step_size
+    ))
+
+    # Done
+    return task, slapcomp_version_name
+
+def _build_layer_mp4_job(
+    config: dict,
+    staging_path: Path,
+    layer_name: str,
+    version_name: str
+    ):
+    """Build MP4 job for a single render layer"""
+    logging.debug(f'Creating layer mp4 task for {layer_name}')
+
+    # Config
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    purpose = config['settings']['purpose']
+    priority = config['settings']['priority']
+    pool_name = config['settings']['pool_name']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+
+    # Parameters
+    playblast_path = get_layer_playblast_path(entity_uri, layer_name, version_name, purpose)
+    daily_path = get_layer_daily_path(entity_uri, layer_name, purpose)
+    title = f'mp4 {layer_name} {version_name}'
+    input_path = get_aov_frame_path(
+        entity_uri,
+        'composite',
+        layer_name,
+        version_name,
+        'beauty',
+        '####',
+        'exr',
+        purpose
+    )
+
+    # Create the task
+    task = mp4_job.build(dict(
+        title = title,
+        priority = priority,
+        pool_name = pool_name,
+        first_frame = first_frame,
+        last_frame = last_frame,
+        step_size = step_size,
+        input_path = path_str(to_windows_path(input_path)),
+        output_paths = [
+            path_str(to_windows_path(playblast_path)),
+            path_str(to_windows_path(daily_path))
+        ]
+    ), dict(), staging_path)
+
+    # Done
+    return task
+
+def _build_slapcomp_mp4_job(
+    config: dict,
+    staging_path: Path,
+    slapcomp_version_name: str
+    ):
+    """Build MP4 job for slapcomp output"""
+    logging.debug('Creating slapcomp mp4 task')
+
+    # Config
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    purpose = config['settings']['purpose']
+    priority = config['settings']['priority']
+    pool_name = config['settings']['pool_name']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+
+    # Parameters
+    playblast_path = get_playblast_path(entity_uri, slapcomp_version_name, purpose)
+    daily_path = get_daily_path(entity_uri, purpose)
+    title = (
+        f'mp4 composite '
+        f'{slapcomp_version_name}'
+    )
+    input_path = get_frame_path(
+        entity_uri,
+        'composite',
+        'slapcomp',
+        slapcomp_version_name,
+        '####',
+        'exr',
+        purpose
+    )
+
+    # Create the task
+    task = mp4_job.build(dict(
+        title = title,
+        priority = priority,
+        pool_name = pool_name,
+        first_frame = first_frame,
+        last_frame = last_frame,
+        step_size = step_size,
+        input_path = path_str(to_windows_path(input_path)),
+        output_paths = [
+            path_str(to_windows_path(playblast_path)),
+            path_str(to_windows_path(daily_path))
+        ]
+    ), dict(), staging_path)
+
+    # Done
+    return task, slapcomp_version_name
+
+def _build_partial_notify_job(
+    config: dict,
+    staging_path: Path,
+    version_name: str
+    ):
+    logging.debug('Creating partial notify task')
+
+    # Config
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    user_name = config['settings']['user_name']
+    purpose = config['settings']['purpose']
+    pool_name = config['settings']['pool_name']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+    channel_name = config['tasks']['partial_composite']['channel_name']
+
+    # Find the middle frame
+    frame_range = BlockRange(
+        first_frame,
+        last_frame,
+        step_size
+    )
+    middle_frame = frame_range.frame(0.5)
+    
+    # Parameters
+    title = (
+        f'notify partial composite '
+        f'{version_name}'
+    )
+    message = (
+        f'{entity_uri} - composite - '
+        f'{version_name}'
+    )
+    frame_path = get_aov_frame_path(
+        entity_uri,
+        'composite',
+        'main',
+        version_name,
+        'beauty',
+        '####',
+        'exr',
+        purpose
+    )
+
+    # Create the task
+    task = notify_job.build(dict(
+        title = title,
+        priority = 90,
+        pool_name = pool_name,
+        user_name = user_name,
+        channel_name = channel_name,
+        message = message,
+        command = dict(
+            mode = 'partial',
+            frame_path = path_str(to_windows_path(frame_path)),
+            first_frame = first_frame,
+            middle_frame = middle_frame,
+            last_frame = last_frame
+        )
+    ), dict(), staging_path)
+
+    # Done
+    return task
+
+def _build_full_notify_job(
+    config: dict,
+    staging_path: Path,
+    version_name: str
+    ):
+    logging.debug('Creating full notify task')
+
+    # Config
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    user_name = config['settings']['user_name']
+    purpose = config['settings']['purpose']
+    pool_name = config['settings']['pool_name']
+    channel_name = config['tasks']['full_composite']['channel_name']
+
+    # Parameters
+    title = (
+        f'notify full composite '
+        f'{version_name}'
+    )
+    message = (
+        f'{entity_uri} - composite - '
+        f'{version_name}'
+    )
+    video_path = get_playblast_path(
+        entity_uri,
+        version_name,
+        purpose
+    )
+
+    # Create the task
+    task = notify_job.build(dict(
+        title = title,
+        priority = 90,
+        pool_name = pool_name,
+        user_name = user_name,
+        channel_name = channel_name,
+        message = message,
+        command = dict(
+            mode = 'full',
+            video_path = path_str(to_windows_path(video_path))
+        )
+    ), dict(), staging_path)
+
+    # Done
+    return task
+
+def _build_slapcomp_notify_job(
+    config: dict,
+    staging_path: Path,
+    slapcomp_version_name: str
+    ):
+    """Build notify job for slapcomp output"""
+    logging.debug('Creating slapcomp notify task')
+
+    # Config
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    user_name = config['settings']['user_name']
+    purpose = config['settings']['purpose']
+    pool_name = config['settings']['pool_name']
+    channel_name = config['tasks']['full_composite']['channel_name']
+
+    # Parameters
+    title = f'notify slapcomp {slapcomp_version_name}'
+    message = f'{entity_uri} - slapcomp - {slapcomp_version_name}'
+    video_path = get_playblast_path(
+        entity_uri,
+        slapcomp_version_name,
+        purpose
+    )
+
+    # Create the task
+    task = notify_job.build(dict(
+        title = title,
+        priority = 90,
+        pool_name = pool_name,
+        user_name = user_name,
+        channel_name = channel_name,
+        message = message,
+        command = dict(
+            mode = 'full',
+            video_path = path_str(to_windows_path(video_path))
+        )
+    ), dict(), staging_path)
+
+    # Done
+    return task
+
+
+def build(
+    config: dict,
+    paths: dict[Path, Path],
+    temp_path: Path,
+    jobs: dict[str, Job],
+    deps: dict[str, list[str]],
+    depends_on: list[str] = None
+    ) -> list[str]:
+    """Build composite jobs and add to provided dicts.
+
+    Args:
+        config: Job configuration
+        paths: Files to bundle with jobs
+        temp_path: Staging directory
+        jobs: Dict to add Job objects to (modified in place)
+        deps: Dict to add dependencies to (modified in place)
+        depends_on: Optional list of job names this job depends on
+
+    Returns:
+        List of terminal job names (for dependency chaining)
+    """
+    if depends_on is None:
+        depends_on = []
+
+    # Helper to add job
+    def _add_job(job_name, job, job_deps):
+        jobs[job_name] = job
+        deps[job_name] = job_deps
+
+    # Track terminal jobs
+    terminal_jobs = []
+
+    # Initial partial composite job
+    render_version_name = None
+    if 'partial_composite' in config['tasks']:
+        render_result = _build_partial_composite_job(
+            config,
+            paths,
+            temp_path
+        )
+        composite_job_obj, render_version_name = render_result
+        notify_job_obj = _build_partial_notify_job(
+            config,
+            temp_path,
+            render_version_name
+        )
+        _add_job('partial_composite', composite_job_obj, depends_on.copy())
+        _add_job('partial_notify', notify_job_obj, ['partial_composite'])
+        terminal_jobs.append('partial_notify')
+
+    # Following full composite jobs
+    if 'full_composite' in config['tasks']:
+        terminal_jobs = []  # Clear - full composite jobs become terminals
+        render_result = _build_full_composite_job(
+            config,
+            paths,
+            temp_path,
+            render_version_name
+        )
+        composite_job_obj, render_version_name = render_result
+
+        # Get layer names for creating per-layer MP4 jobs
+        layer_names = config['settings']['layer_names']
+
+        # Determine full_composite dependencies
+        full_composite_deps = (
+            depends_on.copy() if 'partial_composite' not in config['tasks'] else
+            ['partial_composite']
+        )
+        _add_job('full_composite', composite_job_obj, full_composite_deps)
+
+        # Create MP4 jobs for each layer
+        for layer_name in layer_names:
+            layer_mp4_obj = _build_layer_mp4_job(
+                config,
+                temp_path,
+                layer_name,
+                render_version_name
+            )
+            job_name = f'layer_mp4_{layer_name}'
+            _add_job(job_name, layer_mp4_obj, ['full_composite'])
+
+        edit_job_obj = _build_edit_job(
+            config,
+            temp_path
+        )
+        slapcomp_result = _build_slapcomp_job(
+            config,
+            temp_path,
+            render_version_name
+        )
+        slapcomp_job_obj, slapcomp_version_name = slapcomp_result
+        slapcomp_mp4_result = _build_slapcomp_mp4_job(
+            config,
+            temp_path,
+            slapcomp_version_name
+        )
+        slapcomp_mp4_obj, _ = slapcomp_mp4_result
+        slapcomp_notify_obj = _build_slapcomp_notify_job(
+            config,
+            temp_path,
+            slapcomp_version_name
+        )
+        _add_job('edit', edit_job_obj, ['full_composite'])
+        _add_job('slapcomp', slapcomp_job_obj, ['full_composite'])
+        _add_job('slapcomp_mp4', slapcomp_mp4_obj, ['slapcomp'])
+        _add_job('slapcomp_notify', slapcomp_notify_obj, ['slapcomp_mp4'])
+        terminal_jobs.append('slapcomp_notify')
+
+    return terminal_jobs
+
+
+def submit(
+    config: dict,
+    paths: dict[Path, Path]
+    ) -> int:
+    """Create batch, build jobs, and submit to farm.
+
+    Args:
+        config: Job configuration
+        paths: Files to bundle with jobs
+
+    Returns:
+        0 on success, 1 on error
+    """
+    # Config
+    entity_uri = Uri.parse_unsafe(config['entity']['uri'])
+    user_name = config['settings']['user_name']
+    purpose = config['settings']['purpose']
+
+    # Parameters
+    project_name = get_project_name()
+    timestamp = dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
+
+    # Get deadline ready
+    try: farm = Deadline()
+    except: return _error('Could not connect to Deadline')
+
+    # Open temporary directory
+    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
+        temp_path = Path(temp_dir)
+        logging.debug(f'Temporary directory: {temp_path}')
+
+        # Batch
+        batch = Batch(
+            f'{project_name} '
+            f'{purpose} '
+            f'{entity_uri} '
+            f'{user_name} '
+            f'{timestamp}'
+        )
+
+        # Build jobs using the new build() function
+        jobs = {}
+        deps = {}
+        build(config, paths, temp_path, jobs, deps)
+
+        # Add jobs to batch
+        batch.add_jobs_with_deps(jobs, deps)
+
+        # Submit
+        farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))
+
+    # Done
+    return 0
+
+def cli():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('config_path', type=str)
+    args = parser.parse_args()
+
+    # Check config path
+    config_path = Path(args.config_path)
+    if not config_path.exists():
+        return _error(f'Config path not found: {config_path}')
+    
+    # Load and check config
+    config = load_json(config_path)
+    if not _is_valid_config(config):
+        return _error(f'Invalid config: {config_path}')
+    
+    # Run submit
+    return submit(config)
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level = logging.DEBUG,
+        format = '%(message)s',
+        stream = sys.stdout
+    )
+    sys.exit(cli())

@@ -1,0 +1,40 @@
+[package]
+path = "tumblehead/tumblepipe"
+name = "TumblePipe"
+version = "1.1.5"
+description = "A small studio pipeline for animation and VFX projects in Houdini"
+readme = "README.md"
+keywords = ["houdini"]
+
+[houdini]
+min_version = "21"
+
+[env]
+TH_PIPELINE_PATH = { method = "set", value = "$HPM_PACKAGE_ROOT" }
+TH_PROJECT_PATH = { method = "set", value = "" }
+TH_CONFIG_PATH = { method = "set", value = "" }
+TH_EXPORT_PATH = { method = "set", value = "" }
+OCIO = { method = "set", value = "$HPM_PACKAGE_ROOT/ocio/tumblehead.ocio" }
+
+[python_dependencies]
+qtpy = ">=2.4.0"
+watchdog = ">=6.0.0"
+pymongo = ">=4.13.0"
+dictdiffer = ">=0.9.0"
+opentimelineio = "*"
+
+[native]
+# hpm 0.5.2 only accepts a fixed set of platform names. For mac we ship
+# an arm64-only binary but label the native slot as macos-universal so
+# it passes hpm's validator; the files glob still points at the arm64
+# build dir that resolver-macos.yml produces.
+platforms = ["windows-x86_64", "linux-x86_64", "macos-universal"]
+
+[native.windows-x86_64]
+files = ["resolver/windows-x86_64/**/*"]
+
+[native.linux-x86_64]
+files = ["resolver/linux-x86_64/**/*"]
+
+[native.macos-universal]
+files = ["resolver/macos-arm64/**/*"]

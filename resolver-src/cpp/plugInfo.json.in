@@ -1,0 +1,18 @@
+{
+    "Plugins": [
+        {
+            "Info": {
+                "Types": {
+                    "TumbleResolver": {
+                        "bases": ["ArResolver"],
+                        "uriSchemes": ["entity"]
+                    }
+                }
+            },
+            "LibraryPath": "../lib/@PLUGIN_LIBRARY_FILENAME@",
+            "Name": "tumbleResolver",
+            "Root": ".",
+            "Type": "library"
+        }
+    ]
+}
