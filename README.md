@@ -135,6 +135,29 @@ TumblePipe uses a custom Deadline plugin for UV-based render processing. The plu
 - **Repository**: [tumblehead/deadline-uv-plugin](https://github.com/tumblehead/deadline-uv-plugin)
 - **Installation**: Copy the plugin contents to `<DeadlineRepository>/custom/plugins/UV/` and restart Deadline workers.
 
+### Submitting Jobs from TumblePipe
+
+TumblePipe's `tumblehead.apps.deadline` module provides a `Job` class for submitting render jobs:
+
+```python
+from tumblehead.apps.deadline import Job
+from pathlib import Path
+
+job = Job(
+    script_path=Path('/path/to/script.py'),
+    requirements_path=Path('/path/to/requirements.txt'),  # Optional
+    'arg1', 'arg2'
+)
+
+job.name = 'My Render Job'
+job.pool = 'general'
+job.group = 'karma'
+job.priority = 50
+job.env.update({'MY_VAR': 'value'})
+```
+
+The Job class automatically sets the Deadline plugin to `UV`.
+
 ## Additional Resources
 - **Deadline Plugin Development**: [Thinkbox Documentation](https://docs.thinkboxsoftware.com/products/deadline/10.1/1_User%20Manual/manual/manual-plugins.html)
 - **UV Documentation**: [Astral UV Docs](https://docs.astral.sh/uv/)
