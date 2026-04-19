@@ -49,8 +49,6 @@ from .helpers import (
 from .views import WorkspaceBrowser, DepartmentBrowser, DetailsView, VersionView, SettingsView
 from .utils.async_refresh import AsyncRefreshManager
 from .viewers.usd_viewer import USDViewerLauncher
-from .viewers.djv_viewer import DJVViewerLauncher
-from .dialogs.render_viewer_dialog import RenderViewerDialog
 
 api = default_client()
 
@@ -210,18 +208,6 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._submit_jobs_button.setMaximumWidth(30)
         self._submit_jobs_button.clicked.connect(self._open_job_submission)
         workspace_header_layout.addWidget(self._submit_jobs_button)
-
-        # Create the view renders button
-        self._view_renders_button = QtWidgets.QPushButton()
-        self._view_renders_button.setIcon(hqt.Icon("COP2_mosaic"))
-        self._view_renders_button.setToolTip("View Renders in DJV")
-        self._view_renders_button.setMaximumWidth(30)
-        self._view_renders_button.clicked.connect(self._open_render_viewer)
-        workspace_header_layout.addWidget(self._view_renders_button)
-
-        # DJV viewer launcher
-        self._djv_launcher = DJVViewerLauncher(self)
-        self._render_viewer_selections = set()
 
         # Window references
         self._database_window = None
@@ -738,50 +724,6 @@ class ProjectBrowser(QtWidgets.QWidget):
         self._farm_dialog_selections = dialog.get_selected_uris()
         self._farm_dialog_expanded = dialog.get_expanded_paths()
         self._farm_dialog_splitter = dialog.get_splitter_sizes()
-
-    def _open_render_viewer(self):
-        """Open the render viewer dialog for viewing renders in DJV."""
-        # Check if DJV is configured
-        if not self._djv_launcher.is_configured():
-            hou.ui.displayMessage(
-                "DJV is not configured.\n\n"
-                "Set the TH_DJV_PATH environment variable to the path of the DJV executable.",
-                severity=hou.severityType.Warning,
-                title="DJV Not Found"
-            )
-            return
-
-        # Create dialog with previous selections
-        dialog = RenderViewerDialog(
-            previous_selections=self._render_viewer_selections,
-            parent=self
-        )
-
-        if dialog.exec_():
-            # Get selected shots and settings
-            selected_shots = dialog.get_selected_shots()
-            render_department = dialog.get_selected_department()
-            layer_name = dialog.get_selected_layer()
-            aov_name = dialog.get_selected_aov()
-
-            if selected_shots:
-                # Launch DJV with render timeline
-                success = self._djv_launcher.launch_render_timeline(
-                    shots=selected_shots,
-                    render_department=render_department,
-                    layer_name=layer_name,
-                    aov_name=aov_name
-                )
-                if not success:
-                    hou.ui.displayMessage(
-                        "Failed to launch DJV.\n\n"
-                        "Check the console for details.",
-                        severity=hou.severityType.Warning,
-                        title="DJV Launch Failed"
-                    )
-
-        # Save selections for next open
-        self._render_viewer_selections = dialog.get_selected_uris()
 
     def _open_scene_editor(self):
         """Open or focus the scene description editor window (non-modal)"""

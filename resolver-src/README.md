@@ -86,17 +86,32 @@ What happens under the hood:
 1. CMake loads Houdini's bundled USD CMake package from `$HFS/toolkit/cmake`.
 2. `ExternalProject_Add` shells out to `cargo build --release` to produce
    the `th_resolver_core` staticlib into `build/rust-target/release/`.
-3. `tumbleResolver` (C++ MODULE library) is linked against `ar`, `sdf`,
-   `tf` from USD, plus the Rust staticlib.
+3. `tumbleResolver` (C++ MODULE library) is linked against `ar`, `arch`,
+   `sdf`, `tf`, `vt` from USD, plus the Rust staticlib. The staticlib is
+   pulled in with platform-specific whole-archive flags (`/WHOLEARCHIVE`
+   on MSVC, `-force_load` on Apple, `--whole-archive` on GNU) so linker
+   dead-code passes can't drop static ctors. The `TumbleResolver` class
+   also carries a `TH_RESOLVER_API` export annotation for the same reason.
 4. `plugInfo.json.in` is rendered with the platform-specific library
    filename.
 5. Install lays out `tumbleResolver/{lib,resources,BUILD_INFO}` at the
    install prefix, ready to drop into the package's `resolver/<platform>/
    houdini<major>/` directory.
 
-CI (`.woodpecker/resolver.yml`, coming in a follow-up) runs this for
-each cell in the platform × houdini-major matrix on workers that have
-the corresponding Houdini install.
+CI runs this per-platform from `.woodpecker/build-windows.yml`,
+`build-linux.yml`, and `build-macos.yml` on workers that have the
+corresponding Houdini install. Each build smoke-tests the resulting
+binary with `grep TumbleResolver` to catch the linker-strip regression
+that would otherwise ship a plugin USD can load but can't instantiate.
+
+Linux and macOS additionally `grep th_resolver` against the .so to
+verify the Rust FFI symbols survived (their `.dynsym` / Mach-O symbol
+table preserves `#[no_mangle]` names). Windows can't do this against
+the DLL — MSVC `link.exe` drops the COFF symbol table from a Release
+PE, so internal (non-exported) function names disappear even when the
+code is linked in. The Windows job greps the Rust staticlib instead;
+combined with a successful PE32+ link, that proves cargo emitted the
+FFI surface and `link.exe` consumed it.
 
 ## C ABI
 

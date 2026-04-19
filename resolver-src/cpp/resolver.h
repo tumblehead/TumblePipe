@@ -6,6 +6,18 @@
 
 #include <memory>
 
+// Export the class so MSVC's /OPT:REF can't drop the COMDAT section
+// containing AR_DEFINE_RESOLVER's anonymous static registration. Matches
+// USD's own plugin pattern (PXR_*_API macros). No-op on toolchains with
+// default visibility.
+#if defined(_MSC_VER)
+#  define TH_RESOLVER_API __declspec(dllexport)
+#elif defined(__GNUC__) || defined(__clang__)
+#  define TH_RESOLVER_API __attribute__((visibility("default")))
+#else
+#  define TH_RESOLVER_API
+#endif
+
 PXR_NAMESPACE_OPEN_SCOPE
 
 /// URI-scheme resolver for the `entity://` scheme used by TumblePipe.
@@ -15,7 +27,7 @@ PXR_NAMESPACE_OPEN_SCOPE
 /// `th_resolver_core.h`. USD only routes `entity:` asset paths to this
 /// resolver; filesystem paths continue to flow through USD's default
 /// resolver.
-class TumbleResolver final : public ArResolver {
+class TH_RESOLVER_API TumbleResolver final : public ArResolver {
 public:
     TumbleResolver();
     ~TumbleResolver() override;

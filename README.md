@@ -15,8 +15,8 @@ This readme will help you get up and running with TumblePipe. For documentation 
 # Project Structure
 - `otls/` — Houdini Digital Assets (HDAs) in text format for version control
 - `python/1x/tumblepipe/` — Pipeline Python modules
-- `python3.11libs/` — Python libraries loaded by Houdini at startup
-- `scripts/` — Houdini startup scripts (123.py, etc.)
+- `python3.Xlibs/` — Per-Python-version libraries and startup hooks (`pythonrc.py`, `uiready.py`) loaded by Houdini
+- `scripts/` — Houdini startup scripts
 - `desktop/` — Houdini desktop layout
 - `python_panels/` — Houdini Python panels (project browser)
 - `ocio/` — OpenColorIO configuration

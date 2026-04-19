@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.1.5"
+version = "1.1.7"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 keywords = ["houdini"]
@@ -21,7 +21,6 @@ qtpy = ">=2.4.0"
 watchdog = ">=6.0.0"
 pymongo = ">=4.13.0"
 dictdiffer = ">=0.9.0"
-opentimelineio = "*"
 
 [native]
 # hpm 0.5.2 only accepts a fixed set of platform names. For mac we ship

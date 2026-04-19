@@ -44,7 +44,30 @@ file(WRITE "${CMAKE_BINARY_DIR}/BUILD_INFO"
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
 set(RUST_TARGET_DIR "${CMAKE_BINARY_DIR}/rust-target")
-set(RUST_PROFILE_DIR "${RUST_TARGET_DIR}/release")
+
+# Force cargo onto the same target triple the C++ side is building for.
+# Matters most on macOS where CI workers are typically x86_64 but we
+# cross-compile to arm64 via -DCMAKE_OSX_ARCHITECTURES=arm64; without an
+# explicit --target cargo follows the host and the linker silently
+# discards every Rust object as "wrong architecture". The CI worker must
+# have the matching rustup target installed (e.g. `rustup target add
+# aarch64-apple-darwin`).
+if(APPLE)
+    if("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64")
+        set(RUST_TARGET_TRIPLE "aarch64-apple-darwin")
+    elseif("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64")
+        set(RUST_TARGET_TRIPLE "x86_64-apple-darwin")
+    endif()
+endif()
+
+if(DEFINED RUST_TARGET_TRIPLE)
+    set(_cargo_target_args --target ${RUST_TARGET_TRIPLE})
+    set(RUST_PROFILE_DIR "${RUST_TARGET_DIR}/${RUST_TARGET_TRIPLE}/release")
+else()
+    set(_cargo_target_args "")
+    set(RUST_PROFILE_DIR "${RUST_TARGET_DIR}/release")
+endif()
+
 set(RUST_STATICLIB
     "${RUST_PROFILE_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}th_resolver_core${CMAKE_STATIC_LIBRARY_SUFFIX}")
 
@@ -56,6 +79,7 @@ ExternalProject_Add(th_resolver_core_rust
     BUILD_COMMAND ${CARGO_EXECUTABLE} build
         --release
         --verbose
+        ${_cargo_target_args}
         --manifest-path "${CMAKE_SOURCE_DIR}/Cargo.toml"
         --target-dir "${RUST_TARGET_DIR}"
     INSTALL_COMMAND ""
@@ -78,11 +102,33 @@ add_library(tumbleResolver MODULE
 
 target_include_directories(tumbleResolver PRIVATE cpp)
 
-target_link_libraries(tumbleResolver
-    PRIVATE
-        Houdini
+target_link_libraries(tumbleResolver PRIVATE Houdini)
+
+# Force-link the full Rust staticlib so the linker can't drop static
+# constructors (panic handlers, TLS init, any future registration code).
+# MSVC's /OPT:REF, GNU ld's --gc-sections, and macOS ld64's -dead_strip
+# all discard sections that look unreferenced without this.
+#
+# Windows note: the Visual Studio (MSBuild) generator misclassifies
+# `-WHOLEARCHIVE:...` string entries in target_link_libraries as stray
+# library references and silently drops them; target_link_options with
+# a LINKER: genex was rejected too. LINK_FLAGS writes the flag directly
+# into MSBuild's AdditionalOptions, which reaches link.exe verbatim.
+# Since RUST_STATICLIB is resolved at configure time, no genex is needed.
+if(MSVC)
+    target_link_libraries(tumbleResolver PRIVATE th_resolver_core)
+    set_target_properties(tumbleResolver PROPERTIES
+        LINK_FLAGS "/WHOLEARCHIVE:${RUST_STATICLIB}")
+elseif(APPLE)
+    target_link_libraries(tumbleResolver PRIVATE
+        "-Wl,-force_load"
+        th_resolver_core)
+else()
+    target_link_libraries(tumbleResolver PRIVATE
+        "-Wl,--whole-archive"
         th_resolver_core
-)
+        "-Wl,--no-whole-archive")
+endif()
 
 # Rust's static lib can bring in platform-specific runtime deps.
 if(WIN32)

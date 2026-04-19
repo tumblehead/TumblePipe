@@ -1,5 +1,6 @@
 # Houdini major versions the CI matrix builds binaries for.
 # Add a new major by appending to `majors` and installing the matching
-# Houdini build on every worker listed in .woodpecker/resolver.yml.
+# Houdini build on every worker used by .woodpecker/build-windows.yml,
+# build-linux.yml, and build-macos.yml.
 
 majors = [21]
