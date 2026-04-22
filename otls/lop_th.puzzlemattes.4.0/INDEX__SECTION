@@ -1,7 +1,7 @@
 Operator:     th::puzzlemattes::4.0
 Label:        th puzzle mattes
 Path:         oplib:/th::Lop/puzzlemattes::4.0?th::Lop/puzzlemattes::4.0
-Icon:         W:\_pipeline\pipeline\houdini\Tumblehead\resources/PuzzleMattes.png
+Icon:         $TH_PIPELINE_PATH/resources/PuzzleMattes.png
 Table:        Lop
 License:      
 Extra:        

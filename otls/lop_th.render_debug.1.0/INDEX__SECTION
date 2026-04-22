@@ -1,7 +1,7 @@
 Operator:     th::render_debug::1.0
 Label:        th render debug
 Path:         oplib:/th::Lop/render_debug::1.0?th::Lop/render_debug::1.0
-Icon:         W:\_pipeline\pipeline\houdini\Tumblehead\resources/RenderDebug.png
+Icon:         $TH_PIPELINE_PATH/resources/RenderDebug.png
 Table:        Lop
 License:      
 Extra:        

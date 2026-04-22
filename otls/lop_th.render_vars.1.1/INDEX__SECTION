@@ -1,7 +1,7 @@
 Operator:     th::render_vars::1.1
 Label:        th render vars
 Path:         oplib:/th::Lop/render_vars::1.1?th::Lop/render_vars::1.1
-Icon:         W:\_pipeline\pipeline\houdini\Tumblehead\resources/BuildComp.png
+Icon:         $TH_PIPELINE_PATH/resources/BuildComp.png
 Table:        Lop
 License:      
 Extra:        

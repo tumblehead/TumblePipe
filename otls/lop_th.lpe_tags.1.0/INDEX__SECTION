@@ -1,7 +1,7 @@
 Operator:     th::lpe_tags::1.0
 Label:        th lpe tags
 Path:         oplib:/th::Lop/lpe_tags::1.0?th::Lop/lpe_tags::1.0
-Icon:         W:\_pipeline\pipeline\houdini\Tumblehead\resources/lpeTags.png
+Icon:         $TH_PIPELINE_PATH/resources/lpeTags.png
 Table:        Lop
 License:      
 Extra:        

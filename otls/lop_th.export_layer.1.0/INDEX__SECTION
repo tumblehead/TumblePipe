@@ -1,7 +1,7 @@
 Operator:     th::export_layer::1.0
 Label:        th export layer
 Path:         oplib:/th::Lop/export_layer::1.0?th::Lop/export_layer::1.0
-Icon:         $TH_PIPELINE_PATH\houdini\Tumblehead\resources/ExportShotLayer.png
+Icon:         $TH_PIPELINE_PATH/resources/ExportShotLayer.png
 Table:        Lop
 License:      
 Extra:        

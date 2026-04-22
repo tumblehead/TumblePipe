@@ -1,7 +1,7 @@
 Operator:     th::import_assets::2.0
 Label:        th import assets
 Path:         oplib:/th::Lop/import_assets::2.0?th::Lop/import_assets::2.0
-Icon:         W:\_pipeline\pipeline\houdini\Tumblehead\resources/ImportAssets.png
+Icon:         $TH_PIPELINE_PATH/resources/ImportAssets.png
 Table:        Lop
 License:      
 Extra:        
