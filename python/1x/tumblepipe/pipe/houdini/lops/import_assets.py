@@ -251,7 +251,32 @@ class ImportAssets(ns.Node):
         asset_uris = self.list_entity_uris(index)
         if asset_uri not in asset_uris: return
         self.parm(f'entity{index}').set(str(asset_uri))
-    
+
+    def add_asset_entry(
+        self,
+        asset_uri: Uri,
+        variant: str = 'default',
+        version: str = 'latest',
+        instances: int = 1,
+    ) -> int:
+        """Append a new multiparm entry for ``asset_uri`` and return its index.
+
+        Unlike :meth:`set_entity_uri`, this writes the URI directly
+        without round-tripping through ``list_entity_uris`` — the
+        caller has already resolved the URI, and the filter-by-existing
+        pass in that method would drop the brand-new entry (since
+        entry ``new_index`` temporarily shares the URI with the entry
+        being disambiguated against).
+        """
+        count = self.parm('asset_imports').eval()
+        new_index = count + 1
+        self.parm('asset_imports').set(new_index)
+        self.parm(f'entity{new_index}').set(str(asset_uri))
+        self.parm(f'variant{new_index}').set(variant)
+        self.parm(f'version{new_index}').set(version)
+        self.parm(f'instances{new_index}').set(instances)
+        return new_index
+
     def set_instances(self, index, instances):
         self.parm(f'instances{index}').set(instances)
     

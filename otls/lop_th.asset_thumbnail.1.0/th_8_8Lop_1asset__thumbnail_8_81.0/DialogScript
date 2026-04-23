@@ -1,0 +1,51 @@
+# Dialog script for th::asset_thumbnail::1.0 automatically generated
+
+{
+    name	th::asset_thumbnail::1.0
+    script	th::asset_thumbnail::1.0
+    label	"th asset thumbnail"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "primpath"
+        label   "Primitive Path"
+        type    string
+        default { "`lopinputprim('.', 0)`" }
+        menureplace {
+            [ "opmenu -l -a KEY1 primpath" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, False)" }
+        parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nAlt-click to toggle movement of the display flag." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "script_callback_language" "python" }
+        parmtag { "sidefx::usdpathtype" "prim" }
+    }
+    parm {
+        name    "outputimage"
+        label   "Override Output Image"
+        type    image
+        default { "$HIP/thumbnails`chs(\"../primpath\")`_thumbnail.png" }
+        menureplace {
+            [ "opmenu -l -a thumbnail_render1 outputimage" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "execute"
+        label   "Render to Disk"
+        type    button
+        default { "0" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "takecontrol" "always" }
+    }
+}

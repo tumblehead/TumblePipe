@@ -3,7 +3,6 @@
 from pathlib import Path
 from typing import Callable
 from contextlib import contextmanager
-from io import StringIO
 import traceback
 import uuid
 import sys
@@ -26,15 +25,31 @@ from ..helpers import get_entity_type
 api = default_client()
 
 
+class _SilentStream:
+    def __init__(self, original):
+        self._original = original
+
+    def write(self, text):
+        return len(text) if text else 0
+
+    def flush(self):
+        pass
+
+    def __getattr__(self, name):
+        return getattr(self._original, name)
+
+
 @contextmanager
-def _capture_output():
-    """Context manager to capture stdout and stderr during local execution"""
+def _silence_output():
+    # Wrapper must delegate fileno/isatty/buffer to the real stream — Houdini's
+    # native progress dialog introspects sys.stdout and gets stuck if those
+    # attributes are missing (as with a bare StringIO).
     old_stdout = sys.stdout
     old_stderr = sys.stderr
     try:
-        sys.stdout = StringIO()
-        sys.stderr = StringIO()
-        yield sys.stdout, sys.stderr
+        sys.stdout = _SilentStream(old_stdout)
+        sys.stderr = _SilentStream(old_stderr)
+        yield
     finally:
         sys.stdout = old_stdout
         sys.stderr = old_stderr
@@ -170,12 +185,6 @@ class ProcessExecutor(QObject):
         task.status = TaskStatus.RUNNING
         self.task_started.emit(task.id)
 
-        # Variables to store captured output (for error reporting)
-        captured_stdout = ''
-        captured_stderr = ''
-        stdout_capture = None
-        stderr_capture = None
-
         try:
             if task.children:
                 # Parent task with children - execute each enabled child
@@ -208,8 +217,7 @@ class ProcessExecutor(QObject):
         """Execute a single task (no children)"""
         if self._mode == 'local':
             if task.execute_local is not None:
-                # Capture stdout/stderr during local execution to keep console clean
-                with _capture_output() as (stdout_capture, stderr_capture):
+                with _silence_output():
                     task.execute_local()
             else:
                 raise RuntimeError("No local executor defined for task")
@@ -248,7 +256,7 @@ class ProcessExecutor(QObject):
             try:
                 if self._mode == 'local':
                     if child.execute_local is not None:
-                        with _capture_output() as (stdout_capture, stderr_capture):
+                        with _silence_output():
                             child.execute_local()
                     else:
                         raise RuntimeError(f"No local executor defined for child task: {child.description}")

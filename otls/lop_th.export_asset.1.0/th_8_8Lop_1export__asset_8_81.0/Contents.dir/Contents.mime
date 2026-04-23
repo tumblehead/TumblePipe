@@ -1,0 +1,2937 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="node_type"
+Content-Type: text/plain
+
+Lop
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.init"
+Content-Type: text/plain
+
+type = th::export_asset::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.def"
+Content-Type: text/plain
+
+comment ""
+position -4.98083 22.6938
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	create_asset_lookdev1 0 1 "input1"
+}
+inputs
+{
+0 	create_asset_lookdev1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.inp"
+Content-Type: text/plain
+
+1
+0 -2.9049679328707612e-14 11.016841509433961 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/usd_rop.init"
+Content-Type: text/plain
+
+type = usd_rop
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/usd_rop.def"
+Content-Type: text/plain
+
+comment ""
+position 2.75943 3.77305
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	configure_asset_layer 1 1 "input1"
+}
+inputs
+{
+0 	configure_asset_layer 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.65 0.4 0.5 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/usd_rop.spareparmdef"
+Content-Type: text/plain
+
+    parm {
+        name    "execute"
+        baseparm
+        label   "Save to Disk"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "executebackground"
+        baseparm
+        label   "Save to Disk in Background"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "renderdialog"
+        baseparm
+        label   "Controls..."
+        nolabel
+        export  none
+    }
+    parm {
+        name    "trange"
+        baseparm
+        label   "Valid Frame Range"
+        export  none
+    }
+    parm {
+        name    "f"
+        baseparm
+        label   "Start/End/Inc"
+        export  none
+    }
+    parm {
+        name    "foffset"
+        baseparm
+        label   "Preroll/Postroll/Inc"
+        export  none
+    }
+    parm {
+        name    "take"
+        baseparm
+        label   "Render with Take"
+        export  none
+    }
+    parm {
+        name    "loppath"
+        baseparm
+        label   "LOP Path"
+        export  none
+    }
+    parm {
+        name    "lopoutput"
+        baseparm
+        label   "Output File"
+        export  none
+    }
+    parm {
+        name    "savestyle"
+        baseparm
+        label   "Save Style"
+        export  none
+    }
+    parm {
+        name    "striplayerbreaks"
+        baseparm
+        label   "Strip Layers Above Layer Breaks"
+        export  none
+    }
+    parm {
+        name    "strippostlayers"
+        baseparm
+        label   "Strip Post-Layers"
+        export  none
+    }
+    parm {
+        name    "fileperframe"
+        baseparm
+        label   "Flush Data After Each Frame"
+        export  none
+    }
+    parm {
+        name    "trackprimexistence"
+        baseparm
+        label   "Track Primitive Existence to Set Visibility"
+        export  none
+    }
+    parm {
+        name    "usenetworksafesave"
+        baseparm
+        label   "Use Network Drive Safe Save (Windows Only)"
+        export  none
+    }
+    parm {
+        name    "filtertimesamples"
+        baseparm
+        label   "Filter Time Samples"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "filtertimesamplespadding"
+        baseparm
+        label   "Extra Frames"
+        export  none
+    }
+    groupcollapsible {
+        name    "extrafiles_group2"
+        label   "Extra Files"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "savepattern"
+            baseparm
+            label   "Files to Save"
+            export  none
+        }
+        parm {
+            name    "errorsavingimplicitpaths"
+            baseparm
+            label   "Error Saving Layers with Implicit Paths"
+            export  none
+        }
+        parm {
+            name    "savefilesfromdisk"
+            baseparm
+            label   "Save Updates to Modified Files From Disk"
+            export  none
+        }
+        parm {
+            name    "flattenfilelayers"
+            baseparm
+            label   "Flatten File Layers"
+            export  none
+        }
+        parm {
+            name    "flattensoplayers"
+            baseparm
+            label   "Flatten SOP Layers"
+            export  none
+        }
+    }
+
+    groupcollapsible {
+        name    "outputprocessor_group2"
+        label   "Output Processing"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "outputprocessor_removehfs"
+            baseparm
+            label   "Remove Houdini Install Directory from Asset Paths"
+            export  none
+        }
+        parm {
+            name    "outputprocessors"
+            baseparm
+            label   "Output Processors"
+            export  none
+        }
+        groupsimple {
+            name    "localizeassets_group"
+            label   "Copy All Assets to Referencing Layer Directory"
+            grouptag { "group_type" "simple" }
+
+            parm {
+                name    "enableoutputprocessor_localizeassets"
+                label   "Enable"
+                type    toggle
+                joinnext
+                default { "1" }
+            }
+            parm {
+                name    "localizeassets_spacer"
+                label   "Spacer"
+                type    label
+                nolabel
+                joinnext
+                default { "" }
+            }
+            parm {
+                name    "localizeassets_moveup"
+                label   "Move Up"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "button_icon" "BUTTONS_up" }
+                parmtag { "script_callback" "import loputils\nloputils.handleOutputProcessorMoveUp(kwargs)" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "localizeassets_remove"
+                label   "Remove"
+                type    button
+                nolabel
+                default { "0" }
+                parmtag { "button_icon" "BUTTONS_delete" }
+                parmtag { "script_callback" "import loputils\nloputils.handleOutputProcessorRemove(kwargs)" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "localizeassets_subdirectory"
+                label   "Output Subdirectory"
+                type    string
+                default { "" }
+                disablewhen "{ enableoutputprocessor_localizeassets == 0 }"
+            }
+        }
+
+        groupsimple {
+            name    "savepathsrelativetooutput_group"
+            label   "Save Paths Relative to Output Path"
+            grouptag { "group_type" "simple" }
+
+            parm {
+                name    "enableoutputprocessor_savepathsrelativetooutput"
+                label   "Enable"
+                type    toggle
+                joinnext
+                default { "1" }
+            }
+            parm {
+                name    "savepathsrelativetooutput_spacer"
+                label   "Spacer"
+                type    label
+                nolabel
+                joinnext
+                default { "" }
+            }
+            parm {
+                name    "savepathsrelativetooutput_moveup"
+                label   "Move Up"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "button_icon" "BUTTONS_up" }
+                parmtag { "script_callback" "import loputils\nloputils.handleOutputProcessorMoveUp(kwargs)" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "savepathsrelativetooutput_remove"
+                label   "Remove"
+                type    button
+                nolabel
+                default { "0" }
+                parmtag { "button_icon" "BUTTONS_delete" }
+                parmtag { "script_callback" "import loputils\nloputils.handleOutputProcessorRemove(kwargs)" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "savepathsrelativetooutput_rootdir"
+                label   "Override Output Directory"
+                type    directory
+                default { "" }
+                disablewhen "{ enableoutputprocessor_savepathsrelativetooutput == 0 }"
+            }
+        }
+
+        groupsimple {
+            name    "simplerelativepaths_group"
+            label   "Use Relative Paths"
+            grouptag { "group_type" "simple" }
+
+            parm {
+                name    "enableoutputprocessor_simplerelativepaths"
+                label   "Enable"
+                type    toggle
+                joinnext
+                default { "1" }
+            }
+            parm {
+                name    "simplerelativepaths_spacer"
+                label   "Spacer"
+                type    label
+                nolabel
+                joinnext
+                default { "" }
+            }
+            parm {
+                name    "simplerelativepaths_moveup"
+                label   "Move Up"
+                type    button
+                nolabel
+                joinnext
+                default { "0" }
+                parmtag { "button_icon" "BUTTONS_up" }
+                parmtag { "script_callback" "import loputils\nloputils.handleOutputProcessorMoveUp(kwargs)" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "simplerelativepaths_remove"
+                label   "Remove"
+                type    button
+                nolabel
+                default { "0" }
+                parmtag { "button_icon" "BUTTONS_delete" }
+                parmtag { "script_callback" "import loputils\nloputils.handleOutputProcessorRemove(kwargs)" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
+    groupcollapsible {
+        name    "layermetadata_group2"
+        label   "Layer Metadata"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "defaultprim"
+            baseparm
+            label   "Default Primitive"
+            export  none
+        }
+        parm {
+            name    "requiredefaultprim"
+            baseparm
+            label   "Error Saving Layer with No Default Primitive"
+            export  none
+        }
+        parm {
+            name    "savetimeinfo"
+            baseparm
+            label   "Save ROP's Time Information to Output"
+            export  none
+        }
+        parm {
+            name    "clearhoudinicustomdata"
+            baseparm
+            label   "Clear Houdini-Specific Custom Data"
+            export  none
+        }
+        parm {
+            name    "ensuremetricsset"
+            baseparm
+            label   "Ensure Basic Metrics Are Set on All Layers"
+            export  none
+        }
+    }
+
+    groupcollapsible {
+        name    "contextoptions_group2"
+        label   "Context Options"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "setropcook"
+            baseparm
+            label   "Set ROP Cook Context Option"
+            export  none
+        }
+        multiparm {
+            name    "optioncount"
+            label    "Number of Options"
+            baseparm
+            default 1
+
+            groupsimple {
+                name    "optiongroup#"
+                label   ""
+                baseparm
+
+                parm {
+                    name    "optionenable#"
+                    baseparm
+                    label   "Enable"
+                    export  none
+                }
+                parm {
+                    name    "optionname#"
+                    baseparm
+                    label   "Option Name"
+                    joinnext
+                    export  none
+                }
+                parm {
+                    name    "optiontype#"
+                    baseparm
+                    label   "Option Type"
+                    export  none
+                }
+                parm {
+                    name    "optionstrvalue#"
+                    baseparm
+                    label   "Option Value"
+                    export  none
+                }
+                parm {
+                    name    "optionfloatvalue#"
+                    baseparm
+                    label   "Option Value"
+                    export  none
+                }
+            }
+
+        }
+
+    }
+
+    parm {
+        name    "separator_scripts"
+        baseparm
+        label   "separator_scripts"
+        export  none
+    }
+    parm {
+        name    "tprerender"
+        baseparm
+        label   "Pre-Render Script"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "prerender"
+        baseparm
+        label   "Pre-Render Script"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "lprerender"
+        baseparm
+        label   "Pre-Render Script Language"
+        nolabel
+        export  none
+    }
+    parm {
+        name    "tpreframe"
+        baseparm
+        label   "Pre-Frame Script"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "preframe"
+        baseparm
+        label   "Pre-Frame Script"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "lpreframe"
+        baseparm
+        label   "Pre-Frame Script Language"
+        nolabel
+        export  none
+    }
+    parm {
+        name    "tpostframe"
+        baseparm
+        label   "Post-Frame Script"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "postframe"
+        baseparm
+        label   "Post-Frame Script"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "lpostframe"
+        baseparm
+        label   "Post-Frame Script Language"
+        nolabel
+        export  none
+    }
+    parm {
+        name    "tpostrender"
+        baseparm
+        label   "Post-Render Script"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "postrender"
+        baseparm
+        label   "Post-Render Script"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "lpostrender"
+        baseparm
+        label   "Post-Render Script Language"
+        nolabel
+        export  none
+    }
+    parm {
+        name    "initsim"
+        baseparm
+        label   "Initialize Simulation OPs"
+        export  none
+    }
+    parm {
+        name    "alfprogress"
+        baseparm
+        label   "Alfred Style Progress"
+        export  none
+    }
+    parm {
+        name    "reportnetwork"
+        baseparm
+        label   "Report Network Use"
+        export  none
+    }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/usd_rop.chn"
+Content-Type: text/plain
+
+{
+    channel f1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = $FSTART }
+    }
+    channel f2 {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 240 240 expr = $FEND }
+    }
+    channel lopoutput {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"$HIP/asset/test_asset/test_asset.usda\"
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = chs(\"../lopoutput\") }
+    }
+    channel execute {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../execute\") }
+    }
+    channel savestyle {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"separate\"
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = chs(\"../savestyle\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/usd_rop.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+execute	[ 0	locks=0 ]	(	[ execute	0 ] 	)
+executebackground	[ 0	locks=0 ]	(	0	)
+renderdialog	[ 0	locks=0 ]	(	0	)
+trange	[ 0	locks=0 ]	(	"off"	)
+f	[ 0	locks=0 ]	(	[ f1	1 ] 	[ f2	240 ] 	1	)
+foffset	[ 0	locks=0 ]	(	0	0	1	)
+take	[ 0	locks=0 ]	(	_current_	)
+loppath	[ 0	locks=0 ]	(	"../`opinput(\".\", 0)`"	)
+lopoutput	[ 0	locks=0 ]	(	[ lopoutput	$HIP/geo/$HIPNAME.$OS.usd ] 	)
+savestyle	[ 0	locks=0 ]	(	[ savestyle	flattenimplicitlayers ] 	)
+striplayerbreaks	[ 0	locks=0 ]	(	"on"	)
+strippostlayers	[ 0	locks=0 ]	(	"off"	)
+fileperframe	[ 0	locks=0 ]	(	"off"	)
+trackprimexistence	[ 0	locks=0 ]	(	"off"	)
+usenetworksafesave	[ 0	locks=0 ]	(	"on"	)
+filtertimesamples	[ 0	locks=0 ]	(	framerange	)
+filtertimesamplespadding	[ 0	locks=0 ]	(	0	)
+extrafiles_group	[ 0	locks=0 ]	(	0	)
+savepattern	[ 0	locks=0 ]	(	""	)
+errorsavingimplicitpaths	[ 0	locks=0 ]	(	"on"	)
+savefilesfromdisk	[ 0	locks=0 ]	(	"on"	)
+flattenfilelayers	[ 0	locks=0 ]	(	"off"	)
+flattensoplayers	[ 0	locks=0 ]	(	"off"	)
+outputprocessor_group	[ 0	locks=0 ]	(	0	)
+outputprocessor_removehfs	[ 0	locks=0 ]	(	"on"	)
+outputprocessors	[ 0	locks=0 ]	(	0	)
+layermetadata_group	[ 0	locks=0 ]	(	0	)
+defaultprim	[ 0	locks=0 ]	(	""	)
+requiredefaultprim	[ 0	locks=0 ]	(	"off"	)
+savetimeinfo	[ 0	locks=0 ]	(	"on"	)
+clearhoudinicustomdata	[ 0	locks=0 ]	(	"on"	)
+ensuremetricsset	[ 0	locks=0 ]	(	"on"	)
+contextoptions_group	[ 0	locks=0 ]	(	0	)
+setropcook	[ 0	locks=0 ]	(	"on"	)
+optioncount	[ 0	locks=0 ]	(	1	)
+separator_scripts	[ 0	locks=0 ]	(	)
+tprerender	[ 0	locks=0 ]	(	"on"	)
+prerender	[ 0	locks=0 ]	(	""	)
+lprerender	[ 0	locks=0 ]	(	hscript	)
+tpreframe	[ 0	locks=0 ]	(	"on"	)
+preframe	[ 0	locks=0 ]	(	""	)
+lpreframe	[ 0	locks=0 ]	(	hscript	)
+tpostframe	[ 0	locks=0 ]	(	"on"	)
+postframe	[ 0	locks=0 ]	(	""	)
+lpostframe	[ 0	locks=0 ]	(	hscript	)
+tpostrender	[ 0	locks=0 ]	(	"on"	)
+postrender	[ 0	locks=0 ]	(	""	)
+lpostrender	[ 0	locks=0 ]	(	hscript	)
+initsim	[ 0	locks=0 ]	(	"off"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+reportnetwork	[ 0	locks=0 ]	(	"off"	)
+optiongroup1	[ 0	locks=0 ]	(	0	)
+optionenable1	[ 0	locks=0 ]	(	"on"	)
+optionname1	[ 0	locks=0 ]	(	""	)
+optiontype1	[ 0	locks=0 ]	(	string	)
+optionstrvalue1	[ 0	locks=0 ]	(	""	)
+optionfloatvalue1	[ 0	locks=0 ]	(	0	)
+extrafiles_group2	[ 0	locks=0 ]	(	0	)
+outputprocessor_group2	[ 0	locks=0 ]	(	0	)
+localizeassets_group	[ 0	locks=0 ]	(	1	)
+enableoutputprocessor_localizeassets	[ 0	locks=0 ]	(	"on"	)
+localizeassets_spacer	[ 0	locks=0 ]	(	""	)
+localizeassets_moveup	[ 0	locks=0 ]	(	0	)
+localizeassets_remove	[ 0	locks=0 ]	(	0	)
+localizeassets_subdirectory	[ 0	locks=0 ]	(	""	)
+savepathsrelativetooutput_group	[ 0	locks=0 ]	(	1	)
+enableoutputprocessor_savepathsrelativetooutput	[ 0	locks=0 ]	(	"on"	)
+savepathsrelativetooutput_spacer	[ 0	locks=0 ]	(	""	)
+savepathsrelativetooutput_moveup	[ 0	locks=0 ]	(	0	)
+savepathsrelativetooutput_remove	[ 0	locks=0 ]	(	0	)
+savepathsrelativetooutput_rootdir	[ 0	locks=0 ]	(	""	)
+simplerelativepaths_group	[ 0	locks=0 ]	(	0	)
+enableoutputprocessor_simplerelativepaths	[ 0	locks=0 ]	(	"on"	)
+simplerelativepaths_spacer	[ 0	locks=0 ]	(	""	)
+simplerelativepaths_moveup	[ 0	locks=0 ]	(	0	)
+simplerelativepaths_remove	[ 0	locks=0 ]	(	0	)
+layermetadata_group2	[ 0	locks=0 ]	(	0	)
+contextoptions_group2	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/usd_rop.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sublayer_asset.init"
+Content-Type: text/plain
+
+type = sublayer
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sublayer_asset.def"
+Content-Type: text/plain
+
+comment ""
+position 2.75818 2.36217
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	"" "" 1 "input1"
+}
+inputs
+{
+0 	"" 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sublayer_asset.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+parentlayer_group	[ 0	locks=0 ]	(	0	)
+loadpayloads	[ 0	locks=0 ]	(	"on"	)
+setstagemetadata	[ 0	locks=0 ]	(	auto	)
+editrootlayer	[ 0	locks=0 ]	(	"on"	)
+ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Can only Sublayer into first input's Active Layer."	)
+findsublayers	[ 0	locks=0 ]	(	""	)
+removefoundsublayers	[ 0	locks=0 ]	(	"on"	)
+composition_group	[ 0	locks=0 ]	(	0	)
+sublayertype	[ 0	locks=0 ]	(	filesandinputs	)
+handlemissingfiles	[ 0	locks=0 ]	(	error	)
+positiontype	[ 0	locks=0 ]	(	strongest	)
+positionindex	[ 0	locks=0 ]	(	0	)
+files_separator	[ 0	locks=0 ]	(	)
+num_files	[ 0	locks=0 ]	(	1	)
+reload	[ 0	locks=0 ]	(	0	)
+inputs_separator	[ 0	locks=0 ]	(	)
+enable	[ 0	locks=0 ]	(	"on"	)
+sublayerfile_group1	[ 0	locks=0 ]	(	1	)
+enable1	[ 0	locks=0 ]	(	"on"	)
+filepath1	[ 0	locks=0 ]	(	`chs(\"../usd_rop/lopoutput\")`	)
+mute1	[ 0	locks=0 ]	(	"off"	)
+timeoffset1	[ 0	locks=0 ]	(	0	)
+timescale1	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sublayer_asset.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/configure_asset_layer.init"
+Content-Type: text/plain
+
+type = configurelayer
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/configure_asset_layer.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 4.94901
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	asset_payload 1 1 "input1"
+}
+inputs
+{
+0 	asset_payload 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/configure_asset_layer.chn"
+Content-Type: text/plain
+
+{
+    channel starttime {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel endtime {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel timepersecond {
+      lefttype = extend
+      righttype = extend
+      default = 24
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 24 24 expr = $FPS }
+    }
+    channel framespersecond {
+      lefttype = extend
+      righttype = extend
+      default = 24
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 24 24 expr = $FPS }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/configure_asset_layer.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+setsavepath	[ 0	locks=0 ]	(	"on"	)
+savepath	[ 0	locks=0 ]	(	asset.usda	)
+setdefaultprim	[ 0	locks=0 ]	(	"on"	)
+defaultprim	[ 0	locks=0 ]	(	`chs(\"../primpath\")`	)
+setcomment	[ 0	locks=0 ]	(	"off"	)
+comment	[ 0	locks=0 ]	(	""	)
+setstarttime	[ 0	locks=0 ]	(	"off"	)
+starttime	[ 0	locks=0 ]	(	[ starttime	1 ] 	)
+setendtime	[ 0	locks=0 ]	(	"off"	)
+endtime	[ 0	locks=0 ]	(	[ endtime	240 ] 	)
+settimepersecond	[ 0	locks=0 ]	(	"off"	)
+timepersecond	[ 0	locks=0 ]	(	[ timepersecond	24 ] 	)
+setframespersecond	[ 0	locks=0 ]	(	"off"	)
+framespersecond	[ 0	locks=0 ]	(	[ framespersecond	24 ] 	)
+separator_metrics	[ 0	locks=0 ]	(	)
+setupaxis	[ 0	locks=0 ]	(	"off"	)
+upaxis	[ 0	locks=0 ]	(	z	)
+setmetersperunit	[ 0	locks=0 ]	(	"off"	)
+metersperunit	[ 0	locks=0 ]	(	0.01	)
+separator_colorconfig	[ 0	locks=0 ]	(	)
+setcolorconfig	[ 0	locks=0 ]	(	"off"	)
+colorconfig	[ 0	locks=0 ]	(	""	)
+setcolormanagementsystem	[ 0	locks=0 ]	(	"off"	)
+colormanagementsystem	[ 0	locks=0 ]	(	OpenColorIO	)
+separator_rendersettings	[ 0	locks=0 ]	(	)
+setrendersettings	[ 0	locks=0 ]	(	"off"	)
+rendersettings	[ 0	locks=0 ]	(	""	)
+separator_customdata	[ 0	locks=0 ]	(	)
+customdatacount	[ 0	locks=0 ]	(	0	)
+separator_stagevariables	[ 0	locks=0 ]	(	)
+stagevariablescount	[ 0	locks=0 ]	(	0	)
+separator_newlayer	[ 0	locks=0 ]	(	)
+setstagemetadata	[ 0	locks=0 ]	(	"on"	)
+flattenop	[ 0	locks=0 ]	(	none	)
+startnewlayer	[ 0	locks=0 ]	(	"on"	)
+setinputlayerexplicit	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/configure_asset_layer.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload.init"
+Content-Type: text/plain
+
+type = th::asset_payload::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 6.63768
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	set_thumbnail 1 1 "input1"
+}
+inputs
+{
+0 	set_thumbnail 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload.spareparmdef"
+Content-Type: text/plain
+
+    parm {
+        name    "lop_activation"
+        label   "Activation"
+        type    integer
+        default { "1" }
+        range   { 0 1 }
+    }
+    parm {
+        name    "primpath"
+        baseparm
+        label   "Primitive Path"
+        export  none
+    }
+    parm {
+        name    "color1"
+        baseparm
+        label   "Color"
+        export  none
+    }
+    parm {
+        name    "setcolor1"
+        baseparm
+        label   "Set Color"
+        export  none
+    }
+    parm {
+        name    "new_layer"
+        baseparm
+        label   "Create New Layer"
+        export  none
+    }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload.chn"
+Content-Type: text/plain
+
+{
+    channel lop_activation {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../payload\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+primpath	[ 0	locks=0 ]	(	`chs(\"../primpath\")`	)
+color1	[ 0	locks=0 ]	(	0.5	1	0	)
+setcolor1	[ 0	locks=0 ]	(	"on"	)
+new_layer	[ 0	locks=0 ]	(	"on"	)
+lop_activation	[ 0	locks=0 ]	(	[ lop_activation	1 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload.inp"
+Content-Type: text/plain
+
+1
+0 -4.9960213899679154e-05 8.2149547169811328 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payloadinfo.init"
+Content-Type: text/plain
+
+type = loftpayloadinfo
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payloadinfo.def"
+Content-Type: text/plain
+
+comment ""
+position -4.997e-05 2.81247
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	payload_asset 0 1 "input1"
+}
+inputs
+{
+0 	payload_asset 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payloadinfo.chn"
+Content-Type: text/plain
+
+{
+    channel sample_f1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel sample_f2 {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel sample_f3 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @finc }
+    }
+    channel color1r {
+      lefttype = extend
+      righttype = extend
+      default = 0.5
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 0.5 0.5 expr = ch(\"../color1r\") }
+    }
+    channel color1g {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../color1g\") }
+    }
+    channel color1b {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../color1b\") }
+    }
+    channel setcolor1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../setcolor1\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payloadinfo.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+sample_group	[ 0	locks=0 ]	(	0	)
+sample_behavior	[ 0	locks=0 ]	(	single	)
+sample_f	[ 0	locks=0 ]	(	[ sample_f1	1 ] 	[ sample_f2	240 ] 	[ sample_f3	1 ] 	)
+sample_subframeenable	[ 0	locks=0 ]	(	"off"	)
+sample_subframegroup	[ 0	locks=0 ]	(	0	)
+sample_shuttermode	[ 0	locks=0 ]	(	manual	)
+sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
+sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
+sample_count	[ 0	locks=0 ]	(	2	)
+sample_includeframe	[ 0	locks=0 ]	(	"on"	)
+primpattern	[ 0	locks=0 ]	(	*	)
+setstats	[ 0	locks=0 ]	(	"off"	)
+setcountstats	[ 0	locks=0 ]	(	"off"	)
+num_colors	[ 0	locks=0 ]	(	1	)
+setcolor1	[ 0	locks=0 ]	(	[ setcolor1	0 ] 	)
+color1	[ 0	locks=0 ]	(	[ color1r	1 ] 	[ color1g	1 ] 	[ color1b	1 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payloadinfo.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payload_asset.init"
+Content-Type: text/plain
+
+type = reference::2.0
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payload_asset.def"
+Content-Type: text/plain
+
+comment ""
+position -0.0013 4.53597
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+1 	"" "" 1 "input1"
+2 	payload_layer 1 1 "input2"
+}
+inputs
+{
+0 	"" 0 1
+1 	payload_layer 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payload_asset.editableinputdata"
+Content-Type: text/plain
+
+[
+	{
+	},
+	{
+	}
+]
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payload_asset.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+main_switcher	[ 0	locks=0 ]	(	0	0	0	)
+enable	[ 0	locks=0 ]	(	"on"	)
+input_group	[ 0	locks=0 ]	(	1	)
+primpath	[ 0	locks=0 ]	(	`chs(\"../primpath\")`	)
+createprims	[ 0	locks=0 ]	(	"on"	)
+primcount	[ 0	locks=0 ]	(	1	)
+reftype	[ 0	locks=0 ]	(	payload	)
+instanceable	[ 0	locks=0 ]	(	"off"	)
+refprim	[ 0	locks=0 ]	(	automaticPrim	)
+refprimpath	[ 0	locks=0 ]	(	automaticPrim	)
+files_group	[ 0	locks=0 ]	(	0	)
+num_files	[ 0	locks=0 ]	(	0	)
+reload	[ 0	locks=0 ]	(	0	)
+primkind	[ 0	locks=0 ]	(	__automatic__	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
+handlemissingfiles	[ 0	locks=0 ]	(	error	)
+preop	[ 0	locks=0 ]	(	none	)
+refeditop	[ 0	locks=0 ]	(	prependfront	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payload_asset.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/output0.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/output0.def"
+Content-Type: text/plain
+
+comment ""
+position -4.997e-05 1.34372
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	payloadinfo 1 1 "input1"
+}
+inputs
+{
+0 	payloadinfo 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/output0.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/output0.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payload_layer.init"
+Content-Type: text/plain
+
+type = configurelayer
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payload_layer.def"
+Content-Type: text/plain
+
+comment ""
+position -4.99714e-05 6.49253
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payload_layer.spareparmdef"
+Content-Type: text/plain
+
+    parm {
+        name    "lop_activation"
+        label   "Activation"
+        type    integer
+        default { "1" }
+        range   { 0 1 }
+    }
+    parm {
+        name    "setsavepath"
+        baseparm
+        label   "Set Save Path"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "savepath"
+        baseparm
+        label   "Save Path"
+        export  none
+    }
+    parm {
+        name    "setdefaultprim"
+        baseparm
+        label   "Set Default Primitive"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "defaultprim"
+        baseparm
+        label   "Default Primitive"
+        export  none
+    }
+    parm {
+        name    "setcomment"
+        baseparm
+        label   "Set Comment"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "comment"
+        baseparm
+        label   "Comment"
+        export  none
+    }
+    parm {
+        name    "setstarttime"
+        baseparm
+        label   "Set Start Time"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "starttime"
+        baseparm
+        label   "Start Time"
+        export  none
+    }
+    parm {
+        name    "setendtime"
+        baseparm
+        label   "Set End Time"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "endtime"
+        baseparm
+        label   "End Time"
+        export  none
+    }
+    parm {
+        name    "settimepersecond"
+        baseparm
+        label   "Set Time Codes per Second"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "timepersecond"
+        baseparm
+        label   "Time Codes per Second"
+        export  none
+    }
+    parm {
+        name    "setframespersecond"
+        baseparm
+        label   "Set Frames per Second"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "framespersecond"
+        baseparm
+        label   "Frames per Second"
+        export  none
+    }
+    parm {
+        name    "separator_metrics"
+        baseparm
+        label   "separator_metrics"
+        export  none
+    }
+    parm {
+        name    "setupaxis"
+        baseparm
+        label   "Set Up Axis"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "upaxis"
+        baseparm
+        label   "Up Axis"
+        export  none
+    }
+    parm {
+        name    "setmetersperunit"
+        baseparm
+        label   "Set Meters per Unit"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "metersperunit"
+        baseparm
+        label   "Meters per Unit"
+        export  none
+    }
+    parm {
+        name    "separator_colorconfig"
+        baseparm
+        label   "separator_colorconfig"
+        export  none
+    }
+    parm {
+        name    "setcolorconfig"
+        baseparm
+        label   "Color Configuration"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "colorconfig"
+        baseparm
+        label   "Color Configuration"
+        export  none
+    }
+    parm {
+        name    "setcolormanagementsystem"
+        baseparm
+        label   "Color Management System"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "colormanagementsystem"
+        baseparm
+        label   "Color Management System"
+        export  none
+    }
+    parm {
+        name    "separator_rendersettings"
+        baseparm
+        label   "separator_rendersettings"
+        export  none
+    }
+    parm {
+        name    "setrendersettings"
+        baseparm
+        label   "Set Render Settings"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "rendersettings"
+        baseparm
+        label   "Render Settings"
+        export  none
+    }
+    parm {
+        name    "separator_customdata"
+        baseparm
+        label   "separator_customdata"
+        export  none
+    }
+    multiparm {
+        name    "customdatacount"
+        label    "Custom Data Count"
+        baseparm
+        default 0
+
+        groupsimple {
+            name    "customdatagroup#"
+            label   ""
+            baseparm
+
+            parm {
+                name    "customdataname#"
+                baseparm
+                label   "Custom Data Name"
+                export  none
+            }
+            parm {
+                name    "customdatatype#"
+                baseparm
+                label   "Custom Data Type"
+                export  none
+            }
+            parm {
+                name    "customdatastrvalue#"
+                baseparm
+                label   "Custom Data Value"
+                export  none
+            }
+            parm {
+                name    "customdatafloatvalue#"
+                baseparm
+                label   "Custom Data Value"
+                export  none
+            }
+            parm {
+                name    "customdataintvalue#"
+                baseparm
+                label   "Custom Data Value"
+                export  none
+            }
+            parm {
+                name    "customdataboolvalue#"
+                baseparm
+                label   "Custom Data Value is True"
+                export  none
+            }
+        }
+
+    }
+
+    parm {
+        name    "separator_stagevariables"
+        baseparm
+        label   "separator_stagevariables"
+        export  none
+    }
+    multiparm {
+        name    "stagevariablescount"
+        label    "Stage Variable Count"
+        baseparm
+        default 0
+
+        groupsimple {
+            name    "stagevariablesgroup#"
+            label   ""
+            baseparm
+
+            parm {
+                name    "stagevariablesname#"
+                baseparm
+                label   "Stage Variable Name"
+                export  none
+            }
+            parm {
+                name    "stagevariablestype#"
+                baseparm
+                label   "Stage Variable Type"
+                export  none
+            }
+            parm {
+                name    "stagevariablesstrvalue#"
+                baseparm
+                label   "Stage Variable Value"
+                export  none
+            }
+            parm {
+                name    "stagevariablesfloatvalue#"
+                baseparm
+                label   "Stage Variable Value"
+                export  none
+            }
+            parm {
+                name    "stagevariablesintvalue#"
+                baseparm
+                label   "Stage Variable Value"
+                export  none
+            }
+            parm {
+                name    "stagevariablesboolvalue#"
+                baseparm
+                label   "Stage Variable Value is True"
+                export  none
+            }
+        }
+
+    }
+
+    parm {
+        name    "separator_newlayer"
+        baseparm
+        label   "separator_newlayer"
+        export  none
+    }
+    parm {
+        name    "setstagemetadata"
+        baseparm
+        label   "Also Set Metadata on Stage Root Layer"
+        export  none
+    }
+    parm {
+        name    "flattenop"
+        baseparm
+        label   "Flatten Input"
+        export  none
+    }
+    parm {
+        name    "startnewlayer"
+        baseparm
+        label   "Start New Layer"
+        export  none
+    }
+    parm {
+        name    "setinputlayerexplicit"
+        baseparm
+        label   "Set Input Active Layer to Explicit"
+        export  none
+    }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payload_layer.chn"
+Content-Type: text/plain
+
+{
+    channel starttime {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel endtime {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel timepersecond {
+      lefttype = extend
+      righttype = extend
+      default = 24
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 24 24 expr = $FPS }
+    }
+    channel framespersecond {
+      lefttype = extend
+      righttype = extend
+      default = 24
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 24 24 expr = $FPS }
+    }
+    channel lop_activation {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../new_layer\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payload_layer.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+setsavepath	[ 0	locks=0 ]	(	"on"	)
+savepath	[ 0	locks=0 ]	(	payload.usd	)
+setdefaultprim	[ 0	locks=0 ]	(	"off"	)
+defaultprim	[ 0	locks=0 ]	(	""	)
+setcomment	[ 0	locks=0 ]	(	"off"	)
+comment	[ 0	locks=0 ]	(	""	)
+setstarttime	[ 0	locks=0 ]	(	"off"	)
+starttime	[ 0	locks=0 ]	(	[ starttime	1 ] 	)
+setendtime	[ 0	locks=0 ]	(	"off"	)
+endtime	[ 0	locks=0 ]	(	[ endtime	240 ] 	)
+settimepersecond	[ 0	locks=0 ]	(	"off"	)
+timepersecond	[ 0	locks=0 ]	(	[ timepersecond	24 ] 	)
+setframespersecond	[ 0	locks=0 ]	(	"off"	)
+framespersecond	[ 0	locks=0 ]	(	[ framespersecond	24 ] 	)
+separator_metrics	[ 0	locks=0 ]	(	)
+setupaxis	[ 0	locks=0 ]	(	"off"	)
+upaxis	[ 0	locks=0 ]	(	z	)
+setmetersperunit	[ 0	locks=0 ]	(	"off"	)
+metersperunit	[ 0	locks=0 ]	(	0.01	)
+separator_colorconfig	[ 0	locks=0 ]	(	)
+setcolorconfig	[ 0	locks=0 ]	(	"off"	)
+colorconfig	[ 0	locks=0 ]	(	""	)
+setcolormanagementsystem	[ 0	locks=0 ]	(	"off"	)
+colormanagementsystem	[ 0	locks=0 ]	(	OpenColorIO	)
+separator_rendersettings	[ 0	locks=0 ]	(	)
+setrendersettings	[ 0	locks=0 ]	(	"off"	)
+rendersettings	[ 0	locks=0 ]	(	""	)
+separator_customdata	[ 0	locks=0 ]	(	)
+customdatacount	[ 0	locks=0 ]	(	0	)
+separator_stagevariables	[ 0	locks=0 ]	(	)
+stagevariablescount	[ 0	locks=0 ]	(	0	)
+separator_newlayer	[ 0	locks=0 ]	(	)
+setstagemetadata	[ 0	locks=0 ]	(	"on"	)
+flattenop	[ 0	locks=0 ]	(	none	)
+startnewlayer	[ 0	locks=0 ]	(	"on"	)
+setinputlayerexplicit	[ 0	locks=0 ]	(	"on"	)
+lop_activation	[ 8	locks=0 ]	(	[ lop_activation	1 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload/payload_layer.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload.order"
+Content-Type: text/plain
+
+4
+payloadinfo
+payload_asset
+output0
+payload_layer
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_payload.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output1.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output1.def"
+Content-Type: text/plain
+
+comment ""
+position 0.188312 -0.881627
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	output_switch 0 1 "input1"
+}
+inputs
+{
+0 	output_switch 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output_switch.init"
+Content-Type: text/plain
+
+type = switch
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output_switch.def"
+Content-Type: text/plain
+
+comment ""
+position 0.188312 1.10671
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+1 	configure_asset_layer 1 1 "input1"
+2 	sublayer_asset 1 1 "input2"
+}
+inputs
+{
+0 	configure_asset_layer 0 1
+1 	sublayer_asset 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 1 0.7 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output_switch.editableinputdata"
+Content-Type: text/plain
+
+[
+	{
+	},
+	{
+	}
+]
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output_switch.chn"
+Content-Type: text/plain
+
+{
+    channel input {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../preview\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output_switch.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+chooseinputbyname	[ 0	locks=0 ]	(	"off"	)
+input	[ 8	locks=0 ]	(	[ input	0 ] 	)
+selectinputname	[ 0	locks=0 ]	(	""	)
+selectinputvalue	[ 0	locks=0 ]	(	""	)
+config_separator	[ 0	locks=0 ]	(	)
+badinput	[ 0	locks=0 ]	(	ignore	)
+fallback	[ 0	locks=0 ]	(	0	)
+selectfallbackname	[ 0	locks=0 ]	(	""	)
+inputname	[ 0	locks=0 ]	(	"`opinput(\".\", @input)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/output_switch.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_thumbnail.init"
+Content-Type: text/plain
+
+type = th::asset_thumbnail::1.0
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_thumbnail.def"
+Content-Type: text/plain
+
+comment ""
+position 3.18396 8.74146
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_thumbnail.chn"
+Content-Type: text/plain
+
+{
+    channel primpath {
+      lefttype = extend
+      righttype = extend
+      defaultString = "lopinputprim('.', 0)"
+      flags = 0
+      segment { length = 0 expr = chs(\"../primpath\") }
+    }
+    channel outputimage {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"$HIP/thumbnails/asset_thumbnail.png\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../outputimage\") }
+    }
+    channel execute {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../execute2\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_thumbnail.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+primpath	[ 8	locks=0 ]	(	[ primpath	"`lopinputprim('.', 0)`" ] 	)
+outputimage	[ 8	locks=0 ]	(	[ outputimage	$HIP/thumbnails`chs(\"../primpath\")`_thumbnail.png ] 	)
+execute	[ 0	locks=0 ]	(	[ execute	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/asset_thumbnail.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/set_thumbnail.init"
+Content-Type: text/plain
+
+type = configureprimitive
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/set_thumbnail.def"
+Content-Type: text/plain
+
+comment ""
+position -1.11759e-08 8.74146
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/set_thumbnail.spareparmdef"
+Content-Type: text/plain
+
+    parm {
+        name    "lop_activation"
+        label   "Activation"
+        type    integer
+        default { "1" }
+        range   { 0 1 }
+    }
+    groupcollapsible {
+        name    "sample_group2"
+        label   "Frame Range/Subframes"
+        grouptag { "group_type" "collapsible" }
+        parmtag { "sidefx::header_parm" "sample_behavior" }
+
+        parm {
+            name    "sample_behavior"
+            baseparm
+            label   "Sampling Behavior"
+            export  none
+        }
+        parm {
+            name    "sample_f"
+            baseparm
+            label   "Start/End/Inc"
+            export  none
+        }
+        parm {
+            name    "sample_subframeenable"
+            baseparm
+            label   "Subframe Sampling"
+            export  none
+        }
+        groupsimple {
+            name    "sample_subframegroup2"
+            label   "Subframe Sampling"
+            disablewhen "{ sample_subframeenable == 0 }"
+            grouptag { "group_type" "simple" }
+            parmtag { "sidefx::header_toggle" "sample_subframeenable" }
+
+            parm {
+                name    "sample_shuttermode"
+                baseparm
+                label   "Shutter"
+                export  none
+            }
+            parm {
+                name    "sample_shutterrange"
+                baseparm
+                label   "Shutter Open/Close"
+                export  none
+            }
+            parm {
+                name    "sample_cameraprim"
+                baseparm
+                label   "Camera Prim"
+                export  none
+            }
+            parm {
+                name    "sample_count"
+                baseparm
+                label   "Samples"
+                export  none
+            }
+            parm {
+                name    "sample_includeframe"
+                baseparm
+                label   "Always Include Frame Sample"
+                export  none
+            }
+        }
+
+    }
+
+    parm {
+        name    "primpattern"
+        baseparm
+        label   "Primitives"
+        export  none
+    }
+    parm {
+        name    "setpurpose"
+        baseparm
+        label   "Set Purpose"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "purpose"
+        baseparm
+        label   "Purpose"
+        export  none
+    }
+    parm {
+        name    "setproxy"
+        baseparm
+        label   "Set Proxy Primitive"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "proxy"
+        baseparm
+        label   "Proxy Primitive"
+        export  none
+    }
+    parm {
+        name    "setinstanceable"
+        baseparm
+        label   "Set Instanceable"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "instanceable"
+        baseparm
+        label   "Instanceable"
+        export  none
+    }
+    parm {
+        name    "setactivation"
+        baseparm
+        label   "Set Activation"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "activation"
+        baseparm
+        label   "Activation"
+        export  none
+    }
+    parm {
+        name    "setvisibility"
+        baseparm
+        label   "Set Visibility"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "visibility"
+        baseparm
+        label   "Visibility"
+        export  none
+    }
+    parm {
+        name    "setextents"
+        baseparm
+        label   "Set Extents"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "extents"
+        baseparm
+        label   "Set Extents"
+        export  none
+    }
+    parm {
+        name    "setkind"
+        baseparm
+        label   "Set Kind"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "kind"
+        baseparm
+        label   "Kind"
+        export  none
+    }
+    parm {
+        name    "fixkindhierarchy"
+        baseparm
+        label   "Fix Kind Hierarchy"
+        export  none
+    }
+    groupcollapsible {
+        name    "Schema2"
+        label   "Schema"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "settype"
+            baseparm
+            label   "Set Type"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "type"
+            baseparm
+            label   "Type"
+            export  none
+        }
+        parm {
+            name    "setspecifier"
+            baseparm
+            label   "Set Specifier"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "specifier"
+            baseparm
+            label   "Primitive Specifier"
+            export  none
+        }
+        parm {
+            name    "setapischemas"
+            baseparm
+            label   "Apply API Schemas"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "apischemas"
+            baseparm
+            label   "Apply API Schemas"
+            export  none
+        }
+    }
+
+    groupcollapsible {
+        name    "DrawMode2"
+        label   "Draw Mode"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "setapplydrawmode"
+            baseparm
+            label   "Set Apply Draw Mode On This Primitive"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "applydrawmode"
+            baseparm
+            label   "Apply Draw Mode On This Primitive"
+            export  none
+        }
+        parm {
+            name    "setdrawmode"
+            baseparm
+            label   "Set Draw Mode"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "drawmode"
+            baseparm
+            label   "Draw Mode"
+            export  none
+        }
+        parm {
+            name    "setdrawmodecolor"
+            baseparm
+            label   "Set Draw Mode Color"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "drawmodecolor"
+            baseparm
+            label   "Draw Mode Color"
+            export  none
+        }
+        parm {
+            name    "setcardgeometry"
+            baseparm
+            label   "Set Card Geometry"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "cardgeometry"
+            baseparm
+            label   "Card Geometry"
+            export  none
+        }
+        parm {
+            name    "setcardtexturexneg"
+            baseparm
+            label   "Set -X Texture"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "cardtexturexneg"
+            baseparm
+            label   "-X Texture"
+            export  none
+        }
+        parm {
+            name    "setcardtexturexpos"
+            baseparm
+            label   "Set +X Texture"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "cardtexturexpos"
+            baseparm
+            label   "+X Texture"
+            export  none
+        }
+        parm {
+            name    "setcardtextureyneg"
+            baseparm
+            label   "Set -Y Texture"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "cardtextureyneg"
+            baseparm
+            label   "-Y Texture"
+            export  none
+        }
+        parm {
+            name    "setcardtextureypos"
+            baseparm
+            label   "Set +Y Texture"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "cardtextureypos"
+            baseparm
+            label   "+Y Texture"
+            export  none
+        }
+        parm {
+            name    "setcardtexturezneg"
+            baseparm
+            label   "Set -Z Texture"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "cardtexturezneg"
+            baseparm
+            label   "-Z Texture"
+            export  none
+        }
+        parm {
+            name    "setcardtexturezpos"
+            baseparm
+            label   "Set +Z Texture"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "cardtexturezpos"
+            baseparm
+            label   "+Z Texture"
+            export  none
+        }
+    }
+
+    groupcollapsible {
+        name    "AssetInfo2"
+        label   "Asset Info"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "setassetidentifier"
+            baseparm
+            label   "Asset Identifier"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "assetidentifier"
+            baseparm
+            label   "Asset Identifier"
+            export  none
+        }
+        parm {
+            name    "setassetname"
+            baseparm
+            label   "Asset Name"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "assetname"
+            baseparm
+            label   "Asset Name"
+            export  none
+        }
+        parm {
+            name    "setassetthumbnail"
+            baseparm
+            label   "Asset Thumbnail"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "assetthumbnail"
+            baseparm
+            label   "Asset Thumbnail"
+            export  none
+        }
+        parm {
+            name    "setassetversion"
+            baseparm
+            label   "Asset Version"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "assetversion"
+            baseparm
+            label   "Asset Version"
+            export  none
+        }
+        parm {
+            name    "setassetdependencies"
+            baseparm
+            label   "Asset Dependencies"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "assetdependencies"
+            baseparm
+            label   "Asset Dependencies"
+            export  none
+        }
+        multiparm {
+            name    "assetinfocount"
+            label    "Asset Info Count"
+            baseparm
+            default 0
+
+            groupsimple {
+                name    "assetinfogroup#"
+                label   ""
+                baseparm
+
+                parm {
+                    name    "assetinfoname#"
+                    baseparm
+                    label   "Asset Info Name"
+                    export  none
+                }
+                parm {
+                    name    "assetinfotype#"
+                    baseparm
+                    label   "Asset Info Type"
+                    export  none
+                }
+                parm {
+                    name    "assetinfostrvalue#"
+                    baseparm
+                    label   "Asset Info Value"
+                    export  none
+                }
+                parm {
+                    name    "assetinfofloatvalue#"
+                    baseparm
+                    label   "Asset Info Value"
+                    export  none
+                }
+                parm {
+                    name    "assetinfointvalue#"
+                    baseparm
+                    label   "Asset Info Value"
+                    export  none
+                }
+                parm {
+                    name    "assetinfoboolvalue#"
+                    baseparm
+                    label   "Asset Info Value is True"
+                    export  none
+                }
+            }
+
+        }
+
+    }
+
+    groupcollapsible {
+        name    "Interface2"
+        label   "Interface"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "seticon"
+            baseparm
+            label   "Icon"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "icon"
+            baseparm
+            label   "Icon"
+            export  none
+        }
+        parm {
+            name    "setcatalogparentpath"
+            baseparm
+            label   "Catalog Parent Path"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "catalogparentpath"
+            baseparm
+            label   "Catalog Parent Path"
+            export  none
+        }
+        parm {
+            name    "seteditable"
+            baseparm
+            label   "Allow LOPs to Edit This Primitive"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "editable"
+            baseparm
+            label   "Allow LOPs to Edit This Primitive"
+            export  none
+        }
+        parm {
+            name    "setselectable"
+            baseparm
+            label   "Allow Viewport Selecton of This Primitive"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "selectable"
+            baseparm
+            label   "Allow Viewport Selecton of This Primitive"
+            export  none
+        }
+        parm {
+            name    "sethideinui"
+            baseparm
+            label   "Hide Primitive In Scene Graph Trees"
+            joinnext
+            export  none
+        }
+        parm {
+            name    "hideinui"
+            baseparm
+            label   "Hide Primitive In Scene Graph Trees"
+            export  none
+        }
+    }
+
+    groupcollapsible {
+        name    "CustomData2"
+        label   "Custom Data"
+        grouptag { "group_type" "collapsible" }
+
+        multiparm {
+            name    "customdatacount"
+            label    "Custom Data Count"
+            baseparm
+            default 0
+
+            groupsimple {
+                name    "customdatagroup#"
+                label   ""
+                baseparm
+
+                parm {
+                    name    "customdataname#"
+                    baseparm
+                    label   "Custom Data Name"
+                    export  none
+                }
+                parm {
+                    name    "customdatatype#"
+                    baseparm
+                    label   "Custom Data Type"
+                    export  none
+                }
+                parm {
+                    name    "customdatastrvalue#"
+                    baseparm
+                    label   "Custom Data Value"
+                    export  none
+                }
+                parm {
+                    name    "customdatafloatvalue#"
+                    baseparm
+                    label   "Custom Data Value"
+                    export  none
+                }
+                parm {
+                    name    "customdataintvalue#"
+                    baseparm
+                    label   "Custom Data Value"
+                    export  none
+                }
+                parm {
+                    name    "customdataboolvalue#"
+                    baseparm
+                    label   "Custom Data Value is True"
+                    export  none
+                }
+            }
+
+        }
+
+    }
+
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/set_thumbnail.chn"
+Content-Type: text/plain
+
+{
+    channel sample_f1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel sample_f2 {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel sample_f3 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = @finc }
+    }
+    channel lop_activation {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../thumbnail_as_icon\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/set_thumbnail.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+sample_group	[ 0	locks=0 ]	(	0	)
+sample_behavior	[ 0	locks=0 ]	(	single	)
+sample_f	[ 0	locks=0 ]	(	[ sample_f1	1 ] 	[ sample_f2	240 ] 	[ sample_f3	1 ] 	)
+sample_subframeenable	[ 0	locks=0 ]	(	"off"	)
+sample_subframegroup	[ 0	locks=0 ]	(	0	)
+sample_shuttermode	[ 0	locks=0 ]	(	manual	)
+sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
+sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
+sample_count	[ 0	locks=0 ]	(	2	)
+sample_includeframe	[ 0	locks=0 ]	(	"on"	)
+primpattern	[ 0	locks=0 ]	(	`chs(\"../primpath\")`	)
+setpurpose	[ 0	locks=0 ]	(	"off"	)
+purpose	[ 0	locks=0 ]	(	default	)
+setproxy	[ 0	locks=0 ]	(	"off"	)
+proxy	[ 0	locks=0 ]	(	""	)
+setinstanceable	[ 0	locks=0 ]	(	"off"	)
+instanceable	[ 0	locks=0 ]	(	instanceable	)
+setactivation	[ 0	locks=0 ]	(	"off"	)
+activation	[ 0	locks=0 ]	(	"on"	)
+setvisibility	[ 0	locks=0 ]	(	"off"	)
+visibility	[ 0	locks=0 ]	(	inherit	)
+setextents	[ 0	locks=0 ]	(	"off"	)
+extents	[ 0	locks=0 ]	(	missing	)
+setkind	[ 0	locks=0 ]	(	"off"	)
+kind	[ 0	locks=0 ]	(	""	)
+fixkindhierarchy	[ 0	locks=0 ]	(	"off"	)
+Schema	[ 0	locks=0 ]	(	1	)
+settype	[ 0	locks=0 ]	(	"off"	)
+type	[ 0	locks=0 ]	(	""	)
+setspecifier	[ 0	locks=0 ]	(	"off"	)
+specifier	[ 0	locks=0 ]	(	def	)
+setapischemas	[ 0	locks=0 ]	(	"off"	)
+apischemas	[ 0	locks=0 ]	(	""	)
+DrawMode	[ 0	locks=0 ]	(	0	)
+setapplydrawmode	[ 0	locks=0 ]	(	"off"	)
+applydrawmode	[ 0	locks=0 ]	(	"off"	)
+setdrawmode	[ 0	locks=0 ]	(	"off"	)
+drawmode	[ 0	locks=0 ]	(	default	)
+setdrawmodecolor	[ 0	locks=0 ]	(	"off"	)
+drawmodecolor	[ 0	locks=0 ]	(	0.18	0.18	0.18	)
+setcardgeometry	[ 0	locks=0 ]	(	"off"	)
+cardgeometry	[ 0	locks=0 ]	(	cross	)
+setcardtexturexneg	[ 0	locks=0 ]	(	"off"	)
+cardtexturexneg	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`XNeg.png	)
+setcardtexturexpos	[ 0	locks=0 ]	(	"off"	)
+cardtexturexpos	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`XPos.png	)
+setcardtextureyneg	[ 0	locks=0 ]	(	"off"	)
+cardtextureyneg	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`YNeg.png	)
+setcardtextureypos	[ 0	locks=0 ]	(	"off"	)
+cardtextureypos	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`YPos.png	)
+setcardtexturezneg	[ 0	locks=0 ]	(	"off"	)
+cardtexturezneg	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`ZNeg.png	)
+setcardtexturezpos	[ 0	locks=0 ]	(	"off"	)
+cardtexturezpos	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`ZPos.png	)
+AssetInfo	[ 0	locks=0 ]	(	0	)
+setassetidentifier	[ 0	locks=0 ]	(	"off"	)
+assetidentifier	[ 0	locks=0 ]	(	""	)
+setassetname	[ 0	locks=0 ]	(	"off"	)
+assetname	[ 0	locks=0 ]	(	Asset	)
+setassetthumbnail	[ 0	locks=0 ]	(	"off"	)
+assetthumbnail	[ 8	locks=0 ]	(	""	)
+setassetversion	[ 0	locks=0 ]	(	"off"	)
+assetversion	[ 0	locks=0 ]	(	""	)
+setassetdependencies	[ 0	locks=0 ]	(	"off"	)
+assetdependencies	[ 0	locks=0 ]	(	""	)
+assetinfocount	[ 0	locks=0 ]	(	0	)
+Interface	[ 0	locks=0 ]	(	0	)
+seticon	[ 0	locks=0 ]	(	"on"	)
+icon	[ 8	locks=0 ]	(	`chs(\"../outputimage\")`	)
+setcatalogparentpath	[ 0	locks=0 ]	(	"off"	)
+catalogparentpath	[ 0	locks=0 ]	(	""	)
+seteditable	[ 0	locks=0 ]	(	"off"	)
+editable	[ 0	locks=0 ]	(	"on"	)
+setselectable	[ 0	locks=0 ]	(	"off"	)
+selectable	[ 0	locks=0 ]	(	"on"	)
+sethideinui	[ 0	locks=0 ]	(	"off"	)
+hideinui	[ 0	locks=0 ]	(	"off"	)
+CustomData	[ 0	locks=0 ]	(	0	)
+customdatacount	[ 0	locks=0 ]	(	0	)
+lop_activation	[ 8	locks=0 ]	(	[ lop_activation	1 ] 	)
+sample_group2	[ 0	locks=0 ]	(	0	)
+sample_subframegroup2	[ 0	locks=0 ]	(	0	)
+Schema2	[ 0	locks=0 ]	(	0	)
+DrawMode2	[ 0	locks=0 ]	(	0	)
+AssetInfo2	[ 0	locks=0 ]	(	0	)
+Interface2	[ 0	locks=0 ]	(	0	)
+CustomData2	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/set_thumbnail.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.order"
+Content-Type: text/plain
+
+8
+usd_rop
+sublayer_asset
+configure_asset_layer
+asset_payload
+output1
+output_switch
+asset_thumbnail
+set_thumbnail
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY--

@@ -1,0 +1,14 @@
+Operator:     th::asset_thumbnail::1.0
+Label:        th asset thumbnail
+Path:         oplib:/th::Lop/asset_thumbnail::1.0?th::Lop/asset_thumbnail::1.0
+Icon:         SHELF_generate_thumbnail
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Wed Apr  8 13:52:19 2026
+

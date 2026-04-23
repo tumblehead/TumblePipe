@@ -1,0 +1,14 @@
+Operator:     th::export_asset::1.0
+Label:        th export asset
+Path:         oplib:/th::Lop/export_asset::1.0?th::Lop/export_asset::1.0
+Icon:         LOP_componentoutput
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Thu Apr 23 13:08:34 2026
+

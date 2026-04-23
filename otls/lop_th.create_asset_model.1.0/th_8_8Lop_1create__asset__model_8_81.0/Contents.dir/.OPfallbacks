@@ -1,8 +1,0 @@
-Sop/attribdelete C:/PROGRA~1/SIDEEF~1/HOUDIN~1.591/houdini/otls/OPlibSop.hda
-Sop/attribdelete otls/OPlibSop.hda
-Sop/attribwrangle C:/PROGRA~1/SIDEEF~1/HOUDIN~1.591/houdini/otls/OPlibSop.hda
-Sop/attribwrangle otls/OPlibSop.hda
-Lop/createlod C:/PROGRA~1/SIDEEF~1/HOUDIN~1.591/houdini/otls/OPlibLop.hda
-Lop/createlod otls/OPlibLop.hda
-Lop/sopmodify C:/PROGRA~1/SIDEEF~1/HOUDIN~1.591/houdini/otls/OPlibLop.hda
-Lop/sopmodify otls/OPlibLop.hda

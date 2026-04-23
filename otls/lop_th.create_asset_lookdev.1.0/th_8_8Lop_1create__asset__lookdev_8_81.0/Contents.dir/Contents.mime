@@ -31,20 +31,19 @@ Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
 comment ""
-position -0.749622 7.27493
-connectornextid 2
+position -1.09195 23.4199
+connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
-1 "output1"
 }
 inputsNamed3
 {
-0 	create_asset_model 1 1 "input1"
+0 	hat 0 1 "input1"
 }
 inputs
 {
-0 	create_asset_model 0 1
+0 	hat 0 1
 }
 stat
 {
@@ -78,7 +77,7 @@ Content-Disposition: attachment; filename="hdaroot.inp"
 Content-Type: text/plain
 
 1
-0 0.80850403978610053 12.453096202167318 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+0 0.80850401117587101 10.639556945900459 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.init"
@@ -146,9 +145,9 @@ Content-Type: text/plain
 
 4
 0 8.0182400000000005 11.763100000000001 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
-1 15.219440000000001 9.5041000000000011 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
-2 15.219440000000001 10.633600000000001 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
-3 17.478639999999999 9.9559000179529207 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 11.97184 9.5041000000000011 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+2 11.97184 10.633600000000001 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+3 14.23104 9.9559000179529207 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet.init"
@@ -223,8 +222,8 @@ Content-Type: text/plain
 	height := 1.7471698172812182;
 	minimized := 1;
 	width := 7.9245283078472575;
-	x_position := -1.6944027568134175;
-	y_position := 6.788155347192868;
+	x_position := -10.166402756813417;
+	y_position := 13.047555347192866;
 }
 {
   create -1
@@ -238,24 +237,24 @@ Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookde
 Content-Type: text/plain
 
 4
-0 -6.9896582913165259 3.1807044873949581 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
-1 -0.92677175983469962 7.6950402570076886 2 0 __netbox1 "FROMOUTPUT"
-2 1.2732282148333267 7.6950402570076886 2 0 __netbox1 "FROMOUTPUT"
-3 3.4732281895013521 7.6950402570076886 2 0 __netbox1 "FROMOUTPUT"
+0 -9.4164027456375461 11.677552452830188 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 -9.3987717598346983 13.954440257007686 2 0 __netbox1 "FROMOUTPUT"
+2 -7.1987717851666728 13.954440257007686 2 0 __netbox1 "FROMOUTPUT"
+3 -4.9987718104986474 13.954440257007686 2 0 __netbox1 "FROMOUTPUT"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.init"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library.init"
 Content-Type: text/plain
 
 type = materiallibrary
 matchesdef = 0
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.def"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library.def"
 Content-Type: text/plain
 
 comment ""
-position -6.98966 1.13115
+position -9.4164 10.2537
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -274,7 +273,7 @@ stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@jesus-4090
   access 0777
 }
 color UT_Color RGB 0.55 0.7 0.75 
@@ -283,7 +282,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.spareparmdef"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library.spareparmdef"
 Content-Type: text/plain
 
     parm {
@@ -409,7 +408,7 @@ Content-Type: text/plain
 
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.parm"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library.parm"
 Content-Type: text/plain
 
 {
@@ -418,7 +417,7 @@ genpreviewshaders	[ 0	locks=0 ]	(	"on"	)
 allowparmanim	[ 0	locks=0 ]	(	"off"	)
 referencerendervars	[ 0	locks=0 ]	(	"on"	)
 parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
-matpathprefix	[ 0	locks=0 ]	(	"`lopinputprims('.', 0)`/mtl/"	)
+matpathprefix	[ 0	locks=0 ]	(	`chs(\"../../../primpath\")`/mtl/	)
 geometrygroup	[ 0	locks=0 ]	(	)
 fillgroup	[ 0	locks=0 ]	(	0	)
 matnet	[ 0	locks=0 ]	(	.	)
@@ -429,15 +428,15 @@ enable1	[ 0	locks=0 ]	(	"on"	)
 matflag1	[ 0	locks=0 ]	(	"on"	)
 matnode1	[ 0	locks=0 ]	(	*	)
 matpath1	[ 0	locks=0 ]	(	""	)
-assign1	[ 0	locks=0 ]	(	"on"	)
-geopath1	[ 0	locks=0 ]	(	"`lopinputprims('.', 0)`"	)
+assign1	[ 0	locks=0 ]	(	"off"	)
+geopath1	[ 0	locks=0 ]	(	""	)
 tabmenufolder	[ 0	locks=0 ]	(	0	)
 tabmenumask	[ 0	locks=0 ]	(	"*builder parameter constant rampparm collect null subnet subnetconnector suboutput subinput genericshader"	)
 fillgroup2	[ 0	locks=0 ]	(	0	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.userdata"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library.userdata"
 Content-Type: text/plain
 
 {
@@ -448,19 +447,19 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.init"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl.init"
 Content-Type: text/plain
 
 type = subnet
 matchesdef = 0
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.def"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl.def"
 Content-Type: text/plain
 
 language MaterialX
 comment ""
-position 0.912906 12.7413
+position 4.32688 3.35192
 connectornextid 0
 flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on lowdetail off mediumdetail off highdetail on material on
 outputsNamed3
@@ -485,7 +484,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.spareparmdef"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl.spareparmdef"
 Content-Type: text/plain
 
     groupcollapsible {
@@ -565,7 +564,7 @@ Content-Type: text/plain
 
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.chn"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl.chn"
 Content-Type: text/plain
 
 {
@@ -586,12 +585,12 @@ return r" language = python }
   }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.parm"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-folder1	[ 0	locks=0 ]	(	1	)
+folder1	[ 0	locks=0 ]	(	0	)
 inherit_ctrl	[ 0	locks=0 ]	(	2	)
 shader_referencetype	[ 0	locks=0 ]	(	[ shader_referencetype	"n = hou.pwd()
 n_hasFlag = n.isMaterialFlagSet()
@@ -608,7 +607,7 @@ shader_forcechildren	[ 0	locks=0 ]	(	"on"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.userdata"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl.userdata"
 Content-Type: text/plain
 
 {
@@ -619,14 +618,14 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/inputs.init"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/inputs.init"
 Content-Type: text/plain
 
 type = subinput
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/inputs.def"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/inputs.def"
 Content-Type: text/plain
 
 comment ""
@@ -655,7 +654,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/inputs.parm"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/inputs.parm"
 Content-Type: text/plain
 
 {
@@ -663,7 +662,7 @@ version 0.8
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/inputs.userdata"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/inputs.userdata"
 Content-Type: text/plain
 
 {
@@ -674,14 +673,14 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxstandard_surface.init"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/mtlxstandard_surface.init"
 Content-Type: text/plain
 
 type = mtlxstandard_surface
 matchesdef = 0
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxstandard_surface.def"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/mtlxstandard_surface.def"
 Content-Type: text/plain
 
 comment ""
@@ -795,7 +794,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxstandard_surface.parm"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/mtlxstandard_surface.parm"
 Content-Type: text/plain
 
 {
@@ -803,7 +802,7 @@ version 0.8
 signature	[ 0	locks=0 ]	(	default	)
 folder0	[ 0	locks=0 ]	(	1	)
 base	[ 0	locks=0 ]	(	1	)
-base_color	[ 0	locks=0 ]	(	0	0.5	0	)
+base_color	[ 0	locks=0 ]	(	1	0	0	)
 diffuse_roughness	[ 0	locks=0 ]	(	0	)
 metalness	[ 0	locks=0 ]	(	0	)
 folder0_1	[ 0	locks=0 ]	(	0	)
@@ -855,7 +854,7 @@ tangent	[ 0	locks=0 ]	(	0	0	0	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxstandard_surface.userdata"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/mtlxstandard_surface.userdata"
 Content-Type: text/plain
 
 {
@@ -906,14 +905,14 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxdisplacement.init"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/mtlxdisplacement.init"
 Content-Type: text/plain
 
 type = mtlxdisplacement
 matchesdef = 0
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxdisplacement.def"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/mtlxdisplacement.def"
 Content-Type: text/plain
 
 comment ""
@@ -947,7 +946,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxdisplacement.parm"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/mtlxdisplacement.parm"
 Content-Type: text/plain
 
 {
@@ -959,7 +958,7 @@ scale	[ 0	locks=0 ]	(	1	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/mtlxdisplacement.userdata"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/mtlxdisplacement.userdata"
 Content-Type: text/plain
 
 {
@@ -970,14 +969,14 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/Material_Outputs_and_AOVs.init"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/Material_Outputs_and_AOVs.init"
 Content-Type: text/plain
 
 type = suboutput
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/Material_Outputs_and_AOVs.def"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/Material_Outputs_and_AOVs.def"
 Content-Type: text/plain
 
 comment ""
@@ -1012,7 +1011,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/Material_Outputs_and_AOVs.parm"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/Material_Outputs_and_AOVs.parm"
 Content-Type: text/plain
 
 {
@@ -1148,7 +1147,7 @@ label64	[ 0	locks=0 ]	(	""	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/Material_Outputs_and_AOVs.userdata"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/Material_Outputs_and_AOVs.userdata"
 Content-Type: text/plain
 
 {
@@ -1159,14 +1158,14 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/material_properties.init"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/material_properties.init"
 Content-Type: text/plain
 
 type = kma_material_properties
 matchesdef = 0
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/material_properties.def"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/material_properties.def"
 Content-Type: text/plain
 
 comment ""
@@ -1196,7 +1195,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/material_properties.parm"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/material_properties.parm"
 Content-Type: text/plain
 
 {
@@ -1270,7 +1269,7 @@ xn__karmalightsource_specularscale_wpb	[ 0	locks=0 ]	(	1	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial/material_properties.userdata"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/material_properties.userdata"
 Content-Type: text/plain
 
 {
@@ -1292,7 +1291,7 @@ Content-Disposition: attachment; filename="hdaroot/CONFIG_GEO_SCOPE_PRIM.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 -2.24105
+position 0.808504 -1.89965
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
 outputsNamed3
@@ -1301,11 +1300,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	setvariant1 1 1 "input1"
+0 	foreach_end1 3 1 "input1"
 }
 inputs
 {
-0 	setvariant1 0 1
+0 	foreach_end1 0 1
 }
 stat
 {
@@ -1366,7 +1365,7 @@ sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
 sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
 sample_count	[ 0	locks=0 ]	(	2	)
 sample_includeframe	[ 0	locks=0 ]	(	"on"	)
-primpattern	[ 8	locks=0 ]	(	"`lopinputprims('.', 0)`"	)
+primpattern	[ 8	locks=0 ]	(	"`lopinputprims('.', 0)`/mtl"	)
 setpurpose	[ 0	locks=0 ]	(	"off"	)
 purpose	[ 0	locks=0 ]	(	default	)
 setproxy	[ 0	locks=0 ]	(	"off"	)
@@ -1758,7 +1757,7 @@ parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
 createoptionsblock	[ 0	locks=0 ]	(	"on"	)
 variantset	[ 0	locks=0 ]	(	[ variantset	model ] 	)
 variantsetstrength	[ 0	locks=0 ]	(	appendfront	)
-variantprimpath	[ 8	locks=0 ]	(	"`lopinputprim('.', 0)`"	)
+variantprimpath	[ 8	locks=0 ]	(	`chs(\"../primpath\")`/	)
 variantname	[ 8	locks=0 ]	(	`@ITERATIONVALUE`	)
 setvariantselection	[ 0	locks=0 ]	(	"on"	)
 }
@@ -1786,7 +1785,7 @@ Content-Disposition: attachment; filename="hdaroot/setvariant.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 -3.49915
+position 0.808504 -3.42451
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -1823,7 +1822,7 @@ Content-Type: text/plain
       righttype = extend
       flags = 0
       start = 41.666666666666664
-      segment { length = 0 expr = chs(\"../active_variant\")-1 }
+      segment { length = 0 expr = chs(\"../active_variant\") }
     }
   }
 
@@ -1835,11 +1834,11 @@ Content-Type: text/plain
 version 0.8
 num_variants	[ 0	locks=0 ]	(	1	)
 enable1	[ 0	locks=0 ]	(	"on"	)
-primpattern1	[ 8	locks=0 ]	(	"`lopinputprims('.', 0)`"	)
+primpattern1	[ 8	locks=0 ]	(	`chs(\"../primpath\")`	)
 variantsetuseindex1	[ 0	locks=0 ]	(	"off"	)
 variantset1	[ 0	locks=0 ]	(	`chs(\"../variantset\")`	)
 variantsetindex1	[ 0	locks=0 ]	(	0	)
-variantnameuseindex1	[ 0	locks=0 ]	(	"off"	)
+variantnameuseindex1	[ 0	locks=0 ]	(	"on"	)
 variantname1	[ 0	locks=0 ]	(	`chs(\"../active_variant\")`	)
 variantnameindex1	[ 0	locks=0 ]	(	[ variantnameindex1	0 ] 	)
 }
@@ -1867,7 +1866,7 @@ Content-Disposition: attachment; filename="hdaroot/INPUT.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 10.2575
+position 0.808504 8.0441
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault off exposed on debug off
 outputsNamed3
@@ -1914,7 +1913,7 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.order"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl.order"
 Content-Type: text/plain
 
 5
@@ -1925,13 +1924,13 @@ Material_Outputs_and_AOVs
 material_properties
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary/karmamaterial.net"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl.net"
 Content-Type: text/plain
 
 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/materiallibrary.net"
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library.net"
 Content-Type: text/plain
 
 1
@@ -2019,7 +2018,7 @@ Content-Type: text/plain
 comment ""
 position 0.808504 -4.89034
 connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
 1 "output1"
@@ -2043,6 +2042,336 @@ color UT_Color RGB 0.8 0.8 0.8
 delscript ""
 exprlanguage hscript
 end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/configurelayer.spareparmdef"
+Content-Type: text/plain
+
+    parm {
+        name    "lop_activation"
+        label   "Activation"
+        type    integer
+        default { "1" }
+        range   { 0 1 }
+    }
+    parm {
+        name    "setsavepath"
+        baseparm
+        label   "Set Save Path"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "savepath"
+        baseparm
+        label   "Save Path"
+        export  none
+    }
+    parm {
+        name    "setdefaultprim"
+        baseparm
+        label   "Set Default Primitive"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "defaultprim"
+        baseparm
+        label   "Default Primitive"
+        export  none
+    }
+    parm {
+        name    "setcomment"
+        baseparm
+        label   "Set Comment"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "comment"
+        baseparm
+        label   "Comment"
+        export  none
+    }
+    parm {
+        name    "setstarttime"
+        baseparm
+        label   "Set Start Time"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "starttime"
+        baseparm
+        label   "Start Time"
+        export  none
+    }
+    parm {
+        name    "setendtime"
+        baseparm
+        label   "Set End Time"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "endtime"
+        baseparm
+        label   "End Time"
+        export  none
+    }
+    parm {
+        name    "settimepersecond"
+        baseparm
+        label   "Set Time Codes per Second"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "timepersecond"
+        baseparm
+        label   "Time Codes per Second"
+        export  none
+    }
+    parm {
+        name    "setframespersecond"
+        baseparm
+        label   "Set Frames per Second"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "framespersecond"
+        baseparm
+        label   "Frames per Second"
+        export  none
+    }
+    parm {
+        name    "separator_metrics"
+        baseparm
+        label   "separator_metrics"
+        export  none
+    }
+    parm {
+        name    "setupaxis"
+        baseparm
+        label   "Set Up Axis"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "upaxis"
+        baseparm
+        label   "Up Axis"
+        export  none
+    }
+    parm {
+        name    "setmetersperunit"
+        baseparm
+        label   "Set Meters per Unit"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "metersperunit"
+        baseparm
+        label   "Meters per Unit"
+        export  none
+    }
+    parm {
+        name    "separator_colorconfig"
+        baseparm
+        label   "separator_colorconfig"
+        export  none
+    }
+    parm {
+        name    "setcolorconfig"
+        baseparm
+        label   "Color Configuration"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "colorconfig"
+        baseparm
+        label   "Color Configuration"
+        export  none
+    }
+    parm {
+        name    "setcolormanagementsystem"
+        baseparm
+        label   "Color Management System"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "colormanagementsystem"
+        baseparm
+        label   "Color Management System"
+        export  none
+    }
+    parm {
+        name    "separator_rendersettings"
+        baseparm
+        label   "separator_rendersettings"
+        export  none
+    }
+    parm {
+        name    "setrendersettings"
+        baseparm
+        label   "Set Render Settings"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "rendersettings"
+        baseparm
+        label   "Render Settings"
+        export  none
+    }
+    parm {
+        name    "separator_customdata"
+        baseparm
+        label   "separator_customdata"
+        export  none
+    }
+    multiparm {
+        name    "customdatacount"
+        label    "Custom Data Count"
+        baseparm
+        default 0
+
+        groupsimple {
+            name    "customdatagroup#"
+            label   ""
+            baseparm
+
+            parm {
+                name    "customdataname#"
+                baseparm
+                label   "Custom Data Name"
+                export  none
+            }
+            parm {
+                name    "customdatatype#"
+                baseparm
+                label   "Custom Data Type"
+                export  none
+            }
+            parm {
+                name    "customdatastrvalue#"
+                baseparm
+                label   "Custom Data Value"
+                export  none
+            }
+            parm {
+                name    "customdatafloatvalue#"
+                baseparm
+                label   "Custom Data Value"
+                export  none
+            }
+            parm {
+                name    "customdataintvalue#"
+                baseparm
+                label   "Custom Data Value"
+                export  none
+            }
+            parm {
+                name    "customdataboolvalue#"
+                baseparm
+                label   "Custom Data Value is True"
+                export  none
+            }
+        }
+
+    }
+
+    parm {
+        name    "separator_stagevariables"
+        baseparm
+        label   "separator_stagevariables"
+        export  none
+    }
+    multiparm {
+        name    "stagevariablescount"
+        label    "Stage Variable Count"
+        baseparm
+        default 0
+
+        groupsimple {
+            name    "stagevariablesgroup#"
+            label   ""
+            baseparm
+
+            parm {
+                name    "stagevariablesname#"
+                baseparm
+                label   "Stage Variable Name"
+                export  none
+            }
+            parm {
+                name    "stagevariablestype#"
+                baseparm
+                label   "Stage Variable Type"
+                export  none
+            }
+            parm {
+                name    "stagevariablesstrvalue#"
+                baseparm
+                label   "Stage Variable Value"
+                export  none
+            }
+            parm {
+                name    "stagevariablesfloatvalue#"
+                baseparm
+                label   "Stage Variable Value"
+                export  none
+            }
+            parm {
+                name    "stagevariablesintvalue#"
+                baseparm
+                label   "Stage Variable Value"
+                export  none
+            }
+            parm {
+                name    "stagevariablesboolvalue#"
+                baseparm
+                label   "Stage Variable Value is True"
+                export  none
+            }
+        }
+
+    }
+
+    parm {
+        name    "separator_newlayer"
+        baseparm
+        label   "separator_newlayer"
+        export  none
+    }
+    parm {
+        name    "setstagemetadata"
+        baseparm
+        label   "Also Set Metadata on Stage Root Layer"
+        export  none
+    }
+    parm {
+        name    "flattenop"
+        baseparm
+        label   "Flatten Input"
+        export  none
+    }
+    parm {
+        name    "startnewlayer"
+        baseparm
+        label   "Start New Layer"
+        export  none
+    }
+    parm {
+        name    "setinputlayerexplicit"
+        baseparm
+        label   "Set Input Active Layer to Explicit"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/configurelayer.chn"
@@ -2080,6 +2409,14 @@ Content-Type: text/plain
       flags = 0
       start = 41.666666666666664
       segment { length = 0 value = 24 24 expr = $FPS }
+    }
+    channel lop_activation {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../sublayer\") }
     }
   }
 
@@ -2125,6 +2462,7 @@ setstagemetadata	[ 0	locks=0 ]	(	"on"	)
 flattenop	[ 0	locks=0 ]	(	none	)
 startnewlayer	[ 0	locks=0 ]	(	"on"	)
 setinputlayerexplicit	[ 0	locks=0 ]	(	"on"	)
+lop_activation	[ 8	locks=0 ]	(	[ lop_activation	1 ] 	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -2139,77 +2477,10 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/setvariant1.init"
-Content-Type: text/plain
-
-type = setvariant
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/setvariant1.def"
-Content-Type: text/plain
-
-comment ""
-position 0.810104 -1.11117
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-1 "output1"
-}
-inputsNamed3
-{
-0 	foreach_end1 3 1 "input1"
-}
-inputs
-{
-0 	foreach_end1 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@matthias-4070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/setvariant1.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-num_variants	[ 0	locks=0 ]	(	1	)
-enable1	[ 0	locks=0 ]	(	"on"	)
-primpattern1	[ 0	locks=0 ]	(	/Asset/mtl	)
-variantsetuseindex1	[ 0	locks=0 ]	(	"off"	)
-variantset1	[ 0	locks=0 ]	(	lookdev	)
-variantsetindex1	[ 0	locks=0 ]	(	0	)
-variantnameuseindex1	[ 0	locks=0 ]	(	"off"	)
-variantname1	[ 0	locks=0 ]	(	green	)
-variantnameindex1	[ 0	locks=0 ]	(	0	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/setvariant1.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.order"
 Content-Type: text/plain
 
-11
+10
 CONFIG_GEO_SCOPE_PRIM
 output0
 foreach_end1
@@ -2220,7 +2491,6 @@ INPUT
 lookdev_variant_subnet
 fetch_variant
 configurelayer
-setvariant1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.net"

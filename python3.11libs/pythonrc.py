@@ -45,9 +45,24 @@ def _register_resolver_plugin(pipeline_path: Path) -> None:
 
 def load():
     pipeline_path = os.environ.get('TH_PIPELINE_PATH')
-    if not pipeline_path:
-        return
-    pipeline_path = Path(pipeline_path)
+    if pipeline_path:
+        pipeline_path = Path(pipeline_path)
+    else:
+        # Running from source without TH_PIPELINE_PATH (e.g. dev session via
+        # session manager). Houdini adds python3.11libs/ to sys.path, so find
+        # the entry that contains this file and use its parent as the package root.
+        this_file = Path(__file__).resolve() if '__file__' in dir() else None
+        pipeline_path = None
+        for p in sys.path:
+            sp = Path(p).resolve()
+            if this_file and sp == this_file.parent:
+                pipeline_path = sp.parent
+                break
+            if (sp / 'pythonrc.py').exists() and (sp.parent / 'python' / '1x').exists():
+                pipeline_path = sp.parent
+                break
+        if pipeline_path is None:
+            return
     _add_pipeline_packages(pipeline_path)
     _register_resolver_plugin(pipeline_path)
 

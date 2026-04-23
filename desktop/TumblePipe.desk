@@ -6,55 +6,35 @@ menubar      -1
 statusbar    -1
 radial menu set main
 root {
-    split 0.653906 H {
-        split 0.23669 H {
-            tabs 0 1 {
-                pane panetab1 -a 0 -l 1 -H /stage/ -T LOP -m details
+    split 0.627604 H {
+        split 0.158503 H {
+            tabs 0 0 {
+                pane panetab1 -a 1 -l 1 -H /stage/ -T LOP -m details
             }
-            split 0.305994 V {
-                split 0.5 V R {
-                    tabs 0 1 {
-                        pane panetab2 -a 0 -l 1 -H /stage/ -T LOP -m sceneview
-                        pane panetab6 -a 0 -l 1 -H /stage/ -T LOP -m pythonpanel
-                        pane panetab17 -a 0 -l 10 -H /img/ -T IMG -m imageview
-                    }
-                    tabs 0 1 {
-                        pane panetab16 -a 0 -l 1 -H /stage/ -T LOP -m apexeditor
-                    }
+            split 0.291257 V {
+                tabs 0 0 {
+                    pane panetab2 -a 1 -l 1 -H /stage/ -T LOP -m sceneview
                 }
                 split 0.737056 H R {
-                    tabs 6 1 {
-                        pane panetab23 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
-                        pane panetab7 -a 0 -l 10 -H /img/ -T IMG -m python
-                        pane panetab9 -a 0 -l 0 -H /obj/ -T OBJ -m perfmon
-                        pane panetab14 -a 1 -l 1 -H /stage/ -T LOP -m rendergallery
+                    tabs 0 0 {
                         pane panetab3 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
-                        pane panetab5 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
-                        pane panetab4 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
-                        pane panetab18 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
                     }
-                    tabs 0 1 {
-                        pane panetab15 -a 0 -l 10 -H /img/ -T IMG -m pythonpanel
+                    tabs 0 0 {
+                        pane panetab15 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
                     }
                 }
             }
         }
-        split 0.520953 V {
-            tabs 0 1 {
-                pane panetab13 -a 0 -l 1 -H /stage/ -T LOP -m parmeditor
-                pane panetab8 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
-            }
-            tabs 0 1 {
-                pane panetab11 -a 0 -l 1 -H /stage/ -T LOP -m neteditor
-            }
+        tabs 0 0 {
+            pane panetab11 -a 0 -l 1 -H /stage/ -T LOP -m neteditor
         }
     }
 }
 shelfdock -o 0 -l small_icon -G "0.50 0.50" add solaris_1 solaris_2
 geospreadsheet -c 0 -l vertical -s 0.454137 -m none -f 0 panetab1
 scenegraphtree -S 0.25 -m 2 -p "/collections /lights" -c  -i  -o  -x 1 -s 1 -M 0 -C primtype,populated,loaded,activation,visibility,solo,selectability  panetab1
-viewerstow -x open -b stow -l open -m hide -c open -d open ${DESKNAME}.panetab2.solaris
-viewerstow -b stow -x open -l open -m hide -c open -d open ${DESKNAME}.panetab2.solaris
+viewerstow -x stow -b stow -l stow -m hide -c hide -d stow ${DESKNAME}.panetab2.solaris
+viewerstow -b stow -x stow -l stow -m hide -c hide -d stow ${DESKNAME}.panetab2.solaris
 vieweroption -r 'View: Mantra' ${DESKNAME}.panetab2.solaris
 viewergrouplist -g off -s 0 0 -c  on -t matchselect -m '*' -e on -p off -h on ${DESKNAME}.panetab2.solaris
 vieweroption -p 0 ${DESKNAME}.panetab2.solaris
@@ -273,19 +253,8 @@ viewtype -t ortho_right ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.paneta
 viewtype -t ortho_front ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",3)`
 viewtype -t ortho_top ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",1)`
 viewtype -t perspective ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",2)`
-pythonpanel -s on -t off -n SceneGraphLayersPanel panetab6
-networkeditor -p '{\n	"backgroundimagebrightness":"1.0",\n	"gridmode":"0",\n	"showcopsmenu":"1",\n	"taskgraphcollapsemode":"Off",\n	"showtasksmenu":"1",\n	"useworkitemcolorattribute":"0",\n	"showmenu":"1",\n	"gridxstep":"2.0",\n	"showparmdialogmax":"1",\n	"perfstatname":"Time",\n	"palettemode":"0",\n	"taskgraphsortdirection":"0",\n	"showchilddep":"1",\n	"backgroundimageediting":"0",\n	"showtaskgraphperf":"0",\n	"showperfstats":"1",\n	"showparmdialog":"0",\n	"overviewmode":"2",\n	"showdep":"0",\n	"palettecolors":"",\n	"showspareinputdep":"1",\n	"workitemcolorattribute":"",\n	"palettesize":"187 187",\n	"overviewbounds":"0.000000 0.000000 591.000000 140.100000",\n	"taskgraphperfstatname":"Cook Time",\n	"gridystep":"1.0",\n	"taskgraphsortcriteria":"Automatic",\n	"workitemattrtocollapseby":""\n}\n' panetab16
-pythonpanel -s on -t off -n contexteditor panetab23
-performance -c on -d on -f on -g off -j on -k on -m off -n on -o on -t off -v on -p on -y on -u on -e off -r absolute -R seconds -w tree panetab9
- panetab14
-pythonpanel -s on -t off -n clone_control panetab3
-pythonpanel -s on -t off -n log_viewer panetab5
-pythonpanel -s on -t off -n tumblehead_project_browser panetab4
-pythonpanel -s on -t off -n pdgservicemenu panetab18
 pythonpanel -s on -t off -n rig_tree panetab15
-parmeditor -T 0.25 -w 0 panetab13
-pythonpanel -s on -t off -n labs::diff panetab8
-networkeditor -p '{\n	"backgroundimagebrightness":"1.0",\n	"gridmode":"0",\n	"showcopsmenu":"1",\n	"taskgraphcollapsemode":"Off",\n	"showtasksmenu":"1",\n	"useworkitemcolorattribute":"1",\n	"typesidebarsplit":"0.25",\n	"showmenu":"1",\n	"gridxstep":"2.0",\n	"treesplit":"0.25",\n	"showparmdialogmax":"1",\n	"perfstatname":"Time",\n	"palettemode":"0",\n	"taskgraphsortdirection":"0",\n	"showchilddep":"1",\n	"backgroundimageediting":"0",\n	"showtaskgraphperf":"0",\n	"showgrouplist":"0",\n	"showperfstats":"1",\n	"showparmdialog":"0",\n	"overviewmode":"2",\n	"showdep":"0",\n	"palettecolors":"",\n	"obj:listmode":"0",\n	"showspareinputdep":"1",\n	"workitemcolorattribute":"",\n	"palettesize":"150 150",\n	"showtypesidebar":"0",\n	"showtimedep":"1",\n	"showtree":"0",\n	"overviewbounds":"0.000000 0.000000 263.400000 161.700000",\n	"taskgraphperfstatname":"Cook Time",\n	"gridystep":"1.0",\n	"taskgraphsortcriteria":"Automatic",\n	"workitemattrtocollapseby":"",\n	"grouplistsplit":"0.75"\n}\n' panetab11
+networkeditor -p '{\n	"backgroundimagebrightness":"1.0",\n	"gridmode":"0",\n	"showcopsmenu":"1",\n	"taskgraphcollapsemode":"Off",\n	"showtasksmenu":"1",\n	"useworkitemcolorattribute":"1",\n	"typesidebarsplit":"0.25",\n	"showmenu":"0",\n	"gridxstep":"2.0",\n	"treesplit":"0.25",\n	"showparmdialogmax":"1",\n	"perfstatname":"Time",\n	"palettemode":"0",\n	"taskgraphsortdirection":"0",\n	"showchilddep":"1",\n	"backgroundimageediting":"0",\n	"showtaskgraphperf":"0",\n	"showgrouplist":"0",\n	"showperfstats":"1",\n	"showparmdialog":"0",\n	"overviewmode":"2",\n	"showdep":"0",\n	"palettecolors":"",\n	"obj:listmode":"0",\n	"showspareinputdep":"1",\n	"workitemcolorattribute":"",\n	"palettesize":"150 150",\n	"showtypesidebar":"0",\n	"showtimedep":"1",\n	"showtree":"0",\n	"overviewbounds":"0.000000 0.000000 427.500000 567.300000",\n	"taskgraphperfstatname":"Cook Time",\n	"gridystep":"1.0",\n	"taskgraphsortcriteria":"Automatic",\n	"workitemattrtocollapseby":"",\n	"grouplistsplit":"0.75"\n}\n' panetab11
 netcolumns -c display,xray,select,origin,capture,bone -n OBJ panetab11
 netcolumns -c display,render,template,selectabletemplate,highlight,unload,bypass,lock -n SOP panetab11
 netcolumns -c delscript,comment -n CHOPNET panetab11
@@ -304,3 +273,4 @@ netcolumns -c delscript,comment -n COP panetab11
 netcolumns -c delscript,comment -n MGR panetab11
 netcolumns -c delscript,comment -n DIR panetab11
 netcolumns -c delscript,comment -n DATA panetab11
+pythonpanel -s on -t off -n asset_browser panetab3

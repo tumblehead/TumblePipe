@@ -2,18 +2,6 @@ MIME-Version: 1.0
 Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename=".OPfallbacks"
-Content-Type: application/external-reference
-
-.OPfallbacks
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename=".OPdummydefs"
-Content-Type: application/external-reference
-
-.OPdummydefs
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="node_type"
 Content-Type: text/plain
 
@@ -31,20 +19,20 @@ Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
 comment ""
-position -0.749622 8.81493
+position -0.25465 20.3054
 connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
-1 "output1"
+0 "output1"
 }
 inputsNamed3
 {
-0 	create_asset 0 1 "input1"
+1 	body 0 1 "input1"
 }
 inputs
 {
-0 	create_asset 0 1
+0 	body 0 1
 }
 stat
 {
@@ -70,34 +58,11 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/__netbox1.netboxinit"
-Content-Type: text/plain
-
-2
-2
-{
-	autofit := 0;
-	color := "UT_Color RGB 0 0 0 ";
-	comment := ARCHIVED;
-	height := 3.421300032782554;
-	minimized := 0;
-	width := 5.318059592581088;
-	x_position := -11.929634065819855;
-	y_position := 17.197999955925347;
-}
-{
-  create -1
-  modify -1
-  author tumblehead@matthias-4070
-  access 0777
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.inp"
 Content-Type: text/plain
 
 1
-0 0.80850401117587101 27.246051866410966 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+0 0.8085040111758709 31.474159448186732 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/CONFIG_GEO_SCOPE_PRIM.init"
@@ -111,7 +76,7 @@ Content-Disposition: attachment; filename="hdaroot/CONFIG_GEO_SCOPE_PRIM.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 15.5781
+position 0.808504 18.7496
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
 outputsNamed3
@@ -120,11 +85,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	foreach_end1 3 1 "input1"
+0 	CONFIG_ASSET_PRIMITIVE0 1 1 "input1"
 }
 inputs
 {
-0 	foreach_end1 0 1
+0 	CONFIG_ASSET_PRIMITIVE0 0 1
 }
 stat
 {
@@ -185,7 +150,7 @@ sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
 sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
 sample_count	[ 0	locks=0 ]	(	2	)
 sample_includeframe	[ 0	locks=0 ]	(	"on"	)
-primpattern	[ 0	locks=0 ]	(	"`lopinputprims('.', 0)`/geo"	)
+primpattern	[ 0	locks=0 ]	(	`chs(\"../primpath\")`/geo	)
 setpurpose	[ 0	locks=0 ]	(	"off"	)
 purpose	[ 0	locks=0 ]	(	default	)
 setproxy	[ 0	locks=0 ]	(	"off"	)
@@ -279,7 +244,7 @@ Content-Disposition: attachment; filename="hdaroot/output0.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 11.1735
+position 0.808504 14.107
 connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -340,7 +305,7 @@ Content-Type: text/plain
 objflags objflags =  origin off
 pretransform UT_DMatrix4 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1
 comment ""
-position 7.98115 19.7362
+position 9.45945 24.2382
 connectornextid 0
 flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on selectable on
 outputsNamed3
@@ -404,7 +369,7 @@ uparmtype	[ 0	locks=0 ]	(	"arc"	)
 pathorient	[ 0	locks=0 ]	(	1	)
 up	[ 0	locks=0 ]	(	0	1	0	)
 bank	[ 0	locks=0 ]	(	0	)
-showlopstage	[ 0	locks=0 ]	(	""	)
+showlopstage	[ 0	locks=0 ]	(	"`opinputpath(\"..\", 0)`"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -431,7 +396,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 16.5353 1.6007
+position 16.0233 4.02274
 connectornextid 9
 flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -497,11 +462,11 @@ Content-Type: text/plain
 	autofit := 1;
 	color := "UT_Color RGB 0 0 0 ";
 	comment := INPUTS;
-	height := 0.7000000059604652;
+	height := 0.8750000044703441;
 	minimized := 1;
-	width := 7.799999929964543;
-	x_position := -91.86957261541846;
-	y_position := 53.77137220408171;
+	width := 10.507547099775863;
+	x_position := -103.44169337013545;
+	y_position := 62.34162125919534;
 }
 {
   create -1
@@ -515,142 +480,16 @@ Content-Disposition: attachment; filename="hdaroot/variant_sopnet/create_variant
 Content-Type: text/plain
 
 4
-0 -91.66957261243823 53.97137220706194 2 0 __netbox1 "FROMOUTPUT"
-1 -89.469572637770213 53.97137220706194 2 0 __netbox1 "FROMOUTPUT"
-2 -87.269572663102181 53.97137220706194 2 0 __netbox1 "FROMOUTPUT"
-3 -85.06957268843415 53.97137220706194 2 0 __netbox1 "FROMOUTPUT"
+0 -101.24009432844677 62.541621262175575 2 0 __netbox1 "FROMOUTPUT"
+1 -98.334146222675884 62.541621262175575 2 0 __netbox1 "FROMOUTPUT"
+2 -96.134146248007852 62.541621262175575 2 0 __netbox1 "FROMOUTPUT"
+3 -93.93414627333982 62.541621262175575 2 0 __netbox1 "FROMOUTPUT"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/variant_sopnet/create_variants.net"
 Content-Type: text/plain
 
 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/variant_sopnet/merge_variants.init"
-Content-Type: text/plain
-
-type = merge
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/variant_sopnet/merge_variants.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position 16.5341 -0.94538
-connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-1 "output1"
-}
-inputsNamed3
-{
-}
-inputs
-{
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@matthias-4070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/variant_sopnet/merge_variants.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/variant_sopnet/merge_variants.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/variant_sopnet/VARIANTS_OUT.init"
-Content-Type: text/plain
-
-type = null
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/variant_sopnet/VARIANTS_OUT.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position 16.5341 -2.07488
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-}
-inputsNamed3
-{
-0 	merge_variants 1 1 "input1"
-}
-inputs
-{
-0 	merge_variants 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@matthias-4070
-  access 0777
-}
-color UT_Color RGB 0.6 0.7 0.77 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/variant_sopnet/VARIANTS_OUT.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-copyinput	[ 0	locks=0 ]	(	"on"	)
-cacheinput	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/variant_sopnet/VARIANTS_OUT.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/variant_sopnet.order"
-Content-Type: text/plain
-
-3
-create_variants
-merge_variants
-VARIANTS_OUT
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/variant_sopnet.net"
@@ -670,9 +509,9 @@ Content-Disposition: attachment; filename="hdaroot/foreach_end1.def"
 Content-Type: text/plain
 
 comment ""
-position 0.810104 16.9992
+position 0.810104 20.7889
 connectornextid 4
-flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
 3 "output1"
@@ -773,7 +612,7 @@ Content-Disposition: attachment; filename="hdaroot/foreach_begin.def"
 Content-Type: text/plain
 
 comment ""
-position 1.80611 21.6951
+position 2.43682 24.7462
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on debug off
 outputsNamed3
@@ -821,267 +660,6 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/sopimport_variants.init"
-Content-Type: text/plain
-
-type = sopimport
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/sopimport_variants.def"
-Content-Type: text/plain
-
-comment ""
-position -8.76158 20.1693
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-1 "output1"
-}
-inputsNamed3
-{
-0 	foreach_begin 0 1 "input1"
-}
-inputs
-{
-0 	foreach_begin 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@matthias-4070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/sopimport_variants.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-soppath	[ 0	locks=0 ]	(	../variant_sopnet/VARIANT`@ITERATION+1`_OUT	)
-asreference	[ 0	locks=0 ]	(	"on"	)
-copycontents	[ 0	locks=0 ]	(	"off"	)
-ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
-adjustxformsforinput	[ 0	locks=0 ]	(	"on"	)
-bindmaterials	[ 0	locks=0 ]	(	nobind	)
-reftype	[ 0	locks=0 ]	(	payloadweak	)
-refprim	[ 0	locks=0 ]	(	automaticPrim	)
-refprimpath	[ 0	locks=0 ]	(	""	)
-primpath	[ 0	locks=0 ]	(	"`lopinputprim('.', 0)`"	)
-instanceable	[ 0	locks=0 ]	(	"off"	)
-parentprimkind	[ 0	locks=0 ]	(	group	)
-parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
-separator_config	[ 0	locks=0 ]	(	)
-enable_group	[ 0	locks=0 ]	(	"off"	)
-group	[ 0	locks=0 ]	(	""	)
-enable_grouptype	[ 0	locks=0 ]	(	"off"	)
-grouptype	[ 0	locks=0 ]	(	primitive	)
-enable_pathprefix	[ 0	locks=0 ]	(	"off"	)
-pathprefix	[ 0	locks=0 ]	(	""	)
-enable_savepath	[ 0	locks=0 ]	(	"off"	)
-savepath	[ 8	locks=0 ]	(	variant	)
-separator_extraconfig	[ 0	locks=0 ]	(	)
-primitivedefinitiongroup	[ 0	locks=0 ]	(	1	)
-enable_packedusdhandling	[ 0	locks=0 ]	(	"off"	)
-packedusdhandling	[ 0	locks=0 ]	(	xformandattribs	)
-enable_otherprimhandling	[ 0	locks=0 ]	(	"off"	)
-otherprimhandling	[ 0	locks=0 ]	(	define	)
-enable_defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
-defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
-enable_packedhandling	[ 0	locks=0 ]	(	"off"	)
-packedhandling	[ 0	locks=0 ]	(	nativeinstances	)
-enable_agenthandling	[ 0	locks=0 ]	(	"off"	)
-agenthandling	[ 0	locks=0 ]	(	instancedskelroots	)
-enable_nurbscurvehandling	[ 0	locks=0 ]	(	"off"	)
-nurbscurvehandling	[ 0	locks=0 ]	(	basiscurves	)
-enable_nurbssurfhandling	[ 0	locks=0 ]	(	"off"	)
-nurbssurfhandling	[ 0	locks=0 ]	(	meshes	)
-enable_kindschema	[ 0	locks=0 ]	(	"off"	)
-kindschema	[ 0	locks=0 ]	(	component	)
-enable_pathattr	[ 0	locks=0 ]	(	"on"	)
-pathattr	[ 0	locks=0 ]	(	path,name	)
-enable_prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
-prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
-enable_heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
-heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
-geometryhandlinggroup	[ 0	locks=0 ]	(	0	)
-enable_polygonsassubd	[ 0	locks=0 ]	(	"off"	)
-polygonsassubd	[ 0	locks=0 ]	(	"off"	)
-enable_subdgroup	[ 0	locks=0 ]	(	"off"	)
-subdgroup	[ 0	locks=0 ]	(	""	)
-enable_reversepolygons	[ 0	locks=0 ]	(	"off"	)
-reversepolygons	[ 0	locks=0 ]	(	"off"	)
-enable_setmissingwidths	[ 0	locks=0 ]	(	"on"	)
-setmissingwidths	[ 0	locks=0 ]	(	0.01	)
-importdatagroup	[ 0	locks=0 ]	(	0	)
-authortimesamples	[ 0	locks=0 ]	(	auto	)
-enable_setdefaultprim	[ 0	locks=0 ]	(	"off"	)
-setdefaultprim	[ 0	locks=0 ]	(	"on"	)
-enable_topologyhandling	[ 0	locks=0 ]	(	"off"	)
-topologyhandling	[ 0	locks=0 ]	(	animated	)
-enable_attribs	[ 0	locks=0 ]	(	"off"	)
-attribs	[ 0	locks=0 ]	(	"* ^__* ^usd*"	)
-enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
-indexattribs	[ 0	locks=0 ]	(	type:string	)
-enable_constantattribs	[ 0	locks=0 ]	(	"off"	)
-constantattribs	[ 0	locks=0 ]	(	""	)
-enable_scalarconstantattribs	[ 0	locks=0 ]	(	"off"	)
-scalarconstantattribs	[ 0	locks=0 ]	(	""	)
-enable_boolattribs	[ 0	locks=0 ]	(	"off"	)
-boolattribs	[ 0	locks=0 ]	(	""	)
-enable_uintattribs	[ 0	locks=0 ]	(	"off"	)
-uintattribs	[ 0	locks=0 ]	(	""	)
-enable_uint64attribs	[ 0	locks=0 ]	(	"off"	)
-uint64attribs	[ 0	locks=0 ]	(	""	)
-enable_assetpathattribs	[ 0	locks=0 ]	(	"off"	)
-assetpathattribs	[ 0	locks=0 ]	(	""	)
-enable_staticattribs	[ 0	locks=0 ]	(	"off"	)
-staticattribs	[ 0	locks=0 ]	(	""	)
-enable_partitionattribs	[ 0	locks=0 ]	(	"off"	)
-partitionattribs	[ 0	locks=0 ]	(	""	)
-enable_prefixpartitionsubsets	[ 0	locks=0 ]	(	"off"	)
-prefixpartitionsubsets	[ 0	locks=0 ]	(	"on"	)
-enable_subsetgroups	[ 0	locks=0 ]	(	"off"	)
-subsetgroups	[ 0	locks=0 ]	(	""	)
-enable_customattribs	[ 0	locks=0 ]	(	"off"	)
-customattribs	[ 0	locks=0 ]	(	""	)
-enable_translateuvtost	[ 0	locks=0 ]	(	"off"	)
-translateuvtost	[ 0	locks=0 ]	(	"on"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/sopimport_variants.netbox"
-Content-Type: text/plain
-
-__netbox1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/sopimport_variants.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/add_model_variants1.init"
-Content-Type: text/plain
-
-type = addvariant
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/add_model_variants1.def"
-Content-Type: text/plain
-
-comment ""
-position -11.7296 17.398
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
-outputsNamed3
-{
-3 "output1"
-}
-inputsNamed3
-{
-0 	foreach_begin 0 1 "input1"
-1 	createlods 1 1 "input2"
-}
-inputs
-{
-0 	foreach_begin 0 1
-1 	createlods 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@matthias-4070
-  access 0777
-}
-color UT_Color RGB 0.649 0.57 0.87 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/add_model_variants1.editableinputdata"
-Content-Type: text/plain
-
-[
-	{
-	},
-	{
-		"variantname":{
-			"type":"string",
-			"value":"`@ITERATIONVALUE`"
-		}
-	}
-]
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/add_model_variants1.chn"
-Content-Type: text/plain
-
-{
-    channel variantset {
-      lefttype = extend
-      righttype = extend
-      defaultString = \"model\"
-      flags = 0
-      start = 41.666666666666664
-      segment { length = 0 expr = chs(\"../variantset\") }
-    }
-  }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/add_model_variants1.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-primpath	[ 8	locks=0 ]	(	"`lopparentprims(lopinputprim('.', 0))`"	)
-sourceprim	[ 0	locks=0 ]	(	"off"	)
-sourceprimpath	[ 0	locks=0 ]	(	"`lopinputprim('.', 0)`"	)
-checkopinions	[ 0	locks=0 ]	(	"on"	)
-primkind	[ 0	locks=0 ]	(	assembly	)
-parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
-createoptionsblock	[ 0	locks=0 ]	(	"on"	)
-variantset	[ 0	locks=0 ]	(	[ variantset	model ] 	)
-variantsetstrength	[ 0	locks=0 ]	(	prependfront	)
-variantprimpath	[ 0	locks=0 ]	(	"`lopparentprims(lopinputprim('.', 0))`"	)
-variantname	[ 8	locks=0 ]	(	"`opinput(\".\", @input)`"	)
-setvariantselection	[ 0	locks=0 ]	(	"on"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/add_model_variants1.netbox"
-Content-Type: text/plain
-
-__netbox1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/add_model_variants1.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/setvariant.init"
 Content-Type: text/plain
 
@@ -1093,7 +671,7 @@ Content-Disposition: attachment; filename="hdaroot/setvariant.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 14.33
+position 0.808504 17.2853
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -1142,15 +720,15 @@ Content-Type: text/plain
 version 0.8
 num_variants	[ 0	locks=0 ]	(	2	)
 enable1	[ 0	locks=0 ]	(	"on"	)
-primpattern1	[ 8	locks=0 ]	(	/CHAD	)
+primpattern1	[ 8	locks=0 ]	(	`chs(\"../primpath\")`	)
 variantsetuseindex1	[ 0	locks=0 ]	(	"off"	)
-variantset1	[ 0	locks=0 ]	(	model	)
+variantset1	[ 0	locks=0 ]	(	`chs(\"../variantset\")`	)
 variantsetindex1	[ 0	locks=0 ]	(	0	)
-variantnameuseindex1	[ 0	locks=0 ]	(	"off"	)
+variantnameuseindex1	[ 0	locks=0 ]	(	"on"	)
 variantname1	[ 0	locks=0 ]	(	`chs(\"../active_variant\")`	)
 variantnameindex1	[ 0	locks=0 ]	(	[ variantnameindex1	0 ] 	)
-enable2	[ 0	locks=0 ]	(	"on"	)
-primpattern2	[ 0	locks=0 ]	(	/CHAD	)
+enable2	[ 0	locks=0 ]	(	"off"	)
+primpattern2	[ 8	locks=0 ]	(	`chs(\"../primpath\")`	)
 variantsetuseindex2	[ 0	locks=0 ]	(	"off"	)
 variantset2	[ 0	locks=0 ]	(	lod	)
 variantsetindex2	[ 0	locks=0 ]	(	0	)
@@ -1171,242 +749,6 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/createlods.init"
-Content-Type: text/plain
-
-type = createlod
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/createlods.def"
-Content-Type: text/plain
-
-comment ""
-position -8.8739 18.6633
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-1 "output1"
-}
-inputsNamed3
-{
-0 	sopimport_variants 1 1 "input1"
-}
-inputs
-{
-0 	sopimport_variants 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@matthias-4070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/createlods.spareparmdef"
-Content-Type: text/plain
-
-    parm {
-        name    "lop_activation"
-        label   "Activation"
-        type    integer
-        default { "1" }
-        range   { 0 1 }
-    }
-    parm {
-        name    "primpath"
-        baseparm
-        label   "Primitive Path"
-        export  none
-    }
-    parm {
-        name    "sourceprim"
-        baseparm
-        label   "Source Primitive"
-        nolabel
-        joinnext
-        export  none
-    }
-    parm {
-        name    "sourceprimpath"
-        baseparm
-        label   "Source Primitive"
-        export  none
-    }
-    parm {
-        name    "checkopinions"
-        baseparm
-        label   "Warn if any variant opinions are weaker then existing opinions"
-        export  none
-    }
-    parm {
-        name    "primkind"
-        baseparm
-        label   "Primitive Kind"
-        export  none
-    }
-    parm {
-        name    "parentprimtype"
-        baseparm
-        label   "Parent Primitive Type"
-        export  none
-    }
-    parm {
-        name    "variantset"
-        baseparm
-        label   "Variant Set"
-        export  none
-    }
-    parm {
-        name    "varnameroot"
-        baseparm
-        label   "Variant Name Root"
-        export  none
-    }
-    parm {
-        name    "idoffset"
-        baseparm
-        label   "ID Offset"
-        export  none
-    }
-    parm {
-        name    "usecustvarnames"
-        baseparm
-        label   "Custom Variant Names"
-        export  none
-    }
-    parm {
-        name    "displayvariant"
-        baseparm
-        label   "Display Variant"
-        export  none
-    }
-    parm {
-        name    "variantname1"
-        baseparm
-        label   "Variant Name"
-        export  none
-    }
-    multiparm {
-        name    "lods"
-        label    "Number of LODs"
-        baseparm
-
-        parm {
-            name    "lodpercent#"
-            baseparm
-            label   "Keep Percent"
-            export  none
-        }
-        parm {
-            name    "originalpoints#"
-            baseparm
-            label   "Use Only Original Point Positions"
-            invisible
-            export  none
-        }
-        parm {
-            name    "preservequads#"
-            baseparm
-            label   "Preserve Quads"
-            export  none
-        }
-        parm {
-            name    "equalizelengths#"
-            baseparm
-            label   "Equalize Lengths"
-            invisible
-            export  none
-        }
-        parm {
-            name    "boundaryweight#"
-            baseparm
-            label   "Stiffen Boundaries"
-            export  none
-        }
-        parm {
-            name    "custvariantname#"
-            baseparm
-            label   "Name"
-            export  none
-        }
-        parm {
-            name    "sepparm#"
-            baseparm
-            label   "Separator"
-            export  none
-        }
-    }
-
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/createlods.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-primpath	[ 0	locks=0 ]	(	"`lopparentprims(lopinputprim('.', 0))`"	)
-sourceprim	[ 0	locks=0 ]	(	"off"	)
-sourceprimpath	[ 0	locks=0 ]	(	/geo	)
-checkopinions	[ 0	locks=0 ]	(	"on"	)
-primkind	[ 0	locks=0 ]	(	""	)
-parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
-variantset	[ 0	locks=0 ]	(	lod	)
-varnameroot	[ 0	locks=0 ]	(	lod_	)
-idoffset	[ 0	locks=0 ]	(	0	)
-usecustvarnames	[ 0	locks=0 ]	(	"off"	)
-displayvariant	[ 0	locks=0 ]	(	"off"	)
-variantname1	[ 0	locks=0 ]	(	""	)
-lods	[ 0	locks=0 ]	(	3	)
-lop_activation	[ 0	locks=0 ]	(	1	)
-lodpercent1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	100	)
-originalpoints1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	"off"	)
-preservequads1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	"off"	)
-equalizelengths1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	1e-10	)
-boundaryweight1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	1	)
-custvariantname1	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	""	)
-sepparm1	[ 0	locks=0 ]	(	)
-lodpercent2	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	50	)
-originalpoints2	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	"off"	)
-preservequads2	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	"off"	)
-equalizelengths2	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	1e-10	)
-boundaryweight2	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	1	)
-custvariantname2	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	""	)
-sepparm2	[ 0	locks=0 ]	(	)
-lodpercent3	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	10	)
-originalpoints3	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	"off"	)
-preservequads3	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	"off"	)
-equalizelengths3	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	1e-10	)
-boundaryweight3	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	1	)
-custvariantname3	[ 0	locks=0	autoscope=0	autosel=4294967295 ]	(	""	)
-sepparm3	[ 0	locks=0 ]	(	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/createlods.netbox"
-Content-Type: text/plain
-
-__netbox1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/createlods.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":""
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/import_model_variants.init"
 Content-Type: text/plain
 
@@ -1418,7 +760,7 @@ Content-Disposition: attachment; filename="hdaroot/import_model_variants.def"
 Content-Type: text/plain
 
 comment ""
-position 3.47319 19.7585
+position 4.74474 24.2605
 connectornextid 0
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -1444,14 +786,37 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/import_model_variants.chn"
+Content-Type: text/plain
+
+{
+    channel packedhandling {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"nativeinstances\"
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = chs(\"../packedhandling\") }
+    }
+    channel polygonsassubd {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = ch(\"../polygonsassubd\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/import_model_variants.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-soppath	[ 0	locks=0 ]	(	../variant_sopnet/VARIANTS_OUT	)
+soppath	[ 0	locks=0 ]	(	../variant_sopnet/OUT_`@VARIANTNAME`	)
 asreference	[ 0	locks=0 ]	(	"off"	)
-copycontents	[ 0	locks=0 ]	(	"merge"	)
+copycontents	[ 0	locks=0 ]	(	"off"	)
 ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
 adjustxformsforinput	[ 0	locks=0 ]	(	"on"	)
 bindmaterials	[ 0	locks=0 ]	(	nobind	)
@@ -1468,19 +833,19 @@ group	[ 0	locks=0 ]	(	""	)
 enable_grouptype	[ 0	locks=0 ]	(	"off"	)
 grouptype	[ 0	locks=0 ]	(	primitive	)
 enable_pathprefix	[ 0	locks=0 ]	(	"on"	)
-pathprefix	[ 0	locks=0 ]	(	""	)
-enable_savepath	[ 0	locks=0 ]	(	"on"	)
+pathprefix	[ 8	locks=0 ]	(	/geo	)
+enable_savepath	[ 0	locks=0 ]	(	"off"	)
 savepath	[ 8	locks=0 ]	(	variant	)
 separator_extraconfig	[ 0	locks=0 ]	(	)
-primitivedefinitiongroup	[ 0	locks=0 ]	(	1	)
+primitivedefinitiongroup	[ 0	locks=0 ]	(	0	)
 enable_packedusdhandling	[ 0	locks=0 ]	(	"off"	)
 packedusdhandling	[ 0	locks=0 ]	(	xformandattribs	)
 enable_otherprimhandling	[ 0	locks=0 ]	(	"off"	)
 otherprimhandling	[ 0	locks=0 ]	(	define	)
 enable_defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
 defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
-enable_packedhandling	[ 0	locks=0 ]	(	"off"	)
-packedhandling	[ 0	locks=0 ]	(	nativeinstances	)
+enable_packedhandling	[ 0	locks=0 ]	(	"on"	)
+packedhandling	[ 0	locks=0 ]	(	[ packedhandling	nativeinstances ] 	)
 enable_agenthandling	[ 0	locks=0 ]	(	"off"	)
 agenthandling	[ 0	locks=0 ]	(	instancedskelroots	)
 enable_nurbscurvehandling	[ 0	locks=0 ]	(	"off"	)
@@ -1488,16 +853,16 @@ nurbscurvehandling	[ 0	locks=0 ]	(	basiscurves	)
 enable_nurbssurfhandling	[ 0	locks=0 ]	(	"off"	)
 nurbssurfhandling	[ 0	locks=0 ]	(	meshes	)
 enable_kindschema	[ 0	locks=0 ]	(	"on"	)
-kindschema	[ 0	locks=0 ]	(	nestedgroup	)
+kindschema	[ 0	locks=0 ]	(	component	)
 enable_pathattr	[ 0	locks=0 ]	(	"on"	)
-pathattr	[ 0	locks=0 ]	(	path,variant	)
-enable_prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
-prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
+pathattr	[ 0	locks=0 ]	(	name	)
+enable_prefixabsolutepaths	[ 0	locks=0 ]	(	"on"	)
+prefixabsolutepaths	[ 0	locks=0 ]	(	"on"	)
 enable_heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
 heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
 geometryhandlinggroup	[ 0	locks=0 ]	(	0	)
-enable_polygonsassubd	[ 0	locks=0 ]	(	"off"	)
-polygonsassubd	[ 0	locks=0 ]	(	"off"	)
+enable_polygonsassubd	[ 0	locks=0 ]	(	"on"	)
+polygonsassubd	[ 0	locks=0 ]	(	[ polygonsassubd	0 ] 	)
 enable_subdgroup	[ 0	locks=0 ]	(	"off"	)
 subdgroup	[ 0	locks=0 ]	(	""	)
 enable_reversepolygons	[ 0	locks=0 ]	(	"off"	)
@@ -1529,11 +894,11 @@ assetpathattribs	[ 0	locks=0 ]	(	""	)
 enable_staticattribs	[ 0	locks=0 ]	(	"off"	)
 staticattribs	[ 0	locks=0 ]	(	""	)
 enable_partitionattribs	[ 0	locks=0 ]	(	"off"	)
-partitionattribs	[ 0	locks=0 ]	(	""	)
+partitionattribs	[ 0	locks=0 ]	(	group	)
 enable_prefixpartitionsubsets	[ 0	locks=0 ]	(	"off"	)
 prefixpartitionsubsets	[ 0	locks=0 ]	(	"on"	)
 enable_subsetgroups	[ 0	locks=0 ]	(	"off"	)
-subsetgroups	[ 0	locks=0 ]	(	""	)
+subsetgroups	[ 0	locks=0 ]	(	*	)
 enable_customattribs	[ 0	locks=0 ]	(	"off"	)
 customattribs	[ 0	locks=0 ]	(	""	)
 enable_translateuvtost	[ 0	locks=0 ]	(	"off"	)
@@ -1563,7 +928,7 @@ Content-Disposition: attachment; filename="hdaroot/add_model_variants2.def"
 Content-Type: text/plain
 
 comment ""
-position 1.80326 18.5055
+position 2.43397 22.1981
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
 outputsNamed3
@@ -1637,14 +1002,14 @@ Content-Type: text/plain
 version 0.8
 primpath	[ 8	locks=0 ]	(	[ primpath	/$OS ] 	)
 sourceprim	[ 0	locks=0 ]	(	"off"	)
-sourceprimpath	[ 0	locks=0 ]	(	""	)
+sourceprimpath	[ 0	locks=0 ]	(	chs(\"../primpath\")/geo	)
 checkopinions	[ 0	locks=0 ]	(	"on"	)
 primkind	[ 0	locks=0 ]	(	assembly	)
 parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
 createoptionsblock	[ 0	locks=0 ]	(	"on"	)
-variantset	[ 0	locks=0 ]	(	[ variantset	model ] 	)
-variantsetstrength	[ 0	locks=0 ]	(	prependfront	)
-variantprimpath	[ 0	locks=0 ]	(	/`@VARIANTNAME`	)
+variantset	[ 8	locks=0 ]	(	[ variantset	model ] 	)
+variantsetstrength	[ 0	locks=0 ]	(	appendfront	)
+variantprimpath	[ 8	locks=0 ]	(	/	)
 variantname	[ 8	locks=0 ]	(	"`opinput(\".\", @input)`"	)
 setvariantselection	[ 0	locks=0 ]	(	"on"	)
 }
@@ -1672,9 +1037,9 @@ Content-Disposition: attachment; filename="hdaroot/configurelayer.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 12.7874
+position 0.808504 15.7981
 connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
 outputsNamed3
 {
 1 "output1"
@@ -1698,6 +1063,336 @@ color UT_Color RGB 0.8 0.8 0.8
 delscript ""
 exprlanguage hscript
 end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/configurelayer.spareparmdef"
+Content-Type: text/plain
+
+    parm {
+        name    "lop_activation"
+        label   "Activation"
+        type    integer
+        default { "1" }
+        range   { 0 1 }
+    }
+    parm {
+        name    "setsavepath"
+        baseparm
+        label   "Set Save Path"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "savepath"
+        baseparm
+        label   "Save Path"
+        export  none
+    }
+    parm {
+        name    "setdefaultprim"
+        baseparm
+        label   "Set Default Primitive"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "defaultprim"
+        baseparm
+        label   "Default Primitive"
+        export  none
+    }
+    parm {
+        name    "setcomment"
+        baseparm
+        label   "Set Comment"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "comment"
+        baseparm
+        label   "Comment"
+        export  none
+    }
+    parm {
+        name    "setstarttime"
+        baseparm
+        label   "Set Start Time"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "starttime"
+        baseparm
+        label   "Start Time"
+        export  none
+    }
+    parm {
+        name    "setendtime"
+        baseparm
+        label   "Set End Time"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "endtime"
+        baseparm
+        label   "End Time"
+        export  none
+    }
+    parm {
+        name    "settimepersecond"
+        baseparm
+        label   "Set Time Codes per Second"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "timepersecond"
+        baseparm
+        label   "Time Codes per Second"
+        export  none
+    }
+    parm {
+        name    "setframespersecond"
+        baseparm
+        label   "Set Frames per Second"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "framespersecond"
+        baseparm
+        label   "Frames per Second"
+        export  none
+    }
+    parm {
+        name    "separator_metrics"
+        baseparm
+        label   "separator_metrics"
+        export  none
+    }
+    parm {
+        name    "setupaxis"
+        baseparm
+        label   "Set Up Axis"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "upaxis"
+        baseparm
+        label   "Up Axis"
+        export  none
+    }
+    parm {
+        name    "setmetersperunit"
+        baseparm
+        label   "Set Meters per Unit"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "metersperunit"
+        baseparm
+        label   "Meters per Unit"
+        export  none
+    }
+    parm {
+        name    "separator_colorconfig"
+        baseparm
+        label   "separator_colorconfig"
+        export  none
+    }
+    parm {
+        name    "setcolorconfig"
+        baseparm
+        label   "Color Configuration"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "colorconfig"
+        baseparm
+        label   "Color Configuration"
+        export  none
+    }
+    parm {
+        name    "setcolormanagementsystem"
+        baseparm
+        label   "Color Management System"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "colormanagementsystem"
+        baseparm
+        label   "Color Management System"
+        export  none
+    }
+    parm {
+        name    "separator_rendersettings"
+        baseparm
+        label   "separator_rendersettings"
+        export  none
+    }
+    parm {
+        name    "setrendersettings"
+        baseparm
+        label   "Set Render Settings"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "rendersettings"
+        baseparm
+        label   "Render Settings"
+        export  none
+    }
+    parm {
+        name    "separator_customdata"
+        baseparm
+        label   "separator_customdata"
+        export  none
+    }
+    multiparm {
+        name    "customdatacount"
+        label    "Custom Data Count"
+        baseparm
+        default 0
+
+        groupsimple {
+            name    "customdatagroup#"
+            label   ""
+            baseparm
+
+            parm {
+                name    "customdataname#"
+                baseparm
+                label   "Custom Data Name"
+                export  none
+            }
+            parm {
+                name    "customdatatype#"
+                baseparm
+                label   "Custom Data Type"
+                export  none
+            }
+            parm {
+                name    "customdatastrvalue#"
+                baseparm
+                label   "Custom Data Value"
+                export  none
+            }
+            parm {
+                name    "customdatafloatvalue#"
+                baseparm
+                label   "Custom Data Value"
+                export  none
+            }
+            parm {
+                name    "customdataintvalue#"
+                baseparm
+                label   "Custom Data Value"
+                export  none
+            }
+            parm {
+                name    "customdataboolvalue#"
+                baseparm
+                label   "Custom Data Value is True"
+                export  none
+            }
+        }
+
+    }
+
+    parm {
+        name    "separator_stagevariables"
+        baseparm
+        label   "separator_stagevariables"
+        export  none
+    }
+    multiparm {
+        name    "stagevariablescount"
+        label    "Stage Variable Count"
+        baseparm
+        default 0
+
+        groupsimple {
+            name    "stagevariablesgroup#"
+            label   ""
+            baseparm
+
+            parm {
+                name    "stagevariablesname#"
+                baseparm
+                label   "Stage Variable Name"
+                export  none
+            }
+            parm {
+                name    "stagevariablestype#"
+                baseparm
+                label   "Stage Variable Type"
+                export  none
+            }
+            parm {
+                name    "stagevariablesstrvalue#"
+                baseparm
+                label   "Stage Variable Value"
+                export  none
+            }
+            parm {
+                name    "stagevariablesfloatvalue#"
+                baseparm
+                label   "Stage Variable Value"
+                export  none
+            }
+            parm {
+                name    "stagevariablesintvalue#"
+                baseparm
+                label   "Stage Variable Value"
+                export  none
+            }
+            parm {
+                name    "stagevariablesboolvalue#"
+                baseparm
+                label   "Stage Variable Value is True"
+                export  none
+            }
+        }
+
+    }
+
+    parm {
+        name    "separator_newlayer"
+        baseparm
+        label   "separator_newlayer"
+        export  none
+    }
+    parm {
+        name    "setstagemetadata"
+        baseparm
+        label   "Also Set Metadata on Stage Root Layer"
+        export  none
+    }
+    parm {
+        name    "flattenop"
+        baseparm
+        label   "Flatten Input"
+        export  none
+    }
+    parm {
+        name    "startnewlayer"
+        baseparm
+        label   "Start New Layer"
+        export  none
+    }
+    parm {
+        name    "setinputlayerexplicit"
+        baseparm
+        label   "Set Input Active Layer to Explicit"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/configurelayer.chn"
@@ -1736,6 +1431,13 @@ Content-Type: text/plain
       start = 41.666666666666664
       segment { length = 0 value = 24 24 expr = $FPS }
     }
+    channel lop_activation {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 expr = ch(\"../sublayer\") }
+    }
   }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -1745,7 +1447,7 @@ Content-Type: text/plain
 {
 version 0.8
 setsavepath	[ 0	locks=0 ]	(	"on"	)
-savepath	[ 0	locks=0 ]	(	geo.usdc	)
+savepath	[ 0	locks=0 ]	(	`chs(\"../variantset\")`.usdc	)
 setdefaultprim	[ 0	locks=0 ]	(	"off"	)
 defaultprim	[ 0	locks=0 ]	(	""	)
 setcomment	[ 0	locks=0 ]	(	"off"	)
@@ -1780,6 +1482,7 @@ setstagemetadata	[ 0	locks=0 ]	(	"on"	)
 flattenop	[ 0	locks=0 ]	(	none	)
 startnewlayer	[ 0	locks=0 ]	(	"on"	)
 setinputlayerexplicit	[ 0	locks=0 ]	(	"on"	)
+lop_activation	[ 8	locks=0 ]	(	[ lop_activation	1 ] 	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -1805,7 +1508,7 @@ Content-Disposition: attachment; filename="hdaroot/INPUT.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 23.3527
+position 0.808504 26.6103
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -1852,23 +1555,189 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/CONFIG_ASSET_PRIMITIVE0.init"
+Content-Type: text/plain
+
+type = configureprimitive
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/CONFIG_ASSET_PRIMITIVE0.def"
+Content-Type: text/plain
+
+comment ""
+position 0.808504 19.7496
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	foreach_end1 3 1 "input1"
+}
+inputs
+{
+0 	foreach_end1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/CONFIG_ASSET_PRIMITIVE0.chn"
+Content-Type: text/plain
+
+{
+    channel sample_f1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel sample_f2 {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel sample_f3 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      start = 41.666666666666664
+      segment { length = 0 value = 1 1 expr = @finc }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/CONFIG_ASSET_PRIMITIVE0.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+sample_group	[ 0	locks=0 ]	(	0	)
+sample_behavior	[ 0	locks=0 ]	(	single	)
+sample_f	[ 0	locks=0 ]	(	[ sample_f1	1 ] 	[ sample_f2	240 ] 	[ sample_f3	1 ] 	)
+sample_subframeenable	[ 0	locks=0 ]	(	"off"	)
+sample_subframegroup	[ 0	locks=0 ]	(	0	)
+sample_shuttermode	[ 0	locks=0 ]	(	manual	)
+sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
+sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
+sample_count	[ 0	locks=0 ]	(	2	)
+sample_includeframe	[ 0	locks=0 ]	(	"on"	)
+primpattern	[ 0	locks=0 ]	(	`chs(\"../primpath\")`	)
+setpurpose	[ 0	locks=0 ]	(	"off"	)
+purpose	[ 0	locks=0 ]	(	default	)
+setproxy	[ 0	locks=0 ]	(	"off"	)
+proxy	[ 0	locks=0 ]	(	""	)
+setinstanceable	[ 0	locks=0 ]	(	"off"	)
+instanceable	[ 0	locks=0 ]	(	instanceable	)
+setactivation	[ 0	locks=0 ]	(	"off"	)
+activation	[ 0	locks=0 ]	(	"on"	)
+setvisibility	[ 0	locks=0 ]	(	"off"	)
+visibility	[ 0	locks=0 ]	(	inherit	)
+setextents	[ 0	locks=0 ]	(	"off"	)
+extents	[ 0	locks=0 ]	(	missing	)
+setkind	[ 0	locks=0 ]	(	"off"	)
+kind	[ 0	locks=0 ]	(	""	)
+fixkindhierarchy	[ 0	locks=0 ]	(	"off"	)
+Schema	[ 0	locks=0 ]	(	0	)
+settype	[ 0	locks=0 ]	(	"off"	)
+type	[ 0	locks=0 ]	(	""	)
+setspecifier	[ 0	locks=0 ]	(	"off"	)
+specifier	[ 0	locks=0 ]	(	def	)
+setapischemas	[ 0	locks=0 ]	(	"off"	)
+apischemas	[ 0	locks=0 ]	(	""	)
+DrawMode	[ 0	locks=0 ]	(	0	)
+setapplydrawmode	[ 0	locks=0 ]	(	"off"	)
+applydrawmode	[ 0	locks=0 ]	(	"off"	)
+setdrawmode	[ 0	locks=0 ]	(	"off"	)
+drawmode	[ 0	locks=0 ]	(	default	)
+setdrawmodecolor	[ 0	locks=0 ]	(	"off"	)
+drawmodecolor	[ 0	locks=0 ]	(	0.18	0.18	0.18	)
+setcardgeometry	[ 0	locks=0 ]	(	"off"	)
+cardgeometry	[ 0	locks=0 ]	(	cross	)
+setcardtexturexneg	[ 0	locks=0 ]	(	"off"	)
+cardtexturexneg	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`XNeg.png	)
+setcardtexturexpos	[ 0	locks=0 ]	(	"off"	)
+cardtexturexpos	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`XPos.png	)
+setcardtextureyneg	[ 0	locks=0 ]	(	"off"	)
+cardtextureyneg	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`YNeg.png	)
+setcardtextureypos	[ 0	locks=0 ]	(	"off"	)
+cardtextureypos	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`YPos.png	)
+setcardtexturezneg	[ 0	locks=0 ]	(	"off"	)
+cardtexturezneg	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`ZNeg.png	)
+setcardtexturezpos	[ 0	locks=0 ]	(	"off"	)
+cardtexturezpos	[ 0	locks=0 ]	(	$HIP/tex/`rtrim(@primname,\"0123456789\")`ZPos.png	)
+AssetInfo	[ 0	locks=0 ]	(	0	)
+setassetidentifier	[ 0	locks=0 ]	(	"off"	)
+assetidentifier	[ 0	locks=0 ]	(	""	)
+setassetname	[ 0	locks=0 ]	(	"off"	)
+assetname	[ 0	locks=0 ]	(	""	)
+setassetthumbnail	[ 0	locks=0 ]	(	"off"	)
+assetthumbnail	[ 0	locks=0 ]	(	""	)
+setassetversion	[ 0	locks=0 ]	(	"off"	)
+assetversion	[ 0	locks=0 ]	(	""	)
+setassetdependencies	[ 0	locks=0 ]	(	"off"	)
+assetdependencies	[ 0	locks=0 ]	(	""	)
+assetinfocount	[ 0	locks=0 ]	(	0	)
+Interface	[ 0	locks=0 ]	(	1	)
+seticon	[ 0	locks=0 ]	(	"on"	)
+icon	[ 0	locks=0 ]	(	COMMON_component	)
+setcatalogparentpath	[ 0	locks=0 ]	(	"off"	)
+catalogparentpath	[ 0	locks=0 ]	(	""	)
+seteditable	[ 0	locks=0 ]	(	"off"	)
+editable	[ 0	locks=0 ]	(	"on"	)
+setselectable	[ 0	locks=0 ]	(	"off"	)
+selectable	[ 0	locks=0 ]	(	"on"	)
+sethideinui	[ 0	locks=0 ]	(	"off"	)
+hideinui	[ 0	locks=0 ]	(	"off"	)
+CustomData	[ 0	locks=0 ]	(	0	)
+customdatacount	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/CONFIG_ASSET_PRIMITIVE0.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.order"
 Content-Type: text/plain
 
-13
+11
 CONFIG_GEO_SCOPE_PRIM
 output0
 variant_sopnet
 foreach_end1
 foreach_begin
-sopimport_variants
-add_model_variants1
 setvariant
-createlods
 import_model_variants
 add_model_variants2
 configurelayer
 INPUT
+CONFIG_ASSET_PRIMITIVE0
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.net"

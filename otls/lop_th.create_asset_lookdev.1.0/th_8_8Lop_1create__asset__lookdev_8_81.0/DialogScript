@@ -14,69 +14,88 @@
     inputlabel	3	"Input 3"
     inputlabel	4	"Input 4"
 
-    parm {
-        name    "primpath"
-        label   "Primitive Path"
-        type    string
-        default { "`lopinputprim('.', 0)`" }
-        menureplace {
-            [ "opmenu -l -a add_lookdev_variants primpath" ]
-        }
-        parmtag { "autoscope" "0000000000000000" }
-        parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, False)" }
-        parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nAlt-click to toggle movement of the display flag." }
-        parmtag { "script_action_icon" "BUTTONS_reselect" }
-        parmtag { "sidefx::usdpathtype" "prim" }
-    }
-    parm {
-        name    "variantset"
-        label   "Variant Set"
-        type    string
-        default { "lookdev" }
-        parmtag { "autoscope" "0000000000000000" }
-        parmtag { "script_callback_language" "python" }
-    }
-    parm {
-        name    "active_variant"
-        label   "Active Variant"
-        type    string
-        default { "default" }
-        menu {
-            [ "node = kwargs['node']" ]
-            [ "num = node.parm('variants').eval()" ]
-            [ "" ]
-            [ "menu = []" ]
-            [ "for i in range(1, num + 1):" ]
-            [ "    token = node.parm(f'variant_name{i}').eval()" ]
-            [ "    label = node.parm(f'variant_name{i}').eval()  # use entry's own parm as label" ]
-            [ "    menu.extend([token, label])" ]
-            [ "" ]
-            [ "return menu" ]
-            language python
-        }
-        parmtag { "autoscope" "0000000000000000" }
-        parmtag { "script_callback_language" "python" }
-    }
-    multiparm {
-        name    "variants"
-        label    "Variants"
-        parmtag { "multistartoffset" "1" }
-        parmtag { "script_callback" "hou.phm().add_variant(kwargs)" }
-        parmtag { "script_callback_language" "python" }
+    groupsimple {
+        name    "folder1"
+        label   "Primitive Definition"
 
-        groupsimple {
-            name    "variant#"
-            label   "Variant#"
-
-            parm {
-                name    "variant_name#"
-                label   "Name"
-                type    string
-                default { "variant#" }
-                parmtag { "editor" "0" }
-                parmtag { "script_callback" "hou.phm().on_variant_name(kwargs)" }
-                parmtag { "script_callback_language" "python" }
+        parm {
+            name    "primpath"
+            label   "Primitive Path"
+            type    string
+            default { "`lopinputprim('.', 0)`" }
+            menureplace {
+                [ "opmenu -l -a add_lookdev_variants primpath" ]
             }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, False)" }
+            parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nAlt-click to toggle movement of the display flag." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::usdpathtype" "prim" }
+        }
+        parm {
+            name    "variantset"
+            label   "Variant Set"
+            type    string
+            default { "lookdev" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "active_variant"
+            label   "Active Variant"
+            type    string
+            default { "1" }
+            menu {
+                [ "node = kwargs['node']" ]
+                [ "num = node.parm('variants').eval()" ]
+                [ "" ]
+                [ "menu = []" ]
+                [ "for i in range(1, num + 1):" ]
+                [ "    token = i" ]
+                [ "    label = node.parm(f'variant_name{i}').eval()  # use entry's own parm as label" ]
+                [ "    menu.extend([token, label])" ]
+                [ "" ]
+                [ "return menu" ]
+                language python
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "sublayer"
+            label   "Create Sublayer"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "folder0"
+        label   "Variants"
+
+        multiparm {
+            name    "variants"
+            label    "Variants"
+            parmtag { "multistartoffset" "1" }
+            parmtag { "script_callback" "hou.phm().add_variant(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+
+            groupsimple {
+                name    "variant#"
+                label   "Variant#"
+
+                parm {
+                    name    "variant_name#"
+                    label   "Name"
+                    type    string
+                    default { "variant#" }
+                    parmtag { "editor" "0" }
+                    parmtag { "script_callback" "hou.phm().on_variant_name(kwargs)" }
+                    parmtag { "script_callback_language" "python" }
+                }
+            }
+
         }
 
     }

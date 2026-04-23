@@ -1,0 +1,16 @@
+{
+	"values":["21.0.591"
+	],
+	"indexes":{
+		"hdaroot/sublayer_asset.userdata":0,
+		"hdaroot/usd_rop.userdata":0,
+		"hdaroot/output_switch.userdata":0,
+		"hdaroot/asset_payload/output0.userdata":0,
+		"hdaroot/asset_payload/payload_asset.userdata":0,
+		"hdaroot/asset_payload/payloadinfo.userdata":0,
+		"hdaroot/output1.userdata":0,
+		"hdaroot/configure_asset_layer.userdata":0,
+		"hdaroot/asset_payload/payload_layer.userdata":0,
+		"hdaroot/set_thumbnail.userdata":0
+	}
+}

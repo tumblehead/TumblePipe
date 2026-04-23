@@ -1,61 +1,43 @@
-def _make_snippet(idx):
-    """Build the VEX snippet for a given 1-based variant index."""
-    return (
-        f"if (@name == \"\") s@variant = ch('../../variant_name{idx}')+'/geo/mesh';\n"
-        f"else s@variant = ch('../../variant_name{idx}')+'/geo/'+s@name;"
-    )
-
-
 def _sync_variants(node):
     """Reconcile the internal node network with the current multiparm state.
 
-    Ensures there is exactly one output node (in create_variants) and one
-    attribwrangle (in variant_sopnet) per multiparm entry, all wired into
-    merge_variants in order.  Removes orphans and fixes indices.
+    Per multiparm entry i (0-based, 1-based variant_idx = i+1), ensure:
+        create_variants/OUT_<name>  (output node, outputidx = i)
+            -> OUT_<name>           (null, sibling of create_variants, wired
+                                     from create_variants at output index i)
+
+    The LOP foreach iterates over per-variant nulls; import_model_variants
+    fetches via ../variant_sopnet/OUT_`@VARIANTNAME`. Orphans are destroyed.
     """
     count = node.parm("variants").eval()
     variant_subnet = node.node("variant_sopnet")
     variant_create = variant_subnet.node("create_variants")
-    merge_variants = variant_subnet.node("merge_variants")
 
-    # --- Collect existing nodes keyed by their current output index ---
+    # Sweep any leftover per-variant wrangles from a prior design.
+    for n in list(variant_subnet.children()):
+        if n.type().name() == "attribwrangle" and n.name().startswith("set_variant"):
+            n.destroy()
+
+    # Existing outputs in create_variants keyed by outputidx.
     existing_outputs = {}
     for n in variant_create.children():
         if n.type().name() == "output":
             existing_outputs[n.evalParm("outputidx")] = n
 
-    existing_wrangles = {}
+    # Existing managed nulls keyed by name (any OUT_*).
+    existing_nulls_by_name = {}
     for n in variant_subnet.children():
-        if n.type().name() == "attribwrangle" and n.name().startswith("set_variant"):
-            inputs = n.inputs()
-            if inputs and inputs[0] is not None:
-                src = inputs[0]
-                if src == variant_create:
-                    for conn in n.inputConnections():
-                        if conn.inputNode() == variant_create:
-                            existing_wrangles[conn.outputIndex()] = n
-                            break
+        if n.type().name() == "null" and n.name().startswith("OUT_"):
+            existing_nulls_by_name[n.name()] = n
 
-    # --- Determine the desired set of indices: 0 .. count-1 ---
     desired = set(range(count))
-    have_outputs = set(existing_outputs.keys())
-    have_wrangles = set(existing_wrangles.keys())
-
-    # Remove orphaned nodes (indices beyond the current count)
-    for idx in have_outputs - desired:
+    for idx in set(existing_outputs) - desired:
         existing_outputs[idx].destroy()
-    for idx in have_wrangles - desired:
-        existing_wrangles[idx].destroy()
 
-    # --- Disconnect all merge inputs so we can rewire in order ---
-    for i in range(len(merge_variants.inputs()) - 1, -1, -1):
-        merge_variants.setInput(i, None)
-
-    # --- Create missing nodes and fix indices for all entries ---
     for i in range(count):
-        variant_idx = i + 1  # 1-based multiparm index
+        variant_idx = i + 1
+        variant_name = node.parm(f"variant_name{variant_idx}").eval()
 
-        # Output node in create_variants
         if i in existing_outputs:
             out_node = existing_outputs[i]
         else:
@@ -63,41 +45,24 @@ def _sync_variants(node):
             out_node.parm("outputidx").set(i)
             out_node.moveToGoodPosition()
 
-        # Ensure outputidx is correct (may have shifted)
         if out_node.evalParm("outputidx") != i:
             out_node.parm("outputidx").set(i)
 
-        # Rename output to match current variant name
-        variant_name = node.parm(f"variant_name{variant_idx}").eval()
         try:
             out_node.setName(f"OUT_{variant_name}")
         except hou.OperationFailed:
             out_node.setName(f"VARIANT{variant_idx}_OUTPUT")
 
-        # Wrangle node in variant_sopnet
-        if i in existing_wrangles:
-            wrangle = existing_wrangles[i]
-        else:
-            wrangle = variant_subnet.createNode("attribwrangle", f"set_variant{variant_idx}_attrib")
-            wrangle.parm("class").set(1)  # Primitives
+        null_name = f"OUT_{variant_name}"
+        null = existing_nulls_by_name.pop(null_name, None)
+        if null is None:
+            null = variant_subnet.createNode("null", null_name)
+        null.setInput(0, variant_create, output_index=i)
 
-        # Ensure wrangle is wired to the correct create_variants output
-        wrangle.setInput(0, variant_create, output_index=i)
-
-        # Update the VEX snippet to reference the correct multiparm index
-        wrangle.parm("snippet").set(_make_snippet(variant_idx))
-
-        # Rename wrangle to match index
-        try:
-            wrangle.setName(f"set_variant{variant_idx}_attrib")
-        except hou.OperationFailed:
-            pass
-
-        # Wire into merge
-        merge_variants.setInput(i, wrangle)
+    for null in existing_nulls_by_name.values():
+        null.destroy()
 
     variant_subnet.layoutChildren()
-    variant_create.layoutChildren()
 
 
 def _get_node(kwargs):
@@ -129,7 +94,7 @@ def add_variant(kwargs):
 
 
 def on_variant_name(kwargs):
-    """Variant name changed — rename the corresponding output node."""
+    """Variant name changed — rename the paired output + null."""
     variant_idx = kwargs.get("script_multiparm_index")
     variant_name = kwargs.get("script_value")
 
@@ -137,8 +102,8 @@ def on_variant_name(kwargs):
     variant_subnet = node.node("variant_sopnet")
     variant_create = variant_subnet.node("create_variants")
 
-    # Find output node by its outputidx
     target_idx = int(variant_idx) - 1
+
     for n in variant_create.children():
         if n.type().name() == "output" and n.evalParm("outputidx") == target_idx:
             try:
@@ -146,3 +111,17 @@ def on_variant_name(kwargs):
             except hou.OperationFailed:
                 pass
             break
+
+    for n in variant_subnet.children():
+        if n.type().name() != "null":
+            continue
+        for conn in n.inputConnections():
+            if conn.inputNode() == variant_create and conn.outputIndex() == target_idx:
+                try:
+                    n.setName(f"OUT_{variant_name}")
+                except hou.OperationFailed:
+                    pass
+                break
+        else:
+            continue
+        break

@@ -77,8 +77,6 @@ def _sync_variants(node):
         except hou.OperationFailed:
             pass
 
-    variant_subnet.layoutChildren()
-    lookdev_subnet.layoutChildren()
 
 
 def _get_node(kwargs):

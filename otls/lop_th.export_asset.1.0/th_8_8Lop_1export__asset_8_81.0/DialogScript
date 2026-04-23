@@ -1,0 +1,128 @@
+# Dialog script for th::export_asset::1.0 automatically generated
+
+{
+    name	th::export_asset::1.0
+    script	th::export_asset::1.0
+    label	"th export asset"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    groupsimple {
+        name    "folder0"
+        label   "Thumbnail"
+
+        parm {
+            name    "outputimage"
+            label   "Override Output Image"
+            type    image
+            default { "$HIP/thumbnails/asset_thumbnail.png" }
+            menureplace {
+                [ "opmenu -l -a asset_thumbnail outputimage" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "execute2"
+            label   "Render to Disk"
+            type    button
+            joinnext
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "takecontrol" "always" }
+        }
+        parm {
+            name    "thumbnail_as_icon"
+            label   "Set Thumbnail As Icon"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "folder1"
+        label   "Export Settings"
+
+        parm {
+            name    "primpath"
+            label   "Primitive Path"
+            type    string
+            default { "`lopinputprim('.', 0)`" }
+            menureplace {
+                [ "opmenu -l -a asset_thumbnail primpath" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, False)" }
+            parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nAlt-click to toggle movement of the display flag." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "script_callback_language" "python" }
+            parmtag { "sidefx::usdpathtype" "prim" }
+        }
+        parm {
+            name    "preview"
+            label   "Display"
+            type    buttonstrip
+            default { "0" }
+            menureplace {
+                "0" "Network Asset"
+                "1" "Exported Asset"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "lopoutput"
+            label   "Output File"
+            type    file
+            default { "$HIP/asset/test_asset/test_asset.usda" }
+            menureplace {
+                [ "opmenu -l -a usd_rop lopoutput" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "filechooser_mode" "write" }
+        }
+        parm {
+            name    "execute"
+            label   "Save to Disk"
+            type    button
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "takecontrol" "always" }
+        }
+        parm {
+            name    "sepparm"
+            label   "Separator"
+            type    separator
+            default { "" }
+        }
+        parm {
+            name    "savestyle"
+            label   "Save Style"
+            type    string
+            default { "separate" }
+            menu {
+                "flattenimplicitlayers" "Flatten Implicit Layers (Collapse Implicit Sublayers, Preserve References)"
+                "flattenalllayers"      "Flatten All Layers (Collapse All Sublayers, Preserve References)"
+                "separate"              "Separate Layers (Preserve All Sublayers and References)"
+                "flattenstage"          "Flatten Stage (Collapse All Sublayers and References)"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "payload"
+            label   "Payload Asset"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}
