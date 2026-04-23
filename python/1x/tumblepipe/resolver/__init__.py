@@ -17,8 +17,6 @@ import os
 import platform
 from pathlib import Path
 
-from pxr import Ar
-
 
 LATEST_MODE_ENV_VAR = "TH_RESOLVER_LATEST_MODE"
 
@@ -47,6 +45,12 @@ def resolve_entity_uri(uri: str) -> str:
     Returns the resolved filesystem path, or "" if the URI could not be
     resolved.
     """
+    # Lazy import: importing pxr.Ar at module level initializes Plug.Registry
+    # (scanning PXR_PLUGINPATH_NAME) the moment this module is loaded. pythonrc.py
+    # imports plugin_resources_path from here to compute the tumbleResolver path
+    # *before* setting PXR_PLUGINPATH_NAME — a module-level pxr import would make
+    # that update too late and the resolver plugin would never be discovered.
+    from pxr import Ar
     resolved = Ar.GetResolver().Resolve(uri)
     return str(resolved) if resolved else ""
 
