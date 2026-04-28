@@ -3,11 +3,15 @@ number of registered Tumblehead projects.
 
 Projects are stored in
 ``~/.config/asset_browser/projects.json`` (see
-:class:`asset_browser.core.projects.ProjectRegistry`). On first run with
-no registry file, a single entry is bootstrapped from the
-``TH_PROJECT_PATH`` / ``TH_PIPELINE_PATH`` / ``TH_CONFIG_PATH`` env vars
-so existing single-project users get the same behavior with no manual
-setup.
+:class:`asset_browser.core.projects.ProjectRegistry`). Each entry holds
+``project_path`` and ``config_path``; the registry's ``pipeline_path``
+field is ignored at runtime. The active TumblePipe install is read from
+``$TH_PIPELINE_PATH`` (set globally by hpm via the package's ``[env]``
+block) so it tracks hpm upgrades automatically.
+
+On first run with no registry file, a single entry is bootstrapped from
+``TH_PROJECT_PATH`` / ``TH_CONFIG_PATH`` so existing single-project
+users get the same behavior with no manual setup.
 """
 
 from __future__ import annotations
@@ -212,28 +216,26 @@ class PipelineCatalog(Catalog):
     def _build_client_locked(self, proj: "ProjectConfig"):
         try:
             import sys
-            if proj.pipeline_path:
-                py_path = str(
-                    Path(proj.pipeline_path)
-                    / "houdini" / "TumblePipe" / "python" / "1x"
-                )
-                if py_path not in sys.path:
-                    sys.path.insert(0, py_path)
+            # TH_PIPELINE_PATH is owned by hpm — set in the package's
+            # [env] block to the active install. Never per-project.
+            pipeline_path = os.environ["TH_PIPELINE_PATH"]
+            py_path = str(
+                Path(pipeline_path) / "houdini" / "TumblePipe" / "python" / "1x"
+            )
+            if py_path not in sys.path:
+                sys.path.insert(0, py_path)
 
-            # Set env vars for Client constructor (reads os.environ).
-            # Skip ``_activate_project`` — its ``reset_default_client``
-            # causes import-lock deadlock when called from worker
-            # threads.  The per-project Client gets explicit paths so
-            # the global singleton doesn't matter during init.
-            os.environ["TH_PROJECT_PATH"] = proj.project_path
-            os.environ["TH_PIPELINE_PATH"] = proj.pipeline_path
-            os.environ["TH_CONFIG_PATH"] = proj.config_path
-            os.environ["TH_EXPORT_PATH"] = f"{proj.project_path}/export"
-
+            # Browsing must NOT mutate process env. The resolver
+            # (resolver-src/src/env.rs) and tumblepipe.api free-functions
+            # (get_project_path/get_pipeline_path/...) read TH_* env to
+            # determine the *user-active* project — the one whose hip
+            # file is open. That signal is owned by ``_activate_project``;
+            # constructing per-project Clients here is a passive lookup
+            # and feeds Client via explicit args below.
             from tumblepipe.api import Client
             client = Client(
                 Path(proj.project_path),
-                Path(proj.pipeline_path),
+                Path(pipeline_path),
                 Path(proj.config_path),
             )
             self._clients[proj.name] = client
@@ -367,7 +369,6 @@ class PipelineCatalog(Catalog):
         if project is None:
             return
         os.environ["TH_PROJECT_PATH"] = project.project_path
-        os.environ["TH_PIPELINE_PATH"] = project.pipeline_path
         os.environ["TH_CONFIG_PATH"] = project.config_path
         os.environ["TH_EXPORT_PATH"] = f"{project.project_path}/export"
         try:
@@ -3393,7 +3394,6 @@ class PipelineCatalog(Catalog):
             # If the entry's paths changed, force re-init on next browse.
             if existing is None or (
                 existing.project_path != proj.project_path
-                or existing.pipeline_path != proj.pipeline_path
                 or existing.config_path != proj.config_path
             ):
                 self._clients.pop(proj.name, None)
@@ -5015,11 +5015,12 @@ class PipelineCatalog(Catalog):
                 )
                 return
 
-            # Build env: current process env + target project's TH_* vars
+            # Build env: current process env + target project's TH_* vars.
+            # TH_PIPELINE_PATH is hpm-owned and inherited from the parent
+            # process; never override it per-project.
             import subprocess
             env = dict(os.environ)
             env["TH_PROJECT_PATH"] = proj.project_path
-            env["TH_PIPELINE_PATH"] = proj.pipeline_path
             env["TH_CONFIG_PATH"] = proj.config_path
 
             # Use the same executable as the current Houdini process

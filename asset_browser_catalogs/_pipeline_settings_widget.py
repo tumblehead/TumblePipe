@@ -33,7 +33,7 @@ class PipelineSettingsWidget(QWidget):
             ProjectConfig(
                 name=p.name,
                 project_path=p.project_path,
-                pipeline_path=p.pipeline_path,
+                pipeline_path="",
                 config_path=p.config_path,
             )
             for p in catalog._registry.all()
@@ -120,11 +120,6 @@ class PipelineSettingsWidget(QWidget):
         proj_row.addWidget(browse_btn)
         form.addRow("Project Path", proj_row)
 
-        self._pipeline_edit = QLineEdit()
-        self._pipeline_edit.setPlaceholderText("(optional, used for sys.path)")
-        self._pipeline_edit.editingFinished.connect(self._sync_from_form)
-        form.addRow("Pipeline Path", self._pipeline_edit)
-
         self._config_edit = QLineEdit()
         self._config_edit.setPlaceholderText("(optional)")
         self._config_edit.editingFinished.connect(self._sync_from_form)
@@ -161,8 +156,7 @@ class PipelineSettingsWidget(QWidget):
     def _update_form_enabled(self) -> None:
         has_sel = self._current_index is not None
         for w in (
-            self._name_edit, self._project_edit,
-            self._pipeline_edit, self._config_edit,
+            self._name_edit, self._project_edit, self._config_edit,
         ):
             w.setEnabled(has_sel)
         self._remove_btn.setEnabled(has_sel)
@@ -172,7 +166,6 @@ class PipelineSettingsWidget(QWidget):
             self._current_index = None
             self._name_edit.setText("")
             self._project_edit.setText("")
-            self._pipeline_edit.setText("")
             self._config_edit.setText("")
             self._update_form_enabled()
             return
@@ -180,7 +173,6 @@ class PipelineSettingsWidget(QWidget):
         proj = self._working[row]
         self._name_edit.setText(proj.name)
         self._project_edit.setText(proj.project_path)
-        self._pipeline_edit.setText(proj.pipeline_path)
         self._config_edit.setText(proj.config_path)
         self._update_form_enabled()
 
@@ -193,7 +185,7 @@ class PipelineSettingsWidget(QWidget):
         proj_new = ProjectConfig(
             name=new_name,
             project_path=self._project_edit.text().strip(),
-            pipeline_path=self._pipeline_edit.text().strip(),
+            pipeline_path="",
             config_path=self._config_edit.text().strip(),
         )
         self._working[self._current_index] = proj_new
@@ -218,6 +210,8 @@ class PipelineSettingsWidget(QWidget):
             name=name, project_path="",
             pipeline_path="", config_path="",
         ))
+        # pipeline_path is intentionally always "" — TH_PIPELINE_PATH is
+        # set globally by hpm and is not a per-project concern.
         self._refresh_list()
         self._list.setCurrentRow(len(self._working) - 1)
 
@@ -248,14 +242,8 @@ class PipelineSettingsWidget(QWidget):
             return
         path = path.replace("\\", "/")
         self._project_edit.setText(path)
-        # Auto-suggest sibling pipeline / config paths if the user
-        # leaves them blank. Many Tumblehead shows mirror the same
-        # parent containing pipeline/ and _config/.
+        # Auto-suggest sibling _config path if the user left it blank.
         proj_root = Path(path)
-        if not self._pipeline_edit.text().strip():
-            sib_pipeline = proj_root.parent / "pipeline"
-            if sib_pipeline.exists():
-                self._pipeline_edit.setText(str(sib_pipeline).replace("\\", "/"))
         if not self._config_edit.text().strip():
             cfg_in_proj = proj_root / "_config"
             if cfg_in_proj.exists():
