@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.1.12"
+version = "1.1.15"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 documentation = "https://tumblepipe.readthedocs.io"
 readme = "README.md"
@@ -36,17 +36,23 @@ pymongo = ">=4.13.0"
 dictdiffer = ">=0.9.0"
 
 [native]
-# hpm 0.5.2 only accepts a fixed set of platform names. For mac we ship
-# an arm64-only binary but label the native slot as macos-universal so
-# it passes hpm's validator; the files glob still points at the same
-# flat resolver/houdini<major>/ tree the macos build job produces.
+# hpm only accepts a fixed set of platform names. For mac we ship an
+# arm64-only binary but label the native slot as macos-universal so it
+# passes hpm's validator. Per-platform CI workers only build their own
+# platform's binaries into resolver/houdini<major>/, so each archive
+# carries exactly that platform's resolver.
 #
 # The platform slug is intentionally NOT in the install path: Houdini
 # package.json env values can only substitute $HPM_PACKAGE_ROOT (no
 # $HOUDINI_OS / $HOUDINI_MAJOR_RELEASE expansion in env values), so the
-# path PXR_PLUGINPATH_NAME points at must be a constant string. Each
-# per-platform CI run only builds its own platform's binaries into
-# resolver/houdini<major>/, so the glob captures exactly that platform.
+# path PXR_PLUGINPATH_NAME points at must be a constant string. The
+# identical globs across platforms below are deliberate: with
+# hpm >= 0.9.1, a path that matches the target platform's own
+# `files` glob is included even if it also matches another platform's
+# glob, so the same `resolver/houdini*/**/*` pattern in all three
+# sections lets each per-platform archive carry the resolver binaries
+# its CI worker built. (Earlier hpm versions excluded such paths from
+# every archive — see 1.1.12 release notes.)
 platforms = ["windows-x86_64", "linux-x86_64", "macos-universal"]
 
 [native.windows-x86_64]
