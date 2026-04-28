@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.1.11"
+version = "1.1.12"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 documentation = "https://tumblepipe.readthedocs.io"
 readme = "README.md"
@@ -18,6 +18,17 @@ TH_CONFIG_PATH = { method = "set", value = "" }
 TH_EXPORT_PATH = { method = "set", value = "" }
 OCIO = { method = "set", value = "$HPM_PACKAGE_ROOT/ocio/tumblehead.ocio" }
 
+# tumbleResolver registration. Houdini applies these env edits during its
+# package-loading phase, *before* USD's Plug.Registry first-touches — that's
+# the only timing that works in-process (Plug.Registry is a one-shot
+# scanner; pythonrc.py runs too late). PATH / LD_LIBRARY_PATH /
+# DYLD_LIBRARY_PATH cover the OS-specific dynamic linker so it can load
+# the resolver shared library that plugInfo.json points at.
+PXR_PLUGINPATH_NAME = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/houdini21/tumbleResolver/resources" }
+PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/houdini21/tumbleResolver/lib" }
+LD_LIBRARY_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/houdini21/tumbleResolver/lib" }
+DYLD_LIBRARY_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/houdini21/tumbleResolver/lib" }
+
 [python_dependencies]
 qtpy = ">=2.4.0"
 watchdog = ">=6.0.0"
@@ -27,15 +38,22 @@ dictdiffer = ">=0.9.0"
 [native]
 # hpm 0.5.2 only accepts a fixed set of platform names. For mac we ship
 # an arm64-only binary but label the native slot as macos-universal so
-# it passes hpm's validator; the files glob still points at the arm64
-# build dir that resolver-macos.yml produces.
+# it passes hpm's validator; the files glob still points at the same
+# flat resolver/houdini<major>/ tree the macos build job produces.
+#
+# The platform slug is intentionally NOT in the install path: Houdini
+# package.json env values can only substitute $HPM_PACKAGE_ROOT (no
+# $HOUDINI_OS / $HOUDINI_MAJOR_RELEASE expansion in env values), so the
+# path PXR_PLUGINPATH_NAME points at must be a constant string. Each
+# per-platform CI run only builds its own platform's binaries into
+# resolver/houdini<major>/, so the glob captures exactly that platform.
 platforms = ["windows-x86_64", "linux-x86_64", "macos-universal"]
 
 [native.windows-x86_64]
-files = ["resolver/windows-x86_64/**/*"]
+files = ["resolver/houdini*/**/*"]
 
 [native.linux-x86_64]
-files = ["resolver/linux-x86_64/**/*"]
+files = ["resolver/houdini*/**/*"]
 
 [native.macos-universal]
-files = ["resolver/macos-arm64/**/*"]
+files = ["resolver/houdini*/**/*"]

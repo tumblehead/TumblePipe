@@ -2,7 +2,7 @@ from pathlib import Path
 
 import hou
 
-from tumblepipe.api import default_client, path_str
+from tumblepipe.api import default_client
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
 from tumblepipe.config.department import list_departments
@@ -12,8 +12,7 @@ import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.util import uri_to_prim_path
 from tumblepipe.pipe.paths import (
     get_workfile_context,
-    get_staged_file_path,
-    current_staged_file_path,
+    current_staged_path,
     list_version_paths
 )
 
@@ -198,38 +197,40 @@ class ImportAsset(ns.Node):
         from tumblepipe import resolver
         from pxr import Ar
 
+        # Build entity URI. 'latest' leaves the version unpinned and turns on
+        # latest_mode so nested URIs in the layer also cascade. 'current' and
+        # specific versions bake the version, freezing both top and nested.
         if version_name == 'latest':
-            # Enable resolver latest mode for full cascade semantics
-            # All nested entity:/ URIs will resolve to their latest versions
             resolver.set_latest_mode(True)
-            staged_file_path = current_staged_file_path(asset_uri, variant_name)
-        elif version_name == 'current':
-            # Disable latest mode - use frozen versions from build
-            resolver.set_latest_mode(False)
-            staged_file_path = current_staged_file_path(asset_uri, variant_name)
+            staged_uri = f"{asset_uri}?variant={variant_name}"
         else:
-            # Disable latest mode - use specific version
             resolver.set_latest_mode(False)
-            staged_file_path = get_staged_file_path(asset_uri, version_name, variant_name)
+            if version_name == 'current':
+                current_path = current_staged_path(asset_uri, variant_name)
+                if current_path is None:
+                    ns.set_node_comment(native, "Bypassed: No staged file found")
+                    native.bypass(True)
+                    return result.Value(None)
+                pinned_version = current_path.name
+            else:
+                pinned_version = version_name
+            staged_uri = f"{asset_uri}?variant={variant_name}&version={pinned_version}"
 
-        # Refresh resolver cache to ensure fresh resolution with the new mode
-        resolver = Ar.GetResolver()
-        resolver.RefreshContext(Ar.ResolverContext())
+        # Invalidate cached nested resolutions so the new mode takes effect
+        Ar.GetResolver().RefreshContext(Ar.ResolverContext())
 
-        if staged_file_path is None:
+        # Resolve once to drive the existence check and version label
+        resolved = resolver.resolve_entity_uri(staged_uri)
+        if not resolved or not Path(resolved).exists():
             ns.set_node_comment(native, "Bypassed: No staged file found")
             native.bypass(True)
             return result.Value(None)
-        if not staged_file_path.exists():
-            ns.set_node_comment(native, f"Bypassed: Staged file not found")
-            native.bypass(True)
-            return result.Value(None)
 
-        # Set import node filepath
-        self.parm('import_filepath1').set(path_str(staged_file_path))
+        # Set import node filepath to the entity URI; the resolver translates it
+        self.parm('import_filepath1').set(staged_uri)
 
         # Update version label with resolved folder name
-        resolved_version = staged_file_path.parent.name
+        resolved_version = Path(resolved).parent.name
         self.parm('version_label').set(resolved_version)
 
         # Get shot context if we're in a shot workfile

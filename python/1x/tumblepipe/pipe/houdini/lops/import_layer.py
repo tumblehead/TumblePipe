@@ -18,8 +18,7 @@ from tumblepipe.pipe.paths import (
     get_workfile_context,
     latest_export_path,
     get_export_uri,
-    get_layer_file_name,
-    latest_shared_export_file_path
+    latest_shared_export_path
 )
 
 api = default_client()
@@ -280,24 +279,6 @@ class ImportLayer(ns.Node):
         self._update_labels()
         return self._import_layer()
 
-    def _get_layer_file_name(self) -> str | None:
-        """Determine the layer file name."""
-        version_name = self.get_version_name()
-        if version_name is None:
-            return None
-
-        entity_uri = self.get_entity_uri()
-        if entity_uri is None:
-            return None
-
-        variant_name = self.get_variant_name()
-        department_name = self.get_department_name()
-        if department_name is None:
-            return None
-
-        # Import layer file (assets + cameras, lights, volumes, etc. all in one)
-        return get_layer_file_name(entity_uri, variant_name, department_name, version_name)
-
     def _import_layer(self):
         """Unified import method for both assets and shots."""
         native = self.native()
@@ -324,37 +305,37 @@ class ImportLayer(ns.Node):
 
         logger.info(f"Importing layer: uri={entity_uri}, dept={department_name}, variant={variant_name}, version={version_name}")
 
-        # Get layer file name
-        layer_file_name = self._get_layer_file_name()
-        if layer_file_name is None:
-            self.parm('import_enable1').set(0)
-            self.parm('import_enable2').set(0)
-            self.parm('bypass_input').set(0)
-            return
+        from tumblepipe import resolver as _resolver
 
-        # Import shared layer (index 1) - only if entity has multiple variants
+        # Import shared layer (index 1) - only if entity has multiple variants.
+        # Bake the shared version so saved hip cooks frozen.
         shared_exists = False
         if len(list_variants(entity_uri)) > 1:
-            shared_file_path = latest_shared_export_file_path(entity_uri, department_name)
-            shared_exists = shared_file_path is not None and shared_file_path.exists()
-            if shared_exists:
-                self.parm('import_filepath1').set(path_str(shared_file_path))
-                logger.debug(f"Found shared layer: {shared_file_path}")
+            shared_path = latest_shared_export_path(entity_uri, department_name)
+            if shared_path is not None:
+                shared_version = shared_path.name
+                shared_uri = f"{entity_uri}?dept={department_name}&variant=_shared&version={shared_version}"
+                resolved_shared = _resolver.resolve_entity_uri(shared_uri)
+                shared_exists = bool(resolved_shared) and Path(resolved_shared).exists()
+                if shared_exists:
+                    self.parm('import_filepath1').set(shared_uri)
+                    logger.debug(f"Found shared layer: {shared_uri}")
 
         self.parm('import_enable1').set(1 if shared_exists else 0)
 
-        # Get version path for variant layer
-        export_uri = get_export_uri(entity_uri, variant_name, department_name) / version_name
-        version_path = api.storage.resolve(export_uri)
-        variant_file_path = version_path / layer_file_name
-
-        # Import variant layer (index 2)
-        variant_exists = variant_file_path.exists()
+        # Variant layer URI (version is already concrete here)
+        variant_uri = f"{entity_uri}?dept={department_name}&variant={variant_name}&version={version_name}"
+        resolved_variant = _resolver.resolve_entity_uri(variant_uri)
+        variant_exists = bool(resolved_variant) and Path(resolved_variant).exists()
         self.parm('import_enable2').set(1 if variant_exists else 0)
-        self.parm('import_filepath2').set(path_str(variant_file_path))
+        self.parm('import_filepath2').set(variant_uri)
 
         if not variant_exists:
-            logger.warning(f"Variant layer file not found: {variant_file_path}")
+            logger.warning(f"Variant layer file not found: {variant_uri}")
+
+        # Resolve version_path for context.json lookup below
+        export_uri = get_export_uri(entity_uri, variant_name, department_name) / version_name
+        version_path = api.storage.resolve(export_uri)
 
         # Enable bypass if either layer exists
         self.parm('bypass_input').set(1 if (shared_exists or variant_exists) else 0)

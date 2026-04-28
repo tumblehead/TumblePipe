@@ -8,8 +8,12 @@ Houdini's bundled USD.
 
 This crate owns `entity://` URI resolution for TumblePipe. CI builds
 the plugin per `(platform, houdini_major)` cell and drops the binaries
-into `../resolver/<platform>/houdini<major>/tumbleResolver/`. The
-pipeline's Python side (`tumblepipe.resolver`) is now a thin façade
+into `../resolver/houdini<major>/tumbleResolver/`. Each per-platform
+release archive contains exactly one platform's binaries at that flat
+path, which `hpm.toml [env]` then registers with USD via
+`PXR_PLUGINPATH_NAME` (the path is a constant string because Houdini
+package.json env values can't substitute platform-specific variables).
+The pipeline's Python side (`tumblepipe.resolver`) is now a thin façade
 that toggles env vars and calls `Ar.GetResolver().Resolve()` — all
 resolution decisions happen here in Rust.
 
@@ -78,7 +82,7 @@ cmake -B build -S . -DHFS="C:/Program Files/Side Effects Software/Houdini 21.0.1
 cmake -B build -S . -DHFS=/Applications/Houdini/Houdini21.0.100/Frameworks/Houdini.framework/Versions/Current/Resources   # macos
 
 cmake --build build --config Release
-cmake --install build --prefix ../resolver/<platform>/houdini21
+cmake --install build --prefix ../resolver/houdini21
 ```
 
 What happens under the hood:
@@ -95,8 +99,8 @@ What happens under the hood:
 4. `plugInfo.json.in` is rendered with the platform-specific library
    filename.
 5. Install lays out `tumbleResolver/{lib,resources,BUILD_INFO}` at the
-   install prefix, ready to drop into the package's `resolver/<platform>/
-   houdini<major>/` directory.
+   install prefix, ready to drop into the package's
+   `resolver/houdini<major>/` directory.
 
 CI runs this per-platform from `.woodpecker/build-windows.yml`,
 `build-linux.yml`, and `build-macos.yml` on workers that have the

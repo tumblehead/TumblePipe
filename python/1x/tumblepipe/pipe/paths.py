@@ -1536,17 +1536,6 @@ def latest_shared_export_path(
     if len(version_paths) == 0: return None
     return version_paths[-1]
 
-def latest_shared_export_file_path(
-    entity_uri: Uri,
-    department_name: str
-    ) -> Optional[Path]:
-    """Get latest shared export USD file path."""
-    latest_version_path = latest_shared_export_path(entity_uri, department_name)
-    if latest_version_path is None: return None
-    version_name = latest_version_path.name
-    usd_file_name = get_shared_layer_file_name(entity_uri, department_name, version_name)
-    return latest_version_path / usd_file_name
-
 def next_shared_export_path(
     entity_uri: Uri,
     department_name: str

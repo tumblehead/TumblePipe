@@ -50,8 +50,14 @@ mirror — HPM resolves those dependencies on the user's machine via the
 ### `resolver-src/` and `resolver/`
 
 The `tumbleResolver` USD asset resolver, which implements `entity://` URIs.
-`resolver-src/` holds the Rust / C++ sources; `resolver/<platform>/` holds
-the built binaries that ship in HPM release archives.
+`resolver-src/` holds the Rust / C++ sources; `resolver/houdini<major>/`
+holds the built binaries that ship in HPM release archives. The platform
+slug is intentionally absent from this path: HPM produces a slim
+per-platform archive (one OS per release asset), so the install layout is
+flat by Houdini major. `hpm.toml [env]` then registers the resolver with
+USD by prepending this path to `PXR_PLUGINPATH_NAME` (and the OS-specific
+dynamic-linker search path), which Houdini applies before USD initializes
+its plugin registry.
 
 ### `ocio/`
 
