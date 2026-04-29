@@ -95,38 +95,61 @@ add_dependencies(th_resolver_core th_resolver_core_rust)
 # -----------------------------------------------------------------------------
 # C++ shim
 # -----------------------------------------------------------------------------
+#
+# resolver.cpp is compiled into a STATIC library, then force-linked into
+# the MODULE library via /WHOLEARCHIVE (or its non-MSVC equivalent). This
+# is what makes AR_DEFINE_RESOLVER actually work on Windows.
+#
+# AR_DEFINE_RESOLVER expands to a TF_REGISTRY_FUNCTION block — an
+# anonymous-namespace static initializer that registers an Ar_ResolverFactory
+# with TfRegistryManager. Nothing else in the DLL externally references
+# that COMDAT, so MSVC's /OPT:REF drops it during link. The TumbleResolver
+# class itself is __declspec(dllexport) and survives, so the type still
+# appears in ArResolver's derived-types list (USD picks it up from the
+# plugInfo.json metadata) — but the *factory* never gets registered.
+# When USD tries to manufacture an instance, _PluginResolver::Create
+# returns nullptr with "Failed to manufacture asset resolver". Symptom:
+# TfType.FindByName('TumbleResolver').isUnknown is False, plugin loads,
+# Ar.GetRegisteredURISchemes() lists 'entity' — yet Ar.Resolve('entity:/...')
+# returns empty and never calls into _Resolve.
+#
+# Putting the shim in a STATIC lib and applying /WHOLEARCHIVE pulls every
+# TU into the final DLL, keeping the static-init COMDAT alive.
 
-add_library(tumbleResolver MODULE
-    cpp/resolver.cpp
-)
+add_library(tumbleResolver_cpp STATIC cpp/resolver.cpp)
+target_include_directories(tumbleResolver_cpp PUBLIC cpp)
+target_link_libraries(tumbleResolver_cpp PUBLIC Houdini)
 
-target_include_directories(tumbleResolver PRIVATE cpp)
-
+add_library(tumbleResolver MODULE cpp/module_stub.cpp)
 target_link_libraries(tumbleResolver PRIVATE Houdini)
 
-# Force-link the full Rust staticlib so the linker can't drop static
-# constructors (panic handlers, TLS init, any future registration code).
-# MSVC's /OPT:REF, GNU ld's --gc-sections, and macOS ld64's -dead_strip
-# all discard sections that look unreferenced without this.
+# Force-link the C++ shim AND the Rust staticlib. MSVC's /OPT:REF, GNU ld's
+# --gc-sections, and macOS ld64's -dead_strip all discard sections that look
+# unreferenced without this.
 #
 # Windows note: the Visual Studio (MSBuild) generator misclassifies
 # `-WHOLEARCHIVE:...` string entries in target_link_libraries as stray
 # library references and silently drops them; target_link_options with
 # a LINKER: genex was rejected too. LINK_FLAGS writes the flag directly
 # into MSBuild's AdditionalOptions, which reaches link.exe verbatim.
-# Since RUST_STATICLIB is resolved at configure time, no genex is needed.
+# RUST_STATICLIB is resolved at configure time; the C++ static lib is
+# named by its CMake target so MSBuild adds it to the link line and
+# /WHOLEARCHIVE:tumbleResolver_cpp.lib matches by basename.
 if(MSVC)
-    target_link_libraries(tumbleResolver PRIVATE th_resolver_core)
+    target_link_libraries(tumbleResolver PRIVATE th_resolver_core tumbleResolver_cpp)
     set_target_properties(tumbleResolver PROPERTIES
-        LINK_FLAGS "/WHOLEARCHIVE:${RUST_STATICLIB}")
+        LINK_FLAGS "/WHOLEARCHIVE:${RUST_STATICLIB} /WHOLEARCHIVE:tumbleResolver_cpp.lib")
 elseif(APPLE)
     target_link_libraries(tumbleResolver PRIVATE
         "-Wl,-force_load"
-        th_resolver_core)
+        th_resolver_core
+        "-Wl,-force_load"
+        tumbleResolver_cpp)
 else()
     target_link_libraries(tumbleResolver PRIVATE
         "-Wl,--whole-archive"
         th_resolver_core
+        tumbleResolver_cpp
         "-Wl,--no-whole-archive")
 endif()
 
