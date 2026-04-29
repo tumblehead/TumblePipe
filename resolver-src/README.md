@@ -62,6 +62,13 @@ Env inputs:
 - `TH_EXPORT_PATH` *(required)* — base directory for all resolved paths.
 - `TH_RESOLVER_LATEST_MODE` — when `1`/`true`, explicit `version=` params
   are ignored and the filesystem is scanned for the highest `vNNNN`.
+- `TH_RESOLVER_DEBUG` — when set (any non-empty value other than `0`),
+  the C++ shim writes one line to `stderr` on every `ArResolver` override
+  it sees (`_CreateIdentifier`, `_Resolve`, `_OpenAsset`, etc.). Used to
+  diagnose URI-dispatch problems where the plugin loads but `_Resolve`
+  doesn't appear to be reached. Capture via `os.dup2` on fd 2 from
+  Python; see the troubleshooting notes when the resolver returns empty
+  paths despite the plugin being registered.
 
 ## Building
 
