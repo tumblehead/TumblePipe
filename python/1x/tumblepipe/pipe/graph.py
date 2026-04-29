@@ -26,7 +26,7 @@ from tumblepipe.config.variants import DEFAULT_VARIANT
 from tumblepipe.config.department import list_departments
 from tumblepipe.pipe.paths import (
     latest_export_path,
-    get_layer_file_name,
+    get_root_layer_file_name,
     get_current_scene_staged_file_path,
     get_latest_version_path
 )
@@ -490,8 +490,7 @@ def resolve_shot_build(
     root_version_path = get_latest_version_path(export_path)
     if root_version_path is not None:
         version_name = root_version_path.name
-        entity_name = '_'.join(shot_uri.segments)
-        layer_file_name = f'{entity_name}_root_{version_name}.usda'
+        layer_file_name = get_root_layer_file_name(shot_uri, version_name)
         root_layer_path = root_version_path / layer_file_name
         if root_layer_path.exists():
             root_layer = root_layer_path

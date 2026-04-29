@@ -220,7 +220,7 @@ def generate_root_version(shot_uri: Uri) -> Path:
     from tumblepipe.config.timeline import get_frame_range, get_fps
     from tumblepipe.pipe.paths import (
         get_next_version_path,
-        get_layer_file_name
+        get_root_layer_file_name
     )
     from tumblepipe.pipe.usd import generate_usda_content, generate_scene_sublayer_uri
 
@@ -260,8 +260,7 @@ def generate_root_version(shot_uri: Uri) -> Path:
     version_name = version_path.name
 
     # Generate output path (no variant in filename for shot-level root)
-    entity_name = '_'.join(shot_uri.segments)
-    layer_file_name = f'{entity_name}_root_{version_name}.usda'
+    layer_file_name = get_root_layer_file_name(shot_uri, version_name)
     output_path = version_path / layer_file_name
 
     # Get full frame range (including roll)
@@ -306,7 +305,7 @@ def get_root_layer_path(shot_uri: Uri) -> Path | None:
     Returns:
         Path to the latest root layer .usda file, or None if no root exports exist
     """
-    from tumblepipe.pipe.paths import get_latest_version_path
+    from tumblepipe.pipe.paths import get_latest_version_path, get_root_layer_file_name
 
     # Root is shot-level, stored at _root/ (not variant-specific)
     export_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_root'
@@ -315,10 +314,7 @@ def get_root_layer_path(shot_uri: Uri) -> Path | None:
     if version_path is None:
         return None
 
-    # Construct filename (no variant for shot-level root)
-    version_name = version_path.name
-    entity_name = '_'.join(shot_uri.segments)
-    layer_file_name = f'{entity_name}_root_{version_name}.usda'
+    layer_file_name = get_root_layer_file_name(shot_uri, version_path.name)
     layer_path = version_path / layer_file_name
 
     if not fix_path(layer_path).exists():

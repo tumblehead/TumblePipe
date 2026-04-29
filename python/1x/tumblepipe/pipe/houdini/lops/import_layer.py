@@ -287,48 +287,60 @@ class ImportLayer(ns.Node):
         department_name = self.get_department_name()
         version_name = self.get_version_name()
 
+        def _bypass(reason: str):
+            self.parm('import_filepath1').set('')
+            self.parm('import_filepath2').set('')
+            self.parm('import_enable1').set(0)
+            self.parm('import_enable2').set(0)
+            self.parm('bypass_input').set(0)
+            ns.set_node_comment(native, f"Bypassed: {reason}")
+            native.bypass(True)
+
         if entity_uri is None:
             logger.debug("Import bypassed: No entity selected")
-            ns.set_node_comment(native, "Bypassed: No entity selected")
-            native.bypass(True)
+            _bypass("No entity selected")
             return
         if department_name is None:
             logger.debug(f"Import bypassed: No department selected for {entity_uri}")
-            ns.set_node_comment(native, "Bypassed: No department selected")
-            native.bypass(True)
+            _bypass("No department selected")
             return
         if version_name is None:
             logger.debug(f"Import bypassed: No version selected for {entity_uri}/{department_name}")
-            ns.set_node_comment(native, "Bypassed: No version selected")
-            native.bypass(True)
+            _bypass("No version selected")
             return
 
         logger.info(f"Importing layer: uri={entity_uri}, dept={department_name}, variant={variant_name}, version={version_name}")
 
         from tumblepipe import resolver as _resolver
 
-        # Import shared layer (index 1) - only if entity has multiple variants.
-        # Bake the shared version so saved hip cooks frozen.
+        # Resolve URIs in Python and feed the inner sublayer LOP a plain
+        # filesystem path. The URI form does not survive Houdini's geometry-parm
+        # + chs() pipeline cleanly. Nested entity:// URIs inside the loaded
+        # layer continue to be resolved at USD load time.
+
+        # Shared layer (index 1) - only if entity has multiple variants.
+        shared_resolved = ''
         shared_exists = False
         if len(list_variants(entity_uri)) > 1:
             shared_path = latest_shared_export_path(entity_uri, department_name)
             if shared_path is not None:
                 shared_version = shared_path.name
                 shared_uri = f"{entity_uri}?dept={department_name}&variant=_shared&version={shared_version}"
-                resolved_shared = _resolver.resolve_entity_uri(shared_uri)
-                shared_exists = bool(resolved_shared) and Path(resolved_shared).exists()
-                if shared_exists:
-                    self.parm('import_filepath1').set(shared_uri)
-                    logger.debug(f"Found shared layer: {shared_uri}")
+                resolved = _resolver.resolve_entity_uri(shared_uri)
+                if resolved and Path(resolved).exists():
+                    shared_resolved = resolved
+                    shared_exists = True
+                    logger.debug(f"Found shared layer: {resolved}")
 
+        self.parm('import_filepath1').set(shared_resolved)
         self.parm('import_enable1').set(1 if shared_exists else 0)
 
-        # Variant layer URI (version is already concrete here)
+        # Variant layer (index 2)
         variant_uri = f"{entity_uri}?dept={department_name}&variant={variant_name}&version={version_name}"
         resolved_variant = _resolver.resolve_entity_uri(variant_uri)
         variant_exists = bool(resolved_variant) and Path(resolved_variant).exists()
+        self.parm('import_filepath2').set(resolved_variant if variant_exists else '')
         self.parm('import_enable2').set(1 if variant_exists else 0)
-        self.parm('import_filepath2').set(variant_uri)
 
         if not variant_exists:
             logger.warning(f"Variant layer file not found: {variant_uri}")

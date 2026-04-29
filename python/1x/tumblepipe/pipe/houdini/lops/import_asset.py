@@ -186,6 +186,7 @@ class ImportAsset(ns.Node):
         native = self.native()
         asset_uri = self.get_asset_uri()
         if asset_uri is None:
+            self.parm('import_filepath1').set('')
             ns.set_node_comment(native, "Bypassed: No asset selected")
             native.bypass(True)
             return result.Value(None)
@@ -197,9 +198,10 @@ class ImportAsset(ns.Node):
         from tumblepipe import resolver
         from pxr import Ar
 
-        # Build entity URI. 'latest' leaves the version unpinned and turns on
-        # latest_mode so nested URIs in the layer also cascade. 'current' and
-        # specific versions bake the version, freezing both top and nested.
+        # Build the entity URI we want to resolve. 'latest' leaves the version
+        # unpinned and turns on latest_mode so any nested entity:// URIs inside
+        # the loaded layer also cascade. 'current' and specific versions bake
+        # the version, freezing both this top-level resolve and nested ones.
         if version_name == 'latest':
             resolver.set_latest_mode(True)
             staged_uri = f"{asset_uri}?variant={variant_name}"
@@ -208,6 +210,7 @@ class ImportAsset(ns.Node):
             if version_name == 'current':
                 current_path = current_staged_path(asset_uri, variant_name)
                 if current_path is None:
+                    self.parm('import_filepath1').set('')
                     ns.set_node_comment(native, "Bypassed: No staged file found")
                     native.bypass(True)
                     return result.Value(None)
@@ -219,15 +222,20 @@ class ImportAsset(ns.Node):
         # Invalidate cached nested resolutions so the new mode takes effect
         Ar.GetResolver().RefreshContext(Ar.ResolverContext())
 
-        # Resolve once to drive the existence check and version label
+        # Resolve via the entity resolver and feed the inner sublayer LOP a
+        # plain filesystem path. The URI form does not survive Houdini's
+        # geometry-parm + chs() pipeline cleanly, so we let the resolver do
+        # its work here and stash the resolved path. Nested entity:// URIs
+        # inside the loaded layer continue to go through the resolver at
+        # USD load time.
         resolved = resolver.resolve_entity_uri(staged_uri)
         if not resolved or not Path(resolved).exists():
+            self.parm('import_filepath1').set('')
             ns.set_node_comment(native, "Bypassed: No staged file found")
             native.bypass(True)
             return result.Value(None)
 
-        # Set import node filepath to the entity URI; the resolver translates it
-        self.parm('import_filepath1').set(staged_uri)
+        self.parm('import_filepath1').set(resolved)
 
         # Update version label with resolved folder name
         resolved_version = Path(resolved).parent.name

@@ -1410,27 +1410,6 @@ def latest_export_path(
     )
     return latest_version_path
 
-def latest_export_file_path(
-    entity_uri: Uri,
-    variant_name: str,
-    department_name: str
-    ) -> Optional[Path]:
-    """Get the latest USD file path for an export."""
-    latest_version_path = latest_export_path(
-        entity_uri,
-        variant_name,
-        department_name
-    )
-    if latest_version_path is None: return None
-    version_name = latest_version_path.name
-    usd_file_name = get_layer_file_name(
-        entity_uri,
-        variant_name,
-        department_name,
-        version_name
-    )
-    return latest_version_path / usd_file_name
-
 def next_export_path(
     entity_uri: Uri,
     variant_name: str,
@@ -1445,26 +1424,6 @@ def next_export_path(
     )
     export_path = api.storage.resolve(export_uri)
     return get_next_version_path(export_path)
-
-def next_export_file_path(
-    entity_uri: Uri,
-    variant_name: str,
-    department_name: str
-    ) -> Path:
-    """Get the next USD file path for an export."""
-    version_path = next_export_path(
-        entity_uri,
-        variant_name,
-        department_name
-    )
-    version_name = version_path.name
-    usd_file_name = get_layer_file_name(
-        entity_uri,
-        variant_name,
-        department_name,
-        version_name
-    )
-    return version_path / usd_file_name
 
 def get_export_uri(
     entity_uri: Uri,
@@ -1488,15 +1447,34 @@ def get_layer_file_name(
     department_name: str,
     version_name: str
     ) -> str:
-    """Get layer filename (.usd or .usda for root).
+    """Get layer filename for a department export.
 
-    Returns the filename for department layer exports.
-    Root department uses .usda extension for human readability.
     Filename format: {entity}_{variant}_{dept}_{version}.usd
+
+    Must match the resolver's department-flavor rule (resolve.rs:62-66).
+    For the root department, use ``get_root_layer_file_name`` instead — the
+    root layer is shot-level and does not include a variant in its name.
+    """
+    assert department_name != 'root', (
+        "use get_root_layer_file_name() for the root department"
+    )
+    entity_name = '_'.join(entity_uri.segments)
+    return f'{entity_name}_{variant_name}_{department_name}_{version_name}.usd'
+
+def get_root_layer_file_name(
+    entity_uri: Uri,
+    version_name: str
+    ) -> str:
+    """Get root-department layer filename.
+
+    Filename format: {entity}_root_{version}.usda
+
+    Must match the resolver's root-flavor rule (resolve.rs:113). The root
+    layer is shot-level and has no variant axis, so unlike ordinary
+    department layers the variant is not part of the filename.
     """
     entity_name = '_'.join(entity_uri.segments)
-    ext = '.usda' if department_name == 'root' else '.usd'
-    return f'{entity_name}_{variant_name}_{department_name}_{version_name}{ext}'
+    return f'{entity_name}_root_{version_name}.usda'
 
 ###############################################################################
 # Shared Export Paths (for layer_split)
