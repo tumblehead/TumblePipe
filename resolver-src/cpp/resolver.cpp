@@ -12,27 +12,43 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-AR_DEFINE_RESOLVER(TumbleResolver, ArResolver);
-
 namespace {
 
 constexpr const char* kEntityScheme = "entity:";
 constexpr size_t kPathBufferSize = 1024;
 
-// Diagnostic logging: writes to stderr (fd 2) directly, bypassing TfDiagnostic
-// in case Houdini's diagnostic delegate suppresses TF_WARN. Gated on the
-// TH_RESOLVER_DEBUG env var so production installs stay silent.
-//
-// Each TumbleResolver method calls this on entry so we can see exactly which
-// ArResolver overrides Houdini's URI dispatch is invoking on us, with what
-// argument shape. If this prints nothing during a Resolve, dispatch isn't
-// reaching us at all.
-inline void _DebugLog(const char* fn, const char* arg) {
+// Diagnostic logging — gated on TH_RESOLVER_DEBUG. Writes to both
+// %TEMP%/tumble-resolver.log and stderr. The file path is the reliable
+// channel since Houdini's launcher routes stderr away from any place
+// callers can read; stderr is kept as a convenience for in-shell
+// fd-2 capture. Production installs stay silent unless the env var is set.
+bool _DebugEnabled() {
     static const bool enabled = []() {
         const char* v = std::getenv("TH_RESOLVER_DEBUG");
         return v && *v && std::strcmp(v, "0") != 0;
     }();
-    if (!enabled) return;
+    return enabled;
+}
+
+const char* _DebugLogPath() {
+    static std::string path = []() -> std::string {
+        const char* tmp = std::getenv("TEMP");
+        if (!tmp) tmp = std::getenv("TMP");
+        if (!tmp) tmp = ".";
+        std::string p = tmp;
+        p += "/tumble-resolver.log";
+        return p;
+    }();
+    return path.c_str();
+}
+
+inline void _DebugLog(const char* fn, const char* arg) {
+    if (!_DebugEnabled()) return;
+    std::FILE* f = std::fopen(_DebugLogPath(), "a");
+    if (f) {
+        std::fprintf(f, "[tumbleResolver] %s(\"%s\")\n", fn, arg ? arg : "");
+        std::fclose(f);
+    }
     std::fprintf(stderr, "[tumbleResolver] %s(\"%s\")\n", fn, arg ? arg : "");
     std::fflush(stderr);
 }
@@ -154,5 +170,36 @@ std::shared_ptr<ArWritableAsset> TumbleResolver::_OpenAssetForWrite(
     // USD's default filesystem resolver on the already-resolved path.
     return nullptr;
 }
+
+// Resolver factory registration.
+//
+// We deliberately do NOT use AR_DEFINE_RESOLVER here. That macro registers
+// via TF_REGISTRY_FUNCTION → ARCH_CONSTRUCTOR, which on Windows places an
+// `extern const Arch_ConstructorEntry` in the `.pxrctor` section via
+// `__declspec(allocate(".pxrctor"))`. The data is unreferenced from
+// anywhere else in the DLL, so MSVC's link.exe (observed on 14.44 / VS 2022
+// BuildTools, but not on 14.50 / VS 2026) eliminates it as dead data even
+// with /WHOLEARCHIVE on the .obj and /OPT:NOREF /OPT:NOICF on the link —
+// the .pxrctor section never makes it into the final PE, so
+// Arch_ConstructorInit has nothing to walk and Ar_ResolverFactory never
+// gets registered. Symptom: TfType.FindByName('TumbleResolver').isUnknown
+// is False (USD picks the type up from plugInfo.json metadata), the URI
+// scheme registers, but `Ar.GetResolver().Resolve('entity:/...')` throws
+// "Failed to manufacture asset resolver".
+//
+// A regular C++ static initializer goes through `.CRT$XCU` instead, which
+// MSVC always preserves regardless of toolchain version. Calling
+// Ar_DefineResolver<>() directly is what the AR_DEFINE_RESOLVER macro
+// would have done; we just bypass the section-based registry mechanism
+// and rely on the standard CRT init path.
+namespace {
+struct _ResolverRegistrar {
+    _ResolverRegistrar() {
+        _DebugLog("static_init_marker", "fired");
+        Ar_DefineResolver<TumbleResolver, ArResolver>();
+    }
+};
+const _ResolverRegistrar _resolverRegistrar;
+}  // namespace
 
 PXR_NAMESPACE_CLOSE_SCOPE
