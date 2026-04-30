@@ -63,12 +63,14 @@ Env inputs:
 - `TH_RESOLVER_LATEST_MODE` — when `1`/`true`, explicit `version=` params
   are ignored and the filesystem is scanned for the highest `vNNNN`.
 - `TH_RESOLVER_DEBUG` — when set (any non-empty value other than `0`),
-  the C++ shim writes one line to `stderr` on every `ArResolver` override
-  it sees (`_CreateIdentifier`, `_Resolve`, `_OpenAsset`, etc.). Used to
-  diagnose URI-dispatch problems where the plugin loads but `_Resolve`
-  doesn't appear to be reached. Capture via `os.dup2` on fd 2 from
-  Python; see the troubleshooting notes when the resolver returns empty
-  paths despite the plugin being registered.
+  the C++ shim appends one line to `%TEMP%/tumble-resolver.log` (and
+  duplicates to `stderr`) on every `ArResolver` override it sees
+  (`_CreateIdentifier`, `_Resolve`, `_OpenAsset`, etc.) plus a
+  `static_init_marker` line at DLL load. Used to diagnose URI-dispatch
+  problems where the plugin loads but `_Resolve` doesn't appear to be
+  reached. The file path is the reliable channel: Houdini's launcher
+  routes `stderr` away from the Python shell, but a plain `Read` of the
+  log file always works regardless of how Houdini was launched.
 
 ## Building
 
@@ -103,6 +105,23 @@ What happens under the hood:
    on MSVC, `-force_load` on Apple, `--whole-archive` on GNU) so linker
    dead-code passes can't drop static ctors. The `TumbleResolver` class
    also carries a `TH_RESOLVER_API` export annotation for the same reason.
+
+   Resolver factory registration deliberately does **not** use
+   `AR_DEFINE_RESOLVER`. That macro expands to a `TF_REGISTRY_FUNCTION`
+   block that places an `extern const Arch_ConstructorEntry` in a
+   `.pxrctor` PE section via `__declspec(allocate(".pxrctor"))`. On
+   MSVC that data is unreferenced from anywhere else in the DLL, so
+   link.exe drops it as dead — observed on MSVC 14.44 (VS 2022
+   BuildTools) but not 14.50 (VS 2026 Community), so the bug ships in
+   CI binaries while staying invisible in dev rebuilds. Factory never
+   gets registered, USD's `_PluginResolver::Create` returns null with
+   `Failed to manufacture asset resolver`, and `Ar.Resolve("entity:/...")`
+   throws. We instead register via a regular C++ static initializer at
+   the bottom of `resolver.cpp` that calls `Ar_DefineResolver<>()`
+   directly — that goes through `.CRT$XCU` (standard CRT init), which
+   every MSVC version preserves regardless of dead-code-elimination
+   settings. Same registration outcome, but the path that gets us
+   there is robust against the section-data-elimination behaviour.
 4. `plugInfo.json.in` is rendered with the platform-specific library
    filename.
 5. Install lays out `tumbleResolver/{lib,resources,BUILD_INFO}` at the

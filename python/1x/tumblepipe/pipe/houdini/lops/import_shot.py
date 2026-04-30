@@ -882,7 +882,7 @@ def create(scene, name):
     assert node_type is not None, 'Could not find import_shot node type'
     native = scene.node(name)
     if native is not None: return ImportShot(native)
-    return ImportShot(scene.createNode(node_type.name(), name))
+    return ImportShot(scene.createNode(node_type.name(), name, force_valid_node_name=True))
 
 def set_style(raw_node):
     raw_node.setColor(ns.COLOR_NODE_DEFAULT)

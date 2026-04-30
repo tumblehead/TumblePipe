@@ -38,6 +38,44 @@ from asset_browser.core.projects import ProjectConfig, ProjectRegistry
 
 log = logging.getLogger(__name__)
 
+# Render / playblast assets carry sentinel prefixes so their asset
+# ids don't collide with the 3-segment ``PROJECT/CAT/Name`` ids used
+# by regular assets/shots. Both encode (project, entity_kind, segs)
+# only — per-source detail (dept/layer/version) lives in metadata.
+_RENDER_ID_PREFIX = "@render:"
+_PLAYBLAST_ID_PREFIX = "@playblast:"
+
+# Storage URI purposes scanned by render discovery. ``render`` is
+# walked for EXR layers under ``<purpose>:/render/<kind>/<seq>/<shot>/``
+# and ``daily`` is walked for the flat ``<purpose>:/daily/<kind>/<dept>/<seq>_<shot>.mp4``
+# layout. Both feed into a single per-shot card.
+_RENDER_PURPOSES = ("render", "daily")
+
+# Lucide icon names per department — shared between Shot/Asset
+# department sub-cards and Playblast dept sub-cards. Add new depts
+# here and they pick up consistent iconography across both surfaces.
+_DEPT_ICONS = {
+    "model": "shapes",          # 3D shapes
+    "lookdev": "palette",        # color palette for shading
+    "rig": "bone",              # skeleton/rigging
+    "animation": "move-3d",     # 3D movement
+    "layout": "grid-3x3",       # scene layout
+    "render": "camera",         # camera/render
+    "light": "lamp",            # lighting
+    "cfx": "sparkles",          # cloth/hair FX
+    "composite": "layers",      # compositing layers
+    "effects": "zap",           # VFX
+    "blendshape": "blend",      # blending shapes
+    "environment": "mountain",  # environment/landscape
+    "crowd": "users",           # crowd of people
+}
+_DEPT_SHORT_NAMES = {
+    "animation": "Anim",
+    "blendshape": "Blend",
+    "composite": "Comp",
+    "environment": "Enviro",
+}
+
 
 def _cascade_counts(col: Collection) -> Collection:
     """Return a new Collection whose count is the sum of all descendant counts."""
@@ -111,7 +149,10 @@ class PipelineCatalog(Catalog):
 
     @property
     def icon(self) -> str:
-        return "database"
+        # Ship the catalog's brand icon from this package — the asset
+        # browser's icon loader supports absolute paths so external
+        # catalogs don't need to bake icons into TumbleTrove itself.
+        return str(Path(__file__).parent / "icons" / "tumblepipe.png")
 
     @property
     def default_project_tag(self) -> str:
@@ -160,10 +201,27 @@ class PipelineCatalog(Catalog):
         # project add / remove / refresh.
         self._cached_assets: list[Asset] | None = None
         self._cached_shots: list[Asset] | None = None
+        # Renders are scanned independently — same disk shapes (EXR
+        # sequences, daily MP4s) but resolved through
+        # ``tumblepipe.pipe.paths`` rather than the workfile scanner.
+        self._cached_renders: list[Asset] | None = None
+        # Playblasts: per-shot card aggregating dept-keyed MP4 previews.
+        # Disk-driven, parallel to renders.
+        self._cached_playblasts: list[Asset] | None = None
 
         # Per-asset, per-department version override.
         # Shape: {asset_id: {dept_name: version_label}}
         self._dept_version_overrides: dict[str, dict[str, str]] = {}
+
+        # Render thumbnail generation runs on background daemon
+        # threads, throttled to avoid spawning 50 ffmpeg processes
+        # at once when the user opens a panel full of fresh cards.
+        # ``_render_thumb_in_progress`` deduplicates so the same
+        # card isn't queued twice while one job is mid-flight.
+        import threading
+        self._render_thumb_in_progress: set[str] = set()
+        self._render_thumb_lock = threading.Lock()
+        self._render_thumb_sem = threading.Semaphore(2)
 
         # Tracks whether we've already warned the user about activating
         # a project that doesn't match Houdini's launch project. The
@@ -279,13 +337,99 @@ class PipelineCatalog(Catalog):
     ) -> tuple[str, str, str] | None:
         """Parse a 3-segment asset_id ``"PROJECT/CAT/Name"`` (or
         ``"PROJECT/SEQ/Shot"``). Returns ``(project, second, third)``
-        or ``None`` if the id is malformed."""
+        or ``None`` if the id is malformed.
+
+        Render / playblast ids (``@render:...`` / ``@playblast:...``)
+        intentionally return ``None`` so helpers that assume the
+        workfile shape (``_uri_for_asset_id``,
+        ``_get_department_workfile_info``, etc.) don't accidentally
+        process them.
+        """
         if not asset_id:
+            return None
+        if (
+            asset_id.startswith(_RENDER_ID_PREFIX)
+            or asset_id.startswith(_PLAYBLAST_ID_PREFIX)
+        ):
             return None
         parts = asset_id.split("/", 2)
         if len(parts) != 3:
             return None
         return parts[0], parts[1], parts[2]
+
+    def _is_render_asset_id(self, asset_id: str) -> bool:
+        return bool(asset_id) and asset_id.startswith(_RENDER_ID_PREFIX)
+
+    def _split_render_asset_id(
+        self, asset_id: str,
+    ) -> dict | None:
+        """Parse a render asset id of the form
+        ``@render:<proj>:<entity_kind>:<seg1>:<seg2>``.
+
+        One card represents one entity (typically a shot). All
+        layers / depts / dailies for that entity are stored as
+        ``metadata["sources"]`` rather than encoded in the id.
+
+        Returns ``{"project", "entity_kind", "entity_segs"}`` or
+        ``None`` for malformed ids.
+        """
+        if not self._is_render_asset_id(asset_id):
+            return None
+        body = asset_id[len(_RENDER_ID_PREFIX):]
+        parts = body.split(":")
+        if len(parts) != 4:
+            return None
+        project, entity_kind, seg1, seg2 = parts
+        return {
+            "project": project,
+            "entity_kind": entity_kind,
+            "entity_segs": (seg1, seg2),
+        }
+
+    def _make_render_asset_id(
+        self,
+        project: str,
+        entity_kind: str,
+        entity_segs: tuple[str, str],
+    ) -> str:
+        seg1, seg2 = entity_segs
+        body = ":".join([project, entity_kind, seg1, seg2])
+        return f"{_RENDER_ID_PREFIX}{body}"
+
+    def _is_playblast_asset_id(self, asset_id: str) -> bool:
+        return bool(asset_id) and asset_id.startswith(_PLAYBLAST_ID_PREFIX)
+
+    def _split_playblast_asset_id(
+        self, asset_id: str,
+    ) -> dict | None:
+        """Parse ``@playblast:<proj>:<entity_kind>:<seg1>:<seg2>``.
+
+        One card per entity (typically a shot). All depts that ship a
+        playblast for that entity are stored as ``metadata["depts"]``
+        and aren't encoded in the id.
+        """
+        if not self._is_playblast_asset_id(asset_id):
+            return None
+        body = asset_id[len(_PLAYBLAST_ID_PREFIX):]
+        parts = body.split(":")
+        if len(parts) != 4:
+            return None
+        project, entity_kind, seg1, seg2 = parts
+        return {
+            "project": project,
+            "entity_kind": entity_kind,
+            "entity_segs": (seg1, seg2),
+        }
+
+    def _make_playblast_asset_id(
+        self,
+        project: str,
+        entity_kind: str,
+        entity_segs: tuple[str, str],
+    ) -> str:
+        seg1, seg2 = entity_segs
+        body = ":".join([project, entity_kind, seg1, seg2])
+        return f"{_PLAYBLAST_ID_PREFIX}{body}"
 
     def _project_for_asset_id(self, asset_id: str) -> ProjectConfig | None:
         parts = self._split_asset_id(asset_id)
@@ -427,10 +571,12 @@ class PipelineCatalog(Catalog):
         seqs = self._list_sequences()
         return {
             "source": ["pipeline"],
-            "type": ["asset", "shot"],
+            "type": ["asset", "shot", "render", "playblast"],
             "category": [c.lower() for c in cats],
             "sequence": seqs,
             "project": [p.name for p in self._registry.all()],
+            "has": ["exr", "daily"],
+            "kind": ["media"],
         }
 
     # ── Collections ───────────────────────────────────────
@@ -511,6 +657,40 @@ class PipelineCatalog(Catalog):
                 children=tuple(seq_children),
             ))
 
+        # Media section — Renders (per shot, with raw/denoise/slapcomp/
+        # daily as detail-panel sources) + Playblasts (per shot, with
+        # one sub-card per dept). Only added when at least one media
+        # asset exists. Parent is navigation-only; children carry the
+        # tag filters that scope the grid.
+        render_total = self._count_for_project_renders(proj.name)
+        playblast_total = self._count_for_project_playblasts(proj.name)
+        media_children: list[Collection] = []
+        if render_total:
+            media_children.append(Collection(
+                id=f"{proj.name}:renders_section",
+                label="Renders",
+                count=render_total,
+                tag=f"{project_tag}+type:render",
+                icon="film",
+            ))
+        if playblast_total:
+            media_children.append(Collection(
+                id=f"{proj.name}:playblasts_section",
+                label="Playblasts",
+                count=playblast_total,
+                tag=f"{project_tag}+type:playblast",
+                icon="circle-play",
+            ))
+        if media_children:
+            sections.append(Collection(
+                id=f"{proj.name}:media_section",
+                label="Media",
+                count=render_total + playblast_total,
+                tag=f"{project_tag}+kind:media",
+                icon="image-play",
+                children=tuple(media_children),
+            ))
+
         group_children = self._build_groups_for_project(proj)
         sections.append(Collection(
             id=f"{proj.name}:groups_section",
@@ -546,7 +726,7 @@ class PipelineCatalog(Catalog):
         ]
         sections.append(Collection(
             id=f"{proj.name}:todos_section",
-            label="Todos",
+            label="Tasks",
             icon="list-todo",
             children=tuple(todo_children),
         ))
@@ -571,6 +751,22 @@ class PipelineCatalog(Catalog):
         return sum(
             1 for a in items
             if seq_tag in a.tags and proj_tag in a.tags
+        )
+
+    def _count_for_project_renders(self, project_name: str) -> int:
+        items = self._get_all_items()
+        proj_tag = f"project:{project_name}"
+        return sum(
+            1 for a in items
+            if "type:render" in a.tags and proj_tag in a.tags
+        )
+
+    def _count_for_project_playblasts(self, project_name: str) -> int:
+        items = self._get_all_items()
+        proj_tag = f"project:{project_name}"
+        return sum(
+            1 for a in items
+            if "type:playblast" in a.tags and proj_tag in a.tags
         )
 
     def _count_todos_for_project(
@@ -919,7 +1115,11 @@ class PipelineCatalog(Catalog):
     # ── Detail ────────────────────────────────────────────
 
     def get_detail(self, asset_id: str, version: str | None = None) -> AssetDetail:
-        # asset_id format: "PROJECT/CATEGORY/AssetName" or "PROJECT/SEQ/Shot"
+        # asset_id format: "PROJECT/CATEGORY/AssetName" or "PROJECT/SEQ/Shot",
+        # or a render id (``@render:...``) — handled separately.
+        if self._is_render_asset_id(asset_id):
+            return self._get_render_detail(asset_id)
+
         parsed = self._split_asset_id(asset_id)
         if parsed is None:
             return AssetDetail(
@@ -984,6 +1184,85 @@ class PipelineCatalog(Catalog):
         return AssetDetail(
             id=asset_id,
             name=third,
+            thumbnail_url="",
+            tags=frozenset(tags),
+            description=description,
+            metadata=metadata,
+        )
+
+    def _get_render_detail(self, asset_id: str) -> AssetDetail:
+        """Build an ``AssetDetail`` for a render asset.
+
+        Mirrors the source ``Asset`` (tags + metadata) and adds a
+        small render-specific summary as the description so the Info
+        tab has something useful to show.
+        """
+        parsed = self._split_render_asset_id(asset_id)
+        if parsed is None:
+            return AssetDetail(
+                id=asset_id, name=asset_id, thumbnail_url="",
+                tags=frozenset({"source:pipeline", "type:render"}),
+            )
+
+        # Look up the cached Asset so we re-use the discovery work
+        # rather than re-scanning the disk.
+        source = next(
+            (a for a in self._get_all_items() if a.id == asset_id),
+            None,
+        )
+        tags = set(source.tags) if source else {
+            "source:pipeline",
+            "type:render",
+            f"project:{parsed['project']}",
+        }
+        metadata: dict = dict(source.metadata) if source else {}
+
+        # Frame range from the primary source's context.json. Skipped
+        # when the primary is a daily MP4 (no context file).
+        frame_range = ""
+        primary_key = metadata.get("primary_source", "")
+        sources = metadata.get("sources") or {}
+        primary_info = sources.get(primary_key) if primary_key else None
+        if primary_info and primary_info.get("kind") == "exr":
+            layer = self._resolve_render_layer(asset_id)
+            if layer is not None:
+                try:
+                    fr = layer.get_frame_range()
+                    if fr is not None:
+                        first = getattr(fr, "first_frame", None)
+                        last = getattr(fr, "last_frame", None)
+                        if first is not None and last is not None:
+                            frame_range = f"{first}-{last}"
+                except Exception:
+                    pass
+        if frame_range:
+            metadata["frame_range"] = frame_range
+
+        seg1, seg2 = parsed["entity_segs"]
+        entity_label = (
+            f"{seg1}_{seg2}" if parsed["entity_kind"] == "shots" else seg2
+        )
+        # Description summary — primary source + frame range + AOVs.
+        bits = [entity_label]
+        if primary_info is not None:
+            bits.append(
+                f"Primary: {self._render_source_label(primary_key, primary_info)}",
+            )
+        if frame_range:
+            bits.append(f"Frames: {frame_range}")
+        versions = metadata.get("versions") or []
+        if versions:
+            bits.append(f"Versions: {', '.join(versions)}")
+        aovs = metadata.get("aovs") or []
+        if aovs:
+            bits.append(f"AOVs: {', '.join(aovs)}")
+        description = "\n".join(bits)
+
+        name = source.name if source else entity_label
+
+        return AssetDetail(
+            id=asset_id,
+            name=name,
             thumbnail_url="",
             tags=frozenset(tags),
             description=description,
@@ -1097,6 +1376,11 @@ class PipelineCatalog(Catalog):
         Sidecar lives next to ``description.txt`` in the asset/shot
         root directory so it follows the same project share semantics.
         """
+        if self._is_render_asset_id(asset_id):
+            return self._render_thumbnail_path(asset_id)
+        if self._is_playblast_asset_id(asset_id):
+            return self._playblast_thumbnail_path(asset_id)
+
         parsed = self._split_asset_id(asset_id)
         if parsed is None:
             return None
@@ -1111,20 +1395,388 @@ class PipelineCatalog(Catalog):
         except Exception:
             return None
 
+    def _render_thumbnail_path(self, asset_id: str) -> Path | None:
+        """Return the on-disk thumbnail path for a render card.
+
+        Sidecar lives next to the *primary source's* media:
+        - EXR primary:   ``<latest_version_dir>/thumbnail.png``
+        - Daily primary: ``<mp4>.thumbnail.png``
+
+        Returns ``None`` when the source isn't on disk yet.
+        """
+        info = self._resolve_render_source(asset_id, source=None)
+        if info is None:
+            return None
+        src = info["info"]
+        if src.get("kind") == "daily":
+            path_str = src.get("path")
+            if not path_str:
+                return None
+            mp4 = Path(path_str)
+            return mp4.with_suffix(mp4.suffix + ".thumbnail.png")
+        # EXR — the cached path is the latest version dir.
+        path_str = src.get("path")
+        if not path_str:
+            return None
+        return Path(path_str) / "thumbnail.png"
+
+    def _playblast_thumbnail_path(self, asset_id: str) -> Path | None:
+        """Return the sidecar thumbnail path for a playblast card —
+        ``<latest_mp4>.thumbnail.png`` for the primary dept's latest
+        version. Returns ``None`` when nothing is on disk.
+        """
+        mp4 = self._resolve_playblast_path(asset_id, dept=None)
+        if mp4 is None:
+            return None
+        return mp4.with_suffix(mp4.suffix + ".thumbnail.png")
+
     def get_thumbnail(self, asset: Asset):
         """Return the path to the asset's sidecar thumbnail if present.
 
         Falls back to an empty string (placeholder icon) when there
-        isn't one yet — the user can attach one via the card menu.
+        isn't one yet. For render / playblast assets, schedules a
+        background thumbnail generation from the primary source's
+        latest media so the grid stays responsive — the new thumbnail
+        appears on the next refresh once iconvert/ffmpeg finishes.
         """
         p = self._thumbnail_path(asset.id)
         if p is not None and p.exists():
             return p
+        if (
+            self._is_render_asset_id(asset.id)
+            or self._is_playblast_asset_id(asset.id)
+        ):
+            self._schedule_media_thumbnail(asset)
         return ""
+
+    def _schedule_media_thumbnail(self, asset: Asset) -> None:
+        """Kick off a background thumbnail generation for a render or
+        playblast asset. No-op if one is already in progress for this
+        id.
+
+        Daemon thread bounded by a Semaphore (2 concurrent). Reads
+        source paths straight from ``asset.metadata`` so the worker
+        doesn't touch project env vars. Refresh dispatched on the
+        GUI thread when complete.
+        """
+        aid = asset.id
+        with self._render_thumb_lock:
+            if aid in self._render_thumb_in_progress:
+                return
+            self._render_thumb_in_progress.add(aid)
+        import threading
+        threading.Thread(
+            target=self._media_thumb_worker,
+            args=(asset,),
+            daemon=True,
+            name=f"MediaThumb-{aid[:32]}",
+        ).start()
+
+    def _media_thumb_worker(self, asset: Asset) -> None:
+        try:
+            with self._render_thumb_sem:
+                if self._is_playblast_asset_id(asset.id):
+                    generated = self._playblast_generate_thumbnail_from_metadata(
+                        asset,
+                    )
+                else:
+                    generated = self._render_generate_thumbnail_from_metadata(
+                        asset,
+                    )
+            if generated is not None:
+                # Refresh on the GUI thread — _request_thumbnail_refresh
+                # walks Qt widgets which is GUI-thread-only.
+                try:
+                    from asset_browser.core.thumbnail import _gui_singleshot
+                    _gui_singleshot(
+                        lambda aid=asset.id:
+                            self._request_thumbnail_refresh(aid),
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            log.debug(
+                "Background media thumbnail failed for %s",
+                asset.id, exc_info=True,
+            )
+        finally:
+            with self._render_thumb_lock:
+                self._render_thumb_in_progress.discard(asset.id)
+
+    # ── Render thumbnail generation ───────────────────────
+
+    def _render_generate_thumbnail_from_metadata(
+        self, asset: Asset,
+    ) -> Path | None:
+        """Build a first-frame thumbnail PNG from the primary source's
+        cached on-disk path. Reads only ``asset.metadata`` so the
+        worker doesn't touch project env vars.
+        """
+        meta = asset.metadata or {}
+        sources = meta.get("sources") or {}
+        primary_key = (
+            meta.get("primary_source")
+            or (
+                self._pick_primary_source(sources) if sources else None
+            )
+        )
+        if not primary_key or primary_key not in sources:
+            return None
+        src = sources[primary_key]
+
+        if src.get("kind") == "daily":
+            mp4_str = src.get("path")
+            if not mp4_str:
+                return None
+            mp4 = Path(mp4_str)
+            if not mp4.exists():
+                return None
+            out = mp4.with_suffix(mp4.suffix + ".thumbnail.png")
+            if out.exists():
+                return out
+            try:
+                out.parent.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                return None
+            return self._render_thumb_from_mp4(mp4, out)
+
+        # EXR primary
+        layer_str = src.get("path")
+        if not layer_str:
+            return None
+        layer_path = Path(layer_str)
+        if not layer_path.is_dir():
+            return None
+        out = layer_path / "thumbnail.png"
+        if out.exists():
+            return out
+        first_frame = self._render_first_frame_in_dir(layer_path)
+        if first_frame is None:
+            return None
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return None
+        return self._render_thumb_from_exr(first_frame, out)
+
+    def _playblast_generate_thumbnail_from_metadata(
+        self, asset: Asset,
+    ) -> Path | None:
+        """Build a first-frame thumbnail PNG for a playblast card from
+        the primary dept's latest MP4. Reads only ``asset.metadata``
+        so the worker doesn't touch project env vars.
+        """
+        meta = asset.metadata or {}
+        depts = meta.get("depts") or {}
+        primary = meta.get("primary_dept")
+        if not primary or primary not in depts:
+            return None
+        path_str = depts[primary].get("path")
+        if not path_str:
+            return None
+        mp4 = Path(path_str)
+        if not mp4.exists():
+            return None
+        out = mp4.with_suffix(mp4.suffix + ".thumbnail.png")
+        if out.exists():
+            return out
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return None
+        return self._render_thumb_from_mp4(mp4, out)
+
+    @staticmethod
+    def _render_first_frame_in_dir(version_dir: Path):
+        """Return the lowest-numbered EXR/JPG actually on disk.
+
+        Looks at flat layer files first, then drops into the first
+        AOV subdir. Mirrors ``_render_first_frame_path`` but takes
+        a raw Path so it works without a Layer dataclass.
+        """
+        try:
+            flat = sorted(
+                f for f in version_dir.iterdir()
+                if f.is_file() and f.suffix.lower() in (".exr", ".jpg", ".png", ".tif")
+            )
+            if flat:
+                return flat[0]
+        except Exception:
+            pass
+        try:
+            for sub in sorted(version_dir.iterdir()):
+                if not sub.is_dir() or sub.suffix != "":
+                    continue
+                aov_files = sorted(
+                    f for f in sub.iterdir()
+                    if f.is_file() and f.suffix.lower() in (".exr", ".jpg", ".png", ".tif")
+                )
+                if aov_files:
+                    return aov_files[0]
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _render_first_frame_path(layer):
+        """Return the lowest-numbered EXR (or sidecar suffix) actually
+        on disk for ``layer``. Prefers the layer's own frames; falls
+        back to the first AOV's beauty-equivalent when the layer is
+        AOV-only.
+        """
+        try:
+            frame_glob = layer.get_frame_path("*")
+            candidates = sorted(
+                frame_glob.parent.glob(frame_glob.name),
+                key=lambda p: p.name,
+            )
+            if candidates:
+                return candidates[0]
+        except Exception:
+            pass
+        # Layer has no flat frames — try the first AOV directory
+        try:
+            for aov in layer.aovs.values():
+                aov_glob = aov.get_aov_frame_path("*")
+                aov_candidates = sorted(
+                    aov_glob.parent.glob(aov_glob.name),
+                    key=lambda p: p.name,
+                )
+                if aov_candidates:
+                    return aov_candidates[0]
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _render_thumb_from_exr(src: Path, out: Path) -> Path | None:
+        """Convert an EXR to a 512px PNG via Houdini's ``iconvert``.
+
+        Returns the output path on success or ``None`` on failure.
+        ``iconvert`` ships with Houdini and lives on PATH inside the
+        Houdini environment.
+        """
+        import shutil
+        import subprocess
+        exe = shutil.which("iconvert")
+        if exe is None:
+            log.debug("iconvert not on PATH — skipping EXR thumbnail")
+            return None
+        try:
+            subprocess.run(
+                [exe, str(src), str(out)],
+                check=True,
+                creationflags=0x08000000,
+                capture_output=True,
+                timeout=30,
+            )
+        except Exception:
+            log.debug("iconvert failed for %s", src, exc_info=True)
+            try:
+                out.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return None
+        return out if out.exists() else None
+
+    @staticmethod
+    def _render_thumb_from_mp4(src: Path, out: Path) -> Path | None:
+        """Extract the first frame of ``src`` as a 512px PNG via ffmpeg."""
+        import shutil
+        import subprocess
+        exe = shutil.which("ffmpeg")
+        if exe is None:
+            log.debug("ffmpeg not on PATH — skipping MP4 thumbnail")
+            return None
+        try:
+            subprocess.run(
+                [
+                    exe, "-y", "-loglevel", "error",
+                    "-i", str(src),
+                    "-vf", "scale=512:-1",
+                    "-frames:v", "1",
+                    str(out),
+                ],
+                check=True,
+                creationflags=0x08000000,
+                capture_output=True,
+                timeout=30,
+            )
+        except Exception:
+            log.debug("ffmpeg thumbnail failed for %s", src, exc_info=True)
+            try:
+                out.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return None
+        return out if out.exists() else None
 
     def get_card_menu_items(self, asset: Asset):
         """Catalog-contributed card right-click items."""
         asset_id = asset.id
+
+        # Playblast cards: small viewer menu mirroring renders.
+        # mplay omitted because mplay can't play MP4.
+        if "type:playblast" in asset.tags:
+            return [
+                (
+                    "Open Latest in DJV",
+                    lambda aid=asset_id:
+                        self._execute_playblast_action(
+                            "playblast_open_djv", aid,
+                        ),
+                ),
+                (
+                    "Open Folder",
+                    lambda aid=asset_id:
+                        self._execute_playblast_action(
+                            "playblast_open_folder", aid,
+                        ),
+                ),
+            ]
+
+        # Render assets get a small viewer-focused menu — none of the
+        # workfile/database items make sense for a frame sequence.
+        if "type:render" in asset.tags:
+            # mplay only when the primary source is EXR. Daily-only
+            # cards still get a DJV button (mplay can't play MP4).
+            sources = (asset.metadata or {}).get("sources") or {}
+            primary_key = (
+                (asset.metadata or {}).get("primary_source")
+                or (
+                    self._pick_primary_source(sources)
+                    if sources else ""
+                )
+            )
+            primary_is_daily = (
+                bool(primary_key)
+                and sources.get(primary_key, {}).get("kind") == "daily"
+            )
+            menu: list = []
+            if not primary_is_daily:
+                menu.append((
+                    "Open in MPlay (latest)",
+                    lambda aid=asset_id:
+                        self._execute_render_action(
+                            "render_open_mplay", aid,
+                        ),
+                ))
+            menu.append((
+                "Open in DJV (latest)",
+                lambda aid=asset_id:
+                    self._execute_render_action(
+                        "render_open_djv", aid,
+                    ),
+            ))
+            menu.append((
+                "Open Folder",
+                lambda aid=asset_id:
+                    self._execute_render_action(
+                        "render_open_folder", aid,
+                    ),
+            ))
+            return menu
+
         items = [
             (
                 "Generate Master…",
@@ -1135,7 +1787,7 @@ class PipelineCatalog(Catalog):
                 lambda aid=asset_id: self._edit_description(aid),
             ),
             (
-                "Todos…",
+                "Tasks…",
                 lambda a=asset: self._manage_todos(a),
             ),
             (
@@ -1193,6 +1845,58 @@ class PipelineCatalog(Catalog):
         a fresh version from either the loaded scene or a template
         regardless of whether the dept already has versions.
         """
+        # Playblast dept sub-cards → DJV / open folder for that dept's
+        # latest version. ``sub_card_key`` is the dept name.
+        if "type:playblast" in asset.tags:
+            asset_id = asset.id
+            dept = sub_card_key
+            return [
+                (
+                    f"Open in DJV ({dept})",
+                    lambda aid=asset_id, d=dept:
+                        self._execute_playblast_action(
+                            "playblast_open_djv", aid, dept=d,
+                        ),
+                ),
+                (
+                    "Open Folder",
+                    lambda aid=asset_id, d=dept:
+                        self._execute_playblast_action(
+                            "playblast_open_folder", aid, dept=d,
+                        ),
+                ),
+            ]
+
+        # Render AOV sub-cards → mplay / djv / open folder scoped to
+        # that pass within the primary source's latest version.
+        # ``sub_card_key`` is the AOV name (e.g. "beauty", "normal").
+        if "type:render" in asset.tags:
+            asset_id = asset.id
+            aov = sub_card_key
+            return [
+                (
+                    f"Open in MPlay ({aov})",
+                    lambda aid=asset_id, a=aov:
+                        self._execute_render_action(
+                            "render_open_mplay", aid, aov=a,
+                        ),
+                ),
+                (
+                    f"Open in DJV ({aov})",
+                    lambda aid=asset_id, a=aov:
+                        self._execute_render_action(
+                            "render_open_djv", aid, aov=a,
+                        ),
+                ),
+                (
+                    "Open Folder",
+                    lambda aid=asset_id, a=aov:
+                        self._execute_render_action(
+                            "render_open_folder", aid, aov=a,
+                        ),
+                ),
+            ]
+
         dept = sub_card_key
         asset_id = asset.id
         if self._uri_for_asset_id(asset_id) is None:
@@ -1763,6 +2467,18 @@ class PipelineCatalog(Catalog):
     def get_detail_sections(
         self, detail: AssetDetail,
     ) -> list[DetailSection] | None:
+        # Render / Playblast cards get a simpler Info-only panel —
+        # workfile Departments / Tasks tabs don't apply.
+        if "type:render" in detail.tags or "type:playblast" in detail.tags:
+            return [
+                DetailSection(
+                    key="info",
+                    title="Info",
+                    icon="info",
+                    widget_factory=self._build_combined_info_section,
+                ),
+            ]
+
         # Asset actions live at the TOP of the detail panel so their
         # placement is consistent across assets — the user always knows
         # where Save/Publish/Refresh are regardless of selection.
@@ -1797,37 +2513,143 @@ class PipelineCatalog(Catalog):
             actions_title = "Scene Actions"
 
         sections: list[DetailSection] = [
-            DetailSection(key="description"),
+            DetailSection(
+                key="info",
+                title="Info",
+                icon="info",
+                widget_factory=self._build_combined_info_section,
+            ),
+            DetailSection(
+                key="departments",
+                title="Departments",
+                icon="layers-3",
+                widget_factory=self._build_combined_departments_section,
+            ),
+            DetailSection(
+                key="todos",
+                title="Tasks",
+                icon="list-todo",
+                widget_factory=self._build_todos_section,
+            ),
         ]
-        if "type:asset" in detail.tags:
-            sections.append(DetailSection(
-                key="asset_info",
-                title="Asset Info",
-                widget_factory=self._build_asset_info_section,
-            ))
-        if "type:shot" in detail.tags:
-            sections.append(DetailSection(
-                key="shot_info",
-                title="Shot Info",
-                widget_factory=self._build_shot_info_section,
-            ))
-        sections.append(DetailSection(
-            key="departments",
-            title="Departments",
-            widget_factory=self._build_departments_section,
-        ))
-        sections.append(DetailSection(
-            key="membership",
-            title="Groups & Scenes",
-            widget_factory=self._build_membership_section,
-        ))
-        sections.append(DetailSection(
-            key="todos",
-            title="Todos",
-            widget_factory=self._build_todos_section,
-        ))
-        sections.append(DetailSection(key="actions"))
+        # Stash for use inside the combined info section (the actions
+        # widget builds inline rather than as a tab now).
+        self._actions_section_title = actions_title
         return sections
+
+    def _build_combined_info_section(self, ctx: DetailContext):
+        """Info tab content — description, asset/shot info table,
+        Open-in-Database-Editor, and the catalog's per-asset action
+        buttons (Import to Scene, Open Export Folder, Edit, Delete).
+        """
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import (
+            QHBoxLayout, QLabel, QVBoxLayout, QWidget,
+        )
+        from asset_browser.ui.detail_panel import ElidingPushButton
+        from asset_browser.core.theme import (
+            BUTTON_GHOST_STYLE, DANGER,
+        )
+        detail = ctx.detail
+
+        holder = QWidget()
+        vbox = QVBoxLayout(holder)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(8)
+
+        # Description (plain paragraph)
+        if detail.description:
+            desc = QLabel(detail.description)
+            desc.setWordWrap(True)
+            desc.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            vbox.addWidget(desc)
+
+        # Asset / Shot / Render / Playblast info table
+        is_render = "type:render" in detail.tags
+        is_playblast = "type:playblast" in detail.tags
+        if "type:asset" in detail.tags:
+            info_w = self._build_asset_info_section(ctx)
+            if info_w is not None:
+                vbox.addWidget(info_w)
+        elif "type:shot" in detail.tags:
+            info_w = self._build_shot_info_section(ctx)
+            if info_w is not None:
+                vbox.addWidget(info_w)
+        elif is_render:
+            info_w = self._build_render_info_section(ctx)
+            if info_w is not None:
+                vbox.addWidget(info_w)
+        elif is_playblast:
+            info_w = self._build_playblast_info_section(ctx)
+            if info_w is not None:
+                vbox.addWidget(info_w)
+
+        # Open in Database Editor — only for entity-backed assets;
+        # renders + playblasts are filesystem-only so the button
+        # would be a dead link.
+        if not (is_render or is_playblast):
+            db_btn = ElidingPushButton("Open in Database Editor…")
+            db_btn.setStyleSheet(BUTTON_GHOST_STYLE)
+            db_btn.clicked.connect(
+                lambda _checked=False, aid=detail.id: self._open_database_editor(aid)
+            )
+            vbox.addWidget(db_btn)
+
+        # Per-asset action buttons (formerly the standalone Actions tab)
+        try:
+            actions = self.get_actions(detail)
+        except Exception:
+            log.exception("get_actions failed for %s", detail.id)
+            actions = []
+        for action in actions:
+            if getattr(action, "file_id", None) is not None:
+                continue  # file-bound download actions are not surfaced here
+            btn = ElidingPushButton(action.label)
+            if getattr(action, "destructive", False):
+                btn.setStyleSheet(
+                    BUTTON_GHOST_STYLE
+                    + f"\nQPushButton {{ color: {DANGER}; }}"
+                    + f"\nQPushButton:hover {{ background-color: {DANGER};"
+                    f" color: white; }}"
+                )
+            else:
+                btn.setStyleSheet(BUTTON_GHOST_STYLE)
+            btn.setEnabled(getattr(action, "enabled", True))
+            if getattr(action, "tooltip", ""):
+                btn.setToolTip(action.tooltip)
+            btn.clicked.connect(
+                lambda _checked=False, a=action, d=detail:
+                    self.execute_action(a.id, d)
+            )
+            vbox.addWidget(btn)
+
+        vbox.addStretch(1)
+        return holder
+
+    def _build_combined_departments_section(self, ctx: DetailContext):
+        """Departments tab content — the existing departments grid plus
+        the Groups & Scenes membership pills below.
+        """
+        from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+        holder = QWidget()
+        vbox = QVBoxLayout(holder)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(8)
+
+        depts_w = self._build_departments_section(ctx)
+        if depts_w is not None:
+            vbox.addWidget(depts_w)
+
+        try:
+            mem_w = self._build_membership_section(ctx)
+        except Exception:
+            mem_w = None
+        if mem_w is not None:
+            vbox.addWidget(mem_w)
+
+        vbox.addStretch(1)
+        return holder
 
     def _build_asset_info_section(self, ctx: DetailContext):
         meta = ctx.detail.metadata or {}
@@ -1839,6 +2661,82 @@ class PipelineCatalog(Catalog):
         variants = meta.get("variants") or []
         if variants:
             rows.append(("Variants", ", ".join(variants)))
+        return self._build_info_table(rows)
+
+    def _build_playblast_info_section(self, ctx: DetailContext):
+        meta = ctx.detail.metadata or {}
+        rows: list[tuple[str, str]] = []
+        if meta.get("project"):
+            rows.append(("Project", str(meta["project"])))
+        entity_segs = meta.get("entity_segs") or []
+        entity_kind = meta.get("entity_kind") or ""
+        if len(entity_segs) >= 2:
+            rows.append((
+                entity_kind.title().rstrip("s") or "Entity",
+                f"{entity_segs[0]}/{entity_segs[1]}",
+            ))
+        depts = meta.get("depts") or {}
+        primary = meta.get("primary_dept")
+        if depts:
+            # ``light* (v0005, 3 versions)`` per dept; primary marked.
+            labels = []
+            ordered = (
+                [primary] + sorted(d for d in depts if d != primary)
+            ) if primary in depts else sorted(depts.keys())
+            for d in ordered:
+                summary = depts[d]
+                latest = summary.get("latest", "?")
+                vcount = len(summary.get("versions", []) or [])
+                marker = "*" if d == primary else ""
+                bits = f"{latest}"
+                if vcount > 1:
+                    bits += f" ({vcount} versions)"
+                labels.append(f"{d}{marker}: {bits}")
+            rows.append(("Depts", "; ".join(labels)))
+        if meta.get("latest_update"):
+            try:
+                import datetime
+                ts = datetime.datetime.fromtimestamp(
+                    meta["latest_update"],
+                ).strftime("%Y-%m-%d %H:%M")
+                rows.append(("Updated", ts))
+            except Exception:
+                pass
+        return self._build_info_table(rows)
+
+    def _build_render_info_section(self, ctx: DetailContext):
+        meta = ctx.detail.metadata or {}
+        rows: list[tuple[str, str]] = []
+        if meta.get("project"):
+            rows.append(("Project", str(meta["project"])))
+        entity_segs = meta.get("entity_segs") or []
+        entity_kind = meta.get("entity_kind") or ""
+        if len(entity_segs) >= 2:
+            rows.append((
+                entity_kind.title().rstrip("s") or "Entity",
+                f"{entity_segs[0]}/{entity_segs[1]}",
+            ))
+        sources = meta.get("sources") or {}
+        primary = meta.get("primary_source")
+        if sources:
+            # Friendly source list with the primary marked. Daily
+            # entries get a (daily) suffix to disambiguate from
+            # an EXR layer of the same dept name.
+            labels = []
+            for k in self._sorted_source_keys(sources):
+                label = self._render_source_label(k, sources[k])
+                if k == primary:
+                    label = f"{label}*"
+                labels.append(label)
+            rows.append(("Sources", ", ".join(labels)))
+        if meta.get("frame_range"):
+            rows.append(("Frame Range", str(meta["frame_range"])))
+        versions = meta.get("versions") or []
+        if versions:
+            rows.append(("Versions", ", ".join(versions)))
+        aovs = meta.get("aovs") or []
+        if aovs:
+            rows.append(("AOVs", ", ".join(aovs)))
         return self._build_info_table(rows)
 
     def _build_shot_info_section(self, ctx: DetailContext):
@@ -2018,7 +2916,7 @@ class PipelineCatalog(Catalog):
         )
 
         if not todos:
-            empty = QLabel("No todos.")
+            empty = QLabel("No tasks.")
             empty.setStyleSheet(
                 f'color: {TEXT_DIM}; font-family: "{FONT_FAMILY}"; '
                 f"font-size: {FONT_SMALL}px; background: transparent;"
@@ -2057,7 +2955,7 @@ class PipelineCatalog(Catalog):
         footer.setContentsMargins(0, 6, 0, 0)
         footer.setSpacing(4)
         add_input = QLineEdit()
-        add_input.setPlaceholderText("Add todo…")
+        add_input.setPlaceholderText("Add task…")
         add_input.setStyleSheet(
             f"QLineEdit {{"
             f"  background-color: {BG_DARK};"
@@ -2085,7 +2983,7 @@ class PipelineCatalog(Catalog):
         add_btn.setFlat(True)
         add_btn.setFixedSize(22, 22)
         add_btn.setCursor(Qt.PointingHandCursor)
-        add_btn.setToolTip("Add todo")
+        add_btn.setToolTip("Add task")
         add_btn.setStyleSheet(_flat_btn)
         add_btn.clicked.connect(_do_add)
         footer.addWidget(add_btn)
@@ -2098,7 +2996,7 @@ class PipelineCatalog(Catalog):
             clear_btn.setFlat(True)
             clear_btn.setFixedSize(22, 22)
             clear_btn.setCursor(Qt.PointingHandCursor)
-            clear_btn.setToolTip("Clear todos")
+            clear_btn.setToolTip("Clear tasks")
             clear_btn.setStyleSheet(_flat_btn)
 
             def _show_clear_menu():
@@ -2124,19 +3022,240 @@ class PipelineCatalog(Catalog):
 
     def _build_departments_section(self, ctx: DetailContext):
         from PySide6.QtWidgets import (
-            QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
+            QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
+            QVBoxLayout,
         )
-        from PySide6.QtCore import Qt
+        from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QSize, Qt
+        from PySide6.QtGui import QFont, QFontMetrics
         from asset_browser.ui.detail_panel import make_section_box
         from asset_browser.core.theme import (
-            ACCENT, BG_DARK, BG_MID, BUTTON_GHOST_STYLE, COMBO_STYLE,
-            FONT_FAMILY, FONT_SMALL, TEXT_DIM, TEXT_SECONDARY, scaled,
+            ACCENT, BG_DARK, BG_MID, BORDER, BUTTON_GHOST_STYLE, COMBO_STYLE,
+            FONT_FAMILY, FONT_SMALL, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
+            scaled,
         )
+        # Reach into the theme module's private chevron-PNG renderer so
+        # the per-row stylesheet can include the same chevron without
+        # depending on QSS rule-merge semantics (which silently drop the
+        # chevron's ``image`` property on some Qt builds when a separate
+        # rule for ``QComboBox::down-arrow`` is concatenated).
+        from asset_browser.core import theme as _theme_mod
+        _arrow_url = _theme_mod._render_combo_arrow_png(TEXT_SECONDARY)
+
+        # Reusable QFont matching the QSS-applied combo font. Needed because
+        # ``QWidget.font()``/``fontMetrics()`` don't reflect stylesheet-set
+        # fonts, so QFontMetrics(widget.font()) under-measures combo text.
+        _qss_font = QFont(FONT_FAMILY)
+        _qss_font.setPixelSize(FONT_SMALL)
+
+        # Pre-render the meta-row Lucide icons (clock for "edited", package
+        # for "exported") to base64 PNG data URIs so QLabel rich text can
+        # render them inline via <img> without writing cache files.
+        def _icon_html(name: str, size: int = 11) -> str:
+            try:
+                import base64
+                from asset_browser.core.icons import icon_pixmap
+                pix = icon_pixmap(name, scaled(size), TEXT_DIM)
+                arr = QByteArray()
+                buf = QBuffer(arr)
+                buf.open(QIODevice.WriteOnly)
+                pix.save(buf, "PNG")
+                b64 = base64.b64encode(bytes(arr)).decode("ascii")
+                return (
+                    f'<img src="data:image/png;base64,{b64}" '
+                    f'width="{size}" height="{size}"/>'
+                )
+            except Exception:
+                return ""
+        _user_html = _icon_html("user-round")
+        _edited_html = _icon_html("clock")
+        _exported_html = _icon_html("upload")
+        # Approximate width of an inline icon (icon px + leading space) used
+        # for measurement when deciding which candidate to render.
+        _icon_w = scaled(13)
+
+        class _TightVersionCombo(QComboBox):
+            """QComboBox sized tight to its widest item + minimal chrome.
+
+            Bypasses QStyle's generous default sizeHint (which doubles
+            the visible width on Windows) and uses an explicit QFont
+            matching the QSS so the measurement isn't off-by-DPI when
+            the stylesheet font hasn't propagated to ``self.font()``.
+            """
+
+            def sizeHint(self):
+                fm = QFontMetrics(_qss_font)
+                widest = 0
+                for i in range(self.count()):
+                    widest = max(widest, fm.horizontalAdvance(self.itemText(i)))
+                h = super().sizeHint().height()
+                # text width + 6px left padding + 14px chevron + 2px borders
+                # + 6px breathing room.
+                return QSize(widest + scaled(28), h)
+
+            def minimumSizeHint(self):
+                return self.sizeHint()
+
+        class _DeptNameLabel(QLabel):
+            """Three-stage shrinking name label:
+
+            * full name when the column has room
+            * the optional short/abbreviated label when full doesn't fit
+            * "…"-elided short (or full, if no short) when even the short
+              doesn't fit
+
+            sizeHint is based on the full name so the layout grants room
+            when available; minimumSizeHint matches the short label width
+            (or a small floor) so the column yields cleanly on narrow
+            panels.
+            """
+
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self._full = ""
+                self._short = ""
+
+            def setFullText(self, text: str, short: str = "") -> None:
+                self._full = text or ""
+                self._short = short or ""
+                self.setToolTip(self._full)
+                self.updateGeometry()
+                self._refresh()
+
+            def resizeEvent(self, e):
+                super().resizeEvent(e)
+                self._refresh()
+
+            def sizeHint(self):
+                fm = QFontMetrics(self.font())
+                return QSize(
+                    fm.horizontalAdvance(self._full) + scaled(2),
+                    fm.height(),
+                )
+
+            def minimumSizeHint(self):
+                fm = QFontMetrics(self.font())
+                base = (
+                    fm.horizontalAdvance(self._short)
+                    if self._short else scaled(28)
+                )
+                return QSize(base + scaled(4), fm.height())
+
+            def _refresh(self) -> None:
+                fm = QFontMetrics(self.font())
+                avail = max(0, self.width())
+                if fm.horizontalAdvance(self._full) <= avail:
+                    target = self._full
+                elif self._short and fm.horizontalAdvance(self._short) <= avail:
+                    target = self._short
+                else:
+                    candidate = self._short or self._full
+                    target = fm.elidedText(candidate, Qt.ElideRight, avail)
+                if target != QLabel.text(self):
+                    QLabel.setText(self, target)
+
+        class _DeptMetaLabel(QLabel):
+            """Compact rich-text label with inline icons:
+
+                user · 🕐 Nw ago · 📦 Md ago
+
+            Drops pieces in priority order as the column shrinks:
+
+                1. user + edited + exported   (full)
+                2. edited + exported          (user dropped)
+                3. edited                     (exported dropped)
+                4. ""                         (nothing fits)
+
+            Candidates are stored with ``{E}``/``{X}`` placeholder tokens;
+            measurement substitutes them with an approximate icon-pixel
+            cost, while rendering swaps them for the precomputed icon HTML.
+            """
+
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self._user = ""
+                self._when = ""
+                self._exported = ""
+                self.setTextFormat(Qt.RichText)
+
+            def set_parts(
+                self, user: str, when: str, exported: str = "",
+            ) -> None:
+                self._user = user or ""
+                self._when = when or ""
+                self._exported = exported or ""
+                self.updateGeometry()
+                self._refresh()
+
+            def resizeEvent(self, e):
+                super().resizeEvent(e)
+                self._refresh()
+
+            def _candidates(self) -> list[str]:
+                user = f"{{U}} {self._user}" if self._user else ""
+                edited = f"{{E}} {self._when}" if self._when else ""
+                exported = f"{{X}} {self._exported}" if self._exported else ""
+                items = [s for s in (edited, exported) if s]
+                full = " · ".join(items)
+                out: list[str] = []
+                if user and full:
+                    out.append(f"{user} · {full}")
+                if full:
+                    out.append(full)
+                if edited:
+                    out.append(edited)
+                elif exported:
+                    out.append(exported)
+                return out
+
+            def _measure(self, tokenized: str) -> int:
+                fm = QFontMetrics(self.font())
+                n = (
+                    tokenized.count("{U}")
+                    + tokenized.count("{E}")
+                    + tokenized.count("{X}")
+                )
+                plain = (
+                    tokenized
+                    .replace("{U}", "")
+                    .replace("{E}", "")
+                    .replace("{X}", "")
+                )
+                return fm.horizontalAdvance(plain) + n * _icon_w
+
+            def _to_html(self, tokenized: str) -> str:
+                return (
+                    tokenized
+                    .replace("{U}", _user_html)
+                    .replace("{E}", _edited_html)
+                    .replace("{X}", _exported_html)
+                )
+
+            def sizeHint(self):
+                fm = QFontMetrics(self.font())
+                cands = self._candidates()
+                widest = cands[0] if cands else ""
+                return QSize(self._measure(widest) + scaled(2), fm.height())
+
+            def minimumSizeHint(self):
+                fm = QFontMetrics(self.font())
+                return QSize(0, fm.height())
+
+            def _refresh(self) -> None:
+                avail = max(0, self.width())
+                target = ""
+                for cand in self._candidates():
+                    if self._measure(cand) <= avail:
+                        target = self._to_html(cand)
+                        break
+                if target != QLabel.text(self):
+                    QLabel.setText(self, target)
 
         asset_id = ctx.detail.id
         dept_info: dict = (ctx.detail.metadata or {}).get("departments", {})
         is_shot = "type:shot" in ctx.detail.tags
-        all_depts = self._list_entity_departments("shots" if is_shot else "assets")
+        ent_ctx = "shots" if is_shot else "assets"
+        all_depts = self._list_entity_departments(ent_ctx)
+        dept_shorts = self._list_entity_dept_shorts(ent_ctx)
         overrides = self._dept_version_overrides.get(asset_id, {})
         scene_dv = self._get_scene_dept_version(asset_id)
         active_dept = scene_dv[0] if scene_dv else None
@@ -2203,18 +3322,24 @@ class PipelineCatalog(Catalog):
             row_layout.setContentsMargins(scaled(4), scaled(2), scaled(4), scaled(2))
             row_layout.setSpacing(scaled(8))
 
-            # Col 0: dept name
-            name_lbl = QLabel(dept_name.title())
+            # Col 0: dept name (full → short → ellided as the column shrinks)
+            name_lbl = _DeptNameLabel()
             if is_active:
                 name_lbl.setStyleSheet(active_name_style)
             else:
                 name_lbl.setStyleSheet(name_style if available else missing_style)
-            name_lbl.setMinimumWidth(scaled(70))
+            short_name = dept_shorts.get(dept_name, "")
+            name_lbl.setFullText(
+                dept_name.title(),
+                short=short_name.title() if short_name else "",
+            )
             row_layout.addWidget(name_lbl)
 
-            # Col 1: user · time-ago (stretches)
-            user_lbl = QLabel("—")
+            # Col 1: user · time-ago — right-aligned, drops user then date
+            # as the row narrows (see _DeptMetaLabel above).
+            user_lbl = _DeptMetaLabel()
             user_lbl.setStyleSheet(user_style)
+            user_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             row_layout.addWidget(user_lbl, stretch=1)
 
             combo: QComboBox | None = None
@@ -2231,20 +3356,79 @@ class PipelineCatalog(Catalog):
                 else:
                     current = ordered[0]
 
-                # Col 2: version dropdown
+                # Col 2: version dropdown.
+                #
+                # We write a SINGLE stylesheet here (not COMBO_STYLE +
+                # overrides) because Qt's QSS engine doesn't reliably
+                # merge ``image:`` from a base ::down-arrow rule with a
+                # later one — the chevron disappears. Inlining the
+                # chevron PNG keeps it visible.
+                #
+                # Width is hardcoded based on font metrics for "v0001"
+                # plus a stable chrome budget. _TightVersionCombo's
+                # overridden sizeHint isn't used here (Qt's pre-paint
+                # font metrics weren't reliable), but kept around for
+                # widgets that need to expose an honest sizeHint.
+                arrow_decl = (
+                    f"image: url({_arrow_url});" if _arrow_url else "image: none;"
+                )
                 combo = QComboBox()
-                combo.setStyleSheet(COMBO_STYLE)
-                combo.setMinimumWidth(scaled(70))
+                combo.setStyleSheet(f"""
+                    QComboBox {{
+                        background-color: {BG_DARK};
+                        border: 1px solid {BORDER};
+                        border-radius: 4px;
+                        padding: 4px 16px 4px 6px;
+                        color: {TEXT_PRIMARY};
+                        font-family: "{FONT_FAMILY}";
+                        font-size: {FONT_SMALL}px;
+                    }}
+                    QComboBox:hover {{
+                        border-color: {ACCENT};
+                    }}
+                    QComboBox::drop-down {{
+                        subcontrol-origin: padding;
+                        subcontrol-position: right center;
+                        border: none;
+                        width: 14px;
+                    }}
+                    QComboBox::down-arrow {{
+                        {arrow_decl}
+                        width: 10px;
+                        height: 10px;
+                        margin-right: 2px;
+                    }}
+                    QComboBox QAbstractItemView {{
+                        background-color: {BG_DARK};
+                        border: 1px solid {BORDER};
+                        color: {TEXT_PRIMARY};
+                        selection-background-color: {ACCENT};
+                        selection-color: white;
+                    }}
+                """)
                 for ver in ordered:
                     combo.addItem(ver, ver)
                 idx = combo.findData(current)
                 if idx >= 0:
                     combo.setCurrentIndex(idx)
+                # Hardcoded fixed width that comfortably fits a "v0001"-
+                # style label plus the 14px chevron + padding + borders at
+                # FONT_SMALL = 12px. We avoid measurement-based sizing
+                # because Qt's pre-paint QFontMetrics gives unreliable
+                # results that have been collapsing this combo to ~25px.
+                combo.setFixedWidth(scaled(72))
+                combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
                 row_layout.addWidget(combo)
 
-                # Col 3: open button
-                open_btn = QPushButton("Open")
+                # Col 3: open icon button — saves space vs the "Open" label
+                # so narrow rows don't force the section box past the panel.
+                from asset_browser.core.icons import icon as make_icon
+                open_btn = QPushButton()
+                open_btn.setIcon(make_icon("play", scaled(14), ACCENT))
+                open_btn.setIconSize(QSize(scaled(14), scaled(14)))
+                open_btn.setFixedSize(scaled(28), scaled(24))
                 open_btn.setStyleSheet(BUTTON_GHOST_STYLE)
+                open_btn.setToolTip("Open this version")
                 open_btn.clicked.connect(
                     lambda _checked=False, c=combo, dn=dept_name,
                     aid=asset_id, rd=ctx.refresh_detail:
@@ -2254,24 +3438,42 @@ class PipelineCatalog(Catalog):
                 )
                 row_layout.addWidget(open_btn)
 
-                # Initial user · time-ago fill + live update on combo change
-                user_lbl.setText(
-                    self._user_mtime_label(asset_id, dept_name, current)
+                # Compute the latest export age once per row — it doesn't
+                # depend on which version is selected (the export folder
+                # tracks the latest export for the dept).
+                exported_age = self._format_relative_time(
+                    self._get_latest_export_mtime(asset_id, dept_name)
+                )
+
+                # Initial fill + live update on combo change
+                user_lbl.set_parts(
+                    self._get_user_for_version(asset_id, dept_name, current) or "",
+                    self._format_relative_time(
+                        self._get_mtime_for_version(asset_id, dept_name, current)
+                    ),
+                    exported=exported_age,
                 )
 
                 def _on_change(
                     _idx,
                     c=combo, dn=dept_name, ulbl=user_lbl, aid=asset_id,
+                    exp=exported_age,
                 ):
                     v = c.currentData()
                     self._on_dept_version_picked(aid, dn, v)
-                    ulbl.setText(self._user_mtime_label(aid, dn, v))
+                    ulbl.set_parts(
+                        self._get_user_for_version(aid, dn, v) or "",
+                        self._format_relative_time(
+                            self._get_mtime_for_version(aid, dn, v)
+                        ),
+                        exported=exp,
+                    )
 
                 combo.currentIndexChanged.connect(_on_change)
             else:
                 dash = QLabel("—")
                 dash.setStyleSheet(missing_style)
-                dash.setMinimumWidth(scaled(70))
+                dash.setMinimumWidth(scaled(56))
                 dash.setAlignment(Qt.AlignCenter)
                 row_layout.addWidget(dash)
 
@@ -2675,6 +3877,27 @@ class PipelineCatalog(Catalog):
             import datetime as dt
             return dt.datetime.fromtimestamp(p.stat().st_mtime)
         except Exception:
+            return None
+
+    def _get_latest_export_mtime(self, asset_id: str, dept: str):
+        """Return the latest export folder's mtime for ``dept`` as a
+        datetime, or ``None`` if no export exists."""
+        if not asset_id:
+            return None
+        uri = self._uri_for_asset_id(asset_id)
+        if uri is None:
+            return None
+        try:
+            from tumblepipe.pipe.paths import latest_export_path
+            path = latest_export_path(uri, "default", dept)
+        except Exception:
+            return None
+        if path is None or not path.exists():
+            return None
+        try:
+            import datetime as dt
+            return dt.datetime.fromtimestamp(path.stat().st_mtime)
+        except OSError:
             return None
 
     def _latest_update_timestamp(
@@ -3474,7 +4697,11 @@ class PipelineCatalog(Catalog):
 
         entity_uri = self._entity_uri_for(detail)
         if entity_uri is None:
-            return False
+            hou.ui.setStatusMessage(
+                f"Cannot derive entity URI for {detail.name}",
+                severity=hou.severityType.Warning,
+            )
+            return True  # Always handled — never fall through to fallback menu
 
         # Activate the asset's project so import_asset / import_shot
         # resolve against the right pipeline config.
@@ -3500,7 +4727,11 @@ class PipelineCatalog(Catalog):
                     "Failed to append %s to %s",
                     detail.id, target.path(),
                 )
-                return False
+                hou.ui.setStatusMessage(
+                    f"Failed to add {detail.name} (see console)",
+                    severity=hou.severityType.Error,
+                )
+                return True
             hou.ui.setStatusMessage(
                 f"Added {detail.name} to {target.name()}",
                 severity=hou.severityType.Message,
@@ -3512,7 +4743,12 @@ class PipelineCatalog(Catalog):
             from tumblepipe.util.uri import Uri
             if "type:shot" in detail.tags:
                 from tumblepipe.pipe.houdini.lops import import_shot
-                node = import_shot.create(network, detail.name.replace(" ", "_"))
+                # Prefix with sequence so the node name matches the
+                # displayed Asset.name and avoids leading-digit shot
+                # names (e.g. "010") that Houdini rejects.
+                seq = detail.metadata.get("sequence", "")
+                node_name = f"{seq}_{detail.name}" if seq else detail.name
+                node = import_shot.create(network, node_name.replace(" ", "_"))
                 node.set_shot_uri(Uri.parse_unsafe(entity_uri))
                 node.execute()
             else:
@@ -3533,7 +4769,11 @@ class PipelineCatalog(Catalog):
                 pass
         except Exception:
             log.exception("Failed to drop %s", detail.id)
-            return False
+            hou.ui.setStatusMessage(
+                f"Failed to import {detail.name} (see console)",
+                severity=hou.severityType.Error,
+            )
+            return True  # Always handled — error logged + status message
 
         hou.ui.setStatusMessage(
             f"Imported {detail.name}", severity=hou.severityType.Message,
@@ -4387,6 +5627,97 @@ class PipelineCatalog(Catalog):
         actions = []
 
         is_asset = "type:asset" in detail.tags
+        is_render = "type:render" in detail.tags
+        is_playblast = "type:playblast" in detail.tags
+
+        if is_playblast:
+            # Primary actions target the primary dept's latest mp4;
+            # then one DJV button per other dept.
+            meta = detail.metadata or {}
+            depts: dict = meta.get("depts") or {}
+            primary = meta.get("primary_dept")
+            actions.append(AssetAction(
+                id="playblast_open_djv",
+                label="Open in DJV",
+                icon="eye",
+            ))
+            actions.append(AssetAction(
+                id="playblast_open_folder",
+                label="Open Folder",
+                icon="folder-open",
+            ))
+            for dept_name in sorted(depts.keys()):
+                if dept_name == primary:
+                    continue
+                actions.append(AssetAction(
+                    id=f"playblast_open_djv:dept={dept_name}",
+                    label=f"Open {dept_name.title()} in DJV",
+                    icon="eye",
+                ))
+            return actions
+
+        if is_render:
+            # Render cards are read-only viewers — no
+            # import/edit/delete buttons. Primary action targets the
+            # card's primary source (denoise/main → render/main → …);
+            # then one mplay button per *other* source so the user can
+            # jump between raw render, denoise, slapcomp, daily, etc.
+            # without leaving the detail panel.
+            meta = detail.metadata or {}
+            sources: dict = meta.get("sources") or {}
+            primary_key = (
+                meta.get("primary_source")
+                or (self._pick_primary_source(sources) if sources else None)
+            )
+            primary_info = sources.get(primary_key) if primary_key else None
+            primary_is_daily = (
+                primary_info is not None
+                and primary_info.get("kind") == "daily"
+            )
+
+            # Primary actions
+            if not primary_is_daily:
+                actions.append(AssetAction(
+                    id="render_open_mplay",
+                    label="Open in MPlay",
+                    icon="play",
+                ))
+            actions.append(AssetAction(
+                id="render_open_djv",
+                label="Open in DJV",
+                icon="eye",
+            ))
+            actions.append(AssetAction(
+                id="render_open_folder",
+                label="Open Folder",
+                icon="folder-open",
+            ))
+
+            # One row per other source. Daily entries label as
+            # "Daily (light)"; EXR entries label as "Slapcomp" (when
+            # layer is "slapcomp") or "<dept> (<layer>)" otherwise —
+            # e.g. "Render (main)", "Composite (fx)".
+            for src_key in self._sorted_source_keys(sources):
+                if src_key == primary_key:
+                    continue
+                src_info = sources[src_key]
+                label = self._render_source_label(src_key, src_info)
+                viewer = (
+                    "DJV" if src_info.get("kind") == "daily" else "MPlay"
+                )
+                action_id = (
+                    "render_open_djv"
+                    if src_info.get("kind") == "daily"
+                    else "render_open_mplay"
+                )
+                actions.append(AssetAction(
+                    id=f"{action_id}:source={src_key}",
+                    label=f"Open {label} in {viewer}",
+                    icon=(
+                        "eye" if src_info.get("kind") == "daily" else "play"
+                    ),
+                ))
+            return actions
 
         if is_asset:
             actions.append(AssetAction(
@@ -4434,32 +5765,458 @@ class PipelineCatalog(Catalog):
             dept = action_id.split(":", 1)[1]
             self._open_workfile(detail.id if detail else "", dept)
 
+        elif action_id.startswith("render_open_") and detail:
+            # Action id format:
+            #   render_open_<viewer>[:source=<name>][:aov=<name>]
+            # Plain ``render_open_X`` → primary source, layer frames.
+            base, params = self._parse_render_action_id(action_id)
+            if base is not None:
+                self._execute_render_action(
+                    base,
+                    detail.id,
+                    source=params.get("source"),
+                    aov=params.get("aov"),
+                )
+
+        elif action_id.startswith("playblast_open_") and detail:
+            # Action id format: ``playblast_open_<viewer>[:dept=<name>]``.
+            # Plain ``playblast_open_X`` → primary dept, latest mp4.
+            base, params = self._parse_playblast_action_id(action_id)
+            if base is not None:
+                self._execute_playblast_action(
+                    base,
+                    detail.id,
+                    dept=params.get("dept"),
+                )
+
+    # ── Render: viewer launching ──────────────────────────
+
+    def _resolve_render_source(
+        self, asset_id: str, source: str | None,
+    ) -> dict | None:
+        """Look up the source dict for ``source`` on a render card.
+
+        ``source`` is a key into ``metadata["sources"]`` of the form
+        ``"<layer>/<dept>"`` (EXR) or ``"daily/<dept>"`` (daily MP4).
+        ``None`` returns the card's primary source. Returns ``None``
+        if the card / source can't be found.
+        """
+        if not self._is_render_asset_id(asset_id):
+            return None
+        asset = next(
+            (a for a in self._get_all_items() if a.id == asset_id), None,
+        )
+        if asset is None:
+            return None
+        sources = asset.metadata.get("sources") or {}
+        if not sources:
+            return None
+        primary = (
+            asset.metadata.get("primary_source")
+            or self._pick_primary_source(sources)
+        )
+        chosen = source or primary
+        if chosen not in sources:
+            chosen = primary
+        return {"key": chosen, "info": sources[chosen]}
+
+    def _resolve_render_layer(
+        self, asset_id: str, source: str | None = None,
+    ):
+        """Resolve a render asset id + source key to a ``Layer``
+        (the dataclass from ``tumblepipe.pipe.paths``) by scanning
+        the on-disk version dir directly.
+
+        ``source`` selects an EXR source (``"main/denoise"`` etc.).
+        Returns ``None`` for daily sources or unresolvable paths.
+        """
+        info = self._resolve_render_source(asset_id, source)
+        if info is None:
+            return None
+        src = info["info"]
+        if src.get("kind") != "exr":
+            return None
+        try:
+            from tumblepipe.pipe.paths import AOV, Layer
+        except Exception:
+            return None
+
+        version_path = Path(src["path"])
+        try:
+            if not version_path.is_dir():
+                return None
+        except Exception:
+            return None
+
+        layer_name = src["layer"]
+        suffix = "exr"
+        aovs: dict = {}
+        try:
+            for child in version_path.iterdir():
+                if not child.is_dir() or child.suffix != "":
+                    continue
+                aov_files = [
+                    f for f in child.iterdir()
+                    if f.is_file() and f.suffix == f".{suffix}"
+                ]
+                if not aov_files:
+                    continue
+                aov_name = child.name
+                first = sorted(aov_files)[0]
+                aov_basename = first.name.split(".")[0]
+                aovs[aov_name] = AOV(
+                    path=child,
+                    label=aov_name,
+                    name=aov_basename,
+                    suffix=suffix,
+                )
+        except Exception:
+            pass
+
+        layer_basename = layer_name
+        try:
+            flat_files = sorted(
+                f for f in version_path.iterdir()
+                if f.is_file() and f.suffix.lower() in (
+                    ".exr", ".jpg", ".png", ".tif",
+                )
+            )
+            if flat_files:
+                layer_basename = flat_files[0].name.split(".")[0]
+                suffix = flat_files[0].suffix.lstrip(".") or suffix
+        except Exception:
+            pass
+
+        return Layer(
+            path=version_path,
+            label=layer_name,
+            version=version_path.name,
+            aovs=aovs,
+            name=layer_basename,
+            suffix=suffix,
+        )
+
+    def _resolve_daily_path(
+        self, asset_id: str, source: str | None = None,
+    ):
+        """Return the on-disk MP4 for a daily source on a render card.
+
+        ``source`` is a daily key like ``"daily/light"``; ``None``
+        defaults to the card's primary source if it's a daily.
+        Returns the cached MP4 path from ``metadata["sources"]``
+        when present (no project activation needed). Returns ``None``
+        when the source isn't a daily / file is missing.
+        """
+        info = self._resolve_render_source(asset_id, source)
+        if info is None:
+            return None
+        src = info["info"]
+        if src.get("kind") != "daily":
+            return None
+        path_str = src.get("path")
+        if not path_str:
+            return None
+        mp4 = Path(path_str)
+        try:
+            return mp4 if mp4.exists() else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _parse_render_action_id(action_id: str) -> tuple[str | None, dict]:
+        """Parse a render-action id of the form
+        ``render_open_<viewer>[:key=value][:key=value]``.
+
+        Returns ``(base_action, params_dict)`` or ``(None, {})`` if the
+        id doesn't match a known action. Recognised viewers: ``mplay``,
+        ``djv``, ``folder``. Recognised params: ``source``, ``aov``.
+        """
+        if not action_id.startswith("render_open_"):
+            return (None, {})
+        head, *tail = action_id.split(":")
+        if head not in (
+            "render_open_mplay", "render_open_djv", "render_open_folder",
+        ):
+            return (None, {})
+        params: dict = {}
+        for chunk in tail:
+            if "=" not in chunk:
+                continue
+            k, v = chunk.split("=", 1)
+            if k in ("source", "aov"):
+                params[k] = v
+        return (head, params)
+
+    def _execute_render_action(
+        self,
+        action_id: str,
+        asset_id: str,
+        source: str | None = None,
+        aov: str | None = None,
+    ) -> None:
+        """Dispatch one of ``render_open_mplay`` / ``render_open_djv`` /
+        ``render_open_folder`` against a render card.
+
+        ``source`` is a key into ``metadata["sources"]`` of the form
+        ``"<layer>/<dept>"`` (EXR) or ``"daily/<dept>"`` (daily MP4).
+        ``None`` uses the card's primary source. ``aov`` scopes the
+        EXR action to a single render pass; daily sources ignore it.
+        """
+        info = self._resolve_render_source(asset_id, source)
+        if info is None:
+            self._render_status_warn(
+                f"Render source not found for {asset_id}"
+                + (f" / source={source}" if source else ""),
+            )
+            return
+        src = info["info"]
+        is_daily = src.get("kind") == "daily"
+
+        if is_daily:
+            mp4 = self._resolve_daily_path(asset_id, source=info["key"])
+            if mp4 is None:
+                self._render_status_warn(
+                    f"Daily MP4 not found for {asset_id}",
+                )
+                return
+            if action_id == "render_open_folder":
+                self._render_open_folder(mp4.parent)
+            else:
+                # mplay can't play MP4; both mplay and djv requests
+                # fall through to DJV here.
+                self._render_launch_viewer("djv_view", str(mp4))
+            return
+
+        layer = self._resolve_render_layer(asset_id, source=info["key"])
+        if layer is None:
+            self._render_status_warn(
+                f"Render layer not found for {asset_id} / {info['key']}",
+            )
+            return
+
+        if aov:
+            aov_obj = layer.get_aov(aov)
+            if aov_obj is None:
+                self._render_status_warn(
+                    f"AOV {aov!r} not found in latest version of {asset_id}",
+                )
+                return
+            target_dir = aov_obj.path
+            mplay_frame = aov_obj.get_aov_frame_path("$F4")
+            djv_frame = aov_obj.get_aov_frame_path("####")
+        else:
+            target_dir = layer.path
+            mplay_frame = layer.get_frame_path("$F4")
+            djv_frame = layer.get_frame_path("####")
+
+        if action_id == "render_open_folder":
+            self._render_open_folder(target_dir)
+        elif action_id == "render_open_mplay":
+            self._render_launch_viewer("mplay", str(mplay_frame))
+        elif action_id == "render_open_djv":
+            self._render_launch_viewer("djv_view", str(djv_frame))
+
+    @staticmethod
+    def _render_open_folder(path) -> None:
+        try:
+            import subprocess
+            subprocess.Popen(
+                ["cmd", "/c", "start", "", str(path)],
+                creationflags=0x08000000,
+            )
+        except Exception:
+            log.exception("Failed to open folder %s", path)
+
+    def _render_launch_viewer(self, executable: str, *args: str) -> None:
+        """Launch ``executable`` with ``args`` via ``subprocess.Popen``.
+
+        Resolves the binary against ``PATH`` (Houdini's ``mplay`` ships
+        on PATH inside Houdini's environment; ``djv_view`` requires a
+        DJV install). Surfaces a status-bar warning when missing rather
+        than raising, so a missing viewer doesn't crash the action.
+        """
+        import shutil
+        import subprocess
+        resolved = shutil.which(executable)
+        if resolved is None:
+            # Try common alt names (DJV ships as ``djv`` on some platforms,
+            # ``djv_view`` on others).
+            if executable == "djv_view":
+                resolved = shutil.which("djv")
+        if resolved is None:
+            self._render_status_warn(
+                f"{executable!r} not found on PATH — install it or "
+                "add it to PATH and try again.",
+            )
+            return
+        try:
+            subprocess.Popen([resolved, *args])
+        except Exception:
+            log.exception(
+                "Failed to launch %s with %s", resolved, args,
+            )
+            self._render_status_warn(
+                f"Failed to launch {executable}; see Houdini console.",
+            )
+
+    @staticmethod
+    def _render_status_warn(message: str) -> None:
+        try:
+            import hou
+            hou.ui.setStatusMessage(
+                message, severity=hou.severityType.Warning,
+            )
+        except Exception:
+            log.warning(message)
+
+    # ── Playblast: viewer launching ───────────────────────
+
+    @staticmethod
+    def _parse_playblast_action_id(
+        action_id: str,
+    ) -> tuple[str | None, dict]:
+        """Parse ``playblast_open_<viewer>[:dept=<name>]``.
+
+        Returns ``(base_action, params_dict)`` or ``(None, {})``.
+        Recognised viewers: ``djv``, ``folder``. Recognised params:
+        ``dept``.
+        """
+        if not action_id.startswith("playblast_open_"):
+            return (None, {})
+        head, *tail = action_id.split(":")
+        if head not in ("playblast_open_djv", "playblast_open_folder"):
+            return (None, {})
+        params: dict = {}
+        for chunk in tail:
+            if "=" not in chunk:
+                continue
+            k, v = chunk.split("=", 1)
+            if k == "dept":
+                params[k] = v
+        return (head, params)
+
+    def _resolve_playblast_path(
+        self, asset_id: str, dept: str | None = None,
+    ):
+        """Return the on-disk MP4 path for a playblast dept on a card.
+
+        Reads ``metadata["depts"][dept]["path"]`` directly — no
+        project activation, no storage walk. ``dept`` defaults to
+        the card's primary dept.
+        """
+        if not self._is_playblast_asset_id(asset_id):
+            return None
+        asset = next(
+            (a for a in self._get_all_items() if a.id == asset_id),
+            None,
+        )
+        if asset is None:
+            return None
+        depts = asset.metadata.get("depts") or {}
+        if not depts:
+            return None
+        chosen = dept or asset.metadata.get("primary_dept")
+        if chosen not in depts:
+            return None
+        path_str = depts[chosen].get("path")
+        if not path_str:
+            return None
+        mp4 = Path(path_str)
+        try:
+            return mp4 if mp4.exists() else None
+        except Exception:
+            return None
+
+    def _execute_playblast_action(
+        self,
+        action_id: str,
+        asset_id: str,
+        dept: str | None = None,
+    ) -> None:
+        """Dispatch ``playblast_open_djv`` / ``playblast_open_folder``
+        for a playblast card. ``dept`` selects which dept's latest
+        MP4 to target; ``None`` uses the primary."""
+        mp4 = self._resolve_playblast_path(asset_id, dept=dept)
+        if mp4 is None:
+            self._render_status_warn(
+                f"Playblast not found for {asset_id}"
+                + (f" / dept={dept}" if dept else ""),
+            )
+            return
+        if action_id == "playblast_open_folder":
+            self._render_open_folder(mp4.parent)
+        else:
+            # playblast_open_djv — DJV plays MP4 directly.
+            self._render_launch_viewer("djv_view", str(mp4))
+
     # ── Sub-cards (departments) ───────────────────────────
 
     def get_sub_cards(self, asset: Asset) -> list[SubCard]:
-        depts = asset.metadata.get("departments", {})
+        # Render assets — one sub-card per render pass (AOV) from the
+        # latest version. Layers without AOV subdirs (e.g. slapcomp
+        # JPG sequences) get no sub-cards; the main-card actions
+        # cover them. Dailies have no AOVs either.
+        if "type:render" in asset.tags:
+            aovs = asset.metadata.get("aovs", []) or []
+            if not aovs:
+                return []
+            _AOV_ICONS = {
+                "beauty": "image",
+                "albedo": "palette",
+                "alpha": "circle-dashed",
+                "normal": "compass",
+                "depth": "ruler",
+                "diffuse": "sun",
+                "specular": "sparkle",
+                "emission": "flame",
+            }
+            cards: list[SubCard] = []
+            for aov in aovs:
+                cards.append(SubCard(
+                    key=aov,
+                    label=aov.title(),
+                    status="available",
+                    icon=_AOV_ICONS.get(aov.lower(), "layers"),
+                    action_id=f"render_open_mplay:aov={aov}",
+                ))
+            return cards
 
-        _DEPT_ICONS = {
-            "model": "shapes",          # 3D shapes
-            "lookdev": "palette",        # color palette for shading
-            "rig": "bone",              # skeleton/rigging
-            "animation": "move-3d",     # 3D movement
-            "layout": "grid-3x3",       # scene layout
-            "render": "camera",         # camera/render
-            "light": "lamp",            # lighting
-            "cfx": "sparkles",          # cloth/hair FX
-            "composite": "layers",      # compositing layers
-            "effects": "zap",           # VFX
-            "blendshape": "blend",      # blending shapes
-            "environment": "mountain",  # environment/landscape
-            "crowd": "users",           # crowd of people
-        }
-        _DEPT_SHORT = {
-            "animation": "Anim",
-            "blendshape": "Blend",
-            "composite": "Comp",
-            "environment": "Enviro",
-        }
+        # Playblast assets — one sub-card per dept with a playblast.
+        # Version goes in the label (e.g. "Light v0005") so it's
+        # immediately visible rather than buried in the dim detail row.
+        if "type:playblast" in asset.tags:
+            depts_meta: dict = asset.metadata.get("depts", {}) or {}
+            primary = asset.metadata.get("primary_dept")
+            cards: list[SubCard] = []
+            ordered = (
+                [primary] + sorted(d for d in depts_meta if d != primary)
+            ) if primary in depts_meta else sorted(depts_meta.keys())
+            for dept_name in ordered:
+                summary = depts_meta.get(dept_name) or {}
+                short = _DEPT_SHORT_NAMES.get(
+                    dept_name, dept_name.title(),
+                )
+                latest = summary.get("latest", "")
+                vcount = len(summary.get("versions", []) or [])
+                label = f"{short} {latest}" if latest else short
+                # When the dept has more than one version, surface the
+                # count in the dim detail row (e.g. "3 versions").
+                detail = (
+                    f"{vcount} versions" if vcount > 1 else ""
+                )
+                cards.append(SubCard(
+                    key=dept_name,
+                    label=label,
+                    status=(
+                        "active" if dept_name == primary else "available"
+                    ),
+                    detail=detail,
+                    icon=_DEPT_ICONS.get(dept_name, "video"),
+                    action_id=f"playblast_open_djv:dept={dept_name}",
+                ))
+            return cards
+
+        depts = asset.metadata.get("departments", {})
 
         cards = []
         # Get all possible departments for this entity type
@@ -4471,7 +6228,7 @@ class PipelineCatalog(Catalog):
         active_dept = scene_dv[0] if scene_dv else None
 
         for dept_name in all_depts:
-            short = _DEPT_SHORT.get(dept_name, dept_name.title())
+            short = _DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
             version = depts.get(dept_name)
             if version:
                 status = (
@@ -4528,6 +6285,8 @@ class PipelineCatalog(Catalog):
         """Drop discovered asset/shot caches; next query re-fetches."""
         self._cached_assets = None
         self._cached_shots = None
+        self._cached_renders = None
+        self._cached_playblasts = None
 
     def _reset_project_clients(self) -> None:
         """Drop per-project API clients (Shift+Click full reset)."""
@@ -4537,21 +6296,43 @@ class PipelineCatalog(Catalog):
     # ── Internal helpers ──────────────────────────────────
 
     def _get_all_items(self) -> list[Asset]:
-        """List all assets + shots as Asset objects (across all projects)."""
-        if self._cached_assets is not None and self._cached_shots is not None:
-            return self._cached_assets + self._cached_shots
+        """List assets + shots + renders + playblasts (across projects)."""
+        if (
+            self._cached_assets is not None
+            and self._cached_shots is not None
+            and self._cached_renders is not None
+            and self._cached_playblasts is not None
+        ):
+            return (
+                self._cached_assets
+                + self._cached_shots
+                + self._cached_renders
+                + self._cached_playblasts
+            )
         assets = self._discover_assets()
         shots = self._discover_shots()
+        renders = self._discover_renders()
+        playblasts = self._discover_playblasts()
         # Don't cache an empty result when no clients were ready yet —
         # a transient "no projects loaded" state would otherwise stick
         # forever and require a manual refresh to recover.
         has_projects = any(True for _ in self._registry.all())
         no_clients_ready = not self._clients
-        if not assets and not shots and has_projects and no_clients_ready:
+        if (
+            not assets and not shots and not renders and not playblasts
+            and has_projects and no_clients_ready
+        ):
             return []
         self._cached_assets = assets
         self._cached_shots = shots
-        return self._cached_assets + self._cached_shots
+        self._cached_renders = renders
+        self._cached_playblasts = playblasts
+        return (
+            self._cached_assets
+            + self._cached_shots
+            + self._cached_renders
+            + self._cached_playblasts
+        )
 
     def _discover_assets(self) -> list[Asset]:
         """Aggregate assets from every registered project's Client."""
@@ -4782,6 +6563,734 @@ class PipelineCatalog(Catalog):
             ))
         return out
 
+    # ── Render discovery (EXR layers + daily MP4s) ────────
+
+    def _discover_renders(self) -> list[Asset]:
+        """Aggregate render layers + dailies from every project."""
+        by_id: dict[str, Asset] = {}
+        for proj in self._registry.all():
+            client = self._ensure_client(proj.name)
+            if client is None:
+                log.warning(
+                    "Skipping render discovery for %s — Client not ready",
+                    proj.name,
+                )
+                continue
+            self._activate_project(proj)
+            try:
+                for a in self._discover_renders_for(proj, client):
+                    by_id.setdefault(a.id, a)
+            except Exception:
+                log.exception(
+                    "_discover_renders failed for project %s", proj.name,
+                )
+        return list(by_id.values())
+
+    # Order of preference when picking the "primary" source on a
+    # per-shot render card. Tried in (layer, dept) tuples — first
+    # match wins. Then anything ``denoise/X``, then ``render/X``,
+    # then any EXR source, finally daily.
+    _PRIMARY_DEPT_PRIORITY = ("denoise", "render", "composite")
+    _PRIMARY_LAYER_PRIORITY = ("main",)
+
+    def _discover_renders_for(
+        self, proj: ProjectConfig, client,
+    ) -> list[Asset]:
+        """Walk storage and emit one Asset per shot.
+
+        Every layer × dept under ``render:/render/<kind>/<seg1>/<seg2>/``
+        plus every daily MP4 under ``render:/daily/<kind>/<dept>/``
+        is folded into the same card as a ``source`` in
+        ``metadata["sources"]``. The card's primary action targets
+        the best source — typically ``denoise/main``.
+
+        Source key format:
+        - ``"<layer>/<dept>"`` for EXR sequences
+          (e.g. ``"main/denoise"``, ``"slapcomp/denoise"``)
+        - ``"daily/<dept>"`` for daily MP4s
+          (e.g. ``"daily/light"``)
+
+        Disk-driven (not entity-driven). Skips legacy paths that
+        don't match ``<kind>/<seq>/<shot>/<dept>/<layer>/<version>``.
+        """
+        try:
+            from tumblepipe.api import default_client
+        except Exception:
+            log.debug("tumblepipe.api unavailable")
+            return []
+        try:
+            api = default_client()
+        except Exception:
+            log.debug("default_client() failed for %s", proj.name)
+            return []
+
+        # Per-entity aggregation: ``{(kind, seg1, seg2): {source_key: info}}``
+        per_entity: dict[
+            tuple[str, str, str], dict[str, dict],
+        ] = {}
+
+        # ── EXR layers ───────────────────────────────────
+        render_root = self._resolve_storage_root(api, "render:/render")
+        if render_root is not None:
+            for kind, seg1, seg2, dept, layer_name, versions in (
+                self._iter_disk_render_layers(render_root)
+            ):
+                if not versions:
+                    continue
+                latest = versions[-1]
+                key = f"{layer_name}/{dept}"
+                per_entity.setdefault((kind, seg1, seg2), {})[key] = {
+                    "kind": "exr",
+                    "layer": layer_name,
+                    "dept": dept,
+                    "version": latest["version"],
+                    "versions": [v["version"] for v in versions],
+                    "aovs": latest["aovs"],
+                    "path": str(latest["path"]),
+                    "mtime": latest["mtime"],
+                }
+
+        # ── Daily MP4s ───────────────────────────────────
+        daily_root = self._resolve_storage_root(api, "render:/daily")
+        if daily_root is not None:
+            for kind, seg1, seg2, dept, mp4_path, mtime in (
+                self._iter_disk_dailies(daily_root)
+            ):
+                key = f"daily/{dept}"
+                per_entity.setdefault((kind, seg1, seg2), {})[key] = {
+                    "kind": "daily",
+                    "layer": "",
+                    "dept": dept,
+                    "path": str(mp4_path),
+                    "mtime": mtime,
+                }
+
+        # ── One card per entity ──────────────────────────
+        out: list[Asset] = []
+        for (kind, s1, s2), sources in per_entity.items():
+            primary_key = self._pick_primary_source(sources)
+            primary = sources[primary_key]
+            extra = {
+                "primary_source": primary_key,
+                "sources": sources,
+                "latest_update": max(
+                    s["mtime"] for s in sources.values()
+                ),
+            }
+            # Surface the primary's frame info at top level so the
+            # background thumbnail worker + sub-cards can find it
+            # without re-reading sources.
+            if primary["kind"] == "exr":
+                extra["layer_path"] = primary["path"]
+                extra["aovs"] = primary["aovs"]
+                extra["versions"] = primary["versions"]
+            else:
+                extra["daily_path"] = primary["path"]
+            out.append(self._build_render_asset(
+                proj=proj,
+                entity_kind=kind,
+                entity_segs=(s1, s2),
+                extra_metadata=extra,
+            ))
+
+        log.info(
+            "Discovered %d render assets for project %s",
+            len(out), proj.name,
+        )
+        return out
+
+    @classmethod
+    def _sorted_source_keys(cls, sources: dict[str, dict]) -> list[str]:
+        """Return source keys in display order: main first, then
+        other layers alphabetically, then dailies last."""
+        main = []
+        other_exr = []
+        daily = []
+        for k, v in sources.items():
+            if v.get("kind") == "daily":
+                daily.append(k)
+            elif v.get("layer") == "main":
+                main.append(k)
+            else:
+                other_exr.append(k)
+        # Within each group: denoise → render → composite → alpha
+        def dept_sort(k):
+            dept = k.rsplit("/", 1)[-1]
+            try:
+                return (
+                    cls._PRIMARY_DEPT_PRIORITY.index(dept), dept,
+                )
+            except ValueError:
+                return (len(cls._PRIMARY_DEPT_PRIORITY), dept)
+        return (
+            sorted(main, key=dept_sort)
+            + sorted(other_exr)
+            + sorted(daily)
+        )
+
+    @staticmethod
+    def _render_source_label(key: str, info: dict) -> str:
+        """Friendly label for a source key — e.g.
+        ``"main/denoise"`` → ``"Denoise (main)"``,
+        ``"slapcomp/denoise"`` → ``"Slapcomp"``,
+        ``"daily/light"`` → ``"Daily (light)"``.
+        """
+        if info.get("kind") == "daily":
+            dept = info.get("dept") or key.split("/", 1)[-1]
+            return f"Daily ({dept})"
+        layer = info.get("layer") or ""
+        dept = info.get("dept") or ""
+        if layer == "slapcomp":
+            return "Slapcomp"
+        if layer == "main":
+            return dept.title() if dept else "Main"
+        if layer and dept:
+            return f"{dept.title()} ({layer})"
+        return key.title()
+
+    @classmethod
+    def _pick_primary_source(cls, sources: dict[str, dict]) -> str:
+        """Pick the best source key from a per-entity sources dict.
+
+        Priority:
+        1. ``main/denoise`` → ``main/render`` → ``main/composite``
+        2. Other ``<layer>/denoise`` (sorted)
+        3. Other ``<layer>/render`` (sorted)
+        4. Any EXR source (sorted)
+        5. Any daily source (sorted)
+        """
+        # Tier 1: preferred (layer, dept) combos
+        for layer in cls._PRIMARY_LAYER_PRIORITY:
+            for dept in cls._PRIMARY_DEPT_PRIORITY:
+                key = f"{layer}/{dept}"
+                if key in sources:
+                    return key
+        # Tier 2 + 3: any layer at preferred depts
+        exr = [k for k, v in sources.items() if v["kind"] == "exr"]
+        for dept in cls._PRIMARY_DEPT_PRIORITY:
+            for k in sorted(exr):
+                if k.endswith(f"/{dept}"):
+                    return k
+        # Tier 4: any EXR
+        if exr:
+            return sorted(exr)[0]
+        # Tier 5: daily
+        daily = sorted(
+            k for k, v in sources.items() if v["kind"] == "daily"
+        )
+        return daily[0]
+
+    @staticmethod
+    def _resolve_storage_root(api, prefix: str):
+        """Resolve a ``<purpose>:/<root>`` URI to an on-disk Path,
+        or ``None`` when the storage doesn't resolve / doesn't exist."""
+        try:
+            from tumblepipe.util.uri import Uri
+            root = api.storage.resolve(Uri.parse_unsafe(prefix))
+        except Exception:
+            return None
+        if root is None:
+            return None
+        try:
+            return root if root.exists() else None
+        except Exception:
+            return None
+
+    def _iter_disk_render_layers(self, render_root):
+        """Walk ``render_root`` and yield render-layer tuples.
+
+        Layout: ``<root>/<kind>/<seg1>/<seg2>/<dept>/<layer>/<version>/...``
+        where ``<kind>`` is ``shots`` or ``assets``. Anything outside
+        this shape (legacy / pre-convention scratch dirs) is skipped.
+
+        Yields ``(kind, seg1, seg2, dept, layer_name, versions_list)``
+        where each entry in ``versions_list`` is a dict with
+        ``version`` / ``path`` / ``aovs`` / ``mtime`` keys, sorted by
+        version code.
+        """
+        try:
+            from tumblepipe.pipe.paths import list_version_paths
+        except Exception:
+            list_version_paths = None
+
+        for kind in ("shots", "assets"):
+            kind_root = render_root / kind
+            try:
+                if not kind_root.is_dir():
+                    continue
+            except Exception:
+                continue
+            try:
+                seg1_dirs = sorted(d for d in kind_root.iterdir() if d.is_dir())
+            except Exception:
+                continue
+            for seg1_dir in seg1_dirs:
+                try:
+                    seg2_dirs = sorted(
+                        d for d in seg1_dir.iterdir() if d.is_dir()
+                    )
+                except Exception:
+                    continue
+                for seg2_dir in seg2_dirs:
+                    try:
+                        dept_dirs = sorted(
+                            d for d in seg2_dir.iterdir() if d.is_dir()
+                        )
+                    except Exception:
+                        continue
+                    for dept_dir in dept_dirs:
+                        try:
+                            layer_dirs = sorted(
+                                d for d in dept_dir.iterdir() if d.is_dir()
+                            )
+                        except Exception:
+                            continue
+                        for layer_dir in layer_dirs:
+                            versions = self._scan_layer_versions(
+                                layer_dir, list_version_paths,
+                            )
+                            if not versions:
+                                continue
+                            yield (
+                                kind,
+                                seg1_dir.name,
+                                seg2_dir.name,
+                                dept_dir.name,
+                                layer_dir.name,
+                                versions,
+                            )
+
+    @staticmethod
+    def _scan_layer_versions(layer_dir, list_version_paths) -> list[dict]:
+        """Return version-info dicts for a layer dir, sorted by
+        version code (oldest → newest).
+
+        Each dict: ``{"version": str, "path": Path, "aovs": list[str],
+        "mtime": float}``. Versions with no usable frame data are
+        excluded.
+        """
+        # Use tumblepipe's helper when available — it filters by the
+        # project's naming convention. Fall back to alphabetical sort
+        # over directories that look like ``vNNNN`` if not.
+        if list_version_paths is not None:
+            try:
+                version_paths = list_version_paths(layer_dir)
+            except Exception:
+                version_paths = []
+        else:
+            try:
+                version_paths = sorted(
+                    d for d in layer_dir.iterdir()
+                    if d.is_dir()
+                    and d.name.startswith("v")
+                    and d.name[1:].isdigit()
+                )
+            except Exception:
+                version_paths = []
+
+        out: list[dict] = []
+        for vp in version_paths:
+            # AOV subdirs (anything without an extension that looks
+            # like a directory of frames). Empty ones are skipped.
+            aovs: list[str] = []
+            try:
+                for child in vp.iterdir():
+                    if child.is_dir() and child.suffix == "":
+                        aovs.append(child.name)
+            except Exception:
+                pass
+
+            # Has any frames? Either flat .exr/.jpg in vp, or any AOV
+            # has files. Otherwise skip — empty version dirs are
+            # noise (e.g. a flipbook-failed run).
+            has_frames = False
+            try:
+                for f in vp.iterdir():
+                    if f.is_file() and f.suffix.lower() in (".exr", ".jpg", ".png", ".tif"):
+                        has_frames = True
+                        break
+            except Exception:
+                pass
+            if not has_frames and aovs:
+                # Confirm at least one AOV has files
+                for a in aovs:
+                    try:
+                        for _ in (vp / a).iterdir():
+                            has_frames = True
+                            break
+                    except Exception:
+                        continue
+                    if has_frames:
+                        break
+            if not has_frames:
+                continue
+
+            ctx = vp / "context.json"
+            try:
+                mtime = ctx.stat().st_mtime if ctx.exists() else vp.stat().st_mtime
+            except Exception:
+                mtime = 0.0
+
+            out.append({
+                "version": vp.name,
+                "path": vp,
+                "aovs": sorted(aovs),
+                "mtime": mtime,
+            })
+        return out
+
+    def _iter_disk_dailies(self, daily_root):
+        """Walk ``daily_root`` and yield ``(kind, seg1, seg2, dept,
+        mp4_path, mtime)`` tuples.
+
+        Layout: ``<root>/<kind>/<dept>/<seg1>_<seg2>.mp4`` (no layer).
+        Same convention as ``tumblepipe.pipe.paths.get_daily_path``.
+        Files with no underscore in the stem are skipped.
+        """
+        for kind in ("shots", "assets"):
+            kind_root = daily_root / kind
+            try:
+                if not kind_root.is_dir():
+                    continue
+            except Exception:
+                continue
+            try:
+                dept_dirs = sorted(
+                    d for d in kind_root.iterdir() if d.is_dir()
+                )
+            except Exception:
+                continue
+            for dept_dir in dept_dirs:
+                try:
+                    files = sorted(
+                        f for f in dept_dir.iterdir()
+                        if f.is_file() and f.suffix.lower() == ".mp4"
+                    )
+                except Exception:
+                    continue
+                for mp4 in files:
+                    stem = mp4.stem
+                    if "_" not in stem:
+                        # Convention requires <seg1>_<seg2> — skip
+                        # malformed names.
+                        continue
+                    seg1, seg2 = stem.split("_", 1)
+                    try:
+                        mtime = mp4.stat().st_mtime
+                    except Exception:
+                        mtime = 0.0
+                    yield (kind, seg1, seg2, dept_dir.name, mp4, mtime)
+
+    # ── Playblast discovery (per-shot, per-dept MP4s) ─────
+
+    def _discover_playblasts(self) -> list[Asset]:
+        """Aggregate per-shot playblast cards from every project."""
+        by_id: dict[str, Asset] = {}
+        for proj in self._registry.all():
+            client = self._ensure_client(proj.name)
+            if client is None:
+                log.warning(
+                    "Skipping playblast discovery for %s — Client not ready",
+                    proj.name,
+                )
+                continue
+            self._activate_project(proj)
+            try:
+                for a in self._discover_playblasts_for(proj, client):
+                    by_id.setdefault(a.id, a)
+            except Exception:
+                log.exception(
+                    "_discover_playblasts failed for project %s",
+                    proj.name,
+                )
+        return list(by_id.values())
+
+    def _discover_playblasts_for(
+        self, proj: ProjectConfig, client,
+    ) -> list[Asset]:
+        """Walk the playblast storage root and emit one Asset per shot.
+
+        Layout: ``<purpose>:/playblast/<kind>/<seg1>/<seg2>/<dept>/v<NNNN>.mp4``
+
+        All depts that have at least one playblast for the same entity
+        fold into a single per-shot card. The dept whose latest version
+        has the newest mtime becomes the primary (drives the card's
+        main button + thumbnail).
+        """
+        try:
+            from tumblepipe.api import default_client
+        except Exception:
+            log.debug("tumblepipe.api unavailable")
+            return []
+        try:
+            api = default_client()
+        except Exception:
+            log.debug("default_client() failed for %s", proj.name)
+            return []
+
+        root = self._resolve_storage_root(api, "render:/playblast")
+        if root is None:
+            return []
+
+        # ``per_entity[(kind, seg1, seg2)] = {dept: {versions, latest, path, mtime}}``
+        per_entity: dict[
+            tuple[str, str, str], dict[str, dict],
+        ] = {}
+        for kind, seg1, seg2, dept, dept_summary in (
+            self._iter_disk_playblasts(root)
+        ):
+            per_entity.setdefault((kind, seg1, seg2), {})[dept] = (
+                dept_summary
+            )
+
+        out: list[Asset] = []
+        for (kind, s1, s2), depts in per_entity.items():
+            if not depts:
+                continue
+            primary_dept = max(
+                depts.keys(), key=lambda d: depts[d]["mtime"],
+            )
+            extra = {
+                "depts": depts,
+                "primary_dept": primary_dept,
+                "latest_update": max(d["mtime"] for d in depts.values()),
+            }
+            out.append(self._build_playblast_asset(
+                proj=proj,
+                entity_kind=kind,
+                entity_segs=(s1, s2),
+                extra_metadata=extra,
+            ))
+
+        log.info(
+            "Discovered %d playblast assets for project %s",
+            len(out), proj.name,
+        )
+        return out
+
+    def _iter_disk_playblasts(self, root):
+        """Walk ``root`` and yield ``(kind, seg1, seg2, dept,
+        dept_summary)`` tuples.
+
+        Layout: ``<root>/<kind>/<seg1>/<seg2>/<dept>/v<NNNN>.mp4``.
+        ``dept_summary`` is
+        ``{"versions": [...], "latest": str, "path": str, "mtime": float}``
+        for the latest version. Empty dept dirs are skipped.
+        """
+        try:
+            from tumblepipe.pipe.paths import (
+                list_version_paths as _unused,  # noqa: F401
+            )
+        except Exception:
+            pass
+
+        for kind in ("shots", "assets"):
+            kind_root = root / kind
+            try:
+                if not kind_root.is_dir():
+                    continue
+            except Exception:
+                continue
+            try:
+                seg1_dirs = sorted(
+                    d for d in kind_root.iterdir() if d.is_dir()
+                )
+            except Exception:
+                continue
+            for seg1_dir in seg1_dirs:
+                try:
+                    seg2_dirs = sorted(
+                        d for d in seg1_dir.iterdir() if d.is_dir()
+                    )
+                except Exception:
+                    continue
+                for seg2_dir in seg2_dirs:
+                    try:
+                        dept_dirs = sorted(
+                            d for d in seg2_dir.iterdir() if d.is_dir()
+                        )
+                    except Exception:
+                        continue
+                    for dept_dir in dept_dirs:
+                        summary = self._scan_playblast_dept_dir(dept_dir)
+                        if summary is None:
+                            continue
+                        yield (
+                            kind,
+                            seg1_dir.name,
+                            seg2_dir.name,
+                            dept_dir.name,
+                            summary,
+                        )
+
+    @staticmethod
+    def _scan_playblast_dept_dir(dept_dir) -> dict | None:
+        """List versioned MP4s in a playblast dept dir and return a
+        summary of the latest, or ``None`` if empty.
+
+        Files are expected to be named ``v<NNNN>.mp4`` (matches
+        ``paths.get_next_playblast_path``). Anything else is ignored.
+        """
+        try:
+            mp4s = [
+                f for f in dept_dir.iterdir()
+                if f.is_file()
+                and f.suffix.lower() == ".mp4"
+                and f.stem.startswith("v")
+                and f.stem[1:].isdigit()
+            ]
+        except Exception:
+            return None
+        if not mp4s:
+            return None
+        # Sort by version code (numeric) so v0010 > v0009.
+        mp4s.sort(key=lambda f: int(f.stem[1:]))
+        latest = mp4s[-1]
+        try:
+            mtime = latest.stat().st_mtime
+        except Exception:
+            mtime = 0.0
+        return {
+            "versions": [f.stem for f in mp4s],
+            "latest": latest.stem,
+            "path": str(latest),
+            "mtime": mtime,
+        }
+
+    @staticmethod
+    def _render_layer_mtime(layer_path) -> float:
+        """Return a representative mtime for a layer version dir.
+
+        Prefers ``context.json`` (written when the version finishes),
+        falls back to the directory mtime, falls back to 0.0.
+        """
+        try:
+            ctx = layer_path / "context.json"
+            if ctx.exists():
+                return ctx.stat().st_mtime
+            return layer_path.stat().st_mtime
+        except Exception:
+            return 0.0
+
+    def _build_render_asset(
+        self,
+        *,
+        proj: ProjectConfig,
+        entity_kind: str,
+        entity_segs: tuple[str, str],
+        extra_metadata: dict,
+    ) -> Asset:
+        """Build the per-shot render Asset.
+
+        ``extra_metadata`` is expected to carry ``primary_source``,
+        ``sources``, plus thumbnail-friendly top-level keys
+        (``layer_path``/``aovs``/``versions`` for EXR primaries or
+        ``daily_path`` for daily primaries).
+        """
+        asset_id = self._make_render_asset_id(
+            project=proj.name,
+            entity_kind=entity_kind,
+            entity_segs=entity_segs,
+        )
+        entity_label = (
+            f"{entity_segs[0]}_{entity_segs[1]}"
+            if entity_kind == "shots" else entity_segs[1]
+        )
+
+        tags = {
+            "source:pipeline",
+            "type:render",
+            "kind:media",  # union tag for the Media sidebar parent
+            f"project:{proj.name}",
+            (
+                f"entity:shot:{entity_segs[0]}:{entity_segs[1]}"
+                if entity_kind == "shots"
+                else f"entity:asset:{entity_segs[0]}:{entity_segs[1]}"
+            ),
+        }
+        # ``has:daily`` and ``has:exr`` tags let sidebar collections
+        # filter the grid by what variants the shot actually has.
+        sources = extra_metadata.get("sources") or {}
+        if any(v["kind"] == "daily" for v in sources.values()):
+            tags.add("has:daily")
+        if any(v["kind"] == "exr" for v in sources.values()):
+            tags.add("has:exr")
+
+        metadata: dict = {
+            "project": proj.name,
+            "entity_kind": entity_kind,
+            "entity_segs": list(entity_segs),
+            # Sub-cards (AOVs) only when the primary is EXR.
+            "has_sub_cards": (
+                extra_metadata.get("primary_source", "").startswith(
+                    "daily/",
+                ) is False
+            ),
+        }
+        metadata.update(extra_metadata)
+
+        return Asset(
+            id=asset_id,
+            name=entity_label,
+            thumbnail_url="",
+            tags=frozenset(tags),
+            metadata=metadata,
+        )
+
+    def _build_playblast_asset(
+        self,
+        *,
+        proj: ProjectConfig,
+        entity_kind: str,
+        entity_segs: tuple[str, str],
+        extra_metadata: dict,
+    ) -> Asset:
+        """Build the per-shot playblast Asset.
+
+        ``extra_metadata`` carries ``depts`` (the per-dept summaries),
+        ``primary_dept`` and ``latest_update``.
+        """
+        asset_id = self._make_playblast_asset_id(
+            project=proj.name,
+            entity_kind=entity_kind,
+            entity_segs=entity_segs,
+        )
+        entity_label = (
+            f"{entity_segs[0]}_{entity_segs[1]}"
+            if entity_kind == "shots" else entity_segs[1]
+        )
+        tags = {
+            "source:pipeline",
+            "type:playblast",
+            "kind:media",  # union tag for the Media sidebar parent
+            f"project:{proj.name}",
+            (
+                f"entity:shot:{entity_segs[0]}:{entity_segs[1]}"
+                if entity_kind == "shots"
+                else f"entity:asset:{entity_segs[0]}:{entity_segs[1]}"
+            ),
+        }
+        # ``dept:<name>`` tag per contributing dept so sidebar
+        # filters (or future dept sub-collections) can scope cleanly.
+        for dept_name in (extra_metadata.get("depts") or {}).keys():
+            tags.add(f"dept:{dept_name}")
+
+        metadata: dict = {
+            "project": proj.name,
+            "entity_kind": entity_kind,
+            "entity_segs": list(entity_segs),
+            "has_sub_cards": True,
+        }
+        metadata.update(extra_metadata)
+
+        return Asset(
+            id=asset_id,
+            name=entity_label,
+            thumbnail_url="",
+            tags=frozenset(tags),
+            metadata=metadata,
+        )
+
     def _list_categories_for_project(self, project_name: str) -> list[str]:
         client = self._clients.get(project_name)
         if client is None:
@@ -4833,6 +7342,46 @@ class PipelineCatalog(Catalog):
             if context == "assets":
                 return ["model", "lookdev", "rig"]
             return ["layout", "animation", "lighting", "render", "comp"]
+
+    # Default short labels for common department names. Used as a
+    # fallback when a department doesn't declare its own ``short`` via
+    # the API. Lookup is case-insensitive on the dept name.
+    _DEFAULT_DEPT_SHORTS = {
+        "model": "mdl",
+        "blendshape": "blndsp",
+        "blendshapes": "blndsp",
+        "lookdev": "lkd",
+        "lighting": "lgt",
+        "rig": "rig",
+        "layout": "lay",
+        "environment": "env",
+        "animation": "ani",
+        "crowd": "crwd",
+        "fx": "fx",
+        "cfx": "cfx",
+        "render": "rnd",
+        "comp": "cmp",
+    }
+
+    def _list_entity_dept_shorts(self, context: str) -> dict[str, str]:
+        """Return ``{dept_name: short}`` for every department, preferring
+        the API-declared short when present and falling back to the
+        ``_DEFAULT_DEPT_SHORTS`` map (matched case-insensitively).
+        Departments with no resolvable short are simply omitted."""
+        result: dict[str, str] = {}
+        try:
+            from tumblepipe.config.department import list_departments
+            depts = list_departments(context, include_generated=False)
+        except Exception:
+            return result
+        for d in depts:
+            if d.short:
+                result[d.name] = d.short
+                continue
+            fallback = self._DEFAULT_DEPT_SHORTS.get(d.name.lower())
+            if fallback:
+                result[d.name] = fallback
+        return result
 
     def _count_assets_in_category(self, category: str) -> int:
         items = self._get_all_items()

@@ -15,6 +15,7 @@ class Department:
     renderable: bool
     generated: bool = False  # True for Python-generated departments (not Houdini-exportable)
     enabled: bool = True  # False means retired/hidden from normal use
+    short: str | None = None  # Optional abbreviated label (e.g. "mdl" for "model"); UIs may show this when there isn't room for the full name
 
 def add_department(
     context: str,
@@ -23,7 +24,8 @@ def add_department(
     publishable: bool = True,
     renderable: bool = False,
     generated: bool = False,
-    enabled: bool = True
+    enabled: bool = True,
+    short: str | None = None,
     ):
     department_uri = DEPARTMENTS_URI / context / name
     properties = api.config.get_properties(department_uri)
@@ -33,7 +35,8 @@ def add_department(
         publishable = publishable,
         renderable = renderable,
         generated = generated,
-        enabled = enabled
+        enabled = enabled,
+        short = short,
     ))
 
 def remove_department(context: str, name: str):
@@ -101,6 +104,22 @@ def is_enabled(context: str, name: str) -> bool:
         raise KeyError(f'Department not found: {department_uri}')
     return properties.get('enabled', True)
 
+def set_short(context: str, name: str, short: str | None):
+    """Set or clear the optional abbreviated label for a department."""
+    department_uri = DEPARTMENTS_URI / context / name
+    properties = api.config.get_properties(department_uri)
+    if properties is None: return
+    properties['short'] = short
+    api.config.set_properties(department_uri, properties)
+
+def get_short(context: str, name: str) -> str | None:
+    """Return the optional abbreviated label, or ``None`` if unset."""
+    department_uri = DEPARTMENTS_URI / context / name
+    properties = api.config.get_properties(department_uri)
+    if properties is None:
+        raise KeyError(f'Department not found: {department_uri}')
+    return properties.get('short')
+
 def list_departments(context: str, include_generated: bool = True, include_disabled: bool = False) -> list[Department]:
     """
     List departments for a context (shots or assets).
@@ -121,7 +140,8 @@ def list_departments(context: str, include_generated: bool = True, include_disab
             publishable = dept_data['properties']['publishable'],
             renderable = dept_data['properties']['renderable'],
             generated = dept_data['properties'].get('generated', False),
-            enabled = dept_data['properties'].get('enabled', True)
+            enabled = dept_data['properties'].get('enabled', True),
+            short = dept_data['properties'].get('short'),
         )
         for dept_name, dept_data in context_data.items()
     ]
