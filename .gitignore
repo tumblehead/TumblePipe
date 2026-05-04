@@ -136,6 +136,15 @@ ENV/
 env.bak/
 venv.bak/
 
+# Secrets / local config
+.mcp.json
+.claude/settings.local.json
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+
 # Spyder project settings
 .spyderproject
 .spyproject
