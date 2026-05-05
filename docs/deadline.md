@@ -69,7 +69,7 @@ UV-managed virtualenv built from `requirements_path`. Pass `None` for
 Use `Batch.add_dep(first, second)` to mark `second` as a dependency of
 `first`, or `Batch.add_jobs_with_deps(jobs, deps)` to wire a whole graph
 at once. See the farm job implementations in
-`python/1x/tumblepipe/farm/jobs/` for complete examples.
+`python/tumblepipe/farm/jobs/` for complete examples.
 
 ## Further reading
 

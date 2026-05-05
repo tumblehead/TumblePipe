@@ -40,7 +40,7 @@ ships a working example.
 ## Package layout
 
 - `otls/` — Houdini Digital Assets (HDAs), text-format for version control.
-- `python/1x/tumblepipe/` — pipeline Python modules.
+- `python/tumblepipe/` — pipeline Python modules.
 - `python3.Xlibs/` — per-Python-version libraries and Houdini startup hooks.
 - `scripts/` — Houdini startup scripts.
 - `python_panels/` — Python panels (project browser).

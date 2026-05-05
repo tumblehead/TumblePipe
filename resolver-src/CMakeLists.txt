@@ -194,12 +194,15 @@ elseif(WIN32)
 
     # Houdini's USD on Windows pulls in pxr_boost::python which
     # references Py_NoneStruct / Py_Dealloc. Link against Houdini's
-    # bundled python (currently 3.11 for Houdini 21) so those resolve.
+    # bundled python so those resolve. Houdini 21 ships Python 3.11;
+    # Houdini 22 ships Python 3.13. The NAMES list covers both plus
+    # older fallbacks so adding a new Houdini major only requires
+    # appending the matching pythonNNN entry.
     file(GLOB _hfs_python_dirs LIST_DIRECTORIES true "${HFS}/python3*")
     set(HFS_PYTHON HFS_PYTHON-NOTFOUND)
     foreach(_pydir ${_hfs_python_dirs})
         find_library(HFS_PYTHON
-            NAMES python312 python311 python310 python39
+            NAMES python313 python312 python311 python310 python39
             HINTS "${_pydir}/libs"
             NO_DEFAULT_PATH)
         if(HFS_PYTHON)

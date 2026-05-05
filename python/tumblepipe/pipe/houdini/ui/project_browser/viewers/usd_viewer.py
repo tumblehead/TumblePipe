@@ -399,7 +399,7 @@ class USDViewerLauncher(QtCore.QObject):
 
         # Expose tumblepipe.resolver on PYTHONPATH so the viewer's hython
         # session can toggle latest mode, etc.
-        pipeline_python = Path(pipeline_path) / 'python' / '1x'
+        pipeline_python = Path(pipeline_path) / 'python'
         if pipeline_python.exists():
             current_python_path = env.get('PYTHONPATH', '')
             env['PYTHONPATH'] = (

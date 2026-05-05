@@ -14,7 +14,7 @@ logging.basicConfig(
 pipeline_path = Path(os.environ['TH_PIPELINE_PATH'])
 
 # Add the shared python packages location to sys.path
-packages_path = pipeline_path / 'python' / '1x'
+packages_path = pipeline_path / 'python'
 sys.path.insert(0, str(packages_path))
 
 # Set project environment variables

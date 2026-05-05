@@ -278,7 +278,7 @@ class PipelineCatalog(Catalog):
             # [env] block to the active install. Never per-project.
             pipeline_path = os.environ["TH_PIPELINE_PATH"]
             py_path = str(
-                Path(pipeline_path) / "houdini" / "TumblePipe" / "python" / "1x"
+                Path(pipeline_path) / "houdini" / "TumblePipe" / "python"
             )
             if py_path not in sys.path:
                 sys.path.insert(0, py_path)

@@ -12,7 +12,7 @@ TumblePipe/
 │   └── TumblePipe.desk          # Houdini desktop layout
 ├── ocio/                        # OpenColorIO configuration
 ├── otls/                        # Houdini Digital Assets (text format)
-├── python/1x/tumblepipe/        # Core pipeline Python modules
+├── python/tumblepipe/           # Core pipeline Python modules
 ├── python3.11libs/              # Houdini 21 startup hooks + libraries
 │   ├── pythonrc.py
 │   └── uiready.py
@@ -34,7 +34,7 @@ text-expanded directories (one directory per HDA) so they diff well in git.
 The release pipeline compiles them to binary `.hda` files via `hotl` before
 packaging.
 
-### `python/1x/tumblepipe/`
+### `python/tumblepipe/`
 
 The pipeline's Python package. This is on Houdini's Python path; import
 with `from tumblehead import ...`.
