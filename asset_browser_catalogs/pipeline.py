@@ -9,23 +9,49 @@ field is ignored at runtime. The active TumblePipe install is read from
 ``$TH_PIPELINE_PATH`` (set globally by hpm via the package's ``[env]``
 block) so it tracks hpm upgrades automatically.
 
-On first run with no registry file, a single entry is bootstrapped from
-``TH_PROJECT_PATH`` / ``TH_CONFIG_PATH`` so existing single-project
-users get the same behavior with no manual setup.
+The ``TH_*`` env vars are authoritative for the launch session: every
+``create_catalog`` call passes them through
+:meth:`ProjectRegistry.bootstrap_from_env`, which adds the env-driven
+project on first run and refreshes its paths on subsequent runs if
+they've changed (e.g. config dir renamed ``_config`` → ``_config2``).
+``projects.json`` is just an off-session cache so non-env-launched
+sessions can browse the same projects.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import sys
+import threading
 from pathlib import Path
 
-from asset_browser.api.catalog import (
+# tumbletrove's registry loads this module via
+# ``importlib.util.spec_from_file_location`` for external catalogs,
+# which deliberately does not attach the module to a package — so
+# relative imports (``from ._pipeline_types import ...``) fail with
+# ImportError. Adding our own directory to sys.path lets the companion
+# module be imported absolutely, the same way external catalogs are
+# documented to import their helpers.
+_HERE = str(Path(__file__).parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+from asset_browser.api.catalog import Catalog
+from asset_browser.api.errors import (
+    AssetDiscoveryError,
+    CatalogError,
+    CatalogInitError,
+    ConfigError,
+    DetailBuildError,
+    TagQueryError,
+    WorkfileScanError,
+)
+from asset_browser.api.types import (
     Asset,
     AssetAction,
     AssetDetail,
     AssetPage,
-    Catalog,
     Collection,
     CreationField,
     DetailContext,
@@ -36,76 +62,25 @@ from asset_browser.api.catalog import (
 )
 from asset_browser.core.projects import ProjectConfig, ProjectRegistry
 
+# Value types and module-level utilities live in a companion module so
+# this file stays focused on the catalog implementation. Re-exported
+# under their historical names for backwards compatibility within this
+# file. Absolute import (rather than ``from ._pipeline_types``) because
+# tumbletrove's external-catalog discovery loads pipeline.py without a
+# parent package — see the sys.path tweak above.
+from _pipeline_types import (  # noqa: E402
+    DEPT_ICONS as _DEPT_ICONS,
+    DEPT_SHORT_NAMES as _DEPT_SHORT_NAMES,
+    PERMANENT_INIT_ERRORS as _PERMANENT_INIT_ERRORS,
+    SHOT_DEPT_ICONS as _SHOT_DEPT_ICONS,
+    AssetId,
+    ClientSlot,
+    ClientState,
+    cascade_counts as _cascade_counts,
+    projects_json_path as _projects_json_path,
+)
+
 log = logging.getLogger(__name__)
-
-# Render / playblast assets carry sentinel prefixes so their asset
-# ids don't collide with the 3-segment ``PROJECT/CAT/Name`` ids used
-# by regular assets/shots. Both encode (project, entity_kind, segs)
-# only — per-source detail (dept/layer/version) lives in metadata.
-_RENDER_ID_PREFIX = "@render:"
-_PLAYBLAST_ID_PREFIX = "@playblast:"
-
-# Storage URI purposes scanned by render discovery. ``render`` is
-# walked for EXR layers under ``<purpose>:/render/<kind>/<seq>/<shot>/``
-# and ``daily`` is walked for the flat ``<purpose>:/daily/<kind>/<dept>/<seq>_<shot>.mp4``
-# layout. Both feed into a single per-shot card.
-_RENDER_PURPOSES = ("render", "daily")
-
-# Lucide icon names per department — shared between Shot/Asset
-# department sub-cards and Playblast dept sub-cards. Add new depts
-# here and they pick up consistent iconography across both surfaces.
-_DEPT_ICONS = {
-    "model": "shapes",          # 3D shapes
-    "lookdev": "palette",        # color palette for shading
-    "rig": "bone",              # skeleton/rigging
-    "animation": "move-3d",     # 3D movement
-    "layout": "grid-3x3",       # scene layout
-    "render": "camera",         # camera/render
-    "light": "lamp",            # lighting
-    "cfx": "sparkles",          # cloth/hair FX
-    "composite": "layers",      # compositing layers
-    "effects": "zap",           # VFX
-    "blendshape": "blend",      # blending shapes
-    "environment": "mountain",  # environment/landscape
-    "crowd": "users",           # crowd of people
-}
-
-# Shot department subcards use a stagier, scene-centric iconography
-# (boxes for blocking, drama mask for performance, etc.) so they read
-# differently from asset subcards at a glance.
-_SHOT_DEPT_ICONS = {
-    "layout":      "boxes",
-    "environment": "trees",
-    "animation":   "drama",
-    "effects":     "flame",
-    "light":       "lightbulb",
-    "render":      "camera",
-}
-_DEPT_SHORT_NAMES = {
-    "animation": "Anim",
-    "blendshape": "Blend",
-    "composite": "Comp",
-    "environment": "Enviro",
-}
-
-
-def _cascade_counts(col: Collection) -> Collection:
-    """Return a new Collection whose count is the sum of all descendant counts."""
-    import dataclasses
-    if not col.children:
-        return col
-    cascaded_children = tuple(_cascade_counts(c) for c in col.children)
-    total = sum(c.count for c in cascaded_children)
-    return dataclasses.replace(col, children=cascaded_children, count=total)
-
-
-def _projects_json_path() -> Path:
-    """Resolve the on-disk location of ``projects.json`` using the
-    same conventions as :func:`asset_browser._config_dir`."""
-    houdini_pref = os.environ.get("HOUDINI_USER_PREF_DIR")
-    if houdini_pref:
-        return Path(houdini_pref) / "asset_browser" / "projects.json"
-    return Path.home() / ".config" / "asset_browser" / "projects.json"
 
 
 def create_catalog():
@@ -132,7 +107,11 @@ def create_catalog():
     try:
         registry = ProjectRegistry(_projects_json_path())
         registry.load()
-        registry.bootstrap_from_env()  # add env-project if missing (no-op otherwise)
+        # Add the env-driven project on first run, and refresh its
+        # paths on subsequent runs if TH_* env vars have changed since
+        # they were last cached. The env vars are authoritative for the
+        # launch session — projects.json is just the off-session cache.
+        registry.bootstrap_from_env()
 
         env_proj = os.environ.get("TH_PROJECT_PATH", "").strip()
         if env_proj:
@@ -175,16 +154,18 @@ class PipelineCatalog(Catalog):
         # catalogs don't need to bake icons into TumbleTrove itself.
         return str(Path(__file__).parent / "icons" / "tumblepipe.png")
 
-    @property
-    def default_project_tag(self) -> str:
-        """Return the tag for the project Houdini was launched with.
+    def default_filter_tags(self) -> frozenset[str]:
+        """Auto-activate the launch project's pill on first load.
 
-        The browser can use this to auto-activate the matching project
-        pill on first load so the grid defaults to the current project.
+        When Houdini is launched from a project ``.bat`` (which sets
+        ``TH_PROJECT_PATH``), the browser pre-filters to that project
+        instead of merging every registered project's assets together.
+        Returns an empty set when Houdini wasn't launched from a
+        project context.
         """
         if self._launch_project_name:
-            return f"project:{self._launch_project_name}"
-        return ""
+            return frozenset({f"project:{self._launch_project_name}"})
+        return frozenset()
 
     # ── Lifecycle ─────────────────────────────────────────
 
@@ -206,43 +187,30 @@ class PipelineCatalog(Catalog):
         # pypanel construction is also running races against HDA
         # loading and crashes the process — see the long history
         # of attempts in this file's git log.
-        import threading
-        self._clients: dict[str, "_AnyClient"] = {}
-        # Serializes _build_client_now — tumblepipe's Client constructor
-        # reads TH_* env vars from its config_convention.py, so two
-        # threads building different projects race on the env and
-        # stamp each other's paths into the wrong config.
+        # Per-project Client lifecycle. Replaces the historical
+        # _clients dict + _init_attempted set, which conflated "not yet
+        # built" with "build failed" and prevented retries on transient
+        # failures. See ClientSlot / ClientState above.
+        self._client_slots: dict[str, ClientSlot] = {}
+        # Serializes Client construction — tumblepipe's Client
+        # constructor reads TH_* env vars from its config_convention.py,
+        # so two concurrent builds race on the env and cross-wire each
+        # other's paths into the wrong config.
         self._build_client_lock = threading.Lock()
-        # Tracks projects whose init has been attempted (and failed
-        # or succeeded) so we don't retry unrecoverable failures on
-        # every browse.
-        self._init_attempted: set[str] = set()
+        # Errors accumulated during the most recent discovery pass.
+        # Drained by ``drain_discovery_errors`` so the QueryEngine can
+        # attach them to the AssetPage. A new browse begins by clearing
+        # this list (see ``get_assets``).
+        self._discovery_errors: list[CatalogError] = []
 
         # Discovery cache (merged across projects). Invalidated by
         # project add / remove / refresh.
         self._cached_assets: list[Asset] | None = None
         self._cached_shots: list[Asset] | None = None
-        # Renders are scanned independently — same disk shapes (EXR
-        # sequences, daily MP4s) but resolved through
-        # ``tumblepipe.pipe.paths`` rather than the workfile scanner.
-        self._cached_renders: list[Asset] | None = None
-        # Playblasts: per-shot card aggregating dept-keyed MP4 previews.
-        # Disk-driven, parallel to renders.
-        self._cached_playblasts: list[Asset] | None = None
 
         # Per-asset, per-department version override.
         # Shape: {asset_id: {dept_name: version_label}}
         self._dept_version_overrides: dict[str, dict[str, str]] = {}
-
-        # Render thumbnail generation runs on background daemon
-        # threads, throttled to avoid spawning 50 ffmpeg processes
-        # at once when the user opens a panel full of fresh cards.
-        # ``_render_thumb_in_progress`` deduplicates so the same
-        # card isn't queued twice while one job is mid-flight.
-        import threading
-        self._render_thumb_in_progress: set[str] = set()
-        self._render_thumb_lock = threading.Lock()
-        self._render_thumb_sem = threading.Semaphore(2)
 
         # Tracks whether we've already warned the user about activating
         # a project that doesn't match Houdini's launch project. The
@@ -264,43 +232,69 @@ class PipelineCatalog(Catalog):
         # call. ``initialize()`` is intentionally a no-op (Houdini 22
         # runs it on the main thread during startup, so eager building
         # there would block Houdini load on per-project ``Path.exists``
-        # SMB timeouts). ``_ensure_all_clients`` / ``_ensure_client``
-        # are driven from ``get_assets`` and the per-action helpers,
-        # which run on the asset-browser worker thread.
+        # SMB timeouts). Clients are built on demand by
+        # ``_get_or_build_client`` / ``_try_get_client`` from
+        # ``get_assets`` and the per-action helpers, which run on the
+        # asset-browser worker thread.
 
     # ── Per-project init ──────────────────────────────────
 
-    def _build_client_now(self, proj: "ProjectConfig"):
+    def _slot(self, project_name: str) -> ClientSlot:
+        """Return (creating if missing) the slot for ``project_name``."""
+        slot = self._client_slots.get(project_name)
+        if slot is None:
+            slot = ClientSlot()
+            self._client_slots[project_name] = slot
+        return slot
+
+    def _build_client_blocking(self, proj: ProjectConfig):
         """Construct one project's :class:`tumblehead.api.Client`
         synchronously on the calling thread.
 
-        Idempotent — returns the cached Client on subsequent calls.
-        Records the attempt so a transient failure isn't retried on
-        every browse.
+        Idempotent for READY slots. FAILED_PERMANENT slots re-raise the
+        stored error. FAILED_TRANSIENT and UNTRIED slots attempt
+        (re-)construction.
 
-        The construction is serialised against a catalog-wide lock
-        because tumblepipe's ``Client`` reads ``TH_*`` env vars inside
-        its ``ProjectConfigConvention`` __init__, so two concurrent
-        builds (worker + main thread) race on the env and cross-wire
-        each other's ``config`` object.
+        Construction is serialised against a catalog-wide lock because
+        tumblepipe's ``Client`` reads ``TH_*`` env vars inside its
+        ``ProjectConfigConvention`` ``__init__``, so two concurrent
+        builds race on the env and cross-wire each other's config.
+
+        Raises:
+            CatalogInitError: when construction fails. The slot is
+                updated to FAILED_TRANSIENT or FAILED_PERMANENT
+                depending on the underlying cause.
         """
-        if proj.name in self._clients:
-            return self._clients[proj.name]
-        if proj.name in self._init_attempted:
-            return None
-        with self._build_client_lock:
-            # Re-check inside the lock — another waiter may have built it.
-            if proj.name in self._clients:
-                return self._clients[proj.name]
-            if proj.name in self._init_attempted:
-                return None
-            return self._build_client_locked(proj)
+        slot = self._slot(proj.name)
+        if slot.state is ClientState.READY:
+            return slot.client
+        if slot.state is ClientState.FAILED_PERMANENT:
+            assert slot.error is not None
+            raise slot.error
 
-    def _build_client_locked(self, proj: "ProjectConfig"):
+        with self._build_client_lock:
+            slot = self._slot(proj.name)
+            if slot.state is ClientState.READY:
+                return slot.client
+            if slot.state is ClientState.FAILED_PERMANENT:
+                assert slot.error is not None
+                raise slot.error
+            return self._build_client_locked(proj, slot)
+
+    def _build_client_locked(
+        self, proj: ProjectConfig, slot: ClientSlot,
+    ):
+        """Lock-held construction. Updates ``slot`` and returns the
+        Client on success; raises :class:`CatalogInitError` on failure.
+        """
+        import time
+        slot.last_attempt = time.time()
         try:
             import sys
             # TH_PIPELINE_PATH is owned by hpm — set in the package's
             # [env] block to the active install. Never per-project.
+            # Missing key here means hpm hasn't activated the package;
+            # that's a permanent failure (KeyError).
             pipeline_path = os.environ["TH_PIPELINE_PATH"]
             py_path = str(
                 Path(pipeline_path) / "houdini" / "TumblePipe" / "python"
@@ -321,147 +315,140 @@ class PipelineCatalog(Catalog):
                 Path(pipeline_path),
                 Path(proj.config_path),
             )
-            self._clients[proj.name] = client
-            self._init_attempted.add(proj.name)
-            log.info(
-                "Pipeline API initialized for %s: %s",
-                proj.name, client.PROJECT_PATH,
+        except BaseException as exc:
+            permanent = isinstance(exc, _PERMANENT_INIT_ERRORS)
+            err = CatalogInitError(
+                self.id,
+                str(exc) or type(exc).__name__,
+                project=proj.name,
+                cause=exc,
             )
-            return client
-        except Exception:
-            self._init_attempted.add(proj.name)
+            slot.state = (
+                ClientState.FAILED_PERMANENT
+                if permanent
+                else ClientState.FAILED_TRANSIENT
+            )
+            slot.client = None
+            slot.error = err
             log.exception(
-                "Failed to initialize pipeline API for project %s",
-                proj.name,
+                "Pipeline API init failed for project %s "
+                "(state=%s)", proj.name, slot.state.name,
             )
-            return None
+            raise err from exc
 
-    def _ensure_client(self, project_name: str):
-        """Return the :class:`tumblehead.api.Client` for ``project_name``,
-        building it on the calling thread if it hasn't been built yet."""
-        if project_name in self._clients:
-            return self._clients[project_name]
+        slot.state = ClientState.READY
+        slot.client = client
+        slot.error = None
+        log.info(
+            "Pipeline API initialized for %s: %s",
+            proj.name, client.PROJECT_PATH,
+        )
+        return client
+
+    def _get_or_build_client(self, project_name: str):
+        """Return the Client for ``project_name`` (building on demand).
+
+        Raises :class:`CatalogInitError` if the project isn't registered
+        or the underlying Client construction fails.
+        """
+        slot = self._client_slots.get(project_name)
+        if slot is not None and slot.state is ClientState.READY:
+            return slot.client
         proj = self._registry.get(project_name)
         if proj is None:
-            return None
-        return self._build_client_now(proj)
+            raise CatalogInitError(
+                self.id,
+                f"unknown project {project_name!r}",
+            )
+        return self._build_client_blocking(proj)
 
-    def _ensure_all_clients(self) -> None:
-        """Build any not-yet-built Clients for every registered project."""
+    def _try_get_client(
+        self, project_name: str,
+    ) -> tuple[object | None, CatalogInitError | None]:
+        """Return (client, error) for ``project_name`` without raising.
+
+        For aggregators that need to skip projects that fail to init
+        while collecting errors for surfacing via AssetPage.errors.
+        """
+        try:
+            return (self._get_or_build_client(project_name), None)
+        except CatalogInitError as err:
+            return (None, err)
+
+    def _ensure_all_clients(self) -> list[CatalogInitError]:
+        """Attempt to build Clients for every registered project.
+
+        Returns the list of init errors that occurred. Does not raise —
+        per-project failures are collected for aggregator surfacing.
+        """
+        errors: list[CatalogInitError] = []
         for proj in self._registry.all():
-            self._ensure_client(proj.name)
+            _, err = self._try_get_client(proj.name)
+            if err is not None:
+                errors.append(err)
+        return errors
+
+    @property
+    def _ready_clients(self) -> dict[str, object]:
+        """Read-only view of currently-READY clients keyed by name."""
+        return {
+            name: slot.client
+            for name, slot in self._client_slots.items()
+            if slot.state is ClientState.READY and slot.client is not None
+        }
+
+    def _is_ready(self, project_name: str) -> bool:
+        slot = self._client_slots.get(project_name)
+        return slot is not None and slot.state is ClientState.READY
 
     def initialize(self) -> None:
         """No-op. Houdini 22's asset browser invokes this on the main
         thread during startup, so any work here blocks Houdini load —
         a single registered project that points at an unreachable
         network share stalls startup for the SMB timeout per project.
-        Client construction is now deferred until the first
-        ``get_assets()`` call, which runs on a worker thread after
-        startup is complete and can safely block on ``Path.exists()``.
+        Per-project Client construction is deferred to
+        :meth:`warm_up_worker_thread` (worker) and on-demand calls
+        from get_assets / per-action helpers (worker thread).
         """
         return
 
+    def warm_up_main_thread(self) -> None:
+        """Pre-import ``tumblepipe.api`` on the main thread.
+
+        Building Clients on a worker thread while another main-thread
+        import is running races on Python's import lock and can
+        deadlock Houdini. Importing the package once on the GUI thread
+        before any worker touches it sidesteps the issue.
+        """
+        try:
+            import tumblepipe.api  # noqa: F401
+        except ImportError:
+            # The pipeline package isn't installed in this environment
+            # (rare — usually means hpm hasn't activated TumblePipe).
+            # Don't raise: per-project init will surface a typed
+            # CatalogInitError if a Client is actually requested.
+            log.debug("tumblepipe.api not importable; skipping main-thread warmup")
+
+    def warm_up_worker_thread(self) -> None:
+        """Build per-project Clients on a worker thread.
+
+        Each registered project's Client is constructed eagerly here
+        so the first browse doesn't block on SMB ``Path.exists()``
+        timeouts. Init failures are recorded on the slot and surfaced
+        via :class:`AssetPage.errors` on the next browse.
+        """
+        self._ensure_all_clients()
+
     # ── Project / asset_id helpers ────────────────────────
 
-    def _split_asset_id(
-        self, asset_id: str,
-    ) -> tuple[str, str, str] | None:
+    def _split_asset_id(self, asset_id: str) -> AssetId | None:
         """Parse a 3-segment asset_id ``"PROJECT/CAT/Name"`` (or
-        ``"PROJECT/SEQ/Shot"``). Returns ``(project, second, third)``
-        or ``None`` if the id is malformed.
+        ``"PROJECT/SEQ/Shot"``).
 
-        Render / playblast ids (``@render:...`` / ``@playblast:...``)
-        intentionally return ``None`` so helpers that assume the
-        workfile shape (``_uri_for_asset_id``,
-        ``_get_department_workfile_info``, etc.) don't accidentally
-        process them.
+        Thin wrapper around :meth:`AssetId.parse` kept as an instance
+        method because most callers reach for it via ``self.``.
         """
-        if not asset_id:
-            return None
-        if (
-            asset_id.startswith(_RENDER_ID_PREFIX)
-            or asset_id.startswith(_PLAYBLAST_ID_PREFIX)
-        ):
-            return None
-        parts = asset_id.split("/", 2)
-        if len(parts) != 3:
-            return None
-        return parts[0], parts[1], parts[2]
-
-    def _is_render_asset_id(self, asset_id: str) -> bool:
-        return bool(asset_id) and asset_id.startswith(_RENDER_ID_PREFIX)
-
-    def _split_render_asset_id(
-        self, asset_id: str,
-    ) -> dict | None:
-        """Parse a render asset id of the form
-        ``@render:<proj>:<entity_kind>:<seg1>:<seg2>``.
-
-        One card represents one entity (typically a shot). All
-        layers / depts / dailies for that entity are stored as
-        ``metadata["sources"]`` rather than encoded in the id.
-
-        Returns ``{"project", "entity_kind", "entity_segs"}`` or
-        ``None`` for malformed ids.
-        """
-        if not self._is_render_asset_id(asset_id):
-            return None
-        body = asset_id[len(_RENDER_ID_PREFIX):]
-        parts = body.split(":")
-        if len(parts) != 4:
-            return None
-        project, entity_kind, seg1, seg2 = parts
-        return {
-            "project": project,
-            "entity_kind": entity_kind,
-            "entity_segs": (seg1, seg2),
-        }
-
-    def _make_render_asset_id(
-        self,
-        project: str,
-        entity_kind: str,
-        entity_segs: tuple[str, str],
-    ) -> str:
-        seg1, seg2 = entity_segs
-        body = ":".join([project, entity_kind, seg1, seg2])
-        return f"{_RENDER_ID_PREFIX}{body}"
-
-    def _is_playblast_asset_id(self, asset_id: str) -> bool:
-        return bool(asset_id) and asset_id.startswith(_PLAYBLAST_ID_PREFIX)
-
-    def _split_playblast_asset_id(
-        self, asset_id: str,
-    ) -> dict | None:
-        """Parse ``@playblast:<proj>:<entity_kind>:<seg1>:<seg2>``.
-
-        One card per entity (typically a shot). All depts that ship a
-        playblast for that entity are stored as ``metadata["depts"]``
-        and aren't encoded in the id.
-        """
-        if not self._is_playblast_asset_id(asset_id):
-            return None
-        body = asset_id[len(_PLAYBLAST_ID_PREFIX):]
-        parts = body.split(":")
-        if len(parts) != 4:
-            return None
-        project, entity_kind, seg1, seg2 = parts
-        return {
-            "project": project,
-            "entity_kind": entity_kind,
-            "entity_segs": (seg1, seg2),
-        }
-
-    def _make_playblast_asset_id(
-        self,
-        project: str,
-        entity_kind: str,
-        entity_segs: tuple[str, str],
-    ) -> str:
-        seg1, seg2 = entity_segs
-        body = ":".join([project, entity_kind, seg1, seg2])
-        return f"{_PLAYBLAST_ID_PREFIX}{body}"
+        return AssetId.parse(asset_id)
 
     def _project_for_asset_id(self, asset_id: str) -> ProjectConfig | None:
         parts = self._split_asset_id(asset_id)
@@ -470,10 +457,18 @@ class PipelineCatalog(Catalog):
         return self._registry.get(parts[0])
 
     def _client_for_asset_id(self, asset_id: str):
+        """Return the Client for ``asset_id``'s project, or None if the
+        id is malformed or the project's Client failed to initialize.
+
+        Logs init errors but does not raise — callers handle the None
+        case explicitly. Use :meth:`_get_or_build_client` directly when
+        a missing Client should be a hard error.
+        """
         parts = self._split_asset_id(asset_id)
         if parts is None:
             return None
-        return self._ensure_client(parts[0])
+        client, _err = self._try_get_client(parts[0])
+        return client
 
     def _project_root_for_asset_id(self, asset_id: str) -> Path | None:
         """Return the on-disk project root for an asset, falling back
@@ -598,17 +593,19 @@ class PipelineCatalog(Catalog):
     # ── Tags ──────────────────────────────────────────────
 
     def get_available_tags(self) -> dict[str, list[str]]:
-        # Don't call _ensure_client — runs on GUI thread
+        # Don't call _get_or_build_client here — get_available_tags
+        # runs on the GUI thread and Client construction can block on
+        # SMB Path.exists() timeouts. _list_categories /
+        # _list_sequences both gate on _is_ready, so they return []
+        # for projects whose Clients haven't been warmed up yet.
         cats = self._list_categories()
         seqs = self._list_sequences()
         return {
             "source": ["pipeline"],
-            "type": ["asset", "shot", "render", "playblast"],
+            "type": ["asset", "shot"],
             "category": [c.lower() for c in cats],
             "sequence": seqs,
             "project": [p.name for p in self._registry.all()],
-            "has": ["exr", "daily"],
-            "kind": ["media"],
         }
 
     # ── Collections ───────────────────────────────────────
@@ -689,40 +686,6 @@ class PipelineCatalog(Catalog):
                 children=tuple(seq_children),
             ))
 
-        # Media section — Renders (per shot, with raw/denoise/slapcomp/
-        # daily as detail-panel sources) + Playblasts (per shot, with
-        # one sub-card per dept). Only added when at least one media
-        # asset exists. Parent is navigation-only; children carry the
-        # tag filters that scope the grid.
-        render_total = self._count_for_project_renders(proj.name)
-        playblast_total = self._count_for_project_playblasts(proj.name)
-        media_children: list[Collection] = []
-        if render_total:
-            media_children.append(Collection(
-                id=f"{proj.name}:renders_section",
-                label="Renders",
-                count=render_total,
-                tag=f"{project_tag}+type:render",
-                icon="film",
-            ))
-        if playblast_total:
-            media_children.append(Collection(
-                id=f"{proj.name}:playblasts_section",
-                label="Playblasts",
-                count=playblast_total,
-                tag=f"{project_tag}+type:playblast",
-                icon="circle-play",
-            ))
-        if media_children:
-            sections.append(Collection(
-                id=f"{proj.name}:media_section",
-                label="Media",
-                count=render_total + playblast_total,
-                tag=f"{project_tag}+kind:media",
-                icon="image-play",
-                children=tuple(media_children),
-            ))
-
         group_children = self._build_groups_for_project(proj)
         sections.append(Collection(
             id=f"{proj.name}:groups_section",
@@ -785,22 +748,6 @@ class PipelineCatalog(Catalog):
             if seq_tag in a.tags and proj_tag in a.tags
         )
 
-    def _count_for_project_renders(self, project_name: str) -> int:
-        items = self._get_all_items()
-        proj_tag = f"project:{project_name}"
-        return sum(
-            1 for a in items
-            if "type:render" in a.tags and proj_tag in a.tags
-        )
-
-    def _count_for_project_playblasts(self, project_name: str) -> int:
-        items = self._get_all_items()
-        proj_tag = f"project:{project_name}"
-        return sum(
-            1 for a in items
-            if "type:playblast" in a.tags and proj_tag in a.tags
-        )
-
     def _count_todos_for_project(
         self, project_name: str,
     ) -> tuple[int, int]:
@@ -828,63 +775,81 @@ class PipelineCatalog(Catalog):
     def _filter_by_group(self, items: list, tag: str) -> list:
         """Filter assets to members of a pipeline group.
 
-        Tag format: ``group:PROJECT:CONTEXT/NAME``
+        Tag format: ``group:PROJECT:CONTEXT/NAME``. Returns ``items``
+        unchanged when the project's Client isn't yet READY (sidebar
+        renders early). Raises :class:`TagQueryError` if the group
+        lookup itself fails — silently returning all items would
+        defeat the user's filter and hide the real problem.
         """
+        _, rest = tag.split(":", 1)
+        proj_name, group_path = rest.split(":", 1)
+        proj = self._registry.get(proj_name)
+        if proj is None or not self._is_ready(proj_name):
+            return items
+        self._activate_project(proj)
         try:
-            _, rest = tag.split(":", 1)
-            proj_name, group_path = rest.split(":", 1)
-            proj = self._registry.get(proj_name)
-            if proj is None or proj_name not in self._clients:
-                return items
-            self._activate_project(proj)
             from tumblepipe.config import groups as grp_mod
             from tumblepipe.util.uri import Uri
             group_uri = Uri.parse_unsafe(f"groups:/{group_path}")
             group = grp_mod.get_group(group_uri)
-            if group is None:
-                return items
-            member_ids = set()
-            for member_uri in group.members:
-                segs = member_uri.segments if hasattr(member_uri, 'segments') else str(member_uri).replace("entity:/", "").split("/")
-                if len(segs) >= 3:
-                    member_ids.add(f"{proj_name}/{segs[1]}/{segs[2]}")
-                elif len(segs) >= 2:
-                    member_ids.add(f"{proj_name}/{segs[0]}/{segs[1]}")
-            return [a for a in items if a.id in member_ids]
-        except Exception:
-            log.debug("Failed to filter by group %s", tag, exc_info=True)
-            return items
+        except Exception as exc:
+            raise TagQueryError(
+                self.id,
+                f"failed to resolve group {group_path!r} in {proj_name}: {exc}",
+                cause=exc,
+            ) from exc
+        if group is None:
+            return []
+        member_ids = set()
+        for member_uri in group.members:
+            segs = (
+                member_uri.segments if hasattr(member_uri, 'segments')
+                else str(member_uri).replace("entity:/", "").split("/")
+            )
+            if len(segs) >= 3:
+                member_ids.add(f"{proj_name}/{segs[1]}/{segs[2]}")
+            elif len(segs) >= 2:
+                member_ids.add(f"{proj_name}/{segs[0]}/{segs[1]}")
+        return [a for a in items if a.id in member_ids]
 
     def _filter_by_scene(self, items: list, tag: str) -> list:
         """Filter assets to those in a pipeline scene.
 
-        Tag format: ``scene:PROJECT:PATH``
+        Tag format: ``scene:PROJECT:PATH``. See :meth:`_filter_by_group`
+        for the contract — raises :class:`TagQueryError` on lookup
+        failure.
         """
+        _, rest = tag.split(":", 1)
+        proj_name, scene_path = rest.split(":", 1)
+        proj = self._registry.get(proj_name)
+        if proj is None or not self._is_ready(proj_name):
+            return items
+        self._activate_project(proj)
         try:
-            _, rest = tag.split(":", 1)
-            proj_name, scene_path = rest.split(":", 1)
-            proj = self._registry.get(proj_name)
-            if proj is None or proj_name not in self._clients:
-                return items
-            self._activate_project(proj)
             from tumblepipe.config import scenes as scn_mod
             from tumblepipe.util.uri import Uri
             scene_uri = Uri.parse_unsafe(f"scenes:/{scene_path}")
             scene = scn_mod.get_scene(scene_uri)
-            if scene is None:
-                return items
-            asset_ids = set()
-            for entry in scene.assets:
-                uri = entry.asset
-                segs = uri.segments if hasattr(uri, 'segments') else str(uri).replace("entity:/", "").split("/")
-                if len(segs) >= 3:
-                    asset_ids.add(f"{proj_name}/{segs[1]}/{segs[2]}")
-                elif len(segs) >= 2:
-                    asset_ids.add(f"{proj_name}/{segs[0]}/{segs[1]}")
-            return [a for a in items if a.id in asset_ids]
-        except Exception:
-            log.debug("Failed to filter by scene %s", tag, exc_info=True)
-            return items
+        except Exception as exc:
+            raise TagQueryError(
+                self.id,
+                f"failed to resolve scene {scene_path!r} in {proj_name}: {exc}",
+                cause=exc,
+            ) from exc
+        if scene is None:
+            return []
+        asset_ids = set()
+        for entry in scene.assets:
+            uri = entry.asset
+            segs = (
+                uri.segments if hasattr(uri, 'segments')
+                else str(uri).replace("entity:/", "").split("/")
+            )
+            if len(segs) >= 3:
+                asset_ids.add(f"{proj_name}/{segs[1]}/{segs[2]}")
+            elif len(segs) >= 2:
+                asset_ids.add(f"{proj_name}/{segs[0]}/{segs[1]}")
+        return [a for a in items if a.id in asset_ids]
 
     def _build_groups_for_project(self, proj) -> list[Collection]:
         """Build Group sub-sections (Assets / Shots) for one project.
@@ -893,7 +858,7 @@ class PipelineCatalog(Catalog):
         presented under separate headers. Empty sub-sections are
         omitted.
         """
-        if proj.name not in self._clients:
+        if not self._is_ready(proj.name):
             return []
         sub_by_ctx: dict[str, list[Collection]] = {"assets": [], "shots": []}
         try:
@@ -934,7 +899,7 @@ class PipelineCatalog(Catalog):
     def _build_scenes_for_project(self, proj) -> list[Collection]:
         """Build Scene collections for a single project."""
         children: list[Collection] = []
-        if proj.name not in self._clients:
+        if not self._is_ready(proj.name):
             return children
         try:
             self._activate_project(proj)
@@ -970,7 +935,7 @@ class PipelineCatalog(Catalog):
                 return result
             proj_name = parts[0]
             proj = self._registry.get(proj_name)
-            if proj is None or proj_name not in self._clients:
+            if proj is None or not self._is_ready(proj_name):
                 return result
             self._activate_project(proj)
             from tumblepipe.config import groups as grp_mod
@@ -1085,20 +1050,33 @@ class PipelineCatalog(Catalog):
         self, query: str = "", tags: frozenset[str] = frozenset(),
         cursor: str | None = None, page_size: int = 50,
     ) -> AssetPage:
-        # Block until every registered project's bg init has finished
-        # (success or fail) before aggregating discovery.
-        self._ensure_all_clients()
+        # Begin a fresh discovery pass. Errors are accumulated on
+        # ``self._discovery_errors`` and attached to the returned
+        # AssetPage so the consumer can surface them in the UI.
+        self._discovery_errors = []
+        # Block until every registered project's init has finished
+        # (success or fail) before aggregating discovery. Init errors
+        # are recorded on slots and surfaced via per-project discovery.
+        for err in self._ensure_all_clients():
+            self._discovery_errors.append(err)
         all_items = self._get_all_items()
 
-        # Handle group/scene tags (special filtering)
+        # Handle group/scene tags (special filtering). Filter failures
+        # are surfaced via AssetPage.errors rather than silently
+        # widening the result set, which would defeat the filter.
         remaining_tags = set()
         for t in tags:
-            if t.startswith("group:"):
-                all_items = self._filter_by_group(all_items, t)
-            elif t.startswith("scene:"):
-                all_items = self._filter_by_scene(all_items, t)
-            else:
-                remaining_tags.add(t)
+            try:
+                if t.startswith("group:"):
+                    all_items = self._filter_by_group(all_items, t)
+                elif t.startswith("scene:"):
+                    all_items = self._filter_by_scene(all_items, t)
+                else:
+                    remaining_tags.add(t)
+            except CatalogError as err:
+                self._discovery_errors.append(err)
+                all_items = []  # filter failed — empty result, not all items
+                break
 
         # Inject todo-status tags so sidebar filters can pick up assets
         # by their todo state (none / pending / done).
@@ -1142,16 +1120,13 @@ class PipelineCatalog(Catalog):
             assets=page_items,
             cursor=next_cursor,
             total=len(all_items),
+            errors=tuple(self._discovery_errors),
         )
 
     # ── Detail ────────────────────────────────────────────
 
     def get_detail(self, asset_id: str, version: str | None = None) -> AssetDetail:
-        # asset_id format: "PROJECT/CATEGORY/AssetName" or "PROJECT/SEQ/Shot",
-        # or a render id (``@render:...``) — handled separately.
-        if self._is_render_asset_id(asset_id):
-            return self._get_render_detail(asset_id)
-
+        # asset_id format: "PROJECT/CATEGORY/AssetName" or "PROJECT/SEQ/Shot".
         parsed = self._split_asset_id(asset_id)
         if parsed is None:
             return AssetDetail(
@@ -1193,11 +1168,8 @@ class PipelineCatalog(Catalog):
             metadata["sequence"] = second
             fr = self._get_frame_range_obj(asset_id)
             if fr is not None:
-                start = getattr(fr, "start_frame", None)
-                end = getattr(fr, "end_frame", None)
-                if start is None or end is None:
-                    start = getattr(fr, "first_frame", None)
-                    end = getattr(fr, "last_frame", None)
+                start = fr.start_frame
+                end = fr.end_frame
                 if start is not None:
                     metadata["frame_start"] = start
                 if end is not None:
@@ -1222,85 +1194,6 @@ class PipelineCatalog(Catalog):
             metadata=metadata,
         )
 
-    def _get_render_detail(self, asset_id: str) -> AssetDetail:
-        """Build an ``AssetDetail`` for a render asset.
-
-        Mirrors the source ``Asset`` (tags + metadata) and adds a
-        small render-specific summary as the description so the Info
-        tab has something useful to show.
-        """
-        parsed = self._split_render_asset_id(asset_id)
-        if parsed is None:
-            return AssetDetail(
-                id=asset_id, name=asset_id, thumbnail_url="",
-                tags=frozenset({"source:pipeline", "type:render"}),
-            )
-
-        # Look up the cached Asset so we re-use the discovery work
-        # rather than re-scanning the disk.
-        source = next(
-            (a for a in self._get_all_items() if a.id == asset_id),
-            None,
-        )
-        tags = set(source.tags) if source else {
-            "source:pipeline",
-            "type:render",
-            f"project:{parsed['project']}",
-        }
-        metadata: dict = dict(source.metadata) if source else {}
-
-        # Frame range from the primary source's context.json. Skipped
-        # when the primary is a daily MP4 (no context file).
-        frame_range = ""
-        primary_key = metadata.get("primary_source", "")
-        sources = metadata.get("sources") or {}
-        primary_info = sources.get(primary_key) if primary_key else None
-        if primary_info and primary_info.get("kind") == "exr":
-            layer = self._resolve_render_layer(asset_id)
-            if layer is not None:
-                try:
-                    fr = layer.get_frame_range()
-                    if fr is not None:
-                        first = getattr(fr, "first_frame", None)
-                        last = getattr(fr, "last_frame", None)
-                        if first is not None and last is not None:
-                            frame_range = f"{first}-{last}"
-                except Exception:
-                    pass
-        if frame_range:
-            metadata["frame_range"] = frame_range
-
-        seg1, seg2 = parsed["entity_segs"]
-        entity_label = (
-            f"{seg1}_{seg2}" if parsed["entity_kind"] == "shots" else seg2
-        )
-        # Description summary — primary source + frame range + AOVs.
-        bits = [entity_label]
-        if primary_info is not None:
-            bits.append(
-                f"Primary: {self._render_source_label(primary_key, primary_info)}",
-            )
-        if frame_range:
-            bits.append(f"Frames: {frame_range}")
-        versions = metadata.get("versions") or []
-        if versions:
-            bits.append(f"Versions: {', '.join(versions)}")
-        aovs = metadata.get("aovs") or []
-        if aovs:
-            bits.append(f"AOVs: {', '.join(aovs)}")
-        description = "\n".join(bits)
-
-        name = source.name if source else entity_label
-
-        return AssetDetail(
-            id=asset_id,
-            name=name,
-            thumbnail_url="",
-            tags=frozenset(tags),
-            description=description,
-            metadata=metadata,
-        )
-
     def _get_project_name(self, asset_id: str | None = None) -> str:
         """Return the display name of the project an asset belongs to.
 
@@ -1313,40 +1206,51 @@ class PipelineCatalog(Catalog):
         return proj.name if proj is not None else ""
 
     def _get_variants(self, asset_id: str, kind: str) -> list[str]:
-        """Return variant names for an asset/shot, [] on error."""
-        try:
-            from tumblepipe.config.variants import list_variants
-        except Exception:
-            return []
+        """Return variant names for an asset/shot.
+
+        Returns ``[]`` for a malformed or unresolvable id. Raises
+        :class:`ConfigError` if the variants module fails to load or
+        the lookup itself raises — callers (typically :meth:`get_detail`)
+        let it propagate so the consumer can render a detail-level error.
+        """
+        from tumblepipe.config.variants import list_variants
         uri = self._uri_for_asset_id(asset_id)
         if uri is None:
             return []
         try:
             return list(list_variants(uri))
-        except Exception:
-            log.debug("variants lookup failed for %s", asset_id)
-            return []
+        except Exception as exc:
+            raise ConfigError(
+                self.id,
+                f"variants lookup failed for {asset_id}: {exc}",
+                cause=exc,
+            ) from exc
 
     def _get_frame_range_obj(self, asset_id: str):
-        """Return the FrameRange dataclass for a shot, or None."""
-        try:
-            from tumblepipe.config.timeline import get_frame_range
-        except Exception:
-            return None
+        """Return the FrameRange dataclass for a shot, or ``None`` if
+        the id doesn't resolve. Raises :class:`ConfigError` on lookup
+        failure (rather than masking with ``None``).
+        """
+        from tumblepipe.config.timeline import get_frame_range
         uri = self._uri_for_asset_id(asset_id)
         if uri is None:
             return None
         try:
             return get_frame_range(uri)
-        except Exception:
-            return None
+        except Exception as exc:
+            raise ConfigError(
+                self.id,
+                f"frame range lookup failed for {asset_id}: {exc}",
+                cause=exc,
+            ) from exc
 
     def _get_fps(self, asset_id: str):
-        """Return FPS for an entity (or project default), or None."""
-        try:
-            from tumblepipe.config.timeline import get_fps
-        except Exception:
-            return None
+        """Return FPS for an entity (or project default).
+
+        Raises :class:`ConfigError` if the timeline module's FPS lookup
+        raises — the previous silent ``None`` masked config corruption.
+        """
+        from tumblepipe.config.timeline import get_fps
         uri = self._uri_for_asset_id(asset_id)
         try:
             if uri is not None:
@@ -1354,8 +1258,12 @@ class PipelineCatalog(Catalog):
                 if fps is not None:
                     return fps
             return get_fps()
-        except Exception:
-            return None
+        except Exception as exc:
+            raise ConfigError(
+                self.id,
+                f"fps lookup failed for {asset_id}: {exc}",
+                cause=exc,
+            ) from exc
 
     # ── Description sidecar ───────────────────────────────
 
@@ -1408,11 +1316,6 @@ class PipelineCatalog(Catalog):
         Sidecar lives next to ``description.txt`` in the asset/shot
         root directory so it follows the same project share semantics.
         """
-        if self._is_render_asset_id(asset_id):
-            return self._render_thumbnail_path(asset_id)
-        if self._is_playblast_asset_id(asset_id):
-            return self._playblast_thumbnail_path(asset_id)
-
         parsed = self._split_asset_id(asset_id)
         if parsed is None:
             return None
@@ -1427,321 +1330,16 @@ class PipelineCatalog(Catalog):
         except Exception:
             return None
 
-    def _render_thumbnail_path(self, asset_id: str) -> Path | None:
-        """Return the on-disk thumbnail path for a render card.
-
-        Sidecar lives next to the *primary source's* media:
-        - EXR primary:   ``<latest_version_dir>/thumbnail.png``
-        - Daily primary: ``<mp4>.thumbnail.png``
-
-        Returns ``None`` when the source isn't on disk yet.
-        """
-        info = self._resolve_render_source(asset_id, source=None)
-        if info is None:
-            return None
-        src = info["info"]
-        if src.get("kind") == "daily":
-            path_str = src.get("path")
-            if not path_str:
-                return None
-            mp4 = Path(path_str)
-            return mp4.with_suffix(mp4.suffix + ".thumbnail.png")
-        # EXR — the cached path is the latest version dir.
-        path_str = src.get("path")
-        if not path_str:
-            return None
-        return Path(path_str) / "thumbnail.png"
-
-    def _playblast_thumbnail_path(self, asset_id: str) -> Path | None:
-        """Return the sidecar thumbnail path for a playblast card —
-        ``<latest_mp4>.thumbnail.png`` for the primary dept's latest
-        version. Returns ``None`` when nothing is on disk.
-        """
-        mp4 = self._resolve_playblast_path(asset_id, dept=None)
-        if mp4 is None:
-            return None
-        return mp4.with_suffix(mp4.suffix + ".thumbnail.png")
-
     def get_thumbnail(self, asset: Asset):
         """Return the path to the asset's sidecar thumbnail if present.
 
         Falls back to an empty string (placeholder icon) when there
-        isn't one yet. For render / playblast assets, schedules a
-        background thumbnail generation from the primary source's
-        latest media so the grid stays responsive — the new thumbnail
-        appears on the next refresh once iconvert/ffmpeg finishes.
+        isn't one yet.
         """
         p = self._thumbnail_path(asset.id)
         if p is not None and p.exists():
             return p
-        if (
-            self._is_render_asset_id(asset.id)
-            or self._is_playblast_asset_id(asset.id)
-        ):
-            self._schedule_media_thumbnail(asset)
         return ""
-
-    def _schedule_media_thumbnail(self, asset: Asset) -> None:
-        """Kick off a background thumbnail generation for a render or
-        playblast asset. No-op if one is already in progress for this
-        id.
-
-        Daemon thread bounded by a Semaphore (2 concurrent). Reads
-        source paths straight from ``asset.metadata`` so the worker
-        doesn't touch project env vars. Refresh dispatched on the
-        GUI thread when complete.
-        """
-        aid = asset.id
-        with self._render_thumb_lock:
-            if aid in self._render_thumb_in_progress:
-                return
-            self._render_thumb_in_progress.add(aid)
-        import threading
-        threading.Thread(
-            target=self._media_thumb_worker,
-            args=(asset,),
-            daemon=True,
-            name=f"MediaThumb-{aid[:32]}",
-        ).start()
-
-    def _media_thumb_worker(self, asset: Asset) -> None:
-        try:
-            with self._render_thumb_sem:
-                if self._is_playblast_asset_id(asset.id):
-                    generated = self._playblast_generate_thumbnail_from_metadata(
-                        asset,
-                    )
-                else:
-                    generated = self._render_generate_thumbnail_from_metadata(
-                        asset,
-                    )
-            if generated is not None:
-                # Refresh on the GUI thread — _request_thumbnail_refresh
-                # walks Qt widgets which is GUI-thread-only.
-                try:
-                    from asset_browser.core.thumbnail import _gui_singleshot
-                    _gui_singleshot(
-                        lambda aid=asset.id:
-                            self._request_thumbnail_refresh(aid),
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            log.debug(
-                "Background media thumbnail failed for %s",
-                asset.id, exc_info=True,
-            )
-        finally:
-            with self._render_thumb_lock:
-                self._render_thumb_in_progress.discard(asset.id)
-
-    # ── Render thumbnail generation ───────────────────────
-
-    def _render_generate_thumbnail_from_metadata(
-        self, asset: Asset,
-    ) -> Path | None:
-        """Build a first-frame thumbnail PNG from the primary source's
-        cached on-disk path. Reads only ``asset.metadata`` so the
-        worker doesn't touch project env vars.
-        """
-        meta = asset.metadata or {}
-        sources = meta.get("sources") or {}
-        primary_key = (
-            meta.get("primary_source")
-            or (
-                self._pick_primary_source(sources) if sources else None
-            )
-        )
-        if not primary_key or primary_key not in sources:
-            return None
-        src = sources[primary_key]
-
-        if src.get("kind") == "daily":
-            mp4_str = src.get("path")
-            if not mp4_str:
-                return None
-            mp4 = Path(mp4_str)
-            if not mp4.exists():
-                return None
-            out = mp4.with_suffix(mp4.suffix + ".thumbnail.png")
-            if out.exists():
-                return out
-            try:
-                out.parent.mkdir(parents=True, exist_ok=True)
-            except Exception:
-                return None
-            return self._render_thumb_from_mp4(mp4, out)
-
-        # EXR primary
-        layer_str = src.get("path")
-        if not layer_str:
-            return None
-        layer_path = Path(layer_str)
-        if not layer_path.is_dir():
-            return None
-        out = layer_path / "thumbnail.png"
-        if out.exists():
-            return out
-        first_frame = self._render_first_frame_in_dir(layer_path)
-        if first_frame is None:
-            return None
-        try:
-            out.parent.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            return None
-        return self._render_thumb_from_exr(first_frame, out)
-
-    def _playblast_generate_thumbnail_from_metadata(
-        self, asset: Asset,
-    ) -> Path | None:
-        """Build a first-frame thumbnail PNG for a playblast card from
-        the primary dept's latest MP4. Reads only ``asset.metadata``
-        so the worker doesn't touch project env vars.
-        """
-        meta = asset.metadata or {}
-        depts = meta.get("depts") or {}
-        primary = meta.get("primary_dept")
-        if not primary or primary not in depts:
-            return None
-        path_str = depts[primary].get("path")
-        if not path_str:
-            return None
-        mp4 = Path(path_str)
-        if not mp4.exists():
-            return None
-        out = mp4.with_suffix(mp4.suffix + ".thumbnail.png")
-        if out.exists():
-            return out
-        try:
-            out.parent.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            return None
-        return self._render_thumb_from_mp4(mp4, out)
-
-    @staticmethod
-    def _render_first_frame_in_dir(version_dir: Path):
-        """Return the lowest-numbered EXR/JPG actually on disk.
-
-        Looks at flat layer files first, then drops into the first
-        AOV subdir. Mirrors ``_render_first_frame_path`` but takes
-        a raw Path so it works without a Layer dataclass.
-        """
-        try:
-            flat = sorted(
-                f for f in version_dir.iterdir()
-                if f.is_file() and f.suffix.lower() in (".exr", ".jpg", ".png", ".tif")
-            )
-            if flat:
-                return flat[0]
-        except Exception:
-            pass
-        try:
-            for sub in sorted(version_dir.iterdir()):
-                if not sub.is_dir() or sub.suffix != "":
-                    continue
-                aov_files = sorted(
-                    f for f in sub.iterdir()
-                    if f.is_file() and f.suffix.lower() in (".exr", ".jpg", ".png", ".tif")
-                )
-                if aov_files:
-                    return aov_files[0]
-        except Exception:
-            pass
-        return None
-
-    @staticmethod
-    def _render_first_frame_path(layer):
-        """Return the lowest-numbered EXR (or sidecar suffix) actually
-        on disk for ``layer``. Prefers the layer's own frames; falls
-        back to the first AOV's beauty-equivalent when the layer is
-        AOV-only.
-        """
-        try:
-            frame_glob = layer.get_frame_path("*")
-            candidates = sorted(
-                frame_glob.parent.glob(frame_glob.name),
-                key=lambda p: p.name,
-            )
-            if candidates:
-                return candidates[0]
-        except Exception:
-            pass
-        # Layer has no flat frames — try the first AOV directory
-        try:
-            for aov in layer.aovs.values():
-                aov_glob = aov.get_aov_frame_path("*")
-                aov_candidates = sorted(
-                    aov_glob.parent.glob(aov_glob.name),
-                    key=lambda p: p.name,
-                )
-                if aov_candidates:
-                    return aov_candidates[0]
-        except Exception:
-            pass
-        return None
-
-    @staticmethod
-    def _render_thumb_from_exr(src: Path, out: Path) -> Path | None:
-        """Convert an EXR to a 512px PNG via Houdini's ``iconvert``.
-
-        Returns the output path on success or ``None`` on failure.
-        ``iconvert`` ships with Houdini and lives on PATH inside the
-        Houdini environment.
-        """
-        import shutil
-        import subprocess
-        exe = shutil.which("iconvert")
-        if exe is None:
-            log.debug("iconvert not on PATH — skipping EXR thumbnail")
-            return None
-        try:
-            subprocess.run(
-                [exe, str(src), str(out)],
-                check=True,
-                creationflags=0x08000000,
-                capture_output=True,
-                timeout=30,
-            )
-        except Exception:
-            log.debug("iconvert failed for %s", src, exc_info=True)
-            try:
-                out.unlink(missing_ok=True)
-            except Exception:
-                pass
-            return None
-        return out if out.exists() else None
-
-    @staticmethod
-    def _render_thumb_from_mp4(src: Path, out: Path) -> Path | None:
-        """Extract the first frame of ``src`` as a 512px PNG via ffmpeg."""
-        import shutil
-        import subprocess
-        exe = shutil.which("ffmpeg")
-        if exe is None:
-            log.debug("ffmpeg not on PATH — skipping MP4 thumbnail")
-            return None
-        try:
-            subprocess.run(
-                [
-                    exe, "-y", "-loglevel", "error",
-                    "-i", str(src),
-                    "-vf", "scale=512:-1",
-                    "-frames:v", "1",
-                    str(out),
-                ],
-                check=True,
-                creationflags=0x08000000,
-                capture_output=True,
-                timeout=30,
-            )
-        except Exception:
-            log.debug("ffmpeg thumbnail failed for %s", src, exc_info=True)
-            try:
-                out.unlink(missing_ok=True)
-            except Exception:
-                pass
-            return None
-        return out if out.exists() else None
 
     def get_card_menu_items(self, asset: Asset, *, selected_assets=None):
         """Catalog-contributed card right-click items.
@@ -1754,68 +1352,6 @@ class PipelineCatalog(Catalog):
         to a single-asset menu.
         """
         asset_id = asset.id
-
-        # Playblast cards: small viewer menu mirroring renders.
-        # mplay omitted because mplay can't play MP4.
-        if "type:playblast" in asset.tags:
-            return [
-                (
-                    "Open Latest in DJV",
-                    lambda aid=asset_id:
-                        self._execute_playblast_action(
-                            "playblast_open_djv", aid,
-                        ),
-                ),
-                (
-                    "Open Folder",
-                    lambda aid=asset_id:
-                        self._execute_playblast_action(
-                            "playblast_open_folder", aid,
-                        ),
-                ),
-            ]
-
-        # Render assets get a small viewer-focused menu — none of the
-        # workfile/database items make sense for a frame sequence.
-        if "type:render" in asset.tags:
-            # mplay only when the primary source is EXR. Daily-only
-            # cards still get a DJV button (mplay can't play MP4).
-            sources = (asset.metadata or {}).get("sources") or {}
-            primary_key = (
-                (asset.metadata or {}).get("primary_source")
-                or (
-                    self._pick_primary_source(sources)
-                    if sources else ""
-                )
-            )
-            primary_is_daily = (
-                bool(primary_key)
-                and sources.get(primary_key, {}).get("kind") == "daily"
-            )
-            menu: list = []
-            if not primary_is_daily:
-                menu.append((
-                    "Open in MPlay (latest)",
-                    lambda aid=asset_id:
-                        self._execute_render_action(
-                            "render_open_mplay", aid,
-                        ),
-                ))
-            menu.append((
-                "Open in DJV (latest)",
-                lambda aid=asset_id:
-                    self._execute_render_action(
-                        "render_open_djv", aid,
-                    ),
-            ))
-            menu.append((
-                "Open Folder",
-                lambda aid=asset_id:
-                    self._execute_render_action(
-                        "render_open_folder", aid,
-                    ),
-            ))
-            return menu
 
         # Build the submit-jobs target list: the multi-selected cards if
         # the browser provided a selection scoped to this catalog AND
@@ -1880,12 +1416,8 @@ class PipelineCatalog(Catalog):
         return items
 
     def _asset_context(self, asset: Asset) -> str | None:
-        """Return ``'shots'`` or ``'assets'`` for a regular asset card,
-        or ``None`` for render/playblast/unknown cards.
-
-        Submit-jobs only operates on entity cards (where the id maps to
-        a ``PROJECT/CAT/Name`` URI); render and playblast cards carry
-        sentinel-prefixed ids that don't.
+        """Return ``'shots'`` or ``'assets'`` for an asset card, or
+        ``None`` for unknown cards.
         """
         tags = asset.tags or ()
         if "type:shot" in tags:
@@ -2000,63 +1532,11 @@ class PipelineCatalog(Catalog):
         """Right-click items for a dept sub-card in the deck popup.
 
         Mirrors the detail-panel dept context menu so behavior stays
-        consistent across both surfaces. Both branches expose
-        ``New: Current`` and ``New: Template`` so the user can spawn
-        a fresh version from either the loaded scene or a template
-        regardless of whether the dept already has versions.
+        consistent across both surfaces. Exposes ``New: Current`` and
+        ``New: Template`` so the user can spawn a fresh version from
+        either the loaded scene or a template regardless of whether
+        the dept already has versions.
         """
-        # Playblast dept sub-cards → DJV / open folder for that dept's
-        # latest version. ``sub_card_key`` is the dept name.
-        if "type:playblast" in asset.tags:
-            asset_id = asset.id
-            dept = sub_card_key
-            return [
-                (
-                    f"Open in DJV ({dept})",
-                    lambda aid=asset_id, d=dept:
-                        self._execute_playblast_action(
-                            "playblast_open_djv", aid, dept=d,
-                        ),
-                ),
-                (
-                    "Open Folder",
-                    lambda aid=asset_id, d=dept:
-                        self._execute_playblast_action(
-                            "playblast_open_folder", aid, dept=d,
-                        ),
-                ),
-            ]
-
-        # Render AOV sub-cards → mplay / djv / open folder scoped to
-        # that pass within the primary source's latest version.
-        # ``sub_card_key`` is the AOV name (e.g. "beauty", "normal").
-        if "type:render" in asset.tags:
-            asset_id = asset.id
-            aov = sub_card_key
-            return [
-                (
-                    f"Open in MPlay ({aov})",
-                    lambda aid=asset_id, a=aov:
-                        self._execute_render_action(
-                            "render_open_mplay", aid, aov=a,
-                        ),
-                ),
-                (
-                    f"Open in DJV ({aov})",
-                    lambda aid=asset_id, a=aov:
-                        self._execute_render_action(
-                            "render_open_djv", aid, aov=a,
-                        ),
-                ),
-                (
-                    "Open Folder",
-                    lambda aid=asset_id, a=aov:
-                        self._execute_render_action(
-                            "render_open_folder", aid, aov=a,
-                        ),
-                ),
-            ]
-
         dept = sub_card_key
         asset_id = asset.id
         if self._uri_for_asset_id(asset_id) is None:
@@ -2627,18 +2107,6 @@ class PipelineCatalog(Catalog):
     def get_detail_sections(
         self, detail: AssetDetail,
     ) -> list[DetailSection] | None:
-        # Render / Playblast cards get a simpler Info-only panel —
-        # workfile Departments / Tasks tabs don't apply.
-        if "type:render" in detail.tags or "type:playblast" in detail.tags:
-            return [
-                DetailSection(
-                    key="info",
-                    title="Info",
-                    icon="info",
-                    widget_factory=self._build_combined_info_section,
-                ),
-            ]
-
         # Asset actions live at the TOP of the detail panel so their
         # placement is consistent across assets — the user always knows
         # where Save/Publish/Refresh are regardless of selection.
@@ -2723,16 +2191,10 @@ class PipelineCatalog(Catalog):
             vbox.addWidget(path_row)
 
         # Per-kind info table.
-        is_render = "type:render" in detail.tags
-        is_playblast = "type:playblast" in detail.tags
         if "type:asset" in detail.tags:
             info_w = self._build_asset_info_section(ctx)
         elif "type:shot" in detail.tags:
             info_w = self._build_shot_info_section(ctx)
-        elif is_render:
-            info_w = self._build_render_info_section(ctx)
-        elif is_playblast:
-            info_w = self._build_playblast_info_section(ctx)
         else:
             info_w = None
         if info_w is not None:
@@ -2855,24 +2317,10 @@ class PipelineCatalog(Catalog):
         """Return the breadcrumb segments for an asset's URI, or
         ``None`` when no identity is resolvable.
 
-        Assets/shots: split ``detail.id`` (``project/CHAR/Baby`` form)
-        and append variants if present. Renders/playblasts: pull from
-        ``metadata['project']`` + ``metadata['entity_segs']``.
+        Splits ``detail.id`` (``project/CHAR/Baby`` form) and appends
+        variants if present.
         """
         meta = detail.metadata or {}
-        is_render = "type:render" in detail.tags
-        is_playblast = "type:playblast" in detail.tags
-        if is_render or is_playblast:
-            project = meta.get("project")
-            entity_segs = list(meta.get("entity_segs") or [])
-            if not project and not entity_segs:
-                return None
-            segs = []
-            if project:
-                segs.append(str(project))
-            segs.extend(str(s) for s in entity_segs)
-            return segs or None
-
         parts = (detail.id or "").split("/")
         parts = [p for p in parts if p]
         if not parts:
@@ -2932,82 +2380,6 @@ class PipelineCatalog(Catalog):
             rows.append(("Latest", getattr(latest, "version", "") or ""))
         return self._build_info_table(rows)
 
-    def _build_playblast_info_section(self, ctx: DetailContext):
-        meta = ctx.detail.metadata or {}
-        rows: list[tuple[str, str]] = []
-        if meta.get("project"):
-            rows.append(("Project", str(meta["project"])))
-        entity_segs = meta.get("entity_segs") or []
-        entity_kind = meta.get("entity_kind") or ""
-        if len(entity_segs) >= 2:
-            rows.append((
-                entity_kind.title().rstrip("s") or "Entity",
-                f"{entity_segs[0]}/{entity_segs[1]}",
-            ))
-        depts = meta.get("depts") or {}
-        primary = meta.get("primary_dept")
-        if depts:
-            # ``light* (v0005, 3 versions)`` per dept; primary marked.
-            labels = []
-            ordered = (
-                [primary] + sorted(d for d in depts if d != primary)
-            ) if primary in depts else sorted(depts.keys())
-            for d in ordered:
-                summary = depts[d]
-                latest = summary.get("latest", "?")
-                vcount = len(summary.get("versions", []) or [])
-                marker = "*" if d == primary else ""
-                bits = f"{latest}"
-                if vcount > 1:
-                    bits += f" ({vcount} versions)"
-                labels.append(f"{d}{marker}: {bits}")
-            rows.append(("Depts", "; ".join(labels)))
-        if meta.get("latest_update"):
-            try:
-                import datetime
-                ts = datetime.datetime.fromtimestamp(
-                    meta["latest_update"],
-                ).strftime("%Y-%m-%d %H:%M")
-                rows.append(("Updated", ts))
-            except Exception:
-                pass
-        return self._build_info_table(rows)
-
-    def _build_render_info_section(self, ctx: DetailContext):
-        meta = ctx.detail.metadata or {}
-        rows: list[tuple[str, str]] = []
-        if meta.get("project"):
-            rows.append(("Project", str(meta["project"])))
-        entity_segs = meta.get("entity_segs") or []
-        entity_kind = meta.get("entity_kind") or ""
-        if len(entity_segs) >= 2:
-            rows.append((
-                entity_kind.title().rstrip("s") or "Entity",
-                f"{entity_segs[0]}/{entity_segs[1]}",
-            ))
-        sources = meta.get("sources") or {}
-        primary = meta.get("primary_source")
-        if sources:
-            # Friendly source list with the primary marked. Daily
-            # entries get a (daily) suffix to disambiguate from
-            # an EXR layer of the same dept name.
-            labels = []
-            for k in self._sorted_source_keys(sources):
-                label = self._render_source_label(k, sources[k])
-                if k == primary:
-                    label = f"{label}*"
-                labels.append(label)
-            rows.append(("Sources", ", ".join(labels)))
-        if meta.get("frame_range"):
-            rows.append(("Frame Range", str(meta["frame_range"])))
-        versions = meta.get("versions") or []
-        if versions:
-            rows.append(("Versions", ", ".join(versions)))
-        aovs = meta.get("aovs") or []
-        if aovs:
-            rows.append(("AOVs", ", ".join(aovs)))
-        return self._build_info_table(rows)
-
     def _build_shot_info_section(self, ctx: DetailContext):
         meta = ctx.detail.metadata or {}
         rows: list[tuple[str, str]] = []
@@ -3047,7 +2419,7 @@ class PipelineCatalog(Catalog):
                 return ("", False)
             project_name = parts[0]
             proj = self._registry.get(project_name)
-            if proj is None or project_name not in self._clients:
+            if proj is None or not self._is_ready(project_name):
                 return ("", False)
             self._activate_project(proj)
             from tumblepipe.config import scene as scene_mod
@@ -4876,15 +4248,13 @@ class PipelineCatalog(Catalog):
         Removed projects' clients are dropped (their cached data is
         invalidated). The discovery cache is always invalidated.
         """
-        import threading
         existing_names = set(self._registry.names)
         new_names = {p.name for p in new_projects}
 
         # Remove projects that disappeared.
         for stale in existing_names - new_names:
             self._registry.remove(stale, save=False)
-            self._clients.pop(stale, None)
-            self._init_attempted.discard(stale)
+            self._client_slots.pop(stale, None)
 
         # Add / replace each entry.
         for proj in new_projects:
@@ -4895,13 +4265,9 @@ class PipelineCatalog(Catalog):
                 existing.project_path != proj.project_path
                 or existing.config_path != proj.config_path
             ):
-                self._clients.pop(proj.name, None)
-                self._init_attempted.discard(proj.name)
+                self._client_slots.pop(proj.name, None)
 
-        try:
-            self._registry.save()
-        except Exception:
-            log.exception("Failed to save projects.json")
+        self._registry.save()
 
         # Drop discovery cache so the next browse re-aggregates.
         self._cached_assets = None
@@ -4910,9 +4276,11 @@ class PipelineCatalog(Catalog):
         # Build any newly-added (or path-changed) Clients eagerly on
         # the calling thread (Apply runs from the GUI-thread settings
         # widget). This is the only safe place to construct Clients.
+        # Failures are recorded on the slot and surfaced on next browse
+        # — don't fail the Apply over an unreachable share.
         for proj in self._registry.all():
-            if proj.name not in self._clients:
-                self._build_client_now(proj)
+            if not self._is_ready(proj.name):
+                self._try_get_client(proj.name)
 
     # ── Actions ───────────────────────────────────────────
 
@@ -5127,20 +4495,11 @@ class PipelineCatalog(Catalog):
 
         Asset → ``th::import_asset::1.0`` with the entity URI.
         Shot  → ``th::import_shot::1.0``  with the entity URI.
-        Render / Playblast → ``file`` COP with ``filename`` set.
         If the drop lands on an existing ``th::import_assets::2.0``
         node, the asset is appended as a new multiparm entry instead
         of creating a new node.
         """
         import hou
-
-        # Media (renders, playblasts) drop into COP networks as file
-        # nodes — separate path from the LOP-only asset/shot importers.
-        if (
-            self._is_render_asset_id(detail.id)
-            or self._is_playblast_asset_id(detail.id)
-        ):
-            return self._on_media_drop(detail, drop)
 
         if drop.context != "lop" or not drop.network:
             hou.ui.setStatusMessage(
@@ -5263,203 +4622,20 @@ class PipelineCatalog(Catalog):
         )
         return True
 
-    def _media_drop_path(self, detail) -> str | None:
-        """Resolve the on-disk path to drop into a COP file node.
-
-        Render (EXR) → primary layer's frame stack with ``$F4`` padding.
-        Render (daily) → daily MP4 path.
-        Playblast → primary dept's latest MP4 path.
-        Returns ``None`` when the source can't be resolved.
-        """
-        if self._is_render_asset_id(detail.id):
-            info = self._resolve_render_source(detail.id, source=None)
-            if info is None:
-                return None
-            if info["info"].get("kind") == "daily":
-                mp4 = self._resolve_daily_path(detail.id, source=info["key"])
-                return str(mp4) if mp4 else None
-            layer = self._resolve_render_layer(detail.id, source=info["key"])
-            if layer is None or not layer.aovs:
-                return None
-            # Frames live in per-AOV subdirs (``<version>/<aov>/<basename>.$F4.exr``);
-            # the layer-root flat path returned by ``Layer.get_frame_path``
-            # does not exist on disk. Prefer ``beauty``, fall back to any AOV.
-            aov = layer.aovs.get("beauty") or next(
-                iter(layer.aovs.values()), None,
-            )
-            if aov is None:
-                return None
-            try:
-                return str(aov.get_aov_frame_path("$F4"))
-            except Exception:
-                return None
-        if self._is_playblast_asset_id(detail.id):
-            mp4 = self._resolve_playblast_path(detail.id, dept=None)
-            return str(mp4) if mp4 else None
-        return None
-
-    def _on_media_drop(self, detail, drop) -> bool:
-        """Drop a render or playblast as a ``file`` COP node.
-
-        The file node's ``filename`` parm is set to the primary
-        source's path (EXR frame stack or MP4). Other parms (frame
-        range, colorspace) are left at defaults — the user tunes them
-        after the drop.
-        """
-        import hou
-
-        if drop.context != "cop" or not drop.network:
-            hou.ui.setStatusMessage(
-                "Renders and playblasts can only be dropped into COP networks",
-                severity=hou.severityType.Warning,
-            )
-            return True
-
-        file_path = self._media_drop_path(detail)
-        if file_path is None:
-            hou.ui.setStatusMessage(
-                f"Could not resolve media path for {detail.name}",
-                severity=hou.severityType.Warning,
-            )
-            return True
-
-        try:
-            node_name = detail.name.replace(" ", "_")
-            raw = drop.network.createNode("file", node_name)
-            raw.parm("filename").set(file_path)
-            if drop.position is not None:
-                raw.setPosition(drop.position - hou.Vector2(0.5, 0.0))
-            else:
-                raw.moveToGoodPosition()
-            raw.setSelected(True, clear_all_selected=True)
-        except Exception:
-            log.exception("Failed to drop media %s", detail.id)
-            hou.ui.setStatusMessage(
-                f"Failed to import {detail.name} (see console)",
-                severity=hou.severityType.Error,
-            )
-            return True
-
-        hou.ui.setStatusMessage(
-            f"Imported {detail.name}", severity=hou.severityType.Message,
-        )
-        return True
-
     def on_sub_drop(self, asset, sub_keys, drop) -> bool:
-        """Drop render AOV / playblast dept sub-cards as ``file`` COPs.
-
-        Render AOV sub-card → ``file`` COP pointing at the AOV's frame
-        stack (``<version>/<aov>/<basename>.$F4.exr``).
-        Playblast dept sub-card → ``file`` COP pointing at the dept's
-        latest MP4.
-        Asset dept sub-cards fall through (returns ``False``) so the
-        browser's default ``import_layer`` LOP path keeps working.
+        """Asset/shot dept sub-cards fall through to the browser's
+        default ``import_layer`` LOP path.
         """
-        import hou
-
-        if not sub_keys:
-            return False
-
-        is_render = self._is_render_asset_id(asset.id)
-        is_playblast = self._is_playblast_asset_id(asset.id)
-        if not (is_render or is_playblast):
-            return False
-
-        if drop.context != "cop" or not drop.network:
-            hou.ui.setStatusMessage(
-                "Renders and playblasts can only be dropped into COP networks",
-                severity=hou.severityType.Warning,
-            )
-            return True
-
-        # Resolve a file path per sub-card key.
-        layer = None
-        if is_render:
-            info = self._resolve_render_source(asset.id, source=None)
-            if info is None or info["info"].get("kind") == "daily":
-                # Daily renders have no AOV sub-cards; nothing to drop.
-                hou.ui.setStatusMessage(
-                    f"No AOV sources for {asset.name}",
-                    severity=hou.severityType.Warning,
-                )
-                return True
-            layer = self._resolve_render_layer(asset.id, source=info["key"])
-            if layer is None:
-                hou.ui.setStatusMessage(
-                    f"Could not resolve render layer for {asset.name}",
-                    severity=hou.severityType.Warning,
-                )
-                return True
-
-        created = 0
-        for key in sub_keys:
-            file_path: str | None = None
-            if is_render:
-                aov = layer.aovs.get(key)
-                if aov is None:
-                    continue
-                try:
-                    file_path = str(aov.get_aov_frame_path("$F4"))
-                except Exception:
-                    continue
-            else:  # playblast
-                mp4 = self._resolve_playblast_path(asset.id, dept=key)
-                file_path = str(mp4) if mp4 else None
-            if not file_path:
-                continue
-
-            try:
-                node_name = f"{asset.name}_{key}".replace(" ", "_")
-                raw = drop.network.createNode("file", node_name)
-                raw.parm("filename").set(file_path)
-                if drop.position is not None:
-                    raw.setPosition(
-                        drop.position
-                        + hou.Vector2(-0.5, -created * 1.2),
-                    )
-                else:
-                    raw.moveToGoodPosition()
-                raw.setSelected(
-                    created == 0, clear_all_selected=(created == 0),
-                )
-                created += 1
-            except Exception:
-                log.exception(
-                    "Failed to create file COP for %s/%s", asset.id, key,
-                )
-
-        if created == 0:
-            hou.ui.setStatusMessage(
-                f"No matching media for {asset.name}",
-                severity=hou.severityType.Warning,
-            )
-            return True
-
-        hou.ui.setStatusMessage(
-            f"Imported {asset.name} / {', '.join(sub_keys)}",
-            severity=hou.severityType.Message,
-        )
-        return True
+        return False
 
     def on_multi_drop(self, assets, drop) -> bool:
         """Import multiple pipeline assets into the scene.
 
         Multiple assets → one ``th::import_assets::2.0`` with multiparm
         entries populated. Shots are skipped (multi-shot drops are not
-        supported yet). Media (renders / playblasts) → fall through to
-        per-item drops so each becomes its own ``file`` COP node.
+        supported yet).
         """
         import hou
-
-        # Media items have their own COP-based drop path. Returning
-        # False here lets the browser fall back to per-item ``on_drop``
-        # which routes media through ``_on_media_drop``.
-        if any(
-            self._is_render_asset_id(a.id)
-            or self._is_playblast_asset_id(a.id)
-            for a in assets
-        ):
-            return False
 
         if drop.context != "lop" or not drop.network:
             hou.ui.setStatusMessage(
@@ -5727,9 +4903,10 @@ class PipelineCatalog(Catalog):
             return None
 
         self._activate_project(proj)
-        client = self._clients.get(proj_name)
-        if client is None:
-            hou.ui.displayMessage(f"No client for project: {proj_name}")
+        try:
+            client = self._get_or_build_client(proj_name)
+        except CatalogInitError as err:
+            hou.ui.displayMessage(str(err))
             return None
 
         name = fields.get("name", "").strip()
@@ -5829,14 +5006,15 @@ class PipelineCatalog(Catalog):
         uri = self._uri_for_asset_id(asset_id)
         if uri is None:
             return []
-        client = self._ensure_client(project_name)
-        if client is None:
-            return []
+        client = self._get_or_build_client(project_name)
         try:
             props = client.config.get_properties(uri) or {}
-        except Exception:
-            log.exception("get_properties failed for %s", asset_id)
-            return []
+        except Exception as exc:
+            raise ConfigError(
+                self.id,
+                f"failed to read properties for {asset_id}: {exc}",
+                cause=exc,
+            ) from exc
 
         is_shot = str(uri).startswith("entity:/shots/")
         if is_shot:
@@ -5893,9 +5071,7 @@ class PipelineCatalog(Catalog):
         if parts is None:
             return False
         project_name = parts[0]
-        client = self._ensure_client(project_name)
-        if client is None:
-            return False
+        client = self._get_or_build_client(project_name)
         writable = {}
         if "frame_start" in fields:
             try:
@@ -5911,9 +5087,12 @@ class PipelineCatalog(Catalog):
             return False
         try:
             client.config.set_properties(uri, writable)
-        except Exception:
-            log.exception("set_properties failed for %s", asset_id)
-            return False
+        except Exception as exc:
+            raise ConfigError(
+                self.id,
+                f"failed to write properties for {asset_id}: {exc}",
+                cause=exc,
+            ) from exc
         self.invalidate_cache()
         return True
 
@@ -5925,14 +5104,15 @@ class PipelineCatalog(Catalog):
         if parts is None:
             return False
         project_name = parts[0]
-        client = self._ensure_client(project_name)
-        if client is None:
-            return False
+        client = self._get_or_build_client(project_name)
         try:
             client.config.remove_entity(uri)
-        except Exception:
-            log.exception("remove_entity failed for %s", asset_id)
-            return False
+        except Exception as exc:
+            raise ConfigError(
+                self.id,
+                f"failed to remove entity {asset_id}: {exc}",
+                cause=exc,
+            ) from exc
         self.invalidate_cache()
         return True
 
@@ -6299,97 +5479,6 @@ class PipelineCatalog(Catalog):
         actions = []
 
         is_asset = "type:asset" in detail.tags
-        is_render = "type:render" in detail.tags
-        is_playblast = "type:playblast" in detail.tags
-
-        if is_playblast:
-            # Primary actions target the primary dept's latest mp4;
-            # then one DJV button per other dept.
-            meta = detail.metadata or {}
-            depts: dict = meta.get("depts") or {}
-            primary = meta.get("primary_dept")
-            actions.append(AssetAction(
-                id="playblast_open_djv",
-                label="Open in DJV",
-                icon="eye",
-            ))
-            actions.append(AssetAction(
-                id="playblast_open_folder",
-                label="Open Folder",
-                icon="folder-open",
-            ))
-            for dept_name in sorted(depts.keys()):
-                if dept_name == primary:
-                    continue
-                actions.append(AssetAction(
-                    id=f"playblast_open_djv:dept={dept_name}",
-                    label=f"Open {dept_name.title()} in DJV",
-                    icon="eye",
-                ))
-            return actions
-
-        if is_render:
-            # Render cards are read-only viewers — no
-            # import/edit/delete buttons. Primary action targets the
-            # card's primary source (denoise/main → render/main → …);
-            # then one mplay button per *other* source so the user can
-            # jump between raw render, denoise, slapcomp, daily, etc.
-            # without leaving the detail panel.
-            meta = detail.metadata or {}
-            sources: dict = meta.get("sources") or {}
-            primary_key = (
-                meta.get("primary_source")
-                or (self._pick_primary_source(sources) if sources else None)
-            )
-            primary_info = sources.get(primary_key) if primary_key else None
-            primary_is_daily = (
-                primary_info is not None
-                and primary_info.get("kind") == "daily"
-            )
-
-            # Primary actions
-            if not primary_is_daily:
-                actions.append(AssetAction(
-                    id="render_open_mplay",
-                    label="Open in MPlay",
-                    icon="play",
-                ))
-            actions.append(AssetAction(
-                id="render_open_djv",
-                label="Open in DJV",
-                icon="eye",
-            ))
-            actions.append(AssetAction(
-                id="render_open_folder",
-                label="Open Folder",
-                icon="folder-open",
-            ))
-
-            # One row per other source. Daily entries label as
-            # "Daily (light)"; EXR entries label as "Slapcomp" (when
-            # layer is "slapcomp") or "<dept> (<layer>)" otherwise —
-            # e.g. "Render (main)", "Composite (fx)".
-            for src_key in self._sorted_source_keys(sources):
-                if src_key == primary_key:
-                    continue
-                src_info = sources[src_key]
-                label = self._render_source_label(src_key, src_info)
-                viewer = (
-                    "DJV" if src_info.get("kind") == "daily" else "MPlay"
-                )
-                action_id = (
-                    "render_open_djv"
-                    if src_info.get("kind") == "daily"
-                    else "render_open_mplay"
-                )
-                actions.append(AssetAction(
-                    id=f"{action_id}:source={src_key}",
-                    label=f"Open {label} in {viewer}",
-                    icon=(
-                        "eye" if src_info.get("kind") == "daily" else "play"
-                    ),
-                ))
-            return actions
 
         if is_asset:
             actions.append(AssetAction(
@@ -6446,457 +5535,9 @@ class PipelineCatalog(Catalog):
             dept = action_id.split(":", 1)[1]
             self._open_workfile(detail.id if detail else "", dept)
 
-        elif action_id.startswith("render_open_") and detail:
-            # Action id format:
-            #   render_open_<viewer>[:source=<name>][:aov=<name>]
-            # Plain ``render_open_X`` → primary source, layer frames.
-            base, params = self._parse_render_action_id(action_id)
-            if base is not None:
-                self._execute_render_action(
-                    base,
-                    detail.id,
-                    source=params.get("source"),
-                    aov=params.get("aov"),
-                )
-
-        elif action_id.startswith("playblast_open_") and detail:
-            # Action id format: ``playblast_open_<viewer>[:dept=<name>]``.
-            # Plain ``playblast_open_X`` → primary dept, latest mp4.
-            base, params = self._parse_playblast_action_id(action_id)
-            if base is not None:
-                self._execute_playblast_action(
-                    base,
-                    detail.id,
-                    dept=params.get("dept"),
-                )
-
-    # ── Render: viewer launching ──────────────────────────
-
-    def _resolve_render_source(
-        self, asset_id: str, source: str | None,
-    ) -> dict | None:
-        """Look up the source dict for ``source`` on a render card.
-
-        ``source`` is a key into ``metadata["sources"]`` of the form
-        ``"<layer>/<dept>"`` (EXR) or ``"daily/<dept>"`` (daily MP4).
-        ``None`` returns the card's primary source. Returns ``None``
-        if the card / source can't be found.
-        """
-        if not self._is_render_asset_id(asset_id):
-            return None
-        asset = next(
-            (a for a in self._get_all_items() if a.id == asset_id), None,
-        )
-        if asset is None:
-            return None
-        sources = asset.metadata.get("sources") or {}
-        if not sources:
-            return None
-        primary = (
-            asset.metadata.get("primary_source")
-            or self._pick_primary_source(sources)
-        )
-        chosen = source or primary
-        if chosen not in sources:
-            chosen = primary
-        return {"key": chosen, "info": sources[chosen]}
-
-    def _resolve_render_layer(
-        self, asset_id: str, source: str | None = None,
-    ):
-        """Resolve a render asset id + source key to a ``Layer``
-        (the dataclass from ``tumblepipe.pipe.paths``) by scanning
-        the on-disk version dir directly.
-
-        ``source`` selects an EXR source (``"main/denoise"`` etc.).
-        Returns ``None`` for daily sources or unresolvable paths.
-        """
-        info = self._resolve_render_source(asset_id, source)
-        if info is None:
-            return None
-        src = info["info"]
-        if src.get("kind") != "exr":
-            return None
-        try:
-            from tumblepipe.pipe.paths import AOV, Layer
-        except Exception:
-            return None
-
-        version_path = Path(src["path"])
-        try:
-            if not version_path.is_dir():
-                return None
-        except Exception:
-            return None
-
-        layer_name = src["layer"]
-        suffix = "exr"
-        aovs: dict = {}
-        try:
-            for child in version_path.iterdir():
-                if not child.is_dir() or child.suffix != "":
-                    continue
-                aov_files = [
-                    f for f in child.iterdir()
-                    if f.is_file() and f.suffix == f".{suffix}"
-                ]
-                if not aov_files:
-                    continue
-                aov_name = child.name
-                first = sorted(aov_files)[0]
-                aov_basename = first.name.split(".")[0]
-                aovs[aov_name] = AOV(
-                    path=child,
-                    label=aov_name,
-                    name=aov_basename,
-                    suffix=suffix,
-                )
-        except Exception:
-            pass
-
-        layer_basename = layer_name
-        try:
-            flat_files = sorted(
-                f for f in version_path.iterdir()
-                if f.is_file() and f.suffix.lower() in (
-                    ".exr", ".jpg", ".png", ".tif",
-                )
-            )
-            if flat_files:
-                layer_basename = flat_files[0].name.split(".")[0]
-                suffix = flat_files[0].suffix.lstrip(".") or suffix
-        except Exception:
-            pass
-
-        return Layer(
-            path=version_path,
-            label=layer_name,
-            version=version_path.name,
-            aovs=aovs,
-            name=layer_basename,
-            suffix=suffix,
-        )
-
-    def _resolve_daily_path(
-        self, asset_id: str, source: str | None = None,
-    ):
-        """Return the on-disk MP4 for a daily source on a render card.
-
-        ``source`` is a daily key like ``"daily/light"``; ``None``
-        defaults to the card's primary source if it's a daily.
-        Returns the cached MP4 path from ``metadata["sources"]``
-        when present (no project activation needed). Returns ``None``
-        when the source isn't a daily / file is missing.
-        """
-        info = self._resolve_render_source(asset_id, source)
-        if info is None:
-            return None
-        src = info["info"]
-        if src.get("kind") != "daily":
-            return None
-        path_str = src.get("path")
-        if not path_str:
-            return None
-        mp4 = Path(path_str)
-        try:
-            return mp4 if mp4.exists() else None
-        except Exception:
-            return None
-
-    @staticmethod
-    def _parse_render_action_id(action_id: str) -> tuple[str | None, dict]:
-        """Parse a render-action id of the form
-        ``render_open_<viewer>[:key=value][:key=value]``.
-
-        Returns ``(base_action, params_dict)`` or ``(None, {})`` if the
-        id doesn't match a known action. Recognised viewers: ``mplay``,
-        ``djv``, ``folder``. Recognised params: ``source``, ``aov``.
-        """
-        if not action_id.startswith("render_open_"):
-            return (None, {})
-        head, *tail = action_id.split(":")
-        if head not in (
-            "render_open_mplay", "render_open_djv", "render_open_folder",
-        ):
-            return (None, {})
-        params: dict = {}
-        for chunk in tail:
-            if "=" not in chunk:
-                continue
-            k, v = chunk.split("=", 1)
-            if k in ("source", "aov"):
-                params[k] = v
-        return (head, params)
-
-    def _execute_render_action(
-        self,
-        action_id: str,
-        asset_id: str,
-        source: str | None = None,
-        aov: str | None = None,
-    ) -> None:
-        """Dispatch one of ``render_open_mplay`` / ``render_open_djv`` /
-        ``render_open_folder`` against a render card.
-
-        ``source`` is a key into ``metadata["sources"]`` of the form
-        ``"<layer>/<dept>"`` (EXR) or ``"daily/<dept>"`` (daily MP4).
-        ``None`` uses the card's primary source. ``aov`` scopes the
-        EXR action to a single render pass; daily sources ignore it.
-        """
-        info = self._resolve_render_source(asset_id, source)
-        if info is None:
-            self._render_status_warn(
-                f"Render source not found for {asset_id}"
-                + (f" / source={source}" if source else ""),
-            )
-            return
-        src = info["info"]
-        is_daily = src.get("kind") == "daily"
-
-        if is_daily:
-            mp4 = self._resolve_daily_path(asset_id, source=info["key"])
-            if mp4 is None:
-                self._render_status_warn(
-                    f"Daily MP4 not found for {asset_id}",
-                )
-                return
-            if action_id == "render_open_folder":
-                self._render_open_folder(mp4.parent)
-            else:
-                # mplay can't play MP4; both mplay and djv requests
-                # fall through to DJV here.
-                self._render_launch_viewer("djv_view", str(mp4))
-            return
-
-        layer = self._resolve_render_layer(asset_id, source=info["key"])
-        if layer is None:
-            self._render_status_warn(
-                f"Render layer not found for {asset_id} / {info['key']}",
-            )
-            return
-
-        if aov:
-            aov_obj = layer.get_aov(aov)
-            if aov_obj is None:
-                self._render_status_warn(
-                    f"AOV {aov!r} not found in latest version of {asset_id}",
-                )
-                return
-            target_dir = aov_obj.path
-            mplay_frame = aov_obj.get_aov_frame_path("$F4")
-            djv_frame = aov_obj.get_aov_frame_path("####")
-        else:
-            target_dir = layer.path
-            mplay_frame = layer.get_frame_path("$F4")
-            djv_frame = layer.get_frame_path("####")
-
-        if action_id == "render_open_folder":
-            self._render_open_folder(target_dir)
-        elif action_id == "render_open_mplay":
-            self._render_launch_viewer("mplay", str(mplay_frame))
-        elif action_id == "render_open_djv":
-            self._render_launch_viewer("djv_view", str(djv_frame))
-
-    @staticmethod
-    def _render_open_folder(path) -> None:
-        try:
-            import subprocess
-            subprocess.Popen(
-                ["cmd", "/c", "start", "", str(path)],
-                creationflags=0x08000000,
-            )
-        except Exception:
-            log.exception("Failed to open folder %s", path)
-
-    def _render_launch_viewer(self, executable: str, *args: str) -> None:
-        """Launch ``executable`` with ``args`` via ``subprocess.Popen``.
-
-        Resolves the binary against ``PATH`` (Houdini's ``mplay`` ships
-        on PATH inside Houdini's environment; ``djv_view`` requires a
-        DJV install). Surfaces a status-bar warning when missing rather
-        than raising, so a missing viewer doesn't crash the action.
-        """
-        import shutil
-        import subprocess
-        resolved = shutil.which(executable)
-        if resolved is None:
-            # Try common alt names (DJV ships as ``djv`` on some platforms,
-            # ``djv_view`` on others).
-            if executable == "djv_view":
-                resolved = shutil.which("djv")
-        if resolved is None:
-            self._render_status_warn(
-                f"{executable!r} not found on PATH — install it or "
-                "add it to PATH and try again.",
-            )
-            return
-        try:
-            subprocess.Popen([resolved, *args])
-        except Exception:
-            log.exception(
-                "Failed to launch %s with %s", resolved, args,
-            )
-            self._render_status_warn(
-                f"Failed to launch {executable}; see Houdini console.",
-            )
-
-    @staticmethod
-    def _render_status_warn(message: str) -> None:
-        try:
-            import hou
-            hou.ui.setStatusMessage(
-                message, severity=hou.severityType.Warning,
-            )
-        except Exception:
-            log.warning(message)
-
-    # ── Playblast: viewer launching ───────────────────────
-
-    @staticmethod
-    def _parse_playblast_action_id(
-        action_id: str,
-    ) -> tuple[str | None, dict]:
-        """Parse ``playblast_open_<viewer>[:dept=<name>]``.
-
-        Returns ``(base_action, params_dict)`` or ``(None, {})``.
-        Recognised viewers: ``djv``, ``folder``. Recognised params:
-        ``dept``.
-        """
-        if not action_id.startswith("playblast_open_"):
-            return (None, {})
-        head, *tail = action_id.split(":")
-        if head not in ("playblast_open_djv", "playblast_open_folder"):
-            return (None, {})
-        params: dict = {}
-        for chunk in tail:
-            if "=" not in chunk:
-                continue
-            k, v = chunk.split("=", 1)
-            if k == "dept":
-                params[k] = v
-        return (head, params)
-
-    def _resolve_playblast_path(
-        self, asset_id: str, dept: str | None = None,
-    ):
-        """Return the on-disk MP4 path for a playblast dept on a card.
-
-        Reads ``metadata["depts"][dept]["path"]`` directly — no
-        project activation, no storage walk. ``dept`` defaults to
-        the card's primary dept.
-        """
-        if not self._is_playblast_asset_id(asset_id):
-            return None
-        asset = next(
-            (a for a in self._get_all_items() if a.id == asset_id),
-            None,
-        )
-        if asset is None:
-            return None
-        depts = asset.metadata.get("depts") or {}
-        if not depts:
-            return None
-        chosen = dept or asset.metadata.get("primary_dept")
-        if chosen not in depts:
-            return None
-        path_str = depts[chosen].get("path")
-        if not path_str:
-            return None
-        mp4 = Path(path_str)
-        try:
-            return mp4 if mp4.exists() else None
-        except Exception:
-            return None
-
-    def _execute_playblast_action(
-        self,
-        action_id: str,
-        asset_id: str,
-        dept: str | None = None,
-    ) -> None:
-        """Dispatch ``playblast_open_djv`` / ``playblast_open_folder``
-        for a playblast card. ``dept`` selects which dept's latest
-        MP4 to target; ``None`` uses the primary."""
-        mp4 = self._resolve_playblast_path(asset_id, dept=dept)
-        if mp4 is None:
-            self._render_status_warn(
-                f"Playblast not found for {asset_id}"
-                + (f" / dept={dept}" if dept else ""),
-            )
-            return
-        if action_id == "playblast_open_folder":
-            self._render_open_folder(mp4.parent)
-        else:
-            # playblast_open_djv — DJV plays MP4 directly.
-            self._render_launch_viewer("djv_view", str(mp4))
-
     # ── Sub-cards (departments) ───────────────────────────
 
     def get_sub_cards(self, asset: Asset) -> list[SubCard]:
-        # Render assets — one sub-card per render pass (AOV) from the
-        # latest version. Layers without AOV subdirs (e.g. slapcomp
-        # JPG sequences) get no sub-cards; the main-card actions
-        # cover them. Dailies have no AOVs either.
-        if "type:render" in asset.tags:
-            aovs = asset.metadata.get("aovs", []) or []
-            if not aovs:
-                return []
-            _AOV_ICONS = {
-                "beauty": "image",
-                "albedo": "palette",
-                "alpha": "circle-dashed",
-                "normal": "compass",
-                "depth": "ruler",
-                "diffuse": "sun",
-                "specular": "sparkle",
-                "emission": "flame",
-            }
-            cards: list[SubCard] = []
-            for aov in aovs:
-                cards.append(SubCard(
-                    key=aov,
-                    label=aov.title(),
-                    status="available",
-                    icon=_AOV_ICONS.get(aov.lower(), "layers"),
-                    action_id=f"render_open_mplay:aov={aov}",
-                ))
-            return cards
-
-        # Playblast assets — one sub-card per dept with a playblast.
-        # Version goes in the label (e.g. "Light v0005") so it's
-        # immediately visible rather than buried in the dim detail row.
-        if "type:playblast" in asset.tags:
-            depts_meta: dict = asset.metadata.get("depts", {}) or {}
-            primary = asset.metadata.get("primary_dept")
-            cards: list[SubCard] = []
-            ordered = (
-                [primary] + sorted(d for d in depts_meta if d != primary)
-            ) if primary in depts_meta else sorted(depts_meta.keys())
-            for dept_name in ordered:
-                summary = depts_meta.get(dept_name) or {}
-                short = _DEPT_SHORT_NAMES.get(
-                    dept_name, dept_name.title(),
-                )
-                latest = summary.get("latest", "")
-                vcount = len(summary.get("versions", []) or [])
-                label = f"{short} {latest}" if latest else short
-                # When the dept has more than one version, surface the
-                # count in the dim detail row (e.g. "3 versions").
-                detail = (
-                    f"{vcount} versions" if vcount > 1 else ""
-                )
-                cards.append(SubCard(
-                    key=dept_name,
-                    label=label,
-                    status=(
-                        "active" if dept_name == primary else "available"
-                    ),
-                    detail=detail,
-                    icon=_DEPT_ICONS.get(dept_name, "video"),
-                    action_id=f"playblast_open_djv:dept={dept_name}",
-                ))
-            return cards
-
         depts = asset.metadata.get("departments", {})
 
         cards = []
@@ -6971,76 +5612,69 @@ class PipelineCatalog(Catalog):
         """Drop discovered asset/shot caches; next query re-fetches."""
         self._cached_assets = None
         self._cached_shots = None
-        self._cached_renders = None
-        self._cached_playblasts = None
 
     def _reset_project_clients(self) -> None:
-        """Drop per-project API clients (Shift+Click full reset)."""
-        self._clients.clear()
+        """Drop per-project API client state (Shift+Click full reset).
+
+        Wipes both READY clients and any FAILED slots, so subsequent
+        browses retry from scratch.
+        """
+        self._client_slots.clear()
         self.invalidate_cache()
 
     # ── Internal helpers ──────────────────────────────────
 
     def _get_all_items(self) -> list[Asset]:
-        """List assets + shots + renders + playblasts (across projects)."""
+        """List assets + shots (across projects)."""
         if (
             self._cached_assets is not None
             and self._cached_shots is not None
-            and self._cached_renders is not None
-            and self._cached_playblasts is not None
         ):
-            return (
-                self._cached_assets
-                + self._cached_shots
-                + self._cached_renders
-                + self._cached_playblasts
-            )
+            return self._cached_assets + self._cached_shots
         assets = self._discover_assets()
         shots = self._discover_shots()
-        renders = self._discover_renders()
-        playblasts = self._discover_playblasts()
         # Don't cache an empty result when no clients were ready yet —
         # a transient "no projects loaded" state would otherwise stick
         # forever and require a manual refresh to recover.
         has_projects = any(True for _ in self._registry.all())
-        no_clients_ready = not self._clients
+        no_clients_ready = not self._ready_clients
         if (
-            not assets and not shots and not renders and not playblasts
+            not assets and not shots
             and has_projects and no_clients_ready
         ):
             return []
         self._cached_assets = assets
         self._cached_shots = shots
-        self._cached_renders = renders
-        self._cached_playblasts = playblasts
-        return (
-            self._cached_assets
-            + self._cached_shots
-            + self._cached_renders
-            + self._cached_playblasts
-        )
+        return self._cached_assets + self._cached_shots
 
     def _discover_assets(self) -> list[Asset]:
-        """Aggregate assets from every registered project's Client."""
+        """Aggregate assets from every registered project's Client.
+
+        Per-project failures are recorded on ``self._discovery_errors``
+        (cleared at the start of each browse) so the consumer can
+        surface them via :class:`AssetPage.errors`.
+        """
         by_id: dict[str, Asset] = {}
         for proj in self._registry.all():
-            client = self._ensure_client(proj.name)
-            if client is None:
-                log.warning(
-                    "Skipping asset discovery for %s — Client not ready",
-                    proj.name,
-                )
+            client, init_err = self._try_get_client(proj.name)
+            if init_err is not None:
+                self._discovery_errors.append(init_err)
                 continue
+            assert client is not None
             # Activate this project's env so latest_export_path
             # resolves against the right config.
             self._activate_project(proj)
             try:
                 for a in self._discover_assets_for(proj, client):
                     by_id.setdefault(a.id, a)
-            except Exception:
-                log.exception(
-                    "_discover_assets failed for project %s", proj.name,
-                )
+            except CatalogError as err:
+                self._discovery_errors.append(err)
+            except Exception as exc:
+                self._discovery_errors.append(AssetDiscoveryError(
+                    self.id,
+                    f"asset discovery failed for {proj.name}: {exc}",
+                    cause=exc,
+                ))
         return list(by_id.values())
 
     def _discover_assets_for(
@@ -7048,11 +5682,12 @@ class PipelineCatalog(Catalog):
     ) -> list[Asset]:
         try:
             all_entities = client.config.list_entities(None, closure=True)
-        except Exception:
-            log.exception(
-                "Failed to list entities for project %s", proj.name,
-            )
-            return []
+        except Exception as exc:
+            raise AssetDiscoveryError(
+                self.id,
+                f"list_entities failed for {proj.name}: {exc}",
+                cause=exc,
+            ) from exc
 
         out: list[Asset] = []
         for entity in all_entities:
@@ -7154,24 +5789,33 @@ class PipelineCatalog(Catalog):
         )
 
     def _discover_shots(self) -> list[Asset]:
-        """Aggregate shots from every registered project's Client."""
+        """Aggregate shots from every registered project's Client.
+
+        Per-project failures are recorded on ``self._discovery_errors``
+        for consumer surfacing via :class:`AssetPage.errors`.
+        """
         by_id: dict[str, Asset] = {}
         for proj in self._registry.all():
-            client = self._ensure_client(proj.name)
-            if client is None:
-                log.warning(
-                    "Skipping shot discovery for %s — Client not ready",
-                    proj.name,
-                )
+            client, init_err = self._try_get_client(proj.name)
+            if init_err is not None:
+                # Init errors are already recorded by _discover_assets
+                # in a typical browse — avoid duplicate reporting.
+                if init_err not in self._discovery_errors:
+                    self._discovery_errors.append(init_err)
                 continue
+            assert client is not None
             self._activate_project(proj)
             try:
                 for a in self._discover_shots_for(proj, client):
                     by_id.setdefault(a.id, a)
-            except Exception:
-                log.exception(
-                    "_discover_shots failed for project %s", proj.name,
-                )
+            except CatalogError as err:
+                self._discovery_errors.append(err)
+            except Exception as exc:
+                self._discovery_errors.append(AssetDiscoveryError(
+                    self.id,
+                    f"shot discovery failed for {proj.name}: {exc}",
+                    cause=exc,
+                ))
         return list(by_id.values())
 
     def _discover_shots_for(
@@ -7179,11 +5823,12 @@ class PipelineCatalog(Catalog):
     ) -> list[Asset]:
         try:
             all_entities = client.config.list_entities(None, closure=True)
-        except Exception:
-            log.exception(
-                "Failed to list shot entities for project %s", proj.name,
-            )
-            return []
+        except Exception as exc:
+            raise AssetDiscoveryError(
+                self.id,
+                f"list_entities failed for {proj.name}: {exc}",
+                cause=exc,
+            ) from exc
 
         out: list[Asset] = []
         for entity in all_entities:
@@ -7208,19 +5853,19 @@ class PipelineCatalog(Catalog):
             try:
                 from tumblepipe.config.timeline import get_frame_range
                 fr = get_frame_range(entity.uri)
-                if fr:
-                    # FrameRange uses start_frame / end_frame in newer
-                    # tumblehead versions; fall back to first/last for
-                    # older builds.
-                    start = getattr(fr, "start_frame", None)
-                    end = getattr(fr, "end_frame", None)
-                    if start is None or end is None:
-                        start = getattr(fr, "first_frame", None)
-                        end = getattr(fr, "last_frame", None)
-                    if start is not None and end is not None:
-                        frame_range = f"{start}-{end}"
-            except Exception:
-                pass
+            except Exception as exc:
+                # Skip frame range for this entity rather than tanking
+                # the whole shot discovery — but log so the failure
+                # is visible.
+                log.warning(
+                    "frame range lookup failed for %s: %s", entity.uri, exc,
+                )
+                fr = None
+            if fr is not None:
+                start = fr.start_frame
+                end = fr.end_frame
+                if start is not None and end is not None:
+                    frame_range = f"{start}-{end}"
 
             tags = {
                 "source:pipeline",
@@ -7249,738 +5894,51 @@ class PipelineCatalog(Catalog):
             ))
         return out
 
-    # ── Render discovery (EXR layers + daily MP4s) ────────
-
-    def _discover_renders(self) -> list[Asset]:
-        """Render discovery is currently disabled.
-
-        The original implementation walked ``<purpose>:/render/...`` and
-        ``<purpose>:/daily/...`` per project. On busy studio shares with
-        tens of thousands of EXR sequences and MP4s the scan dominated
-        asset-browser load time and could stall Houdini startup. Restore
-        from git history once a cheaper indexing path lands (manifest
-        file, server-side enumeration, or an on-demand cache).
-        """
-        return []
-
-    # Order of preference when picking the "primary" source on a
-    # per-shot render card. Tried in (layer, dept) tuples — first
-    # match wins. Then anything ``denoise/X``, then ``render/X``,
-    # then any EXR source, finally daily.
-    _PRIMARY_DEPT_PRIORITY = ("denoise", "render", "composite")
-    _PRIMARY_LAYER_PRIORITY = ("main",)
-
-    def _discover_renders_for(
-        self, proj: ProjectConfig, client,
-    ) -> list[Asset]:
-        """Walk storage and emit one Asset per shot.
-
-        Every layer × dept under ``render:/render/<kind>/<seg1>/<seg2>/``
-        plus every daily MP4 under ``render:/daily/<kind>/<dept>/``
-        is folded into the same card as a ``source`` in
-        ``metadata["sources"]``. The card's primary action targets
-        the best source — typically ``denoise/main``.
-
-        Source key format:
-        - ``"<layer>/<dept>"`` for EXR sequences
-          (e.g. ``"main/denoise"``, ``"slapcomp/denoise"``)
-        - ``"daily/<dept>"`` for daily MP4s
-          (e.g. ``"daily/light"``)
-
-        Disk-driven (not entity-driven). Skips legacy paths that
-        don't match ``<kind>/<seq>/<shot>/<dept>/<layer>/<version>``.
-        """
-        try:
-            from tumblepipe.api import default_client
-        except Exception:
-            log.debug("tumblepipe.api unavailable")
-            return []
-        try:
-            api = default_client()
-        except Exception:
-            log.debug("default_client() failed for %s", proj.name)
-            return []
-
-        # Per-entity aggregation: ``{(kind, seg1, seg2): {source_key: info}}``
-        per_entity: dict[
-            tuple[str, str, str], dict[str, dict],
-        ] = {}
-
-        # ── EXR layers ───────────────────────────────────
-        render_root = self._resolve_storage_root(api, "render:/render")
-        if render_root is not None:
-            for kind, seg1, seg2, dept, layer_name, versions in (
-                self._iter_disk_render_layers(render_root)
-            ):
-                if not versions:
-                    continue
-                latest = versions[-1]
-                key = f"{layer_name}/{dept}"
-                per_entity.setdefault((kind, seg1, seg2), {})[key] = {
-                    "kind": "exr",
-                    "layer": layer_name,
-                    "dept": dept,
-                    "version": latest["version"],
-                    "versions": [v["version"] for v in versions],
-                    "aovs": latest["aovs"],
-                    "path": str(latest["path"]),
-                    "mtime": latest["mtime"],
-                }
-
-        # ── Daily MP4s ───────────────────────────────────
-        daily_root = self._resolve_storage_root(api, "render:/daily")
-        if daily_root is not None:
-            for kind, seg1, seg2, dept, mp4_path, mtime in (
-                self._iter_disk_dailies(daily_root)
-            ):
-                key = f"daily/{dept}"
-                per_entity.setdefault((kind, seg1, seg2), {})[key] = {
-                    "kind": "daily",
-                    "layer": "",
-                    "dept": dept,
-                    "path": str(mp4_path),
-                    "mtime": mtime,
-                }
-
-        # ── One card per entity ──────────────────────────
-        out: list[Asset] = []
-        for (kind, s1, s2), sources in per_entity.items():
-            primary_key = self._pick_primary_source(sources)
-            primary = sources[primary_key]
-            extra = {
-                "primary_source": primary_key,
-                "sources": sources,
-                "latest_update": max(
-                    s["mtime"] for s in sources.values()
-                ),
-            }
-            # Surface the primary's frame info at top level so the
-            # background thumbnail worker + sub-cards can find it
-            # without re-reading sources.
-            if primary["kind"] == "exr":
-                extra["layer_path"] = primary["path"]
-                extra["aovs"] = primary["aovs"]
-                extra["versions"] = primary["versions"]
-            else:
-                extra["daily_path"] = primary["path"]
-            out.append(self._build_render_asset(
-                proj=proj,
-                entity_kind=kind,
-                entity_segs=(s1, s2),
-                extra_metadata=extra,
-            ))
-
-        log.info(
-            "Discovered %d render assets for project %s",
-            len(out), proj.name,
-        )
-        return out
-
-    @classmethod
-    def _sorted_source_keys(cls, sources: dict[str, dict]) -> list[str]:
-        """Return source keys in display order: main first, then
-        other layers alphabetically, then dailies last."""
-        main = []
-        other_exr = []
-        daily = []
-        for k, v in sources.items():
-            if v.get("kind") == "daily":
-                daily.append(k)
-            elif v.get("layer") == "main":
-                main.append(k)
-            else:
-                other_exr.append(k)
-        # Within each group: denoise → render → composite → alpha
-        def dept_sort(k):
-            dept = k.rsplit("/", 1)[-1]
-            try:
-                return (
-                    cls._PRIMARY_DEPT_PRIORITY.index(dept), dept,
-                )
-            except ValueError:
-                return (len(cls._PRIMARY_DEPT_PRIORITY), dept)
-        return (
-            sorted(main, key=dept_sort)
-            + sorted(other_exr)
-            + sorted(daily)
-        )
-
-    @staticmethod
-    def _render_source_label(key: str, info: dict) -> str:
-        """Friendly label for a source key — e.g.
-        ``"main/denoise"`` → ``"Denoise (main)"``,
-        ``"slapcomp/denoise"`` → ``"Slapcomp"``,
-        ``"daily/light"`` → ``"Daily (light)"``.
-        """
-        if info.get("kind") == "daily":
-            dept = info.get("dept") or key.split("/", 1)[-1]
-            return f"Daily ({dept})"
-        layer = info.get("layer") or ""
-        dept = info.get("dept") or ""
-        if layer == "slapcomp":
-            return "Slapcomp"
-        if layer == "main":
-            return dept.title() if dept else "Main"
-        if layer and dept:
-            return f"{dept.title()} ({layer})"
-        return key.title()
-
-    @classmethod
-    def _pick_primary_source(cls, sources: dict[str, dict]) -> str:
-        """Pick the best source key from a per-entity sources dict.
-
-        Priority:
-        1. ``main/denoise`` → ``main/render`` → ``main/composite``
-        2. Other ``<layer>/denoise`` (sorted)
-        3. Other ``<layer>/render`` (sorted)
-        4. Any EXR source (sorted)
-        5. Any daily source (sorted)
-        """
-        # Tier 1: preferred (layer, dept) combos
-        for layer in cls._PRIMARY_LAYER_PRIORITY:
-            for dept in cls._PRIMARY_DEPT_PRIORITY:
-                key = f"{layer}/{dept}"
-                if key in sources:
-                    return key
-        # Tier 2 + 3: any layer at preferred depts
-        exr = [k for k, v in sources.items() if v["kind"] == "exr"]
-        for dept in cls._PRIMARY_DEPT_PRIORITY:
-            for k in sorted(exr):
-                if k.endswith(f"/{dept}"):
-                    return k
-        # Tier 4: any EXR
-        if exr:
-            return sorted(exr)[0]
-        # Tier 5: daily
-        daily = sorted(
-            k for k, v in sources.items() if v["kind"] == "daily"
-        )
-        return daily[0]
-
-    @staticmethod
-    def _resolve_storage_root(api, prefix: str):
-        """Resolve a ``<purpose>:/<root>`` URI to an on-disk Path,
-        or ``None`` when the storage doesn't resolve / doesn't exist."""
-        try:
-            from tumblepipe.util.uri import Uri
-            root = api.storage.resolve(Uri.parse_unsafe(prefix))
-        except Exception:
-            return None
-        if root is None:
-            return None
-        try:
-            return root if root.exists() else None
-        except Exception:
-            return None
-
-    def _iter_disk_render_layers(self, render_root):
-        """Walk ``render_root`` and yield render-layer tuples.
-
-        Layout: ``<root>/<kind>/<seg1>/<seg2>/<dept>/<layer>/<version>/...``
-        where ``<kind>`` is ``shots`` or ``assets``. Anything outside
-        this shape (legacy / pre-convention scratch dirs) is skipped.
-
-        Yields ``(kind, seg1, seg2, dept, layer_name, versions_list)``
-        where each entry in ``versions_list`` is a dict with
-        ``version`` / ``path`` / ``aovs`` / ``mtime`` keys, sorted by
-        version code.
-        """
-        try:
-            from tumblepipe.pipe.paths import list_version_paths
-        except Exception:
-            list_version_paths = None
-
-        for kind in ("shots", "assets"):
-            kind_root = render_root / kind
-            try:
-                if not kind_root.is_dir():
-                    continue
-            except Exception:
-                continue
-            try:
-                seg1_dirs = sorted(d for d in kind_root.iterdir() if d.is_dir())
-            except Exception:
-                continue
-            for seg1_dir in seg1_dirs:
-                try:
-                    seg2_dirs = sorted(
-                        d for d in seg1_dir.iterdir() if d.is_dir()
-                    )
-                except Exception:
-                    continue
-                for seg2_dir in seg2_dirs:
-                    try:
-                        dept_dirs = sorted(
-                            d for d in seg2_dir.iterdir() if d.is_dir()
-                        )
-                    except Exception:
-                        continue
-                    for dept_dir in dept_dirs:
-                        try:
-                            layer_dirs = sorted(
-                                d for d in dept_dir.iterdir() if d.is_dir()
-                            )
-                        except Exception:
-                            continue
-                        for layer_dir in layer_dirs:
-                            versions = self._scan_layer_versions(
-                                layer_dir, list_version_paths,
-                            )
-                            if not versions:
-                                continue
-                            yield (
-                                kind,
-                                seg1_dir.name,
-                                seg2_dir.name,
-                                dept_dir.name,
-                                layer_dir.name,
-                                versions,
-                            )
-
-    @staticmethod
-    def _scan_layer_versions(layer_dir, list_version_paths) -> list[dict]:
-        """Return version-info dicts for a layer dir, sorted by
-        version code (oldest → newest).
-
-        Each dict: ``{"version": str, "path": Path, "aovs": list[str],
-        "mtime": float}``. Versions with no usable frame data are
-        excluded.
-        """
-        # Use tumblepipe's helper when available — it filters by the
-        # project's naming convention. Fall back to alphabetical sort
-        # over directories that look like ``vNNNN`` if not.
-        if list_version_paths is not None:
-            try:
-                version_paths = list_version_paths(layer_dir)
-            except Exception:
-                version_paths = []
-        else:
-            try:
-                version_paths = sorted(
-                    d for d in layer_dir.iterdir()
-                    if d.is_dir()
-                    and d.name.startswith("v")
-                    and d.name[1:].isdigit()
-                )
-            except Exception:
-                version_paths = []
-
-        out: list[dict] = []
-        for vp in version_paths:
-            # AOV subdirs (anything without an extension that looks
-            # like a directory of frames). Empty ones are skipped.
-            aovs: list[str] = []
-            try:
-                for child in vp.iterdir():
-                    if child.is_dir() and child.suffix == "":
-                        aovs.append(child.name)
-            except Exception:
-                pass
-
-            # Has any frames? Either flat .exr/.jpg in vp, or any AOV
-            # has files. Otherwise skip — empty version dirs are
-            # noise (e.g. a flipbook-failed run).
-            has_frames = False
-            try:
-                for f in vp.iterdir():
-                    if f.is_file() and f.suffix.lower() in (".exr", ".jpg", ".png", ".tif"):
-                        has_frames = True
-                        break
-            except Exception:
-                pass
-            if not has_frames and aovs:
-                # Confirm at least one AOV has files
-                for a in aovs:
-                    try:
-                        for _ in (vp / a).iterdir():
-                            has_frames = True
-                            break
-                    except Exception:
-                        continue
-                    if has_frames:
-                        break
-            if not has_frames:
-                continue
-
-            ctx = vp / "context.json"
-            try:
-                mtime = ctx.stat().st_mtime if ctx.exists() else vp.stat().st_mtime
-            except Exception:
-                mtime = 0.0
-
-            out.append({
-                "version": vp.name,
-                "path": vp,
-                "aovs": sorted(aovs),
-                "mtime": mtime,
-            })
-        return out
-
-    def _iter_disk_dailies(self, daily_root):
-        """Walk ``daily_root`` and yield ``(kind, seg1, seg2, dept,
-        mp4_path, mtime)`` tuples.
-
-        Layout: ``<root>/<kind>/<dept>/<seg1>_<seg2>.mp4`` (no layer).
-        Same convention as ``tumblepipe.pipe.paths.get_daily_path``.
-        Files with no underscore in the stem are skipped.
-        """
-        for kind in ("shots", "assets"):
-            kind_root = daily_root / kind
-            try:
-                if not kind_root.is_dir():
-                    continue
-            except Exception:
-                continue
-            try:
-                dept_dirs = sorted(
-                    d for d in kind_root.iterdir() if d.is_dir()
-                )
-            except Exception:
-                continue
-            for dept_dir in dept_dirs:
-                try:
-                    files = sorted(
-                        f for f in dept_dir.iterdir()
-                        if f.is_file() and f.suffix.lower() == ".mp4"
-                    )
-                except Exception:
-                    continue
-                for mp4 in files:
-                    stem = mp4.stem
-                    if "_" not in stem:
-                        # Convention requires <seg1>_<seg2> — skip
-                        # malformed names.
-                        continue
-                    seg1, seg2 = stem.split("_", 1)
-                    try:
-                        mtime = mp4.stat().st_mtime
-                    except Exception:
-                        mtime = 0.0
-                    yield (kind, seg1, seg2, dept_dir.name, mp4, mtime)
-
-    # ── Playblast discovery (per-shot, per-dept MP4s) ─────
-
-    def _discover_playblasts(self) -> list[Asset]:
-        """Playblast discovery is currently disabled — see
-        :meth:`_discover_renders` for the rationale (slow disk walks
-        on busy studio shares). Restore from git history once an
-        indexer lands.
-        """
-        return []
-
-    def _discover_playblasts_for(
-        self, proj: ProjectConfig, client,
-    ) -> list[Asset]:
-        """Walk the playblast storage root and emit one Asset per shot.
-
-        Layout: ``<purpose>:/playblast/<kind>/<seg1>/<seg2>/<dept>/v<NNNN>.mp4``
-
-        All depts that have at least one playblast for the same entity
-        fold into a single per-shot card. The dept whose latest version
-        has the newest mtime becomes the primary (drives the card's
-        main button + thumbnail).
-        """
-        try:
-            from tumblepipe.api import default_client
-        except Exception:
-            log.debug("tumblepipe.api unavailable")
-            return []
-        try:
-            api = default_client()
-        except Exception:
-            log.debug("default_client() failed for %s", proj.name)
-            return []
-
-        root = self._resolve_storage_root(api, "render:/playblast")
-        if root is None:
-            return []
-
-        # ``per_entity[(kind, seg1, seg2)] = {dept: {versions, latest, path, mtime}}``
-        per_entity: dict[
-            tuple[str, str, str], dict[str, dict],
-        ] = {}
-        for kind, seg1, seg2, dept, dept_summary in (
-            self._iter_disk_playblasts(root)
-        ):
-            per_entity.setdefault((kind, seg1, seg2), {})[dept] = (
-                dept_summary
-            )
-
-        out: list[Asset] = []
-        for (kind, s1, s2), depts in per_entity.items():
-            if not depts:
-                continue
-            primary_dept = max(
-                depts.keys(), key=lambda d: depts[d]["mtime"],
-            )
-            extra = {
-                "depts": depts,
-                "primary_dept": primary_dept,
-                "latest_update": max(d["mtime"] for d in depts.values()),
-            }
-            out.append(self._build_playblast_asset(
-                proj=proj,
-                entity_kind=kind,
-                entity_segs=(s1, s2),
-                extra_metadata=extra,
-            ))
-
-        log.info(
-            "Discovered %d playblast assets for project %s",
-            len(out), proj.name,
-        )
-        return out
-
-    def _iter_disk_playblasts(self, root):
-        """Walk ``root`` and yield ``(kind, seg1, seg2, dept,
-        dept_summary)`` tuples.
-
-        Layout: ``<root>/<kind>/<seg1>/<seg2>/<dept>/v<NNNN>.mp4``.
-        ``dept_summary`` is
-        ``{"versions": [...], "latest": str, "path": str, "mtime": float}``
-        for the latest version. Empty dept dirs are skipped.
-        """
-        try:
-            from tumblepipe.pipe.paths import (
-                list_version_paths as _unused,  # noqa: F401
-            )
-        except Exception:
-            pass
-
-        for kind in ("shots", "assets"):
-            kind_root = root / kind
-            try:
-                if not kind_root.is_dir():
-                    continue
-            except Exception:
-                continue
-            try:
-                seg1_dirs = sorted(
-                    d for d in kind_root.iterdir() if d.is_dir()
-                )
-            except Exception:
-                continue
-            for seg1_dir in seg1_dirs:
-                try:
-                    seg2_dirs = sorted(
-                        d for d in seg1_dir.iterdir() if d.is_dir()
-                    )
-                except Exception:
-                    continue
-                for seg2_dir in seg2_dirs:
-                    try:
-                        dept_dirs = sorted(
-                            d for d in seg2_dir.iterdir() if d.is_dir()
-                        )
-                    except Exception:
-                        continue
-                    for dept_dir in dept_dirs:
-                        summary = self._scan_playblast_dept_dir(dept_dir)
-                        if summary is None:
-                            continue
-                        yield (
-                            kind,
-                            seg1_dir.name,
-                            seg2_dir.name,
-                            dept_dir.name,
-                            summary,
-                        )
-
-    @staticmethod
-    def _scan_playblast_dept_dir(dept_dir) -> dict | None:
-        """List versioned MP4s in a playblast dept dir and return a
-        summary of the latest, or ``None`` if empty.
-
-        Files are expected to be named ``v<NNNN>.mp4`` (matches
-        ``paths.get_next_playblast_path``). Anything else is ignored.
-        """
-        try:
-            mp4s = [
-                f for f in dept_dir.iterdir()
-                if f.is_file()
-                and f.suffix.lower() == ".mp4"
-                and f.stem.startswith("v")
-                and f.stem[1:].isdigit()
-            ]
-        except Exception:
-            return None
-        if not mp4s:
-            return None
-        # Sort by version code (numeric) so v0010 > v0009.
-        mp4s.sort(key=lambda f: int(f.stem[1:]))
-        latest = mp4s[-1]
-        try:
-            mtime = latest.stat().st_mtime
-        except Exception:
-            mtime = 0.0
-        return {
-            "versions": [f.stem for f in mp4s],
-            "latest": latest.stem,
-            "path": str(latest),
-            "mtime": mtime,
-        }
-
-    @staticmethod
-    def _render_layer_mtime(layer_path) -> float:
-        """Return a representative mtime for a layer version dir.
-
-        Prefers ``context.json`` (written when the version finishes),
-        falls back to the directory mtime, falls back to 0.0.
-        """
-        try:
-            ctx = layer_path / "context.json"
-            if ctx.exists():
-                return ctx.stat().st_mtime
-            return layer_path.stat().st_mtime
-        except Exception:
-            return 0.0
-
-    def _build_render_asset(
-        self,
-        *,
-        proj: ProjectConfig,
-        entity_kind: str,
-        entity_segs: tuple[str, str],
-        extra_metadata: dict,
-    ) -> Asset:
-        """Build the per-shot render Asset.
-
-        ``extra_metadata`` is expected to carry ``primary_source``,
-        ``sources``, plus thumbnail-friendly top-level keys
-        (``layer_path``/``aovs``/``versions`` for EXR primaries or
-        ``daily_path`` for daily primaries).
-        """
-        asset_id = self._make_render_asset_id(
-            project=proj.name,
-            entity_kind=entity_kind,
-            entity_segs=entity_segs,
-        )
-        entity_label = (
-            f"{entity_segs[0]}_{entity_segs[1]}"
-            if entity_kind == "shots" else entity_segs[1]
-        )
-
-        tags = {
-            "source:pipeline",
-            "type:render",
-            "kind:media",  # union tag for the Media sidebar parent
-            f"project:{proj.name}",
-            (
-                f"entity:shot:{entity_segs[0]}:{entity_segs[1]}"
-                if entity_kind == "shots"
-                else f"entity:asset:{entity_segs[0]}:{entity_segs[1]}"
-            ),
-        }
-        # ``has:daily`` and ``has:exr`` tags let sidebar collections
-        # filter the grid by what variants the shot actually has.
-        sources = extra_metadata.get("sources") or {}
-        if any(v["kind"] == "daily" for v in sources.values()):
-            tags.add("has:daily")
-        if any(v["kind"] == "exr" for v in sources.values()):
-            tags.add("has:exr")
-
-        metadata: dict = {
-            "project": proj.name,
-            "entity_kind": entity_kind,
-            "entity_segs": list(entity_segs),
-            # Sub-cards (AOVs) only when the primary is EXR.
-            "has_sub_cards": (
-                extra_metadata.get("primary_source", "").startswith(
-                    "daily/",
-                ) is False
-            ),
-        }
-        metadata.update(extra_metadata)
-
-        return Asset(
-            id=asset_id,
-            name=entity_label,
-            thumbnail_url="",
-            tags=frozenset(tags),
-            metadata=metadata,
-        )
-
-    def _build_playblast_asset(
-        self,
-        *,
-        proj: ProjectConfig,
-        entity_kind: str,
-        entity_segs: tuple[str, str],
-        extra_metadata: dict,
-    ) -> Asset:
-        """Build the per-shot playblast Asset.
-
-        ``extra_metadata`` carries ``depts`` (the per-dept summaries),
-        ``primary_dept`` and ``latest_update``.
-        """
-        asset_id = self._make_playblast_asset_id(
-            project=proj.name,
-            entity_kind=entity_kind,
-            entity_segs=entity_segs,
-        )
-        entity_label = (
-            f"{entity_segs[0]}_{entity_segs[1]}"
-            if entity_kind == "shots" else entity_segs[1]
-        )
-        tags = {
-            "source:pipeline",
-            "type:playblast",
-            "kind:media",  # union tag for the Media sidebar parent
-            f"project:{proj.name}",
-            (
-                f"entity:shot:{entity_segs[0]}:{entity_segs[1]}"
-                if entity_kind == "shots"
-                else f"entity:asset:{entity_segs[0]}:{entity_segs[1]}"
-            ),
-        }
-        # ``dept:<name>`` tag per contributing dept so sidebar
-        # filters (or future dept sub-collections) can scope cleanly.
-        for dept_name in (extra_metadata.get("depts") or {}).keys():
-            tags.add(f"dept:{dept_name}")
-
-        metadata: dict = {
-            "project": proj.name,
-            "entity_kind": entity_kind,
-            "entity_segs": list(entity_segs),
-            "has_sub_cards": True,
-        }
-        metadata.update(extra_metadata)
-
-        return Asset(
-            id=asset_id,
-            name=entity_label,
-            thumbnail_url="",
-            tags=frozenset(tags),
-            metadata=metadata,
-        )
-
     def _list_categories_for_project(self, project_name: str) -> list[str]:
-        client = self._clients.get(project_name)
-        if client is None:
+        """Return the asset categories registered for ``project_name``.
+
+        Returns empty list when the Client isn't yet READY (so the
+        sidebar can render before background init finishes). Raises
+        :class:`ConfigError` if the underlying enumeration fails.
+        """
+        if not self._is_ready(project_name):
             return []
+        client = self._client_slots[project_name].client
         try:
             entities = client.config.list_entities(None, closure=True)
-            return sorted({
-                e.uri.segments[1]
-                for e in entities
-                if len(e.uri.segments) >= 3 and e.uri.segments[0] == "assets"
-            })
-        except Exception:
-            return []
+        except Exception as exc:
+            raise ConfigError(
+                self.id,
+                f"failed to list categories for {project_name}: {exc}",
+                cause=exc,
+            ) from exc
+        return sorted({
+            e.uri.segments[1]
+            for e in entities
+            if len(e.uri.segments) >= 3 and e.uri.segments[0] == "assets"
+        })
 
     def _list_sequences_for_project(self, project_name: str) -> list[str]:
-        client = self._clients.get(project_name)
-        if client is None:
+        """Return the shot sequences registered for ``project_name``.
+
+        See :meth:`_list_categories_for_project` for the contract.
+        """
+        if not self._is_ready(project_name):
             return []
+        client = self._client_slots[project_name].client
         try:
             entities = client.config.list_entities(None, closure=True)
-            return sorted({
-                e.uri.segments[1]
-                for e in entities
-                if len(e.uri.segments) >= 3 and e.uri.segments[0] == "shots"
-            })
-        except Exception:
-            return []
+        except Exception as exc:
+            raise ConfigError(
+                self.id,
+                f"failed to list sequences for {project_name}: {exc}",
+                cause=exc,
+            ) from exc
+        return sorted({
+            e.uri.segments[1]
+            for e in entities
+            if len(e.uri.segments) >= 3 and e.uri.segments[0] == "shots"
+        })
 
     def _list_categories(self) -> list[str]:
         """Aggregate categories across every initialized project."""
@@ -8095,9 +6053,14 @@ class PipelineCatalog(Catalog):
                 if versions:
                     result[dept] = sorted(versions)
             return result
-        except Exception:
-            log.exception("Failed to scan workfile versions for %s", asset_id)
-            return {}
+        except CatalogError:
+            raise
+        except Exception as exc:
+            raise WorkfileScanError(
+                self.id,
+                f"failed to scan workfile versions for {asset_id}: {exc}",
+                cause=exc,
+            ) from exc
 
     def _get_department_info(self, asset_id: str) -> dict[str, list[str]]:
         """Get {dept_name: [versions]} for an asset/shot (publish versions)."""
