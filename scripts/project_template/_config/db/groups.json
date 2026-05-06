@@ -1,0 +1,15 @@
+{
+    "properties": {},
+    "children": {
+        "shots": {
+            "schema": "schemas:/groups/shots",
+            "properties": {},
+            "children": {}
+        },
+        "assets": {
+            "schema": "schemas:/groups/assets",
+            "properties": {},
+            "children": {}
+        }
+    }
+}

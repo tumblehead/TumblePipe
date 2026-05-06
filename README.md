@@ -42,7 +42,7 @@ ships a working example.
 - `otls/` — Houdini Digital Assets (HDAs), text-format for version control.
 - `python/tumblepipe/` — pipeline Python modules.
 - `python3.Xlibs/` — per-Python-version libraries and Houdini startup hooks.
-- `scripts/` — Houdini startup scripts.
+- `scripts/` — TumbleTrove `tt_setup` wizard and bundled project template.
 - `python_panels/` — Python panels (project browser).
 - `desktop/` — Houdini desktop layout.
 - `resources/`, `ocio/` — resource files and OpenColorIO configuration.

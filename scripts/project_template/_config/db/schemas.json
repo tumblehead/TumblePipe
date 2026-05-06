@@ -1,0 +1,248 @@
+{
+    "properties": {},
+    "children": {
+        "entity": {
+            "properties": {
+                "frame_start": 1001,
+                "frame_end": 1001,
+                "roll_start": 0,
+                "roll_end": 0,
+                "fps": 24,
+                "render": {
+                    "camera": "/cameras/render_camera",
+                    "resolution": [
+                        1920,
+                        1080
+                    ],
+                    "overscan": [
+                        0.0,
+                        0.0
+                    ],
+                    "pathtracedsamples": 64,
+                    "diffuselimit": 2,
+                    "reflectionlimit": 4,
+                    "refractionlimit": 4,
+                    "volumelimit": 0,
+                    "ssslimit": 1,
+                    "usedicingcamera": false,
+                    "dicingframe": 1001,
+                    "dicingfocallength": 50,
+                    "dicingqualityscale": 0.5,
+                    "enabledof": true,
+                    "enablemblur": true,
+                    "enabledenoising": true
+                },
+                "farm": {
+                    "pools": [],
+                    "default_pool": "",
+                    "priority": 50,
+                    "tile_count": 1,
+                    "batch_size": 10,
+                    "timeout_render": 45,
+                    "timeout_denoise": 20,
+                    "timeout_mp4": 20,
+                    "timeout_notify": 10
+                },
+                "variants": [
+                    "default"
+                ]
+            },
+            "children": {
+                "shots": {
+                    "properties": {
+                        "frame_end": 1100
+                    },
+                    "children": {
+                        "sequence": {
+                            "properties": {},
+                            "children": {
+                                "shot": {
+                                    "properties": {},
+                                    "children": {}
+                                }
+                            }
+                        }
+                    }
+                },
+                "assets": {
+                    "properties": {
+                        "animatable": false,
+                        "frame_end": 1001
+                    },
+                    "children": {
+                        "category": {
+                            "properties": {},
+                            "children": {
+                                "asset": {
+                                    "properties": {},
+                                    "children": {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "config": {
+            "properties": {},
+            "children": {
+                "project": {
+                    "properties": {
+                        "fps": 30
+                    },
+                    "children": {}
+                },
+                "discord": {
+                    "properties": {
+                        "token": ""
+                    },
+                    "children": {
+                        "users": {
+                            "properties": {},
+                            "children": {
+                                "user": {
+                                    "properties": {
+                                        "discord_id": 0
+                                    },
+                                    "children": {}
+                                }
+                            }
+                        },
+                        "channels": {
+                            "properties": {},
+                            "children": {
+                                "channel": {
+                                    "properties": {
+                                        "channel_id": 0
+                                    },
+                                    "children": {}
+                                }
+                            }
+                        },
+                        "departments": {
+                            "properties": {},
+                            "children": {
+                                "department": {
+                                    "properties": {
+                                        "channel": ""
+                                    },
+                                    "children": {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "departments": {
+            "properties": {},
+            "children": {
+                "assets": {
+                    "properties": {},
+                    "children": {
+                        "department": {
+                            "properties": {
+                                "independent": false,
+                                "publishable": true,
+                                "renderable": false
+                            },
+                            "children": {}
+                        }
+                    }
+                },
+                "shots": {
+                    "properties": {},
+                    "children": {
+                        "department": {
+                            "properties": {
+                                "independent": false,
+                                "publishable": true,
+                                "renderable": false
+                            },
+                            "children": {}
+                        }
+                    }
+                },
+                "render": {
+                    "properties": {},
+                    "children": {
+                        "department": {
+                            "properties": {
+                                "independent": false,
+                                "publishable": true,
+                                "renderable": false
+                            },
+                            "children": {}
+                        }
+                    }
+                }
+            }
+        },
+        "groups": {
+            "properties": {},
+            "children": {
+                "shots": {
+                    "properties": {},
+                    "children": {}
+                },
+                "assets": {
+                    "properties": {},
+                    "children": {}
+                },
+                "group": {
+                    "properties": {
+                        "members": [],
+                        "departments": []
+                    },
+                    "children": {}
+                }
+            }
+        },
+        "procedurals": {
+            "properties": {},
+            "children": {
+                "assets": {
+                    "properties": {},
+                    "children": {}
+                },
+                "shots": {
+                    "properties": {},
+                    "children": {}
+                }
+            }
+        },
+        "scenes": {
+            "properties": {},
+            "children": {
+                "category": {
+                    "properties": {},
+                    "children": {
+                        "category": {
+                            "properties": {},
+                            "children": {
+                                "scene": {
+                                    "properties": {
+                                        "assets": []
+                                    },
+                                    "children": {}
+                                }
+                            }
+                        },
+                        "scene": {
+                            "properties": {
+                                "assets": []
+                            },
+                            "children": {}
+                        }
+                    }
+                },
+                "scene": {
+                    "properties": {
+                        "assets": []
+                    },
+                    "children": {}
+                }
+            }
+        }
+    }
+}

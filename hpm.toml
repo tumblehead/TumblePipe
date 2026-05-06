@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.1.25"
+version = "1.1.27"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 documentation = "https://tumblepipe.readthedocs.io"
 readme = "README.md"
@@ -20,8 +20,8 @@ max_version = "22"
 TH_PIPELINE_PATH = { method = "set", value = "$HPM_PACKAGE_ROOT" }
 ASSET_BROWSER_CATALOG_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/asset_browser_catalogs" }
 TH_PROJECT_PATH = { method = "set", value = "" }
-TH_CONFIG_PATH = { method = "set", value = "" }
-TH_EXPORT_PATH = { method = "set", value = "" }
+TH_CONFIG_PATH = { method = "set", value = "$TH_PROJECT_PATH/_config" }
+TH_EXPORT_PATH = { method = "set", value = "$TH_PROJECT_PATH/export" }
 OCIO = { method = "set", value = "$HPM_PACKAGE_ROOT/ocio/tumblehead.ocio" }
 
 # tumbleResolver registration. Houdini applies these env edits during its
@@ -48,6 +48,20 @@ qtpy = ">=2.4.0"
 watchdog = ">=6.0.0"
 pymongo = ">=4.13.0"
 dictdiffer = ">=0.9.0"
+
+# tt_setup runs when the user clicks Configure on the package card in
+# TumbleTrove. It launches a Qt6 wizard that either points at an existing
+# project or scaffolds a new one from scripts/project_template/, then
+# emits {"envVars": {"TH_PROJECT_PATH": ...}} on stdout.
+#
+# The table form (hpm >= 0.11) opts the script into a uv-managed venv
+# resolved on demand, so we don't have to assume PySide6 (or even a
+# `python` interpreter) exists on the user's PATH. Python is pinned to
+# match the version Houdini ships (`python3.11libs/`).
+[scripts.tt_setup]
+cmd = "python scripts/tt_setup.py"
+python = "3.11"
+requirements = ["PySide6>=6.6"]
 
 [native]
 # hpm only accepts a fixed set of platform names. For mac we ship an

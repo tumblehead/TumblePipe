@@ -1,0 +1,272 @@
+{
+    "properties": {},
+    "children": {
+        "submission": {
+            "properties": {},
+            "children": {
+                "columns": {
+                    "properties": {
+                        "publish": {
+                            "columns": [
+                                {
+                                    "key": "department",
+                                    "label": "Department",
+                                    "type": "combo",
+                                    "choices_func": "publishable_departments",
+                                    "default_func": "default_publishable_department",
+                                    "width": 100,
+                                    "tooltip": "Publish up to this department"
+                                },
+                                {
+                                    "key": "pool",
+                                    "label": "Pool",
+                                    "type": "combo",
+                                    "property_path": "farm.default_pool",
+                                    "choices_func": "pools",
+                                    "width": 80,
+                                    "tooltip": "Farm pool for publish jobs"
+                                },
+                                {
+                                    "key": "priority",
+                                    "label": "Priority",
+                                    "type": "integer",
+                                    "property_path": "farm.priority",
+                                    "min": 0,
+                                    "max": 100,
+                                    "step": 5,
+                                    "width": 60,
+                                    "tooltip": "Job priority (0-100)"
+                                }
+                            ],
+                            "default_hidden": []
+                        },
+                        "render": {
+                            "columns": [
+                                {
+                                    "key": "department",
+                                    "label": "Department",
+                                    "type": "combo",
+                                    "choices_func": "renderable_departments",
+                                    "default_func": "default_renderable_department",
+                                    "width": 100,
+                                    "tooltip": "Render department"
+                                },
+                                {
+                                    "key": "variants",
+                                    "label": "Variants",
+                                    "type": "multi_select",
+                                    "property_path": "variants",
+                                    "per_entity_choices": true,
+                                    "width": 100,
+                                    "tooltip": "Variants to render"
+                                },
+                                {
+                                    "key": "pool",
+                                    "label": "Pool",
+                                    "type": "combo",
+                                    "property_path": "farm.default_pool",
+                                    "choices_func": "pools",
+                                    "width": 80,
+                                    "tooltip": "Farm pool"
+                                },
+                                {
+                                    "key": "priority",
+                                    "label": "Priority",
+                                    "type": "integer",
+                                    "property_path": "farm.priority",
+                                    "min": 0,
+                                    "max": 100,
+                                    "step": 5,
+                                    "width": 60,
+                                    "tooltip": "Job priority (0-100)"
+                                },
+                                {
+                                    "key": "tile_count",
+                                    "label": "Tiles",
+                                    "type": "integer",
+                                    "property_path": "farm.tile_count",
+                                    "min": 1,
+                                    "max": 16,
+                                    "step": 1,
+                                    "width": 45,
+                                    "tooltip": "Parallel render tiles"
+                                },
+                                {
+                                    "key": "pre_roll",
+                                    "label": "Pre",
+                                    "type": "integer",
+                                    "property_path": "roll_start",
+                                    "min": 0,
+                                    "width": 40,
+                                    "tooltip": "Pre-roll frames"
+                                },
+                                {
+                                    "key": "first_frame",
+                                    "label": "First",
+                                    "type": "integer",
+                                    "property_path": "frame_start",
+                                    "width": 50,
+                                    "tooltip": "First frame"
+                                },
+                                {
+                                    "key": "last_frame",
+                                    "label": "Last",
+                                    "type": "integer",
+                                    "property_path": "frame_end",
+                                    "width": 50,
+                                    "tooltip": "Last frame"
+                                },
+                                {
+                                    "key": "post_roll",
+                                    "label": "Post",
+                                    "type": "integer",
+                                    "property_path": "roll_end",
+                                    "min": 0,
+                                    "width": 40,
+                                    "tooltip": "Post-roll frames"
+                                },
+                                {
+                                    "key": "batch_size",
+                                    "label": "Batch",
+                                    "type": "integer",
+                                    "property_path": "farm.batch_size",
+                                    "min": 1,
+                                    "max": 100,
+                                    "step": 5,
+                                    "width": 45,
+                                    "tooltip": "Frames per batch"
+                                },
+                                {
+                                    "key": "samples",
+                                    "label": "Samples",
+                                    "type": "integer",
+                                    "property_path": "render.pathtracedsamples",
+                                    "min": 1,
+                                    "max": 4096,
+                                    "step": 16,
+                                    "width": 55,
+                                    "tooltip": "Pathtraced samples"
+                                },
+                                {
+                                    "key": "mblur",
+                                    "label": "MBlur",
+                                    "type": "boolean",
+                                    "property_path": "render.enablemblur",
+                                    "width": 50,
+                                    "tooltip": "Motion blur"
+                                },
+                                {
+                                    "key": "dof",
+                                    "label": "DOF",
+                                    "type": "boolean",
+                                    "property_path": "render.enabledof",
+                                    "width": 45,
+                                    "tooltip": "Depth of field"
+                                },
+                                {
+                                    "key": "denoise",
+                                    "label": "Denoise",
+                                    "type": "boolean",
+                                    "property_path": "render.enabledenoising",
+                                    "width": 55,
+                                    "tooltip": "Denoising"
+                                },
+                                {
+                                    "key": "standalone",
+                                    "label": "Standalone",
+                                    "type": "boolean",
+                                    "default": false,
+                                    "width": 70,
+                                    "tooltip": "Skip staging, use existing latest staged file with locked versions"
+                                },
+                                {
+                                    "key": "diffuse_limit",
+                                    "label": "Diffuse",
+                                    "type": "integer",
+                                    "property_path": "render.diffuselimit",
+                                    "min": 0,
+                                    "max": 16,
+                                    "width": 50,
+                                    "tooltip": "Diffuse ray limit"
+                                },
+                                {
+                                    "key": "reflection_limit",
+                                    "label": "Refl",
+                                    "type": "integer",
+                                    "property_path": "render.reflectionlimit",
+                                    "min": 0,
+                                    "max": 16,
+                                    "width": 45,
+                                    "tooltip": "Reflection ray limit"
+                                },
+                                {
+                                    "key": "refraction_limit",
+                                    "label": "Refr",
+                                    "type": "integer",
+                                    "property_path": "render.refractionlimit",
+                                    "min": 0,
+                                    "max": 16,
+                                    "width": 45,
+                                    "tooltip": "Refraction ray limit"
+                                },
+                                {
+                                    "key": "volume_limit",
+                                    "label": "Vol",
+                                    "type": "integer",
+                                    "property_path": "render.volumelimit",
+                                    "min": 0,
+                                    "max": 16,
+                                    "width": 40,
+                                    "tooltip": "Volume ray limit"
+                                },
+                                {
+                                    "key": "sss_limit",
+                                    "label": "SSS",
+                                    "type": "integer",
+                                    "property_path": "render.ssslimit",
+                                    "min": 0,
+                                    "max": 16,
+                                    "width": 40,
+                                    "tooltip": "SSS ray limit"
+                                }
+                            ],
+                            "default_hidden": [
+                                "diffuse_limit",
+                                "reflection_limit",
+                                "refraction_limit",
+                                "volume_limit",
+                                "sss_limit"
+                            ]
+                        }
+                    },
+                    "children": {}
+                }
+            }
+        },
+        "project": {
+            "properties": {
+                "fps": 24
+            },
+            "children": {}
+        },
+        "discord": {
+            "properties": {
+                "token": ""
+            },
+            "children": {
+                "users": {
+                    "properties": {},
+                    "children": {}
+                },
+                "channels": {
+                    "properties": {},
+                    "children": {}
+                },
+                "departments": {
+                    "properties": {},
+                    "children": {}
+                }
+            }
+        }
+    }
+}

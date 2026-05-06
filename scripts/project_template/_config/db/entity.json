@@ -1,0 +1,48 @@
+{
+    "properties": {
+        "farm": {
+            "pools": [
+                "default"
+            ],
+            "default_pool": "default"
+        }
+    },
+    "children": {
+        "shots": {
+            "properties": {
+                "render": {
+                    "resolution": [
+                        1920,
+                        1080
+                    ],
+                    "overscan": [
+                        0.0,
+                        0.0
+                    ]
+                }
+            },
+            "children": {}
+        },
+        "assets": {
+            "properties": {},
+            "children": {
+                "CHAR": {
+                    "schema": "schemas:/entity/assets/category",
+                    "properties": {},
+                    "children": {}
+                },
+                "PROP": {
+                    "schema": "schemas:/entity/assets/category",
+                    "properties": {},
+                    "children": {}
+                },
+                "SET": {
+                    "schema": "schemas:/entity/assets/category",
+                    "properties": {},
+                    "children": {}
+                }
+            },
+            "schema": "schemas:/entity/assets"
+        }
+    }
+}

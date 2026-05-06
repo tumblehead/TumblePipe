@@ -1,0 +1,233 @@
+#usda 1.0
+(
+    doc = """Generated from Composed Stage of root layer
+"""
+    endTimeCode = 1
+    metersPerUnit = 1
+    renderSettingsPrimPath = "/scene/Render/rendersettings"
+    startTimeCode = 1
+    upAxis = "Y"
+)
+
+def Scope "scene" (
+    kind = "assembly"
+)
+{
+    def Xform "cameras"
+    {
+        def Camera "render_camera" (
+            apiSchemas = ["KarmaCameraAPI", "HoudiniViewportGuideAPI", "HoudiniCameraPlateAPI"]
+        )
+        {
+            float2 clippingRange = (1, 1000000)
+            float exposure = 0
+            float focalLength = 0.5
+            float focusDistance = 5
+            float fStop = 0
+            float horizontalAperture = 0.20955
+            float horizontalApertureOffset = 0
+            asset houdini:backgroundimage = @@
+            asset houdini:foregroundimage = @@
+            float houdini:guidescale = 1
+            uniform bool houdini:inviewermenu = 1
+            float4 karma:camera:window = (-1, 1, -1, 1)
+            token projection = "perspective"
+            double shutter:close = 0.25
+            double shutter:open = -0.25
+            float verticalAperture = 0.11787187
+            float verticalApertureOffset = 0
+            matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )
+            uniform token[] xformOpOrder = ["xformOp:transform"]
+        }
+    }
+
+    def Scope "Render"
+    {
+        def Scope "Products"
+        {
+            def Scope "Vars"
+            {
+                def RenderVar "beauty" (
+                    apiSchemas = ["KarmaRenderVarAPI", "HuskRenderVarAPI"]
+                )
+                {
+                    uniform token dataType = "color3f"
+                    custom int driver:parameters:aov:clearValue = 0
+                    custom token driver:parameters:aov:format = "color3f"
+                    bool driver:parameters:aov:husk:channel_lower_rgb = 1
+                    string driver:parameters:aov:husk:OpenEXR:compression = "dwab"
+                    int driver:parameters:aov:husk:OpenEXR:dwa_compression = 45
+                    bool driver:parameters:aov:karma:cryptomatte = 0
+                    float driver:parameters:aov:karma:defaultvalue = 0
+                    float driver:parameters:aov:karma:dither = 1
+                    string driver:parameters:aov:karma:filter = '["ubox",{}]'
+                    custom bool driver:parameters:aov:multiSampled = 1
+                    custom string driver:parameters:aov:name = "beauty"
+                    uniform string sourceName = "C.*[LO]"
+                    uniform token sourceType = "lpe"
+                }
+
+                def RenderVar "alpha" (
+                    apiSchemas = ["KarmaRenderVarAPI", "HuskRenderVarAPI"]
+                )
+                {
+                    uniform token dataType = "float"
+                    custom int driver:parameters:aov:clearValue = 0
+                    custom token driver:parameters:aov:format = "half"
+                    bool driver:parameters:aov:husk:channel_lower_rgb = 1
+                    string driver:parameters:aov:husk:OpenEXR:compression = "dwab"
+                    int driver:parameters:aov:husk:OpenEXR:dwa_compression = 45
+                    bool driver:parameters:aov:karma:cryptomatte = 0
+                    float driver:parameters:aov:karma:defaultvalue = 0
+                    float driver:parameters:aov:karma:dither = 1
+                    string driver:parameters:aov:karma:filter = '["ubox",{}]'
+                    custom bool driver:parameters:aov:multiSampled = 0
+                    custom string driver:parameters:aov:name = "alpha"
+                    uniform string sourceName = "ray:noholdouts;hit"
+                    uniform token sourceType = "raw"
+                }
+
+                def RenderVar "albedo" (
+                    apiSchemas = ["KarmaRenderVarAPI", "HuskRenderVarAPI"]
+                )
+                {
+                    uniform token dataType = "color3f"
+                    custom int driver:parameters:aov:clearValue = 0
+                    custom token driver:parameters:aov:format = "color3h"
+                    bool driver:parameters:aov:husk:channel_lower_rgb = 1
+                    string driver:parameters:aov:husk:OpenEXR:compression = "dwab"
+                    int driver:parameters:aov:husk:OpenEXR:dwa_compression = 45
+                    bool driver:parameters:aov:karma:cryptomatte = 0
+                    float driver:parameters:aov:karma:defaultvalue = 0
+                    float driver:parameters:aov:karma:dither = 1
+                    string driver:parameters:aov:karma:filter = '["ubox",{}]'
+                    custom bool driver:parameters:aov:multiSampled = 0
+                    custom string driver:parameters:aov:name = "albedo"
+                    uniform string sourceName = "export_basecolor"
+                    uniform token sourceType = "raw"
+                }
+
+                def RenderVar "normal" (
+                    apiSchemas = ["KarmaRenderVarAPI", "HuskRenderVarAPI"]
+                )
+                {
+                    uniform token dataType = "normal3f"
+                    custom int driver:parameters:aov:clearValue = 0
+                    custom token driver:parameters:aov:format = "half3"
+                    bool driver:parameters:aov:husk:channel_lower_rgb = 1
+                    string driver:parameters:aov:husk:OpenEXR:compression = "dwab"
+                    int driver:parameters:aov:husk:OpenEXR:dwa_compression = 45
+                    bool driver:parameters:aov:karma:cryptomatte = 0
+                    float driver:parameters:aov:karma:defaultvalue = 0
+                    float driver:parameters:aov:karma:dither = 1
+                    string driver:parameters:aov:karma:filter = '["ubox",{}]'
+                    custom bool driver:parameters:aov:multiSampled = 0
+                    custom string driver:parameters:aov:name = "normal"
+                    uniform string sourceName = "ray:hitN"
+                    uniform token sourceType = "raw"
+                }
+            }
+
+            def RenderProduct "renderproduct" (
+                apiSchemas = ["HuskRenderProductAPI"]
+            )
+            {
+                string driver:parameters:husk:artist = ""
+                string driver:parameters:husk:comment = ""
+                string driver:parameters:husk:hostname = ""
+                string driver:parameters:husk:OpenEXR:compression = "dwab"
+                int driver:parameters:husk:OpenEXR:dwa_compression = 45
+                rel orderedVars = [
+                    </scene/Render/Products/Vars/beauty>,
+                    </scene/Render/Products/Vars/alpha>,
+                    </scene/Render/Products/Vars/albedo>,
+                    </scene/Render/Products/Vars/normal>,
+                ]
+                token productName = ""
+                uniform token productType = "raster"
+            }
+        }
+
+        def RenderSettings "rendersettings" (
+            apiSchemas = ["KarmaRenderSettingsAPI"]
+        )
+        {
+            uniform token aspectRatioConformPolicy = "expandAperture"
+            rel camera = </scene/cameras/render_camera>
+            uniform float4 dataWindowNDC = (-0, -0, 1, 1)
+            uniform bool disableDepthOfField = 0
+            uniform bool disableMotionBlur = 0
+            uniform token[] includedPurposes = ["default", "render"]
+            bool karma:global:abortmissingtexture = 0
+            bool karma:global:abortnogpudevice = 0
+            bool karma:global:autoraybias = 1
+            token karma:global:bucketorder = "Middle"
+            int karma:global:bucketsize = 32
+            float karma:global:cacheratio = 0.25
+            int karma:global:cachesize = 1000
+            float karma:global:colorlimit = 10
+            float karma:global:colorlimitindirect = 10
+            bool karma:global:colorlimitindlinked = 1
+            bool karma:global:constrainmaxrough = 1
+            token karma:global:convergence_mode = "Variance"
+            float karma:global:dicingqualityscale = 0.5
+            string karma:global:diffusecomponents = "diffuse"
+            custom bool karma:global:enable_dof = 1
+            custom string karma:global:engine = "xpu"
+            string karma:global:exportcomponents = "diffuse reflect coat refract volume sss"
+            bool karma:global:guiding_enable = 0
+            int karma:global:guiding_samples = 0
+            string karma:global:imagefilter = "[]"
+            token karma:global:imagemode = "Progressive"
+            token karma:global:light_sampling_mode = "Light Tree"
+            float karma:global:light_sampling_quality = 1
+            float karma:global:offscreenquality = 0.1
+            int karma:global:pathtracedsamples = 32
+            string karma:global:pixelfilter = "gauss"
+            float karma:global:pixelfiltersize = 2
+            string karma:global:pixeloracle = '["variance", {"variance": 0.01, "plane": "C", "minrays": -1, "ociomode": 0, "ociodisplay": "sRGB - Display", "ocioview": "Un-tone-mapped", "ociocolorspace": "default"}]'
+            float karma:global:raybias = 0.001
+            string karma:global:refractcomponents = "refract"
+            int karma:global:russianroulette_cutoff = 2
+            int karma:global:samplesperpixel = 9
+            int karma:global:screendoorlimit = 4
+            string karma:global:ssscomponents = "sss"
+            bool karma:global:usecacheratio = 1
+            string karma:global:volumecomponents = "volume"
+            custom token karma:object:blurstyle = "Rotation Blur"
+            custom bool karma:object:causticsenable = 0
+            custom float karma:object:causticsroughnessclamp = 0.2
+            custom token karma:object:cull_backface = "Off"
+            custom int karma:object:curve_basis = 0
+            custom token karma:object:curve_style = "Rounded Curves"
+            custom float karma:object:diffuselimit = 1
+            custom float karma:object:diffusequality = 1
+            custom int karma:object:geosamples = 2
+            custom int karma:object:instance_samples = 2
+            custom token karma:object:instance_vblur = "No Velocity Blur"
+            custom bool karma:object:mblur = 1
+            custom token karma:object:point_style = "Spheres"
+            custom float karma:object:reflectlimit = 4
+            custom float karma:object:reflectquality = 1
+            custom float karma:object:refractlimit = 4
+            custom float karma:object:refractquality = 1
+            custom bool karma:object:samplesfromstage = 1
+            custom float karma:object:ssslimit = 1
+            custom float karma:object:sssquality = 1
+            custom int karma:object:varianceaa_maxsamples = 9
+            custom int karma:object:varianceaa_minsamples = 1
+            custom float karma:object:varianceaa_thresh = 0.01
+            custom token karma:object:vblur = "No Velocity Blur"
+            custom float karma:object:volumelimit = 0
+            custom float karma:object:volumequality = 1
+            custom float karma:object:volumesteprate = 0.25
+            custom float karma:object:volumevblurscale = 1
+            custom int karma:object:xformsamples = 2
+            uniform token[] materialBindingPurposes = ["full", "allPurpose"]
+            uniform float pixelAspectRatio = 1
+            rel products = </scene/Render/Products/renderproduct>
+            uniform int2 resolution = (1920, 1080)
+        }
+    }
+}
+

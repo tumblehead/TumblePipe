@@ -14,11 +14,35 @@ typically set in a launcher script that then starts Houdini.
 |--------------------|--------------------------------------------------|----------|
 | `TH_PIPELINE_PATH` | Path to the TumblePipe package root.             | yes      |
 | `TH_PROJECT_PATH`  | Path to the active project root on disk.         | yes      |
-| `TH_CONFIG_PATH`   | Path to the studio config directory (see below). | yes      |
-| `TH_EXPORT_PATH`   | Path where the pipeline writes exports.          | yes      |
+| `TH_CONFIG_PATH`   | Path to the studio config directory (see below). | no       |
+| `TH_EXPORT_PATH`   | Path where the pipeline writes exports.          | no       |
 | `TH_USER`          | Override the user identity in the pipeline.      | no       |
 
-`TH_USER` defaults to your operating system username when unset.
+`TH_CONFIG_PATH` defaults to `$TH_PROJECT_PATH/_config` and `TH_EXPORT_PATH`
+defaults to `$TH_PROJECT_PATH/export` when unset. `TH_USER` defaults to your
+operating system username when unset.
+
+## Project setup wizard
+
+TumblePipe ships a `tt_setup` hook that TumbleTrove Desktop runs when the
+user clicks **Configure** on the package card. The hook launches a small
+Qt6 wizard with two flows:
+
+- **Use an existing project** — browse to a project root that already has a
+  `_config/` directory. The wizard verifies the layout and persists
+  `TH_PROJECT_PATH` as a project-scope override.
+- **Create a new project** — pick a parent directory, project name, and
+  FPS. The wizard copies `scripts/project_template/_config/` into
+  `<parent>/<name>/`, customises the JSON databases (farm pool default,
+  fps), creates the standard top-level subdirs (`assets/`, `shots/`,
+  `groups/`, `kits/`, `export/`), and persists `TH_PROJECT_PATH`.
+
+The hook source is `scripts/tt_setup.py` and the bundled template lives
+under `scripts/project_template/`. The wizard runs under an
+hpm-managed `uv` venv (declared in `[scripts.tt_setup]` in `hpm.toml`)
+that pins Python 3.11 and PySide6, so the hook works regardless of what
+the user has on `PATH` — `tt_setup` runs out-of-process and can't reuse
+Houdini's bundled `qtpy`.
 
 ## The convention framework
 
@@ -43,7 +67,9 @@ publishes a complete working example of these modules.
   supported Houdini version, native resolver slots).
 - `ocio/tumblehead.ocio` — OpenColorIO config shipped with the package;
   the package sets `OCIO` to this path on Houdini startup.
-- `scripts/` — Houdini startup scripts that run when the package loads.
+- `scripts/` — TumbleTrove hooks (`tt_setup.py`, plus the bundled
+  `project_template/`) and any Houdini startup scripts that run when the
+  package loads.
 - `python3.11libs/` — Python-version-specific startup hooks (`pythonrc.py`,
   `uiready.py`) executed by Houdini.
 

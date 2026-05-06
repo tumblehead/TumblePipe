@@ -21,7 +21,9 @@ TumblePipe/
 ├── resolver/                    # Pre-built USD asset resolver (native)
 ├── resolver-src/                # Source for the `entity://` USD resolver
 ├── resources/                   # Icons, UI resources, templates
-├── scripts/                     # Houdini startup scripts
+├── scripts/                     # TumbleTrove hooks + project template
+│   ├── tt_setup.py              #   project setup wizard (Qt6)
+│   └── project_template/        #   new-project scaffolding
 └── docs/                        # This documentation (Sphinx)
 ```
 

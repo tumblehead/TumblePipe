@@ -78,7 +78,13 @@ Where you place the package depends on your setup:
 - **Teams** — place it on a shared file server, or install locally per
   workstation.
 
-The simplest activation path is a launcher script (for example a `.bat`
-file on Windows) that sets the required environment variables and launches
-Houdini. See [Configuration](configuration.md) for the variables TumblePipe
-expects.
+If you installed via TumbleTrove Desktop, click **Configure** on the
+TumblePipe package card to launch the project setup wizard — it points
+the package at an existing project on disk or scaffolds a new one from
+the bundled template. See
+[Project setup wizard](configuration.md#project-setup-wizard).
+
+For HPM or manual installs, the simplest activation path is a launcher
+script (for example a `.bat` file on Windows) that sets the required
+environment variables and launches Houdini. See
+[Configuration](configuration.md) for the variables TumblePipe expects.

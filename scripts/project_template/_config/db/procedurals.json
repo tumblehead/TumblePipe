@@ -1,0 +1,13 @@
+{
+    "properties": {},
+    "children": {
+        "assets": {
+            "properties": {},
+            "children": {}
+        },
+        "shots": {
+            "properties": {},
+            "children": {}
+        }
+    }
+}

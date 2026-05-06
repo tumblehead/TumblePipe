@@ -1,0 +1,148 @@
+{
+    "properties": {},
+    "children": {
+        "assets": {
+            "properties": {},
+            "children": {
+                "model": {
+                    "properties": {
+                        "independent": true,
+                        "publishable": true,
+                        "renderable": true
+                    },
+                    "children": {}
+                },
+                "blendshape": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": false
+                    },
+                    "children": {}
+                },
+                "lookdev": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": true
+                    },
+                    "children": {}
+                },
+                "rig": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": false
+                    },
+                    "children": {}
+                }
+            }
+        },
+        "shots": {
+            "properties": {},
+            "children": {
+                "layout": {
+                    "properties": {
+                        "independent": true,
+                        "publishable": true,
+                        "renderable": true
+                    },
+                    "children": {}
+                },
+                "environment": {
+                    "properties": {
+                        "independent": true,
+                        "publishable": true,
+                        "renderable": true
+                    },
+                    "children": {}
+                },
+                "animation": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": true
+                    },
+                    "children": {}
+                },
+                "crowd": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": true
+                    },
+                    "children": {}
+                },
+                "effects": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": true
+                    },
+                    "children": {}
+                },
+                "cfx": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": true
+                    },
+                    "children": {}
+                },
+                "light": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": true
+                    },
+                    "children": {}
+                },
+                "render": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": true
+                    },
+                    "children": {}
+                },
+                "composite": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": false,
+                        "renderable": false
+                    },
+                    "children": {}
+                }
+            }
+        },
+        "render": {
+            "properties": {},
+            "children": {
+                "render": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": false
+                    },
+                    "children": {}
+                },
+                "denoise": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": false
+                    },
+                    "children": {}
+                },
+                "composite": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": false
+                    },
+                    "children": {}
+                }
+            }
+        }
+    }
+}
