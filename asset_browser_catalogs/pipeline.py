@@ -7252,25 +7252,16 @@ class PipelineCatalog(Catalog):
     # ── Render discovery (EXR layers + daily MP4s) ────────
 
     def _discover_renders(self) -> list[Asset]:
-        """Aggregate render layers + dailies from every project."""
-        by_id: dict[str, Asset] = {}
-        for proj in self._registry.all():
-            client = self._ensure_client(proj.name)
-            if client is None:
-                log.warning(
-                    "Skipping render discovery for %s — Client not ready",
-                    proj.name,
-                )
-                continue
-            self._activate_project(proj)
-            try:
-                for a in self._discover_renders_for(proj, client):
-                    by_id.setdefault(a.id, a)
-            except Exception:
-                log.exception(
-                    "_discover_renders failed for project %s", proj.name,
-                )
-        return list(by_id.values())
+        """Render discovery is currently disabled.
+
+        The original implementation walked ``<purpose>:/render/...`` and
+        ``<purpose>:/daily/...`` per project. On busy studio shares with
+        tens of thousands of EXR sequences and MP4s the scan dominated
+        asset-browser load time and could stall Houdini startup. Restore
+        from git history once a cheaper indexing path lands (manifest
+        file, server-side enumeration, or an on-demand cache).
+        """
+        return []
 
     # Order of preference when picking the "primary" source on a
     # per-shot render card. Tried in (layer, dept) tuples — first
@@ -7670,26 +7661,12 @@ class PipelineCatalog(Catalog):
     # ── Playblast discovery (per-shot, per-dept MP4s) ─────
 
     def _discover_playblasts(self) -> list[Asset]:
-        """Aggregate per-shot playblast cards from every project."""
-        by_id: dict[str, Asset] = {}
-        for proj in self._registry.all():
-            client = self._ensure_client(proj.name)
-            if client is None:
-                log.warning(
-                    "Skipping playblast discovery for %s — Client not ready",
-                    proj.name,
-                )
-                continue
-            self._activate_project(proj)
-            try:
-                for a in self._discover_playblasts_for(proj, client):
-                    by_id.setdefault(a.id, a)
-            except Exception:
-                log.exception(
-                    "_discover_playblasts failed for project %s",
-                    proj.name,
-                )
-        return list(by_id.values())
+        """Playblast discovery is currently disabled — see
+        :meth:`_discover_renders` for the rationale (slow disk walks
+        on busy studio shares). Restore from git history once an
+        indexer lands.
+        """
+        return []
 
     def _discover_playblasts_for(
         self, proj: ProjectConfig, client,
