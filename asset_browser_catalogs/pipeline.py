@@ -69,6 +69,18 @@ _DEPT_ICONS = {
     "environment": "mountain",  # environment/landscape
     "crowd": "users",           # crowd of people
 }
+
+# Shot department subcards use a stagier, scene-centric iconography
+# (boxes for blocking, drama mask for performance, etc.) so they read
+# differently from asset subcards at a glance.
+_SHOT_DEPT_ICONS = {
+    "layout":      "boxes",
+    "environment": "trees",
+    "animation":   "drama",
+    "effects":     "flame",
+    "light":       "lightbulb",
+    "render":      "camera",
+}
 _DEPT_SHORT_NAMES = {
     "animation": "Anim",
     "blendshape": "Blend",
@@ -111,29 +123,38 @@ def create_catalog():
     this session. The project is also auto-registered to disk on first
     launch so subsequent manual-launch sessions can see it alongside
     other registered projects.
+
+    Fails closed: any exception in registry construction is logged and
+    causes the catalog to be skipped. The asset browser invokes this on
+    Houdini's main thread during startup, so a raised exception here
+    would otherwise propagate up and stall Houdini load.
     """
-    registry = ProjectRegistry(_projects_json_path())
-    registry.load()
-    registry.bootstrap_from_env()  # add env-project if missing (no-op otherwise)
+    try:
+        registry = ProjectRegistry(_projects_json_path())
+        registry.load()
+        registry.bootstrap_from_env()  # add env-project if missing (no-op otherwise)
 
-    env_proj = os.environ.get("TH_PROJECT_PATH", "").strip()
-    if env_proj:
-        env_name = Path(env_proj).name or "default"
-        if env_name in registry.names:
-            # Scope this session to the launch-project only.
-            scoped = ProjectRegistry(_projects_json_path())
-            entry = registry.get(env_name)
-            if entry is not None:
-                scoped.add(entry, save=False)
-            registry = scoped
+        env_proj = os.environ.get("TH_PROJECT_PATH", "").strip()
+        if env_proj:
+            env_name = Path(env_proj).name or "default"
+            if env_name in registry.names:
+                # Scope this session to the launch-project only.
+                scoped = ProjectRegistry(_projects_json_path())
+                entry = registry.get(env_name)
+                if entry is not None:
+                    scoped.add(entry, save=False)
+                registry = scoped
 
-    if not registry:
-        log.debug(
-            "Pipeline catalog skipped — no projects registered and "
-            "TH_PROJECT_PATH not set",
-        )
+        if not registry:
+            log.debug(
+                "Pipeline catalog skipped — no projects registered and "
+                "TH_PROJECT_PATH not set",
+            )
+            return None
+        return PipelineCatalog(registry)
+    except Exception:
+        log.exception("Pipeline catalog skipped — registry load failed")
         return None
-    return PipelineCatalog(registry)
 
 
 class PipelineCatalog(Catalog):
@@ -239,9 +260,13 @@ class PipelineCatalog(Catalog):
                 pass
         self._activation_warned = False
 
-        # Client construction is deferred — ``_ensure_all_clients()``
-        # is called from ``get_assets()`` and ``initialize()`` which
-        # both run on worker threads.
+        # Client construction is deferred until the first asset-browse
+        # call. ``initialize()`` is intentionally a no-op (Houdini 22
+        # runs it on the main thread during startup, so eager building
+        # there would block Houdini load on per-project ``Path.exists``
+        # SMB timeouts). ``_ensure_all_clients`` / ``_ensure_client``
+        # are driven from ``get_assets`` and the per-action helpers,
+        # which run on the asset-browser worker thread.
 
     # ── Per-project init ──────────────────────────────────
 
@@ -311,7 +336,7 @@ class PipelineCatalog(Catalog):
             )
             return None
 
-    def _ensure_client(self, project_name: str, timeout: float = 30.0):
+    def _ensure_client(self, project_name: str):
         """Return the :class:`tumblehead.api.Client` for ``project_name``,
         building it on the calling thread if it hasn't been built yet."""
         if project_name in self._clients:
@@ -321,14 +346,21 @@ class PipelineCatalog(Catalog):
             return None
         return self._build_client_now(proj)
 
-    def _ensure_all_clients(self, timeout: float = 30.0) -> None:
+    def _ensure_all_clients(self) -> None:
         """Build any not-yet-built Clients for every registered project."""
         for proj in self._registry.all():
-            self._ensure_client(proj.name, timeout=timeout)
+            self._ensure_client(proj.name)
 
     def initialize(self) -> None:
-        """Called on a worker thread — safe to do slow I/O here."""
-        self._ensure_all_clients()
+        """No-op. Houdini 22's asset browser invokes this on the main
+        thread during startup, so any work here blocks Houdini load —
+        a single registered project that points at an unreachable
+        network share stalls startup for the SMB timeout per project.
+        Client construction is now deferred until the first
+        ``get_assets()`` call, which runs on a worker thread after
+        startup is complete and can safely block on ``Path.exists()``.
+        """
+        return
 
     # ── Project / asset_id helpers ────────────────────────
 
@@ -1711,8 +1743,16 @@ class PipelineCatalog(Catalog):
             return None
         return out if out.exists() else None
 
-    def get_card_menu_items(self, asset: Asset):
-        """Catalog-contributed card right-click items."""
+    def get_card_menu_items(self, asset: Asset, *, selected_assets=None):
+        """Catalog-contributed card right-click items.
+
+        ``selected_assets`` is provided by the browser when the right-clicked
+        card is part of a multi-selection AND every selected card belongs to
+        this catalog. We use it to expand "Submit Jobs…" to the whole
+        selection (filtered to the same context as the right-clicked card,
+        since publish/render is per-context). When ``None`` we fall through
+        to a single-asset menu.
+        """
         asset_id = asset.id
 
         # Playblast cards: small viewer menu mirroring renders.
@@ -1777,7 +1817,32 @@ class PipelineCatalog(Catalog):
             ))
             return menu
 
+        # Build the submit-jobs target list: the multi-selected cards if
+        # the browser provided a selection scoped to this catalog AND
+        # filtered to the same context as the right-clicked card,
+        # otherwise just this card.
+        click_context = self._asset_context(asset)
+        if selected_assets is not None and click_context is not None:
+            submit_targets = [
+                a for a in selected_assets
+                if self._asset_context(a) == click_context
+            ]
+            if not submit_targets:
+                submit_targets = [asset]
+        else:
+            submit_targets = [asset]
+        submit_label = (
+            "Submit Jobs…"
+            if len(submit_targets) <= 1
+            else f"Submit Jobs for {len(submit_targets)} selected…"
+        )
+
         items = [
+            (
+                submit_label,
+                lambda targets=submit_targets:
+                    self._submit_jobs_for_assets(targets),
+            ),
             (
                 "Generate Master…",
                 lambda aid=asset_id: self._generate_master_scene(aid),
@@ -1813,6 +1878,101 @@ class PipelineCatalog(Catalog):
                 )
             )
         return items
+
+    def _asset_context(self, asset: Asset) -> str | None:
+        """Return ``'shots'`` or ``'assets'`` for a regular asset card,
+        or ``None`` for render/playblast/unknown cards.
+
+        Submit-jobs only operates on entity cards (where the id maps to
+        a ``PROJECT/CAT/Name`` URI); render and playblast cards carry
+        sentinel-prefixed ids that don't.
+        """
+        tags = asset.tags or ()
+        if "type:shot" in tags:
+            return "shots"
+        if "type:asset" in tags:
+            return "assets"
+        return None
+
+    def _submit_jobs_for_assets(self, assets: list[Asset]) -> None:
+        """Open the slim submit dialog for ``assets``.
+
+        All assets must share a project and a context. Activates the
+        project before opening the dialog so ``tumblepipe.api.default_client``
+        and the department lookups resolve against the right install.
+        """
+        if not assets:
+            return
+        # All from the same project — enforced by the menu's selection
+        # filter, but double-check defensively.
+        proj = self._project_for_asset_id(assets[0].id)
+        if proj is None:
+            log.warning("Submit Jobs: no project for asset %s", assets[0].id)
+            return
+        self._activate_project(proj)
+
+        contexts = {self._asset_context(a) for a in assets}
+        contexts.discard(None)
+        if len(contexts) != 1:
+            log.warning(
+                "Submit Jobs: mixed/empty contexts %r — aborting", contexts,
+            )
+            return
+        context = next(iter(contexts))
+
+        # Build URI list parallel to a display name list.
+        uris: list = []
+        names: list[str] = []
+        for a in assets:
+            uri = self._uri_for_asset_id(a.id)
+            if uri is None:
+                log.warning("Submit Jobs: cannot resolve URI for %s", a.id)
+                continue
+            uris.append(uri)
+            names.append(a.name or a.id.split("/")[-1])
+        if not uris:
+            return
+
+        # Load submit_jobs_dialog by file path: this catalog is loaded
+        # via importlib.util.spec_from_file_location (see registry.py),
+        # so it has no parent package and `from .submit_jobs_dialog`
+        # would raise ImportError. spec_from_file_location keeps the
+        # module out of sys.path entirely, which avoids polluting the
+        # global module namespace.
+        try:
+            import importlib.util
+            import sys
+            mod_name = "tumblepipe_asset_browser_submit_jobs_dialog"
+            mod = sys.modules.get(mod_name)
+            if mod is None:
+                dlg_path = Path(__file__).parent / "submit_jobs_dialog.py"
+                spec = importlib.util.spec_from_file_location(
+                    mod_name, dlg_path,
+                )
+                if spec is None or spec.loader is None:
+                    raise ImportError(
+                        f"Cannot build module spec for {dlg_path}",
+                    )
+                mod = importlib.util.module_from_spec(spec)
+                sys.modules[mod_name] = mod
+                spec.loader.exec_module(mod)
+            SubmitJobsDialog = mod.SubmitJobsDialog
+            import hou
+            parent = hou.qt.mainWindow()
+            dlg = SubmitJobsDialog(uris, names, context, parent=parent)
+            dlg.exec()
+        except Exception as exc:
+            log.exception("Failed to open Submit Jobs dialog")
+            try:
+                from PySide6.QtWidgets import QMessageBox
+                import hou
+                QMessageBox.critical(
+                    hou.qt.mainWindow(),
+                    "Submit Jobs",
+                    f"Failed to open dialog:\n\n{type(exc).__name__}: {exc}",
+                )
+            except Exception:
+                pass
 
     def _shot_has_direct_scene_ref(self, asset_id: str) -> bool:
         try:
@@ -2538,18 +2698,14 @@ class PipelineCatalog(Catalog):
         return sections
 
     def _build_combined_info_section(self, ctx: DetailContext):
-        """Info tab content — description, asset/shot info table,
-        Open-in-Database-Editor, and the catalog's per-asset action
-        buttons (Import to Scene, Open Export Folder, Edit, Delete).
+        """Info tab content — identity breadcrumb, filesystem path,
+        the per-kind info table, and the description paragraph.
+
+        Action buttons live in the DetailPanel's sticky bottom bar now;
+        this section is purely descriptive.
         """
         from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import (
-            QHBoxLayout, QLabel, QVBoxLayout, QWidget,
-        )
-        from asset_browser.ui.detail_panel import ElidingPushButton
-        from asset_browser.core.theme import (
-            BUTTON_GHOST_STYLE, DANGER,
-        )
+        from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
         detail = ctx.detail
 
         holder = QWidget()
@@ -2557,78 +2713,187 @@ class PipelineCatalog(Catalog):
         vbox.setContentsMargins(0, 0, 0, 0)
         vbox.setSpacing(8)
 
-        # Description (plain paragraph)
+        # Identity breadcrumb (URI) and filesystem path — uniform across
+        # all asset kinds where the data is resolvable.
+        breadcrumb = self._build_identity_breadcrumb(detail)
+        if breadcrumb is not None:
+            vbox.addWidget(breadcrumb)
+        path_row = self._build_path_row(detail)
+        if path_row is not None:
+            vbox.addWidget(path_row)
+
+        # Per-kind info table.
+        is_render = "type:render" in detail.tags
+        is_playblast = "type:playblast" in detail.tags
+        if "type:asset" in detail.tags:
+            info_w = self._build_asset_info_section(ctx)
+        elif "type:shot" in detail.tags:
+            info_w = self._build_shot_info_section(ctx)
+        elif is_render:
+            info_w = self._build_render_info_section(ctx)
+        elif is_playblast:
+            info_w = self._build_playblast_info_section(ctx)
+        else:
+            info_w = None
+        if info_w is not None:
+            vbox.addWidget(info_w)
+
+        # Description (plain paragraph) — last so the structured
+        # metadata above is the first thing the eye lands on.
         if detail.description:
             desc = QLabel(detail.description)
             desc.setWordWrap(True)
             desc.setTextInteractionFlags(Qt.TextSelectableByMouse)
             vbox.addWidget(desc)
 
-        # Asset / Shot / Render / Playblast info table
-        is_render = "type:render" in detail.tags
-        is_playblast = "type:playblast" in detail.tags
-        if "type:asset" in detail.tags:
-            info_w = self._build_asset_info_section(ctx)
-            if info_w is not None:
-                vbox.addWidget(info_w)
-        elif "type:shot" in detail.tags:
-            info_w = self._build_shot_info_section(ctx)
-            if info_w is not None:
-                vbox.addWidget(info_w)
-        elif is_render:
-            info_w = self._build_render_info_section(ctx)
-            if info_w is not None:
-                vbox.addWidget(info_w)
-        elif is_playblast:
-            info_w = self._build_playblast_info_section(ctx)
-            if info_w is not None:
-                vbox.addWidget(info_w)
-
-        # Open in Database Editor — only for entity-backed assets;
-        # renders + playblasts are filesystem-only so the button
-        # would be a dead link.
-        if not (is_render or is_playblast):
-            db_btn = ElidingPushButton("Open in Database Editor…")
-            db_btn.setStyleSheet(BUTTON_GHOST_STYLE)
-            db_btn.clicked.connect(
-                lambda _checked=False, aid=detail.id: self._open_database_editor(aid)
-            )
-            vbox.addWidget(db_btn)
-
-        # Per-asset action buttons (formerly the standalone Actions tab)
-        try:
-            actions = self.get_actions(detail)
-        except Exception:
-            log.exception("get_actions failed for %s", detail.id)
-            actions = []
-        for action in actions:
-            if getattr(action, "file_id", None) is not None:
-                continue  # file-bound download actions are not surfaced here
-            btn = ElidingPushButton(action.label)
-            if getattr(action, "destructive", False):
-                btn.setStyleSheet(
-                    BUTTON_GHOST_STYLE
-                    + f"\nQPushButton {{ color: {DANGER}; }}"
-                    + f"\nQPushButton:hover {{ background-color: {DANGER};"
-                    f" color: white; }}"
-                )
-            else:
-                btn.setStyleSheet(BUTTON_GHOST_STYLE)
-            btn.setEnabled(getattr(action, "enabled", True))
-            if getattr(action, "tooltip", ""):
-                btn.setToolTip(action.tooltip)
-            btn.clicked.connect(
-                lambda _checked=False, a=action, d=detail:
-                    self.execute_action(a.id, d)
-            )
-            vbox.addWidget(btn)
-
         vbox.addStretch(1)
         return holder
 
+    def _build_identity_breadcrumb(self, detail):
+        """Render the entity URI as a copyable monospaced breadcrumb,
+        or ``None`` if no URI is resolvable for this detail kind.
+        """
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import (
+            QHBoxLayout, QLabel, QPushButton, QWidget,
+        )
+        from asset_browser.core.icons import icon as make_icon
+        from asset_browser.core.theme import (
+            BG_MID, BORDER, FONT_SMALL, TEXT_DIM, TEXT_SECONDARY, scaled,
+        )
+
+        segs = self._resolve_identity_segments(detail)
+        if not segs:
+            return None
+        text = " / ".join(segs)
+
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(scaled(4))
+
+        lbl = QLabel(text)
+        lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        lbl.setStyleSheet(
+            f"font-family: Consolas, 'Courier New', monospace; "
+            f"font-size: {FONT_SMALL}px; color: {TEXT_SECONDARY}; "
+            f"background: {BG_MID}; border: 1px solid {BORDER}; "
+            f"border-radius: {scaled(3)}px; padding: 2px 6px;"
+        )
+        lbl.setWordWrap(True)
+        row.addWidget(lbl, stretch=1)
+
+        copy_btn = QPushButton()
+        copy_btn.setFixedSize(scaled(20), scaled(20))
+        copy_btn.setIcon(make_icon("copy", scaled(12), TEXT_DIM))
+        copy_btn.setToolTip("Copy URI to clipboard")
+        copy_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; }"
+            f"QPushButton:hover {{ background: {BG_MID}; "
+            f"border-radius: {scaled(3)}px; }}"
+        )
+        copy_btn.clicked.connect(
+            lambda _checked=False, t=text: self._copy_to_clipboard(t)
+        )
+        row.addWidget(copy_btn)
+        return w
+
+    def _build_path_row(self, detail):
+        """Render the export-folder path as a click-to-copy
+        monospaced row, or ``None`` if there is no resolvable path.
+        """
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import (
+            QHBoxLayout, QLabel, QPushButton, QWidget,
+        )
+        from asset_browser.core.icons import icon as make_icon
+        from asset_browser.core.theme import (
+            BG_MID, BORDER, FONT_TINY, TEXT_DIM, scaled,
+        )
+
+        try:
+            path = self._resolve_export_path(detail.id if detail else "")
+        except Exception:
+            log.debug("export-path resolution failed", exc_info=True)
+            return None
+        if not path:
+            return None
+
+        text = str(path)
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(scaled(4))
+
+        lbl = QLabel(text)
+        lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        lbl.setStyleSheet(
+            f"font-family: Consolas, 'Courier New', monospace; "
+            f"font-size: {FONT_TINY}px; color: {TEXT_DIM}; "
+            f"background: transparent; border: none;"
+        )
+        lbl.setWordWrap(True)
+        lbl.setToolTip(text)
+        row.addWidget(lbl, stretch=1)
+
+        copy_btn = QPushButton()
+        copy_btn.setFixedSize(scaled(20), scaled(20))
+        copy_btn.setIcon(make_icon("copy", scaled(12), TEXT_DIM))
+        copy_btn.setToolTip("Copy path to clipboard")
+        copy_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; }"
+            f"QPushButton:hover {{ background: {BG_MID}; "
+            f"border-radius: {scaled(3)}px; }}"
+        )
+        copy_btn.clicked.connect(
+            lambda _checked=False, t=text: self._copy_to_clipboard(t)
+        )
+        row.addWidget(copy_btn)
+        return w
+
+    def _resolve_identity_segments(self, detail):
+        """Return the breadcrumb segments for an asset's URI, or
+        ``None`` when no identity is resolvable.
+
+        Assets/shots: split ``detail.id`` (``project/CHAR/Baby`` form)
+        and append variants if present. Renders/playblasts: pull from
+        ``metadata['project']`` + ``metadata['entity_segs']``.
+        """
+        meta = detail.metadata or {}
+        is_render = "type:render" in detail.tags
+        is_playblast = "type:playblast" in detail.tags
+        if is_render or is_playblast:
+            project = meta.get("project")
+            entity_segs = list(meta.get("entity_segs") or [])
+            if not project and not entity_segs:
+                return None
+            segs = []
+            if project:
+                segs.append(str(project))
+            segs.extend(str(s) for s in entity_segs)
+            return segs or None
+
+        parts = (detail.id or "").split("/")
+        parts = [p for p in parts if p]
+        if not parts:
+            return None
+        variants = meta.get("variants") or []
+        if "type:asset" in detail.tags and variants:
+            return parts + ["/".join(variants)] if len(variants) > 1 \
+                else parts + [str(variants[0])]
+        return parts
+
+    def _copy_to_clipboard(self, text: str) -> None:
+        try:
+            from PySide6.QtWidgets import QApplication
+            QApplication.clipboard().setText(text)
+        except Exception:
+            log.debug("clipboard copy failed", exc_info=True)
+
     def _build_combined_departments_section(self, ctx: DetailContext):
-        """Departments tab content — the existing departments grid plus
-        the Groups & Scenes membership pills below.
+        """Departments tab content — Groups & Scenes membership pills
+        on top (a shot's scene-ref is conceptually the root layer of
+        its department stack), then the departments grid below.
         """
         from PySide6.QtWidgets import QVBoxLayout, QWidget
 
@@ -2637,10 +2902,6 @@ class PipelineCatalog(Catalog):
         vbox.setContentsMargins(0, 0, 0, 0)
         vbox.setSpacing(8)
 
-        depts_w = self._build_departments_section(ctx)
-        if depts_w is not None:
-            vbox.addWidget(depts_w)
-
         try:
             mem_w = self._build_membership_section(ctx)
         except Exception:
@@ -2648,11 +2909,16 @@ class PipelineCatalog(Catalog):
         if mem_w is not None:
             vbox.addWidget(mem_w)
 
+        depts_w = self._build_departments_section(ctx)
+        if depts_w is not None:
+            vbox.addWidget(depts_w)
+
         vbox.addStretch(1)
         return holder
 
     def _build_asset_info_section(self, ctx: DetailContext):
-        meta = ctx.detail.metadata or {}
+        detail = ctx.detail
+        meta = detail.metadata or {}
         rows: list[tuple[str, str]] = []
         if meta.get("project"):
             rows.append(("Project", str(meta["project"])))
@@ -2661,6 +2927,9 @@ class PipelineCatalog(Catalog):
         variants = meta.get("variants") or []
         if variants:
             rows.append(("Variants", ", ".join(variants)))
+        if detail.versions:
+            latest = detail.versions[-1]
+            rows.append(("Latest", getattr(latest, "version", "") or ""))
         return self._build_info_table(rows)
 
     def _build_playblast_info_section(self, ctx: DetailContext):
@@ -3477,7 +3746,14 @@ class PipelineCatalog(Catalog):
                 dash.setAlignment(Qt.AlignCenter)
                 row_layout.addWidget(dash)
 
-                create_btn = QPushButton("Create")
+                # Match the Open button's icon style — clicking creates
+                # v0001 from the dept template, which is intuitive enough
+                # that the green play icon doubles for "create + open".
+                from asset_browser.core.icons import icon as make_icon
+                create_btn = QPushButton()
+                create_btn.setIcon(make_icon("play", scaled(14), ACCENT))
+                create_btn.setIconSize(QSize(scaled(14), scaled(14)))
+                create_btn.setFixedSize(scaled(28), scaled(24))
                 create_btn.setStyleSheet(BUTTON_GHOST_STYLE)
                 create_btn.setToolTip(
                     f"Create {dept_name}/v0001 from the dept template."
@@ -4674,6 +4950,175 @@ class PipelineCatalog(Catalog):
         except Exception:
             return False
 
+    @staticmethod
+    def _is_import_asset_node(node) -> bool:
+        """Detect the *singular* import_asset HDA (one asset per node)."""
+        if node is None:
+            return False
+        try:
+            return node.type().name().startswith("th::import_asset::")
+        except Exception:
+            return False
+
+    def _upgrade_singular_to_plural(self, target, new_uri):
+        """Replace a singular ``th::import_asset`` node with a new
+        ``th::import_assets`` node containing both the existing asset
+        and ``new_uri``.
+
+        Preserves the target's position, name, wiring, exclude-departments,
+        and include-layerbreak flag. Returns the new raw node, or ``None``
+        if the existing asset URI couldn't be read (the caller should fall
+        back to the regular drop path in that case).
+        """
+        import hou
+        from tumblepipe.util.uri import Uri
+        from tumblepipe.pipe.houdini.lops import import_asset, import_assets
+
+        # Read state from the singular node before we destroy it.
+        try:
+            old = import_asset.ImportAsset(target)
+            old_uri = old.get_asset_uri()
+            old_variant = old.get_variant_name()
+            old_version = old.get_version_name()
+            old_excl = old.get_exclude_department_names()
+            old_layerbreak = old.get_include_layerbreak()
+        except Exception:
+            log.exception(
+                "Failed to read state from singular import_asset %s",
+                target.path(),
+            )
+            return None
+        if old_uri is None:
+            return None
+
+        old_position = target.position()
+        old_color = None
+        try:
+            old_color = target.color()
+        except Exception:
+            pass
+        old_name = target.name()
+        input_conns = list(target.inputConnections())
+        output_conns = list(target.outputConnections())
+        network = target.parent()
+
+        # Free the name so the plural node can take it cleanly. Suffix
+        # the old node so unique_name=False would still work; we destroy
+        # it shortly anyway.
+        try:
+            target.setName(f"{old_name}__obsolete", unique_name=True)
+        except Exception:
+            log.debug(
+                "Could not rename %s before upgrade", target.path(),
+                exc_info=True,
+            )
+
+        plural = import_assets.create(network, old_name)
+        raw = plural.native()
+
+        # Reset the default entry count so the two add_asset_entry calls
+        # below produce indices 1 and 2 instead of stacking on top of an
+        # empty pre-allocated entry from the HDA's default state.
+        try:
+            plural.parm('asset_imports').set(0)
+        except Exception:
+            log.debug("Could not reset asset_imports count", exc_info=True)
+
+        try:
+            plural.set_exclude_department_names(old_excl)
+            plural.set_include_layerbreak(old_layerbreak)
+        except Exception:
+            log.debug(
+                "Could not transfer node-level params to plural",
+                exc_info=True,
+            )
+
+        plural.add_asset_entry(
+            old_uri, variant=old_variant, version=old_version, instances=1,
+        )
+        plural.add_asset_entry(new_uri)
+
+        # Re-wire: inputs going into target now go into the new raw,
+        # outputs consuming target now consume the new raw.
+        for ic in input_conns:
+            try:
+                src_node = ic.inputNode()
+                src_idx = ic.outputIndex()
+                dst_idx = ic.inputIndex()
+                raw.setInput(dst_idx, src_node, src_idx)
+            except Exception:
+                log.debug("Failed to rewire input", exc_info=True)
+        for oc in output_conns:
+            try:
+                consumer = oc.inputNode()
+                src_idx = oc.outputIndex()
+                dst_idx = oc.inputIndex()
+                consumer.setInput(dst_idx, raw, src_idx)
+            except Exception:
+                log.debug("Failed to rewire output", exc_info=True)
+
+        # Destroy the old singular AFTER wiring so we don't disconnect
+        # anything by accident.
+        try:
+            target.destroy()
+        except Exception:
+            log.exception("Failed to destroy old singular %s", old_name)
+
+        # Position + color/style the new node where the old one was.
+        try:
+            raw.setPosition(old_position)
+            if old_color is not None:
+                raw.setColor(old_color)
+        except Exception:
+            log.debug("Position transfer failed", exc_info=True)
+
+        try:
+            plural.execute()
+        except Exception:
+            log.exception(
+                "execute() failed on upgraded plural import_assets %s",
+                old_name,
+            )
+        return raw
+
+    def _attach_network_thumbnail(self, detail, raw_node, drop) -> None:
+        """Attach the asset/shot's ``thumbnail.png`` sidecar as a
+        ``hou.NetworkImage`` next to the freshly-created import node.
+
+        No-op when the sidecar isn't on disk or the drop didn't land on
+        a network editor (e.g. dropped onto a scene viewer).
+        """
+        try:
+            thumb = self._thumbnail_path(detail.id)
+            if thumb is None:
+                log.debug(
+                    "network thumbnail: no path resolvable for %s",
+                    detail.id,
+                )
+                return
+            if not thumb.exists():
+                log.debug(
+                    "network thumbnail: sidecar missing on disk for %s "
+                    "(expected at %s)",
+                    detail.id, thumb,
+                )
+                return
+            from tumblepipe.pipe.houdini import network_thumbnail
+            editor = (
+                drop.pane
+                if isinstance(drop.pane, hou.NetworkEditor)
+                else None
+            )
+            log.debug(
+                "network thumbnail: attaching %s to %s (editor=%s)",
+                thumb, raw_node.path(), editor,
+            )
+            network_thumbnail.attach(raw_node, thumb, editor=editor)
+        except Exception:
+            log.exception(
+                "Failed to attach network thumbnail for %s", detail.id,
+            )
+
     def on_drop(self, detail, drop) -> bool:
         """Import a single pipeline asset or shot into the scene.
 
@@ -4682,11 +5127,20 @@ class PipelineCatalog(Catalog):
 
         Asset → ``th::import_asset::1.0`` with the entity URI.
         Shot  → ``th::import_shot::1.0``  with the entity URI.
+        Render / Playblast → ``file`` COP with ``filename`` set.
         If the drop lands on an existing ``th::import_assets::2.0``
         node, the asset is appended as a new multiparm entry instead
         of creating a new node.
         """
         import hou
+
+        # Media (renders, playblasts) drop into COP networks as file
+        # nodes — separate path from the LOP-only asset/shot importers.
+        if (
+            self._is_render_asset_id(detail.id)
+            or self._is_playblast_asset_id(detail.id)
+        ):
+            return self._on_media_drop(detail, drop)
 
         if drop.context != "lop" or not drop.network:
             hou.ui.setStatusMessage(
@@ -4738,6 +5192,34 @@ class PipelineCatalog(Catalog):
             )
             return True
 
+        # Drop onto a singular import_asset → upgrade it to a plural
+        # import_assets node carrying both the original asset and the
+        # newly dropped one, preserving wiring and position.
+        if (
+            "type:shot" not in detail.tags
+            and self._is_import_asset_node(target)
+        ):
+            try:
+                from tumblepipe.util.uri import Uri
+                raw = self._upgrade_singular_to_plural(
+                    target, Uri.parse_unsafe(entity_uri),
+                )
+            except Exception:
+                log.exception(
+                    "Failed to upgrade %s to plural import_assets",
+                    target.path(),
+                )
+                raw = None
+            if raw is not None:
+                raw.setSelected(True, clear_all_selected=True)
+                self._attach_network_thumbnail(detail, raw, drop)
+                hou.ui.setStatusMessage(
+                    f"Combined {detail.name} into {raw.name()}",
+                    severity=hou.severityType.Message,
+                )
+                return True
+            # Fall through to the normal single-asset path on failure.
+
         network = drop.network
         try:
             from tumblepipe.util.uri import Uri
@@ -4767,6 +5249,7 @@ class PipelineCatalog(Catalog):
                 raw.setRenderFlag(True)
             except AttributeError:
                 pass
+            self._attach_network_thumbnail(detail, raw, drop)
         except Exception:
             log.exception("Failed to drop %s", detail.id)
             hou.ui.setStatusMessage(
@@ -4780,14 +5263,203 @@ class PipelineCatalog(Catalog):
         )
         return True
 
+    def _media_drop_path(self, detail) -> str | None:
+        """Resolve the on-disk path to drop into a COP file node.
+
+        Render (EXR) → primary layer's frame stack with ``$F4`` padding.
+        Render (daily) → daily MP4 path.
+        Playblast → primary dept's latest MP4 path.
+        Returns ``None`` when the source can't be resolved.
+        """
+        if self._is_render_asset_id(detail.id):
+            info = self._resolve_render_source(detail.id, source=None)
+            if info is None:
+                return None
+            if info["info"].get("kind") == "daily":
+                mp4 = self._resolve_daily_path(detail.id, source=info["key"])
+                return str(mp4) if mp4 else None
+            layer = self._resolve_render_layer(detail.id, source=info["key"])
+            if layer is None or not layer.aovs:
+                return None
+            # Frames live in per-AOV subdirs (``<version>/<aov>/<basename>.$F4.exr``);
+            # the layer-root flat path returned by ``Layer.get_frame_path``
+            # does not exist on disk. Prefer ``beauty``, fall back to any AOV.
+            aov = layer.aovs.get("beauty") or next(
+                iter(layer.aovs.values()), None,
+            )
+            if aov is None:
+                return None
+            try:
+                return str(aov.get_aov_frame_path("$F4"))
+            except Exception:
+                return None
+        if self._is_playblast_asset_id(detail.id):
+            mp4 = self._resolve_playblast_path(detail.id, dept=None)
+            return str(mp4) if mp4 else None
+        return None
+
+    def _on_media_drop(self, detail, drop) -> bool:
+        """Drop a render or playblast as a ``file`` COP node.
+
+        The file node's ``filename`` parm is set to the primary
+        source's path (EXR frame stack or MP4). Other parms (frame
+        range, colorspace) are left at defaults — the user tunes them
+        after the drop.
+        """
+        import hou
+
+        if drop.context != "cop" or not drop.network:
+            hou.ui.setStatusMessage(
+                "Renders and playblasts can only be dropped into COP networks",
+                severity=hou.severityType.Warning,
+            )
+            return True
+
+        file_path = self._media_drop_path(detail)
+        if file_path is None:
+            hou.ui.setStatusMessage(
+                f"Could not resolve media path for {detail.name}",
+                severity=hou.severityType.Warning,
+            )
+            return True
+
+        try:
+            node_name = detail.name.replace(" ", "_")
+            raw = drop.network.createNode("file", node_name)
+            raw.parm("filename").set(file_path)
+            if drop.position is not None:
+                raw.setPosition(drop.position - hou.Vector2(0.5, 0.0))
+            else:
+                raw.moveToGoodPosition()
+            raw.setSelected(True, clear_all_selected=True)
+        except Exception:
+            log.exception("Failed to drop media %s", detail.id)
+            hou.ui.setStatusMessage(
+                f"Failed to import {detail.name} (see console)",
+                severity=hou.severityType.Error,
+            )
+            return True
+
+        hou.ui.setStatusMessage(
+            f"Imported {detail.name}", severity=hou.severityType.Message,
+        )
+        return True
+
+    def on_sub_drop(self, asset, sub_keys, drop) -> bool:
+        """Drop render AOV / playblast dept sub-cards as ``file`` COPs.
+
+        Render AOV sub-card → ``file`` COP pointing at the AOV's frame
+        stack (``<version>/<aov>/<basename>.$F4.exr``).
+        Playblast dept sub-card → ``file`` COP pointing at the dept's
+        latest MP4.
+        Asset dept sub-cards fall through (returns ``False``) so the
+        browser's default ``import_layer`` LOP path keeps working.
+        """
+        import hou
+
+        if not sub_keys:
+            return False
+
+        is_render = self._is_render_asset_id(asset.id)
+        is_playblast = self._is_playblast_asset_id(asset.id)
+        if not (is_render or is_playblast):
+            return False
+
+        if drop.context != "cop" or not drop.network:
+            hou.ui.setStatusMessage(
+                "Renders and playblasts can only be dropped into COP networks",
+                severity=hou.severityType.Warning,
+            )
+            return True
+
+        # Resolve a file path per sub-card key.
+        layer = None
+        if is_render:
+            info = self._resolve_render_source(asset.id, source=None)
+            if info is None or info["info"].get("kind") == "daily":
+                # Daily renders have no AOV sub-cards; nothing to drop.
+                hou.ui.setStatusMessage(
+                    f"No AOV sources for {asset.name}",
+                    severity=hou.severityType.Warning,
+                )
+                return True
+            layer = self._resolve_render_layer(asset.id, source=info["key"])
+            if layer is None:
+                hou.ui.setStatusMessage(
+                    f"Could not resolve render layer for {asset.name}",
+                    severity=hou.severityType.Warning,
+                )
+                return True
+
+        created = 0
+        for key in sub_keys:
+            file_path: str | None = None
+            if is_render:
+                aov = layer.aovs.get(key)
+                if aov is None:
+                    continue
+                try:
+                    file_path = str(aov.get_aov_frame_path("$F4"))
+                except Exception:
+                    continue
+            else:  # playblast
+                mp4 = self._resolve_playblast_path(asset.id, dept=key)
+                file_path = str(mp4) if mp4 else None
+            if not file_path:
+                continue
+
+            try:
+                node_name = f"{asset.name}_{key}".replace(" ", "_")
+                raw = drop.network.createNode("file", node_name)
+                raw.parm("filename").set(file_path)
+                if drop.position is not None:
+                    raw.setPosition(
+                        drop.position
+                        + hou.Vector2(-0.5, -created * 1.2),
+                    )
+                else:
+                    raw.moveToGoodPosition()
+                raw.setSelected(
+                    created == 0, clear_all_selected=(created == 0),
+                )
+                created += 1
+            except Exception:
+                log.exception(
+                    "Failed to create file COP for %s/%s", asset.id, key,
+                )
+
+        if created == 0:
+            hou.ui.setStatusMessage(
+                f"No matching media for {asset.name}",
+                severity=hou.severityType.Warning,
+            )
+            return True
+
+        hou.ui.setStatusMessage(
+            f"Imported {asset.name} / {', '.join(sub_keys)}",
+            severity=hou.severityType.Message,
+        )
+        return True
+
     def on_multi_drop(self, assets, drop) -> bool:
         """Import multiple pipeline assets into the scene.
 
         Multiple assets → one ``th::import_assets::2.0`` with multiparm
         entries populated. Shots are skipped (multi-shot drops are not
-        supported yet).
+        supported yet). Media (renders / playblasts) → fall through to
+        per-item drops so each becomes its own ``file`` COP node.
         """
         import hou
+
+        # Media items have their own COP-based drop path. Returning
+        # False here lets the browser fall back to per-item ``on_drop``
+        # which routes media through ``_on_media_drop``.
+        if any(
+            self._is_render_asset_id(a.id)
+            or self._is_playblast_asset_id(a.id)
+            for a in assets
+        ):
+            return False
 
         if drop.context != "lop" or not drop.network:
             hou.ui.setStatusMessage(
@@ -5733,6 +6405,12 @@ class PipelineCatalog(Catalog):
         ))
 
         actions.append(AssetAction(
+            id="open_db_editor",
+            label="Open in Database Editor…",
+            icon="database",
+        ))
+
+        actions.append(AssetAction(
             id="edit_entity",
             label="Edit…",
             icon="settings",
@@ -5757,6 +6435,9 @@ class PipelineCatalog(Catalog):
                     ["cmd", "/c", "start", "", str(path)],
                     creationflags=0x08000000,
                 )
+
+        elif action_id == "open_db_editor" and detail:
+            self._open_database_editor(detail.id)
 
         elif action_id == "import_asset" and detail:
             self._import_asset_to_scene(detail)
@@ -6227,6 +6908,11 @@ class PipelineCatalog(Catalog):
         scene_dv = self._get_scene_dept_version(asset.id)
         active_dept = scene_dv[0] if scene_dv else None
 
+        def _icon_for(dept: str) -> str:
+            if is_shot and dept in _SHOT_DEPT_ICONS:
+                return _SHOT_DEPT_ICONS[dept]
+            return _DEPT_ICONS.get(dept, "package")
+
         for dept_name in all_depts:
             short = _DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
             version = depts.get(dept_name)
@@ -6239,7 +6925,7 @@ class PipelineCatalog(Catalog):
                     label=short,
                     status=status,
                     detail=version,
-                    icon=_DEPT_ICONS.get(dept_name, "package"),
+                    icon=_icon_for(dept_name),
                     action_id=f"open_workfile:{dept_name}",
                 ))
             else:
@@ -6247,7 +6933,7 @@ class PipelineCatalog(Catalog):
                     key=dept_name,
                     label=short,
                     status="missing",
-                    icon=_DEPT_ICONS.get(dept_name, "package"),
+                    icon=_icon_for(dept_name),
                 ))
 
         return cards
