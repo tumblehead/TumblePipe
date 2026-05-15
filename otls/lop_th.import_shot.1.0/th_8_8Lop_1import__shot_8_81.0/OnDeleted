@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini import network_thumbnail
+
+network_thumbnail.detach(kwargs['node'].path())

@@ -10,4 +10,6 @@ EditableNodes	EditableNodes
 IconImage	IconImage
 PythonModule	PythonModule
 OnCreated	OnCreated
+OnDeleted	OnDeleted
+OnNameChanged	OnNameChanged
 ExtraFileOptions	ExtraFileOptions

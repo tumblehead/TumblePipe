@@ -8,4 +8,6 @@ Help	Help
 Tools.shelf	Tools.shelf
 PythonModule	PythonModule
 OnCreated	OnCreated
+OnDeleted	OnDeleted
+OnNameChanged	OnNameChanged
 ExtraFileOptions	ExtraFileOptions

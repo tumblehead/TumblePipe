@@ -38,10 +38,10 @@ from pathlib import Path
 # PySide6, but fall back to PyQt6 if someone is running this script
 # outside hpm for development.
 try:
-    from PySide6 import QtWidgets  # type: ignore
+    from PySide6 import QtGui, QtWidgets  # type: ignore
 except ImportError:
     try:
-        from PyQt6 import QtWidgets  # type: ignore
+        from PyQt6 import QtGui, QtWidgets  # type: ignore
     except ImportError:
         sys.stderr.write(
             'tt_setup: neither PySide6 nor PyQt6 is available. Run via '
@@ -54,6 +54,39 @@ except ImportError:
 SCRIPT_DIR = Path(__file__).resolve().parent
 TEMPLATE_DIR = SCRIPT_DIR / 'project_template'
 TOP_LEVEL_DIRS = ('assets', 'shots', 'groups', 'kits', 'export')
+
+# Status colors chosen to contrast on both light and dark themes (the wizard
+# inherits whatever palette the host system uses, so plain "red"/"green" can
+# vanish on one or the other).
+STATUS_ERROR = '#e06c75'
+STATUS_OK = '#98c379'
+
+
+def _muted(label: QtWidgets.QLabel) -> None:
+    """Render a label as helper text in a theme-aware muted color.
+
+    Uses the palette's PlaceholderText role so the color adapts to light and
+    dark themes — hardcoded grays disappear on one of them.
+    """
+    palette = label.palette()
+    muted = palette.color(QtGui.QPalette.ColorRole.PlaceholderText)
+    palette.setColor(QtGui.QPalette.ColorRole.WindowText, muted)
+    label.setPalette(palette)
+
+
+def _mark_invalid(label: QtWidgets.QLabel, text: str) -> None:
+    label.setText(text)
+    label.setStyleSheet(f'color: {STATUS_ERROR};')
+
+
+def _mark_valid(label: QtWidgets.QLabel, text: str) -> None:
+    label.setText(text)
+    label.setStyleSheet(f'color: {STATUS_OK};')
+
+
+def _clear_status(label: QtWidgets.QLabel) -> None:
+    label.setText('')
+    label.setStyleSheet('')
 
 
 @dataclass
@@ -155,16 +188,16 @@ class ModePage(QtWidgets.QWizardPage):
             "<code>_config/</code> directory."
         )
         existing_help.setWordWrap(True)
-        existing_help.setStyleSheet('color: gray;')
         existing_help.setIndent(24)
+        _muted(existing_help)
 
         new_help = QtWidgets.QLabel(
             'Choose this to scaffold a new project from the TumblePipe template '
             '(config databases, conventions, USD context).'
         )
         new_help.setWordWrap(True)
-        new_help.setStyleSheet('color: gray;')
         new_help.setIndent(24)
+        _muted(new_help)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(8)
@@ -230,26 +263,26 @@ class ExistingProjectPage(QtWidgets.QWizardPage):
     def _refresh_status(self) -> None:
         text = self._path_edit.text().strip()
         if not text:
-            self._status.setText('')
+            _clear_status(self._status)
             return
         path = Path(text).expanduser()
         if not path.exists():
-            self._status.setText("Path doesn't exist.")
-            self._status.setStyleSheet('color: #c44;')
+            _mark_invalid(self._status, "Path doesn't exist.")
             return
         if not path.is_dir():
-            self._status.setText('Path is not a directory.')
-            self._status.setStyleSheet('color: #c44;')
+            _mark_invalid(self._status, 'Path is not a directory.')
             return
         if not _looks_like_project(path):
-            self._status.setText(
+            _mark_invalid(
+                self._status,
                 "Couldn't find <code>_config/db/entity.json</code> inside this folder. "
-                'Pick the project root, not a sub-folder.'
+                'Pick the project root, not a sub-folder.',
             )
-            self._status.setStyleSheet('color: #c44;')
             return
-        self._status.setText(f'Looks valid — will set TH_PROJECT_PATH to <code>{path}</code>.')
-        self._status.setStyleSheet('color: #2a7;')
+        _mark_valid(
+            self._status,
+            f'Looks valid — will set TH_PROJECT_PATH to <code>{path}</code>.',
+        )
 
     def isComplete(self) -> bool:
         text = self._path_edit.text().strip()
@@ -299,7 +332,7 @@ class NewProjectPage(QtWidgets.QWizardPage):
 
         self._target_label = QtWidgets.QLabel('')
         self._target_label.setWordWrap(True)
-        self._target_label.setStyleSheet('color: gray;')
+        _muted(self._target_label)
 
         form = QtWidgets.QFormLayout(self)
         form.addRow('Project name', self._name_edit)
@@ -336,28 +369,27 @@ class NewProjectPage(QtWidgets.QWizardPage):
         target = self._target_path()
 
         if name and not _is_valid_project_name(name):
-            self._target_label.setText('Project name must be alphanumeric (no spaces or dashes).')
-            self._target_label.setStyleSheet('color: #c44;')
+            _mark_invalid(self._target_label, 'Project name must be alphanumeric (no spaces or dashes).')
             return
         if parent_text:
             parent = Path(parent_text).expanduser()
             if not parent.exists():
-                self._target_label.setText("Parent directory doesn't exist.")
-                self._target_label.setStyleSheet('color: #c44;')
+                _mark_invalid(self._target_label, "Parent directory doesn't exist.")
                 return
             if not parent.is_dir():
-                self._target_label.setText('Parent path is not a directory.')
-                self._target_label.setStyleSheet('color: #c44;')
+                _mark_invalid(self._target_label, 'Parent path is not a directory.')
                 return
         if target and target.exists():
-            self._target_label.setText(f'<code>{target}</code> already exists — pick a different name or parent.')
-            self._target_label.setStyleSheet('color: #c44;')
+            _mark_invalid(
+                self._target_label,
+                f'<code>{target}</code> already exists — pick a different name or parent.',
+            )
             return
         if target:
-            self._target_label.setText(f'Will create <code>{target}</code>')
-            self._target_label.setStyleSheet('color: #2a7;')
+            _mark_valid(self._target_label, f'Will create <code>{target}</code>')
         else:
-            self._target_label.setText('')
+            # Clearing the stylesheet lets the muted palette (set in __init__) show through.
+            _clear_status(self._target_label)
 
     def isComplete(self) -> bool:
         name = self._name_edit.text().strip()
@@ -399,6 +431,10 @@ class SetupWizard(QtWidgets.QWizard):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle('TumblePipe — Project Setup')
+        # ClassicStyle uses the system palette uniformly. The default banner
+        # styles (Vista/Aero/Modern) force a white content panel, which makes
+        # default-colored text invisible on dark themes.
+        self.setWizardStyle(QtWidgets.QWizard.WizardStyle.ClassicStyle)
         self.setOption(QtWidgets.QWizard.WizardOption.NoBackButtonOnStartPage, True)
         self.setOption(QtWidgets.QWizard.WizardOption.NoCancelButtonOnLastPage, False)
         self.setMinimumWidth(620)

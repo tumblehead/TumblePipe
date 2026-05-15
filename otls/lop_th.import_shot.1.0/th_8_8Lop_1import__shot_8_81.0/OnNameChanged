@@ -1,0 +1,7 @@
+from tumblepipe.pipe.houdini import network_thumbnail
+
+old_name = kwargs.get('old_name')
+new_path = kwargs['node'].path()
+parent, _, _ = new_path.rpartition('/')
+old_path = f"{parent}/{old_name}" if parent else old_name
+network_thumbnail.rename(old_path, new_path)

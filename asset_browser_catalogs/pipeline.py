@@ -3399,13 +3399,22 @@ class PipelineCatalog(Catalog):
         project is re-activated before the load so the env is
         consistent.
         """
+        def _settle():
+            if callable(refresh_cb):
+                try:
+                    refresh_cb()
+                except Exception:
+                    log.exception("Detail refresh after reload failed")
+
         try:
             import hou
             hip = hou.hipFile.path()
         except Exception:
             log.exception("Reload Scene: failed to read current hip path")
+            _settle()
             return
         if not hip:
+            _settle()
             return
 
         target_proj = self._project_for_hip_path(Path(hip))
@@ -3418,15 +3427,11 @@ class PipelineCatalog(Catalog):
                     self._activate_project(proj)
                 hou.hipFile.load(hip)
                 log.info("Reloaded scene: %s", hip)
+                self._request_global_detail_refresh()
             except Exception:
                 log.exception("Reload Scene failed")
-                return
-            if callable(refresh_cb):
-                try:
-                    refresh_cb()
-                except Exception:
-                    log.exception("Detail refresh after reload failed")
-            self._request_global_detail_refresh()
+            finally:
+                _settle()
 
         _gui_singleshot(_do_reload)
 
@@ -4097,20 +4102,35 @@ class PipelineCatalog(Catalog):
                 f"Saved {Path(next_path).name}",
                 severity=hou.severityType.Message,
             )
-            # Drop scan caches and refresh the open detail so the new
-            # version appears in any matching dropdown.
+            # Drop scan caches so the next browse query re-scans.
             self._cached_assets = None
             self._cached_shots = None
+        except Exception:
+            log.exception("Save failed")
+        finally:
+            # Always notify the browser so the detail panel and quick-
+            # action label re-sync — even on partial-success saves where
+            # hipFile.save() succeeded but context.json writing raised.
             if callable(refresh_cb):
                 try:
                     refresh_cb()
                 except Exception:
                     log.exception("Detail refresh after save failed")
-        except Exception:
-            log.exception("Save failed")
 
     def _publish_current_scene(self, refresh_cb=None) -> None:
         """Execute matching ExportLayer / ExportRig nodes for the loaded scene."""
+        try:
+            self._publish_current_scene_impl()
+        finally:
+            # Always notify the browser so the spinner/detail can settle
+            # even if publish bailed early or raised.
+            if callable(refresh_cb):
+                try:
+                    refresh_cb()
+                except Exception:
+                    log.exception("Detail refresh after publish failed")
+
+    def _publish_current_scene_impl(self) -> None:
         scene_ctx = self._get_loaded_scene_context()
         if scene_ctx is None:
             try:
@@ -4204,7 +4224,9 @@ class PipelineCatalog(Catalog):
                 f"Published {published} export node(s).",
                 severity=hou.severityType.Message,
             )
-            self._refresh_asset(None, refresh_cb)
+            # refresh_cb is dispatched by the outer wrapper's finally;
+            # only drop caches here so the next browse re-scans.
+            self._refresh_asset(None, None)
         except Exception:
             log.exception("Publish failed")
 
@@ -5600,7 +5622,6 @@ class PipelineCatalog(Catalog):
 
     def get_list_columns(self) -> list[ListColumn]:
         return [
-            ListColumn(key="status", label="", width=30),
             ListColumn(key="name", label="Name"),
             ListColumn(key="category", label="Category", width=100),
             ListColumn(key="dept_count", label="Depts", width=60, align="center"),
