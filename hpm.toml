@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.3.1"
+version = "1.3.2"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -64,14 +64,12 @@ python = "3.11"
 requirements = ["PySide6>=6.6"]
 
 [native]
-# hpm only accepts a fixed set of platform names. For mac we ship an
-# arm64-only binary but label the native slot as macos-universal so it
-# passes hpm's validator. Per-platform CI workers only build their own
-# platform's binaries into resolver/houdini<major>/, so each archive
-# carries exactly that platform's resolver. linux + windows archives
-# carry both H21 and H22 builds; the macOS x86_64 archive carries H21
-# only (SideFX dropped x86_64 macos at H22, so the build worker has
-# no H22 toolkit to link against — see resolver-src/houdini_majors.toml).
+# Platform names are the arch-suffixed identifiers shared by hpm
+# (>= v0.13.0) and the TumbleTrove API. The macOS worker cross-compiles
+# arm64 only (-DCMAKE_OSX_ARCHITECTURES=arm64), so its slot is
+# macos-aarch64. Per-platform CI workers only build their own platform's
+# binaries into resolver/houdini<major>/, so each archive carries
+# exactly that platform's resolver.
 #
 # The identical globs across platforms below are deliberate: with
 # hpm >= 0.9.1, a path that matches the target platform's own
@@ -80,7 +78,7 @@ requirements = ["PySide6>=6.6"]
 # sections lets each per-platform archive carry the resolver binaries
 # its CI worker built. (Earlier hpm versions excluded such paths from
 # every archive — see 1.1.12 release notes.)
-platforms = ["windows-x86_64", "linux-x86_64", "macos-universal"]
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 
 [native.windows-x86_64]
 files = ["resolver/houdini*/**/*"]
@@ -88,5 +86,5 @@ files = ["resolver/houdini*/**/*"]
 [native.linux-x86_64]
 files = ["resolver/houdini*/**/*"]
 
-[native.macos-universal]
+[native.macos-aarch64]
 files = ["resolver/houdini*/**/*"]
