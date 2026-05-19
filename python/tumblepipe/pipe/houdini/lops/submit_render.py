@@ -305,21 +305,25 @@ class SubmitRender(ns.Node):
         shot_uris = self.list_shot_uris()
         if str(shot_uri) not in shot_uris: return  # Compare strings
         self.parm('shot').set(str(shot_uri))
+        self._update_labels()
 
     def set_shot_department_name(self, shot_department_name):
         shot_department_names = self.list_shot_department_names()
         if shot_department_name not in shot_department_names: return
         self.parm('shot_department').set(shot_department_name)
-    
+        self._update_labels()
+
     def set_variant_name(self, variant_name):
         variant_names = self.list_variant_names()
         if variant_name not in variant_names: return
         self.parm('variant').set(variant_name)
-    
+        self._update_labels()
+
     def set_render_department_name(self, render_department_name):
         render_department_names = self.list_render_department_names()
         if render_department_name not in render_department_names: return
         self.parm('render_department').set(render_department_name)
+        self._update_labels()
     
     def set_frame_range_source(self, frame_range_source):
         valid_sources = ['from_config', 'from_settings']

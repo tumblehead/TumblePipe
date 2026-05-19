@@ -228,22 +228,26 @@ class ImportLayer(ns.Node):
         if str(entity_uri) not in entity_uris:  # Compare strings
             return
         self.parm('entity').set(str(entity_uri))
+        self._update_labels()
 
     def set_department_name(self, department_name: str):
         department_names = self.list_department_names()
         if department_name not in department_names:
             return
         self.parm('department').set(department_name)
+        self._update_labels()
 
     def set_variant_name(self, variant_name: str):
         """Set variant name."""
         self.parm('variant').set(variant_name)
+        self._update_labels()
 
     def set_version_name(self, version_name: str):
         version_names = self.list_version_names()
         if version_name not in version_names:
             return
         self.parm('version').set(version_name)
+        self._update_labels()
 
     def set_include_layerbreak(self, include_layerbreak: bool):
         self.parm('include_layerbreak').set(int(include_layerbreak))
@@ -466,3 +470,14 @@ def select():
         if selected_uri:
             node.parm('entity').set(selected_uri)
             node.execute()
+
+
+def output_modified_prims(raw_node) -> str:
+    """Return the prim path this HDA wrote, for the output's modifiedprims."""
+    entity = raw_node.parm('entity').eval()
+    if not entity:
+        return ''
+    try:
+        return uri_to_prim_path(Uri.parse_unsafe(entity))
+    except ValueError:
+        return ''

@@ -8,11 +8,10 @@ from .base import ValidationResult
 def _validate_asset_base(root, context: dict | None, child_prim_name: str) -> ValidationResult:
     """Common validation for asset structure.
 
-    Validates:
-    - Asset prim exists at path derived from entity URI
-    - Asset prim is of type Scope
-    - Required child prim exists (geo or mat)
-    - Child prim is of type Scope
+    Convention (matches create_asset_model HDA):
+    - Asset prim is of type Xform (transformable so it can be placed in shots)
+    - Required child prim ('geo' or 'mat') is of type Scope (pure grouping)
+    - Mesh content lives inside the Scope as Mesh prims
 
     Args:
         root: USD stage pseudo root prim
@@ -28,7 +27,12 @@ def _validate_asset_base(root, context: dict | None, child_prim_name: str) -> Va
     entity_uri_str = context.get('entity_uri') if context else None
     if not entity_uri_str:
         result.add_warning(
-            f"No entity URI provided - cannot validate {child_prim_name} structure"
+            f"No entity URI provided - cannot validate {child_prim_name} structure",
+            suggestion=(
+                "Set the export_layer's 'Entity' parameter to a specific URI "
+                "(or 'from_context' inside a saved workfile) so the validator "
+                "knows which prim path to expect."
+            ),
         )
         return result
 
@@ -48,16 +52,27 @@ def _validate_asset_base(root, context: dict | None, child_prim_name: str) -> Va
     if not asset_prim.IsValid():
         result.add_error(
             f"Asset prim not found at path: {asset_prim_path}",
-            asset_prim_path
+            asset_prim_path,
+            suggestion=(
+                "Author the asset prim at this path. The create_asset_model HDA "
+                "sets up the expected /CATEGORY/Asset hierarchy automatically — "
+                "check the export_layer's Entity URI matches the stage."
+            ),
         )
         return result
 
-    # Check asset prim type is Scope
+    # Check asset prim type is Xform (project convention — asset roots are
+    # transformable so they can be placed/instanced in shots).
     prim_type = asset_prim.GetTypeName()
-    if prim_type != 'Scope':
+    if prim_type != 'Xform':
         result.add_error(
-            f"Asset prim must be of type 'Scope', found '{prim_type}'",
-            asset_prim_path
+            f"Asset prim must be of type 'Xform', found '{prim_type}'",
+            asset_prim_path,
+            suggestion=(
+                "Set the prim's type to Xform via a Configure Primitive LOP "
+                "with type=UsdGeomXform, or re-author through the "
+                "create_asset_model HDA which produces the correct hierarchy."
+            ),
         )
 
     # Check child prim exists
@@ -66,7 +81,13 @@ def _validate_asset_base(root, context: dict | None, child_prim_name: str) -> Va
     if not child_prim.IsValid():
         result.add_error(
             f"Missing required '{child_prim_name}' child prim",
-            child_prim_path
+            child_prim_path,
+            suggestion=(
+                f"Create a '{child_prim_name}' Scope under the asset. The "
+                "create_asset_model HDA produces this child automatically; if "
+                "you authored the stage manually, add a Configure Primitive "
+                f"LOP that creates {child_prim_name} with type=UsdGeomScope."
+            ),
         )
         return result
 
@@ -75,7 +96,12 @@ def _validate_asset_base(root, context: dict | None, child_prim_name: str) -> Va
     if child_type != 'Scope':
         result.add_error(
             f"'{child_prim_name}' prim must be of type 'Scope', found '{child_type}'",
-            child_prim_path
+            child_prim_path,
+            suggestion=(
+                f"Set the type of '{child_prim_name}' to UsdGeomScope via a "
+                "Configure Primitive LOP. Use the set_kinds LOP for the full "
+                "asset hierarchy in one shot."
+            ),
         )
 
     return result
@@ -86,7 +112,7 @@ def validate_model_structure(root, context: dict | None = None) -> ValidationRes
 
     For model exports, validates:
     - Asset prim exists at path derived from entity URI (e.g., /CHAR/mom)
-    - Asset prim is of type Scope
+    - Asset prim is of type Xform
     - 'geo' child prim exists (e.g., /CHAR/mom/geo)
     - 'geo' prim is of type Scope
 
@@ -105,7 +131,7 @@ def validate_lookdev_structure(root, context: dict | None = None) -> ValidationR
 
     For lookdev exports, validates:
     - Asset prim exists at path derived from entity URI (e.g., /CHAR/mom)
-    - Asset prim is of type Scope
+    - Asset prim is of type Xform
     - 'mat' child prim exists (e.g., /CHAR/mom/mat)
     - 'mat' prim is of type Scope
 

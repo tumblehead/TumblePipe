@@ -6,6 +6,7 @@
     label	"th import model"
 
     help {
+	""
     }
 
     inputlabel	1	"Sub-Network Input #1"

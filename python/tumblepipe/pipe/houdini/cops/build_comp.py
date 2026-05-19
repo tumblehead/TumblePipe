@@ -322,6 +322,7 @@ class BuildComp(ns.Node):
         shot_uris = self.list_shot_uris()
         if str(shot_uri) not in shot_uris: return  # Compare strings
         self.parm('shot').set(str(shot_uri))
+        self._update_labels()
 
     def _update_labels(self):
         """Update label parameters to show resolved values when 'from_context' is selected."""

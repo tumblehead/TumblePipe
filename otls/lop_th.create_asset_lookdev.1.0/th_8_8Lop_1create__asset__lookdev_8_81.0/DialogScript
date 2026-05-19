@@ -19,10 +19,51 @@
         label   "Primitive Definition"
 
         parm {
+            name    "use_entity"
+            label   "Primitive"
+            type    buttonstrip
+            default { "1" }
+            menureplace {
+                "0" "Path"
+                "1" "Entity"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity_select"
+            label   "Entity"
+            type    button
+            joinnext
+            default { "0" }
+            hidewhen "{ use_entity == 0 }"
+            parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
+            parmtag { "script_callback" "hou.phm().select_entity()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity"
+            label   "Entity"
+            type    string
+            invisible
+            nolabel
+            joinnext
+            default { "" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity_label"
+            label   "entity_label"
+            type    label
+            nolabel
+            default { "none" }
+            hidewhen "{ use_entity == 0 }"
+        }
+        parm {
             name    "primpath"
             label   "Primitive Path"
             type    string
             default { "`lopinputprim('.', 0)`" }
+            hidewhen "{ use_entity == 1 }"
             menureplace {
                 [ "opmenu -l -a add_lookdev_variants primpath" ]
             }
@@ -32,6 +73,26 @@
             parmtag { "script_action_icon" "BUTTONS_reselect" }
             parmtag { "sidefx::usdpathtype" "prim" }
         }
+        parm {
+            name    "effective_primpath"
+            label   "effective_primpath"
+            type    string
+            invisible
+            default { "`pythonexprs(\"hou.phm().effective_primpath(hou.pwd())\")`" }
+        }
+        parm {
+            name    "sublayer"
+            label   "Create Sublayer"
+            type    toggle
+            default { "0" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
+        name    "folder0"
+        label   "Variants"
+
         parm {
             name    "variantset"
             label   "Variant Set"
@@ -61,19 +122,6 @@
             parmtag { "autoscope" "0000000000000000" }
             parmtag { "script_callback_language" "python" }
         }
-        parm {
-            name    "sublayer"
-            label   "Create Sublayer"
-            type    toggle
-            default { "0" }
-            parmtag { "script_callback_language" "python" }
-        }
-    }
-
-    groupsimple {
-        name    "folder0"
-        label   "Variants"
-
         multiparm {
             name    "variants"
             label    "Variants"
@@ -84,14 +132,26 @@
             groupsimple {
                 name    "variant#"
                 label   "Variant#"
+                grouptag { "sidefx::look" "blank" }
 
                 parm {
                     name    "variant_name#"
                     label   "Name"
                     type    string
+                    joinnext
                     default { "variant#" }
                     parmtag { "editor" "0" }
                     parmtag { "script_callback" "hou.phm().on_variant_name(kwargs)" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "jump_to_variant#"
+                    label   "Jump to Output"
+                    type    button
+                    nolabel
+                    default { "0" }
+                    parmtag { "button_icon" "BUTTONS_jump" }
+                    parmtag { "script_callback" "hou.phm().jump_to_variant(kwargs)" }
                     parmtag { "script_callback_language" "python" }
                 }
             }

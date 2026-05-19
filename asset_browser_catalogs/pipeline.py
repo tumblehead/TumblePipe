@@ -82,6 +82,11 @@ from _pipeline_types import (  # noqa: E402
 
 log = logging.getLogger(__name__)
 
+# Group accent — matches ``TYPE_COLORS["group"]`` in asset_browser's
+# theme.py. Reused as the sub-card tint when a shot/asset dept is
+# superseded by a group workfile.
+_GROUP_ACCENT_COLOR = "#e08c4a"
+
 
 def create_catalog():
     """Factory function — called by the registry on discovery.
@@ -227,6 +232,14 @@ class PipelineCatalog(Catalog):
             except Exception:
                 pass
         self._activation_warned = False
+
+        # Tracks the project_path currently bound to the tumblehead
+        # default_client + ``TH_*`` env. ``_activate_project`` skips
+        # its expensive reset/rebuild when the requested project
+        # already matches both this attribute and the live env var.
+        # Initialised to the launch project so the first call with
+        # the same project is a no-op.
+        self._active_project_path = self._launch_project_path or ""
 
         # Client construction is deferred until the first asset-browse
         # call. ``initialize()`` is intentionally a no-op (Houdini 22
@@ -536,8 +549,20 @@ class PipelineCatalog(Catalog):
         project. Safe to call from any thread (including bg init):
         the one-shot "switched context" warning is dispatched through
         ``_gui_singleshot`` so it never touches ``hou.ui`` directly.
+
+        Fast path: when the requested project already matches both
+        ``self._active_project_path`` AND the live ``TH_PROJECT_PATH``
+        env var, the reset/rebuild is skipped. ``Client`` construction
+        is the dominant per-op cost (~100 ms — reads disk + execs
+        project-config modules), so this guard makes back-to-back ops
+        on the same project effectively free.
         """
         if project is None:
+            return
+        if (
+            self._active_project_path == project.project_path
+            and os.environ.get("TH_PROJECT_PATH") == project.project_path
+        ):
             return
         os.environ["TH_PROJECT_PATH"] = project.project_path
         os.environ["TH_CONFIG_PATH"] = project.config_path
@@ -564,6 +589,7 @@ class PipelineCatalog(Catalog):
                     pass
         except Exception:
             log.debug("reset_default_client unavailable")
+        self._active_project_path = project.project_path
 
         if (
             self._launch_project_path
@@ -643,62 +669,64 @@ class PipelineCatalog(Catalog):
         return [_cascade_counts(c) for c in result]
 
     def _build_project_sections(self, proj) -> list[Collection]:
-        """Return [Assets, Shots, Groups, Scenes] sections for one
-        project, omitting any that are empty."""
+        """Return [Assets, Shots, Roots, Tasks] sections for one
+        project, omitting any that are empty. Multis are nested inside
+        Assets / Shots based on the Multi's own context (they can't
+        mix) — a single ``Multis`` subheader on each side filters the
+        grid to that context's Multi cards.
+        """
         project_tag = f"project:{proj.name}"
         sections: list[Collection] = []
 
+        # Build once, then inject under Assets / Shots below.
+        asset_multis, shot_multis = self._build_groups_for_project(proj)
+
+        # Multis go at the top of each side — artists favour multi-shot
+        # / multi-asset workflows when one exists. The subheaders are
+        # always present (even with zero children) so the affordance
+        # stays one click away.
         cats = self._list_categories_for_project(proj.name)
-        if cats:
-            cat_children = []
-            for cat in cats:
-                count = self._count_for_project_category(proj.name, cat)
-                cat_children.append(Collection(
-                    id=f"{proj.name}:category:{cat.lower()}",
-                    label=cat,
-                    count=count,
-                    tag=f"{project_tag}+category:{cat.lower()}",
-                ))
-            sections.append(Collection(
-                id=f"{proj.name}:assets_section",
-                label="Assets",
-                tag=f"{project_tag}+type:asset",
-                icon="box",
-                children=tuple(cat_children),
+        cat_children = [asset_multis]
+        for cat in cats:
+            count = self._count_for_project_category(proj.name, cat)
+            cat_children.append(Collection(
+                id=f"{proj.name}:category:{cat.lower()}",
+                label=cat,
+                count=count,
+                tag=f"{project_tag}+category:{cat.lower()}",
             ))
+        sections.append(Collection(
+            id=f"{proj.name}:assets_section",
+            label="Assets",
+            tag=f"{project_tag}+type:asset",
+            icon="box",
+            children=tuple(cat_children),
+        ))
 
         seqs = self._list_sequences_for_project(proj.name)
-        if seqs:
-            seq_children = []
-            for seq in seqs:
-                count = self._count_for_project_sequence(proj.name, seq)
-                seq_children.append(Collection(
-                    id=f"{proj.name}:sequence:{seq}",
-                    label=seq,
-                    count=count,
-                    tag=f"{project_tag}+sequence:{seq}",
-                ))
-            sections.append(Collection(
-                id=f"{proj.name}:shots_section",
-                label="Shots",
-                tag=f"{project_tag}+type:shot",
-                icon="clapperboard",
-                children=tuple(seq_children),
+        seq_children = [shot_multis]
+        for seq in seqs:
+            count = self._count_for_project_sequence(proj.name, seq)
+            seq_children.append(Collection(
+                id=f"{proj.name}:sequence:{seq}",
+                label=seq,
+                count=count,
+                tag=f"{project_tag}+sequence:{seq}",
             ))
-
-        group_children = self._build_groups_for_project(proj)
         sections.append(Collection(
-            id=f"{proj.name}:groups_section",
-            label="Groups",
-            icon="group",
-            children=tuple(group_children),
+            id=f"{proj.name}:shots_section",
+            label="Shots",
+            tag=f"{project_tag}+type:shot",
+            icon="clapperboard",
+            children=tuple(seq_children),
         ))
 
         scene_children = self._build_scenes_for_project(proj)
         sections.append(Collection(
             id=f"{proj.name}:scenes_section",
-            label="Scenes",
+            label="Roots",
             icon="layers",
+            tag=f"{project_tag}+type:scene",
             children=tuple(scene_children),
         ))
 
@@ -851,16 +879,22 @@ class PipelineCatalog(Catalog):
                 asset_ids.add(f"{proj_name}/{segs[0]}/{segs[1]}")
         return [a for a in items if a.id in asset_ids]
 
-    def _build_groups_for_project(self, proj) -> list[Collection]:
-        """Build Group sub-sections (Assets / Shots) for one project.
+    def _list_group_leaves_by_context(
+        self, proj,
+    ) -> dict[str, list[Collection]]:
+        """Return ``{"assets": [...], "shots": [...]}`` of Multi leaf
+        Collections for one project.
 
-        Asset-groups and shot-groups can't mix departments so they're
-        presented under separate headers. Empty sub-sections are
-        omitted.
+        Multis are locked to a single context (their URI is either
+        ``groups:/shots/...`` or ``groups:/assets/...``), so the
+        split is intrinsic to the data — this helper just surfaces
+        it as a dict for callers that need either the per-context
+        subsection (sidebar tree) or the flat list
+        (``_iter_group_collections``).
         """
+        result: dict[str, list[Collection]] = {"assets": [], "shots": []}
         if not self._is_ready(proj.name):
-            return []
-        sub_by_ctx: dict[str, list[Collection]] = {"assets": [], "shots": []}
+            return result
         try:
             self._activate_project(proj)
             from tumblepipe.config import groups as grp_mod
@@ -869,7 +903,7 @@ class PipelineCatalog(Catalog):
                 for g in ctx_groups:
                     name = g.uri.segments[-1] if g.uri.segments else str(g.uri)
                     member_count = len(g.members)
-                    sub_by_ctx[ctx].append(Collection(
+                    result[ctx].append(Collection(
                         id=f"group:{proj.name}:{ctx}/{name}",
                         label=name,
                         count=member_count,
@@ -878,23 +912,45 @@ class PipelineCatalog(Catalog):
                     ))
         except Exception:
             log.debug("Failed to list groups for %s", proj.name, exc_info=True)
+        return result
 
-        sections: list[Collection] = []
-        if sub_by_ctx["assets"]:
-            sections.append(Collection(
-                id=f"{proj.name}:groups_section:assets",
-                label="Assets",
-                icon="box",
-                children=tuple(sub_by_ctx["assets"]),
-            ))
-        if sub_by_ctx["shots"]:
-            sections.append(Collection(
-                id=f"{proj.name}:groups_section:shots",
-                label="Shots",
-                icon="clapperboard",
-                children=tuple(sub_by_ctx["shots"]),
-            ))
-        return sections
+    def _build_groups_for_project(self, proj):
+        """Return ``(asset_multis_subheader, shot_multis_subheader)``
+        for one project.
+
+        Each subheader is a single ``Multis`` Collection whose
+        children are the actual Multi leaves; the subheader's tag
+        filters the grid to that context's Multi cards via
+        ``type:group+multi_context:<assets|shots>``. The headers are
+        always returned (never ``None``) — including empty contexts
+        — so artists can always see and click through to the Multi
+        grid view, and right-click → "New Multi…" stays one motion
+        away even before the first Multi exists.
+
+        Callers inject these into the Assets / Shots sections rather
+        than rendering a separate top-level Multis section, so the
+        sidebar mirrors the inherent context split without nesting
+        twice.
+        """
+        project_tag = f"project:{proj.name}"
+        leaves = self._list_group_leaves_by_context(proj)
+        asset_sub = Collection(
+            id=f"{proj.name}:multis_section:assets",
+            label="Multis",
+            icon="group",
+            tag=f"{project_tag}+type:group+multi_context:assets",
+            count=len(leaves["assets"]),
+            children=tuple(leaves["assets"]),
+        )
+        shot_sub = Collection(
+            id=f"{proj.name}:multis_section:shots",
+            label="Multis",
+            icon="group",
+            tag=f"{project_tag}+type:group+multi_context:shots",
+            count=len(leaves["shots"]),
+            children=tuple(leaves["shots"]),
+        )
+        return asset_sub, shot_sub
 
     def _build_scenes_for_project(self, proj) -> list[Collection]:
         """Build Scene collections for a single project."""
@@ -918,6 +974,941 @@ class PipelineCatalog(Catalog):
         except Exception:
             log.debug("Failed to list scenes for %s", proj.name, exc_info=True)
         return children
+
+    def _iter_group_collections(self):
+        """Yield ``(group_collection, project_name)`` for every Multi
+        leaf in every registered project. Reads via the per-context
+        leaf list so it doesn't depend on the sidebar tree shape.
+        """
+        for proj in self._registry.all():
+            leaves = self._list_group_leaves_by_context(proj)
+            for ctx in ("shots", "assets"):
+                for grp in leaves[ctx]:
+                    yield grp, proj.name
+
+    def _iter_scene_collections(self):
+        """Yield ``(scene_collection, project_name)`` for every scene
+        in every registered project."""
+        for proj in self._registry.all():
+            for scn in self._build_scenes_for_project(proj):
+                yield scn, proj.name
+
+    def _container_collection_to_asset(
+        self, collection: "Collection", project_name: str, kind: str,
+    ) -> Asset:
+        """Wrap a Group/Scene Collection in an Asset so the grid can
+        render it as a card. The ``drill_tag`` metadata key signals to
+        the browser's card-click handler that the card represents a
+        container — clicking it should drill into its members rather
+        than open a detail panel.
+
+        For groups, the asset also advertises ``has_sub_cards=True``
+        and a flat ``departments`` list so the deck popup can render
+        one sub-card per dept (mirroring the shot/asset open-workfile
+        UX).
+        """
+        metadata: dict = {
+            "kind": kind,
+            "drill_tag": collection.tag,
+            "member_count": collection.count,
+        }
+        if kind == "scene":
+            # Surface a dirty flag so the renderer can paint an
+            # "unsaved" indicator on Roots whose JSON has drifted
+            # from the latest exported USD.
+            try:
+                metadata["dirty"] = self._root_is_dirty(collection.tag)
+            except Exception:
+                metadata["dirty"] = False
+        if kind == "group":
+            # Stash the Multi's context (``assets`` / ``shots``) so
+            # ``_get_container_assets`` can filter by it when the
+            # sidebar's nested **Multis** subheader is active. The
+            # context comes from the second URI segment, i.e. the
+            # ``ctx`` in ``group:PROJECT:ctx/name``.
+            try:
+                _, _, group_path = collection.tag.split(":", 2)
+                ctx = group_path.split("/", 1)[0] if "/" in group_path else ""
+            except ValueError:
+                ctx = ""
+            if ctx:
+                metadata["context"] = ctx
+            covered = self._group_departments_from_tag(
+                collection.tag, project_name,
+            )
+            if covered:
+                workfile_info = self._get_group_department_workfile_info(
+                    collection.tag,
+                )
+                # Same shape as shot/asset metadata: {dept: latest_version
+                # or ""}. Dept-name iteration order (for sub-card render)
+                # comes from get_sub_cards, which sorts by the project's
+                # canonical dept order.
+                depts_dict = {}
+                for dept in covered:
+                    versions = workfile_info.get(dept) or []
+                    depts_dict[dept] = versions[-1] if versions else ""
+                metadata["departments"] = depts_dict
+                metadata["has_sub_cards"] = True
+        return Asset(
+            id=collection.tag,
+            name=collection.label,
+            thumbnail_url="",
+            tags=frozenset({
+                f"type:{kind}",
+                f"project:{project_name}",
+                "source:pipeline",
+                collection.tag,
+            }),
+            metadata=metadata,
+        )
+
+    def open_container_location(self, collection_id: str) -> bool:
+        """Open the Multi or Root's on-disk storage folder in Explorer.
+
+        Mirrors :meth:`_open_dept_work_dir` for shots/assets: resolves
+        the container's URI to a filesystem path via tumblepipe's
+        storage layer and shells out to ``explorer``. Walks up to the
+        nearest existing ancestor if the leaf folder hasn't been
+        created yet (e.g. a brand-new Multi with no workfiles).
+        """
+        import sys
+        from pathlib import Path
+
+        def _bail(msg: str) -> bool:
+            log.warning("open_container_location: %s (%s)", msg, collection_id)
+            try:
+                print(
+                    f"[asset_browser] open_container_location failed for "
+                    f"{collection_id}: {msg}",
+                    file=sys.stderr,
+                )
+            except Exception:
+                pass
+            return False
+
+        parsed = self._parse_collection_id(collection_id)
+        if parsed is None:
+            return _bail("could not parse collection id")
+        kind, proj_name, path = parsed
+        proj = self._registry.get(proj_name)
+        if proj is None:
+            return _bail(f"unknown project {proj_name!r}")
+        try:
+            self._activate_project(proj)
+            from tumblepipe import api as tp_api
+            from tumblepipe.util.uri import Uri
+        except Exception:
+            log.exception("open_container_location: imports failed")
+            return _bail("tumblepipe imports failed")
+
+        candidate_uris: list = []
+        try:
+            if kind == "group":
+                uri = self._group_uri(path)
+                # Multis live at two possible roots — the config side
+                # (``groups:/``) holds the JSON definition, and the
+                # workfile side mirrors the entity layout. Try both;
+                # the first one that resolves to an existing folder
+                # wins. Walk up either if needed.
+                candidate_uris.append(
+                    Uri.parse_unsafe("groups:/") / uri.segments
+                )
+                candidate_uris.append(
+                    Uri.parse_unsafe("project:/") / uri.segments
+                )
+            elif kind == "scene":
+                uri = self._scene_uri(path)
+                # Roots export to ``export:/scenes/<path>/_staged`` —
+                # that's where the .usda layer versions land. Plain
+                # ``export:/scenes/<path>`` is the parent.
+                candidate_uris.append(
+                    Uri.parse_unsafe("export:/scenes/")
+                    / uri.segments / "_staged"
+                )
+                candidate_uris.append(
+                    Uri.parse_unsafe("export:/scenes/") / uri.segments
+                )
+                # Fall back to the scene's config folder if no export
+                # has happened yet so the user lands somewhere
+                # meaningful.
+                candidate_uris.append(
+                    Uri.parse_unsafe("scenes:/") / uri.segments
+                )
+            else:
+                return _bail(f"unsupported kind {kind!r}")
+        except Exception:
+            log.exception("open_container_location: uri build failed")
+            return _bail("URI build failed")
+
+        target: Path | None = None
+        attempts: list[str] = []
+        for uri in candidate_uris:
+            try:
+                resolved = tp_api.storage.resolve(uri)
+            except Exception:
+                attempts.append(f"resolve({uri}) raised")
+                continue
+            if resolved is None:
+                attempts.append(f"resolve({uri}) -> None")
+                continue
+            p = Path(str(resolved))
+            attempts.append(f"resolve({uri}) -> {p}")
+            walked = p
+            while not walked.exists() and walked.parent != walked:
+                walked = walked.parent
+            if walked.exists():
+                target = walked
+                break
+        if target is None:
+            return _bail(
+                "no candidate path resolved to an existing folder: "
+                + " ; ".join(attempts)
+            )
+        try:
+            import subprocess
+            subprocess.Popen(
+                ["cmd", "/c", "start", "", str(target)],
+                creationflags=0x08000000,
+            )
+            return True
+        except Exception:
+            log.exception(
+                "open_container_location: shell failed for %s", target,
+            )
+            return _bail(f"shell failed for {target}")
+
+    def list_root_assigned_shots(self, collection_id: str) -> list:
+        """Return a list of shot URIs whose ``scene_ref`` points at
+        this Root. Empty list on any failure.
+        """
+        parsed = self._parse_collection_id(collection_id)
+        if parsed is None:
+            return []
+        kind, proj_name, path = parsed
+        if kind != "scene":
+            return []
+        proj = self._registry.get(proj_name)
+        if proj is None:
+            return []
+        try:
+            self._activate_project(proj)
+            from tumblepipe.config import scenes as scn_mod
+        except Exception:
+            log.exception("list_root_assigned_shots: imports failed")
+            return []
+        scene_uri = self._scene_uri(path)
+        try:
+            shots = list(scn_mod.find_shots_with_scene_ref(scene_uri))
+        except Exception:
+            log.exception(
+                "find_shots_with_scene_ref failed for %s", scene_uri,
+            )
+            return []
+        return shots
+
+    def rebuild_root_assigned_shots(
+        self, collection_id: str,
+    ) -> tuple[int, list]:
+        """Regenerate root + build staged USD for every shot whose
+        ``scene_ref`` points at this Root. Returns ``(ok_count,
+        failed_uris)``. Best-effort: a shot failure logs and continues.
+        """
+        shots = self.list_root_assigned_shots(collection_id)
+        if not shots:
+            return (0, [])
+        parsed = self._parse_collection_id(collection_id)
+        if parsed is None:
+            return (0, [])
+        kind, proj_name, _path = parsed
+        proj = self._registry.get(proj_name)
+        if proj is None:
+            return (0, [])
+        try:
+            self._activate_project(proj)
+            from tumblepipe.config import scene as scene_mod
+        except Exception:
+            log.exception("rebuild_root_assigned_shots: imports failed")
+            return (0, list(shots))
+        ok = 0
+        failed: list = []
+        for shot_uri in shots:
+            try:
+                scene_mod.generate_root_version(shot_uri)
+            except Exception:
+                log.exception(
+                    "generate_root_version failed for %s", shot_uri,
+                )
+                failed.append(shot_uri)
+                continue
+            try:
+                self._build_shot_staged(shot_uri)
+            except Exception:
+                log.exception(
+                    "build_shot_staged failed for %s", shot_uri,
+                )
+                failed.append(shot_uri)
+                continue
+            ok += 1
+        return (ok, failed)
+
+    def export_root_usd(self, collection_id: str) -> bool:
+        """Re-export a Root's scene USD via ``export_scene_version``.
+
+        Manual replacement for the auto-staging that used to fire on
+        every membership edit. Returns ``True`` on success.
+        """
+        import sys
+        print(
+            f"[asset_browser] export_root_usd START for {collection_id}",
+            file=sys.stderr,
+        )
+        parsed = self._parse_collection_id(collection_id)
+        if parsed is None:
+            return False
+        kind, proj_name, path = parsed
+        if kind != "scene":
+            return False
+        proj = self._registry.get(proj_name)
+        if proj is None:
+            return False
+        try:
+            self._activate_project(proj)
+            from tumblepipe.config import scenes as scn_mod
+        except Exception:
+            log.exception("export_root_usd: imports failed")
+            return False
+        scene_uri = self._scene_uri(path)
+        try:
+            scn_mod.export_scene_version(scene_uri)
+            print(
+                f"[asset_browser] export_scene_version OK for {scene_uri}",
+                file=sys.stderr,
+            )
+        except Exception:
+            log.exception(
+                "export_scene_version failed for %s", scene_uri,
+            )
+            print(
+                f"[asset_browser] export_scene_version FAILED for {scene_uri}",
+                file=sys.stderr,
+            )
+            return False
+        # Re-fetch the Root card so the dirty indicator clears now
+        # that scene JSON matches the freshly-written context.json.
+        try:
+            self._request_card_refresh_for_id(collection_id)
+            print(
+                f"[asset_browser] card refresh requested for "
+                f"{collection_id}",
+                file=sys.stderr,
+            )
+        except Exception:
+            log.exception(
+                "card refresh after export failed for %s", collection_id,
+            )
+        return True
+
+    def _build_shot_staged(self, shot_uri) -> None:
+        """Build a shot's staged USD locally.
+
+        Mirrors the legacy Scene Editor's ``_execute_build_local`` —
+        resolves the next staged file path, reads the shot's frame
+        range, and runs the build task. Raises on failure so callers
+        can surface the error in their status message.
+        """
+        from tumblepipe.pipe.paths import next_staged_file_path
+        from tumblepipe.config.timeline import get_frame_range
+        from tumblepipe.farm.tasks.build import build as build_task
+
+        output_path = next_staged_file_path(shot_uri)
+        frame_range = get_frame_range(shot_uri)
+        render_range = (
+            frame_range.full_range() if frame_range else None
+        )
+        if render_range is None:
+            raise RuntimeError(
+                f"No frame range found for shot: {shot_uri}"
+            )
+        result = build_task.main(shot_uri, output_path, render_range)
+        if result != 0:
+            raise RuntimeError(
+                f"Build failed with exit code {result} for {shot_uri}"
+            )
+
+    def _toggle_group_dept_coverage(
+        self, group_id: str, dept: str, enabled: bool,
+    ) -> None:
+        """Add or remove ``dept`` from the Multi's covered list.
+
+        Wraps ``add_department`` / ``remove_department`` with cache
+        invalidation + card and detail-panel refresh so the user sees
+        the deck and the Departments tab catch up on the next paint.
+        """
+        if not group_id.startswith("group:"):
+            return
+        try:
+            _, rest = group_id.split(":", 1)
+            proj_name, path = rest.split(":", 1)
+        except ValueError:
+            return
+        proj = self._registry.get(proj_name)
+        if proj is None:
+            return
+        try:
+            self._activate_project(proj)
+            from tumblepipe.config import groups as grp_mod
+        except Exception:
+            log.exception("toggle dept coverage: import failed")
+            return
+        group_uri = self._group_uri(path)
+        try:
+            grp = grp_mod.get_group(group_uri)
+        except Exception:
+            log.exception("toggle dept coverage: get_group failed")
+            return
+        if grp is None:
+            return
+        current = {str(d) for d in getattr(grp, "departments", ())}
+        try:
+            if enabled and dept not in current:
+                grp_mod.add_department(group_uri, dept)
+            elif (not enabled) and dept in current:
+                grp_mod.remove_department(group_uri, dept)
+            else:
+                return  # already in target state, no-op
+        except Exception:
+            log.exception(
+                "toggle dept coverage failed for %s/%s", group_id, dept,
+            )
+            return
+        self._invalidate_membership_cache()
+        try:
+            self._request_card_refresh_for_id(group_id)
+        except Exception:
+            log.exception("card refresh after dept toggle failed")
+        try:
+            self._request_global_detail_refresh()
+        except Exception:
+            log.exception("detail refresh after dept toggle failed")
+
+    def _remove_member_from_group(
+        self, asset_id: str, collection_id: str,
+    ) -> None:
+        """Remove a single shot/asset from a pipeline group.
+
+        Wraps :meth:`remove_assets_from_collection` with status
+        feedback + cache invalidation so the deck refreshes on the
+        next render without the user having to hard-refresh. Logs and
+        bails on any unexpected exception.
+        """
+        if not asset_id or not collection_id:
+            return
+        try:
+            removed, skipped, msg = self.remove_assets_from_collection(
+                collection_id, [asset_id],
+            )
+        except Exception:
+            log.exception(
+                "remove_assets_from_collection failed for %s / %s",
+                collection_id, asset_id,
+            )
+            return
+        if msg:
+            try:
+                import hou
+                hou.ui.setStatusMessage(
+                    msg, severity=hou.severityType.Message,
+                )
+            except Exception:
+                log.info("status: %s", msg)
+        if removed:
+            self._invalidate_membership_cache()
+            self._request_global_detail_refresh()
+            try:
+                self._request_global_grid_refresh()
+            except Exception:
+                pass
+
+    def _get_member_groups_for_project(
+        self, proj_name: str,
+    ) -> dict[str, dict[str, tuple[str, str]]]:
+        """Return ``{member_asset_id: {dept: (group_id, group_label)}}``
+        for the shots and assets in ``proj_name`` covered by one or
+        more groups. ``group_id`` is the same id our catalog uses for
+        the group's drill/edit/remove actions (``group:PROJECT:ctx/name``).
+        Cached on the catalog; dropped by :meth:`invalidate_cache`.
+        First-write-wins when several groups cover the same
+        (member, dept) pair.
+        """
+        cache = getattr(self, "_member_groups_cache", None)
+        if cache is None:
+            cache = {}
+            self._member_groups_cache = cache
+        if proj_name in cache:
+            return cache[proj_name]
+
+        coverage: dict[str, dict[str, tuple[str, str]]] = {}
+        proj = self._registry.get(proj_name)
+        if proj is None or not self._is_ready(proj_name):
+            cache[proj_name] = coverage
+            return coverage
+
+        try:
+            self._activate_project(proj)
+            from tumblepipe.config import groups as grp_mod
+            for ctx in ("shots", "assets"):
+                try:
+                    ctx_groups = grp_mod.list_groups(ctx)
+                except Exception:
+                    log.debug(
+                        "list_groups(%s) failed for %s", ctx, proj_name,
+                        exc_info=True,
+                    )
+                    continue
+                for g in ctx_groups:
+                    segs = getattr(g.uri, "segments", None) or []
+                    group_label = segs[-1] if segs else str(g.uri)
+                    # Reuse the catalog's collection-id convention so
+                    # the remove action can plug straight into
+                    # ``remove_assets_from_collection``.
+                    group_path = "/".join(segs) if segs else group_label
+                    group_id = f"group:{proj_name}:{group_path}"
+                    depts = [str(d) for d in getattr(g, "departments", ())]
+                    if not depts:
+                        continue
+                    for member_uri in g.members:
+                        m_segs = (
+                            member_uri.segments
+                            if hasattr(member_uri, "segments")
+                            else str(member_uri)
+                                .replace("entity:/", "").split("/")
+                        )
+                        if len(m_segs) >= 3:
+                            member_id = f"{proj_name}/{m_segs[1]}/{m_segs[2]}"
+                        elif len(m_segs) >= 2:
+                            member_id = f"{proj_name}/{m_segs[0]}/{m_segs[1]}"
+                        else:
+                            continue
+                        bucket = coverage.setdefault(member_id, {})
+                        for dept in depts:
+                            bucket.setdefault(
+                                dept, (group_id, group_label),
+                            )
+        except Exception:
+            log.debug(
+                "Member group coverage failed for %s", proj_name,
+                exc_info=True,
+            )
+
+        cache[proj_name] = coverage
+        return coverage
+
+    def _dept_groups_for_member(
+        self, asset_id: str,
+    ) -> dict[str, tuple[str, str]]:
+        """Return ``{dept: (group_id, group_label)}`` for an asset/shot
+        covered by a group. Empty when the asset isn't a group member.
+        """
+        parts = asset_id.split("/", 1)
+        if not parts or not parts[0]:
+            return {}
+        coverage = self._get_member_groups_for_project(parts[0])
+        return coverage.get(asset_id, {})
+
+    def _root_is_dirty(self, scene_id: str) -> bool:
+        """Return ``True`` when a Root has unsaved changes vs the last
+        exported USD.
+
+        Compares the Root's current ``assets`` list against the asset
+        list recorded in the latest exported version's ``context.json``.
+        If they differ — or no export exists yet and the Root has any
+        members — the Root is dirty. Used to surface a visual cue on
+        the card so users know when an explicit ``Export Root USD`` is
+        needed before downstream shots rebuild correctly.
+        """
+        parsed = self._parse_collection_id(scene_id)
+        if parsed is None or parsed[0] != "scene":
+            return False
+        _, proj_name, path = parsed
+        proj = self._registry.get(proj_name)
+        if proj is None or not self._is_ready(proj_name):
+            return False
+        try:
+            self._activate_project(proj)
+            from tumblepipe.config import scenes as scn_mod
+            from tumblepipe import api as tp_api
+            from tumblepipe.util.uri import Uri
+            scene_uri = self._scene_uri(path)
+            scene = scn_mod.get_scene(scene_uri)
+        except Exception:
+            log.debug(
+                "_root_is_dirty: get_scene failed for %s",
+                scene_id, exc_info=True,
+            )
+            return False
+        if scene is None:
+            return False
+        current = [
+            (
+                str(e.asset),
+                int(getattr(e, "instances", 1) or 1),
+                str(getattr(e, "variant", "default") or "default"),
+            )
+            for e in getattr(scene, "assets", ())
+        ]
+        import sys
+        # Use the same path resolver tumblepipe uses for export so our
+        # check is anchored to the truth of where files land.
+        try:
+            from tumblepipe.pipe.paths import get_scene_staged_path
+            export_root = get_scene_staged_path(scene_uri)
+        except Exception:
+            log.debug(
+                "_root_is_dirty: get_scene_staged_path failed for %s",
+                scene_id, exc_info=True,
+            )
+            print(
+                f"[asset_browser] _root_is_dirty {scene_id}: "
+                f"get_scene_staged_path RAISED -> dirty=bool(current)="
+                f"{bool(current)}",
+                file=sys.stderr,
+            )
+            return bool(current)
+        from pathlib import Path
+        export_root = Path(str(export_root))
+        if not export_root.exists():
+            print(
+                f"[asset_browser] _root_is_dirty {scene_id}: "
+                f"export_root does not exist: {export_root} -> "
+                f"dirty=bool(current)={bool(current)}",
+                file=sys.stderr,
+            )
+            return bool(current)
+        try:
+            versions = sorted(
+                p for p in export_root.iterdir()
+                if p.is_dir() and p.name.startswith("v")
+            )
+        except Exception:
+            print(
+                f"[asset_browser] _root_is_dirty {scene_id}: "
+                f"iterdir RAISED on {export_root} -> "
+                f"dirty=bool(current)={bool(current)}",
+                file=sys.stderr,
+            )
+            return bool(current)
+        if not versions:
+            print(
+                f"[asset_browser] _root_is_dirty {scene_id}: "
+                f"no v* dirs under {export_root} -> "
+                f"dirty=bool(current)={bool(current)}",
+                file=sys.stderr,
+            )
+            return bool(current)
+        ctx_path = versions[-1] / "context.json"
+        if not ctx_path.exists():
+            print(
+                f"[asset_browser] _root_is_dirty {scene_id}: "
+                f"context.json missing at {ctx_path} -> "
+                f"dirty=bool(current)={bool(current)}",
+                file=sys.stderr,
+            )
+            return bool(current)
+        try:
+            import json
+            with open(ctx_path, "r", encoding="utf-8") as f:
+                ctx = json.load(f)
+        except Exception:
+            log.debug(
+                "_root_is_dirty: context.json read failed for %s",
+                scene_id, exc_info=True,
+            )
+            return False
+        exported = [
+            (
+                str(a.get("asset", "")),
+                int(a.get("instances", 1) or 1),
+                str(a.get("variant", "default") or "default"),
+            )
+            for a in ctx.get("parameters", {}).get("assets", [])
+        ]
+        dirty = sorted(current) != sorted(exported)
+        # One-shot debug print so the user can see exactly why the
+        # dirty dot is or isn't clearing. Drop this once the path
+        # math is confirmed.
+        try:
+            import sys
+            print(
+                f"[asset_browser] _root_is_dirty {scene_id}\n"
+                f"  context.json: {ctx_path}\n"
+                f"  current ({len(current)}): {sorted(current)}\n"
+                f"  exported ({len(exported)}): {sorted(exported)}\n"
+                f"  dirty={dirty}",
+                file=sys.stderr,
+            )
+        except Exception:
+            pass
+        return dirty
+
+    def _group_context_from_tag(self, group_tag: str) -> str | None:
+        """Return ``"shots"`` / ``"assets"`` for a ``group:`` id, or
+        ``None`` if the tag is malformed. The context is the first
+        path segment after the project name.
+        """
+        try:
+            _, rest = group_tag.split(":", 1)
+            _, path = rest.split(":", 1)
+        except ValueError:
+            return None
+        ctx = path.split("/", 1)[0] if "/" in path else path
+        if ctx in ("shots", "assets"):
+            return ctx
+        return None
+
+    def _get_group_department_workfile_info(
+        self, group_tag: str,
+    ) -> dict[str, list[str]]:
+        """Return ``{dept: [latest_version]}`` for a group's workfile
+        tree.
+
+        Resolution goes through ``latest_hip_file_path_with_context``
+        (the same helper :meth:`_open_group_workfile` and
+        :meth:`_new_group_from_template` use), so paths line up with
+        the open/create flows even if the on-disk layout doesn't match
+        a naive ``<root>/groups/<ctx>/<name>/<dept>`` walk. Returns
+        ``{}`` on any lookup failure — callers treat empty as "no
+        versions yet".
+        """
+        try:
+            _, rest = group_tag.split(":", 1)
+            proj_name, path = rest.split(":", 1)
+        except ValueError:
+            return {}
+        proj = self._registry.get(proj_name)
+        if proj is None or not self._is_ready(proj_name):
+            return {}
+        try:
+            self._activate_project(proj)
+            from tumblepipe.config import groups as grp_mod
+            from tumblepipe.pipe import paths as paths_mod
+            group_uri = self._group_uri(path)
+            grp = grp_mod.get_group(group_uri)
+        except Exception:
+            log.debug(
+                "Group lookup failed for %s", group_tag, exc_info=True,
+            )
+            return {}
+        if grp is None:
+            return {}
+        result: dict[str, list[str]] = {}
+        for dept in getattr(grp, "departments", ()):
+            dept_name = str(dept)
+            try:
+                hip_path = paths_mod.latest_hip_file_path_with_context(
+                    group_uri, dept_name,
+                )
+            except Exception:
+                log.debug(
+                    "latest_hip_file_path_with_context failed for "
+                    "%s/%s", group_tag, dept_name, exc_info=True,
+                )
+                continue
+            if hip_path is None or not hip_path.exists():
+                continue
+            stem = hip_path.stem
+            tail = stem.rsplit("_", 1)
+            if (
+                len(tail) == 2
+                and tail[1].startswith("v")
+                and tail[1][1:].isdigit()
+            ):
+                result[dept_name] = [tail[1]]
+        return result
+
+    def _group_departments_from_tag(
+        self, group_tag: str, project_name: str,
+    ) -> list[str]:
+        """Return the list of dept-name strings a group covers.
+
+        ``group_tag`` is the same id we use for drill-down — format
+        ``group:PROJECT:ctx/name``. Returns ``[]`` on any lookup
+        failure (logged at debug); callers treat empty as "no sub-
+        cards available".
+        """
+        try:
+            _, rest = group_tag.split(":", 1)
+            _, path = rest.split(":", 1)
+        except ValueError:
+            return []
+        proj = self._registry.get(project_name)
+        if proj is None or not self._is_ready(project_name):
+            return []
+        try:
+            self._activate_project(proj)
+            from tumblepipe.config import groups as grp_mod
+            grp = grp_mod.get_group(self._group_uri(path))
+        except Exception:
+            log.debug("Failed to resolve group %s", group_tag, exc_info=True)
+            return []
+        if grp is None:
+            return []
+        return [str(d) for d in getattr(grp, "departments", ())]
+
+    def _get_container_assets(
+        self, kind: str, query: str, tags: frozenset[str],
+        cursor: str | None, page_size: int,
+    ) -> AssetPage:
+        """Return synthetic Group/Scene cards for the grid.
+
+        Called from :meth:`get_assets` when the active filter is
+        ``type:group`` / ``type:scene``. Respects the ``project:``
+        pill, the search box, and standard pagination.
+        """
+        self._discovery_errors = []
+        for err in self._ensure_all_clients():
+            self._discovery_errors.append(err)
+
+        if kind == "group":
+            items = [
+                self._container_collection_to_asset(g, p, "group")
+                for g, p in self._iter_group_collections()
+            ]
+        else:
+            items = [
+                self._container_collection_to_asset(s, p, "scene")
+                for s, p in self._iter_scene_collections()
+            ]
+
+        project_tags = {t for t in tags if t.startswith("project:")}
+        if project_tags:
+            items = [
+                a for a in items
+                if any(pt in a.tags for pt in project_tags)
+            ]
+
+        # Sidebar's nested **Multis** subheaders (under Assets / Shots)
+        # filter by context via ``multi_context:assets|shots``. Only
+        # Multi cards carry a ``context`` metadata key today, so a
+        # non-matching kind (e.g. scenes) would silently disappear if
+        # this clause ever leaked into a ``type:scene`` query — but
+        # the sidebar never builds such a combined tag, so the gate
+        # below is restricted to the group branch.
+        if kind == "group":
+            multi_ctx_tags = {
+                t.split(":", 1)[1]
+                for t in tags
+                if t.startswith("multi_context:")
+            }
+            if multi_ctx_tags:
+                items = [
+                    a for a in items
+                    if a.metadata.get("context") in multi_ctx_tags
+                ]
+
+        if query:
+            q = query.lower()
+            items = [a for a in items if q in a.name.lower()]
+
+        page = int(cursor) if cursor else 0
+        start = page * page_size
+        end = start + page_size
+        page_items = items[start:end]
+        next_cursor = str(page + 1) if end < len(items) else None
+        return AssetPage(
+            assets=page_items,
+            cursor=next_cursor,
+            total=len(items),
+            errors=tuple(self._discovery_errors),
+        )
+
+    def _get_container_detail(self, asset_id: str) -> AssetDetail:
+        """Build an AssetDetail for a Group/Scene id.
+
+        ``asset_id`` is the container's tag — same format the sidebar
+        uses (``group:PROJECT:ctx/name`` / ``scene:PROJECT:path``). The
+        detail carries enough metadata for the panel to render the
+        Info tab + departments toggle (groups only).
+        """
+        try:
+            kind, rest = asset_id.split(":", 1)
+            proj_name, path = rest.split(":", 1)
+        except ValueError:
+            return AssetDetail(
+                id=asset_id, name=asset_id, thumbnail_url="",
+                tags=frozenset({"source:pipeline"}),
+            )
+
+        proj = self._registry.get(proj_name)
+        if proj is not None:
+            try:
+                self._activate_project(proj)
+            except Exception:
+                log.exception("activate_project failed in container detail")
+
+        metadata: dict = {
+            "kind": kind,
+            "drill_tag": asset_id,
+            "project": proj_name,
+            "path": path,
+        }
+
+        if kind == "group":
+            try:
+                from tumblepipe.config import groups as grp_mod
+                from tumblepipe.config import department as dept_mod
+                grp = grp_mod.get_group(self._group_uri(path))
+                covered: list[str] = []
+                if grp is not None:
+                    metadata["member_count"] = len(grp.members)
+                    covered = [
+                        str(d) for d in getattr(grp, "departments", ())
+                    ]
+                # Shape ``departments`` like shots/assets ({dept:
+                # [versions]}) so the rich dept section can render
+                # version dropdowns + active highlights uniformly.
+                # The covered/uncovered toggle state lives separately
+                # in ``covered_departments``.
+                metadata["departments"] = (
+                    self._get_group_department_workfile_info(asset_id)
+                )
+                metadata["covered_departments"] = covered
+                ctx = path.split("/", 1)[0] if "/" in path else "assets"
+                metadata["context"] = ctx
+                try:
+                    metadata["known_departments"] = [
+                        d.name for d in
+                        dept_mod.list_departments(ctx, include_generated=False)
+                    ]
+                except Exception:
+                    metadata["known_departments"] = []
+            except Exception:
+                log.exception(
+                    "Failed to populate group detail for %s", asset_id,
+                )
+        elif kind == "scene":
+            try:
+                from tumblepipe.config import scenes as scn_mod
+                scn = scn_mod.get_scene(self._scene_uri(path))
+                if scn is not None:
+                    metadata["member_count"] = len(scn.assets)
+            except Exception:
+                log.exception(
+                    "Failed to populate scene detail for %s", asset_id,
+                )
+
+        name = path.rsplit("/", 1)[-1] if path else asset_id
+        return AssetDetail(
+            id=asset_id,
+            name=name,
+            thumbnail_url="",
+            tags=frozenset({
+                f"type:{kind}",
+                f"project:{proj_name}",
+                "source:pipeline",
+            }),
+            metadata=metadata,
+        )
 
     def get_asset_membership(
         self, asset_id: str,
@@ -967,8 +1958,33 @@ class PipelineCatalog(Catalog):
                             result.append((cid, name, "group"))
                             break
 
-            # Scenes
+            # Scenes — Roots can hold an asset two different ways:
+            #   1. Listed in the Root's ``assets`` (asset cards).
+            #   2. A shot's ``scene_ref`` pointing at the Root (shot
+            #      cards).
+            # Both paths feed the same "Remove from Root <name>"
+            # context menu item, so we collect them together.
+            assigned_scene_uri = None
+            if entity_suffix.startswith("shots/"):
+                try:
+                    from tumblepipe.config import scene as scene_mod_pkg
+                    shot_uri = Uri.parse_unsafe(f"entity:/{entity_suffix}")
+                    assigned_scene_uri = (
+                        scene_mod_pkg.get_scene_ref(shot_uri)
+                    )
+                    if assigned_scene_uri is None:
+                        resolved, _src = (
+                            scene_mod_pkg.get_inherited_scene_ref(shot_uri)
+                        )
+                        assigned_scene_uri = resolved
+                except Exception:
+                    log.debug(
+                        "scene_ref lookup failed for %s",
+                        asset_id, exc_info=True,
+                    )
+
             for s in scn_mod.list_scenes():
+                matched = False
                 for entry in s.assets:
                     uri = entry.asset
                     segs = (
@@ -980,19 +1996,27 @@ class PipelineCatalog(Catalog):
                     )
                     mid = "/".join(segs[-2:]) if len(segs) >= 2 else ""
                     if mid == entity_suffix:
-                        path = (
-                            "/".join(s.uri.segments)
-                            if s.uri.segments
-                            else str(s.uri)
-                        )
-                        name = (
-                            s.uri.segments[-1]
-                            if s.uri.segments
-                            else path
-                        )
-                        cid = f"scene:{proj_name}:{path}"
-                        result.append((cid, name, "scene"))
+                        matched = True
                         break
+                if not matched and assigned_scene_uri is not None:
+                    try:
+                        if str(s.uri) == str(assigned_scene_uri):
+                            matched = True
+                    except Exception:
+                        pass
+                if matched:
+                    path = (
+                        "/".join(s.uri.segments)
+                        if s.uri.segments
+                        else str(s.uri)
+                    )
+                    name = (
+                        s.uri.segments[-1]
+                        if s.uri.segments
+                        else path
+                    )
+                    cid = f"scene:{proj_name}:{path}"
+                    result.append((cid, name, "scene"))
         except Exception:
             log.debug(
                 "Failed to query membership for %s",
@@ -1026,6 +2050,10 @@ class PipelineCatalog(Catalog):
                        count=_tag_count("type:asset")),
             Collection(id="type:shot", label="Shots", tag="type:shot", icon="clapperboard",
                        count=_tag_count("type:shot")),
+            Collection(id="type:group", label="Multis", tag="type:group", icon="group",
+                       count=sum(1 for _ in self._iter_group_collections())),
+            Collection(id="type:scene", label="Roots", tag="type:scene", icon="layers",
+                       count=sum(1 for _ in self._iter_scene_collections())),
         ]
         projects = list(self._registry.all())
         if len(projects) > 1:
@@ -1050,6 +2078,21 @@ class PipelineCatalog(Catalog):
         self, query: str = "", tags: frozenset[str] = frozenset(),
         cursor: str | None = None, page_size: int = 50,
     ) -> AssetPage:
+        # Container types (Groups / Scenes) take over the grid: the
+        # cards are synthesized from sidebar Collection data rather than
+        # the real asset/shot index. Drill-down (card click) clears the
+        # ``type:group`` / ``type:scene`` filter and replaces it with
+        # the container's own ``group:`` / ``scene:`` tag, which falls
+        # through to the normal member-filter branch below.
+        if "type:group" in tags:
+            return self._get_container_assets(
+                "group", query, tags, cursor, page_size,
+            )
+        if "type:scene" in tags:
+            return self._get_container_assets(
+                "scene", query, tags, cursor, page_size,
+            )
+
         # Begin a fresh discovery pass. Errors are accumulated on
         # ``self._discovery_errors`` and attached to the returned
         # AssetPage so the consumer can surface them in the UI.
@@ -1126,6 +2169,13 @@ class PipelineCatalog(Catalog):
     # ── Detail ────────────────────────────────────────────
 
     def get_detail(self, asset_id: str, version: str | None = None) -> AssetDetail:
+        # Container ids ("group:PROJECT:ctx/name", "scene:PROJECT:path")
+        # don't pass through the normal asset-id parser — route them to
+        # the dedicated container detail builder so the detail panel
+        # can render group/scene info (incl. the depts toggle).
+        if asset_id.startswith("group:") or asset_id.startswith("scene:"):
+            return self._get_container_detail(asset_id)
+
         # asset_id format: "PROJECT/CATEGORY/AssetName" or "PROJECT/SEQ/Shot".
         parsed = self._split_asset_id(asset_id)
         if parsed is None:
@@ -1409,11 +2459,84 @@ class PipelineCatalog(Catalog):
         if "type:shot" in asset.tags and self._shot_has_direct_scene_ref(asset_id):
             items.append(
                 (
-                    "Clear scene",
+                    "Clear Root",
                     lambda aid=asset_id: self._clear_shot_scene_ref(aid),
                 )
             )
+
+        # "Remove from <Multi/Root>" — one entry per container this
+        # asset belongs to. For Multis this is full member-list
+        # removal (a Multi's coverage is whole-asset, not per-dept).
+        # For Roots this removes the asset from the Root's asset list
+        # (shots use ``Clear Root`` above, which clears their
+        # ``scene_ref`` instead).
+        try:
+            memberships = self.get_asset_membership(asset_id)
+        except Exception:
+            memberships = []
+        if memberships:
+            for cid, label, kind in memberships:
+                if kind == "group":
+                    items.append((
+                        f"Remove from Multi: {label}",
+                        lambda aid=asset_id, c=cid:
+                            self._remove_member_from_group(aid, c),
+                    ))
+                elif kind == "scene":
+                    # Roots don't store shot membership in their
+                    # ``assets`` list (shots point at a Root via
+                    # ``scene_ref``), so this branch only fires for
+                    # asset cards. The unified removal path covers it.
+                    items.append((
+                        f"Remove from Root: {label}",
+                        lambda aid=asset_id, c=cid:
+                            self._remove_member_from_root(aid, c),
+                    ))
         return items
+
+    def _remove_member_from_root(
+        self, asset_id: str, collection_id: str,
+    ) -> None:
+        """Remove an asset from a Root's member list.
+
+        Wraps :meth:`remove_assets_from_collection` (the scene branch
+        prunes the Root's ``assets`` and re-writes the JSON; staging
+        is the user's manual ``Export Root USD`` action). Surfaces
+        status + refreshes the affected detail panels.
+        """
+        if not asset_id or not collection_id:
+            return
+        try:
+            removed, skipped, msg = self.remove_assets_from_collection(
+                collection_id, [asset_id],
+            )
+        except Exception:
+            log.exception(
+                "remove_assets_from_collection failed for %s / %s",
+                collection_id, asset_id,
+            )
+            return
+        if msg:
+            try:
+                import hou
+                hou.ui.setStatusMessage(
+                    msg, severity=hou.severityType.Message,
+                )
+            except Exception:
+                log.info("status: %s", msg)
+        if removed:
+            self._invalidate_membership_cache()
+            try:
+                self._request_global_detail_refresh()
+            except Exception:
+                pass
+            # Re-query the grid so the removed asset disappears from
+            # the current view immediately (otherwise the user sees a
+            # phantom card until the next refresh button click).
+            try:
+                self._request_global_grid_refresh()
+            except Exception:
+                pass
 
     def _asset_context(self, asset: Asset) -> str | None:
         """Return ``'shots'`` or ``'assets'`` for an asset card, or
@@ -1539,6 +2662,33 @@ class PipelineCatalog(Catalog):
         """
         dept = sub_card_key
         asset_id = asset.id
+
+        # Group container sub-cards: simpler menu — Open / Open
+        # Location / New: Template. "New: Current" is intentionally
+        # omitted for v1 since the active-scene-context resolver
+        # doesn't track group workfiles yet.
+        if asset_id.startswith("group:"):
+            return [
+                (
+                    "Open Latest",
+                    lambda aid=asset_id, dn=dept:
+                        self._open_group_workfile(aid, dn),
+                ),
+                (
+                    "Open Location",
+                    lambda aid=asset_id, dn=dept:
+                        self._open_group_dept_work_dir(aid, dn),
+                ),
+                ("__separator__", None),
+                (
+                    "New: Template",
+                    lambda aid=asset_id, dn=dept:
+                        self._new_group_from_template(
+                            aid, dn, self._request_global_detail_refresh,
+                        ),
+                ),
+            ]
+
         if self._uri_for_asset_id(asset_id) is None:
             return []
         versions = self._get_department_workfile_info(asset_id).get(dept, [])
@@ -1579,6 +2729,22 @@ class PipelineCatalog(Catalog):
                 "Open Location",
                 lambda aid=asset_id, dn=dept:
                     self._open_dept_work_dir(aid, dn),
+            ))
+
+        # "Remove from <group>" — visible only when this dept is
+        # currently covered by a group's workfile for this member.
+        # Removing the member from the group is global (affects every
+        # dept the group covers for this member), so the label is
+        # phrased as "Remove from <group>" rather than per-dept.
+        dept_groups = self._dept_groups_for_member(asset_id)
+        group_info = dept_groups.get(dept)
+        if group_info:
+            group_id, group_label = group_info
+            items.append(("__separator__", None))
+            items.append((
+                f"Remove from {group_label}",
+                lambda aid=asset_id, gid=group_id:
+                    self._remove_member_from_group(aid, gid),
             ))
 
         items.append(("__separator__", None))
@@ -1905,6 +3071,93 @@ class PipelineCatalog(Catalog):
         except Exception:
             log.exception("Failed to connect todo refresh hook")
 
+    def _request_global_grid_refresh(self) -> None:
+        """Ask every open asset browser to re-query the grid.
+
+        Used after operations that change membership / visibility of
+        the currently-filtered set (e.g. "Remove from Root" — the
+        removed asset shouldn't keep appearing in the Root's drill
+        view). Equivalent to the user clicking the refresh button.
+        """
+        try:
+            from PySide6.QtWidgets import QApplication
+            from asset_browser.ui.browser import AssetBrowserWidget
+            for w in QApplication.allWidgets():
+                if not isinstance(w, AssetBrowserWidget):
+                    continue
+                try:
+                    w._refresh()
+                except Exception:
+                    log.exception(
+                        "browser._refresh failed in global grid refresh",
+                    )
+        except Exception:
+            log.debug("Global grid refresh failed", exc_info=True)
+
+    def _request_card_refresh_for_id(self, asset_id: str) -> None:
+        """Rebuild ``asset_id``'s card and swap it in any open grid.
+
+        Used by create/edit actions on container (Multi/Root) cards
+        where the detail-panel-driven refresh path (``refresh_cb`` →
+        ``detail_refresh_requested`` → ``_on_quick_action_done``)
+        wouldn't fire because the current detail isn't this container.
+        """
+        import sys
+        try:
+            fresh = self.refresh_single_asset(asset_id)
+        except Exception:
+            log.debug(
+                "refresh_single_asset failed for %s", asset_id,
+                exc_info=True,
+            )
+            print(
+                f"[asset_browser] refresh_single_asset RAISED for "
+                f"{asset_id}",
+                file=sys.stderr,
+            )
+            return
+        if fresh is None:
+            print(
+                f"[asset_browser] refresh_single_asset -> None for "
+                f"{asset_id}",
+                file=sys.stderr,
+            )
+            return
+        print(
+            f"[asset_browser] _request_card_refresh_for_id {asset_id} "
+            f"fresh.metadata.dirty="
+            f"{fresh.metadata.get('dirty')!r}",
+            file=sys.stderr,
+        )
+        try:
+            from PySide6.QtWidgets import QApplication
+            from asset_browser.ui.browser import AssetBrowserWidget
+            swapped = 0
+            for w in QApplication.allWidgets():
+                if not isinstance(w, AssetBrowserWidget):
+                    continue
+                grid = getattr(w, "_grid", None)
+                if grid is None or not hasattr(grid, "update_card_asset"):
+                    continue
+                try:
+                    grid.update_card_asset(fresh)
+                    swapped += 1
+                except Exception:
+                    log.debug(
+                        "update_card_asset failed for %s", asset_id,
+                        exc_info=True,
+                    )
+            print(
+                f"[asset_browser] update_card_asset called on "
+                f"{swapped} browser(s) for {asset_id}",
+                file=sys.stderr,
+            )
+        except Exception:
+            log.debug(
+                "card refresh walk failed for %s", asset_id,
+                exc_info=True,
+            )
+
     def _request_global_detail_refresh(self) -> None:
         """Ask any open asset browser detail panels to re-fetch.
 
@@ -2107,6 +3360,40 @@ class PipelineCatalog(Catalog):
     def get_detail_sections(
         self, detail: AssetDetail,
     ) -> list[DetailSection] | None:
+        # Container details (Groups / Scenes) get a slim section list
+        # — no scene-actions row, no todos. Groups also get a
+        # Departments tab where the user can toggle which depts the
+        # group covers; scenes don't (no editable depts field).
+        kind = detail.metadata.get("kind")
+        if kind == "group":
+            return [
+                DetailSection(
+                    key="info",
+                    title="Info",
+                    icon="info",
+                    widget_factory=self._build_container_info_section,
+                ),
+                # Multis share the rich asset/shot Departments section
+                # so version dropdowns + meta rows render uniformly.
+                # The per-row coverage toggle is injected when
+                # ``is_multi`` is detected.
+                DetailSection(
+                    key="departments",
+                    title="Departments",
+                    icon="layers-3",
+                    widget_factory=self._build_combined_departments_section,
+                ),
+            ]
+        if kind == "scene":
+            return [
+                DetailSection(
+                    key="info",
+                    title="Info",
+                    icon="info",
+                    widget_factory=self._build_container_info_section,
+                ),
+            ]
+
         # Asset actions live at the TOP of the detail panel so their
         # placement is consistent across assets — the user always knows
         # where Save/Publish/Refresh are regardless of selection.
@@ -2338,12 +3625,191 @@ class PipelineCatalog(Catalog):
         except Exception:
             log.debug("clipboard copy failed", exc_info=True)
 
-    def _build_combined_departments_section(self, ctx: DetailContext):
-        """Departments tab content — Groups & Scenes membership pills
-        on top (a shot's scene-ref is conceptually the root layer of
-        its department stack), then the departments grid below.
+    def _build_container_info_section(self, ctx: DetailContext):
+        """Info tab content for a Group/Scene detail.
+
+        Shows identity (project / context / path) and member count.
+        For groups, the editable departments toggle lives on its own
+        Departments tab (see :meth:`_build_group_departments_section`).
         """
-        from PySide6.QtWidgets import QVBoxLayout, QWidget
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import (
+            QGridLayout,
+            QLabel,
+            QVBoxLayout,
+            QWidget,
+        )
+
+        detail = ctx.detail
+        meta = detail.metadata or {}
+        kind = meta.get("kind", "")
+        proj_name = meta.get("project", "")
+        path = meta.get("path", "")
+        member_count = int(meta.get("member_count") or 0)
+        ctx_label = meta.get("context", "")
+
+        holder = QWidget()
+        vbox = QVBoxLayout(holder)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(10)
+
+        # Identity grid — project / context / path / members
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(4)
+        row = 0
+
+        def _row(label: str, value: str) -> None:
+            nonlocal row
+            k = QLabel(label)
+            k.setStyleSheet("color: #888;")
+            v = QLabel(value)
+            v.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            grid.addWidget(k, row, 0, Qt.AlignTop)
+            grid.addWidget(v, row, 1)
+            row += 1
+
+        # Display label decouples from internal ``kind`` slug — the
+        # data model still calls these "groups", but the UI surfaces
+        # them as "Multi" since the term reads more concretely.
+        _KIND_DISPLAY = {"group": "Multi", "scene": "Root"}
+        if proj_name:
+            _row("Project", proj_name)
+        if kind:
+            _row("Type", _KIND_DISPLAY.get(kind, kind.capitalize()))
+        if ctx_label and kind == "group":
+            _row("Context", ctx_label.capitalize())
+        if path:
+            _row("Path", path)
+        unit = "asset" if kind == "scene" else "member"
+        _row("Members", f"{member_count} {unit}{'' if member_count == 1 else 's'}")
+
+        vbox.addLayout(grid)
+
+        # Per-dept "Open" buttons — groups only. The deck on the
+        # group card surfaces the same actions, but the buttons here
+        # are more discoverable for users who haven't found the deck
+        # expand affordance yet.
+        group_depts = list(meta.get("departments") or ())
+        if kind == "group" and group_depts:
+            from PySide6.QtWidgets import (
+                QHBoxLayout,
+                QLabel,
+                QPushButton,
+            )
+            heading = QLabel("Work scenes")
+            heading.setStyleSheet("color: #aaa; font-weight: bold;")
+            vbox.addWidget(heading)
+            btn_row = QHBoxLayout()
+            btn_row.setSpacing(6)
+            for dept_name in group_depts:
+                short = _DEPT_SHORT_NAMES.get(
+                    dept_name, dept_name.title(),
+                )
+                btn = QPushButton(f"Open {short}")
+                btn.setToolTip(
+                    f"Open the latest {dept_name} workfile for this Multi",
+                )
+                btn.clicked.connect(
+                    lambda checked=False, d=dept_name:
+                        self.execute_action(
+                            f"open_workfile:{d}", detail,
+                        )
+                )
+                btn_row.addWidget(btn)
+            btn_row.addStretch(1)
+            vbox.addLayout(btn_row)
+
+        vbox.addStretch(1)
+        return holder
+
+    def _build_group_departments_section(self, ctx: DetailContext):
+        """Departments tab content for a Group detail.
+
+        Inline checkbox list mirroring the dialog-based Edit flow's
+        ``departments`` multi-select. Commits via :meth:`edit_collection`.
+        """
+        from PySide6.QtWidgets import (
+            QCheckBox,
+            QHBoxLayout,
+            QLabel,
+            QPushButton,
+            QVBoxLayout,
+            QWidget,
+        )
+
+        detail = ctx.detail
+        meta = detail.metadata or {}
+        depts_current = list(meta.get("departments") or ())
+        known_depts = list(meta.get("known_departments") or ())
+
+        holder = QWidget()
+        vbox = QVBoxLayout(holder)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(8)
+
+        if not known_depts:
+            empty = QLabel("(no departments defined for this context)")
+            empty.setStyleSheet("color: #666;")
+            vbox.addWidget(empty)
+            vbox.addStretch(1)
+            return holder
+
+        boxes_holder = QWidget()
+        boxes_lyt = QVBoxLayout(boxes_holder)
+        boxes_lyt.setContentsMargins(0, 0, 0, 0)
+        boxes_lyt.setSpacing(2)
+        current_set = {str(d) for d in depts_current}
+        boxes: list[QCheckBox] = []
+        for d in known_depts:
+            cb = QCheckBox(d)
+            cb.setChecked(d in current_set)
+            boxes_lyt.addWidget(cb)
+            boxes.append(cb)
+        vbox.addWidget(boxes_holder)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        apply_btn = QPushButton("Apply")
+        btn_row.addWidget(apply_btn)
+        vbox.addLayout(btn_row)
+
+        cid = detail.id  # container id == tag
+
+        def _apply() -> None:
+            selected = tuple(
+                cb.text() for cb in boxes if cb.isChecked()
+            )
+            try:
+                ok = bool(self.edit_collection(
+                    cid, {"departments": selected},
+                ))
+            except Exception:
+                log.exception("edit_collection failed for %s", cid)
+                ok = False
+            if ok and ctx.refresh_detail is not None:
+                try:
+                    ctx.refresh_detail()
+                except Exception:
+                    log.exception("refresh_detail failed")
+
+        apply_btn.clicked.connect(_apply)
+        vbox.addStretch(1)
+        return holder
+
+    def _build_combined_departments_section(self, ctx: DetailContext):
+        """Departments tab content — Multi / Root membership pills on
+        top (a shot's Root-ref is conceptually the root layer of its
+        department stack), then the departments grid below.
+
+        Wrapped defensively: if either sub-builder throws, we still
+        return a non-empty widget so the detail panel keeps the
+        Departments tab visible. The actual exception goes to the log
+        and is surfaced inline so the user knows to check the Python
+        Shell for the traceback.
+        """
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
         holder = QWidget()
         vbox = QVBoxLayout(holder)
@@ -2353,13 +3819,55 @@ class PipelineCatalog(Catalog):
         try:
             mem_w = self._build_membership_section(ctx)
         except Exception:
+            log.exception("Membership section build failed")
             mem_w = None
         if mem_w is not None:
             vbox.addWidget(mem_w)
 
-        depts_w = self._build_departments_section(ctx)
+        depts_err: str = ""
+        try:
+            depts_w = self._build_departments_section(ctx)
+        except Exception:
+            import sys
+            import traceback
+            depts_err = traceback.format_exc()
+            log.exception(
+                "Departments section build failed for %s", ctx.detail.id,
+            )
+            # Houdini's default log handler can swallow log.exception
+            # output; print to stderr too so the traceback always
+            # surfaces in the Python Shell while we debug this.
+            try:
+                print(
+                    f"[asset_browser] Departments section build "
+                    f"failed for {ctx.detail.id}:\n{depts_err}",
+                    file=sys.stderr,
+                )
+            except Exception:
+                pass
+            depts_w = None
         if depts_w is not None:
             vbox.addWidget(depts_w)
+        else:
+            err = QLabel(
+                "(failed to load departments — see Python Shell for traceback)"
+            )
+            err.setStyleSheet("color: #f06060;")
+            err.setWordWrap(True)
+            vbox.addWidget(err)
+            # Inline traceback so the user has SOMETHING to read even
+            # if the shell handler is silent. Truncated to keep the
+            # panel scrollable on terse error messages.
+            if depts_err:
+                tb_lbl = QLabel(depts_err[-1500:])
+                tb_lbl.setStyleSheet(
+                    "color: #f0a0a0; font-family: monospace; font-size: 10px;"
+                )
+                tb_lbl.setWordWrap(True)
+                tb_lbl.setTextInteractionFlags(
+                    Qt.TextSelectableByMouse,
+                )
+                vbox.addWidget(tb_lbl)
 
         vbox.addStretch(1)
         return holder
@@ -2403,7 +3911,7 @@ class PipelineCatalog(Catalog):
         scene_label, inherited = self._shot_scene_label(ctx.detail.id)
         if scene_label:
             suffix = " (inherited)" if inherited else ""
-            rows.append(("Scene", f"{scene_label}{suffix}"))
+            rows.append(("Root", f"{scene_label}{suffix}"))
         return self._build_info_table(rows)
 
     def _shot_scene_label(self, asset_id: str) -> tuple[str, bool]:
@@ -2512,10 +4020,10 @@ class PipelineCatalog(Catalog):
             f"padding: 2px 8px;"
         )
         for _cid, label, kind in memberships:
-            prefix = "G" if kind == "group" else "S"
+            prefix = "M" if kind == "group" else "R"
             pill = QLabel(f"{prefix}  {label}")
             pill.setStyleSheet(pill_style)
-            pill.setToolTip(f"{'Group' if kind == 'group' else 'Scene'}: {label}")
+            pill.setToolTip(f"{'Multi' if kind == 'group' else 'Root'}: {label}")
             flow.addWidget(pill)
         flow.addStretch(1)
         lay.addLayout(flow)
@@ -2678,9 +4186,19 @@ class PipelineCatalog(Catalog):
         # the per-row stylesheet can include the same chevron without
         # depending on QSS rule-merge semantics (which silently drop the
         # chevron's ``image`` property on some Qt builds when a separate
-        # rule for ``QComboBox::down-arrow`` is concatenated).
+        # rule for ``QComboBox::down-arrow`` is concatenated). The
+        # helper is private to tumbletrove and has been removed/renamed
+        # in newer releases — fall back to ``None`` (the row stylesheet
+        # already handles that gracefully via ``image: none``).
         from asset_browser.core import theme as _theme_mod
-        _arrow_url = _theme_mod._render_combo_arrow_png(TEXT_SECONDARY)
+        _render_chevron = getattr(
+            _theme_mod, "_render_combo_arrow_png", None,
+        )
+        _arrow_url = (
+            _render_chevron(TEXT_SECONDARY)
+            if callable(_render_chevron)
+            else None
+        )
 
         # Reusable QFont matching the QSS-applied combo font. Needed because
         # ``QWidget.font()``/``fontMetrics()`` don't reflect stylesheet-set
@@ -2894,13 +4412,28 @@ class PipelineCatalog(Catalog):
         asset_id = ctx.detail.id
         dept_info: dict = (ctx.detail.metadata or {}).get("departments", {})
         is_shot = "type:shot" in ctx.detail.tags
-        ent_ctx = "shots" if is_shot else "assets"
+        is_multi = "type:group" in ctx.detail.tags
+        # Multis carry their context (``shots`` / ``assets``) on the
+        # detail metadata; uncovered depts still render as "missing"
+        # rows so the user can toggle them on.
+        if is_multi:
+            ent_ctx = (
+                (ctx.detail.metadata or {}).get("context") or "shots"
+            )
+        else:
+            ent_ctx = "shots" if is_shot else "assets"
         all_depts = self._list_entity_departments(ent_ctx)
         dept_shorts = self._list_entity_dept_shorts(ent_ctx)
         overrides = self._dept_version_overrides.get(asset_id, {})
         scene_dv = self._get_scene_dept_version(asset_id)
         active_dept = scene_dv[0] if scene_dv else None
         active_version = scene_dv[1] if scene_dv else None
+        # Coverage toggle state for Multis: depts the user has flagged
+        # this Multi to override. Uncovered depts render as missing
+        # rows with an unchecked toggle.
+        covered_set: set[str] = set(
+            (ctx.detail.metadata or {}).get("covered_departments", [])
+        ) if is_multi else set()
 
         w, lay = make_section_box()
 
@@ -2962,6 +4495,25 @@ class PipelineCatalog(Catalog):
             row_layout = QHBoxLayout(row_frame)
             row_layout.setContentsMargins(scaled(4), scaled(2), scaled(4), scaled(2))
             row_layout.setSpacing(scaled(8))
+
+            # Multi-only column: per-dept override toggle. Checked
+            # means the Multi covers this dept (its workfile takes
+            # precedence over individual member workfiles); unchecked
+            # means the dept falls through to per-member workfiles.
+            if is_multi:
+                from PySide6.QtWidgets import QCheckBox
+                toggle = QCheckBox()
+                toggle.setChecked(dept_name in covered_set)
+                toggle.setToolTip(
+                    f"Override {dept_name} for all members of this Multi"
+                )
+                toggle.toggled.connect(
+                    lambda checked, gid=asset_id, dn=dept_name:
+                        self._toggle_group_dept_coverage(
+                            gid, dn, bool(checked),
+                        )
+                )
+                row_layout.addWidget(toggle)
 
             # Col 0: dept name (full → short → ellided as the column shrinks)
             name_lbl = _DeptNameLabel()
@@ -4471,26 +6023,29 @@ class PipelineCatalog(Catalog):
             )
         return raw
 
-    def _attach_network_thumbnail(self, detail, raw_node, drop) -> None:
+    def attach_network_thumbnail(self, asset_id, raw_node, drop) -> None:
         """Attach the asset/shot's ``thumbnail.png`` sidecar as a
-        ``hou.NetworkImage`` next to the freshly-created import node.
+        ``hou.NetworkImage`` next to the given import node.
 
-        No-op when the sidecar isn't on disk or the drop didn't land on
-        a network editor (e.g. dropped onto a scene viewer).
+        Public so the asset browser host can call it for non-catalog-
+        owned drops too (e.g. ``import_layer`` nodes created by the
+        sub-card drop path). No-op when the sidecar isn't on disk or
+        the drop didn't land on a network editor.
         """
+        import hou
         try:
-            thumb = self._thumbnail_path(detail.id)
+            thumb = self._thumbnail_path(asset_id)
             if thumb is None:
                 log.debug(
                     "network thumbnail: no path resolvable for %s",
-                    detail.id,
+                    asset_id,
                 )
                 return
             if not thumb.exists():
                 log.debug(
                     "network thumbnail: sidecar missing on disk for %s "
                     "(expected at %s)",
-                    detail.id, thumb,
+                    asset_id, thumb,
                 )
                 return
             from tumblepipe.pipe.houdini import network_thumbnail
@@ -4506,7 +6061,7 @@ class PipelineCatalog(Catalog):
             network_thumbnail.attach(raw_node, thumb, editor=editor)
         except Exception:
             log.exception(
-                "Failed to attach network thumbnail for %s", detail.id,
+                "Failed to attach network thumbnail for %s", asset_id,
             )
 
     def on_drop(self, detail, drop) -> bool:
@@ -4517,11 +6072,19 @@ class PipelineCatalog(Catalog):
 
         Asset → ``th::import_asset::1.0`` with the entity URI.
         Shot  → ``th::import_shot::1.0``  with the entity URI.
+        Root  → stock ``sublayer`` LOP referencing the Root's USD
+                via the ``entity:/scenes/...`` URI so the asset
+                resolver maps to the latest exported version.
         If the drop lands on an existing ``th::import_assets::2.0``
         node, the asset is appended as a new multiparm entry instead
         of creating a new node.
         """
         import hou
+
+        # Roots (scenes) drop as a sublayer node — they aren't asset/
+        # shot entities, so they bypass the import_* HDA path.
+        if detail.metadata.get("kind") == "scene":
+            return self._drop_root_as_sublayer(detail, drop)
 
         if drop.context != "lop" or not drop.network:
             hou.ui.setStatusMessage(
@@ -4593,7 +6156,7 @@ class PipelineCatalog(Catalog):
                 raw = None
             if raw is not None:
                 raw.setSelected(True, clear_all_selected=True)
-                self._attach_network_thumbnail(detail, raw, drop)
+                self.attach_network_thumbnail(detail.id, raw, drop)
                 hou.ui.setStatusMessage(
                     f"Combined {detail.name} into {raw.name()}",
                     severity=hou.severityType.Message,
@@ -4630,7 +6193,7 @@ class PipelineCatalog(Catalog):
                 raw.setRenderFlag(True)
             except AttributeError:
                 pass
-            self._attach_network_thumbnail(detail, raw, drop)
+            self.attach_network_thumbnail(detail.id, raw, drop)
         except Exception:
             log.exception("Failed to drop %s", detail.id)
             hou.ui.setStatusMessage(
@@ -4641,6 +6204,91 @@ class PipelineCatalog(Catalog):
 
         hou.ui.setStatusMessage(
             f"Imported {detail.name}", severity=hou.severityType.Message,
+        )
+        return True
+
+    def _drop_root_as_sublayer(self, detail, drop) -> bool:
+        """Drop a Root card into a LOP network as a stock ``sublayer``
+        node pointing at the Root's ``entity:/scenes/...`` URI.
+
+        The asset resolver maps that URI to the latest exported
+        scene USD at evaluation time, so the sublayer stays in sync
+        with re-exports automatically. Returns ``True`` always
+        (drop is considered handled even on failure — failures emit
+        a status message rather than fall through to a fallback
+        menu).
+        """
+        import hou
+
+        if drop.context != "lop" or not drop.network:
+            hou.ui.setStatusMessage(
+                "Roots can only be sublayered into LOP networks",
+                severity=hou.severityType.Warning,
+            )
+            return True
+
+        parsed = self._parse_collection_id(detail.id)
+        if parsed is None or parsed[0] != "scene":
+            return True
+        _, proj_name, path = parsed
+
+        proj = self._registry.get(proj_name)
+        if proj is not None:
+            try:
+                self._activate_project(proj)
+            except Exception:
+                log.exception(
+                    "activate_project failed for Root drop %s", detail.id,
+                )
+
+        try:
+            from tumblepipe.pipe.usd import generate_scene_sublayer_uri
+            scene_uri = self._scene_uri(path)
+            layer_uri = generate_scene_sublayer_uri(scene_uri)
+        except Exception:
+            log.exception(
+                "Failed to build sublayer URI for Root %s", detail.id,
+            )
+            hou.ui.setStatusMessage(
+                f"Failed to sublayer Root {detail.name}",
+                severity=hou.severityType.Warning,
+            )
+            return True
+
+        network = drop.network
+        name = (detail.name or "root").replace(" ", "_")
+        try:
+            node = network.createNode("sublayer", name)
+            # ``num_files`` controls the multiparm count for layer
+            # paths; defaults to 1 on a fresh node but set explicitly
+            # in case of future schema changes.
+            try:
+                node.parm("num_files").set(1)
+            except Exception:
+                pass
+            node.parm("filepath1").set(layer_uri)
+            if drop.position is not None:
+                node.setPosition(drop.position - hou.Vector2(0.5, 0.0))
+            else:
+                node.moveToGoodPosition()
+            node.setSelected(True, clear_all_selected=True)
+            try:
+                node.setDisplayFlag(True)
+            except AttributeError:
+                pass
+        except Exception:
+            log.exception(
+                "Failed to create sublayer for Root %s", detail.id,
+            )
+            hou.ui.setStatusMessage(
+                f"Failed to import Root {detail.name}",
+                severity=hou.severityType.Warning,
+            )
+            return True
+
+        hou.ui.setStatusMessage(
+            f"Sublayered Root: {detail.name}",
+            severity=hou.severityType.Message,
         )
         return True
 
@@ -4787,8 +6435,8 @@ class PipelineCatalog(Catalog):
             opts.append(CreationOption("new_asset", "New Asset...", "plus"))
         if has_shot or not has_asset:
             opts.append(CreationOption("new_shot", "New Shot...", "plus"))
-        opts.append(CreationOption("new_group", "New Group...", "users"))
-        opts.append(CreationOption("new_scene", "New Scene...", "layers"))
+        opts.append(CreationOption("new_group", "New Multi...", "users"))
+        opts.append(CreationOption("new_scene", "New Root...", "layers"))
         return opts
 
     def _resolve_project_from_tags(self, tags):
@@ -4981,17 +6629,17 @@ class PipelineCatalog(Catalog):
                 existing = grp_mod.get_group(group_uri)
                 if existing is not None:
                     hou.ui.displayMessage(
-                        f"Group '{name}' already exists in {context}."
+                        f"Multi '{name}' already exists in {context}."
                     )
                     return None
                 grp_mod.add_group(context, name, [], [])
                 hou.ui.setStatusMessage(
-                    f"Created group: {name} ({context})",
+                    f"Created Multi: {name} ({context})",
                     severity=hou.severityType.Message,
                 )
             except Exception:
                 log.exception("Failed to create group %s", name)
-                hou.ui.displayMessage(f"Failed to create group: {name}")
+                hou.ui.displayMessage(f"Failed to create Multi: {name}")
                 return None
             return None  # Groups aren't assets — no card to select
 
@@ -5002,17 +6650,17 @@ class PipelineCatalog(Catalog):
                 existing = scn_mod.get_scene(scene_uri)
                 if existing is not None:
                     hou.ui.displayMessage(
-                        f"Scene '{name}' already exists."
+                        f"Root '{name}' already exists."
                     )
                     return None
                 scn_mod.add_scene(name)
                 hou.ui.setStatusMessage(
-                    f"Created scene: {name}",
+                    f"Created Root: {name}",
                     severity=hou.severityType.Message,
                 )
             except Exception:
                 log.exception("Failed to create scene %s", name)
-                hou.ui.displayMessage(f"Failed to create scene: {name}")
+                hou.ui.displayMessage(f"Failed to create Root: {name}")
                 return None
             return None  # Scenes aren't assets — no card to select
 
@@ -5223,6 +6871,7 @@ class PipelineCatalog(Catalog):
         ctx = path.split("/", 1)[0] if "/" in path else "assets"
         try:
             known_depts = tuple(
+                d.name for d in
                 dept_mod.list_departments(ctx, include_generated=False)
             )
         except Exception:
@@ -5282,12 +6931,25 @@ class PipelineCatalog(Catalog):
             except Exception:
                 log.exception("remove_department failed: %s", d)
         if changed:
-            self.invalidate_cache()
+            self._invalidate_membership_cache()
+            # Multi card needs to reflect added/removed depts on its
+            # deck. The collection id IS the card's drill tag, so we
+            # can refresh the card directly.
+            try:
+                self._request_card_refresh_for_id(collection_id)
+            except Exception:
+                log.exception(
+                    "card refresh failed after edit_collection %s",
+                    collection_id,
+                )
         return True
 
     def add_assets_to_collection(
         self, collection_id: str, asset_ids: list[str],
     ) -> tuple[int, int, str]:
+        import sys
+        import time
+        t_total = time.perf_counter()
         parsed = self._parse_collection_id(collection_id)
         if parsed is None:
             return (0, 0, "")
@@ -5295,10 +6957,17 @@ class PipelineCatalog(Catalog):
         proj = self._registry.get(proj_name)
         if proj is None:
             return (0, 0, "")
+        t_act = time.perf_counter()
         try:
             self._activate_project(proj)
         except Exception:
             return (0, 0, "")
+        print(
+            f"[asset_browser] add_assets_to_collection({collection_id}, "
+            f"{len(asset_ids)}): _activate_project "
+            f"{(time.perf_counter() - t_act) * 1000:.0f}ms",
+            file=sys.stderr,
+        )
         added = 0
         skipped = 0
         skip_reasons: set[str] = set()
@@ -5340,15 +7009,27 @@ class PipelineCatalog(Catalog):
             except Exception:
                 return (0, 0, "")
             scene_uri = self._scene_uri(path)
+            t_get = time.perf_counter()
             try:
                 scene = scn_mod.get_scene(scene_uri)
             except Exception:
                 log.exception("get_scene failed")
                 return (0, 0, "")
+            print(
+                f"[asset_browser]   get_scene "
+                f"{(time.perf_counter() - t_get) * 1000:.0f}ms",
+                file=sys.stderr,
+            )
             if scene is None:
                 return (0, 0, "")
-            shot_ref_changed = False
+            shot_ref_changed_uris: list = []
             existing = list(getattr(scene, "assets", ()))
+            # ``AssetEntry.asset`` is typed as ``str`` (URI string); the
+            # tumblepipe JSON layer doesn't serialise raw ``Uri`` objects,
+            # so passing one in silently produced unreadable entries
+            # that vanished on the next ``get_scene`` (bug observed:
+            # "Root members disappear after restart"). Force ``str(uri)``
+            # for every comparison and AssetEntry write below.
             existing_uris = {
                 str(getattr(e, "asset", getattr(e, "uri", e)))
                 for e in existing
@@ -5361,55 +7042,82 @@ class PipelineCatalog(Catalog):
                     skip_reasons.add("unknown asset")
                     continue
                 uri_str = str(uri)
-                # Shots dropped on a scene set the shot's scene_ref
-                # (the shot "uses" this scene as its root-layer source).
+                # Shots dropped on a Root set the shot's scene_ref
+                # (the shot "uses" this Root as its root-layer source).
                 if uri_str.startswith("entity:/shots/"):
+                    t_ref = time.perf_counter()
                     try:
                         scene_mod.set_scene_ref(uri, scene_uri)
                         added += 1
-                        shot_ref_changed = True
+                        shot_ref_changed_uris.append(uri)
                     except Exception:
                         log.exception("set_scene_ref failed for %s", aid)
                         skipped += 1
                         skip_reasons.add("set_scene_ref failed")
+                    print(
+                        f"[asset_browser]   set_scene_ref({aid}) "
+                        f"{(time.perf_counter() - t_ref) * 1000:.0f}ms",
+                        file=sys.stderr,
+                    )
                     continue
                 if not uri_str.startswith("entity:/assets/"):
                     skipped += 1
-                    skip_reasons.add("scene accepts assets or shots")
+                    skip_reasons.add("Root accepts assets or shots")
                     continue
                 if uri_str in existing_uris:
                     skipped += 1
-                    skip_reasons.add("already in scene")
+                    skip_reasons.add("already in Root")
                     continue
                 existing_uris.add(uri_str)
                 try:
                     AssetEntry = scn_mod.AssetEntry  # type: ignore[attr-defined]
                     new_entries.append(
-                        AssetEntry(asset=uri, instances=1)
+                        AssetEntry(asset=uri_str, instances=1)
                     )
                     added += 1
                 except Exception:
                     log.exception("AssetEntry create failed")
                     skipped += 1
                     skip_reasons.add("entry create failed")
-            if shot_ref_changed:
-                # Shot detail panels show the assigned scene — refresh
+            if shot_ref_changed_uris:
+                # Shot detail panels show the assigned Root — refresh
                 # so the user sees the change without re-selecting.
                 try:
                     self._request_global_detail_refresh()
                 except Exception:
                     pass
-            if new_entries != list(existing):
+            assets_changed = new_entries != list(existing)
+            if assets_changed:
+                t_set = time.perf_counter()
                 try:
                     scn_mod.set_scene_assets(scene_uri, new_entries)
                 except Exception:
                     log.exception("set_scene_assets failed")
                     return (0, len(asset_ids), "set_scene_assets failed")
+                print(
+                    f"[asset_browser]   set_scene_assets "
+                    f"({len(new_entries)} entries) "
+                    f"{(time.perf_counter() - t_set) * 1000:.0f}ms",
+                    file=sys.stderr,
+                )
+            # Staging the Root (export_scene_version,
+            # generate_root_version, build) used to happen here
+            # automatically, but heavy USD operations on every
+            # drag-drop turned out to be too punishing. They're now
+            # explicit context-menu actions on the Root card (see
+            # ``_export_root_usd``). The membership write above
+            # still happens unconditionally so data is never lost.
         else:
             return (0, 0, "")
 
         if added:
-            self.invalidate_cache()
+            self._invalidate_membership_cache()
+        print(
+            f"[asset_browser] add_assets_to_collection TOTAL "
+            f"{(time.perf_counter() - t_total) * 1000:.0f}ms "
+            f"(added={added}, skipped={skipped})",
+            file=sys.stderr,
+        )
         total = added + skipped
         if skipped and added:
             msg = f"Added {added} of {total} — {skipped} skipped ({', '.join(sorted(skip_reasons))})"
@@ -5455,6 +7163,7 @@ class PipelineCatalog(Catalog):
         elif kind == "scene":
             try:
                 from tumblepipe.config import scenes as scn_mod
+                from tumblepipe.config import scene as scene_mod
             except Exception:
                 return (0, 0, "")
             scene_uri = self._scene_uri(path)
@@ -5465,11 +7174,36 @@ class PipelineCatalog(Catalog):
                 return (0, 0, "")
             if scene is None:
                 return (0, 0, "")
-            drop_set = set()
+            drop_set: set[str] = set()
+            shot_uris_to_clear: list = []
             for aid in asset_ids:
                 uri = self._uri_for_asset_id(aid)
-                if uri is not None:
-                    drop_set.add(str(uri))
+                if uri is None:
+                    continue
+                uri_str = str(uri)
+                # Shots: membership is via ``scene_ref`` on the shot,
+                # not via the Root's ``assets`` list. Clear the ref
+                # (if it points at this Root) to "remove" the shot.
+                if uri_str.startswith("entity:/shots/"):
+                    shot_uris_to_clear.append(uri)
+                else:
+                    drop_set.add(uri_str)
+            for shot_uri in shot_uris_to_clear:
+                try:
+                    current_ref = scene_mod.get_scene_ref(shot_uri)
+                    if (
+                        current_ref is not None
+                        and str(current_ref) == str(scene_uri)
+                    ):
+                        scene_mod.set_scene_ref(shot_uri, None)
+                        removed += 1
+                    else:
+                        skipped += 1
+                except Exception:
+                    log.exception(
+                        "set_scene_ref(None) failed for %s", shot_uri,
+                    )
+                    skipped += 1
             kept: list = []
             for entry in getattr(scene, "assets", ()):
                 entry_uri = str(
@@ -5479,14 +7213,29 @@ class PipelineCatalog(Catalog):
                     removed += 1
                 else:
                     kept.append(entry)
-            if removed:
+            asset_list_changed = (
+                drop_set
+                and len(kept) != len(list(getattr(scene, "assets", ())))
+            )
+            if asset_list_changed:
                 try:
                     scn_mod.set_scene_assets(scene_uri, kept)
                 except Exception:
                     log.exception("set_scene_assets failed")
                     return (0, len(asset_ids), "set_scene_assets failed")
+                # Staging (export_scene_version) is a manual context-
+                # menu action on the Root card; see ``_export_root_usd``.
+                # We keep the membership write strictly automatic so
+                # users never lose data.
+            if shot_uris_to_clear:
+                # Shot detail panels show the assigned Root — refresh
+                # so the user sees the change without re-selecting.
+                try:
+                    self._request_global_detail_refresh()
+                except Exception:
+                    pass
         if removed:
-            self.invalidate_cache()
+            self._invalidate_membership_cache()
         if removed and skipped:
             msg = f"Removed {removed}, skipped {skipped}"
         elif skipped:
@@ -5555,11 +7304,65 @@ class PipelineCatalog(Catalog):
 
         elif action_id.startswith("open_workfile:"):
             dept = action_id.split(":", 1)[1]
-            self._open_workfile(detail.id if detail else "", dept)
+            target_id = detail.id if detail else ""
+            if target_id.startswith("group:"):
+                self._open_group_workfile(target_id, dept)
+            else:
+                self._open_workfile(target_id, dept)
 
     # ── Sub-cards (departments) ───────────────────────────
 
     def get_sub_cards(self, asset: Asset) -> list[SubCard]:
+        # Group container cards: one sub-card per dept the group
+        # covers. "missing" status (no action_id) for covered depts
+        # that don't have a workfile yet — right-click → "New:
+        # Template" creates one. Active-version tracking against the
+        # currently-loaded scene is deferred (groups don't have a
+        # ``_get_scene_dept_version`` equivalent yet).
+        if "type:group" in asset.tags:
+            depts_dict = asset.metadata.get("departments") or {}
+            # ``departments`` is a dict[str, str] on group cards
+            # ({dept: latest_version or ""}). Older code paths may
+            # still produce a list — handle both shapes so a stale
+            # synthesizer doesn't crash the deck.
+            if isinstance(depts_dict, dict):
+                covered = list(depts_dict.keys())
+            else:
+                covered = list(depts_dict)
+                depts_dict = {d: "" for d in covered}
+            ctx = (
+                asset.metadata.get("context")
+                or self._group_context_from_tag(asset.id)
+                or "shots"
+            )
+            canonical = self._list_entity_departments(ctx)
+            order = {name: i for i, name in enumerate(canonical)}
+            sorted_depts = sorted(
+                covered,
+                key=lambda n: (order.get(n, len(order)), n),
+            )
+            cards: list[SubCard] = []
+            for dept_name in sorted_depts:
+                short = _DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
+                latest = depts_dict.get(dept_name) or ""
+                if latest:
+                    cards.append(SubCard(
+                        key=dept_name,
+                        label=short,
+                        status="available",
+                        detail=latest,
+                        icon=_DEPT_ICONS.get(dept_name, "package"),
+                        action_id=f"open_workfile:{dept_name}",
+                    ))
+                else:
+                    cards.append(SubCard(
+                        key=dept_name,
+                        label=short,
+                        status="missing",
+                        icon=_DEPT_ICONS.get(dept_name, "package"),
+                    ))
+            return cards
+
         depts = asset.metadata.get("departments", {})
 
         cards = []
@@ -5571,6 +7374,14 @@ class PipelineCatalog(Catalog):
         scene_dv = self._get_scene_dept_version(asset.id)
         active_dept = scene_dv[0] if scene_dv else None
 
+        # Group coverage: depts where this member's workfile is
+        # superseded by a group's multi-shot workfile. The sub-card
+        # detail line shows "ⓖ GroupLabel" instead of a version, and
+        # the click action route through ``open_workfile:<dept>`` —
+        # which now resolves via ``latest_hip_file_path_with_context``
+        # and lands on the group's hip automatically.
+        dept_groups = self._dept_groups_for_member(asset.id)
+
         def _icon_for(dept: str) -> str:
             if is_shot and dept in _SHOT_DEPT_ICONS:
                 return _SHOT_DEPT_ICONS[dept]
@@ -5579,7 +7390,30 @@ class PipelineCatalog(Catalog):
         for dept_name in all_depts:
             short = _DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
             version = depts.get(dept_name)
-            if version:
+            group_info = dept_groups.get(dept_name)
+            if group_info:
+                _group_id, group_label = group_info
+                status = (
+                    "active" if dept_name == active_dept else "available"
+                )
+                # Detail text stays short — sub-cards are narrow, so a
+                # long group name overflows. The tint (border + icon)
+                # signals "covered by a group"; the tooltip carries
+                # the full group name for hover discovery.
+                cards.append(SubCard(
+                    key=dept_name,
+                    label=short,
+                    status=status,
+                    detail="ⓜ",
+                    icon=_icon_for(dept_name),
+                    action_id=f"open_workfile:{dept_name}",
+                    tint=_GROUP_ACCENT_COLOR,
+                    tooltip=(
+                        f"{short} — covered by Multi: {group_label}\n"
+                        "Click to open the Multi's workfile"
+                    ),
+                ))
+            elif version:
                 status = (
                     "active" if dept_name == active_dept else "available"
                 )
@@ -5633,14 +7467,29 @@ class PipelineCatalog(Catalog):
         """Drop discovered asset/shot caches; next query re-fetches."""
         self._cached_assets = None
         self._cached_shots = None
+        self._member_groups_cache = None
+
+    def _invalidate_membership_cache(self) -> None:
+        """Drop only the member-coverage cache.
+
+        Membership changes don't alter ``_cached_assets`` /
+        ``_cached_shots`` — those enumerate which entities *exist*, not
+        who they belong to. Skipping their bust spares a costly
+        filesystem rediscovery pass on the next sidebar / grid query
+        (which dominates the perceived latency of add/remove ops).
+        """
+        self._member_groups_cache = None
 
     def _reset_project_clients(self) -> None:
         """Drop per-project API client state (Shift+Click full reset).
 
         Wipes both READY clients and any FAILED slots, so subsequent
-        browses retry from scratch.
+        browses retry from scratch. Also clears the activation guard
+        so the next ``_activate_project`` rebuilds the tumblehead
+        Client even when called with the previously-active project.
         """
         self._client_slots.clear()
+        self._active_project_path = ""
         self.invalidate_cache()
 
     # ── Internal helpers ──────────────────────────────────
@@ -5765,6 +7614,13 @@ class PipelineCatalog(Catalog):
         Used for lightweight card refresh after save/create without
         rebuilding the entire grid.
         """
+        # Container ids (groups/scenes) go through a separate rebuild
+        # path — they're synthesised, not discovered from list_entities.
+        if asset_id.startswith("group:"):
+            return self._refresh_group_asset(asset_id)
+        if asset_id.startswith("scene:"):
+            return self._refresh_scene_asset(asset_id)
+
         parts = self._split_asset_id(asset_id)
         if parts is None:
             return None
@@ -5806,6 +7662,104 @@ class PipelineCatalog(Catalog):
                     asset_id, depts,
                 ),
             },
+            catalog_id=self.id,
+        )
+
+    def _refresh_group_asset(self, group_id: str):
+        """Rebuild a Multi container Asset (post-create / -edit).
+
+        Re-fetches the group's departments and the latest workfile
+        version per dept so the deck-popup sub-cards switch from
+        "missing" to "available" without a hard grid refresh.
+        """
+        try:
+            _, rest = group_id.split(":", 1)
+            proj_name, path = rest.split(":", 1)
+        except ValueError:
+            return None
+        proj = self._registry.get(proj_name)
+        if proj is None or not self._is_ready(proj_name):
+            return None
+        try:
+            self._activate_project(proj)
+            from tumblepipe.config import groups as grp_mod
+        except Exception:
+            log.debug("group refresh imports failed", exc_info=True)
+            return None
+        try:
+            grp = grp_mod.get_group(self._group_uri(path))
+        except Exception:
+            log.debug("get_group failed for %s", group_id, exc_info=True)
+            return None
+        if grp is None:
+            return None
+
+        ctx_seg = path.split("/", 1)[0] if "/" in path else "assets"
+        label = path.rsplit("/", 1)[-1] if path else group_id
+        members = list(getattr(grp, "members", ()))
+        # Drop the cached coverage so other shots/assets pick up
+        # member-list changes on their next sub-card render too.
+        self._member_groups_cache = None
+
+        # Build a stand-in Collection just to drive the synthesizer —
+        # the only fields the synthesizer reads are ``tag``, ``label``,
+        # and ``count``.
+        proxy = Collection(
+            id=group_id,
+            label=label,
+            tag=group_id,
+            count=len(members),
+            kind="group",
+        )
+        asset = self._container_collection_to_asset(proxy, proj_name, "group")
+        return Asset(
+            id=asset.id,
+            name=asset.name,
+            thumbnail_url=asset.thumbnail_url,
+            tags=asset.tags,
+            metadata=asset.metadata,
+            catalog_id=self.id,
+        )
+
+    def _refresh_scene_asset(self, scene_id: str):
+        """Rebuild a Root container Asset (no workfile detail today —
+        scenes don't have per-dept workfiles — but the count and tag
+        set still need to be fresh after edits)."""
+        try:
+            _, rest = scene_id.split(":", 1)
+            proj_name, path = rest.split(":", 1)
+        except ValueError:
+            return None
+        proj = self._registry.get(proj_name)
+        if proj is None or not self._is_ready(proj_name):
+            return None
+        try:
+            self._activate_project(proj)
+            from tumblepipe.config import scenes as scn_mod
+        except Exception:
+            return None
+        try:
+            scn = scn_mod.get_scene(self._scene_uri(path))
+        except Exception:
+            return None
+        if scn is None:
+            return None
+        label = path.rsplit("/", 1)[-1] if path else scene_id
+        count = len(getattr(scn, "assets", ()))
+        proxy = Collection(
+            id=scene_id,
+            label=label,
+            tag=scene_id,
+            count=count,
+            kind="scene",
+        )
+        asset = self._container_collection_to_asset(proxy, proj_name, "scene")
+        return Asset(
+            id=asset.id,
+            name=asset.name,
+            thumbnail_url=asset.thumbnail_url,
+            tags=asset.tags,
+            metadata=asset.metadata,
             catalog_id=self.id,
         )
 
@@ -6250,6 +8204,11 @@ class PipelineCatalog(Catalog):
 
         File-system inspection happens on the worker thread; the actual
         ``hou.hipFile.load`` must run on the GUI thread or Houdini crashes.
+
+        Resolution is delegated to ``latest_hip_file_path_with_context``,
+        which auto-routes to a covering group's workfile when one
+        exists — so clicking a member shot's covered dept opens the
+        group's hip, not a local shot hip.
         """
         if not asset_id:
             return
@@ -6269,7 +8228,26 @@ class PipelineCatalog(Catalog):
                 work_dir = root / "shots" / second / third / dept
 
             hip_path: Path | None = None
-            if work_dir.exists():
+            try:
+                self._activate_project(proj)
+                from tumblepipe.pipe import paths as paths_mod
+                entity_uri = self._uri_for_asset_id(asset_id)
+                if entity_uri is not None:
+                    resolved = paths_mod.latest_hip_file_path_with_context(
+                        entity_uri, dept,
+                    )
+                    if resolved is not None and resolved.exists():
+                        hip_path = resolved
+            except Exception:
+                log.debug(
+                    "latest_hip_file_path_with_context failed for %s/%s",
+                    asset_id, dept, exc_info=True,
+                )
+
+            # Last-resort fallback: legacy direct glob over the
+            # member's own dept folder. Kept so that a tumblepipe
+            # path-resolver hiccup doesn't break opens entirely.
+            if hip_path is None and work_dir.exists():
                 hip_files = sorted(
                     work_dir.glob("*.hip*"),
                     key=lambda p: p.stat().st_mtime,
@@ -6304,3 +8282,263 @@ class PipelineCatalog(Catalog):
             )
         except Exception:
             log.exception("Failed to open workfile for %s/%s", asset_id, dept)
+
+    def _open_group_workfile(self, asset_id: str, dept: str) -> None:
+        """Open the latest workfile for a group's department.
+
+        Mirrors :meth:`_open_workfile` but routes through tumblepipe's
+        group-aware path resolver. The ``hou.hipFile.load`` call is
+        dispatched on the GUI thread; if no workfile exists, the
+        group's work directory is opened in Explorer.
+        """
+        if not asset_id.startswith("group:"):
+            return
+        try:
+            _, rest = asset_id.split(":", 1)
+            proj_name, path = rest.split(":", 1)
+        except ValueError:
+            return
+        proj = self._registry.get(proj_name)
+        if proj is None:
+            return
+        try:
+            self._activate_project(proj)
+            from tumblepipe.pipe import paths as paths_mod
+            from tumblepipe import api as tp_api
+            from tumblepipe.util.uri import Uri
+            group_uri = self._group_uri(path)
+            hip_path = paths_mod.latest_hip_file_path_with_context(
+                group_uri, dept,
+            )
+            if hip_path is not None and hip_path.exists():
+                from asset_browser.core.thumbnail import _gui_singleshot
+
+                def _do_load(p=hip_path, target_proj=proj):
+                    try:
+                        import hou
+                        self._activate_project(target_proj)
+                        hou.hipFile.load(str(p))
+                        log.info("Opened group workfile: %s", p)
+                    except Exception:
+                        log.exception(
+                            "Failed to load group workfile %s", p,
+                        )
+                        return
+                    self._request_global_detail_refresh()
+
+                _gui_singleshot(_do_load)
+                return
+
+            # Fallback: open the resolved work directory in Explorer.
+            # If the dept folder doesn't exist yet, walk up to the
+            # group root so the user still lands somewhere sensible.
+            workspace_uri = (
+                Uri.parse_unsafe("groups:/") / group_uri.segments / dept
+            )
+            target = tp_api.storage.resolve(workspace_uri)
+            if not target.exists():
+                group_root_uri = (
+                    Uri.parse_unsafe("groups:/") / group_uri.segments
+                )
+                target = tp_api.storage.resolve(group_root_uri)
+            import subprocess
+            subprocess.Popen(
+                ["cmd", "/c", "start", "", str(target)],
+                creationflags=0x08000000,
+            )
+        except Exception:
+            log.exception(
+                "Failed to open group workfile for %s/%s", asset_id, dept,
+            )
+
+    def _open_group_dept_work_dir(self, asset_id: str, dept: str) -> None:
+        """Open a group dept's workfile directory in Explorer.
+
+        Mirrors :meth:`_open_dept_work_dir` but resolves the path via
+        the group's ``groups:/`` workspace URI. Walks up to the group
+        root if the dept folder doesn't exist yet.
+        """
+        if not asset_id.startswith("group:"):
+            return
+        try:
+            _, rest = asset_id.split(":", 1)
+            proj_name, path = rest.split(":", 1)
+        except ValueError:
+            return
+        proj = self._registry.get(proj_name)
+        if proj is None:
+            return
+        try:
+            self._activate_project(proj)
+            from tumblepipe import api as tp_api
+            from tumblepipe.util.uri import Uri
+            group_uri = self._group_uri(path)
+            workspace_uri = (
+                Uri.parse_unsafe("groups:/") / group_uri.segments / dept
+            )
+            target = tp_api.storage.resolve(workspace_uri)
+            if not target.exists():
+                target = tp_api.storage.resolve(
+                    Uri.parse_unsafe("groups:/") / group_uri.segments,
+                )
+            import subprocess
+            subprocess.Popen(
+                ["cmd", "/c", "start", "", str(target)],
+                creationflags=0x08000000,
+            )
+        except Exception:
+            log.exception(
+                "Failed to open group work dir for %s/%s", asset_id, dept,
+            )
+
+    def _new_group_from_template(
+        self, asset_id: str, dept: str, refresh_cb=None,
+    ) -> None:
+        """Save the next ``dept/vNNNN`` workfile for a group from the
+        department template.
+
+        Mirrors :meth:`_new_from_template` but routes through the
+        group's ``groups:/ctx/name`` URI, which
+        :func:`next_hip_file_path` and the template loader already
+        handle. Falls back to a no-op if the project or URI can't be
+        resolved.
+        """
+        if not asset_id.startswith("group:"):
+            return
+        try:
+            _, rest = asset_id.split(":", 1)
+            proj_name, path = rest.split(":", 1)
+        except ValueError:
+            return
+        proj = self._registry.get(proj_name)
+        if proj is None:
+            return
+        self._activate_project(proj)
+        client, _err = self._try_get_client(proj_name)
+        if client is None:
+            return
+
+        try:
+            from tumblepipe.pipe.paths import (
+                next_hip_file_path, Context,
+            )
+            from tumblepipe.util.uri import Uri
+        except Exception:
+            log.exception("New: Template (group): tumblepipe imports failed")
+            return
+
+        group_uri = self._group_uri(path)
+        # Context for groups is the first segment ("shots" or "assets")
+        ctx = (
+            self._group_context_from_tag(asset_id) or "shots"
+        )
+
+        from asset_browser.core.thumbnail import _gui_singleshot
+
+        def _do_create(target_proj=proj):
+            try:
+                import hou
+                from tumblepipe.pipe.paths import get_workfile_context
+                from tumblepipe.pipe.context import (
+                    save_context, save_entity_context,
+                )
+
+                self._activate_project(target_proj)
+
+                try:
+                    next_path = next_hip_file_path(
+                        group_uri, dept, nc_type=None,
+                    )
+                except Exception:
+                    log.exception(
+                        "New: Template (group): next_hip_file_path "
+                        "failed for %s/%s", asset_id, dept,
+                    )
+                    return
+                if next_path is None:
+                    hou.ui.setStatusMessage(
+                        f"Create: could not resolve path for {dept}.",
+                        severity=hou.severityType.Warning,
+                    )
+                    return
+
+                # Resolve the template module path — groups share the
+                # same per-context dept template as shots/assets.
+                try:
+                    template_uri = Uri.parse_unsafe(
+                        f"config:/templates/{ctx}/{dept}/template.py"
+                    )
+                    template_path = client.storage.resolve(template_uri)
+                except Exception:
+                    log.exception(
+                        "New: Template (group): failed to resolve "
+                        "template URI for %s/%s", ctx, dept,
+                    )
+                    template_path = None
+
+                next_path.parent.mkdir(parents=True, exist_ok=True)
+
+                hou.hipFile.clear(suppress_save_prompt=True)
+                hou.hipFile.save(str(next_path))
+
+                new_ctx = get_workfile_context(next_path) or Context(
+                    entity_uri=group_uri,
+                    department_name=dept,
+                    version_name=Path(next_path).stem.rsplit("_", 1)[-1],
+                )
+                save_context(
+                    next_path.parent, None, new_ctx,
+                    file_extension=next_path.suffix.lstrip("."),
+                )
+                save_entity_context(next_path.parent, new_ctx)
+
+                # Run the department template against /stage
+                if template_path is not None and Path(template_path).exists():
+                    try:
+                        from tumblepipe.pipe.houdini.ui.project_browser.helpers import (
+                            load_module,
+                        )
+                        stage = hou.node("/stage")
+                        if stage is not None:
+                            module_name = (
+                                f"{'_'.join(group_uri.segments[1:])}"
+                                f"_{dept}_template_group"
+                            )
+                            template = load_module(
+                                Path(template_path), module_name,
+                            )
+                            template.create(stage, group_uri, dept)
+                            stage.layoutChildren()
+                            hou.hipFile.save(str(next_path))
+                    except Exception:
+                        log.exception(
+                            "New: Template (group): template apply "
+                            "failed for %s/%s", ctx, dept,
+                        )
+
+                log.info("Created group workfile: %s", next_path)
+                # The detail-panel-driven refresh path only fires for
+                # the currently-displayed card. After New: Template
+                # from a sub-card right-click we need the Multi card
+                # itself to swap out its "missing" sub-card for the
+                # new "v0001"-bearing one — regardless of whether the
+                # group's detail is open.
+                try:
+                    self._request_card_refresh_for_id(asset_id)
+                except Exception:
+                    log.exception(
+                        "card refresh failed for new group workfile %s",
+                        asset_id,
+                    )
+                if refresh_cb is not None:
+                    try:
+                        refresh_cb()
+                    except Exception:
+                        log.exception("refresh_cb failed after group create")
+            except Exception:
+                log.exception(
+                    "New: Template (group): unexpected failure for %s/%s",
+                    asset_id, dept,
+                )
+
+        _gui_singleshot(_do_create)

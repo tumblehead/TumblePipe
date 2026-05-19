@@ -22,12 +22,31 @@ import nodegraphutils
 
 log = logging.getLogger(__name__)
 
-# 2x2 unit square anchored to the upper-left corner of the node.
-# Network coordinates: positive Y is up, default node origin sits at
-# (0, 0). Placing the image just above the node keeps it from
-# overlapping the connectors and lets multiple stacked imports each
-# carry their own preview without colliding.
-_DEFAULT_RECT = hou.BoundingRect(-2.0, 1.2, 0.0, 3.2)
+# Thumbnail rect ratios — expressed as multiples of the node's width.
+# Hand-tuned against the asymmetric ``import_asset`` shape so the image
+# reads as visually centered above the node (math-centering on the bbox
+# looks off-center because the shape isn't symmetric within its bbox).
+_RECT_X_MIN_RATIO = -0.319
+_RECT_X_MAX_RATIO = 1.184
+_RECT_Y_MIN = 0.005
+
+
+def _default_rect_for_node(node) -> "hou.BoundingRect":
+    """Square thumbnail sitting just above the node, sized and offset
+    by hand-tuned ratios of the node's width.
+
+    ``hou.NetworkImage.setRelativeToPath`` offsets coords by the node's
+    position; on the ``import_asset`` shape that anchors the relative
+    rect such that y=0 corresponds to the node's top edge.
+    """
+    w, _h = node.size()
+    img_w = (_RECT_X_MAX_RATIO - _RECT_X_MIN_RATIO) * w
+    return hou.BoundingRect(
+        _RECT_X_MIN_RATIO * w,
+        _RECT_Y_MIN,
+        _RECT_X_MAX_RATIO * w,
+        _RECT_Y_MIN + img_w,
+    )
 
 
 def _resolve_editor(editor=None):
@@ -109,7 +128,8 @@ def attach(
             img for img in ed.backgroundImages()
             if img.relativeToPath() != node_path
         ]
-        image = hou.NetworkImage(str(path_obj), rect or _DEFAULT_RECT)
+        resolved_rect = rect if rect is not None else _default_rect_for_node(node)
+        image = hou.NetworkImage(str(path_obj), resolved_rect)
         image.setRelativeToPath(node_path)
         images.append(image)
 

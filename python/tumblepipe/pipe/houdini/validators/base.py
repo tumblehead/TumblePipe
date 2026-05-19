@@ -16,6 +16,7 @@ class ValidationIssue:
     message: str
     prim_path: str | None = None
     severity: ValidationSeverity = ValidationSeverity.ERROR
+    suggestion: str | None = None
 
 
 @dataclass
@@ -23,28 +24,83 @@ class ValidationResult:
     passed: bool = True
     issues: list[ValidationIssue] = field(default_factory=list)
 
-    def add_error(self, message: str, prim_path: str | None = None):
-        self.issues.append(ValidationIssue(message, prim_path, ValidationSeverity.ERROR))
+    def add_error(
+        self,
+        message: str,
+        prim_path: str | None = None,
+        suggestion: str | None = None,
+    ):
+        self.issues.append(
+            ValidationIssue(message, prim_path, ValidationSeverity.ERROR, suggestion)
+        )
         self.passed = False
 
-    def add_warning(self, message: str, prim_path: str | None = None):
-        self.issues.append(ValidationIssue(message, prim_path, ValidationSeverity.WARNING))
+    def add_warning(
+        self,
+        message: str,
+        prim_path: str | None = None,
+        suggestion: str | None = None,
+    ):
+        self.issues.append(
+            ValidationIssue(message, prim_path, ValidationSeverity.WARNING, suggestion)
+        )
 
     def merge(self, other: 'ValidationResult'):
         self.issues.extend(other.issues)
         if not other.passed:
             self.passed = False
 
+    def grouped_issues(
+        self,
+    ) -> list[tuple['ValidationSeverity', str, list[str], str | None]]:
+        """Group issues by (severity, message), preserving first-seen order.
+
+        Returns a list of (severity, message, prim_paths, suggestion) tuples.
+        `prim_paths` is the list of every prim_path that produced this
+        (severity, message) pair (in original order); single-prim issues yield a
+        one-element list and issues with no prim_path yield an empty list.
+        `suggestion` is taken from the first issue in the group (validators
+        should attach the same suggestion to every issue with the same message).
+
+        Use this to render summaries like "Mesh missing rest positions — 14 prims"
+        with expandable details, instead of one line per affected prim.
+        """
+        groups: dict[tuple['ValidationSeverity', str], list[str]] = {}
+        suggestions: dict[tuple['ValidationSeverity', str], str | None] = {}
+        order: list[tuple['ValidationSeverity', str]] = []
+        for issue in self.issues:
+            key = (issue.severity, issue.message)
+            if key not in groups:
+                groups[key] = []
+                suggestions[key] = issue.suggestion
+                order.append(key)
+            if issue.prim_path:
+                groups[key].append(issue.prim_path)
+        return [
+            (sev, msg, groups[(sev, msg)], suggestions[(sev, msg)])
+            for (sev, msg) in order
+        ]
+
     def format_message(self) -> str:
         if not self.issues:
             return "Validation passed"
         lines = []
-        for issue in self.issues:
-            prefix = "ERROR" if issue.severity == ValidationSeverity.ERROR else "WARNING"
-            if issue.prim_path:
-                lines.append(f"[{prefix}] {issue.prim_path}: {issue.message}")
+        for severity, message, prim_paths, suggestion in self.grouped_issues():
+            prefix = "ERROR" if severity == ValidationSeverity.ERROR else "WARNING"
+            if len(prim_paths) <= 1:
+                # Single occurrence — show inline, original format
+                path = prim_paths[0] if prim_paths else None
+                if path:
+                    lines.append(f"[{prefix}] {path}: {message}")
+                else:
+                    lines.append(f"[{prefix}] {message}")
             else:
-                lines.append(f"[{prefix}] {issue.message}")
+                # Multiple occurrences — summary + indented paths
+                lines.append(f"[{prefix}] {message} ({len(prim_paths)} prims)")
+                for path in prim_paths:
+                    lines.append(f"    - {path}")
+            if suggestion:
+                lines.append(f"    Suggestion: {suggestion}")
         return "\n".join(lines)
 
 

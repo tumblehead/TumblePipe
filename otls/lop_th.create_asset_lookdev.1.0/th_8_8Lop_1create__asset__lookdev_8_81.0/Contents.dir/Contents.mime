@@ -31,7 +31,7 @@ Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
 comment ""
-position -1.09195 23.4199
+position -9.21997 -2.54372
 connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -39,11 +39,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	hat 0 1 "input1"
+0 	create_asset_model1 0 1 "input1"
 }
 inputs
 {
-0 	hat 0 1
+0 	create_asset_model1 0 1
 }
 stat
 {
@@ -222,8 +222,8 @@ Content-Type: text/plain
 	height := 1.7471698172812182;
 	minimized := 1;
 	width := 7.9245283078472575;
-	x_position := -10.166402756813417;
-	y_position := 13.047555347192866;
+	x_position := -13.555202756813417;
+	y_position := 14.835955347192865;
 }
 {
   create -1
@@ -237,10 +237,10 @@ Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookde
 Content-Type: text/plain
 
 4
-0 -9.4164027456375461 11.677552452830188 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
-1 -9.3987717598346983 13.954440257007686 2 0 __netbox1 "FROMOUTPUT"
-2 -7.1987717851666728 13.954440257007686 2 0 __netbox1 "FROMOUTPUT"
-3 -4.9987718104986474 13.954440257007686 2 0 __netbox1 "FROMOUTPUT"
+0 -12.805202745637546 13.465952452830187 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 -12.787571759834698 15.742840257007686 2 0 __netbox1 "FROMOUTPUT"
+2 -10.587571785166672 15.742840257007686 2 0 __netbox1 "FROMOUTPUT"
+3 -8.3875718104986472 15.742840257007686 2 0 __netbox1 "FROMOUTPUT"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library.init"
@@ -254,7 +254,7 @@ Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookde
 Content-Type: text/plain
 
 comment ""
-position -9.4164 10.2537
+position -12.8052 12.0421
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -1492,7 +1492,7 @@ Content-Type: text/plain
 {
 version 0.8
 outputidx	[ 0	locks=0 ]	(	0	)
-modifiedprims	[ 0	locks=0 ]	(	`chs(\"../primpath\")`	)
+modifiedprims	[ 0	locks=0 ]	(	`chs(\"../effective_primpath\")`	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -1588,6 +1588,7 @@ combineiterations	[ 0	locks=0 ]	(	flattenloplayers	)
 ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block. Flattening Into First Input's Active Layer."	)
 striplayerbreaks	[ 0	locks=0 ]	(	"on"	)
 lastmodifiedfromiteration	[ 0	locks=0 ]	(	"off"	)
+mergeloadmasks	[ 0	locks=0 ]	(	"off"	)
 separator_options	[ 0	locks=0 ]	(	)
 iterationname	[ 0	locks=0 ]	(	ITERATION	)
 iterationcountname	[ 0	locks=0 ]	(	NUMITERATIONS	)
@@ -1738,7 +1739,7 @@ Content-Type: text/plain
       righttype = extend
       defaultString = "lopinputprim('.', 0)"
       flags = 0
-      segment { length = 0 expr = chs(\"../primpath\") }
+      segment { length = 0 expr = chs(\"../effective_primpath\") }
     }
   }
 
@@ -1757,7 +1758,7 @@ parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
 createoptionsblock	[ 0	locks=0 ]	(	"on"	)
 variantset	[ 0	locks=0 ]	(	[ variantset	model ] 	)
 variantsetstrength	[ 0	locks=0 ]	(	appendfront	)
-variantprimpath	[ 8	locks=0 ]	(	`chs(\"../primpath\")`/	)
+variantprimpath	[ 8	locks=0 ]	(	`chs(\"../effective_primpath\")`/	)
 variantname	[ 8	locks=0 ]	(	`@ITERATIONVALUE`	)
 setvariantselection	[ 0	locks=0 ]	(	"on"	)
 }
@@ -1834,7 +1835,7 @@ Content-Type: text/plain
 version 0.8
 num_variants	[ 0	locks=0 ]	(	1	)
 enable1	[ 0	locks=0 ]	(	"on"	)
-primpattern1	[ 8	locks=0 ]	(	`chs(\"../primpath\")`	)
+primpattern1	[ 8	locks=0 ]	(	`chs(\"../effective_primpath\")`	)
 variantsetuseindex1	[ 0	locks=0 ]	(	"off"	)
 variantset1	[ 0	locks=0 ]	(	`chs(\"../variantset\")`	)
 variantsetindex1	[ 0	locks=0 ]	(	0	)
@@ -1936,10 +1937,24 @@ Content-Type: text/plain
 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet.order"
+Content-Type: text/plain
+
+1
+material_library
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet.net"
 Content-Type: text/plain
 
 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.order"
+Content-Type: text/plain
+
+1
+lookdev_subnet
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.net"
@@ -1991,6 +2006,10 @@ Content-Type: text/plain
 {
 version 0.8
 loppath	[ 0	locks=0 ]	(	../lookdev_variant_subnet/VARIANT`@ITERATION+1`_OUT	)
+outputidx	[ 0	locks=0 ]	(	0	)
+erroroninvalidlop	[ 0	locks=0 ]	(	"off"	)
+layerbreak	[ 0	locks=0 ]	(	"off"	)
+popcontextoptions	[ 0	locks=0 ]	(	0	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY

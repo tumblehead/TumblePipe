@@ -19,10 +19,51 @@
         label   "Asset Definition"
 
         parm {
+            name    "use_entity"
+            label   "Primitive"
+            type    buttonstrip
+            default { "1" }
+            menureplace {
+                "0" "Path"
+                "1" "Entity"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity_select"
+            label   "Entity"
+            type    button
+            joinnext
+            default { "0" }
+            hidewhen "{ use_entity == 0 }"
+            parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
+            parmtag { "script_callback" "hou.phm().select_entity()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity"
+            label   "Entity"
+            type    string
+            invisible
+            nolabel
+            joinnext
+            default { "" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity_label"
+            label   "entity_label"
+            type    label
+            nolabel
+            default { "none" }
+            hidewhen "{ use_entity == 0 }"
+        }
+        parm {
             name    "primpath"
             label   "Primitive Path"
             type    string
             default { "`lopinputprim('.', 0)`" }
+            hidewhen "{ use_entity == 1 }"
             menureplace {
                 [ "opmenu -l -a add_model_variants2 primpath" ]
             }
@@ -33,33 +74,11 @@
             parmtag { "sidefx::usdpathtype" "prim" }
         }
         parm {
-            name    "variantset"
-            label   "Variant Set"
+            name    "effective_primpath"
+            label   "effective_primpath"
             type    string
-            default { "model" }
-            parmtag { "autoscope" "0000000000000000" }
-            parmtag { "script_callback_language" "python" }
-        }
-        parm {
-            name    "active_variant"
-            label   "Active Variant"
-            type    string
-            default { "1" }
-            menu {
-                [ "node = kwargs['node']" ]
-                [ "num = node.parm('variants').eval()" ]
-                [ "" ]
-                [ "menu = []" ]
-                [ "for i in range(1, num + 1 ):" ]
-                [ "    token = i" ]
-                [ "    label = node.parm(f'variant_name{i}').eval()  # use entry's own parm as label" ]
-                [ "    menu.extend([token, label])" ]
-                [ "" ]
-                [ "return menu" ]
-                language python
-            }
-            parmtag { "autoscope" "0000000000000000" }
-            parmtag { "script_callback_language" "python" }
+            invisible
+            default { "`pythonexprs(\"hou.phm().effective_primpath(hou.pwd())\")`" }
         }
         parm {
             name    "sublayer"
@@ -102,6 +121,35 @@
         name    "folder2"
         label   "Variants"
 
+        parm {
+            name    "variantset"
+            label   "Variant Set"
+            type    string
+            default { "model" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "active_variant"
+            label   "Active Variant"
+            type    string
+            default { "1" }
+            menu {
+                [ "node = kwargs['node']" ]
+                [ "num = node.parm('variants').eval()" ]
+                [ "" ]
+                [ "menu = []" ]
+                [ "for i in range(1, num + 1 ):" ]
+                [ "    token = i" ]
+                [ "    label = node.parm(f'variant_name{i}').eval()  # use entry's own parm as label" ]
+                [ "    menu.extend([token, label])" ]
+                [ "" ]
+                [ "return menu" ]
+                language python
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
         multiparm {
             name    "variants"
             label    "Variants"
@@ -109,17 +157,29 @@
             parmtag { "script_callback" "hou.phm().add_variant(kwargs)" }
             parmtag { "script_callback_language" "python" }
 
-            groupcollapsible {
+            groupsimple {
                 name    "variant#"
                 label   "Variant#"
+                grouptag { "sidefx::look" "blank" }
 
                 parm {
                     name    "variant_name#"
-                    label   "Name"
+                    label   "variant"
                     type    string
+                    joinnext
                     default { "variant#" }
                     parmtag { "editor" "0" }
                     parmtag { "script_callback" "hou.phm().on_variant_name(kwargs)" }
+                    parmtag { "script_callback_language" "python" }
+                }
+                parm {
+                    name    "jump_to_variant#"
+                    label   "Jump to Output"
+                    type    button
+                    nolabel
+                    default { "0" }
+                    parmtag { "button_icon" "BUTTONS_jump" }
+                    parmtag { "script_callback" "hou.phm().jump_to_variant(kwargs)" }
                     parmtag { "script_callback_language" "python" }
                 }
             }

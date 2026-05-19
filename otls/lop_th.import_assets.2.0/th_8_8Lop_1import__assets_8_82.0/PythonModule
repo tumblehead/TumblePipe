@@ -1,3 +1,4 @@
+import hou
 from tumblepipe.pipe.houdini.lops import import_assets
 
 def execute():
@@ -5,3 +6,6 @@ def execute():
 
 def select(index):
     import_assets.select(index)
+
+def output_modified_prims(node):
+    return import_assets.output_modified_prims(node)

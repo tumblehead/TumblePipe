@@ -3,6 +3,22 @@
 from .base import ValidationResult
 
 
+_SUGG_ADD_RENDERSETTINGS = (
+    "Add a Render Settings LOP that creates /Render/rendersettings. The shot "
+    "render template normally provides this; check the shot's render layer."
+)
+_SUGG_FIX_RS_CAMERA = (
+    "Set Camera Path on the Render Settings LOP to a valid /cameras/... prim."
+)
+_SUGG_ADD_PRODUCTS = (
+    "Add at least one Render Product LOP under /Render/Products and reference "
+    "it from Render Settings' Products input."
+)
+_SUGG_FIX_PRODUCT_CAMERA = (
+    "Set Camera Path on the Render Product LOP. Each product needs a camera."
+)
+
+
 def validate_render_settings(root) -> ValidationResult:
     """Validate that RenderSettings prim exists and is properly configured.
 
@@ -21,7 +37,8 @@ def validate_render_settings(root) -> ValidationResult:
     settings_prim = stage.GetPrimAtPath('/Render/rendersettings')
     if not settings_prim.IsValid():
         result.add_error(
-            "RenderSettings prim not found at /Render/rendersettings"
+            "RenderSettings prim not found at /Render/rendersettings",
+            suggestion=_SUGG_ADD_RENDERSETTINGS,
         )
         return result
 
@@ -30,7 +47,11 @@ def validate_render_settings(root) -> ValidationResult:
     if prim_type != 'RenderSettings':
         result.add_error(
             f"Prim at /Render/rendersettings has type '{prim_type}', expected 'RenderSettings'",
-            '/Render/rendersettings'
+            '/Render/rendersettings',
+            suggestion=(
+                "Re-author /Render/rendersettings via a Render Settings LOP "
+                "(or set its type to UsdRenderSettings on a Configure Primitive)."
+            ),
         )
 
     # Check camera relationship
@@ -38,14 +59,16 @@ def validate_render_settings(root) -> ValidationResult:
     if not camera_rel.IsValid():
         result.add_error(
             "RenderSettings missing 'camera' relationship",
-            '/Render/rendersettings'
+            '/Render/rendersettings',
+            suggestion=_SUGG_FIX_RS_CAMERA,
         )
     else:
         camera_targets = camera_rel.GetTargets()
         if not camera_targets:
             result.add_error(
                 "RenderSettings 'camera' relationship has no target",
-                '/Render/rendersettings'
+                '/Render/rendersettings',
+                suggestion=_SUGG_FIX_RS_CAMERA,
             )
         else:
             # Verify camera target exists
@@ -54,7 +77,11 @@ def validate_render_settings(root) -> ValidationResult:
             if not camera_prim.IsValid():
                 result.add_error(
                     f"RenderSettings camera target does not exist: {camera_path}",
-                    '/Render/rendersettings'
+                    '/Render/rendersettings',
+                    suggestion=(
+                        "The Camera Path on Render Settings doesn't resolve. "
+                        "Update it or add the missing camera to the stage."
+                    ),
                 )
 
     # Check products relationship (warning only)
@@ -62,14 +89,16 @@ def validate_render_settings(root) -> ValidationResult:
     if not products_rel.IsValid():
         result.add_warning(
             "RenderSettings missing 'products' relationship",
-            '/Render/rendersettings'
+            '/Render/rendersettings',
+            suggestion=_SUGG_ADD_PRODUCTS,
         )
     else:
         products_targets = products_rel.GetTargets()
         if not products_targets:
             result.add_warning(
                 "RenderSettings 'products' relationship has no targets",
-                '/Render/rendersettings'
+                '/Render/rendersettings',
+                suggestion=_SUGG_ADD_PRODUCTS,
             )
 
     return result
@@ -94,7 +123,8 @@ def validate_render_products(root) -> ValidationResult:
     products_prim = stage.GetPrimAtPath('/Render/Products')
     if not products_prim.IsValid():
         result.add_error(
-            "/Render/Products prim not found"
+            "/Render/Products prim not found",
+            suggestion=_SUGG_ADD_PRODUCTS,
         )
         return result
 
@@ -107,7 +137,8 @@ def validate_render_products(root) -> ValidationResult:
     if not render_products:
         result.add_error(
             "No RenderProduct prims found under /Render/Products",
-            '/Render/Products'
+            '/Render/Products',
+            suggestion=_SUGG_ADD_PRODUCTS,
         )
         return result
 
@@ -120,7 +151,8 @@ def validate_render_products(root) -> ValidationResult:
         if not camera_rel.IsValid():
             result.add_error(
                 "RenderProduct missing 'camera' relationship",
-                product_path
+                product_path,
+                suggestion=_SUGG_FIX_PRODUCT_CAMERA,
             )
             continue
 
@@ -128,7 +160,8 @@ def validate_render_products(root) -> ValidationResult:
         if not camera_targets:
             result.add_error(
                 "RenderProduct 'camera' relationship has no target",
-                product_path
+                product_path,
+                suggestion=_SUGG_FIX_PRODUCT_CAMERA,
             )
             continue
 
@@ -138,7 +171,11 @@ def validate_render_products(root) -> ValidationResult:
         if not camera_prim.IsValid():
             result.add_error(
                 f"RenderProduct camera target does not exist: {camera_path}",
-                product_path
+                product_path,
+                suggestion=(
+                    "The Render Product's Camera Path doesn't resolve. Update "
+                    "it on the Render Product LOP or add the missing camera."
+                ),
             )
 
         # Check productName attribute (warning only)
@@ -146,14 +183,22 @@ def validate_render_products(root) -> ValidationResult:
         if not product_name_attr.IsValid():
             result.add_warning(
                 "RenderProduct missing 'productName' attribute",
-                product_path
+                product_path,
+                suggestion=(
+                    "Set the Product Name (output filename) on the Render "
+                    "Product LOP."
+                ),
             )
         else:
             product_name = product_name_attr.Get()
             if not product_name:
                 result.add_warning(
                     "RenderProduct 'productName' attribute is empty",
-                    product_path
+                    product_path,
+                    suggestion=(
+                        "Set a non-empty Product Name on the Render Product LOP, "
+                        "e.g. '/path/to/<aov>.exr'."
+                    ),
                 )
 
     return result

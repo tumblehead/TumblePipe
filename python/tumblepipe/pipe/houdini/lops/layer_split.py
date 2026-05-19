@@ -120,12 +120,14 @@ class LayerSplit(ns.Node):
         if str(entity_uri) not in entity_uris:  # Compare strings
             return
         self.parm('entity').set(str(entity_uri))
+        self._update_labels()
 
     def set_department_name(self, department_name: str):
         department_names = self.list_department_names()
         if department_name not in department_names:
             return
         self.parm('department').set(department_name)
+        self._update_labels()
 
     def _update_labels(self):
         """Update label parameters to show current entity/department selection."""
@@ -353,7 +355,7 @@ def select():
 
 def validate():
     """HDA button callback to run stage validation."""
-    from tumblepipe.pipe.houdini.validators import validate_stage
+    from tumblepipe.pipe.houdini.validators import validate_stage_for_department
 
     raw_node = hou.pwd()
     stage_node = raw_node.node('IN_stage')
@@ -373,8 +375,24 @@ def validate():
         )
         return
 
+    node = LayerSplit(raw_node)
+    entity_uri = node.get_entity_uri()
+    department = node.get_department_name()
+
+    if entity_uri is None or department is None:
+        hou.ui.displayMessage(
+            "Entity or department not set on this layer split - cannot pick validators.",
+            severity=hou.severityType.Warning
+        )
+        return
+
+    uri_str = str(entity_uri)
+    entity_context = 'shots' if uri_str.startswith('entity:/shots/') else 'assets'
+
     root = stage.GetPseudoRoot()
-    result = validate_stage(root)
+    result = validate_stage_for_department(
+        root, entity_context, department, {'entity_uri': uri_str}
+    )
 
     if result.passed:
         hou.ui.displayMessage(
@@ -382,12 +400,20 @@ def validate():
             severity=hou.severityType.Message,
             title="Validation Passed"
         )
-    else:
-        hou.ui.displayMessage(
-            result.format_message(),
-            severity=hou.severityType.Error,
-            title="Validation Failed"
-        )
+        return
+
+    from tumblepipe.pipe.houdini.ui.project_browser.dialogs.validation_dialog import (
+        ValidationConfirmDialog,
+    )
+    entity_name = uri_str.rsplit('/', 1)[-1] if uri_str else 'unknown'
+    dialog = ValidationConfirmDialog(
+        validation_result=result,
+        department=department,
+        entity_name=entity_name,
+        parent=hou.qt.mainWindow(),
+        read_only=True,
+    )
+    dialog.exec_()
 
 
 def update_labels():

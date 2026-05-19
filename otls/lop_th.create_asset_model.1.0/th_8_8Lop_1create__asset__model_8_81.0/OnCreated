@@ -1,0 +1,5 @@
+node = kwargs['node']
+node.parm('variants').set(1)
+node.parm('variant_name1').set('default')
+node.hdaModule()._sync_variants(node)
+node.hdaModule().init_entity_from_context(node)

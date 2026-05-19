@@ -283,4 +283,11 @@
         }
     }
 
+    parm {
+        name    "output_modified_prims"
+        label   "output_modified_prims"
+        type    string
+        invisible
+        default { "`pythonexprs(\"hou.phm().output_modified_prims(hou.pwd())\")`" }
+    }
 }

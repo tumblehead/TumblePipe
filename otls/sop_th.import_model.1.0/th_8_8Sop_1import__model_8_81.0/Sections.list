@@ -4,8 +4,10 @@ CreateScript	CreateScript
 InternalFileOptions	InternalFileOptions
 Contents.gz	Contents.gz
 IconImage	IconImage
-PythonModule	PythonModule
-OnCreated	OnCreated
 EditableNodes	EditableNodes
 TypePropertiesOptions	TypePropertiesOptions
+Help	Help
+PythonModule	PythonModule
+OnCreated	OnCreated
 ExtraFileOptions	ExtraFileOptions
+Tools.shelf	Tools.shelf

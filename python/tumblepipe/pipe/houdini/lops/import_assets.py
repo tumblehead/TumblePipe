@@ -490,3 +490,18 @@ def select(index: int):
         if selected_uri:
             node.parm(f'entity{index}').set(selected_uri)
             node._update_labels(index)
+
+
+def output_modified_prims(raw_node) -> str:
+    """Return the imported asset prim paths, space-separated."""
+    count = raw_node.parm('asset_imports').eval()
+    paths = []
+    for i in range(1, count + 1):
+        entity = raw_node.parm(f'entity{i}').eval()
+        if not entity:
+            continue
+        try:
+            paths.append(uri_to_prim_path(Uri.parse_unsafe(entity)))
+        except ValueError:
+            pass
+    return ' '.join(paths)

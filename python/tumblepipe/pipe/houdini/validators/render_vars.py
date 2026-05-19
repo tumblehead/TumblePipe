@@ -51,19 +51,38 @@ def validate_render_var_names(root) -> ValidationResult:
         # Get the aov:name attribute
         aov_attr = prim.GetAttribute('driver:parameters:aov:name')
         if not aov_attr.IsValid():
-            result.add_warning(f"Missing 'driver:parameters:aov:name' attribute", prim_path)
+            result.add_warning(
+                f"Missing 'driver:parameters:aov:name' attribute",
+                prim_path,
+                suggestion=(
+                    "Set the AOV name on the Render Var LOP so the prim has a "
+                    "driver:parameters:aov:name attribute matching the prim name."
+                ),
+            )
             continue
 
         aov_name = aov_attr.Get()
         if aov_name is None:
-            result.add_warning(f"Empty 'driver:parameters:aov:name' attribute", prim_path)
+            result.add_warning(
+                f"Empty 'driver:parameters:aov:name' attribute",
+                prim_path,
+                suggestion=(
+                    "Set a non-empty AOV name on the Render Var LOP (e.g. "
+                    "'beauty', 'N', 'albedo')."
+                ),
+            )
             continue
 
         # Compare names (case-insensitive to catch common issues)
         if prim_name.lower() != str(aov_name).lower():
             result.add_error(
                 f"Prim name '{prim_name}' does not match aov:name '{aov_name}'",
-                prim_path
+                prim_path,
+                suggestion=(
+                    "Rename either the Render Var prim or its aov:name so they "
+                    "match. Mismatch means the rendered AOV file will have a "
+                    "different name from what the prim implies."
+                ),
             )
 
     return result
@@ -109,7 +128,11 @@ def validate_ordered_vars(root) -> ValidationResult:
         if not ordered_vars_rel.IsValid():
             result.add_warning(
                 "Missing 'orderedVars' relationship",
-                product_path
+                product_path,
+                suggestion=(
+                    "Add an 'orderedVars' relationship to the Render Product "
+                    "listing each Render Var to render, in order."
+                ),
             )
             continue
 
@@ -120,7 +143,11 @@ def validate_ordered_vars(root) -> ValidationResult:
         if not ordered_paths:
             result.add_warning(
                 "'orderedVars' relationship is empty",
-                product_path
+                product_path,
+                suggestion=(
+                    "Populate orderedVars on the Render Product with the "
+                    "Render Vars to render."
+                ),
             )
             continue
 
@@ -129,7 +156,11 @@ def validate_ordered_vars(root) -> ValidationResult:
         for missing_path in sorted(missing_from_stage):
             result.add_error(
                 f"orderedVars references non-existent RenderVar: {missing_path}",
-                product_path
+                product_path,
+                suggestion=(
+                    "Remove the stale path from orderedVars, or re-add the "
+                    "Render Var prim it points at."
+                ),
             )
 
         # Check for RenderVars that aren't in orderedVars
@@ -137,7 +168,12 @@ def validate_ordered_vars(root) -> ValidationResult:
         for missing_path in sorted(missing_from_ordered):
             result.add_error(
                 f"RenderVar not in orderedVars: {missing_path}",
-                product_path
+                product_path,
+                suggestion=(
+                    "Add this Render Var to the Render Product's orderedVars "
+                    "list (or delete the Render Var if you don't want it "
+                    "rendered)."
+                ),
             )
 
     return result

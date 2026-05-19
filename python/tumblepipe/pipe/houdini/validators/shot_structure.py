@@ -58,7 +58,13 @@ def validate_shot_root_prims(root) -> ValidationResult:
         result.add_error(
             f"Disallowed root prim '{prim_name}'. "
             f"Only asset categories, collections, lights, cameras, Render, and scene are allowed.",
-            f"/{prim_name}"
+            f"/{prim_name}",
+            suggestion=(
+                "Reparent this content under one of the allowed roots "
+                "(collections, lights, cameras, Render, scene), or under an "
+                "asset category Scope (e.g. /CHAR). Edit the upstream LOP "
+                "graph so the prim isn't authored at the stage root."
+            ),
         )
 
     return result

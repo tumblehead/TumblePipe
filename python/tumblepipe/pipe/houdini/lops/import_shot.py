@@ -483,9 +483,11 @@ class ImportShot(ns.Node):
         shot_uris = self.list_shot_uris()
         if str(shot_uri) not in shot_uris: return  # Compare strings
         self.parm('entity').set(str(shot_uri))
+        self._update_labels()
 
     def set_department_name(self, department_name: str):
         self.parm('department').set(department_name)
+        self._update_labels()
 
     def set_include_procedurals(self, include_procedurals):
         self.parm('include_procedurals').set(int(include_procedurals))

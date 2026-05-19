@@ -43,6 +43,38 @@ _registry.register('lookdev_structure', validate_lookdev_structure)
 _registry.register('shot_root_prims', validate_shot_root_prims)
 
 
+# Per-department default validator sets. Keyed by (entity_context, department).
+# Project config at config:/validators/{ctx}/{dept}/validators.py overrides these.
+_DEFAULT_VALIDATORS: dict[tuple[str, str], list[str]] = {
+    ('assets', 'model'): ['model_structure', 'rest_geometry'],
+    ('assets', 'blendshape'): ['model_structure'],
+    ('assets', 'lookdev'): ['lookdev_structure', 'material_bindings'],
+    ('assets', 'rig'): ['model_structure'],
+    ('shots', 'layout'): ['shot_root_prims'],
+    ('shots', 'environment'): ['shot_root_prims'],
+    ('shots', 'animation'): ['shot_root_prims'],
+    ('shots', 'crowd'): ['shot_root_prims'],
+    ('shots', 'cfx'): ['shot_root_prims'],
+    ('shots', 'effects'): ['shot_root_prims'],
+    ('shots', 'light'): ['shot_root_prims'],
+    ('shots', 'render'): [
+        'shot_root_prims',
+        'cameras',
+        'render_settings',
+        'render_products',
+        'render_var_names',
+        'ordered_vars',
+    ],
+    ('shots', 'composite'): [],
+    ('shots', 'compsite'): [],  # typo-tolerant alias for Growth config
+}
+
+
+def get_default_validator_names(entity_context: str, department: str) -> list[str]:
+    """Return the built-in default validator names for a department."""
+    return list(_DEFAULT_VALIDATORS.get((entity_context, department), []))
+
+
 def get_registry() -> StageValidatorRegistry:
     """Get the global validator registry."""
     return _registry
@@ -77,14 +109,10 @@ def validate_stage_for_department(
 ) -> ValidationResult:
     """Validate a USD stage using department-specific validators.
 
-    Loads validators from the project config directory at:
-        config:/validators/{entity_context}/{department}/validators.py
-
-    If no department-specific validators are found, falls back to
-    running all built-in validators.
-
-    For shot departments, 'shot_root_prims' is automatically included
-    to enforce stage structure conventions.
+    Resolution order:
+    1. Project config at config:/validators/{entity_context}/{department}/validators.py
+    2. Built-in defaults in _DEFAULT_VALIDATORS (see get_default_validator_names)
+    3. Empty list - no validators run
 
     Args:
         root: USD stage pseudo root prim
@@ -98,18 +126,17 @@ def validate_stage_for_department(
     """
     from tumblepipe.config.validation import get_validator_names_for_department
 
-    # Get department-specific validator names
+    # Project config takes precedence
     validator_names = get_validator_names_for_department(entity_context, department)
 
+    # Fall back to built-in per-department defaults
     if not validator_names:
-        # No department-specific config, run all validators
-        return _registry.run(root, context=validation_context)
+        validator_names = get_default_validator_names(entity_context, department)
 
-    # For shot departments, always include shot_root_prims validator
-    if entity_context == 'shots' and 'shot_root_prims' not in validator_names:
-        validator_names = ['shot_root_prims'] + validator_names
+    if not validator_names:
+        # No defaults and no project config - skip validation rather than running everything
+        return ValidationResult()
 
-    # Run only the validators specified for this department
     return _registry.run(root, validator_names, context=validation_context)
 
 
@@ -119,6 +146,7 @@ __all__ = [
     'ValidationResult',
     'StageValidatorRegistry',
     'get_registry',
+    'get_default_validator_names',
     'validate_stage',
     'validate_stage_for_department',
     'validate_render_var_names',

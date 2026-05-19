@@ -1,3 +1,4 @@
+import hou
 from tumblepipe.pipe.houdini.lops import export_layer
 
 def execute():
@@ -11,3 +12,6 @@ def open_location():
 
 def validate():
     export_layer.validate()
+
+def output_modified_prims(node):
+    return export_layer.output_modified_prims(node)

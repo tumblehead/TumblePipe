@@ -846,6 +846,16 @@ def _collect_rig_publish_tasks(context: Context) -> list[ProcessTask]:
     return tasks
 
 
+def _entity_context_from_uri(entity_uri: Uri | None) -> str:
+    """Map an entity URI to the 'shots' or 'assets' validator context."""
+    if entity_uri is None:
+        return 'assets'
+    uri_str = str(entity_uri)
+    if uri_str.startswith('entity:/shots/'):
+        return 'shots'
+    return 'assets'
+
+
 def _uri_name(uri: Uri) -> str:
     """Extract a short display name from a URI"""
     if uri is None:
@@ -890,8 +900,11 @@ def _create_validation_task(
     Returns:
         ProcessTask for validation
     """
+    entity_context = _entity_context_from_uri(entity_uri)
+    validation_ctx = {'entity_uri': str(entity_uri)} if entity_uri is not None else {}
+
     def validate_local_fn():
-        from tumblepipe.pipe.houdini.validators import validate_stage
+        from tumblepipe.pipe.houdini.validators import validate_stage_for_department
         from tumblepipe.pipe.houdini.validators.base import ValidationResult
         from ..dialogs.validation_dialog import ValidationConfirmDialog, ValidationCancelled
         import hou
@@ -908,14 +921,14 @@ def _create_validation_task(
             if stage is None:
                 continue
             root = stage.GetPseudoRoot()
-            result = validate_stage(root)
+            result = validate_stage_for_department(
+                root, entity_context, department, validation_ctx
+            )
             combined_result.merge(result)
 
         # No validation failures - continue normally
         if combined_result.passed:
             return
-
-        combined_message = combined_result.format_message()
 
         # Check if user already made a remembered choice
         if _validation_session.has_remembered_choice():
@@ -927,7 +940,7 @@ def _create_validation_task(
         # Show dialog and get user choice
         entity_name = _uri_name(entity_uri)
         dialog = ValidationConfirmDialog(
-            validation_message=combined_message,
+            validation_result=combined_result,
             department=department,
             entity_name=entity_name,
             parent=hou.qt.mainWindow()
@@ -945,7 +958,7 @@ def _create_validation_task(
 
     def validate_farm_fn():
         # Farm execution: no UI available, use original blocking behavior
-        from tumblepipe.pipe.houdini.validators import validate_stage
+        from tumblepipe.pipe.houdini.validators import validate_stage_for_department
         for export_node in export_nodes:
             native = export_node.native()
             stage_node = native.node('IN_stage')
@@ -955,7 +968,9 @@ def _create_validation_task(
             if stage is None:
                 continue
             root = stage.GetPseudoRoot()
-            result = validate_stage(root)
+            result = validate_stage_for_department(
+                root, entity_context, department, validation_ctx
+            )
             if not result.passed:
                 raise RuntimeError(f"Validation failed:\n{result.format_message()}")
 

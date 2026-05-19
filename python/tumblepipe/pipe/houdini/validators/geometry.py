@@ -42,7 +42,12 @@ def validate_rest_geometry(root) -> ValidationResult:
             if not pref_attr.IsValid():
                 result.add_warning(
                     "Mesh missing rest positions (primvars:rest or primvars:Pref)",
-                    mesh_path
+                    mesh_path,
+                    suggestion=(
+                        "Author a 'rest' primvar on the meshes. In create_asset_model "
+                        "make sure the Rest LOP isn't bypassed; in SOPs, capture "
+                        "rest positions with a Rest SOP before USD export."
+                    ),
                 )
 
         # Check for normals
@@ -53,7 +58,11 @@ def validate_rest_geometry(root) -> ValidationResult:
             if not std_normals_attr.IsValid():
                 result.add_warning(
                     "Mesh missing normals (primvars:normals or normals)",
-                    mesh_path
+                    mesh_path,
+                    suggestion=(
+                        "Compute normals upstream (Normal SOP or Polyframe SOP), "
+                        "or author normals3f via a Configure Primitive LOP."
+                    ),
                 )
 
     if mesh_count == 0:
@@ -83,7 +92,11 @@ def validate_material_bindings(root) -> ValidationResult:
         if not binding_rel.IsValid() or not binding_rel.GetTargets():
             result.add_warning(
                 "Mesh has no material binding",
-                mesh_path
+                mesh_path,
+                suggestion=(
+                    "Bind a material via an Assign Material LOP, or rely on the "
+                    "lookdev department export to author bindings later."
+                ),
             )
 
     return result

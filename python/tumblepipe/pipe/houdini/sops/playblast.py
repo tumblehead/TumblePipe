@@ -80,11 +80,13 @@ class Playblast(ns.Node):
         department_names = self.list_department_names()
         if department_name not in department_names: return
         self.parm('department').set(department_name)
-    
+        self._update_labels()
+
     def set_camera_name(self, camera_name):
         camera_names = self.list_camera_names()
         if camera_name not in camera_names: return
         self.parm('camera').set(camera_name)
+        self._update_labels()
 
     def get_entity_uri(self) -> Uri | None:
         entity_uri_raw = self.parm('entity').eval()
@@ -106,6 +108,7 @@ class Playblast(ns.Node):
         entity_uris = self.list_entity_uris()
         if str(entity_uri) not in entity_uris: return  # Compare strings
         self.parm('entity').set(str(entity_uri))
+        self._update_labels()
 
     def _update_labels(self):
         """Update label parameters to show current entity/department selection."""

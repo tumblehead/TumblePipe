@@ -24,7 +24,11 @@ def validate_cameras(root) -> ValidationResult:
 
     if not camera_paths:
         result.add_error(
-            "No Camera prims found in stage"
+            "No Camera prims found in stage",
+            suggestion=(
+                "Add a camera under /cameras/ via a Camera LOP, or sublayer in "
+                "the layout/animation department where the shot camera lives."
+            ),
         )
         return result
 
@@ -39,7 +43,12 @@ def validate_cameras(root) -> ValidationResult:
                 if render_camera_path not in camera_paths:
                     result.add_error(
                         f"Render camera path not found in stage: {render_camera_path}",
-                        '/Render/rendersettings'
+                        '/Render/rendersettings',
+                        suggestion=(
+                            "Update the Camera Path on the Render Settings LOP "
+                            "to point at an existing camera, or add the missing "
+                            "camera to the stage."
+                        ),
                     )
 
     # Validate each camera's attributes
@@ -57,12 +66,20 @@ def validate_cameras(root) -> ValidationResult:
                 if near >= far:
                     result.add_warning(
                         f"Camera has invalid clipping range: near ({near}) >= far ({far})",
-                        camera_path
+                        camera_path,
+                        suggestion=(
+                            "Set near < far on the camera LOP (typical: near=0.1, "
+                            "far=10000)."
+                        ),
                     )
                 if near <= 0:
                     result.add_warning(
                         f"Camera has non-positive near clipping plane: {near}",
-                        camera_path
+                        camera_path,
+                        suggestion=(
+                            "Near clip must be > 0 (USD requirement). Set the "
+                            "near plane on the camera LOP — typical value 0.1."
+                        ),
                     )
 
         # Check focal length (warning if missing)
@@ -70,14 +87,22 @@ def validate_cameras(root) -> ValidationResult:
         if not focal_attr.IsValid():
             result.add_warning(
                 "Camera missing 'focalLength' attribute",
-                camera_path
+                camera_path,
+                suggestion=(
+                    "Set Focal Length on the camera LOP (default 50mm; typical "
+                    "cinematic 35–85mm)."
+                ),
             )
         else:
             focal_length = focal_attr.Get()
             if focal_length is not None and focal_length <= 0:
                 result.add_warning(
                     f"Camera has invalid focal length: {focal_length}",
-                    camera_path
+                    camera_path,
+                    suggestion=(
+                        "Focal Length must be > 0. Set a sensible value on the "
+                        "camera LOP (typical: 35–85mm)."
+                    ),
                 )
 
     return result

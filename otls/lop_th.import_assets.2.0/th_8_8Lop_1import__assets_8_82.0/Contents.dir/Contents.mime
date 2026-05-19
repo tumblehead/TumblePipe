@@ -110,7 +110,7 @@ Content-Type: text/plain
 {
 version 0.8
 outputidx	[ 0	locks=0 ]	(	0	)
-modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+modifiedprims	[ 0	locks=0 ]	(	"`chs(\"../output_modified_prims\")`"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -233,7 +233,7 @@ Content-Type: text/plain
 {
 version 0.8
 outputidx	[ 0	locks=0 ]	(	0	)
-modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+modifiedprims	[ 0	locks=0 ]	(	"`chs(\"../../output_modified_prims\")`"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY

@@ -306,3 +306,14 @@ def select():
         if selected_uri:
             node.parm('entity').set(selected_uri)
             node.execute()
+
+
+def output_modified_prims(raw_node) -> str:
+    """Return the prim path this HDA wrote, for the output's modifiedprims."""
+    entity = raw_node.parm('entity').eval()
+    if not entity:
+        return ''
+    try:
+        return uri_to_prim_path(Uri.parse_unsafe(entity))
+    except ValueError:
+        return ''
