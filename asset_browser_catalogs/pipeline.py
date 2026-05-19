@@ -186,6 +186,16 @@ class PipelineCatalog(Catalog):
                     except Exception:
                         log.exception("Failed to save bootstrapped projects.json")
 
+        # Global pipeline catalog prefs (autosave-on-scene-change, …).
+        # Loaded once on init; mutators go through set_prefs() so on-disk
+        # JSON stays in sync. See _pipeline_prefs.py.
+        # Absolute import (rather than ``from ._pipeline_prefs``)
+        # because tumbletrove's external-catalog discovery loads
+        # pipeline.py without a parent package — see the sys.path
+        # tweak at the top of this file.
+        from _pipeline_prefs import load_prefs  # noqa: E402
+        self._prefs = load_prefs()
+
         # Per-project Client instances. Built eagerly on the calling
         # thread (typically the GUI thread during pypanel creation).
         # Building Clients on background threads while Houdini's
@@ -237,9 +247,11 @@ class PipelineCatalog(Catalog):
         # default_client + ``TH_*`` env. ``_activate_project`` skips
         # its expensive reset/rebuild when the requested project
         # already matches both this attribute and the live env var.
-        # Initialised to the launch project so the first call with
-        # the same project is a no-op.
-        self._active_project_path = self._launch_project_path or ""
+        # ``None`` means "no activation has happened yet" — the first
+        # call must run the full patching pass even if the project
+        # matches the launch env, because tumblepipe modules cached at
+        # import time may still hold a stale ``api`` reference.
+        self._active_project_path: str | None = None
 
         # Client construction is deferred until the first asset-browse
         # call. ``initialize()`` is intentionally a no-op (Houdini 22
@@ -560,7 +572,8 @@ class PipelineCatalog(Catalog):
         if project is None:
             return
         if (
-            self._active_project_path == project.project_path
+            self._active_project_path is not None
+            and self._active_project_path == project.project_path
             and os.environ.get("TH_PROJECT_PATH") == project.project_path
         ):
             return
@@ -1258,11 +1271,6 @@ class PipelineCatalog(Catalog):
         Manual replacement for the auto-staging that used to fire on
         every membership edit. Returns ``True`` on success.
         """
-        import sys
-        print(
-            f"[asset_browser] export_root_usd START for {collection_id}",
-            file=sys.stderr,
-        )
         parsed = self._parse_collection_id(collection_id)
         if parsed is None:
             return False
@@ -1281,28 +1289,15 @@ class PipelineCatalog(Catalog):
         scene_uri = self._scene_uri(path)
         try:
             scn_mod.export_scene_version(scene_uri)
-            print(
-                f"[asset_browser] export_scene_version OK for {scene_uri}",
-                file=sys.stderr,
-            )
         except Exception:
             log.exception(
                 "export_scene_version failed for %s", scene_uri,
-            )
-            print(
-                f"[asset_browser] export_scene_version FAILED for {scene_uri}",
-                file=sys.stderr,
             )
             return False
         # Re-fetch the Root card so the dirty indicator clears now
         # that scene JSON matches the freshly-written context.json.
         try:
             self._request_card_refresh_for_id(collection_id)
-            print(
-                f"[asset_browser] card refresh requested for "
-                f"{collection_id}",
-                file=sys.stderr,
-            )
         except Exception:
             log.exception(
                 "card refresh after export failed for %s", collection_id,
@@ -1557,9 +1552,6 @@ class PipelineCatalog(Catalog):
             )
             for e in getattr(scene, "assets", ())
         ]
-        import sys
-        # Use the same path resolver tumblepipe uses for export so our
-        # check is anchored to the truth of where files land.
         try:
             from tumblepipe.pipe.paths import get_scene_staged_path
             export_root = get_scene_staged_path(scene_uri)
@@ -1568,22 +1560,10 @@ class PipelineCatalog(Catalog):
                 "_root_is_dirty: get_scene_staged_path failed for %s",
                 scene_id, exc_info=True,
             )
-            print(
-                f"[asset_browser] _root_is_dirty {scene_id}: "
-                f"get_scene_staged_path RAISED -> dirty=bool(current)="
-                f"{bool(current)}",
-                file=sys.stderr,
-            )
             return bool(current)
         from pathlib import Path
         export_root = Path(str(export_root))
         if not export_root.exists():
-            print(
-                f"[asset_browser] _root_is_dirty {scene_id}: "
-                f"export_root does not exist: {export_root} -> "
-                f"dirty=bool(current)={bool(current)}",
-                file=sys.stderr,
-            )
             return bool(current)
         try:
             versions = sorted(
@@ -1591,29 +1571,11 @@ class PipelineCatalog(Catalog):
                 if p.is_dir() and p.name.startswith("v")
             )
         except Exception:
-            print(
-                f"[asset_browser] _root_is_dirty {scene_id}: "
-                f"iterdir RAISED on {export_root} -> "
-                f"dirty=bool(current)={bool(current)}",
-                file=sys.stderr,
-            )
             return bool(current)
         if not versions:
-            print(
-                f"[asset_browser] _root_is_dirty {scene_id}: "
-                f"no v* dirs under {export_root} -> "
-                f"dirty=bool(current)={bool(current)}",
-                file=sys.stderr,
-            )
             return bool(current)
         ctx_path = versions[-1] / "context.json"
         if not ctx_path.exists():
-            print(
-                f"[asset_browser] _root_is_dirty {scene_id}: "
-                f"context.json missing at {ctx_path} -> "
-                f"dirty=bool(current)={bool(current)}",
-                file=sys.stderr,
-            )
             return bool(current)
         try:
             import json
@@ -1633,23 +1595,7 @@ class PipelineCatalog(Catalog):
             )
             for a in ctx.get("parameters", {}).get("assets", [])
         ]
-        dirty = sorted(current) != sorted(exported)
-        # One-shot debug print so the user can see exactly why the
-        # dirty dot is or isn't clearing. Drop this once the path
-        # math is confirmed.
-        try:
-            import sys
-            print(
-                f"[asset_browser] _root_is_dirty {scene_id}\n"
-                f"  context.json: {ctx_path}\n"
-                f"  current ({len(current)}): {sorted(current)}\n"
-                f"  exported ({len(exported)}): {sorted(exported)}\n"
-                f"  dirty={dirty}",
-                file=sys.stderr,
-            )
-        except Exception:
-            pass
-        return dirty
+        return sorted(current) != sorted(exported)
 
     def _group_context_from_tag(self, group_tag: str) -> str | None:
         """Return ``"shots"`` / ``"assets"`` for a ``group:`` id, or
@@ -3102,7 +3048,6 @@ class PipelineCatalog(Catalog):
         ``detail_refresh_requested`` → ``_on_quick_action_done``)
         wouldn't fire because the current detail isn't this container.
         """
-        import sys
         try:
             fresh = self.refresh_single_asset(asset_id)
         except Exception:
@@ -3110,29 +3055,12 @@ class PipelineCatalog(Catalog):
                 "refresh_single_asset failed for %s", asset_id,
                 exc_info=True,
             )
-            print(
-                f"[asset_browser] refresh_single_asset RAISED for "
-                f"{asset_id}",
-                file=sys.stderr,
-            )
             return
         if fresh is None:
-            print(
-                f"[asset_browser] refresh_single_asset -> None for "
-                f"{asset_id}",
-                file=sys.stderr,
-            )
             return
-        print(
-            f"[asset_browser] _request_card_refresh_for_id {asset_id} "
-            f"fresh.metadata.dirty="
-            f"{fresh.metadata.get('dirty')!r}",
-            file=sys.stderr,
-        )
         try:
             from PySide6.QtWidgets import QApplication
             from asset_browser.ui.browser import AssetBrowserWidget
-            swapped = 0
             for w in QApplication.allWidgets():
                 if not isinstance(w, AssetBrowserWidget):
                     continue
@@ -3141,17 +3069,11 @@ class PipelineCatalog(Catalog):
                     continue
                 try:
                     grid.update_card_asset(fresh)
-                    swapped += 1
                 except Exception:
                     log.debug(
                         "update_card_asset failed for %s", asset_id,
                         exc_info=True,
                     )
-            print(
-                f"[asset_browser] update_card_asset called on "
-                f"{swapped} browser(s) for {asset_id}",
-                file=sys.stderr,
-            )
         except Exception:
             log.debug(
                 "card refresh walk failed for %s", asset_id,
@@ -3804,11 +3726,8 @@ class PipelineCatalog(Catalog):
 
         Wrapped defensively: if either sub-builder throws, we still
         return a non-empty widget so the detail panel keeps the
-        Departments tab visible. The actual exception goes to the log
-        and is surfaced inline so the user knows to check the Python
-        Shell for the traceback.
+        Departments tab visible.
         """
-        from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
         holder = QWidget()
@@ -3824,50 +3743,22 @@ class PipelineCatalog(Catalog):
         if mem_w is not None:
             vbox.addWidget(mem_w)
 
-        depts_err: str = ""
         try:
             depts_w = self._build_departments_section(ctx)
         except Exception:
-            import sys
-            import traceback
-            depts_err = traceback.format_exc()
             log.exception(
                 "Departments section build failed for %s", ctx.detail.id,
             )
-            # Houdini's default log handler can swallow log.exception
-            # output; print to stderr too so the traceback always
-            # surfaces in the Python Shell while we debug this.
-            try:
-                print(
-                    f"[asset_browser] Departments section build "
-                    f"failed for {ctx.detail.id}:\n{depts_err}",
-                    file=sys.stderr,
-                )
-            except Exception:
-                pass
             depts_w = None
         if depts_w is not None:
             vbox.addWidget(depts_w)
         else:
             err = QLabel(
-                "(failed to load departments — see Python Shell for traceback)"
+                "(failed to load departments — see log for traceback)"
             )
             err.setStyleSheet("color: #f06060;")
             err.setWordWrap(True)
             vbox.addWidget(err)
-            # Inline traceback so the user has SOMETHING to read even
-            # if the shell handler is silent. Truncated to keep the
-            # panel scrollable on terse error messages.
-            if depts_err:
-                tb_lbl = QLabel(depts_err[-1500:])
-                tb_lbl.setStyleSheet(
-                    "color: #f0a0a0; font-family: monospace; font-size: 10px;"
-                )
-                tb_lbl.setWordWrap(True)
-                tb_lbl.setTextInteractionFlags(
-                    Qt.TextSelectableByMouse,
-                )
-                vbox.addWidget(tb_lbl)
 
         vbox.addStretch(1)
         return holder
@@ -4772,6 +4663,11 @@ class PipelineCatalog(Catalog):
                 self._publish_current_scene(rd)
         )
         btn_row.addWidget(pub_btn)
+        # Note: this detail-panel section is currently dead code (the
+        # asset browser renders the Save/Publish buttons via the
+        # quick-actions toolbar instead — see get_quick_actions +
+        # get_quick_action_hover). The hover-info wiring for those
+        # lives in the shared asset_browser/core/hover_info.py path.
 
         refresh_btn = QPushButton("Refresh")
         refresh_btn.setStyleSheet(BUTTON_GHOST_STYLE)
@@ -6400,9 +6296,9 @@ class PipelineCatalog(Catalog):
     def get_quick_actions(self):
         from asset_browser.api.catalog import QuickAction
         return [
-            QuickAction(id="save", label="Save", icon="save", tooltip="Save current scene"),
-            QuickAction(id="publish", label="Publish", icon="upload", tooltip="Publish exports"),
-            QuickAction(id="reload", label="Reload", icon="refresh-cw", tooltip="Reload current scene"),
+            QuickAction(id="save", label="Save", icon="save-all", tooltip="Save current scene"),
+            QuickAction(id="publish", label="Publish", icon="send", tooltip="Publish exports"),
+            QuickAction(id="reload", label="Reload", icon="rotate-ccw", tooltip="Reload current scene"),
         ]
 
     def get_quick_actions_label(self) -> str:
@@ -6423,6 +6319,49 @@ class PipelineCatalog(Catalog):
             self._publish_current_scene(done_cb)
         elif action_id == "reload":
             self._reload_current_scene(done_cb)
+
+    def get_quick_action_hover(self, action_id: str) -> str | None:
+        """Return rich-text HTML for the hover popup above a quick action.
+
+        - ``save``: last mtime of the currently-loaded hip file.
+        - ``publish``: mtime of the latest published version for the
+          current scene's (entity, dept, variant) tuple.
+
+        Returns ``None`` for actions we don't track (e.g. ``reload``) so
+        the button falls back to its regular QToolTip.
+        """
+        from asset_browser.core.hover_info import format_age_html
+
+        if action_id == "save":
+            try:
+                import hou
+                hip = hou.hipFile.path()
+                if not hip:
+                    return None
+                p = Path(hip)
+                if not p.exists():
+                    return format_age_html("Last saved", None)
+                return format_age_html("Last saved", p.stat().st_mtime)
+            except Exception:
+                return None
+
+        if action_id == "publish":
+            scene_ctx = self._get_loaded_scene_context()
+            if scene_ctx is None:
+                return None
+            try:
+                from tumblepipe.pipe.paths import latest_export_path
+                variant = getattr(scene_ctx, "variant_name", None) or "default"
+                path = latest_export_path(
+                    scene_ctx.entity_uri, variant, scene_ctx.department_name,
+                )
+                if path is None or not path.exists():
+                    return format_age_html("Last published", None)
+                return format_age_html("Last published", path.stat().st_mtime)
+            except Exception:
+                return None
+
+        return None
 
     # ── Entity Creation ────────────────────────────────
 
@@ -6947,9 +6886,6 @@ class PipelineCatalog(Catalog):
     def add_assets_to_collection(
         self, collection_id: str, asset_ids: list[str],
     ) -> tuple[int, int, str]:
-        import sys
-        import time
-        t_total = time.perf_counter()
         parsed = self._parse_collection_id(collection_id)
         if parsed is None:
             return (0, 0, "")
@@ -6957,17 +6893,10 @@ class PipelineCatalog(Catalog):
         proj = self._registry.get(proj_name)
         if proj is None:
             return (0, 0, "")
-        t_act = time.perf_counter()
         try:
             self._activate_project(proj)
         except Exception:
             return (0, 0, "")
-        print(
-            f"[asset_browser] add_assets_to_collection({collection_id}, "
-            f"{len(asset_ids)}): _activate_project "
-            f"{(time.perf_counter() - t_act) * 1000:.0f}ms",
-            file=sys.stderr,
-        )
         added = 0
         skipped = 0
         skip_reasons: set[str] = set()
@@ -7009,17 +6938,11 @@ class PipelineCatalog(Catalog):
             except Exception:
                 return (0, 0, "")
             scene_uri = self._scene_uri(path)
-            t_get = time.perf_counter()
             try:
                 scene = scn_mod.get_scene(scene_uri)
             except Exception:
                 log.exception("get_scene failed")
                 return (0, 0, "")
-            print(
-                f"[asset_browser]   get_scene "
-                f"{(time.perf_counter() - t_get) * 1000:.0f}ms",
-                file=sys.stderr,
-            )
             if scene is None:
                 return (0, 0, "")
             shot_ref_changed_uris: list = []
@@ -7045,7 +6968,6 @@ class PipelineCatalog(Catalog):
                 # Shots dropped on a Root set the shot's scene_ref
                 # (the shot "uses" this Root as its root-layer source).
                 if uri_str.startswith("entity:/shots/"):
-                    t_ref = time.perf_counter()
                     try:
                         scene_mod.set_scene_ref(uri, scene_uri)
                         added += 1
@@ -7054,11 +6976,6 @@ class PipelineCatalog(Catalog):
                         log.exception("set_scene_ref failed for %s", aid)
                         skipped += 1
                         skip_reasons.add("set_scene_ref failed")
-                    print(
-                        f"[asset_browser]   set_scene_ref({aid}) "
-                        f"{(time.perf_counter() - t_ref) * 1000:.0f}ms",
-                        file=sys.stderr,
-                    )
                     continue
                 if not uri_str.startswith("entity:/assets/"):
                     skipped += 1
@@ -7088,18 +7005,11 @@ class PipelineCatalog(Catalog):
                     pass
             assets_changed = new_entries != list(existing)
             if assets_changed:
-                t_set = time.perf_counter()
                 try:
                     scn_mod.set_scene_assets(scene_uri, new_entries)
                 except Exception:
                     log.exception("set_scene_assets failed")
                     return (0, len(asset_ids), "set_scene_assets failed")
-                print(
-                    f"[asset_browser]   set_scene_assets "
-                    f"({len(new_entries)} entries) "
-                    f"{(time.perf_counter() - t_set) * 1000:.0f}ms",
-                    file=sys.stderr,
-                )
             # Staging the Root (export_scene_version,
             # generate_root_version, build) used to happen here
             # automatically, but heavy USD operations on every
@@ -7112,12 +7022,6 @@ class PipelineCatalog(Catalog):
 
         if added:
             self._invalidate_membership_cache()
-        print(
-            f"[asset_browser] add_assets_to_collection TOTAL "
-            f"{(time.perf_counter() - t_total) * 1000:.0f}ms "
-            f"(added={added}, skipped={skipped})",
-            file=sys.stderr,
-        )
         total = added + skipped
         if skipped and added:
             msg = f"Added {added} of {total} — {skipped} skipped ({', '.join(sorted(skip_reasons))})"
@@ -7489,7 +7393,7 @@ class PipelineCatalog(Catalog):
         Client even when called with the previously-active project.
         """
         self._client_slots.clear()
-        self._active_project_path = ""
+        self._active_project_path = None
         self.invalidate_cache()
 
     # ── Internal helpers ──────────────────────────────────
@@ -8199,6 +8103,31 @@ class PipelineCatalog(Catalog):
         except Exception:
             log.exception("Failed to open in new instance: %s/%s", asset_id, dept)
 
+    def _autosave_before_scene_swap(self) -> None:
+        """Version-up the current scene if the user opted in and there are
+        unsaved changes. Called from the scene-load paths to bypass
+        Houdini's "save changes?" prompt without losing the user's WIP.
+
+        No-op when the pref is off, when the hip is clean, or when the
+        current scene has no pipeline context (untitled, off-pipeline,
+        etc. — falling back to Houdini's native prompt is safer than
+        silently writing to an unknown location).
+        """
+        if not self._prefs.autosave_on_scene_change:
+            return
+        try:
+            import hou
+            if not hou.hipFile.hasUnsavedChanges():
+                return
+        except Exception:
+            return
+        # _save_current_scene already guards on context + activates the
+        # correct project, and is safe to call on the GUI thread.
+        try:
+            self._save_current_scene()
+        except Exception:
+            log.exception("Autosave on scene change failed")
+
     def _open_workfile(self, asset_id: str, dept: str) -> None:
         """Open the latest workfile for a department.
 
@@ -8262,6 +8191,7 @@ class PipelineCatalog(Catalog):
                 def _do_load(p=hip_path, target_proj=proj):
                     try:
                         import hou
+                        self._autosave_before_scene_swap()
                         self._activate_project(target_proj)
                         hou.hipFile.load(str(p))
                         log.info("Opened workfile: %s", p)
@@ -8316,6 +8246,7 @@ class PipelineCatalog(Catalog):
                 def _do_load(p=hip_path, target_proj=proj):
                     try:
                         import hou
+                        self._autosave_before_scene_swap()
                         self._activate_project(target_proj)
                         hou.hipFile.load(str(p))
                         log.info("Opened group workfile: %s", p)

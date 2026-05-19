@@ -153,17 +153,19 @@ def jump_to_variant(kwargs):
             pane_tab.homeToSelection()
 
 
+FROM_CONTEXT = 'from_context'
+
+
 def select_entity():
     """HDA button callback — open entity selector and sync entity parm."""
     from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
     from tumblepipe.pipe.houdini.lops import import_asset
-    from tumblepipe.util.uri import Uri
 
     node = hou.pwd()
     dialog = EntitySelectorDialog(
         api=import_asset.api,
         entity_filter='assets',
-        include_from_context=False,
+        include_from_context=True,
         current_selection=node.parm('entity').eval(),
         title="Select Asset",
         parent=hou.qt.mainWindow(),
@@ -175,26 +177,60 @@ def select_entity():
     if not selected_uri:
         return
 
-    _apply_entity(node, Uri.parse_unsafe(selected_uri))
+    _apply_entity(node, selected_uri)
 
 
-def _apply_entity(node, uri):
-    """Write an entity URI into the node's parms (entity, entity_label)."""
-    raw = str(uri)
-    node.parm('entity').set(raw)
-    node.parm('entity_label').set(raw)
+def _resolve_from_context():
+    """Return the asset URI string from the workfile context, or None."""
+    from tumblepipe.pipe.paths import get_workfile_context
+    from pathlib import Path
+    try:
+        ctx = get_workfile_context(Path(hou.hipFile.path()))
+    except Exception:
+        return None
+    if ctx is None or ctx.entity_uri is None:
+        return None
+    if ctx.entity_uri.purpose != 'entity':
+        return None
+    uri_str = str(ctx.entity_uri)
+    if not uri_str.startswith('entity:/assets/'):
+        return None
+    return uri_str
+
+
+def _apply_entity(node, value):
+    """Write entity URI (or 'from_context' sentinel) into the node's parms.
+
+    For 'from_context' the entity parm holds the sentinel literal and the
+    label shows the dynamically-resolved URI (or 'none' if it can't be
+    resolved yet). For an explicit URI both parms get the same string.
+    """
+    if value == FROM_CONTEXT:
+        node.parm('entity').set(FROM_CONTEXT)
+        resolved = _resolve_from_context()
+        node.parm('entity_label').set(
+            f'from_context: {resolved}' if resolved else 'from_context: none'
+        )
+    else:
+        raw = str(value)
+        node.parm('entity').set(raw)
+        node.parm('entity_label').set(raw)
 
 
 def effective_primpath(node):
     """Resolve the primpath internal LOPs should consume.
 
     In entity mode (`use_entity == 1`) the path is derived from `entity` via
-    `uri_to_prim_path`. In direct mode it falls back to the `primpath` parm.
-    Called from hscript `pythonexprs(...)` on the hidden `effective_primpath`
-    parm, which the internals reference via `chs("../effective_primpath")`.
+    `uri_to_prim_path`. The 'from_context' sentinel resolves to the current
+    workfile's asset URI. In direct mode it falls back to the `primpath`
+    parm. Called from hscript `pythonexprs(...)` on the hidden
+    `effective_primpath` parm, which the internals reference via
+    `chs("../effective_primpath")`.
     """
     if node.parm('use_entity').eval():
         entity = node.parm('entity').eval()
+        if entity == FROM_CONTEXT:
+            entity = _resolve_from_context()
         if entity:
             from tumblepipe.pipe.houdini.util import uri_to_prim_path
             from tumblepipe.util.uri import Uri
@@ -206,29 +242,5 @@ def effective_primpath(node):
 
 
 def init_entity_from_context(node):
-    """Best-effort: default `entity` to the current workfile's asset URI."""
-    from tumblepipe.pipe.houdini.lops import import_asset
-    from tumblepipe.pipe.paths import get_workfile_context
-    from tumblepipe.util.uri import Uri
-    from pathlib import Path
-
-    asset_uris = import_asset.api.config.list_entities(
-        filter=Uri.parse_unsafe('entity:/assets'),
-        closure=True,
-    )
-    asset_uris = [e.uri for e in asset_uris]
-    if not asset_uris:
-        return
-
-    chosen = None
-    try:
-        ctx = get_workfile_context(Path(hou.hipFile.path()))
-    except Exception:
-        ctx = None
-    if ctx is not None and ctx.entity_uri in asset_uris:
-        chosen = ctx.entity_uri
-
-    if chosen is None:
-        chosen = asset_uris[0]
-
-    _apply_entity(node, chosen)
+    """Set entity to the 'from_context' sentinel and refresh the label."""
+    _apply_entity(node, FROM_CONTEXT)

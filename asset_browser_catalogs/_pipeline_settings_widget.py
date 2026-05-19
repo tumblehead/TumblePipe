@@ -10,9 +10,9 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMessageBox, QPushButton, QVBoxLayout,
-    QWidget,
+    QCheckBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+    QVBoxLayout, QWidget,
 )
 
 from asset_browser.core.projects import ProjectConfig
@@ -127,6 +127,36 @@ class PipelineSettingsWidget(QWidget):
 
         outer.addWidget(self._form_holder)
 
+        # ── Behavior toggles (separator + section) ──
+        sep = QFrame(self)
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet(f"color: {BORDER}; background-color: {BORDER};")
+        outer.addWidget(sep)
+
+        behavior_label = QLabel("Behavior")
+        behavior_label.setStyleSheet(
+            f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; '
+            f"color: {TEXT_DIM}; border: none; background: transparent;"
+        )
+        outer.addWidget(behavior_label)
+
+        self._autosave_checkbox = QCheckBox(
+            "Autosave (version up) on scene change"
+        )
+        self._autosave_checkbox.setToolTip(
+            "When opening a different workfile from the asset browser, "
+            "version-up-save the current scene first if it has unsaved "
+            "changes — instead of triggering Houdini's save-override "
+            "prompt. The current scene must have a pipeline context "
+            "(an entity URI / department / version); off-pipeline hips "
+            "fall back to the native prompt."
+        )
+        self._autosave_checkbox.setChecked(
+            self._catalog._prefs.autosave_on_scene_change
+        )
+        self._autosave_checkbox.toggled.connect(self._on_autosave_toggled)
+        outer.addWidget(self._autosave_checkbox)
+
         # ── Apply button (commits to disk + reinits clients) ──
         apply_row = QHBoxLayout()
         apply_row.setContentsMargins(0, 0, 0, 0)
@@ -138,6 +168,27 @@ class PipelineSettingsWidget(QWidget):
         outer.addLayout(apply_row)
 
         self._refresh_list()
+
+    def _on_autosave_toggled(self, checked: bool) -> None:
+        """Persist the autosave-on-scene-change pref immediately on toggle.
+
+        Independent of the "Apply Project Changes" button — the toggle is
+        a single boolean, no validation required, and saving on every
+        click keeps the in-memory catalog state and the on-disk JSON in
+        sync without needing the user to remember to apply.
+        """
+        from ._pipeline_prefs import save_prefs
+        self._catalog._prefs.autosave_on_scene_change = bool(checked)
+        try:
+            save_prefs(self._catalog._prefs)
+        except Exception:
+            # Don't roll back the checkbox — the in-memory pref is what
+            # the catalog reads at scene-swap time, and a failed disk
+            # write will surface as an inconsistency on next launch.
+            QMessageBox.warning(
+                self, "Pipeline Settings",
+                "Failed to persist autosave preference — see Houdini console.",
+            )
 
     # ── Helpers ───────────────────────────────────────
 
