@@ -1,16 +1,23 @@
 import hou
 
 
-def _get_import_layer_node():
+def _resolve_node(node):
+    """Use the explicit ``node`` arg when given (catalog drop path),
+    otherwise fall back to ``hou.pwd()`` (parm-callback path)."""
+    return node if node is not None else hou.pwd()
+
+
+def _get_import_layer_node(node=None):
     """Get the internal import_layer LOP node."""
-    return hou.pwd().node('lopnet/import_layer')
+    sop = _resolve_node(node)
+    return sop.node('lopnet/import_layer') if sop is not None else None
 
 
-def _update_labels():
+def _update_labels(node=None):
     """Copy label values from internal import_layer to SOP HDA."""
-    sop_node = hou.pwd()
-    il_node = _get_import_layer_node()
-    if not il_node:
+    sop_node = _resolve_node(node)
+    il_node = _get_import_layer_node(sop_node)
+    if not il_node or sop_node is None:
         return
 
     # Copy entity_label
@@ -26,15 +33,40 @@ def _update_labels():
         sop_vlabel.set(il_vlabel.eval())
 
 
-def execute():
-    """Import button callback - triggers the internal import_layer."""
-    from tumblepipe.pipe.houdini.lops import import_layer
+def execute(node=None):
+    """Import button callback - triggers the internal import_layer.
 
-    il_node = _get_import_layer_node()
-    if il_node:
-        node = import_layer.ImportLayer(il_node)
-        node.execute()
-        _update_labels()
+    Accepts an optional explicit ``node`` so callers outside the parm-
+    callback context (e.g. the asset browser drop handler) can drive
+    the HDA without relying on ``hou.pwd()``.
+    """
+    from tumblepipe.pipe.houdini.lops import import_layer
+    import tumblepipe.pipe.houdini.nodes as ns
+
+    sop_node = _resolve_node(node)
+    il_node = _get_import_layer_node(sop_node)
+    if not il_node or sop_node is None:
+        return
+
+    n = import_layer.ImportLayer(il_node)
+    n.execute()
+    _update_labels(sop_node)
+
+    # Mirror the internal import_layer's bypass state onto the outer SOP
+    # HDA so the node visibly disables when the asset isn't staged on
+    # disk (or has no entity/department/version selected). import_layer
+    # already sets its own comment with the reason — propagate it so the
+    # user sees the same message on the SOP card.
+    if il_node.isBypassed():
+        comment = il_node.comment() or "Bypassed: No staged asset"
+        ns.set_node_comment(sop_node, comment)
+        sop_node.bypass(True)
+    else:
+        # IL imported cleanly — clear any prior bypass + comment on the
+        # SOP HDA so re-runs after fixing the entity/version succeed.
+        sop_node.bypass(False)
+        sop_node.setComment("")
+        sop_node.setGenericFlag(hou.nodeFlag.DisplayComment, False)
 
 
 def open_location():

@@ -7,7 +7,9 @@ IconImage	IconImage
 EditableNodes	EditableNodes
 TypePropertiesOptions	TypePropertiesOptions
 Help	Help
+Tools.shelf	Tools.shelf
 PythonModule	PythonModule
 OnCreated	OnCreated
+OnNameChanged	OnNameChanged
+OnDeleted	OnDeleted
 ExtraFileOptions	ExtraFileOptions
-Tools.shelf	Tools.shelf

@@ -44,13 +44,16 @@
             default { "from_context: none" }
         }
         parm {
-            name    "variant"
-            label   "Variant"
+            name    "department"
+            label   "Department"
             type    string
-            default { "default" }
+            default { "model" }
             menu {
-                [ "opmenu -l -a lopnet/import_layer variant" ]
+                "model"         "model"
+                "blendshape"    "blendshape"
             }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
         }
         parm {
             name    "version"

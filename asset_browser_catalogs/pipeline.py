@@ -1971,8 +1971,26 @@ class PipelineCatalog(Catalog):
             )
         return result
 
-    def get_primary_filters(self) -> list[Collection]:
+    def get_primary_filters(
+        self, active_tags: frozenset[str] | None = None,
+    ) -> list[Collection]:
         items = self._get_all_items()
+
+        # When the user has a collection selected, scope pill counts to
+        # items that satisfy the collection's non-type clauses. We strip
+        # the ``type:*`` clauses because each TYPE pill represents its
+        # own type — the count is "how many items of THIS type would be
+        # visible if the user picked this pill", so we don't want the
+        # current type clause forcing the count to zero on the others.
+        if active_tags:
+            non_type = frozenset(
+                t for t in active_tags if not t.startswith("type:")
+            )
+            if non_type:
+                items = [
+                    a for a in items
+                    if non_type.issubset(set(a.tags))
+                ]
 
         def _tag_count(tag: str) -> int:
             return sum(1 for a in items if tag in a.tags)
@@ -5982,9 +6000,9 @@ class PipelineCatalog(Catalog):
         if detail.metadata.get("kind") == "scene":
             return self._drop_root_as_sublayer(detail, drop)
 
-        if drop.context != "lop" or not drop.network:
+        if not drop.network or drop.context not in ("lop", "sop"):
             hou.ui.setStatusMessage(
-                "Pipeline assets can only be imported into LOP networks",
+                "Pipeline assets can only be imported into LOP or SOP networks",
                 severity=hou.severityType.Warning,
             )
             return True
@@ -6002,6 +6020,17 @@ class PipelineCatalog(Catalog):
         proj = self._project_for_asset_id(detail.id)
         if proj is not None:
             self._activate_project(proj)
+
+        # SOP context: drop a th::import_model HDA. Shots and group
+        # containers don't have a SOP-side equivalent — reject them.
+        if drop.context == "sop":
+            if "type:shot" in detail.tags:
+                hou.ui.setStatusMessage(
+                    "Shots can only be imported into LOP networks",
+                    severity=hou.severityType.Warning,
+                )
+                return True
+            return self._drop_asset_as_import_model(detail, drop, entity_uri)
 
         # Shots cannot be appended to an import_assets node — fall
         # through to the normal single-shot path below.
@@ -6097,6 +6126,90 @@ class PipelineCatalog(Catalog):
                 severity=hou.severityType.Error,
             )
             return True  # Always handled — error logged + status message
+
+        hou.ui.setStatusMessage(
+            f"Imported {detail.name}", severity=hou.severityType.Message,
+        )
+        return True
+
+    def _drop_asset_as_import_model(self, detail, drop, entity_uri: str) -> bool:
+        """Drop an asset into a SOP network as a ``th::import_model`` HDA.
+
+        Sets the HDA's ``entity`` parm to the asset URI, defaults the
+        ``department`` parm based on tags (``blendshape`` if the asset
+        is tagged as such; ``model`` otherwise), then triggers the
+        HDA's ``execute()`` so the internal LOP chain populates.
+        Returns ``True`` always — failures emit a status message.
+        """
+        import hou
+
+        network = drop.network
+        node_name = detail.name.replace(" ", "_")
+        try:
+            raw = network.createNode("th::import_model::1.0", node_name)
+            raw.parm("entity").set(entity_uri)
+            dept_parm = raw.parm("department")
+            if dept_parm is not None:
+                dept = "blendshape" if "type:blendshape" in detail.tags else "model"
+                dept_parm.set(dept)
+            # Drive the internal lopnet/import_layer directly rather than
+            # going through the HDA's PythonModule.execute(). The HDA's
+            # execute() relies on hou.pwd() which isn't set from a drop-
+            # handler context, AND its definition may be cached in the
+            # live session (so a freshly-rebuilt .hda's new signatures
+            # wouldn't be live yet). Talking straight to the inner IL
+            # node sidesteps both issues; entity/department/version on
+            # the IL are channel-referenced to the SOP HDA's parms, so
+            # we just set the SOP parms above and let IL.execute() read
+            # them through the references.
+            try:
+                il_node = raw.node("lopnet/import_layer")
+                if il_node is not None:
+                    from tumblepipe.pipe.houdini.lops import import_layer
+                    import_layer.ImportLayer(il_node).execute()
+                    # Copy the IL's resolved labels onto the SOP HDA so
+                    # entity_label / version_label show the live values
+                    # instead of "from_context: none".
+                    for parm_name in ("entity_label", "version_label"):
+                        src = il_node.parm(parm_name)
+                        dst = raw.parm(parm_name)
+                        if src is not None and dst is not None:
+                            dst.set(src.eval())
+                    # Mirror IL's bypass onto the outer SOP HDA so the
+                    # node is visibly disabled when the asset isn't
+                    # staged on disk. IL already wrote a "Bypassed: ..."
+                    # comment with the reason — surface that on the
+                    # outer node instead of leaving it silent.
+                    if il_node.isBypassed():
+                        comment = il_node.comment() or "Bypassed: No staged asset"
+                        raw.setComment(comment)
+                        raw.setGenericFlag(
+                            hou.nodeFlag.DisplayComment, True,
+                        )
+                        raw.bypass(True)
+            except Exception:
+                log.exception(
+                    "import_model: driving inner import_layer failed for %s",
+                    detail.id,
+                )
+            if drop.position is not None:
+                raw.setPosition(drop.position - hou.Vector2(0.5, 0.0))
+            else:
+                raw.moveToGoodPosition()
+            raw.setSelected(True, clear_all_selected=True)
+            try:
+                raw.setDisplayFlag(True)
+                raw.setRenderFlag(True)
+            except AttributeError:
+                pass
+            self.attach_network_thumbnail(detail.id, raw, drop)
+        except Exception:
+            log.exception("Failed to drop %s as import_model", detail.id)
+            hou.ui.setStatusMessage(
+                f"Failed to import {detail.name} (see console)",
+                severity=hou.severityType.Error,
+            )
+            return True
 
         hou.ui.setStatusMessage(
             f"Imported {detail.name}", severity=hou.severityType.Message,
@@ -6362,6 +6475,104 @@ class PipelineCatalog(Catalog):
                 return None
 
         return None
+
+    def get_asset_hover_html(self, asset) -> str | None:
+        """Pipeline-specific asset hover popup.
+
+        Surfaces name, type, project (when multi-project), category /
+        sequence, department version map (truncated), and member /
+        scene shot count for group / scene cards. All reads come from
+        ``asset.metadata`` and ``asset.tags`` so this stays fast enough
+        to call on every hover without blocking the GUI thread.
+        """
+        from asset_browser.core.theme import (
+            TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM, BORDER,
+        )
+
+        if asset is None:
+            return None
+
+        name = asset.name or "Untitled"
+        tags = list(asset.tags or ())
+        metadata = asset.metadata or {}
+
+        type_tag = next(
+            (t.split(":", 1)[1] for t in tags if t.startswith("type:")), None
+        )
+        type_label = {
+            "asset": "Asset",
+            "shot": "Shot",
+            "group": "Multi",
+            "scene": "Root",
+        }.get(type_tag, type_tag.title() if type_tag else "")
+
+        project = next(
+            (t.split(":", 1)[1] for t in tags if t.startswith("project:")),
+            None,
+        )
+        category = next(
+            (t.split(":", 1)[1] for t in tags if t.startswith("category:")),
+            None,
+        )
+
+        parts = [
+            f"<div style='color:{TEXT_PRIMARY}; font-weight:600; "
+            f"font-size:13px;'>{name}</div>"
+        ]
+        meta_line = " · ".join(
+            v for v in (type_label, project, category) if v
+        )
+        if meta_line:
+            parts.append(
+                f"<div style='color:{TEXT_SECONDARY}; margin-top:2px;'>"
+                f"{meta_line}</div>"
+            )
+
+        # Per-department version snapshot. Shot/asset cards carry a
+        # dict {dept: [versions]}; group cards may carry the same shape
+        # plus a covered-list. Show the latest version per dept.
+        depts = metadata.get("departments") or {}
+        rows: list[tuple[str, str]] = []
+        if isinstance(depts, dict):
+            for dept_name, versions in depts.items():
+                if isinstance(versions, list) and versions:
+                    rows.append((dept_name, versions[-1]))
+                elif isinstance(versions, str) and versions:
+                    rows.append((dept_name, versions))
+        elif isinstance(depts, list):
+            for dept_name in depts:
+                rows.append((str(dept_name), ""))
+
+        # Extra container info for groups / scenes.
+        extras: list[tuple[str, str]] = []
+        if "member_count" in metadata:
+            extras.append(("Members", str(metadata["member_count"])))
+        if "shot_count" in metadata:
+            extras.append(("Shots", str(metadata["shot_count"])))
+        if "sequence" in metadata and metadata["sequence"]:
+            extras.append(("Sequence", str(metadata["sequence"])))
+
+        if rows or extras:
+            parts.append(
+                f"<div style='border-top:1px solid {BORDER}; "
+                f"margin:8px 0 6px 0;'></div>"
+            )
+            for k, v in rows:
+                parts.append(
+                    f"<div style='margin-top:3px;'>"
+                    f"<span style='color:{TEXT_DIM};'>{k}:</span> "
+                    f"<span style='color:{TEXT_PRIMARY};'>{v or '—'}</span>"
+                    f"</div>"
+                )
+            for k, v in extras:
+                parts.append(
+                    f"<div style='margin-top:3px;'>"
+                    f"<span style='color:{TEXT_DIM};'>{k}:</span> "
+                    f"<span style='color:{TEXT_PRIMARY};'>{v}</span>"
+                    f"</div>"
+                )
+
+        return "".join(parts)
 
     # ── Entity Creation ────────────────────────────────
 

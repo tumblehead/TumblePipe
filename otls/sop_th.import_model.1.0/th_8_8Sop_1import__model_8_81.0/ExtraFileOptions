@@ -19,6 +19,46 @@
 		"type":"string",
 		"value":""
 	},
+	"OnDeleted/Cursor":{
+		"type":"intarray",
+		"value":[0,0]
+	},
+	"OnDeleted/IsExpr":{
+		"type":"bool",
+		"value":false
+	},
+	"OnDeleted/IsPython":{
+		"type":"bool",
+		"value":true
+	},
+	"OnDeleted/IsScript":{
+		"type":"bool",
+		"value":true
+	},
+	"OnDeleted/Source":{
+		"type":"string",
+		"value":""
+	},
+	"OnNameChanged/Cursor":{
+		"type":"intarray",
+		"value":[0,0]
+	},
+	"OnNameChanged/IsExpr":{
+		"type":"bool",
+		"value":false
+	},
+	"OnNameChanged/IsPython":{
+		"type":"bool",
+		"value":true
+	},
+	"OnNameChanged/IsScript":{
+		"type":"bool",
+		"value":true
+	},
+	"OnNameChanged/Source":{
+		"type":"string",
+		"value":""
+	},
 	"PythonModule/Cursor":{
 		"type":"intarray",
 		"value":[1,1]
