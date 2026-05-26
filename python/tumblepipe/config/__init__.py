@@ -29,7 +29,12 @@ class ConfigConvention:
         """
         raise NotImplementedError()
 
-    def set_properties(self, uri: Uri, properties: dict):
+    def set_properties(self, uri: Uri, properties: dict, schema_uri: Uri | None = None):
+        """Set properties at uri. If schema_uri is provided and the target
+        node has no existing schema, attach it (does not overwrite an
+        existing schema). This lets writers that don't go through
+        ``add_entity`` still produce schema-bearing leaves.
+        """
         raise NotImplementedError()
 
     def list_entities(self, filter: Uri | None = None, closure: bool = False) -> list[Entity]:

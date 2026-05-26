@@ -110,9 +110,17 @@ def get_pipeline_path():
 def get_config_path():
     return _env('TH_CONFIG_PATH')
 
-# Module-level singleton instance with thread safety
+# Module-level singleton instance with thread safety.
+#
+# Reentrant lock: Client.__init__ loads the project's config_convention.py
+# via importlib, which imports tumblepipe.config, whose submodules execute
+# `api = default_client()` at module-load. That recursive call must succeed
+# while the lock is already held by the outermost default_client() — a
+# plain threading.Lock would deadlock here. RLock lets the same thread
+# reacquire; the double-checked guard still keeps the Client constructor
+# from running twice.
 _default_client_instance = None
-_default_client_lock = threading.Lock()
+_default_client_lock = threading.RLock()
 
 def default_client():
     """Return the global shared API client instance.

@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from tumblehead.storage import StorageConvention
-from tumblehead.util.uri import Uri
-from tumblehead.api import (
+from tumblepipe.storage import StorageConvention
+from tumblepipe.util.uri import Uri
+from tumblepipe.api import (
     get_config_path,
     get_project_path,
     get_pipeline_path,

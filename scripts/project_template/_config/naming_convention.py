@@ -1,4 +1,4 @@
-from tumblehead.naming import NamingConvention
+from tumblepipe.naming import NamingConvention
 
 class ProjectNamingConvention(NamingConvention):
     def is_valid_entity_name(self, entity_name: str) -> bool:

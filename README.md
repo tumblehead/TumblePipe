@@ -30,9 +30,9 @@ for the full prerequisite list.
 ## Configure
 
 TumblePipe is customized through a config directory pointed at by
-`TH_CONFIG_PATH`, containing four Python convention modules
-(`config_convention.py`, `naming_convention.py`, `storage_convention.py`,
-`render_convention.py`). The
+`TH_CONFIG_PATH`, containing three Python convention modules
+(`config_convention.py`, `naming_convention.py`, `storage_convention.py`)
+and a `db/` of JSON-backed entity, schema, and convention data. The
 [configuration guide](https://tumblepipe.readthedocs.io/en/latest/configuration.html)
 documents each one; the [*Turbulence* tech demo](https://www.sidefx.com/tech-demos/turbulence/)
 ships a working example.
@@ -48,6 +48,7 @@ ships a working example.
 - `resources/`, `ocio/` — resource files and OpenColorIO configuration.
 - `resolver-src/` — source for the `entity://` USD asset resolver.
 - `docs/` — documentation source (hosted on Read the Docs).
+- `tests/` — property-based test harness (uv-managed, independent of hpm).
 - `hpm.toml` — HPM package manifest.
 
 ## Disclaimer

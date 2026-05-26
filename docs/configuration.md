@@ -55,7 +55,10 @@ imports them by name:
 - `naming_convention.py` — how assets, shots, and work files are named.
 - `storage_convention.py` — maps project URIs (`project://`, `entity://`, …)
   to concrete filesystem paths.
-- `render_convention.py` — render layer / AOV configuration.
+
+Render layer / AOV configuration lives in the schema and entity data
+(`schemas.json`, `entity.json` under the `render` sub-object), not in a
+Python module.
 
 Each module exposes a specific interface that the pipeline calls into. The
 [*Turbulence* tech demo](https://www.sidefx.com/tech-demos/turbulence/)

@@ -5,7 +5,11 @@ from tumblepipe.util.uri import Uri
 
 api = default_client()
 
-DEPARTMENTS_URI = Uri.parse_unsafe('config:/departments')
+DEPARTMENTS_URI = Uri.parse_unsafe('departments:/')
+
+
+def _schema_uri_for(context: str) -> Uri:
+    return Uri.parse_unsafe(f'schemas:/departments/{context}/department')
 
 @dataclass(frozen=True)
 class Department:
@@ -37,7 +41,7 @@ def add_department(
         generated = generated,
         enabled = enabled,
         short = short,
-    ))
+    ), schema_uri=_schema_uri_for(context))
 
 def remove_department(context: str, name: str):
     department_uri = DEPARTMENTS_URI / context / name
@@ -48,21 +52,21 @@ def set_independent(context: str, name: str, independent: bool):
     properties = api.config.get_properties(department_uri)
     if properties is None: return
     properties['independent'] = independent
-    api.config.set_properties(department_uri, properties)
+    api.config.set_properties(department_uri, properties, schema_uri=_schema_uri_for(context))
 
 def set_publishable(context: str, name: str, publishable: bool):
     department_uri = DEPARTMENTS_URI / context / name
     properties = api.config.get_properties(department_uri)
     if properties is None: return
     properties['publishable'] = publishable
-    api.config.set_properties(department_uri, properties)
+    api.config.set_properties(department_uri, properties, schema_uri=_schema_uri_for(context))
 
 def set_renderable(context: str, name: str, renderable: bool):
     department_uri = DEPARTMENTS_URI / context / name
     properties = api.config.get_properties(department_uri)
     if properties is None: return
     properties['renderable'] = renderable
-    api.config.set_properties(department_uri, properties)
+    api.config.set_properties(department_uri, properties, schema_uri=_schema_uri_for(context))
 
 def is_renderable(context: str, name: str) -> bool:
     """Check if a department is renderable."""
@@ -78,7 +82,7 @@ def set_generated(context: str, name: str, generated: bool):
     properties = api.config.get_properties(department_uri)
     if properties is None: return
     properties['generated'] = generated
-    api.config.set_properties(department_uri, properties)
+    api.config.set_properties(department_uri, properties, schema_uri=_schema_uri_for(context))
 
 def is_generated(context: str, name: str) -> bool:
     """Check if a department is generated (Python-only, not Houdini-exportable)."""
@@ -94,7 +98,7 @@ def set_enabled(context: str, name: str, enabled: bool):
     properties = api.config.get_properties(department_uri)
     if properties is None: return
     properties['enabled'] = enabled
-    api.config.set_properties(department_uri, properties)
+    api.config.set_properties(department_uri, properties, schema_uri=_schema_uri_for(context))
 
 def is_enabled(context: str, name: str) -> bool:
     """Check if a department is enabled."""
@@ -110,7 +114,7 @@ def set_short(context: str, name: str, short: str | None):
     properties = api.config.get_properties(department_uri)
     if properties is None: return
     properties['short'] = short
-    api.config.set_properties(department_uri, properties)
+    api.config.set_properties(department_uri, properties, schema_uri=_schema_uri_for(context))
 
 def get_short(context: str, name: str) -> str | None:
     """Return the optional abbreviated label, or ``None`` if unset."""

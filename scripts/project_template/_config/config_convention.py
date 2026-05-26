@@ -1,8 +1,8 @@
-from tumblehead.api import get_config_path
-from tumblehead.config import ConfigConvention, Entity
-from tumblehead.config.schema import Schema, schema_from_properties
-from tumblehead.util.io import load_json, store_json
-from tumblehead.util.uri import Uri
+from tumblepipe.api import get_config_path
+from tumblepipe.config import ConfigConvention, Entity
+from tumblepipe.config.schema import Schema, schema_from_properties
+from tumblepipe.util.io import load_json, store_json
+from tumblepipe.util.uri import Uri
 
 def _contains(data: dict, path: list[str]) -> bool:
     for step in path:
@@ -154,6 +154,10 @@ class ProjectConfigConvention(ConfigConvention):
 
         Properties are stored sparsely - only overrides, not defaults.
         Defaults are resolved from schemas at query time.
+
+        If schema_uri is provided, it's attached to the leaf when the leaf
+        is being created or has no existing schema. An existing schema is
+        not overwritten.
         """
         current_path = []
         for step in path:
@@ -171,7 +175,7 @@ class ProjectConfigConvention(ConfigConvention):
                 )
             data = data['children'][step]
         data['properties'] = datum
-        if schema_uri is not None:
+        if schema_uri is not None and not data.get('schema'):
             data['schema'] = schema_uri
 
     def add_entity(self, uri: Uri, properties: dict, schema_uri: Uri):
@@ -255,10 +259,18 @@ class ProjectConfigConvention(ConfigConvention):
         if data is None:
             return result
 
-        # Merge root properties
+        # For a URI with no segments, the root entity IS the target — its
+        # own properties must not appear in "inherited", or set_properties'
+        # sparse diff will silently drop fields that happen to equal what's
+        # already stored. Only merge root properties when we have at least
+        # one segment to descend into.
+        if not uri.segments:
+            return result
+
+        # Merge root properties (these are inherited by all children).
         result = _deep_merge(result, copy.deepcopy(data.get('properties', {})))
 
-        # Walk down the path, merging parent properties (stop before the final segment)
+        # Walk down the path, merging parent properties (stop before the final segment).
         for step in uri.segments[:-1]:
             if step not in data.get('children', {}):
                 break
@@ -268,13 +280,14 @@ class ProjectConfigConvention(ConfigConvention):
 
         return result
 
-    def set_properties(self, uri: Uri, properties: dict):
+    def set_properties(self, uri: Uri, properties: dict, schema_uri: Uri | None = None):
         # Calculate inherited properties and store only the difference
         inherited = self._get_inherited_properties(uri)
         sparse_properties = _deep_diff(inherited, properties)
 
         data = self.cache.get(uri.purpose, dict(children=dict()))
-        self._insert(uri.purpose, data, sparse_properties, uri.segments)
+        schema_str = str(schema_uri) if schema_uri is not None else None
+        self._insert(uri.purpose, data, sparse_properties, uri.segments, schema_str)
         self.cache[uri.purpose] = data
         file_path = self.db_path / f'{uri.purpose}.json'
         store_json(file_path, data)

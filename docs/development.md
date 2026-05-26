@@ -17,6 +17,24 @@ reporting a bug, include:
 - A minimal reproduction — a small .hip file or a short script — if
   possible.
 
+## Running the test harness
+
+`tests/` ships a property-based test harness for the Python config
+layer, using [minigun-soren-n](https://github.com/soren-n/minigun) for
+QuickCheck-style generation and shrinking. It has its own uv-managed
+venv pinned to Python 3.12+ (Houdini's bundled 3.11 is too old for
+minigun) and is independent of `hpm.toml` and the package install. From
+the repository root:
+
+```bash
+cd tests
+uv sync
+uv run minigun --test-dir . --time-budget 30
+```
+
+`tests/README.md` covers writing new properties and the design of the
+project-fixture bootstrap (`_harness.py`).
+
 ## Building the documentation locally
 
 The docs are written in [MyST Markdown](https://myst-parser.readthedocs.io)
