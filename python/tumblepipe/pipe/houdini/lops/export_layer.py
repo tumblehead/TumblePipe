@@ -110,6 +110,51 @@ def _validate_export_files(temp_path: Path, expected_filename: str, operation_de
         )
 
 
+def _check_no_dangling_composition_paths(layer_path: Path) -> None:
+    """Abort the export if the layer composes geometry from a missing file.
+
+    A published layer whose sublayer/reference/payload points at a path
+    that doesn't exist composes to nothing, so every consumer imports an
+    empty asset — and nothing in the pipeline flags it. The classic case
+    is a payload anchored to a machine-local scratch file (e.g. the
+    asset_payload sidecar resolving against the launching app's working
+    directory instead of the export folder).
+
+    Fail-open on analysis errors: a problem opening / walking the layer
+    only skips the check (preserving the prior behaviour), never blocks a
+    legitimate export. Only a *confirmed* dangling path raises.
+    """
+    from tumblepipe.pipe.usd import (
+        collect_layer_composition_paths,
+        find_dangling_layer_paths,
+    )
+
+    try:
+        asset_paths = collect_layer_composition_paths(layer_path)
+    except Exception:
+        logger.warning(
+            "Dangling-path check skipped; could not analyse %s",
+            layer_path, exc_info=True,
+        )
+        return
+
+    dangling = find_dangling_layer_paths(asset_paths, layer_path.parent)
+    if not dangling:
+        return
+
+    bullets = "\n  - ".join(dangling)
+    raise ExportLayerError(
+        "Export aborted: the exported layer composes geometry from "
+        "path(s) that do not exist, so the published asset would import "
+        f"empty:\n  - {bullets}\n\n"
+        "This usually means the asset's geometry/payload was not written "
+        "into the version folder — for example a payload anchored to a "
+        "machine-local scratch path rather than the export directory. "
+        "Check the asset_payload / export setup and re-export so the "
+        "geometry travels with the layer."
+    )
+
+
 class ExportLayer(ns.Node):
 
     def __init__(self, native):
@@ -568,6 +613,11 @@ class ExportLayer(ns.Node):
                 _flatten_sidecar_directories(temp_path)
 
                 logger.info("Export to temp completed successfully")
+
+            # Refuse to publish a layer that composes geometry from a
+            # missing file (e.g. a payload anchored to a machine-local
+            # scratch path) — otherwise the asset silently imports empty.
+            _check_no_dangling_composition_paths(temp_path / layer_file_name)
 
             # Re-fetch root prim after export (stage may have been modified)
             root = stage_node.stage().GetPseudoRoot()

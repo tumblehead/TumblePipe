@@ -4009,10 +4009,33 @@ class PipelineCatalog(Catalog):
     # ── Cache invalidation ────────────────────────────────
 
     def invalidate_cache(self) -> None:
-        """Drop discovered asset/shot caches; next query re-fetches."""
+        """Drop discovered asset/shot caches; next query re-fetches.
+
+        Also reloads each already-built project config's on-disk entity
+        snapshot. The ``ProjectConfigConvention`` reads ``db/*.json``
+        once in ``__init__`` and ``list_entities`` serves purely from
+        that in-memory ``self.cache`` — so without this, a "refresh"
+        re-runs discovery against a stale snapshot and never sees
+        entities written out-of-process (another Houdini session, the
+        project browser, another artist). Reloading the config here is
+        far cheaper than rebuilding every Client (the Shift+Click "hard"
+        reset path), which is the only thing that previously picked up
+        external additions.
+        """
         self._cached_assets = None
         self._cached_shots = None
         self._member_groups_cache = None
+        for name, client in self._clients.ready.items():
+            config = getattr(client, "config", None)
+            refresh = getattr(config, "refresh_cache", None)
+            if not callable(refresh):
+                continue
+            try:
+                refresh()
+            except Exception:
+                log.exception(
+                    "config.refresh_cache failed for project %s", name,
+                )
 
     def _invalidate_membership_cache(self) -> None:
         """Drop only the member-coverage cache.

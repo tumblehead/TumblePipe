@@ -570,6 +570,83 @@ def add_sublayer(layer_path: Path, sublayer_ref: Union[Path, str]) -> bool:
     return True
 
 
+def _looks_like_uri(asset_path: str) -> bool:
+    """True if ``asset_path`` carries a URI scheme the resolver handles
+    (``entity:/``, ``op:/`` …) rather than a bare filesystem path.
+
+    A scheme is two or more leading characters before ``:`` — this
+    deliberately excludes single-letter Windows drive prefixes (``C:``)
+    so absolute paths are treated as filesystem paths, not URIs.
+    """
+    return bool(re.match(r'^[A-Za-z][A-Za-z0-9+.\-]+:', asset_path))
+
+
+def find_dangling_layer_paths(
+    asset_paths, layer_dir: Union[Path, str, None] = None,
+) -> list:
+    """Return composition asset paths that won't resolve at load time.
+
+    Flags only filesystem paths whose target does not exist — the
+    unambiguous "this layer composes geometry from a file that isn't
+    there, so consumers import nothing" case (e.g. a payload left
+    pointing at a machine-local scratch file). Conservative by design:
+
+    - URI-scheme arcs (``entity:/``, ``op:/`` …) are left to the
+      resolver and never flagged.
+    - Absolute paths are checked directly.
+    - Relative paths are resolved against ``layer_dir`` (the layer's own
+      directory) when given; with no ``layer_dir`` they're assumed to
+      travel with the layer and skipped.
+
+    Returns the offending raw path strings, in input order, de-duped.
+    """
+    dangling = []
+    seen = set()
+    for raw in asset_paths:
+        p = (raw or '').strip()
+        if not p or p in seen:
+            continue
+        if _looks_like_uri(p):
+            continue
+        path = Path(p)
+        if path.is_absolute():
+            exists = path.exists()
+        elif layer_dir is not None:
+            exists = (Path(layer_dir) / path).exists()
+        else:
+            continue
+        if not exists:
+            seen.add(p)
+            dangling.append(p)
+    return dangling
+
+
+def collect_layer_composition_paths(layer_path: Union[Path, str]) -> list:
+    """Collect the sublayer / reference / payload asset paths declared
+    directly in ``layer_path``.
+
+    Shallow: inspects this layer's own composition arcs, not the
+    contents of layers it points at. Requires USD; returns ``[]`` if the
+    layer can't be opened.
+    """
+    from pxr import Sdf
+
+    layer = Sdf.Layer.FindOrOpen(str(layer_path))
+    if layer is None:
+        return []
+    paths = [str(p) for p in layer.subLayerPaths]
+    stack = list(layer.rootPrims)
+    while stack:
+        prim = stack.pop()
+        for arc_list in (prim.referenceList, prim.payloadList):
+            for item in arc_list.GetAddedOrExplicitItems():
+                asset_path = getattr(item, 'assetPath', '')
+                if asset_path:
+                    paths.append(str(asset_path))
+        stack.extend(prim.nameChildren.values())
+    return paths
+
+
 def generate_entity_sublayer_uri(
     entity_uri: Uri,
     variant_name: str,
