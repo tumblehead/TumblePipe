@@ -1,22 +1,39 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.4.5"
+version = "1.4.6"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
 keywords = ["houdini"]
 
-[houdini]
-min_version = "21"
-# Capped at the highest Houdini major the CI matrix builds a resolver for —
-# see resolver-src/houdini_majors.toml. Bump in lockstep when adding a new
-# major, otherwise users on the new major would install cleanly and then
-# hit a runtime failure when USD's plugin registry can't find a matching
-# resolver/houdini<major>/ tree.
-max_version = "22"
+[compat]
+# Cargo-style version requirement with an EXCLUSIVE upper bound. ">=21, <23"
+# admits Houdini 21.x and 22.x; the cap is the first UNSUPPORTED major, not
+# the last supported one. (The pre-Manifest-2.0 form `max_version = "22"`
+# compiled to `houdini_version < '22'` and silently disabled the entire
+# package on every 22.x build — that was the H22 "package not registering"
+# bug.) Bump the upper bound to "<24" only once the CI matrix actually
+# builds a houdini23 resolver — see resolver-src/houdini_majors.toml and the
+# per-platform HOUDINI_MAJORS in .woodpecker/build-*.yml — otherwise users
+# on the new major install cleanly and then hit a runtime failure when USD's
+# plugin registry can't find a matching resolver/houdini<major>/ tree.
+houdini = ">=21, <23"
 
-[env]
+# Native platforms this package ships a resolver binary for. Each
+# per-platform CI worker (.woodpecker/build-<os>.yml) builds only its own
+# platform's resolver into resolver/houdini<major>/ and packs with
+# `hpm pack --platform <id>`. The macOS worker cross-compiles arm64 only
+# (-DCMAKE_OSX_ARCHITECTURES=arm64) on an x86_64 host, hence macos-aarch64.
+#
+# No [stage.platform.<id>] place rules are needed: the release flow stages an
+# allowlisted tree (.ci/_tumblepipe_build.py) that carries no .gitignore, so
+# the built resolver/ tree is present at pack time and ships as common
+# content at its workspace path. Per-platform staging only ever contains
+# that worker's own resolver, so there is nothing cross-platform to filter.
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+
+[runtime]
 TH_PIPELINE_PATH = { method = "set", value = "$HPM_PACKAGE_ROOT" }
 ASSET_BROWSER_CATALOG_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/asset_browser_catalogs" }
 TH_PROJECT_PATH = { method = "set", value = "" }
@@ -49,42 +66,87 @@ watchdog = ">=6.0.0"
 pymongo = ">=4.13.0"
 dictdiffer = ">=0.9.0"
 
+[stage]
+# Compile the native/derived artifacts before staging:
+#   build-resolver — cmake-build the tumbleResolver USD plugin into
+#                    resolver/houdini<major>/
+#   compile-hdas   — collapse expanded otls/<name>/ dirs into otls/<name>.hda
+# hpm has no native HDA collapse (verified on 0.18 — a no-prepack `hpm build`
+# leaves the expanded dir untouched), so this is the script that does it.
+#
+# IMPORTANT: only `hpm build` and `hpm run <script>` honour prepack — `hpm
+# pack` packs the workspace as-is and does NOT run it. The release flow
+# therefore runs `hpm build` (which runs both prepack scripts + stages) and
+# then `hpm pack` on that output; local devs get the same via `hpm build`.
+#
+# No per-platform [stage.platform.*].place rules: place `to` is literal (hpm
+# doesn't expand wildcards in it), so `to = "resolver/houdini*/**/"` collapses
+# every file onto one path and pack fails with a duplicate-filename error. The
+# resolver ships as ordinary tree content instead (re-included for packing via
+# .hpmignore, since resolver/ is gitignored for git hygiene).
+prepack = ["build-resolver", "compile-hdas"]
+
+# Archive contents (allowlist — mirrors .ci/_tumblepipe_build.py
+# INCLUDE_PATTERNS, minus the mirror-only docs/ + .readthedocs.yaml). Without
+# this, tracked-but-non-package files (keymaps, *.pref.nosave, toolbar/,
+# viewer_states/, tests/, …) would ship as common content.
+include = [
+    "README.md",
+    "LICENSE",
+    "hpm.toml",
+    "asset_browser_catalogs/**",
+    "otls/**",
+    "python/tumblepipe/**",
+    "python3.11libs/**",
+    "python3.13libs/**",
+    "python_panels/project_browser.pypanel",
+    "desktop/TumblePipe.desk",
+    "scripts/**",
+    "resources/**",
+    "ocio/**",
+    "resolver/**",
+    "resolver-src/**",
+]
+# Carve-outs within the included dirs.
+exclude = [
+    "otls/*/**",                 # decompiled HDA source dirs — ship the .hda, not the source
+    "otls/aaronsmithtv__*.hda",  # third-party HDA, not redistributed
+]
+
+# build-resolver ports the cmake loop + arch/symbol verification out of the
+# three .woodpecker/build-*.yml files into one script. A [scripts] `when`
+# only supports the `os` axis, so the per-Houdini-major loop lives inside the
+# script (driven by $HOUDINI_MAJORS, else resolver-src/houdini_majors.toml).
+[scripts.build-resolver]
+cmd = [
+    { when = { os = "windows" }, set = "python .ci/build_resolver.py --platform windows-x86_64" },
+    { when = { os = "linux" }, set = "python .ci/build_resolver.py --platform linux-x86_64" },
+    { when = { os = "macos" }, set = "python .ci/build_resolver.py --platform macos-aarch64" },
+]
+python = "3.11"
+
+# compile-hdas collapses expanded HDA dirs to binary .hda in place, NON-
+# destructively (leaves the tracked source dirs; [stage].exclude drops them
+# from the archive). os-agnostic, but uses the conditional form for parity.
+[scripts.compile-hdas]
+cmd = [
+    { when = { os = "windows" }, set = "python .ci/compile_hdas.py" },
+    { when = { os = "linux" }, set = "python .ci/compile_hdas.py" },
+    { when = { os = "macos" }, set = "python .ci/compile_hdas.py" },
+]
+python = "3.11"
+
 # tt_setup runs when the user clicks Configure on the package card in
 # TumbleTrove. It launches a Qt6 wizard that either points at an existing
 # project or scaffolds a new one from scripts/project_template/, then
 # emits {"envVars": {"TH_PROJECT_PATH": ...}} on stdout.
 #
-# The table form (hpm >= 0.11) opts the script into a uv-managed venv
-# resolved on demand, so we don't have to assume PySide6 (or even a
-# `python` interpreter) exists on the user's PATH. Python is pinned to
-# match the version Houdini ships (`python3.11libs/`).
+# The table form opts the script into a uv-managed venv resolved on demand,
+# so we don't have to assume PySide6 (or even a `python` interpreter) exists
+# on the user's PATH. Python is pinned to the version Houdini 21 ships
+# (`python3.11libs/`); the wizard runs out-of-process so this is independent
+# of the interpreter inside any given Houdini.
 [scripts.tt_setup]
 cmd = "python scripts/tt_setup.py"
 python = "3.11"
 requirements = ["PySide6>=6.6"]
-
-[native]
-# Platform names are the arch-suffixed identifiers shared by hpm
-# (>= v0.13.0) and the TumbleTrove API. The macOS worker cross-compiles
-# arm64 only (-DCMAKE_OSX_ARCHITECTURES=arm64), so its slot is
-# macos-aarch64. Per-platform CI workers only build their own platform's
-# binaries into resolver/houdini<major>/, so each archive carries
-# exactly that platform's resolver.
-#
-# The identical globs across platforms below are deliberate: with
-# hpm >= 0.9.1, a path that matches the target platform's own
-# `files` glob is included even if it also matches another platform's
-# glob, so the same `resolver/houdini*/**/*` pattern in all three
-# sections lets each per-platform archive carry the resolver binaries
-# its CI worker built. (Earlier hpm versions excluded such paths from
-# every archive — see 1.1.12 release notes.)
-platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
-
-[native.windows-x86_64]
-files = ["resolver/houdini*/**/*"]
-
-[native.linux-x86_64]
-files = ["resolver/houdini*/**/*"]
-
-[native.macos-aarch64]
-files = ["resolver/houdini*/**/*"]
