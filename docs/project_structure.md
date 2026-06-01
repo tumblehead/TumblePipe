@@ -8,6 +8,9 @@ TumblePipe/
 ├── hpm.toml                     # HPM package manifest
 ├── README.md                    # Short project overview
 ├── LICENSE                      # MIT License
+├── asset_browser_catalogs/      # TumbleTrove asset_browser catalog
+│   ├── pipeline.py              #   factory entry point (discovered)
+│   └── _pipeline_*.py           #   catalog implementation + helpers
 ├── desktop/
 │   └── TumblePipe.desk          # Houdini desktop layout
 ├── ocio/                        # OpenColorIO configuration
@@ -65,3 +68,41 @@ its plugin registry.
 
 The OCIO config used by Houdini. The package sets the `OCIO` environment
 variable to `$HPM_PACKAGE_ROOT/ocio/tumblehead.ocio` at startup.
+
+### `asset_browser_catalogs/`
+
+A TumbleTrove `asset_browser` *catalog* — the integration that surfaces
+pipeline assets and shots in the asset-browser pypanel. `hpm.toml`
+prepends this directory to `ASSET_BROWSER_CATALOG_PATH`, and
+TumbleTrove's catalog registry loads `pipeline.py` from it via
+`importlib.util.spec_from_file_location`. That loader globs top-level
+`*.py` files only and skips underscore-prefixed names, so the catalog
+itself is one `pipeline.py` (a small factory: `create_catalog()` plus
+the `sys.path` tweak that lets the companions import each other
+absolutely) and the implementation is split across `_pipeline_*.py`
+companion modules:
+
+- `_pipeline_catalog.py` — the `PipelineCatalog` class itself, which
+  composes everything below.
+- `_pipeline_houdini.py` — Houdini main-thread bridge + project-
+  activation (TH_* env / `default_client` reset).
+- `_pipeline_clients.py` — per-project tumblepipe `Client` lifecycle.
+- `_pipeline_resolver.py` — asset-id → `(ref, project, client, uri,
+  root)` resolution.
+- `_pipeline_containers.py` — `GroupContainer` / `SceneContainer`
+  typed sum replacing the Multi-vs-Root `kind` branching.
+- `_pipeline_uris.py` — typed factories for tumblepipe URIs.
+- `_pipeline_drops.py` — the LOP / SOP / sublayer drop router.
+- `_pipeline_workfiles.py` — workfile open / create lifecycle plus
+  mtime / user-attribution helpers.
+- `_pipeline_scene.py` — scene-state lifecycle: save / publish /
+  reload / autosave-on-swap and the readonly hip-context helpers.
+- `_pipeline_detail.py` — Qt widget construction for every section
+  in the right-hand detail panel.
+- `_pipeline_thumbnails.py` — sidecar thumbnail read / write / refresh.
+- `_pipeline_widgets.py` — detail-panel custom QLabel / QComboBox.
+- `_pipeline_types.py` — value-types and module-level constants.
+- `_pipeline_prefs.py`, `_pipeline_settings_widget.py` — persisted
+  preferences plus the gear-icon settings UI.
+
+None of the `_pipeline_*` files are loaded by TumbleTrove directly.

@@ -12,7 +12,7 @@ import os
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import TypedDict
+from typing import ClassVar, Iterable, Literal, TypedDict, Union
 
 from asset_browser.api.errors import CatalogInitError
 from asset_browser.api.types import Collection
@@ -27,10 +27,10 @@ class PipelineAssetMetadata(TypedDict, total=False):
     All fields are optional (``total=False``) — different code paths
     populate different subsets:
 
-    - Discovery (``_discover_assets`` / ``_discover_shots``) sets
-      ``departments``, ``dept_count``, ``has_sub_cards``,
-      ``latest_update``, plus ``category`` (assets) or ``sequence``
-      (shots), and ``project``.
+    - Discovery (``_discover_entities`` → ``_build_asset_card`` /
+      ``_build_shot_card``) sets ``departments``, ``dept_count``,
+      ``has_sub_cards``, ``latest_update``, plus ``category`` (assets)
+      or ``sequence`` (shots), and ``project``.
     - ``get_detail`` adds ``frame_start``, ``frame_end``, ``frame_total``,
       ``fps`` for shots, and ``variants`` for assets.
     - ``get_assets`` overlays ``is_current_scene`` for the asset whose
@@ -113,69 +113,160 @@ PERMANENT_INIT_ERRORS: tuple[type[BaseException], ...] = (
 )
 
 
-# ── Asset id ─────────────────────────────────────────────────────
+# ── Per-asset, per-dept version overrides ────────────────────────
+
+
+class DeptVersionStore:
+    """Session-only per-asset, per-department version overrides.
+
+    The detail panel's dept-row combo boxes let users pick an older
+    version to "view as"; that selection is stored here keyed by
+    asset_id + dept_name. The store is intentionally not persisted —
+    overrides are session scratch and cleared by asset refresh.
+    """
+
+    def __init__(self) -> None:
+        self._overrides: dict[str, dict[str, str]] = {}
+
+    def set(self, asset_id: str, dept: str, version: str) -> None:
+        self._overrides.setdefault(asset_id, {})[dept] = version
+
+    def get(self, asset_id: str) -> dict[str, str]:
+        return self._overrides.get(asset_id, {})
+
+    def clear(self, asset_id: str) -> None:
+        self._overrides.pop(asset_id, None)
+
+
+# ── Entity refs (assets vs shots) ────────────────────────────────
 
 
 @dataclass(frozen=True)
-class AssetId:
-    """Parsed 3-segment asset id of the form ``"PROJECT/SECOND/THIRD"``.
-
-    The same shape encodes both assets and shots:
-
-    - Assets: ``project / category / name``  (e.g. ``"growth/Heroes/Knight"``)
-    - Shots:  ``project / sequence / shot``  (e.g. ``"growth/SEQ010/SH020"``)
-
-    The disambiguation between asset and shot requires looking up the
-    project's category list — see ``PipelineCatalog._uri_for_asset_id``.
-    The fields are named ``second`` and ``third`` (rather than
-    ``category`` / ``sequence``) so the type doesn't lie about a
-    semantic it can't determine on its own. Use
-    :attr:`as_category` / :attr:`as_sequence` when context is known.
-    """
+class AssetRef:
+    """A parsed asset id of the form ``"PROJECT/CATEGORY/Name"``."""
 
     project: str
-    second: str
-    third: str
+    category: str
+    name: str
 
-    @classmethod
-    def parse(cls, asset_id: str) -> AssetId | None:
-        """Parse a string id; return ``None`` for malformed input."""
-        if not asset_id:
-            return None
-        parts = asset_id.split("/", 2)
-        if len(parts) != 3:
-            return None
-        return cls(parts[0], parts[1], parts[2])
+    kind: ClassVar[Literal["assets"]] = "assets"
 
     def __str__(self) -> str:
-        return f"{self.project}/{self.second}/{self.third}"
+        return f"{self.project}/{self.category}/{self.name}"
 
-    def __iter__(self):
-        # Allow ``project, second, third = aid`` unpacking — the
-        # historical tuple shape that callers already use.
-        yield self.project
-        yield self.second
-        yield self.third
 
-    def __getitem__(self, index: int) -> str:
-        # Allow ``aid[0]`` for legacy call sites; field access
-        # (``aid.project``) is preferred for new code.
-        return (self.project, self.second, self.third)[index]
+@dataclass(frozen=True)
+class ShotRef:
+    """A parsed shot id of the form ``"PROJECT/SEQUENCE/Shot"``."""
 
-    @property
-    def as_category(self) -> str:
-        """Read ``second`` as an asset category (caller knows the kind)."""
-        return self.second
+    project: str
+    sequence: str
+    shot: str
 
-    @property
-    def as_sequence(self) -> str:
-        """Read ``second`` as a shot sequence (caller knows the kind)."""
-        return self.second
+    kind: ClassVar[Literal["shots"]] = "shots"
 
-    @property
-    def name(self) -> str:
-        """Read ``third`` as the asset/shot name."""
-        return self.third
+    def __str__(self) -> str:
+        return f"{self.project}/{self.sequence}/{self.shot}"
+
+
+EntityRef = Union[AssetRef, ShotRef]
+
+
+def parse_entity_ref(
+    asset_id: str, categories: Iterable[str],
+) -> EntityRef | None:
+    """Parse ``"PROJECT/SECOND/THIRD"`` into an :class:`AssetRef` or
+    :class:`ShotRef`, using ``categories`` (the project's category list)
+    to disambiguate.
+
+    When ``categories`` is empty (e.g. the project's Client is not
+    READY), the id is classified as a shot — same behavior as the
+    legacy code path. Callers that need correctness in that case must
+    ensure the Client is ready before calling.
+    """
+    if not asset_id:
+        return None
+    parts = asset_id.split("/", 2)
+    if len(parts) != 3:
+        return None
+    project, second, third = parts
+    if second in set(categories):
+        return AssetRef(project, second, third)
+    return ShotRef(project, second, third)
+
+
+def parse_project_name(asset_id: str) -> str | None:
+    """Extract just the project name from a 3-segment asset id."""
+    if not asset_id:
+        return None
+    parts = asset_id.split("/", 2)
+    if len(parts) != 3:
+        return None
+    return parts[0]
+
+
+def entity_base_dir(ref: EntityRef, root: Path) -> Path:
+    """Return the on-disk base directory for ``ref`` under ``root``."""
+    if isinstance(ref, AssetRef):
+        return root / "assets" / ref.category / ref.name
+    return root / "shots" / ref.sequence / ref.shot
+
+
+def entity_uri_tail(ref: EntityRef) -> str:
+    """Return the URI tail after ``entity:/``, e.g. ``"assets/Heroes/Knight"``."""
+    if isinstance(ref, AssetRef):
+        return f"assets/{ref.category}/{ref.name}"
+    return f"shots/{ref.sequence}/{ref.shot}"
+
+
+# ── Workfile scanning ────────────────────────────────────────────
+
+
+# Workfile filenames follow ``{prefix}_{version}.hip[nc|lc]``. We
+# extract the trailing ``vNNNN`` token from the stem; this matches the
+# convention used by ``tumblepipe.pipe.paths.next_hip_file_path``.
+WORKFILE_GLOB = "*.hip*"
+
+
+def workfile_versions(dept_dir: Path) -> list[str]:
+    """Return sorted ``vNNNN`` version labels parsed from .hip filenames."""
+    if not dept_dir.exists():
+        return []
+    versions: set[str] = set()
+    for hip in dept_dir.glob(WORKFILE_GLOB):
+        stem = hip.stem
+        tail = stem.rsplit("_", 1)
+        if (
+            len(tail) == 2
+            and tail[1].startswith("v")
+            and tail[1][1:].isdigit()
+        ):
+            versions.add(tail[1])
+    return sorted(versions)
+
+
+def workfile_for_version(dept_dir: Path, version: str) -> Path | None:
+    """Return the .hip whose filename trails with ``_{version}``."""
+    if not dept_dir.exists():
+        return None
+    for hip in dept_dir.glob(WORKFILE_GLOB):
+        stem = hip.stem
+        tail = stem.rsplit("_", 1)
+        if len(tail) == 2 and tail[1] == version:
+            return hip
+    return None
+
+
+def latest_workfile(dept_dir: Path) -> Path | None:
+    """Return the newest .hip in *dept_dir* by mtime, or ``None``."""
+    if not dept_dir.exists():
+        return None
+    hip_files = sorted(
+        dept_dir.glob(WORKFILE_GLOB),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return hip_files[0] if hip_files else None
 
 
 # ── Department iconography ───────────────────────────────────────
@@ -217,6 +308,29 @@ DEPT_SHORT_NAMES = {
     "blendshape": "Blend",
     "composite": "Comp",
     "environment": "Enviro",
+}
+
+# Lowercase 3-letter codes used as fallback for the API's
+# ``Department.short`` field — drives the dept name column in the
+# detail panel when the department config doesn't declare its own short.
+# Matched case-insensitively on the dept name. Not the same convention
+# as :data:`DEPT_SHORT_NAMES` above (which is PascalCase for SubCard
+# chips); the two coexist because they serve different label contexts.
+DEPT_API_SHORT_FALLBACK = {
+    "model": "mdl",
+    "blendshape": "blndsp",
+    "blendshapes": "blndsp",
+    "lookdev": "lkd",
+    "lighting": "lgt",
+    "rig": "rig",
+    "layout": "lay",
+    "environment": "env",
+    "animation": "ani",
+    "crowd": "crwd",
+    "fx": "fx",
+    "cfx": "cfx",
+    "render": "rnd",
+    "comp": "cmp",
 }
 
 

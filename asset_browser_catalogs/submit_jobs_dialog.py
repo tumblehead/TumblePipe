@@ -16,7 +16,6 @@ from __future__ import annotations
 import logging
 from typing import Sequence
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QSpinBox,
