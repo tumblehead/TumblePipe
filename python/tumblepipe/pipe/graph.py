@@ -133,7 +133,7 @@ def _iter_all_entities(api):
     for entity in api.config.list_entities(Uri.parse_unsafe('entity:/assets/*/*/*'), closure=True):
         # entity is Entity(uri, properties) from new API
         # Extract department from URI path
-        path_segments = [s for s in entity.uri.path.split('/') if s]
+        path_segments = list(entity.uri.segments)
         if len(path_segments) >= 4:
             department_name = path_segments[3]
             base_uri = Uri.parse_unsafe(f'entity:/assets/{path_segments[1]}/{path_segments[2]}')
@@ -144,7 +144,7 @@ def _iter_all_entities(api):
     # Iterate all shot entities (sequence/shot/department)
     for entity in api.config.list_entities(Uri.parse_unsafe('entity:/shots/*/*/*'), closure=True):
         # Extract department from URI path
-        path_segments = [s for s in entity.uri.path.split('/') if s]
+        path_segments = list(entity.uri.segments)
         if len(path_segments) >= 4:
             department_name = path_segments[3]
             base_uri = Uri.parse_unsafe(f'entity:/shots/{path_segments[1]}/{path_segments[2]}')

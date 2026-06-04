@@ -114,21 +114,6 @@ def dept_template(context: str, dept: str) -> "Uri":
     )
 
 
-# ── Schema URIs ──────────────────────────────────────────────
-
-
-def schema_asset() -> "Uri":
-    """``schemas:/entity/assets/category/asset`` — entity schema for
-    ``client.config.add_entity`` when creating an asset."""
-    return _Uri().parse_unsafe("schemas:/entity/assets/category/asset")
-
-
-def schema_shot() -> "Uri":
-    """``schemas:/entity/shots/sequence/shot`` — entity schema for
-    ``client.config.add_entity`` when creating a shot."""
-    return _Uri().parse_unsafe("schemas:/entity/shots/sequence/shot")
-
-
 # ── Reparse pass-through ─────────────────────────────────────
 
 

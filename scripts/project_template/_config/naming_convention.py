@@ -2,12 +2,21 @@ from tumblepipe.naming import NamingConvention
 
 class ProjectNamingConvention(NamingConvention):
     def is_valid_entity_name(self, entity_name: str) -> bool:
-        return entity_name.isalnum()
+        # ASCII-only: str.isalnum() accepts Unicode letters/digits, but an
+        # entity name becomes a URI segment and uri.py's NAME_ALPHABET is
+        # ASCII, so a Unicode name would validate here yet fail to address.
+        return entity_name.isascii() and entity_name.isalnum()
 
     def is_valid_version_name(self, version_name: str) -> bool:
-        if not len(version_name) == 5: return False
+        # 'v' followed by >= 4 ASCII digits. A hard len==5 rejected v10000
+        # (so the >9999th version vanished from listings and the next-version
+        # picker re-issued a colliding name). str.isdigit() also accepts
+        # Unicode digits, which then crash int() in get_version_code, so
+        # require isascii() too.
+        if len(version_name) < 5: return False
         if not version_name.startswith('v'): return False
-        if not version_name[1:].isdigit(): return False
+        digits = version_name[1:]
+        if not (digits.isascii() and digits.isdigit()): return False
         return True
     
     def get_version_name(self, version_code: int) -> str:

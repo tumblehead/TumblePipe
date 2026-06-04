@@ -1,201 +1,162 @@
+"""Pipeline URIs: ``purpose:/seg/seg[?k=v&...]``.
+
+A URI is a flat, frozen value: a ``purpose`` string, path ``segments``,
+and a query (stored canonically so equal URIs compare and hash equal
+regardless of query order). This replaced an earlier design that modelled
+the path as a linked hierarchy of wildcard/named nodes — that structure
+only ever encoded "is this segment the literal ``*``", which the flat
+string already carries, and it was the source of subtle join/hash bugs.
+Segment-level wildcards (``*``) remain valid literal segments; nothing
+depends on a *typed* wildcard distinction anymore.
+
+Segments are stored as a tuple (so the value is hashable) but ``.segments``
+returns a fresh list, matching the long-standing public contract.
+"""
+
 from dataclasses import dataclass
 import string
+import urllib.parse
 
 NAME_ALPHABET = set(string.ascii_letters + string.digits + '_-.')
 
+
 def _valid_name(name: str) -> bool:
-    return set(name).issubset(NAME_ALPHABET)
+    # Reject empty: an interior empty segment ('entity:/a//b') would
+    # otherwise produce a silently-wrong address.
+    return len(name) > 0 and set(name).issubset(NAME_ALPHABET)
 
-@dataclass(frozen=True)
-class UriPath:
-    pass
 
-@dataclass(frozen=True)
-class WildcardSection(UriPath):
-    path: UriPath
+def _valid_segment(segment: str) -> bool:
+    return segment == '*' or _valid_name(segment)
 
-@dataclass(frozen=True)
-class NamedSection(UriPath):
-    name: str
-    path: UriPath
 
-@dataclass(frozen=True)
-class WildcardItem(UriPath):
-    pass
-
-@dataclass(frozen=True)
-class NamedItem(UriPath):
-    name: str
-
-@dataclass
+@dataclass(frozen=True, init=False)
 class Uri:
     purpose: str
-    path: UriPath | None
-    query: dict = None
+    # Stored canonically as tuples so the dataclass is hashable and __eq__
+    # is query-order insensitive. Read via the .segments / .query properties.
+    _segments: tuple
+    _query: tuple  # sorted tuple of (key, value) string pairs
 
-    def __post_init__(self):
-        if self.query is not None: return
-        object.__setattr__(self, 'query', dict())
+    def __init__(self, purpose: str, segments=(), query=None):
+        object.__setattr__(self, 'purpose', purpose)
+        object.__setattr__(self, '_segments', tuple(segments) if segments else ())
+        if query is None:
+            items: tuple = ()
+        elif isinstance(query, dict):
+            items = tuple(sorted(query.items()))
+        else:
+            items = tuple(sorted(tuple(pair) for pair in query))
+        object.__setattr__(self, '_query', items)
+
+    # ── Construction ─────────────────────────────────────────────
 
     @staticmethod
     def parse_unsafe(raw_uri: str) -> 'Uri':
-        def _fail():
+        """Parse a URI string, raising ``ValueError`` on anything invalid."""
+        if ':' not in raw_uri:
             raise ValueError(f'Invalid URI "{raw_uri}"')
+        purpose, rest = raw_uri.split(':', 1)
 
-        def _parse_purpose(raw_uri: str) -> tuple[str, str]:
-            if ':' not in raw_uri: _fail()
-            purpose, raw_segments = raw_uri.split(':', 1)
-            return purpose, raw_segments
+        query: dict = {}
+        if '?' in rest:
+            rest, query_string = rest.split('?', 1)
+            for key, value in urllib.parse.parse_qsl(query_string, keep_blank_values=True):
+                query[key] = value
 
-        def _parse_path(raw_segments: str) -> UriPath | None:
-            def _parse_part(part: str, path: UriPath) -> UriPath:
-                if part == '*': return WildcardSection(path)
-                if not _valid_name(part): _fail()
-                return NamedSection(part, path)
+        if not rest.startswith('/'):
+            raise ValueError(f'Invalid URI "{raw_uri}"')
+        if rest == '/':
+            segments: tuple = ()
+        else:
+            parts = rest[1:].split('/')
+            for part in parts:
+                if not _valid_segment(part):
+                    raise ValueError(f'Invalid URI "{raw_uri}"')
+            segments = tuple(parts)
 
-            def _parse_last(part: str) -> UriPath:
-                if part == '': _fail()
-                if part == '*': return WildcardItem()
-                return NamedItem(part)
+        return Uri(purpose, segments, query)
 
-            if not raw_segments.startswith('/'): _fail()
-            if raw_segments == '/': return None
-            segments = raw_segments[1:].split('/')
-            if len(segments) == 0: _fail()
-            path = _parse_last(segments[-1])
-            for name in reversed(segments[:-1]):
-                path = _parse_part(name, path)
-            return path
-
-        # Parse query string if present
-        query = dict()
-        if '?' in raw_uri:
-            raw_uri, query_string = raw_uri.split('?', 1)
-            for param in query_string.split('&'):
-                if '=' in param:
-                    k, v = param.split('=', 1)
-                    query[k] = v
-
-        purpose, raw_segments = _parse_purpose(raw_uri)
-        path = _parse_path(raw_segments)
-        return Uri(purpose, path, query)
-    
-    @staticmethod
-    def parse(raw_uri: str) -> 'Uri | None':
-        try: return Uri.parse_unsafe(raw_uri)
-        except ValueError: return None
-
-    def parts(self) -> tuple[str | None, list[str]]:
-        parts = []
-        path = self.path
-        while path is not None:
-            match path:
-                case WildcardItem():
-                    parts.append('*')
-                    path = None
-                case NamedItem(name):
-                    parts.append(name)
-                    path = None
-                case WildcardSection(path):
-                    parts.append('*')
-                    path = path
-                case NamedSection(name, path):
-                    parts.append(name)
-                    path = path
-        return self.purpose, parts
-
-    def is_wild(self) -> bool:
-        def _is_wild(path: UriPath) -> bool:
-            match path:
-                case WildcardSection(_):
-                    return True
-                case NamedSection(_, subpath):
-                    return _is_wild(subpath)
-                case WildcardItem():
-                    return True
-                case NamedItem(_):
-                    return False
-            return False
-
-        if self.path is None: return False
-        return _is_wild(self.path)
-
-    def is_root(self) -> bool:
-        return self.path is None
+    # ── Properties ───────────────────────────────────────────────
 
     @property
-    def segments(self) -> list[str]:
-        return self.parts()[1]
+    def segments(self) -> list:
+        return list(self._segments)
+
+    @property
+    def query(self) -> dict:
+        return dict(self._query)
+
+    # ── Segment access ───────────────────────────────────────────
+
+    def parts(self) -> tuple:
+        """``(purpose, [segments])`` — retained for callers that unpack both."""
+        return self.purpose, list(self._segments)
+
+    def is_wild(self) -> bool:
+        return '*' in self._segments
+
+    def is_root(self) -> bool:
+        return len(self._segments) == 0
 
     def __len__(self) -> int:
-        return len(self.parts()[1])
+        return len(self._segments)
 
     def __getitem__(self, index):
-        return self.parts()[1][index]
+        return self._segments[index]
 
     def __iter__(self):
-        return iter(self.parts()[1])
+        return iter(self._segments)
 
     def get(self, index: int, default=None):
-        segments = self.parts()[1]
+        segments = self._segments
         if -len(segments) <= index < len(segments):
             return segments[index]
         return default
 
     def first(self):
-        segments = self.parts()[1]
-        return segments[0] if segments else None
+        return self._segments[0] if self._segments else None
 
     def last(self):
-        segments = self.parts()[1]
-        return segments[-1] if segments else None
+        return self._segments[-1] if self._segments else None
 
     def display_name(self) -> str:
-        segments = self.segments
+        segments = self._segments
         if len(segments) >= 3:
             return f"{segments[1]}/{segments[2]}"
         return "/".join(segments)
 
     def contains(self, other: 'Uri') -> bool:
-        if self.purpose != other.purpose: return False
-        if len(self.segments) >= len(other.segments): return False
-        for self_part, other_part in zip(self.segments, other.segments):
-            if self_part == other_part: continue
+        if self.purpose != other.purpose:
             return False
+        if len(self._segments) >= len(other._segments):
+            return False
+        for self_part, other_part in zip(self._segments, other._segments):
+            if self_part != other_part:
+                return False
         return True
 
+    # ── Serialisation / joining ──────────────────────────────────
+
     def __str__(self) -> str:
-        purpose, parts = self.parts()
-        purpose = '' if purpose is None else f'{purpose}:'
-        path = '/'.join(parts)
-        base = f'{purpose}/{path}'
-        if len(self.query) == 0: return base
-        query = '&'.join(f'{k}={v}' for k, v in self.query.items())
+        base = f'{self.purpose}:/' + '/'.join(self._segments)
+        if not self._query:
+            return base
+        query = '&'.join(
+            f'{urllib.parse.quote(k, safe="")}={urllib.parse.quote(v, safe="")}'
+            for k, v in self._query
+        )
         return f'{base}?{query}'
 
-    def __hash__(self) -> int:
-        return hash(str(self))
-
-    def __truediv__(self, other: str | list[str]) -> 'Uri':
-
-        def _is_valid(other: str):
-            if other == '*': return True
-            if _valid_name(other): return True
-            return False
-    
+    def __truediv__(self, other) -> 'Uri':
         if isinstance(other, str):
-            if not _is_valid(other):
+            others = [other]
+        elif isinstance(other, (list, tuple)):
+            others = list(other)
+        else:
+            raise ValueError(f'Invalid other: {other}')
+        for segment in others:
+            if not (isinstance(segment, str) and _valid_segment(segment)):
                 raise ValueError(f'Invalid other: {other}')
-            self_str = str(self)
-            separator = '' if self_str.endswith('/') else '/'
-            return Uri.parse_unsafe(f'{self_str}{separator}{other}')
-
-        if isinstance(other, list):
-            if not all(map(_is_valid, other)):
-                raise ValueError(f'Invalid other: {other}')
-            self_str = str(self)
-            separator = '' if self_str.endswith('/') else '/'
-            other_path = '/'.join(other)
-            return Uri.parse_unsafe(f'{self_str}{separator}{other_path}')
-        
-        raise ValueError(f'Invalid other: {other}')
+        # Joining preserves purpose and query; only segments grow.
+        return Uri(self.purpose, self._segments + tuple(others), self.query)

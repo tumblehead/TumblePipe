@@ -440,12 +440,12 @@ class ExportLayer(ns.Node):
         if department_name is None:
             raise ExportLayerError(f"Department name is not set for entity: {entity_uri}")
         if frame_range_result is None:
-            if str(entity_uri).startswith('entity:/assets/'):
-                raise ExportLayerError(
-                    f"Frame range could not be determined for asset: {entity_uri}. "
-                    "Assets don't have frame ranges - use 'Single Frame' or 'Playback Range' instead."
-                )
-            raise ExportLayerError(f"Frame range could not be determined for entity: {entity_uri}")
+            raise ExportLayerError(
+                f"Frame range could not be determined for entity: {entity_uri}. "
+                "Its config resolves no frame range (is the entity registered?) - "
+                "set one on the entity, or switch the node's frame range source to "
+                "'Single Frame' or 'Playback Range'."
+            )
 
         frame_range, step = frame_range_result
         render_range = frame_range.full_range()
@@ -702,12 +702,12 @@ class ExportLayer(ns.Node):
         if department_name is None:
             raise ExportLayerError(f"Department name is not set for entity: {entity_uri}")
         if frame_range_result is None:
-            if str(entity_uri).startswith('entity:/assets/'):
-                raise ExportLayerError(
-                    f"Frame range could not be determined for asset: {entity_uri}. "
-                    "Assets don't have frame ranges - use 'Single Frame' or 'Playback Range' instead."
-                )
-            raise ExportLayerError(f"Frame range could not be determined for entity: {entity_uri}")
+            raise ExportLayerError(
+                f"Frame range could not be determined for entity: {entity_uri}. "
+                "Its config resolves no frame range (is the entity registered?) - "
+                "set one on the entity, or switch the node's frame range source to "
+                "'Single Frame' or 'Playback Range'."
+            )
 
         frame_range, _step = frame_range_result
 

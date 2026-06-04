@@ -556,7 +556,7 @@ class DetailSectionBuilder:
             TEXT_DIM, TEXT_SECONDARY,
         )
 
-        memberships = self.get_asset_membership(ctx.detail.id)
+        memberships = self._catalog.get_asset_membership(ctx.detail.id)
         if not memberships:
             return None
 
@@ -861,7 +861,7 @@ class DetailSectionBuilder:
                 )
                 toggle.toggled.connect(
                     lambda checked, gid=asset_id, dn=dept_name:
-                        self._catalog._toggle_group_dept_coverage(
+                        self._catalog._containers._toggle_group_dept_coverage(
                             gid, dn, bool(checked),
                         )
                 )

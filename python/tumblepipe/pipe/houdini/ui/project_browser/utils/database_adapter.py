@@ -96,17 +96,12 @@ class DatabaseAdapter:
             children = current.setdefault('children', {})
             existing = children.get(final_segment, {})
 
-            # Build merged data: preserve existing children, update properties
+            # Build merged data: preserve existing children, update properties.
+            # No per-node schema is stored — it's derived from position.
             merged = {
                 'properties': data.get('properties', existing.get('properties', {})),
                 'children': existing.get('children', {}),  # Preserve existing children
             }
-
-            # Preserve or update schema if present
-            if 'schema' in data:
-                merged['schema'] = data['schema']
-            elif 'schema' in existing:
-                merged['schema'] = existing['schema']
 
             children[final_segment] = merged
 
@@ -152,17 +147,12 @@ class DatabaseAdapter:
         1. schemas:/entity/assets/category/asset (schema defaults - defines order)
         2. entity:/ -> entity:/assets -> entity:/assets/CHAR (parent inheritance)
         """
-        # 1. Start with schema defaults (defines base structure and order)
-        entity_data = self.lookup(uri)
-        if entity_data and entity_data.get('schema'):
-            # Entity has explicit schema - use it
-            schema_uri = Uri.parse_unsafe(entity_data['schema'])
-        else:
-            # No explicit schema - derive from URI path
-            # e.g., entity:/assets -> schemas:/entity/assets
-            schema_uri = Uri.parse_unsafe(f'schemas:/{uri.purpose}/' + '/'.join(uri.segments))
-
-        result = self._get_schema_properties(schema_uri)
+        # 1. Start with schema defaults (defines base structure and order).
+        # The schema is derived from the entity's position (handles the
+        # placeholder schema tree correctly) — the old naive
+        # schemas:/{purpose}/{segments} join mismatched placeholder paths.
+        schema_uri = self._config.get_entity_schema_uri(uri)
+        result = self._get_schema_properties(schema_uri) if schema_uri is not None else {}
 
         # 2. Merge parent entity inheritance on top
         if uri.segments:

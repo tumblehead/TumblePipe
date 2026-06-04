@@ -8,9 +8,6 @@ api = default_client()
 DEPARTMENTS_URI = Uri.parse_unsafe('departments:/')
 
 
-def _schema_uri_for(context: str) -> Uri:
-    return Uri.parse_unsafe(f'schemas:/departments/{context}/department')
-
 @dataclass(frozen=True)
 class Department:
     name: str
@@ -41,7 +38,7 @@ def add_department(
         generated = generated,
         enabled = enabled,
         short = short,
-    ), schema_uri=_schema_uri_for(context))
+    ))
 
 def remove_department(context: str, name: str):
     department_uri = DEPARTMENTS_URI / context / name
@@ -52,21 +49,21 @@ def set_independent(context: str, name: str, independent: bool):
     properties = api.config.get_properties(department_uri)
     if properties is None: return
     properties['independent'] = independent
-    api.config.set_properties(department_uri, properties, schema_uri=_schema_uri_for(context))
+    api.config.set_properties(department_uri, properties)
 
 def set_publishable(context: str, name: str, publishable: bool):
     department_uri = DEPARTMENTS_URI / context / name
     properties = api.config.get_properties(department_uri)
     if properties is None: return
     properties['publishable'] = publishable
-    api.config.set_properties(department_uri, properties, schema_uri=_schema_uri_for(context))
+    api.config.set_properties(department_uri, properties)
 
 def set_renderable(context: str, name: str, renderable: bool):
     department_uri = DEPARTMENTS_URI / context / name
     properties = api.config.get_properties(department_uri)
     if properties is None: return
     properties['renderable'] = renderable
-    api.config.set_properties(department_uri, properties, schema_uri=_schema_uri_for(context))
+    api.config.set_properties(department_uri, properties)
 
 def is_renderable(context: str, name: str) -> bool:
     """Check if a department is renderable."""
@@ -82,7 +79,7 @@ def set_generated(context: str, name: str, generated: bool):
     properties = api.config.get_properties(department_uri)
     if properties is None: return
     properties['generated'] = generated
-    api.config.set_properties(department_uri, properties, schema_uri=_schema_uri_for(context))
+    api.config.set_properties(department_uri, properties)
 
 def is_generated(context: str, name: str) -> bool:
     """Check if a department is generated (Python-only, not Houdini-exportable)."""
@@ -98,7 +95,7 @@ def set_enabled(context: str, name: str, enabled: bool):
     properties = api.config.get_properties(department_uri)
     if properties is None: return
     properties['enabled'] = enabled
-    api.config.set_properties(department_uri, properties, schema_uri=_schema_uri_for(context))
+    api.config.set_properties(department_uri, properties)
 
 def is_enabled(context: str, name: str) -> bool:
     """Check if a department is enabled."""
@@ -114,7 +111,7 @@ def set_short(context: str, name: str, short: str | None):
     properties = api.config.get_properties(department_uri)
     if properties is None: return
     properties['short'] = short
-    api.config.set_properties(department_uri, properties, schema_uri=_schema_uri_for(context))
+    api.config.set_properties(department_uri, properties)
 
 def get_short(context: str, name: str) -> str | None:
     """Return the optional abbreviated label, or ``None`` if unset."""
@@ -137,18 +134,21 @@ def list_departments(context: str, include_generated: bool = True, include_disab
     departments_data = api.config.cache.get('departments', {})
     root_children = departments_data.get('children', {})
     context_data = root_children.get(context, {}).get('children', {})
-    departments = [
-        Department(
+    departments = []
+    for dept_name in context_data:
+        # Resolve through get_properties so schema defaults fill in — the
+        # raw cache node stores only sparse overrides, so default-valued
+        # fields (independent/publishable/renderable) may be absent there.
+        props = api.config.get_properties(DEPARTMENTS_URI / context / dept_name) or {}
+        departments.append(Department(
             name = dept_name,
-            independent = dept_data['properties']['independent'],
-            publishable = dept_data['properties']['publishable'],
-            renderable = dept_data['properties']['renderable'],
-            generated = dept_data['properties'].get('generated', False),
-            enabled = dept_data['properties'].get('enabled', True),
-            short = dept_data['properties'].get('short'),
-        )
-        for dept_name, dept_data in context_data.items()
-    ]
+            independent = props['independent'],
+            publishable = props['publishable'],
+            renderable = props['renderable'],
+            generated = props.get('generated', False),
+            enabled = props.get('enabled', True),
+            short = props.get('short'),
+        ))
     if not include_generated:
         departments = [d for d in departments if not d.generated]
     if not include_disabled:

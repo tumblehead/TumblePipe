@@ -1346,10 +1346,15 @@ def get_workfile_context(hip_file_path: Path) -> Optional[Context]:
     context_data = load_json(context_path)
     if context_data is None: return None
 
-    # Read entity URI from context
-    entity_uri = Uri.parse_unsafe(context_data['uri'])
-
-    department_name = context_data['department']
+    # Degrade to None on a partial/legacy context.json rather than raising,
+    # matching load_entity_context's contract.
+    uri_str = context_data.get('uri')
+    department_name = context_data.get('department')
+    if uri_str is None or department_name is None: return None
+    try:
+        entity_uri = Uri.parse_unsafe(uri_str)
+    except ValueError:
+        return None
 
     # Return context
     return Context(

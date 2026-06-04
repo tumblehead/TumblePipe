@@ -27,9 +27,12 @@ def get_scene_ref(entity_uri: Uri) -> Uri | None:
         entity_uri: The entity URI (e.g., entity:/shots/010/010)
 
     Returns:
-        Scene URI if set, None otherwise
+        Scene URI if set *directly on this entity*, None otherwise. Use
+        get_inherited_scene_ref to resolve refs inherited from ancestors —
+        get_properties merges those down, so reading it here would wrongly
+        report an inherited ref as direct.
     """
-    properties = api.config.get_properties(entity_uri)
+    properties = api.config.get_own_properties(entity_uri)
     if properties is None:
         return None
     scene_str = properties.get('scene')
@@ -114,7 +117,15 @@ def get_resolved_scene_assets(entity_uri: Uri) -> list[Uri]:
     if scene is None:
         return []
 
-    return list(scene.assets.keys())
+    # Scene.assets is a list[AssetEntry]; return unique asset URIs in order.
+    seen = set()
+    result = []
+    for entry in scene.assets:
+        if entry.asset in seen:
+            continue
+        seen.add(entry.asset)
+        result.append(Uri.parse_unsafe(entry.asset))
+    return result
 
 
 def get_scene(entity_uri: Uri):
@@ -140,16 +151,16 @@ def get_scene(entity_uri: Uri):
     scene_ref, _ = get_inherited_scene_ref(entity_uri)
     if scene_ref is None:
         # No scene assigned - return empty Scene using entity as reference
-        return Scene(uri=entity_uri, assets={})
+        return Scene(uri=entity_uri, assets=[])
 
     scene = get_scene_by_uri(scene_ref)
     if scene is None:
-        return Scene(uri=scene_ref, assets={})
+        return Scene(uri=scene_ref, assets=[])
 
     return scene
 
 
-def set_scene(entity_uri: Uri, assets: dict[Uri, 'AssetEntry']):
+def set_scene(entity_uri: Uri, assets: "list['AssetEntry'] | dict[Uri, 'AssetEntry']"):
     """
     Set scene assets for an entity.
 
@@ -158,7 +169,9 @@ def set_scene(entity_uri: Uri, assets: dict[Uri, 'AssetEntry']):
 
     Args:
         entity_uri: The entity URI (e.g., entity:/shots/010/010)
-        assets: Dict of asset URI -> AssetEntry (instances, variant)
+        assets: A list[AssetEntry] (canonical). A legacy dict[Uri, AssetEntry]
+            is also accepted and normalised to its values — the dict keys are
+            redundant with AssetEntry.asset.
     """
     from tumblepipe.config.scenes import (
         get_scene as get_scene_by_uri,
@@ -166,6 +179,9 @@ def set_scene(entity_uri: Uri, assets: dict[Uri, 'AssetEntry']):
         add_scene,
         AssetEntry
     )
+
+    if isinstance(assets, dict):
+        assets = list(assets.values())
 
     scene_ref, _ = get_inherited_scene_ref(entity_uri)
 

@@ -255,7 +255,7 @@ class BatchEntityDialog(QtWidgets.QDialog):
             properties = apply_defaults(self._selected_schema, properties)
 
             try:
-                self._api.config.add_entity(entity_uri, properties, self._selected_schema.uri)
+                self._api.config.add_entity(entity_uri, properties)
                 created_uris.append(entity_uri)
             except Exception as e:
                 errors.append(f"{name}: {str(e)}")

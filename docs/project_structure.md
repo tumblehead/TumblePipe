@@ -90,7 +90,11 @@ companion modules:
 - `_pipeline_resolver.py` — asset-id → `(ref, project, client, uri,
   root)` resolution.
 - `_pipeline_containers.py` — `GroupContainer` / `SceneContainer`
-  typed sum replacing the Multi-vs-Root `kind` branching.
+  typed sum replacing the Multi-vs-Root `kind` branching, plus the
+  `ContainerManager` that owns all container behaviour: collection
+  discovery, member/dept coverage, member add/remove, and the Root
+  context-menu actions (open location, rebuild assigned shots,
+  export USD).
 - `_pipeline_uris.py` — typed factories for tumblepipe URIs.
 - `_pipeline_drops.py` — the LOP / SOP / sublayer drop router.
 - `_pipeline_workfiles.py` — workfile open / create lifecycle plus

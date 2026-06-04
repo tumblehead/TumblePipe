@@ -48,17 +48,17 @@ def load_validators_module(path: Path):
         path: Path to validators.py file
 
     Returns:
-        Loaded module or None on error
+        Loaded module. Raises if the file exists but is broken (syntax
+        error, bad import, raising at module scope) — a broken validators.py
+        must fail loudly rather than silently disabling validation. Absence
+        is handled upstream by get_validators_path returning None.
     """
-    try:
-        spec = importlib.util.spec_from_file_location('validators', path)
-        if spec is None or spec.loader is None:
-            return None
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-    except Exception:
-        return None
+    spec = importlib.util.spec_from_file_location('validators', path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'Cannot load validators module: {path}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def get_validator_names_for_department(context: str, department: str) -> list[str]:
@@ -79,24 +79,18 @@ def get_validator_names_for_department(context: str, department: str) -> list[st
         return []
 
     module = load_validators_module(path)
-    if module is None:
-        return []
-
     if not hasattr(module, 'register'):
         return []
 
-    # Use a collector to gather validator names
+    # Use a collector to gather validator names. A register() that raises
+    # is a broken validator and propagates — don't mask it as "no validators".
     names = []
 
     class NameCollector:
         def register(self, name: str, validator: Callable):
             names.append(name)
 
-    try:
-        module.register(NameCollector())
-    except Exception:
-        return []
-
+    module.register(NameCollector())
     return names
 
 
@@ -119,17 +113,12 @@ def register_department_validators(registry, context: str, department: str) -> b
         return False
 
     module = load_validators_module(path)
-    if module is None:
-        return False
-
     if not hasattr(module, 'register'):
         return False
 
-    try:
-        module.register(registry)
-        return True
-    except Exception:
-        return False
+    # A register() that raises is a broken validator and propagates.
+    module.register(registry)
+    return True
 
 
 def list_department_validators(context: str) -> dict[str, list[str]]:

@@ -31,7 +31,10 @@ class BlockRange:
         return frames[index]
     
     def __len__(self):
-        return (self.last_frame - self.first_frame + 1) // self.step_size
+        # Must equal len(list(self)) == len(range(first, last+1, step)).
+        # The naive (last-first+1)//step under-counts whenever step>1
+        # (e.g. 1..10x3 yields [1,4,7,10] -> 4, not 3).
+        return (self.last_frame - self.first_frame) // self.step_size + 1
 
     def __iter__(self):
         return iter(range(
@@ -80,6 +83,15 @@ class FrameRange:
             raise ValueError(f"start_roll must be non-negative, got {self.start_roll}")
         if self.end_roll < 0:
             raise ValueError(f"end_roll must be non-negative, got {self.end_roll}")
+        # Validate the roll-adjusted lower bound here, not in full_range():
+        # an invalid range must be unconstructable rather than exploding
+        # later inside __len__/__iter__/timecode (which all go via full_range).
+        if self.start_frame - self.start_roll <= 0:
+            raise ValueError(
+                f"start_frame - start_roll must be positive, got "
+                f"{self.start_frame} - {self.start_roll} = "
+                f"{self.start_frame - self.start_roll}"
+            )
 
     def play_range(self) -> BlockRange:
         return BlockRange(
@@ -89,17 +101,10 @@ class FrameRange:
         )
 
     def full_range(self) -> BlockRange:
+        # __post_init__ guarantees the result is valid: first_frame > 0 (roll
+        # underflow check) and first_frame <= last_frame (start<=end, rolls>=0).
         first_frame = self.start_frame - self.start_roll
         last_frame = self.end_frame + self.end_roll
-        
-        if first_frame <= 0:
-            raise ValueError(f"full_range first_frame ({first_frame}) must be positive. "
-                           f"start_frame={self.start_frame}, start_roll={self.start_roll}")
-        if first_frame > last_frame:
-            raise ValueError(f"full_range first_frame ({first_frame}) cannot be greater than last_frame ({last_frame}). "
-                           f"start_frame={self.start_frame}, end_frame={self.end_frame}, "
-                           f"start_roll={self.start_roll}, end_roll={self.end_roll}")
-        
         return BlockRange(first_frame, last_frame, self.step_size)
     
     def timecode(self, frame: int) -> float:

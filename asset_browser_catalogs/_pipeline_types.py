@@ -186,7 +186,9 @@ def parse_entity_ref(
     """
     if not asset_id:
         return None
-    parts = asset_id.split("/", 2)
+    # split() with no maxsplit (not split("/", 2)): a 4-segment id like
+    # "a/b/c/d" must be rejected, not glued into third="c/d".
+    parts = asset_id.split("/")
     if len(parts) != 3:
         return None
     project, second, third = parts
@@ -199,7 +201,7 @@ def parse_project_name(asset_id: str) -> str | None:
     """Extract just the project name from a 3-segment asset id."""
     if not asset_id:
         return None
-    parts = asset_id.split("/", 2)
+    parts = asset_id.split("/")
     if len(parts) != 3:
         return None
     return parts[0]
@@ -228,6 +230,23 @@ def entity_uri_tail(ref: EntityRef) -> str:
 WORKFILE_GLOB = "*.hip*"
 
 
+def version_code(label: str) -> int:
+    """Numeric code of a ``vNNNN`` version label (``version_code('v0007') == 7``)."""
+    return int(label[1:])
+
+
+def latest_version(labels: Iterable[str]) -> str | None:
+    """The version label with the highest numeric code, or ``None`` if empty.
+
+    Use instead of ``sorted(labels)[-1]``: labels can exceed four digits
+    (``v10000``), where a lexical sort wrongly ranks ``v9999`` last.
+    """
+    labels = list(labels)
+    if not labels:
+        return None
+    return max(labels, key=version_code)
+
+
 def workfile_versions(dept_dir: Path) -> list[str]:
     """Return sorted ``vNNNN`` version labels parsed from .hip filenames."""
     if not dept_dir.exists():
@@ -242,7 +261,10 @@ def workfile_versions(dept_dir: Path) -> list[str]:
             and tail[1][1:].isdigit()
         ):
             versions.add(tail[1])
-    return sorted(versions)
+    # Sort by numeric code, not lexically: version labels can exceed 4
+    # digits (v10000), and every consumer takes [-1] as "latest" — a
+    # lexical sort would rank v9999 after v10000 and open a stale workfile.
+    return sorted(versions, key=version_code)
 
 
 def workfile_for_version(dept_dir: Path, version: str) -> Path | None:

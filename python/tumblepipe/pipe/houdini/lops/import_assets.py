@@ -49,15 +49,20 @@ def _update_script(instances):
         ''
     ]
 
-    # Update metadata instance names
+    # Update metadata instance names. Guard the prim: if the asset
+    # composed empty (e.g. a payload that didn't resolve), GetPrimAtPath
+    # returns an invalid prim — skip it instead of crashing the import.
+    # Mirrors import_layer.py's metadata-update guard.
     for prim_path, instance_name in instances:
         prim_var = f'prim_{instance_name}'
         metadata_var = f'metadata_{instance_name}'
         script += [
             f'{prim_var} = root.GetPrimAtPath("{prim_path}")',
-            f'{metadata_var} = util.get_metadata({prim_var})',
-            f'{metadata_var}["instance"] = "{instance_name}"',
-            f'util.set_metadata({prim_var}, {metadata_var})',
+            f'if {prim_var}.IsValid():',
+            f'    {metadata_var} = util.get_metadata({prim_var})',
+            f'    if {metadata_var} is not None:',
+            f'        {metadata_var}["instance"] = "{instance_name}"',
+            f'        util.set_metadata({prim_var}, {metadata_var})',
             ''
         ]
     

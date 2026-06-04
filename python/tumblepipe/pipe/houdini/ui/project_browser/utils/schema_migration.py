@@ -27,35 +27,44 @@ def detect_field_changes(old_props: dict, new_props: dict) -> tuple[set[str], se
     return added, removed
 
 
-def collect_entities_by_schema(cache: dict, schema_uri: str) -> list[tuple[Uri, dict]]:
+def collect_entities_by_schema(config, schema_uri: Uri) -> list[tuple[Uri, dict]]:
     """
-    Walk entity cache and find all entities using the given schema.
+    Find all entities whose schema (derived from position) is ``schema_uri``.
+
+    The schema URI is no longer stored per node — it's derived from each
+    entity's position — so match by derivation rather than a stored string.
+    Walks every node (including intermediate category/sequence entities, not
+    just leaves) so a category-level schema edit still finds its entities.
 
     Args:
-        cache: The ConfigConvention cache dict
-        schema_uri: The schema URI string to match
+        config: The ConfigConvention (for get_entity_schema_uri + cache)
+        schema_uri: The schema URI being edited (e.g.
+            ``schemas:/entity/assets/category/asset``)
 
     Returns:
-        List of (entity_uri, entity_data) tuples
+        List of (entity_uri, own_properties) tuples
     """
+    if not schema_uri.segments:
+        return []
+    purpose = schema_uri.segments[0]
     results = []
 
     def walk(data: dict, uri: Uri):
-        if data.get('schema') == schema_uri:
-            results.append((uri, data))
+        if config.get_entity_schema_uri(uri) == schema_uri:
+            results.append((uri, data.get('properties', {})))
         for name, child in data.get('children', {}).items():
             walk(child, uri / name)
 
-    entity_data = cache.get('entity', {})
-    base_uri = Uri.parse_unsafe('entity:/')
-    for name, child in entity_data.get('children', {}).items():
+    purpose_data = config.cache.get(purpose, {})
+    base_uri = Uri.parse_unsafe(f'{purpose}:/')
+    for name, child in purpose_data.get('children', {}).items():
         walk(child, base_uri / name)
 
     return results
 
 
 def build_migration(
-    cache: dict,
+    config,
     schema_uri: Uri,
     old_props: dict,
     new_props: dict
@@ -67,7 +76,7 @@ def build_migration(
         {"frame_start": 1001, "name": "untitled"}
 
     Args:
-        cache: The ConfigConvention cache dict
+        config: The ConfigConvention (for entity discovery + schema derivation)
         schema_uri: The schema URI being modified
         old_props: The original schema properties (which ARE the fields)
         new_props: The new schema properties (which ARE the fields)
@@ -80,7 +89,7 @@ def build_migration(
     if not added and not removed:
         return None
 
-    entities = collect_entities_by_schema(cache, str(schema_uri))
+    entities = collect_entities_by_schema(config, schema_uri)
 
     additions = {}
     for field_name in added:
@@ -91,10 +100,11 @@ def build_migration(
     removals = {}
     for field_name in removed:
         affected = []
-        for uri, data in entities:
-            props = data.get('properties', {})
-            if field_name in props:
-                affected.append((uri, props[field_name]))
+        for uri, own_props in entities:
+            # Only entities that explicitly set the field (own props) are
+            # affected by its removal.
+            if field_name in own_props:
+                affected.append((uri, own_props[field_name]))
         if affected:
             removals[field_name] = affected
 

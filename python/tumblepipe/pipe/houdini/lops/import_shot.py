@@ -755,7 +755,9 @@ class ImportShot(ns.Node):
                 uri = Uri.parse_unsafe(path_value)
                 # Strip version when in 'latest' mode so resolver picks actual latest
                 if version_name == 'latest' and 'version' in uri.query:
-                    del uri.query['version']
+                    stripped = dict(uri.query)
+                    del stripped['version']
+                    uri = Uri(uri.purpose, uri.segments, stripped)
                 layer_path = str(uri)
             elif isinstance(path_value, str):
                 # Other string path - pass through directly

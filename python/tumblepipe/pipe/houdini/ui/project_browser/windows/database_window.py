@@ -158,7 +158,7 @@ class DatabaseWindow(QMainWindow):
             old_properties = self._original_properties or {}
 
             migration = build_migration(
-                self._adapter._config.cache,
+                self._adapter._config,
                 self._uri,
                 old_properties,
                 new_properties

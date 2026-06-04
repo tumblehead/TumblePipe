@@ -29,78 +29,68 @@ class RendererDefaults:
     denoise: bool
 
 
+# The single source of truth for renderer defaults. Project config at
+# config:/renderer/settings overrides individual fields; everything that
+# wants a default reads it from here, not from inlined literals scattered
+# across the getters (where they silently masked the store-mismatch bug).
+DEFAULT_RENDERER = RendererDefaults(
+    tile_count=RangeSetting(default=4, min=1, max=16),
+    batch_size=RangeSetting(default=10, min=1, max=100),
+    timeout_minutes=RangeSetting(default=45, min=1, max=480),
+    denoise=True,
+)
+
+
 def _get_settings_data() -> dict:
-    """Get the raw settings data from config cache."""
-    renderer_data = api.config.cache.get('renderer', {})
-    settings_data = renderer_data.get('children', {}).get('settings', {})
-    return settings_data.get('properties', {})
+    """Stored renderer overrides, or {} if none are configured.
+
+    Reads through the same URI the writer uses (``config:/renderer/settings``,
+    persisted to db/config.json). ``None`` (path absent) means "no overrides
+    set" — the canonical case — so collapsing it to {} is correct here.
+    """
+    return api.config.get_properties(SETTINGS_URI) or {}
+
+
+def _overlay(base: RangeSetting, stored: dict) -> RangeSetting:
+    return RangeSetting(
+        default=stored.get('default', base.default),
+        min=stored.get('min', base.min),
+        max=stored.get('max', base.max),
+    )
 
 
 def get_renderer_defaults() -> RendererDefaults:
-    """Get all default renderer settings."""
+    """Resolved renderer settings: project overrides on top of DEFAULT_RENDERER."""
     props = _get_settings_data()
-
-    tile_count = props.get('tile_count', {})
-    batch_size = props.get('batch_size', {})
-    timeout = props.get('timeout_minutes', {})
-
     return RendererDefaults(
-        tile_count=RangeSetting(
-            default=tile_count.get('default', 4),
-            min=tile_count.get('min', 1),
-            max=tile_count.get('max', 16)
-        ),
-        batch_size=RangeSetting(
-            default=batch_size.get('default', 10),
-            min=batch_size.get('min', 1),
-            max=batch_size.get('max', 100)
-        ),
-        timeout_minutes=RangeSetting(
-            default=timeout.get('default', 45),
-            min=timeout.get('min', 1),
-            max=timeout.get('max', 480)
-        ),
-        denoise=props.get('denoise', {}).get('default', True)
+        tile_count=_overlay(DEFAULT_RENDERER.tile_count, props.get('tile_count', {})),
+        batch_size=_overlay(DEFAULT_RENDERER.batch_size, props.get('batch_size', {})),
+        timeout_minutes=_overlay(DEFAULT_RENDERER.timeout_minutes, props.get('timeout_minutes', {})),
+        denoise=props.get('denoise', {}).get('default', DEFAULT_RENDERER.denoise),
     )
 
 
 def get_tile_count_range() -> tuple[int, int, int]:
     """Get tile count (min, max, default)."""
-    props = _get_settings_data()
-    tile_count = props.get('tile_count', {})
-    return (
-        tile_count.get('min', 1),
-        tile_count.get('max', 16),
-        tile_count.get('default', 4)
-    )
+    s = get_renderer_defaults().tile_count
+    return (s.min, s.max, s.default)
 
 
 def get_batch_size_range() -> tuple[int, int, int]:
     """Get batch size (min, max, default)."""
-    props = _get_settings_data()
-    batch_size = props.get('batch_size', {})
-    return (
-        batch_size.get('min', 1),
-        batch_size.get('max', 100),
-        batch_size.get('default', 10)
-    )
+    s = get_renderer_defaults().batch_size
+    return (s.min, s.max, s.default)
 
 
 def get_timeout_range() -> tuple[int, int, int]:
     """Get timeout in minutes (min, max, default)."""
-    props = _get_settings_data()
-    timeout = props.get('timeout_minutes', {})
-    return (
-        timeout.get('min', 1),
-        timeout.get('max', 480),
-        timeout.get('default', 45)
-    )
+    s = get_renderer_defaults().timeout_minutes
+    return (s.min, s.max, s.default)
 
 
 def get_denoise_default() -> bool:
     """Get default denoise setting."""
-    props = _get_settings_data()
-    return props.get('denoise', {}).get('default', True)
+    return get_renderer_defaults().denoise
 
 
 def set_renderer_setting(setting_name: str, values: dict[str, Any]):

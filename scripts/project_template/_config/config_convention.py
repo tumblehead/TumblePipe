@@ -149,39 +149,26 @@ class ProjectConfigConvention(ConfigConvention):
                 if not file_path.suffix == '.json': continue
                 self.cache[file_path.stem] = load_json(file_path)
 
-    def _insert(self, purpose: str, data: dict, datum: dict, path: list[str], schema_uri: str | None = None):
-        """Insert entity at path, creating intermediate entities with proper schemas.
+    def _insert(self, data: dict, datum: dict, path: list[str]):
+        """Insert entity at path, creating intermediate nodes as needed.
 
         Properties are stored sparsely - only overrides, not defaults.
-        Defaults are resolved from schemas at query time.
-
-        If schema_uri is provided, it's attached to the leaf when the leaf
-        is being created or has no existing schema. An existing schema is
-        not overwritten.
+        Defaults are resolved from schemas at query time, and the schema
+        itself is resolved from the entity's position (get_entity_schema_uri),
+        so nothing about it is stored per-node.
         """
-        current_path = []
         for step in path:
-            current_path.append(step)
             if 'children' not in data:
                 data['children'] = dict()
             if step not in data['children']:
-                intermediate_uri = Uri.parse_unsafe(f'schemas:/{purpose}/' + '/'.join(current_path))
-                intermediate_schema = self.get_schema(intermediate_uri)
-                schema_str = str(intermediate_uri) if intermediate_schema is not None else None
                 data['children'][step] = dict(
-                    schema = schema_str,
                     properties = dict(),  # Sparse: no defaults, resolved at query time
                     children = dict()
                 )
             data = data['children'][step]
         data['properties'] = datum
-        if schema_uri is not None and not data.get('schema'):
-            data['schema'] = schema_uri
 
-    def add_entity(self, uri: Uri, properties: dict, schema_uri: Uri):
-        if self.get_schema(schema_uri) is None:
-            raise ValueError(f'Schema does not exist: {schema_uri}')
-
+    def add_entity(self, uri: Uri, properties: dict):
         # Safety: Ensure cache is loaded from disk if missing
         if uri.purpose not in self.cache:
             file_path = self.db_path / f'{uri.purpose}.json'
@@ -194,7 +181,7 @@ class ProjectConfigConvention(ConfigConvention):
         if _contains(data, uri.segments):
             raise ValueError('Entity already exists')
 
-        self._insert(uri.purpose, data, properties, uri.segments, str(schema_uri))
+        self._insert(data, properties, uri.segments)
         # Note: data is modified in place, cache is already updated
         store_json(self.db_path / f'{uri.purpose}.json', data)
 
@@ -241,6 +228,23 @@ class ProjectConfigConvention(ConfigConvention):
 
         return result if result else None
 
+    def get_own_properties(self, uri: Uri) -> dict | None:
+        """Properties stored directly on this entity (no defaults, no
+        inheritance). {} if the entity exists but stores nothing; None if
+        it does not exist. See the ConfigConvention base for the contract.
+        """
+        import copy
+
+        data = self.cache.get(uri.purpose)
+        if data is None:
+            return None
+        for step in uri.segments:
+            children = data.get('children', {})
+            if step not in children:
+                return None
+            data = children[step]
+        return copy.deepcopy(data.get('properties', {}))
+
     def _get_inherited_properties(self, uri: Uri) -> dict:
         """Get inherited properties (schema defaults + parent chain) without this entity's own props."""
         import copy
@@ -280,14 +284,13 @@ class ProjectConfigConvention(ConfigConvention):
 
         return result
 
-    def set_properties(self, uri: Uri, properties: dict, schema_uri: Uri | None = None):
+    def set_properties(self, uri: Uri, properties: dict):
         # Calculate inherited properties and store only the difference
         inherited = self._get_inherited_properties(uri)
         sparse_properties = _deep_diff(inherited, properties)
 
         data = self.cache.get(uri.purpose, dict(children=dict()))
-        schema_str = str(schema_uri) if schema_uri is not None else None
-        self._insert(uri.purpose, data, sparse_properties, uri.segments, schema_str)
+        self._insert(data, sparse_properties, uri.segments)
         self.cache[uri.purpose] = data
         file_path = self.db_path / f'{uri.purpose}.json'
         store_json(file_path, data)
@@ -348,18 +351,45 @@ class ProjectConfigConvention(ConfigConvention):
             for name, child_data in data.items()
         ]
 
-    def get_entity_schema(self, entity_uri: Uri) -> Schema | None:
-        data = self.cache.get(entity_uri.purpose)
-        if data is None:
+    def get_entity_schema_uri(self, entity_uri: Uri) -> Uri | None:
+        """Resolve an entity's schema URI purely from its position.
+
+        The schema URI is entirely determined by an entity's position, so
+        this is the single source of truth — there is no per-node stored
+        schema string to drift out of sync (that drift was the cause of the
+        frame-range inheritance bug). The schema tree uses placeholder
+        segment names (e.g. ``schemas:/entity/assets/category/asset``) so a
+        real entity path like ``entity:/assets/CHAR/Hero`` never matches it
+        literally. We walk the schema tree in lock-step with the entity
+        segments: a segment that names a literal schema child
+        (``shots``/``assets``) is used as-is, otherwise we descend through
+        the single placeholder child at that level. Returns ``None`` if the
+        schema tree doesn't cover the path (no child, or an ambiguous fork
+        of placeholders).
+        """
+        node = self.cache.get('schemas')
+        if node is None:
             return None
+        node = node.get('children', {}).get(entity_uri.purpose)
+        if node is None:
+            return None
+        schema_segments = [entity_uri.purpose]
         for segment in entity_uri.segments:
-            data = data.get('children', {}).get(segment)
-            if data is None:
+            children = node.get('children', {})
+            if segment in children:
+                chosen = segment
+            elif len(children) == 1:
+                chosen = next(iter(children))
+            else:
                 return None
-        schema_uri_str = data.get('schema')
-        if schema_uri_str is None:
+            schema_segments.append(chosen)
+            node = children[chosen]
+        return Uri.parse_unsafe('schemas:/' + '/'.join(schema_segments))
+
+    def get_entity_schema(self, entity_uri: Uri) -> Schema | None:
+        schema_uri = self.get_entity_schema_uri(entity_uri)
+        if schema_uri is None:
             return None
-        schema_uri = Uri.parse_unsafe(schema_uri_str)
         return self.get_schema(schema_uri)
 
     def get_child_schemas(self, schema_uri: Uri) -> list[Schema]:

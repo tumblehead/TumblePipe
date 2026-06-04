@@ -42,11 +42,10 @@ def add_group(
     for member in members:
         if not root_uri.contains(member):
             raise ValueError('Invalid group member list')
-    schema_uri = Uri.parse_unsafe('schemas:/groups/group')
     api.config.add_entity(group_uri, dict(
         members = list(map(str, members)),
         departments = departments
-    ), schema_uri)
+    ))
     return group_uri
 
 def remove_group(group_uri: Uri):

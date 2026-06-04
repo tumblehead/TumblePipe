@@ -102,6 +102,7 @@ def update_mode(mode):
 ###############################################################################
 
 def get_metadata(prim):
+    if prim is None or not prim.IsValid(): return None
     if not prim.HasMetadata('customData'): return None
     _metadata = prim.GetMetadata('customData')
     if _metadata is None: return None

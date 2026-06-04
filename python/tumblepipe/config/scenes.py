@@ -67,23 +67,6 @@ def is_scene_uri(uri: Uri) -> bool:
     return True
 
 
-def _get_scene_schema_uri(depth: int) -> Uri:
-    """
-    Get the schema URI for a scene at a given depth.
-
-    depth=1: scenes:/scene -> schemas:/scenes/scene
-    depth=2: scenes:/cat/scene -> schemas:/scenes/category/scene
-    depth=3: scenes:/cat/subcat/scene -> schemas:/scenes/category/category/scene
-    """
-    if depth == 1:
-        return Uri.parse_unsafe('schemas:/scenes/scene')
-    elif depth == 2:
-        return Uri.parse_unsafe('schemas:/scenes/category/scene')
-    else:
-        # For depth >= 3, use nested category path
-        return Uri.parse_unsafe('schemas:/scenes/category/category/scene')
-
-
 def add_scene(path: str, assets: list[AssetEntry] | None = None) -> Uri:
     """
     Create a new scene.
@@ -119,8 +102,7 @@ def add_scene(path: str, assets: list[AssetEntry] | None = None) -> Uri:
         parent_props = api.config.get_properties(parent_uri)
         if parent_props is None:
             # Create parent as scene with empty assets
-            parent_schema = _get_scene_schema_uri(i)
-            api.config.add_entity(parent_uri, dict(assets=[]), parent_schema)
+            api.config.add_entity(parent_uri, dict(assets=[]))
 
     # Build final scene URI
     scene_uri = SCENES_URI
@@ -131,13 +113,12 @@ def add_scene(path: str, assets: list[AssetEntry] | None = None) -> Uri:
     if properties is not None:
         raise ValueError('Scene already exists')
 
-    schema_uri = _get_scene_schema_uri(len(segments))
     api.config.add_entity(scene_uri, dict(
         assets=[
             {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.variant}
             for entry in assets
         ]
-    ), schema_uri)
+    ))
     return scene_uri
 
 

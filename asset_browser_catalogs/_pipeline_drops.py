@@ -39,14 +39,16 @@ def entity_uri_for(asset_or_detail) -> str | None:
     URI since URIs themselves don't carry project info.
     """
     parts = asset_or_detail.id.split("/")
-    if len(parts) < 3:
+    if len(parts) != 3:
+        # Exactly PROJECT/SECOND/THIRD. The old `< 3` silently accepted a
+        # 4+-segment id and took parts[1]/parts[2], building a plausible-but-
+        # wrong URI; reject it instead (mirrors parse_entity_ref).
         return None
-    # parts[0] is the project name; URIs use parts[1] / parts[2].
-    a, b = parts[1], parts[2]
+    _project, second, third = parts
     if "type:asset" in asset_or_detail.tags:
-        return f"entity:/assets/{a}/{b}"
+        return str(uris.entity_asset(second, third))
     if "type:shot" in asset_or_detail.tags:
-        return f"entity:/shots/{a}/{b}"
+        return str(uris.entity_shot(second, third))
     return None
 
 

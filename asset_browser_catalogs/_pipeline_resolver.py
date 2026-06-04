@@ -91,7 +91,9 @@ class AssetResolver:
         """Split ``"PROJECT/SECOND/THIRD"`` or return ``None``."""
         if not asset_id:
             return None
-        parts = asset_id.split("/", 2)
+        # split() with no maxsplit: a 4-segment id must be rejected, not
+        # glued into third="c/d" (mirrors parse_entity_ref in _pipeline_types).
+        parts = asset_id.split("/")
         if len(parts) != 3:
             return None
         return (parts[0], parts[1], parts[2])

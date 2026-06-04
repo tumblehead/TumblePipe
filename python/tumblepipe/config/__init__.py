@@ -12,7 +12,7 @@ class Entity:
 from tumblepipe.config.schema import Schema, FieldDefinition
 
 class ConfigConvention:
-    def add_entity(self, uri: Uri, properties: dict, schema_uri: Uri):
+    def add_entity(self, uri: Uri, properties: dict):
         raise NotImplementedError()
 
     def remove_entity(self, uri: Uri):
@@ -29,11 +29,22 @@ class ConfigConvention:
         """
         raise NotImplementedError()
 
-    def set_properties(self, uri: Uri, properties: dict, schema_uri: Uri | None = None):
-        """Set properties at uri. If schema_uri is provided and the target
-        node has no existing schema, attach it (does not overwrite an
-        existing schema). This lets writers that don't go through
-        ``add_entity`` still produce schema-bearing leaves.
+    def set_properties(self, uri: Uri, properties: dict):
+        """Set properties at uri (stored sparsely against inherited defaults).
+
+        The entity's schema is resolved from its position
+        (get_entity_schema_uri), so no schema needs to be passed or stored.
+        """
+        raise NotImplementedError()
+
+    def get_own_properties(self, uri: Uri) -> dict | None:
+        """Properties stored directly on this entity only.
+
+        Unlike get_properties, this applies no schema defaults and no
+        inheritance from ancestors — it returns exactly what is stored on
+        the entity's own node ({} if it exists but stores nothing), or None
+        if the entity does not exist. Use it to tell a value set ON an
+        entity apart from one merged down from a parent.
         """
         raise NotImplementedError()
 
@@ -47,6 +58,15 @@ class ConfigConvention:
         raise NotImplementedError()
 
     def get_entity_schema(self, entity_uri: Uri) -> Schema | None:
+        raise NotImplementedError()
+
+    def get_entity_schema_uri(self, entity_uri: Uri) -> Uri | None:
+        """The schema URI for an entity, derived purely from its position.
+
+        This is the single source of truth for which schema an entity uses;
+        there is no per-node stored value to drift out of sync. Returns None
+        if the schema tree doesn't cover the entity's position.
+        """
         raise NotImplementedError()
 
     def get_child_schemas(self, schema_uri: Uri) -> list[Schema]:
