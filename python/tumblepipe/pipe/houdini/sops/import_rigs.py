@@ -3,6 +3,7 @@ import hou
 from tumblepipe.api import default_client
 from tumblepipe.util.uri import Uri
 from tumblepipe.util import result
+from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.sops import import_rig
 from tumblepipe.config.variants import list_variants
@@ -40,7 +41,10 @@ class ImportRigs(ns.Node):
             filter=Uri.parse_unsafe('entity:/assets'),
             closure=True
         )
-        return [entity.uri for entity in asset_entities]
+        return [
+            entity.uri for entity in asset_entities
+            if is_terminal_entity(api.config, entity.uri)
+        ]
 
     def list_entity_uris(self, index: int) -> list[Uri]:
         """List asset URIs excluding those already used by other indices."""

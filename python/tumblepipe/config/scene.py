@@ -15,6 +15,7 @@ from pathlib import Path
 from tumblepipe.api import default_client, fix_path
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import store_text, store_json
+from tumblepipe.config.entities import is_terminal_entity
 
 api = default_client()
 
@@ -208,7 +209,10 @@ def list_available_assets() -> list[Uri]:
         filter=Uri.parse_unsafe('entity:/assets'),
         closure=True
     )
-    return [entity.uri for entity in asset_entities]
+    return [
+        entity.uri for entity in asset_entities
+        if is_terminal_entity(api.config, entity.uri)
+    ]
 
 
 def generate_root_version(shot_uri: Uri) -> Path:

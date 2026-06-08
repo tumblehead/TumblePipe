@@ -5,6 +5,7 @@ from qtpy.QtCore import Qt
 from qtpy.QtGui import QStandardItemModel, QStandardItem
 
 from tumblepipe.util.uri import Uri
+from tumblepipe.config.entities import is_terminal_entity
 
 
 # Custom data role for entity URI (matching workspace.py)
@@ -173,6 +174,12 @@ class EntitySelectorDialog(QtWidgets.QDialog):
                 all_uris.extend([e.uri for e in shots])
             except Exception:
                 pass
+
+        # Drop empty categories/sequences: list_entities(closure=True) returns
+        # any childless node, so a category with no assets yet (e.g.
+        # entity:/assets/CHAR) comes back as a selectable leaf. Keep only real
+        # terminal entities (assets/shots) - see config.entities.
+        all_uris = [u for u in all_uris if is_terminal_entity(self._api.config, u)]
 
         # Build tree from segment 0 (includes 'assets', 'shots' as top-level items)
         _build_entity_tree(model.invisibleRootItem(), all_uris, 0)

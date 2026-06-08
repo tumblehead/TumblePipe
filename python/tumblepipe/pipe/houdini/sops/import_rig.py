@@ -4,6 +4,7 @@ import hou
 
 from tumblepipe.api import path_str, default_client
 from tumblepipe.util.uri import Uri
+from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.sops import rename_packed
 from tumblepipe.pipe.paths import list_version_paths
@@ -55,7 +56,10 @@ class ImportRig(ns.Node):
             filter=Uri.parse_unsafe('entity:/assets'),
             closure=True
         )
-        return [entity.uri for entity in asset_entities]
+        return [
+            entity.uri for entity in asset_entities
+            if is_terminal_entity(api.config, entity.uri)
+        ]
 
     def list_variant_names(self) -> list[str]:
         """List available variant names for current asset."""
