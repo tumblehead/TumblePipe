@@ -1,3 +1,5 @@
+import time
+
 import hou
 
 from tumblepipe.api import path_str, default_client
@@ -8,6 +10,29 @@ from tumblepipe.pipe.paths import list_version_paths
 from tumblepipe.config.variants import list_variants
 
 api = default_client()
+
+# Throttle entity-cache refreshes: list_asset_uris is hit on every menu
+# evaluation, so re-reading entity.json each time would lag on large DBs.
+# This bound just coalesces bursts; the EntitySelectorDialog still forces a
+# refresh on open for the interactive path.
+_last_entity_refresh = 0.0
+_ENTITY_REFRESH_INTERVAL = 2.0
+
+def _refresh_entities():
+    """Reload the entity cache from disk, at most once per interval.
+
+    Picks up categories/entities created externally (Database Editor, another
+    artist) even when a node is driven headlessly and the picker never opens.
+    """
+    global _last_entity_refresh
+    now = time.monotonic()
+    if now - _last_entity_refresh < _ENTITY_REFRESH_INTERVAL:
+        return
+    _last_entity_refresh = now
+    try:
+        api.config.refresh_cache('entity')
+    except Exception:
+        pass
 
 def _clear_scene(dive_node, output_node):
 
@@ -25,6 +50,7 @@ class ImportRig(ns.Node):
         super().__init__(native)
 
     def list_asset_uris(self) -> list[Uri]:
+        _refresh_entities()
         asset_entities = api.config.list_entities(
             filter=Uri.parse_unsafe('entity:/assets'),
             closure=True

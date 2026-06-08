@@ -155,6 +155,90 @@ def _check_no_dangling_composition_paths(layer_path: Path) -> None:
     )
 
 
+def _localize_external_sidecars(layer_path: Path) -> None:
+    """Pull externally-anchored composition sidecars into the layer's folder.
+
+    The ``asset_payload`` HDA writes its geometry into a ``payload.usd``
+    sidecar whose *relative* save path anchors to ``$HIP`` — next to the
+    workfile, or a machine-local desktop dir for an unsaved scene — not the
+    export directory. The ROP's "Use Relative Paths" processor can't
+    relativise an arc to a file outside the output tree (and never across
+    drives on Windows), so the published layer keeps a payload arc pointing
+    outside the version folder, where it dangles on import.
+
+    Right after export the sidecar still exists at its anchored location, so
+    we copy every external, on-disk payload/reference file the layer points
+    at into the layer's own directory and rewrite the arc to the bare sibling
+    filename. The sidecar then travels into the version folder with the layer
+    and resolves portably — fixing both the saved-workfile and the
+    unsaved-desktop cases.
+
+    Fail-open: any analysis/copy error is logged and skipped, leaving the
+    layer untouched for the downstream dangling-path guard to catch.
+    """
+    try:
+        from pxr import Sdf, UsdUtils
+    except Exception:
+        logger.warning("Sidecar localisation skipped; USD unavailable", exc_info=True)
+        return
+
+    from tumblepipe.pipe.usd import _looks_like_uri
+
+    layer = Sdf.Layer.FindOrOpen(str(layer_path))
+    if layer is None:
+        return
+
+    layer_dir = layer_path.parent
+    try:
+        used_names = {p.name for p in layer_dir.iterdir()}
+    except OSError:
+        used_names = set()
+
+    # Map each raw authored asset path we relocate -> its new sibling name.
+    remap: dict[str, str] = {}
+    stack = list(layer.rootPrims)
+    while stack:
+        prim = stack.pop()
+        for arc_list in (prim.referenceList, prim.payloadList):
+            for item in arc_list.GetAddedOrExplicitItems():
+                raw = str(getattr(item, 'assetPath', '') or '')
+                if not raw or raw in remap or _looks_like_uri(raw):
+                    continue
+                src = Path(raw)
+                abs_src = src if src.is_absolute() else (layer_dir / src)
+                try:
+                    if abs_src.resolve().parent == layer_dir.resolve():
+                        continue  # already a sibling — nothing to do
+                except OSError:
+                    pass
+                if not abs_src.is_file():
+                    continue  # missing — leave for the dangling-path guard
+                dest_name = abs_src.name
+                if dest_name in used_names:
+                    stem, suffix = abs_src.stem, abs_src.suffix
+                    n = 1
+                    while f"{stem}_{n}{suffix}" in used_names:
+                        n += 1
+                    dest_name = f"{stem}_{n}{suffix}"
+                try:
+                    shutil.copy(abs_src, layer_dir / dest_name)
+                except OSError:
+                    logger.warning("Could not localise sidecar %s", abs_src, exc_info=True)
+                    continue
+                used_names.add(dest_name)
+                remap[raw] = dest_name
+        stack.extend(prim.nameChildren.values())
+
+    if not remap:
+        return
+
+    UsdUtils.ModifyAssetPaths(layer, lambda p: remap.get(p, p))
+    layer.Save()
+    logger.info(
+        "Localised %d payload/reference sidecar(s) into %s", len(remap), layer_dir
+    )
+
+
 class ExportLayer(ns.Node):
 
     def __init__(self, native):
@@ -613,6 +697,11 @@ class ExportLayer(ns.Node):
                 _flatten_sidecar_directories(temp_path)
 
                 logger.info("Export to temp completed successfully")
+
+            # Pull the asset_payload geometry sidecar (and any other
+            # externally-anchored arc) into the version folder so the
+            # published layer is self-contained and travels portably.
+            _localize_external_sidecars(temp_path / layer_file_name)
 
             # Refuse to publish a layer that composes geometry from a
             # missing file (e.g. a payload anchored to a machine-local

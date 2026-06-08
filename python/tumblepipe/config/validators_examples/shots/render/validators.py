@@ -20,7 +20,7 @@ def register(registry):
     - cameras: Check cameras exist and are valid
     - rest_geometry: Check meshes have rest normals (for model exports)
     - model_structure: Check asset prim exists with 'geo' child (Scope type)
-    - lookdev_structure: Check asset prim exists with 'mat' child (Scope type)
+    - lookdev_structure: Check asset prim exists with 'mtl' child (Scope type)
     - material_bindings: Check all geometry has material bindings
     - shot_root_prims: Check only allowed root prims exist (for shot departments)
 

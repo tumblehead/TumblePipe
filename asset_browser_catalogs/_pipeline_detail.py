@@ -35,6 +35,23 @@ class DetailSectionBuilder:
     def __init__(self, catalog: "PipelineCatalog") -> None:
         self._catalog = catalog
 
+    @staticmethod
+    def mix_hex(base_hex: str, accent_hex: str, ratio: float) -> str:
+        """Linearly blend two ``#rrggbb`` colors. ``ratio`` is the share
+        of ``accent_hex`` in the result (0..1)."""
+        try:
+            def _hx(s: str) -> tuple[int, int, int]:
+                s = s.lstrip("#")
+                return int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
+            br, bg, bb = _hx(base_hex)
+            ar, ag, ab = _hx(accent_hex)
+            r = int(br + (ar - br) * ratio)
+            g = int(bg + (ag - bg) * ratio)
+            b = int(bb + (ab - bb) * ratio)
+            return f"#{r:02x}{g:02x}{b:02x}"
+        except Exception:
+            return base_hex
+
     def build_combined_info_section(self, ctx: DetailContext):
         """Info tab content — identity breadcrumb, filesystem path,
         the per-kind info table, and the description paragraph.
@@ -726,7 +743,7 @@ class DetailSectionBuilder:
             QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
             QVBoxLayout,
         )
-        from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt
+        from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QSize, Qt
         from asset_browser.ui.detail_panel import make_section_box
         from asset_browser.core.theme import (
             ACCENT, BG_DARK, BG_MID, BORDER, BUTTON_GHOST_STYLE, COMBO_STYLE,

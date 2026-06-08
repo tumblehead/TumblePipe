@@ -10,13 +10,13 @@ def _validate_asset_base(root, context: dict | None, child_prim_name: str) -> Va
 
     Convention (matches create_asset_model HDA):
     - Asset prim is of type Xform (transformable so it can be placed in shots)
-    - Required child prim ('geo' or 'mat') is of type Scope (pure grouping)
+    - Required child prim ('geo' or 'mtl') is of type Scope (pure grouping)
     - Mesh content lives inside the Scope as Mesh prims
 
     Args:
         root: USD stage pseudo root prim
         context: Optional dict containing 'entity_uri'
-        child_prim_name: Name of required child prim ('geo' or 'mat')
+        child_prim_name: Name of required child prim ('geo' or 'mtl')
 
     Returns:
         ValidationResult with any errors found
@@ -132,8 +132,8 @@ def validate_lookdev_structure(root, context: dict | None = None) -> ValidationR
     For lookdev exports, validates:
     - Asset prim exists at path derived from entity URI (e.g., /CHAR/mom)
     - Asset prim is of type Xform
-    - 'mat' child prim exists (e.g., /CHAR/mom/mat)
-    - 'mat' prim is of type Scope
+    - 'mtl' child prim exists (e.g., /CHAR/mom/mtl)
+    - 'mtl' prim is of type Scope
 
     Args:
         root: USD stage pseudo root prim
@@ -142,4 +142,4 @@ def validate_lookdev_structure(root, context: dict | None = None) -> ValidationR
     Returns:
         ValidationResult with any structure errors
     """
-    return _validate_asset_base(root, context, 'mat')
+    return _validate_asset_base(root, context, 'mtl')

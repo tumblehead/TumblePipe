@@ -252,6 +252,6 @@ def fill_materials(node):
             matshortnames.append(matshortname)
             istr = str(x + 1)
             node.parm("matnode" + istr).set(node.relativePathTo(outputnode.node(material)))
-            node.parm("matpath" + istr).set('`ifs(ch("enable_pathprefix"), chs("pathprefix"), "")`/materials/%s' % matshortname)
+            node.parm("matpath" + istr).set('`ifs(ch("enable_pathprefix"), chs("pathprefix"), "")`/mtl/%s' % matshortname)
             if material in matprims:
                 node.parm("geopath" + istr).set(" ".join(matprims[material]))

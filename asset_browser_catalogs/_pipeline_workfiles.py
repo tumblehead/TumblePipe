@@ -321,6 +321,8 @@ class WorkfileManager:
                 log.exception("Failed to load %s", path_str)
                 return
             self._catalog._scene.apply_scene_timeline(asset_id)
+            if self._catalog._prefs.auto_refresh_on_open:
+                self._catalog._scene.refresh_scene_imports()
             if callable(refresh_cb):
                 try:
                     refresh_cb()
@@ -714,6 +716,8 @@ class WorkfileManager:
                         log.exception("Failed to load workfile %s", p)
                         return
                     self._catalog._scene.apply_scene_timeline(asset_id)
+                    if self._catalog._prefs.auto_refresh_on_open:
+                        self._catalog._scene.refresh_scene_imports()
                     self._catalog._request_global_detail_refresh()
 
                 run_on_main_thread(_do_load)
@@ -770,6 +774,8 @@ class WorkfileManager:
                         )
                         return
                     self._catalog._scene.apply_scene_timeline(asset_id)
+                    if self._catalog._prefs.auto_refresh_on_open:
+                        self._catalog._scene.refresh_scene_imports()
                     self._catalog._request_global_detail_refresh()
 
                 run_on_main_thread(_do_load)

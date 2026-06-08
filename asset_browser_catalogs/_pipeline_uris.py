@@ -48,6 +48,50 @@ def entity_shot(sequence: str, name: str) -> "Uri":
     return _Uri().parse_unsafe(f"entity:/shots/{sequence}/{name}")
 
 
+def entity_category(category: str) -> "Uri":
+    """``entity:/assets/<category>`` — parent-only entity for an empty
+    category. tumblepipe supports 2-segment parent entities natively
+    (see ``ensure_sequence`` in tools/csv_shot_import.py)."""
+    return _Uri().parse_unsafe(f"entity:/assets/{category}")
+
+
+def entity_sequence(sequence: str) -> "Uri":
+    """``entity:/shots/<sequence>`` — parent-only entity for an empty
+    sequence."""
+    return _Uri().parse_unsafe(f"entity:/shots/{sequence}")
+
+
+# ── Entity schema URIs ───────────────────────────────────────
+# ``ProjectConfigConvention.add_entity(uri, properties, schema_uri)``
+# wants the schema for the entity's position. The pipeline declares
+# these four:
+#
+#     schemas:/entity/assets/category          (entity:/assets/<X>)
+#     schemas:/entity/assets/category/asset    (entity:/assets/<X>/<Y>)
+#     schemas:/entity/shots/sequence           (entity:/shots/<X>)
+#     schemas:/entity/shots/sequence/shot      (entity:/shots/<X>/<Y>)
+
+
+def schema_asset() -> "Uri":
+    """``schemas:/entity/assets/category/asset`` — for ``entity:/assets/<cat>/<asset>``."""
+    return _Uri().parse_unsafe("schemas:/entity/assets/category/asset")
+
+
+def schema_shot() -> "Uri":
+    """``schemas:/entity/shots/sequence/shot`` — for ``entity:/shots/<seq>/<shot>``."""
+    return _Uri().parse_unsafe("schemas:/entity/shots/sequence/shot")
+
+
+def schema_category() -> "Uri":
+    """``schemas:/entity/assets/category`` — for the 2-segment category parent."""
+    return _Uri().parse_unsafe("schemas:/entity/assets/category")
+
+
+def schema_sequence() -> "Uri":
+    """``schemas:/entity/shots/sequence`` — for the 2-segment sequence parent."""
+    return _Uri().parse_unsafe("schemas:/entity/shots/sequence")
+
+
 def entity_from_suffix(suffix: str) -> "Uri":
     """``entity:/<suffix>`` — for callers that already have the
     post-scheme tail (e.g. extracted from another URI's segments)."""

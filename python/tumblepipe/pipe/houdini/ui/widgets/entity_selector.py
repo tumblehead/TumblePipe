@@ -131,6 +131,15 @@ class EntitySelectorDialog(QtWidgets.QDialog):
 
     def _load_entities(self):
         """Load entities into the tree model."""
+        # Pick up categories/entities created externally (Database Editor,
+        # another artist, web) since this session's cache was populated.
+        # list_entities serves an in-memory snapshot that is otherwise stale
+        # until refreshed - see tests/test_config_refresh.py.
+        try:
+            self._api.config.refresh_cache('entity')
+        except Exception:
+            pass
+
         model = QStandardItemModel()
 
         # Add "from_context" option at top if enabled

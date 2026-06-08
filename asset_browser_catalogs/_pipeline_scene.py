@@ -54,6 +54,72 @@ class SceneManager:
         if fps is not None:
             util.set_fps(fps)
 
+    def refresh_scene_imports(self) -> None:
+        """Re-execute every import node in the loaded scene so the latest
+        published versions flow in.
+
+        This restores the old project_browser auto-import/update-on-open
+        behavior (``main._refresh_scene``): each ``th::import_*`` /
+        ``th::create_model`` / ``th::build_comp`` node re-resolves its
+        ``latest`` reference and rewrites its prims/geometry. Only meant
+        to run on the GUI thread (it mutates the network), so callers
+        invoke it from inside the ``run_on_main_thread`` open tick, right
+        after :meth:`apply_scene_timeline`.
+
+        Each node type is wrapped in its own try/except: a single bad
+        node (stale HDA, missing export, cross-project reference) must
+        not abort the whole refresh. Node wrappers already no-op when
+        ``is_valid()`` is false, matching the old behavior.
+        """
+        try:
+            import tumblepipe.pipe.houdini.nodes as ns
+            from tumblepipe.pipe.houdini.lops import (
+                create_model, import_shot, import_assets,
+                import_asset, import_layer,
+            )
+            from tumblepipe.pipe.houdini.sops import import_rigs
+            from tumblepipe.pipe.houdini.cops import build_comp
+        except Exception:
+            log.exception("Auto-refresh: failed to import node wrappers")
+            return
+
+        # (wrapper class, node type name, network context). Order mirrors
+        # the old _refresh_scene: metadata-generating create_model first,
+        # then the import nodes, then comp last.
+        node_specs = [
+            (create_model.CreateModel, "create_model", "Lop"),
+            (import_shot.ImportShot, "import_shot", "Lop"),
+            (import_assets.ImportAssets, "import_assets", "Lop"),
+            (import_asset.ImportAsset, "import_asset", "Lop"),
+            (import_layer.ImportLayer, "import_layer", "Lop"),
+            (import_rigs.ImportRigs, "import_rigs", "Sop"),
+            (build_comp.BuildComp, "build_comp", "Cop"),
+        ]
+
+        executed = 0
+        for wrapper_cls, type_name, context in node_specs:
+            try:
+                nodes = ns.list_by_node_type(type_name, context)
+            except Exception:
+                log.exception(
+                    "Auto-refresh: listing %s nodes failed", type_name,
+                )
+                continue
+            for native in nodes:
+                try:
+                    node = wrapper_cls(native)
+                    if not node.is_valid():
+                        continue
+                    node.execute()
+                    executed += 1
+                except Exception:
+                    log.exception(
+                        "Auto-refresh: executing %s node failed", type_name,
+                    )
+
+        if executed:
+            log.info("Auto-refresh: re-executed %d import node(s)", executed)
+
     def get_loaded_scene_context(self):
         """Return the current scene's ``Context`` if it has pipeline metadata.
 

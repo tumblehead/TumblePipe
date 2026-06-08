@@ -35,6 +35,7 @@ class ImportRigs(ns.Node):
         super().__init__(native)
 
     def list_asset_uris(self) -> list[Uri]:
+        import_rig._refresh_entities()
         asset_entities = api.config.list_entities(
             filter=Uri.parse_unsafe('entity:/assets'),
             closure=True

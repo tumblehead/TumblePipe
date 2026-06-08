@@ -358,6 +358,7 @@ class PipelineCatalog(Catalog):
                 label=cat,
                 count=count,
                 tag=f"{project_tag}+category:{cat.lower()}",
+                kind="category",
             ))
         sections.append(Collection(
             id=f"{proj.name}:assets_section",
@@ -376,6 +377,7 @@ class PipelineCatalog(Catalog):
                 label=seq,
                 count=count,
                 tag=f"{project_tag}+sequence:{seq}",
+                kind="sequence",
             ))
         sections.append(Collection(
             id=f"{proj.name}:shots_section",
@@ -1790,17 +1792,30 @@ class PipelineCatalog(Catalog):
 
         return None
 
-    def get_asset_hover_html(self, asset) -> str | None:
-        """Pipeline-specific asset hover popup.
+    def get_asset_hover_widget(self, asset):
+        """Pipeline-specific asset hover popup, built as a widget tree.
 
-        Surfaces name, type, project (when multi-project), category /
-        sequence, department version map (truncated), and member /
-        scene shot count for group / scene cards. All reads come from
-        ``asset.metadata`` and ``asset.tags`` so this stays fast enough
-        to call on every hover without blocking the GUI thread.
+        Compact at-a-glance card so the user can see asset info without
+        opening the detail panel. Sections (top → bottom):
+
+        - Big title + type/project/category subtitle
+        - Tag pills (custom tags only; structural ones suppressed)
+        - Department icon grid — all known depts for the context.
+          Active depts tinted, inactive depts deep-grey. Each icon has
+          a native Qt tooltip showing its name + version on hover.
+        - Member/shot/sequence rows for Multi/Root containers
+
+        Built as a widget tree (rather than HTML) so sub-elements like
+        the dept icons can carry their own tooltips. All reads come
+        from ``asset.metadata`` and ``asset.tags`` — no I/O.
         """
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import (
+            QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
+        )
         from asset_browser.core.theme import (
-            TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM, BORDER,
+            BG_MID, BORDER, FONT_BODY, FONT_FAMILY, FONT_SMALL,
+            FONT_TINY, FONT_TITLE, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
         )
 
         if asset is None:
@@ -1819,7 +1834,6 @@ class PipelineCatalog(Catalog):
             "group": "Multi",
             "scene": "Root",
         }.get(type_tag, type_tag.title() if type_tag else "")
-
         project = next(
             (t.split(":", 1)[1] for t in tags if t.startswith("project:")),
             None,
@@ -1829,35 +1843,87 @@ class PipelineCatalog(Catalog):
             None,
         )
 
-        parts = [
-            f"<div style='color:{TEXT_PRIMARY}; font-weight:600; "
-            f"font-size:13px;'>{name}</div>"
-        ]
+        root = QWidget()
+        root.setStyleSheet(
+            f"QWidget {{ background: transparent; "
+            f'font-family: "{FONT_FAMILY}"; color: {TEXT_PRIMARY}; }}'
+        )
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+
+        # ── Title (bigger than the rest) ──────────────
+        title = QLabel(name, root)
+        title.setStyleSheet(
+            f"color:{TEXT_PRIMARY}; font-weight:700; "
+            f"font-size:{FONT_TITLE}px; background:transparent;"
+        )
+        layout.addWidget(title)
+
         meta_line = " · ".join(
             v for v in (type_label, project, category) if v
         )
         if meta_line:
-            parts.append(
-                f"<div style='color:{TEXT_SECONDARY}; margin-top:2px;'>"
-                f"{meta_line}</div>"
+            subtitle = QLabel(meta_line, root)
+            subtitle.setStyleSheet(
+                f"color:{TEXT_SECONDARY}; font-size:{FONT_BODY}px; "
+                f"background:transparent;"
             )
+            layout.addWidget(subtitle)
 
-        # Per-department version snapshot. Shot/asset cards carry a
-        # dict {dept: [versions]}; group cards may carry the same shape
-        # plus a covered-list. Show the latest version per dept.
-        depts = metadata.get("departments") or {}
-        rows: list[tuple[str, str]] = []
-        if isinstance(depts, dict):
-            for dept_name, versions in depts.items():
-                if isinstance(versions, list) and versions:
-                    rows.append((dept_name, versions[-1]))
-                elif isinstance(versions, str) and versions:
-                    rows.append((dept_name, versions))
-        elif isinstance(depts, list):
-            for dept_name in depts:
-                rows.append((str(dept_name), ""))
+        def add_separator():
+            layout.addSpacing(10)
+            sep = QFrame(root)
+            sep.setFrameShape(QFrame.HLine)
+            sep.setStyleSheet(f"color:{BORDER}; background:{BORDER};")
+            sep.setFixedHeight(1)
+            layout.addWidget(sep)
+            layout.addSpacing(6)
 
-        # Extra container info for groups / scenes.
+        def add_section_header(text):
+            hdr = QLabel(text.upper(), root)
+            hdr.setStyleSheet(
+                f"color:{TEXT_DIM}; font-size:{FONT_TINY}px; "
+                f"font-weight:600; letter-spacing:1px; background:transparent;"
+            )
+            layout.addWidget(hdr)
+
+        # ── Tags ─────────────────────────────────────
+        # Pills only for non-structural tags. type:/status:/project:/
+        # category: are surfaced in title/subtitle or on the card.
+        suppress = ("type:", "status:", "project:", "category:")
+        pill_tags = [t for t in tags if not t.startswith(suppress)]
+        if pill_tags:
+            add_separator()
+            add_section_header("Tags")
+            pills_widget = QWidget(root)
+            pills_layout = QHBoxLayout(pills_widget)
+            pills_layout.setContentsMargins(0, 4, 0, 0)
+            pills_layout.setSpacing(4)
+            for tag in pill_tags:
+                display = tag.split(":", 1)[-1] if ":" in tag else tag
+                pill = QLabel(display, pills_widget)
+                pill.setStyleSheet(
+                    f"background-color:{BG_MID}; "
+                    f"border:1px solid {BORDER}; border-radius:8px; "
+                    f"padding:1px 8px; color:{TEXT_SECONDARY}; "
+                    f"font-size:{FONT_SMALL}px;"
+                )
+                pills_layout.addWidget(pill)
+            pills_layout.addStretch(1)
+            layout.addWidget(pills_widget)
+
+        # ── Department grid ──────────────────────────
+        if type_tag in ("asset", "shot"):
+            grid_widget = self._hover_dept_grid_widget(
+                root, type_tag, metadata,
+            )
+            if grid_widget is not None:
+                add_separator()
+                add_section_header("Departments")
+                layout.addWidget(grid_widget)
+
+        # ── Container info (Multi / Root only) ──────
         extras: list[tuple[str, str]] = []
         if "member_count" in metadata:
             extras.append(("Members", str(metadata["member_count"])))
@@ -1865,28 +1931,103 @@ class PipelineCatalog(Catalog):
             extras.append(("Shots", str(metadata["shot_count"])))
         if "sequence" in metadata and metadata["sequence"]:
             extras.append(("Sequence", str(metadata["sequence"])))
-
-        if rows or extras:
-            parts.append(
-                f"<div style='border-top:1px solid {BORDER}; "
-                f"margin:8px 0 6px 0;'></div>"
-            )
-            for k, v in rows:
-                parts.append(
-                    f"<div style='margin-top:3px;'>"
-                    f"<span style='color:{TEXT_DIM};'>{k}:</span> "
-                    f"<span style='color:{TEXT_PRIMARY};'>{v or '—'}</span>"
-                    f"</div>"
-                )
+        if extras:
+            add_separator()
             for k, v in extras:
-                parts.append(
-                    f"<div style='margin-top:3px;'>"
+                row = QLabel(
                     f"<span style='color:{TEXT_DIM};'>{k}:</span> "
-                    f"<span style='color:{TEXT_PRIMARY};'>{v}</span>"
-                    f"</div>"
+                    f"<span style='color:{TEXT_PRIMARY};'>{v}</span>",
+                    root,
                 )
+                row.setStyleSheet(
+                    f"font-size:{FONT_BODY}px; background:transparent;"
+                )
+                layout.addWidget(row)
 
-        return "".join(parts)
+        return root
+
+    def _hover_dept_grid_widget(self, parent, type_tag, metadata):
+        """Build the department icon grid as a QWidget. Each icon is a
+        small QLabel with a Qt tooltip showing the dept name + version.
+
+        Returns ``None`` if no departments are configured for the
+        context, so the caller knows to skip the section entirely.
+        """
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
+        from asset_browser.core.icons import icon_pixmap
+        from asset_browser.core.theme import TEXT_PRIMARY
+        from tumblepipe.config.department import list_departments
+
+        context = "shots" if type_tag == "shot" else "assets"
+        try:
+            all_depts = [
+                d for d in list_departments(
+                    context, include_generated=False,
+                )
+                if d.enabled
+            ]
+        except Exception:
+            return None
+        if not all_depts:
+            return None
+
+        raw_depts = metadata.get("departments")
+        active_versions: dict[str, str] = {}
+        if isinstance(raw_depts, dict):
+            for k, v in raw_depts.items():
+                if isinstance(v, list) and v:
+                    active_versions[k] = str(v[-1])
+                elif isinstance(v, str) and v:
+                    active_versions[k] = v
+        elif isinstance(raw_depts, list):
+            for d in raw_depts:
+                active_versions[str(d)] = ""
+
+        active_color = TEXT_PRIMARY
+        inactive_color = "#3e3e44"
+        is_shot = type_tag == "shot"
+
+        grid_widget = QWidget(parent)
+        grid_widget.setStyleSheet("background: transparent;")
+        grid = QGridLayout(grid_widget)
+        grid.setContentsMargins(0, 4, 0, 0)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+
+        n_per_row = 7
+        for i, dept in enumerate(all_depts):
+            row, col = divmod(i, n_per_row)
+            icon_name = None
+            if is_shot:
+                icon_name = SHOT_DEPT_ICONS.get(dept.name)
+            if icon_name is None:
+                icon_name = DEPT_ICONS.get(dept.name, "package")
+            is_active = dept.name in active_versions
+            color = active_color if is_active else inactive_color
+            pm = icon_pixmap(icon_name, 22, color)
+
+            icon_label = QLabel(grid_widget)
+            icon_label.setPixmap(pm)
+            icon_label.setFixedSize(28, 28)
+            icon_label.setAlignment(Qt.AlignCenter)
+            icon_label.setStyleSheet("background: transparent;")
+
+            display_name = (dept.short or dept.name).title()
+            if is_active:
+                version = active_versions.get(dept.name) or ""
+                tip = (
+                    f"{display_name} · {version}" if version
+                    else f"{display_name} · active"
+                )
+            else:
+                tip = f"{display_name} · inactive"
+            icon_label.setToolTip(tip)
+
+            grid.addWidget(icon_label, row, col)
+
+        grid.setColumnStretch(n_per_row, 1)
+        return grid_widget
 
     # ── Entity Creation ────────────────────────────────
 
@@ -1923,23 +2064,36 @@ class PipelineCatalog(Catalog):
             fields = [
                 CreationField("name", "Name", required=True),
             ]
-            # Category dropdown
+            # Category dropdown — strict (no free-text). To create a new
+            # category, use the right-click "New category…" action on the
+            # Assets section header, which routes to ``new_category``.
             cats = (
                 self._list_categories_for_project(default_proj)
                 if default_proj else self._list_categories()
             )
-            # Pre-select from tags
+            # When invoked from a category row's right-click menu the
+            # caller passes a ``category:<name>`` tag; lock the field so
+            # the user sees the bound context but can't redirect it.
+            # The tag is lowercased (``category:char``) but URI segments
+            # preserve case (``entity:/assets/CHAR/...``) — look up the
+            # original-case label from the project's category list so we
+            # don't silently spawn a duplicate lowercase category.
             default_cat = ""
             for t in tags:
                 if t.startswith("category:"):
-                    default_cat = t.split(":", 1)[1]
+                    tag_val = t.split(":", 1)[1]
+                    default_cat = next(
+                        (c for c in cats if c.lower() == tag_val.lower()),
+                        tag_val,
+                    )
                     break
             fields.append(CreationField(
                 "category", "Category",
                 field_type="dropdown",
                 choices=tuple(cats),
                 default=default_cat,
-                allow_new=True,
+                allow_new=False,
+                readonly=bool(default_cat),
             ))
             if len(projects) > 1:
                 fields.append(CreationField(
@@ -1968,7 +2122,8 @@ class PipelineCatalog(Catalog):
                 field_type="dropdown",
                 choices=tuple(seqs),
                 default=default_seq,
-                allow_new=True,
+                allow_new=False,
+                readonly=bool(default_seq),
             ))
             fields.append(CreationField(
                 "frame_start", "Frame Start",
@@ -1978,6 +2133,41 @@ class PipelineCatalog(Catalog):
                 "frame_end", "Frame End",
                 field_type="int", default="1100",
             ))
+            if len(projects) > 1:
+                fields.append(CreationField(
+                    "project", "Project",
+                    field_type="dropdown",
+                    choices=tuple(projects),
+                    default=default_proj,
+                ))
+            return fields
+
+        if option_id == "new_category":
+            # The only place free-text category entry survives. Reached
+            # via right-click "New category…" on the Assets section
+            # header. Creates an empty category-only entity
+            # (``entity:/assets/<name>``) — tumblepipe supports
+            # parent-only entities, so no first asset is required.
+            fields = [
+                CreationField("category", "Category", required=True),
+            ]
+            if len(projects) > 1:
+                fields.append(CreationField(
+                    "project", "Project",
+                    field_type="dropdown",
+                    choices=tuple(projects),
+                    default=default_proj,
+                ))
+            return fields
+
+        if option_id == "new_sequence":
+            # Symmetric with new_category: creates an empty
+            # sequence-only entity (``entity:/shots/<name>``). Shot
+            # frame ranges live on individual shot entities, not the
+            # sequence parent, so no frame fields here.
+            fields = [
+                CreationField("sequence", "Sequence", required=True),
+            ]
             if len(projects) > 1:
                 fields.append(CreationField(
                     "project", "Project",
@@ -2041,6 +2231,41 @@ class PipelineCatalog(Catalog):
             hou.ui.displayMessage(str(err))
             return None
 
+        # Parent-only entity creation: ``new_category`` and
+        # ``new_sequence`` register a 2-segment URI (no asset/shot name)
+        # so the bucket exists in the sidebar even with no children
+        # yet. tumblepipe supports this natively — see
+        # ``ensure_sequence`` in tools/csv_shot_import.py.
+        if option_id == "new_category":
+            category = fields.get("category", "").strip()
+            if not category:
+                hou.ui.displayMessage("Category is required.")
+                return None
+            cat_uri = uris.entity_category(category)
+            if client.config.get_properties(cat_uri) is not None:
+                hou.ui.displayMessage(
+                    f"Category '{category}' already exists."
+                )
+                return None
+            client.config.add_entity(cat_uri, {}, uris.schema_category())
+            self._cached_assets = None
+            return None  # No card to select — empty category
+
+        if option_id == "new_sequence":
+            sequence = fields.get("sequence", "").strip()
+            if not sequence:
+                hou.ui.displayMessage("Sequence is required.")
+                return None
+            seq_uri = uris.entity_sequence(sequence)
+            if client.config.get_properties(seq_uri) is not None:
+                hou.ui.displayMessage(
+                    f"Sequence '{sequence}' already exists."
+                )
+                return None
+            client.config.add_entity(seq_uri, {}, uris.schema_sequence())
+            self._cached_shots = None
+            return None  # No card to select — empty sequence
+
         name = fields.get("name", "").strip()
         if not name:
             hou.ui.displayMessage("Name is required.")
@@ -2057,7 +2282,9 @@ class PipelineCatalog(Catalog):
                     f"Asset '{name}' already exists in '{category}'."
                 )
                 return None
-            client.config.add_entity(entity_uri, {"name": name})
+            client.config.add_entity(
+                entity_uri, {"name": name}, uris.schema_asset(),
+            )
             self._cached_assets = None
             return f"{proj_name}/{category}/{name}"
 
@@ -2074,10 +2301,11 @@ class PipelineCatalog(Catalog):
                     f"Shot '{name}' already exists in '{sequence}'."
                 )
                 return None
-            client.config.add_entity(entity_uri, {
-                "frame_start": frame_start,
-                "frame_end": frame_end,
-            })
+            client.config.add_entity(
+                entity_uri,
+                {"frame_start": frame_start, "frame_end": frame_end},
+                uris.schema_shot(),
+            )
             self._cached_shots = None
             return f"{proj_name}/{sequence}/{name}"
 
@@ -2245,6 +2473,59 @@ class PipelineCatalog(Catalog):
             ) from exc
         self.invalidate_cache()
         return True
+
+    def delete_bucket(
+        self, project_name: str, kind: str, bucket_name: str,
+    ) -> tuple[bool, str]:
+        """Remove an empty category/sequence parent entity.
+
+        ``kind`` is ``"category"`` or ``"sequence"``. Refuses if the
+        bucket still has children (the UI surfaces the returned
+        message). The bucket name comes from the row's label so it
+        carries the original case — don't lowercase it again here.
+        Returns ``(ok, message)``.
+        """
+        client = self._clients.get(project_name)
+        if client is None:
+            return False, f"project '{project_name}' not loaded"
+        if kind == "category":
+            child_count = self._count_for_project_category(
+                project_name, bucket_name,
+            )
+            uri = uris.entity_category(bucket_name)
+            child_word = "asset" if child_count == 1 else "assets"
+            label = "category"
+        elif kind == "sequence":
+            child_count = self._count_for_project_sequence(
+                project_name, bucket_name,
+            )
+            uri = uris.entity_sequence(bucket_name)
+            child_word = "shot" if child_count == 1 else "shots"
+            label = "sequence"
+        else:
+            return False, f"unknown bucket kind: {kind!r}"
+        if child_count > 0:
+            return (
+                False,
+                f"{label.capitalize()} '{bucket_name}' still contains "
+                f"{child_count} {child_word}. Remove them first.",
+            )
+        if client.config.get_properties(uri) is None:
+            # Bucket was inferred from URIs that have all been removed
+            # already — nothing left to delete on disk, but tell the
+            # caller to refresh.
+            self._cached_assets = None
+            self._cached_shots = None
+            return True, f"{label.capitalize()} '{bucket_name}' was already empty."
+        try:
+            client.config.remove_entity(uri)
+        except Exception as exc:
+            return False, f"failed to remove {label} '{bucket_name}': {exc}"
+        if kind == "category":
+            self._cached_assets = None
+        else:
+            self._cached_shots = None
+        return True, f"Deleted {label} '{bucket_name}'."
 
     # ── Group / Scene lifecycle ──────────────────────────
 
@@ -3040,10 +3321,16 @@ class PipelineCatalog(Catalog):
                 f"failed to list categories for {project_name}: {exc}",
                 cause=exc,
             ) from exc
+        # Include both populated categories (``assets/<cat>/<asset>``,
+        # ≥3 segments) AND empty category-only entities
+        # (``assets/<cat>``, exactly 2 segments) registered via
+        # ``add_entity`` on the parent URI. The browser previously only
+        # surfaced categories that had at least one asset, hiding
+        # standalone ones that tumblepipe supports natively.
         return sorted({
             e.uri.segments[1]
             for e in entities
-            if len(e.uri.segments) >= 3 and e.uri.segments[0] == "assets"
+            if len(e.uri.segments) >= 2 and e.uri.segments[0] == "assets"
         })
 
     def _list_sequences_for_project(self, project_name: str) -> list[str]:
@@ -3062,10 +3349,12 @@ class PipelineCatalog(Catalog):
                 f"failed to list sequences for {project_name}: {exc}",
                 cause=exc,
             ) from exc
+        # Same as _list_categories_for_project: include 2-segment
+        # sequence-only entities, not just sequences that have shots.
         return sorted({
             e.uri.segments[1]
             for e in entities
-            if len(e.uri.segments) >= 3 and e.uri.segments[0] == "shots"
+            if len(e.uri.segments) >= 2 and e.uri.segments[0] == "shots"
         })
 
     def _list_categories(self) -> list[str]:

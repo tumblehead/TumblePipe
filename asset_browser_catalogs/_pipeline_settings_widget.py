@@ -156,6 +156,24 @@ class PipelineSettingsWidget(QWidget):
         self._autosave_checkbox.toggled.connect(self._on_autosave_toggled)
         outer.addWidget(self._autosave_checkbox)
 
+        self._auto_refresh_checkbox = QCheckBox(
+            "Auto-import latest on workfile open"
+        )
+        self._auto_refresh_checkbox.setToolTip(
+            "After opening a workfile from the asset browser, re-execute "
+            "every import node in the scene (import_asset, import_shot, "
+            "import_layer, import_rigs, build_comp, …) so their 'latest' "
+            "references pull in the newest published versions. Mirrors the "
+            "old Project Browser auto-refresh-on-open behavior."
+        )
+        self._auto_refresh_checkbox.setChecked(
+            self._catalog._prefs.auto_refresh_on_open
+        )
+        self._auto_refresh_checkbox.toggled.connect(
+            self._on_auto_refresh_toggled
+        )
+        outer.addWidget(self._auto_refresh_checkbox)
+
         # ── Apply button (commits to disk + reinits clients) ──
         apply_row = QHBoxLayout()
         apply_row.setContentsMargins(0, 0, 0, 0)
@@ -187,6 +205,25 @@ class PipelineSettingsWidget(QWidget):
             QMessageBox.warning(
                 self, "Pipeline Settings",
                 "Failed to persist autosave preference — see Houdini console.",
+            )
+
+    def _on_auto_refresh_toggled(self, checked: bool) -> None:
+        """Persist the auto-import-on-open pref immediately on toggle.
+
+        Same fire-and-forget pattern as :meth:`_on_autosave_toggled`: a
+        lone boolean, no validation, saved on every click so the catalog's
+        in-memory pref (read at workfile-open time) and the on-disk JSON
+        stay in sync without the Apply button.
+        """
+        from ._pipeline_prefs import save_prefs
+        self._catalog._prefs.auto_refresh_on_open = bool(checked)
+        try:
+            save_prefs(self._catalog._prefs)
+        except Exception:
+            QMessageBox.warning(
+                self, "Pipeline Settings",
+                "Failed to persist auto-import preference — see Houdini "
+                "console.",
             )
 
     # ── Helpers ───────────────────────────────────────

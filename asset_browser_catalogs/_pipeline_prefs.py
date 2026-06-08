@@ -34,6 +34,7 @@ class PipelinePrefs:
     """
 
     autosave_on_scene_change: bool = False
+    auto_refresh_on_open: bool = False
 
 
 def load_prefs() -> PipelinePrefs:
@@ -45,6 +46,9 @@ def load_prefs() -> PipelinePrefs:
         return PipelinePrefs(
             autosave_on_scene_change=bool(
                 data.get("autosave_on_scene_change", False)
+            ),
+            auto_refresh_on_open=bool(
+                data.get("auto_refresh_on_open", False)
             ),
         )
     except Exception:
