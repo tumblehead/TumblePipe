@@ -18,10 +18,9 @@ matchesdef = 0
 Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
-comment ""
-position -1.22893 0.533371
+position -1.18959 3.10638
 connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault off exposed on debug off
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault off exposed on displaycomment off debug off
 outputsNamed3
 {
 }
@@ -35,7 +34,7 @@ stat
 {
   create -1
   modify -1
-  author tumblehead@judas-3070
+  author tumblehead@matthias-4070
   access 0777
 }
 color UT_Color RGB 0.631373 0.870588 1 
@@ -63,7 +62,7 @@ Content-Disposition: attachment; filename="hdaroot.inp"
 Content-Type: text/plain
 
 1
-0 -2.5348600000000001 6.5293600034064054 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+0 -2.2609883018867922 9.6788845317082934 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/output.init"
@@ -110,7 +109,7 @@ Content-Type: text/plain
 {
 version 0.8
 outputidx	[ 0	locks=0 ]	(	0	)
-modifiedprims	[ 0	locks=0 ]	(	"`chs(\"../output_modified_prims\")`"	)
+modifiedprims	[ 0	locks=0 ]	(	`chs(\"../output_modified_prims\")`	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -185,10 +184,10 @@ Content-Disposition: attachment; filename="hdaroot/dive.inp"
 Content-Type: text/plain
 
 4
-0 -0.96043769999999995 2.6943099820470811 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
-1 -0.96043769999999995 3.8238099820470812 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
-2 -0.96043769999999995 4.9533099820470801 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
-3 1.2987622999999999 3.1461100000000002 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+0 6.3819599999999994 4.2756099999999995 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 6.3819599999999994 5.4051099999999996 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+2 8.6411599999999993 4.7274100179529182 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+3 8.6411599999999993 5.8569100179529183 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/dive/output.init"
@@ -202,17 +201,19 @@ Content-Disposition: attachment; filename="hdaroot/dive/output.def"
 Content-Type: text/plain
 
 comment ""
-position 1.29876 4.27561
-connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+position 1.29876 2.43673
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
 }
 inputsNamed3
 {
+0 	layout_assets 1 1 "input1"
 }
 inputs
 {
+0 	layout_assets 0 1
 }
 stat
 {
@@ -233,7 +234,7 @@ Content-Type: text/plain
 {
 version 0.8
 outputidx	[ 0	locks=0 ]	(	0	)
-modifiedprims	[ 0	locks=0 ]	(	"`chs(\"../../output_modified_prims\")`"	)
+modifiedprims	[ 0	locks=0 ]	(	`chs(\"../../output_modified_prims\")`	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -246,6 +247,438 @@ Content-Type: text/plain
 		"value":"___EXTERNAL___"
 	}
 }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/merge.init"
+Content-Type: text/plain
+
+type = merge
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/merge.def"
+Content-Type: text/plain
+
+comment ""
+position 1.29876 6.53461
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/merge.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+mergestyle	[ 0	locks=0 ]	(	separate	)
+ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block. Flattening Into First Input's Active Layer."	)
+alwaysstriplabel	[ 0	locks=0 ]	(	"Layers above layer breaks will be stripped"	)
+multistriplabel	[ 0	locks=0 ]	(	"Layers above layer breaks will be stripped for all but the first input"	)
+striplayerbreaks	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/merge.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/metadata_update.init"
+Content-Type: text/plain
+
+type = pythonscript
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/metadata_update.def"
+Content-Type: text/plain
+
+comment ""
+position 1.29876 5.40511
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	merge 2 1 "input1"
+}
+inputs
+{
+0 	merge 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/metadata_update.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+python	[ 0	locks=0 ]	(	"import hou
+
+from tumblepipe.pipe.houdini import util
+
+node = hou.pwd()
+stage = node.editableStage()
+root = stage.GetPseudoRoot()
+"	)
+maintainstate	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/metadata_update.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/layout_assets.init"
+Content-Type: text/plain
+
+type = edit
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/layout_assets.def"
+Content-Type: text/plain
+
+comment ""
+position 1.29876 3.97406
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	metadata_update 1 1 "input1"
+}
+inputs
+{
+0 	metadata_update 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/layout_assets.chn"
+Content-Type: text/plain
+
+{
+    channel primpattern {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../../primpattern\") }
+    }
+    channel physprimpattern {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../../physprimpattern\") }
+    }
+    channel bypassprimpattern {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../../bypassprimpattern\") }
+    }
+    channel xformdescription {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"$OS\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../../xformdescription\") }
+    }
+    channel localxform {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../localxform\") }
+    }
+    channel xformcommon {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../../xformcommon\") }
+    }
+    channel applyparmxform {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../applyparmxform\") }
+    }
+    channel xOrd {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../xOrd\") }
+    }
+    channel rOrd {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../rOrd\") }
+    }
+    channel tx {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../tx\") }
+    }
+    channel ty {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../ty\") }
+    }
+    channel tz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../tz\") }
+    }
+    channel rx {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../rx\") }
+    }
+    channel ry {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../ry\") }
+    }
+    channel rz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../rz\") }
+    }
+    channel sx {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../../sx\") }
+    }
+    channel sy {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../../sy\") }
+    }
+    channel sz {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../../sz\") }
+    }
+    channel shear1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../shear1\") }
+    }
+    channel shear2 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../shear2\") }
+    }
+    channel shear3 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../shear3\") }
+    }
+    channel scale {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../../scale\") }
+    }
+    channel px {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../px\") }
+    }
+    channel py {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../py\") }
+    }
+    channel pz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../pz\") }
+    }
+    channel prx {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../prx\") }
+    }
+    channel pry {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../pry\") }
+    }
+    channel prz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../prz\") }
+    }
+    channel delta {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../delta\") }
+    }
+    channel viewerstatedelta {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../viewerstatedelta\") }
+    }
+    channel apply {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../apply\") }
+    }
+    channel reset {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../reset\") }
+    }
+    channel removeunusedtransforms {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../removeunusedtransforms\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/layout_assets.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+primpattern	[ 0	locks=0 ]	(	[ primpattern	"" ] 	)
+physprimpattern	[ 0	locks=0 ]	(	[ physprimpattern	"" ] 	)
+bypassprimpattern	[ 0	locks=0 ]	(	[ bypassprimpattern	"" ] 	)
+xformdescription	[ 0	locks=0 ]	(	[ xformdescription	$OS ] 	)
+localxform	[ 0	locks=0 ]	(	[ localxform	0 ] 	)
+xformcommon	[ 0	locks=0 ]	(	[ xformcommon	1 ] 	)
+applyparmxform	[ 0	locks=0 ]	(	[ applyparmxform	1 ] 	)
+xOrd	[ 0	locks=0 ]	(	[ xOrd	0 ] 	)
+rOrd	[ 0	locks=0 ]	(	[ rOrd	0 ] 	)
+t	[ 0	locks=0 ]	(	[ tx	0 ] 	[ ty	0 ] 	[ tz	0 ] 	)
+r	[ 0	locks=0 ]	(	[ rx	0 ] 	[ ry	0 ] 	[ rz	0 ] 	)
+s	[ 0	locks=0 ]	(	[ sx	1 ] 	[ sy	1 ] 	[ sz	1 ] 	)
+shear	[ 0	locks=0 ]	(	[ shear1	0 ] 	[ shear2	0 ] 	[ shear3	0 ] 	)
+scale	[ 0	locks=0 ]	(	[ scale	1 ] 	)
+parmgroup_pivotxform	[ 0	locks=0 ]	(	0	)
+p	[ 0	locks=0 ]	(	[ px	0 ] 	[ py	0 ] 	[ pz	0 ] 	)
+pr	[ 0	locks=0 ]	(	[ prx	0 ] 	[ pry	0 ] 	[ prz	0 ] 	)
+delta	[ 0	locks=0 ]	(	""	)
+viewerstatedelta	[ 0	locks=0 ]	(	""	)
+apply	[ 0	locks=0 ]	(	[ apply	0 ] 	)
+reset	[ 0	locks=0 ]	(	[ reset	0 ] 	)
+removeunusedtransforms	[ 0	locks=0 ]	(	[ removeunusedtransforms	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive/layout_assets.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/dive.order"
+Content-Type: text/plain
+
+4
+output
+merge
+metadata_update
+layout_assets
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/dive.net"

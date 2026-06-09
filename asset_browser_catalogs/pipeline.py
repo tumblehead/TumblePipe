@@ -3,7 +3,7 @@
 Browses production assets and shots from any number of registered
 Tumblehead projects. Projects are stored in
 ``~/.config/asset_browser/projects.json`` (see
-:class:`asset_browser.core.projects.ProjectRegistry`). Each entry
+:class:`asset_browser.core.projects.PipelineProjectRegistry`). Each entry
 holds ``project_path`` and ``config_path``; the registry's
 ``pipeline_path`` field is ignored at runtime. The active TumblePipe
 install is read from ``$TH_PIPELINE_PATH`` (set globally by hpm via
@@ -12,7 +12,7 @@ automatically.
 
 The ``TH_*`` env vars are authoritative for the launch session: every
 :func:`create_catalog` call passes them through
-:meth:`ProjectRegistry.bootstrap_from_env`, which adds the env-driven
+:meth:`PipelineProjectRegistry.bootstrap_from_env`, which adds the env-driven
 project on first run and refreshes its paths on subsequent runs if
 they've changed (e.g. config dir renamed ``_config`` → ``_config2``).
 ``projects.json`` is just an off-session cache so non-env-launched
@@ -42,7 +42,7 @@ _HERE = str(Path(__file__).parent)
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-from asset_browser.core.projects import ProjectRegistry  # noqa: E402
+from tumbletrove.asset_browser.core.projects import PipelineProjectRegistry  # noqa: E402
 
 from _pipeline_catalog import PipelineCatalog  # noqa: E402
 from _pipeline_types import projects_json_path  # noqa: E402
@@ -72,7 +72,7 @@ def create_catalog():
     would otherwise propagate up and stall Houdini load.
     """
     try:
-        registry = ProjectRegistry(projects_json_path())
+        registry = PipelineProjectRegistry(projects_json_path())
         registry.load()
         # Add the env-driven project on first run, and refresh its
         # paths on subsequent runs if TH_* env vars have changed since
@@ -85,7 +85,7 @@ def create_catalog():
             env_name = Path(env_proj).name or "default"
             if env_name in registry.names:
                 # Scope this session to the launch-project only.
-                scoped = ProjectRegistry(projects_json_path())
+                scoped = PipelineProjectRegistry(projects_json_path())
                 entry = registry.get(env_name)
                 if entry is not None:
                     scoped.add(entry, save=False)

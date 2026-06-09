@@ -8,6 +8,16 @@
     help {
 	""
     }
+    bindhandle rx xform "Transformer" rx ""
+    bindhandle ry xform "Transformer" ry ""
+    bindhandle rz xform "Transformer" rz ""
+    bindhandle sx xform "Transformer" sx ""
+    bindhandle sy xform "Transformer" sy ""
+    bindhandle sz xform "Transformer" sz ""
+    bindhandle tx xform "Transformer" tx ""
+    bindhandle ty xform "Transformer" ty ""
+    bindhandle tz xform "Transformer" tz ""
+    bindhandle scale xform "Transformer" uniform_scale ""
 
     inputlabel	1	"Input Stage"
     inputlabel	2	"Input 2"
@@ -80,7 +90,7 @@
         }
         parm {
             name    "entity_label"
-            label   ""
+            label   "entity_label"
             type    label
             nolabel
             default { "" }
@@ -178,4 +188,49 @@
         invisible
         default { "`pythonexprs(\"hou.phm().output_modified_prims(hou.pwd())\")`" }
     }
+    groupcollapsible {
+        name    "Transform"
+        label   "Transform"
+
+        parm {
+            name    "t"
+            label   "Translate"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "r"
+            label   "Rotate"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            range   { 0 360 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "s"
+            label   "Scale"
+            type    vector
+            size    3
+            default { "1" "1" "1" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "scale"
+            label   "Uniform Scale"
+            type    float
+            default { "1" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
 }

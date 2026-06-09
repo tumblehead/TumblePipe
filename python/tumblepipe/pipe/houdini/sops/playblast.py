@@ -189,7 +189,7 @@ class Playblast(ns.Node):
         output_playblast_path = get_latest_playblast_path(entity_uri, department_name)
 
         # Open playblast
-        if not output_playblast_path.exists():
+        if output_playblast_path is None or not output_playblast_path.exists():
             return hou.ui.displayMessage(
                 (
                     f'No playblast found for {entity_uri}.\n'
@@ -206,7 +206,11 @@ class Playblast(ns.Node):
         entity_uri = self.get_entity_uri()
         department_name = self.get_department_names()
         output_playblast_path = get_latest_playblast_path(entity_uri, department_name)
-        output_path = output_playblast_path.parent
+        # No playblast yet → fall back to the (not-yet-populated) output dir.
+        if output_playblast_path is None:
+            output_path = get_next_playblast_path(entity_uri, department_name).parent
+        else:
+            output_path = output_playblast_path.parent
 
         # Create and open the directory containing the playblast
         output_path.mkdir(parents=True, exist_ok=True)
@@ -250,10 +254,6 @@ def open_location():
     raw_node = hou.pwd()
     node = Playblast(raw_node)
     node.open_location()
-
-def browse_all():
-    """HDA button callback for Browse All - alias for open_location."""
-    open_location()
 
 def select():
     """HDA button callback to open entity selector dialog."""

@@ -19,8 +19,8 @@ import threading
 import time
 from pathlib import Path
 
-from asset_browser.api.errors import CatalogInitError
-from asset_browser.core.projects import ProjectConfig, ProjectRegistry
+from tumbletrove.asset_browser.api.errors import CatalogInitError
+from tumbletrove.asset_browser.core.projects import ProjectConfig, PipelineProjectRegistry
 
 from _pipeline_types import (
     PERMANENT_INIT_ERRORS,
@@ -40,7 +40,7 @@ class ClientPool:
     retry while permanent ones stick.
     """
 
-    def __init__(self, catalog_id: str, registry: ProjectRegistry) -> None:
+    def __init__(self, catalog_id: str, registry: PipelineProjectRegistry) -> None:
         self._catalog_id = catalog_id
         self._registry = registry
         self._slots: dict[str, ClientSlot] = {}

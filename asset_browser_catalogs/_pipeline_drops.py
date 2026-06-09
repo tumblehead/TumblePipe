@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from typing import Callable
 
-from asset_browser.core.projects import ProjectConfig
+from tumbletrove.asset_browser.core.projects import ProjectConfig
 
 import _pipeline_containers as containers
 from _pipeline_containers import SceneContainer
@@ -106,7 +106,7 @@ class DropRouter:
 
         # Roots (scenes) drop as a sublayer node — they aren't asset/
         # shot entities, so they bypass the import_* HDA path.
-        if detail.metadata.get("kind") == "scene":
+        if detail.kind == "scene":
             return self._drop_root_as_sublayer(detail, drop)
 
         if not drop.network or drop.context not in ("lop", "sop"):

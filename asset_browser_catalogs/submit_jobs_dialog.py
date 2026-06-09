@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from asset_browser.core.theme import (
+from tumbletrove.asset_browser.core.theme import (
     ACCENT, BG_DARK, BG_DARKEST, BORDER, FONT_BODY, FONT_FAMILY,
     TEXT_PRIMARY, TEXT_SECONDARY,
 )

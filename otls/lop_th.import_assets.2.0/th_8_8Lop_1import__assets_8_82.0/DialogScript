@@ -18,10 +18,15 @@
         name    "hidden_parms"
         label   "hidden_parms"
         invisibletab
+        grouptag { "group_type" "simple" }
+        grouptag { "import_enable" "1" }
+        grouptag { "import_source" "layout_assets" }
+        grouptag { "import_token" "*" }
 
         groupsimple {
             name    "set_metadata_parms"
             label   "set_metadata"
+            grouptag { "group_type" "simple" }
 
             parm {
                 name    "set_metadata_python"
@@ -43,10 +48,12 @@
     groupsimple {
         name    "selection"
         label   "Selection"
+        grouptag { "group_type" "simple" }
 
         multiparm {
             name    "asset_imports"
             label    "Asset Imports"
+            default 0
 
             parm {
                 name    "entity_select#"
@@ -145,6 +152,7 @@
     groupsimple {
         name    "settings"
         label   "Settings"
+        grouptag { "group_type" "simple" }
 
         parm {
             name    "departments"
@@ -168,7 +176,7 @@
             name    "include_layerbreak"
             label   "Include layerbreak"
             type    toggle
-            default { "on" }
+            default { [ "on" hscript-expr ] }
             parmtag { "script_callback_language" "python" }
         }
     }
@@ -176,6 +184,7 @@
     groupsimple {
         name    "actions"
         label   "Actions"
+        grouptag { "group_type" "simple" }
 
         parm {
             name    "import"
@@ -187,11 +196,242 @@
         }
     }
 
+    groupcollapsible {
+        name    "layout"
+        label   "Layout"
+
+        parm {
+            name    "primpattern"
+            label   "Primitives"
+            type    string
+            default { "" }
+            menutoggle {
+                [ "opmenu -l -a /stage/import_assets1/dive/layout_assets primpattern" ]
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_action" "import loputils\nimport toolutils\nkwargs['node'].parm('apply').pressButton()\nloputils.selectPrimsInParm(kwargs, True,\n                           inputidx = -1)\nkwargs['parmtuple'][0].pressButton()" }
+            parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nShift-click to select using the primitive pattern editor.\nAlt-click to toggle movement of the display flag." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "script_callback_language" "python" }
+            parmtag { "sidefx::usdpathtype" "primlist" }
+        }
+        parm {
+            name    "xOrd"
+            label   "Transform Order"
+            type    ordinal
+            joinnext
+            default { "srt" }
+            menu {
+                "srt"   "Scale Rot Trans"
+                "str"   "Scale Trans Rot"
+                "rst"   "Rot Scale Trans"
+                "rts"   "Rot Trans Scale"
+                "tsr"   "Trans Scale Rot"
+                "trs"   "Trans Rot Scale"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "rOrd"
+            label   "Rotate Order"
+            type    ordinal
+            nolabel
+            default { "xyz" }
+            menu {
+                "xyz"   "Rx Ry Rz"
+                "xzy"   "Rx Rz Ry"
+                "yxz"   "Ry Rx Rz"
+                "yzx"   "Ry Rz Rx"
+                "zxy"   "Rz Rx Ry"
+                "zyx"   "Rz Ry Rx"
+            }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "t"
+            label   "Translate"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "r"
+            label   "Rotate"
+            type    vector
+            size    3
+            default { "0" "0" "0" }
+            range   { 0 360 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "s"
+            label   "Scale"
+            type    vector
+            size    3
+            default { "1" "1" "1" }
+            range   { -1 1 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "shear"
+            label   "Shear"
+            type    float
+            size    3
+            default { "0" "0" "0" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "scale"
+            label   "Uniform Scale"
+            type    float
+            default { "1" }
+            range   { 0 10 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        groupcollapsible {
+            name    "parmgroup_pivotxform"
+            label   "Pivot Transform"
+            grouptag { "group_type" "collapsible" }
+
+            parm {
+                name    "p"
+                label   "Pivot Translate"
+                type    vector
+                size    3
+                default { "0" "0" "0" }
+                range   { -1 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "pr"
+                label   "Pivot Rotate"
+                type    vector
+                size    3
+                default { "0" "-0" "0" }
+                range   { -1 1 }
+                parmtag { "autoscope" "0000000000000000" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        parm {
+            name    "applyparmxform"
+            label   "Apply Transform from Parameters"
+            type    toggle
+            default { [ "off" hscript-expr ] }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "localxform"
+            label   "Local Transform"
+            type    toggle
+            default { [ "off" hscript-expr ] }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "xformcommon"
+            label   "Use XformCommonAPI"
+            type    toggle
+            default { [ "on" hscript-expr ] }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "apply"
+            label   "Apply"
+            type    button
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "reset"
+            label   "Reset"
+            type    button
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "removeunusedtransforms"
+            label   "Remove Unused Transforms"
+            type    button
+            default { "0" }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
     parm {
         name    "output_modified_prims"
         label   "output_modified_prims"
         type    string
         invisible
         default { "`pythonexprs(\"hou.phm().output_modified_prims(hou.pwd())\")`" }
+    }
+    parm {
+        name    "physprimpattern"
+        label   "Physics Primitives"
+        type    string
+        invisible
+        default { "" }
+        menutoggle {
+            [ "opmenu -l -a /stage/import_assets1/dive/layout_assets physprimpattern" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_action" "import loputils\nimport toolutils\nsv = toolutils.sceneViewer()\ntry:\n    sv.runStateCommand('startphyssel')\nexcept:\n	 pass\nloputils.selectPrimsInParm(kwargs, True,\n                           inputidx = -1)\n" }
+        parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nShift-click to select using the primitive pattern editor.\nAlt-click to toggle movement of the display flag." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "script_callback_language" "python" }
+        parmtag { "sidefx::usdpathtype" "primlist" }
+    }
+    parm {
+        name    "bypassprimpattern"
+        label   "Bypass Primitives"
+        type    string
+        invisible
+        default { "" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "xformdescription"
+        label   "Transform Description (x)"
+        type    string
+        invisible
+        default { "$OS" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "delta"
+        label   "Delta"
+        type    geometrydata
+        invisible
+        default { "" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "viewerstatedelta"
+        label   "Viewer State Delta"
+        type    geometrydata
+        invisible
+        default { "" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
     }
 }

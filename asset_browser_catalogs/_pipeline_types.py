@@ -14,8 +14,8 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import ClassVar, Iterable, Literal, TypedDict, Union
 
-from asset_browser.api.errors import CatalogInitError
-from asset_browser.api.types import Collection
+from tumbletrove.asset_browser.api.errors import CatalogInitError
+from tumbletrove.asset_browser.api.types import Collection
 
 
 # ── Asset metadata schema ────────────────────────────────────────
@@ -336,7 +336,7 @@ DEPT_SHORT_NAMES = {
 # ``Department.short`` field — drives the dept name column in the
 # detail panel when the department config doesn't declare its own short.
 # Matched case-insensitively on the dept name. Not the same convention
-# as :data:`DEPT_SHORT_NAMES` above (which is PascalCase for SubCard
+# as :data:`DEPT_SHORT_NAMES` above (which is PascalCase for DeckItem
 # chips); the two coexist because they serve different label contexts.
 DEPT_API_SHORT_FALLBACK = {
     "model": "mdl",

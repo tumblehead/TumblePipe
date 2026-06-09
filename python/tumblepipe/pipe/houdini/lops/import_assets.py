@@ -15,15 +15,18 @@ from tumblepipe.pipe.houdini.lops import import_asset
 api = default_client()
 
 
-def _clear_scene(dive_node, output_node):
+def _clear_scene(dive_node, output_node, keep_names=()):
 
     # Clear output connections
     for input in output_node.inputConnections():
         output_node.setInput(input.inputIndex(), None)
 
-    # Delete all nodes other than inputs and outputs
+    # Delete all nodes other than inputs, outputs, and preserved nodes.
+    # Preserved nodes (e.g. the persistent edit node) keep their promoted
+    # parm links and stored deltas across rebuilds.
+    keep = {output_node.name()} | set(keep_names)
     for node in dive_node.children():
-        if node.name() == output_node.name(): continue
+        if node.name() in keep: continue
         node.destroy()
 
 def _connect(node1, node2):
@@ -326,11 +329,15 @@ class ImportAssets(ns.Node):
         for index in range(1, count + 1):
             self._update_labels(index)
 
-        # Clear scene
+        # Clear scene. Preserve the persistent edit node (layout_assets):
+        # its promoted parms + stored deltas back the multi-asset transform
+        # handles, so it must survive the rebuild rather than be recreated.
         context = self.native()
         dive_node = context.node('dive')
         output_node = dive_node.node('output')
-        _clear_scene(dive_node, output_node)
+        edit_node = dive_node.node('layout_assets')
+        keep_names = ('layout_assets',) if edit_node is not None else ()
+        _clear_scene(dive_node, output_node, keep_names)
 
         # Parameters
         asset_imports = self.get_asset_imports()
@@ -419,7 +426,16 @@ class ImportAssets(ns.Node):
             '\n'.join(_update_script(script_args))
         )
         python_node.setInput(0, merge_node)
-        output_node.setInput(0, python_node)
+
+        # Route the merged + metadata-updated assets through the persistent
+        # edit node so the HDA's promoted 'edit' state can transform all
+        # imported assets at once. Fall back to a direct connection only if
+        # the edit node is somehow missing (e.g. a legacy node).
+        if edit_node is not None:
+            edit_node.setInput(0, python_node)
+            output_node.setInput(0, edit_node)
+        else:
+            output_node.setInput(0, python_node)
 
         # Layout the nodes
         dive_node.layoutChildren()

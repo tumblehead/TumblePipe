@@ -14,8 +14,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from asset_browser.core.projects import ProjectConfig
-from asset_browser.core.theme import (
+from tumbletrove.asset_browser.core.projects import ProjectConfig
+from tumbletrove.asset_browser.core.theme import (
     BORDER, BUTTON_GHOST_STYLE, BUTTON_PRIMARY_STYLE, FONT_FAMILY, FONT_SMALL,
     TEXT_DIM, scaled,
 )

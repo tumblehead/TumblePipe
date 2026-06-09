@@ -209,7 +209,7 @@ class ThumbnailManager:
         """
         try:
             from PySide6.QtWidgets import QApplication
-            from asset_browser.ui.browser import AssetBrowserWidget
+            from tumbletrove.asset_browser.ui.browser import AssetBrowserWidget
             for w in QApplication.allWidgets():
                 if not isinstance(w, AssetBrowserWidget):
                     continue

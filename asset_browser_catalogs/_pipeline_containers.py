@@ -32,8 +32,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from asset_browser.api.errors import TagQueryError
-from asset_browser.api.types import Asset, AssetDetail, AssetPage, Collection
+from tumbletrove.asset_browser.api.errors import TagQueryError
+from tumbletrove.asset_browser.api.types import Asset, AssetDetail, AssetPage, Collection
 
 import _pipeline_uris as uris
 from _pipeline_types import version_code
@@ -357,7 +357,7 @@ class ContainerManager:
         self, collection: "Collection", project_name: str, kind: str,
     ) -> Asset:
         """Wrap a Group/Scene Collection in an Asset so the grid can
-        render it as a card. The ``drill_tag`` metadata key signals to
+        render it as a card. The ``drill_tag`` field signals to
         the browser's card-click handler that the card represents a
         container — clicking it should drill into its members rather
         than open a detail panel.
@@ -367,19 +367,18 @@ class ContainerManager:
         one sub-card per dept (mirroring the shot/asset open-workfile
         UX).
         """
-        metadata: dict = {
-            "kind": kind,
-            "drill_tag": collection.tag,
-            "member_count": collection.count,
-        }
+        metadata: dict = {}
+        dirty = False
+        ctx = ""
+        has_sub_cards = False
         if kind == "scene":
             # Surface a dirty flag so the renderer can paint an
             # "unsaved" indicator on Roots whose JSON has drifted
             # from the latest exported USD.
             try:
-                metadata["dirty"] = self._root_is_dirty(collection.tag)
+                dirty = self._root_is_dirty(collection.tag)
             except Exception:
-                metadata["dirty"] = False
+                dirty = False
         if kind == "group":
             # Stash the Multi's context (``assets`` / ``shots``) so
             # ``_get_container_assets`` can filter by it when the
@@ -391,8 +390,6 @@ class ContainerManager:
                 ctx = group_path.split("/", 1)[0] if "/" in group_path else ""
             except ValueError:
                 ctx = ""
-            if ctx:
-                metadata["context"] = ctx
             covered = self._group_departments_from_tag(
                 collection.tag, project_name,
             )
@@ -409,7 +406,7 @@ class ContainerManager:
                     versions = workfile_info.get(dept) or []
                     depts_dict[dept] = versions[-1] if versions else ""
                 metadata["departments"] = depts_dict
-                metadata["has_sub_cards"] = True
+                has_sub_cards = True
         return Asset(
             id=collection.tag,
             name=collection.label,
@@ -420,6 +417,12 @@ class ContainerManager:
                 "source:pipeline",
                 collection.tag,
             }),
+            kind=kind,
+            drill_tag=collection.tag,
+            member_count=collection.count,
+            dirty=dirty,
+            context=ctx,
+            has_sub_cards=has_sub_cards,
             metadata=metadata,
         )
 
@@ -683,7 +686,7 @@ class ContainerManager:
 
         # Sidebar's nested **Multis** subheaders (under Assets / Shots)
         # filter by context via ``multi_context:assets|shots``. Only
-        # Multi cards carry a ``context`` metadata key today, so a
+        # Multi cards carry a non-empty ``context`` field today, so a
         # non-matching kind (e.g. scenes) would silently disappear if
         # this clause ever leaked into a ``type:scene`` query — but
         # the sidebar never builds such a combined tag, so the gate
@@ -697,7 +700,7 @@ class ContainerManager:
             if multi_ctx_tags:
                 items = [
                     a for a in items
-                    if a.metadata.get("context") in multi_ctx_tags
+                    if a.context in multi_ctx_tags
                 ]
 
         if query:
@@ -741,11 +744,11 @@ class ContainerManager:
                 log.exception("activate_project failed in container detail")
 
         metadata: dict = {
-            "kind": kind,
-            "drill_tag": asset_id,
             "project": proj_name,
             "path": path,
         }
+        member_count = 0
+        ctx = ""
 
         if kind == "group":
             try:
@@ -754,7 +757,7 @@ class ContainerManager:
                 grp = grp_mod.get_group(uris.group(path))
                 covered: list[str] = []
                 if grp is not None:
-                    metadata["member_count"] = len(grp.members)
+                    member_count = len(grp.members)
                     covered = [
                         str(d) for d in getattr(grp, "departments", ())
                     ]
@@ -768,7 +771,6 @@ class ContainerManager:
                 )
                 metadata["covered_departments"] = covered
                 ctx = path.split("/", 1)[0] if "/" in path else "assets"
-                metadata["context"] = ctx
                 try:
                     metadata["known_departments"] = [
                         d.name for d in
@@ -785,7 +787,7 @@ class ContainerManager:
                 from tumblepipe.config import scenes as scn_mod
                 scn = scn_mod.get_scene(uris.scene(path))
                 if scn is not None:
-                    metadata["member_count"] = len(scn.assets)
+                    member_count = len(scn.assets)
             except Exception:
                 log.exception(
                     "Failed to populate scene detail for %s", asset_id,
@@ -801,6 +803,10 @@ class ContainerManager:
                 f"project:{proj_name}",
                 "source:pipeline",
             }),
+            kind=kind,
+            drill_tag=asset_id,
+            member_count=member_count,
+            context=ctx,
             metadata=metadata,
         )
 

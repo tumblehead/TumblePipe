@@ -22,7 +22,7 @@ def load():
 
     # Register TumblePipe-shipped radial menus + their actions with the
     # tumbletrove radial system. Wrapped in a try/except so a missing
-    # `radial` module doesn't block the rest of TumblePipe loading.
+    # `tumbletrove` package doesn't block the rest of TumblePipe loading.
     _register_radial(pipeline_path)
 
 
@@ -34,7 +34,7 @@ def _register_radial(pipeline_path: Path) -> None:
     up the menu we ship in ``radial_menus/``.
     """
     try:
-        import radial
+        from tumbletrove import radial
     except ImportError:
         return  # tumbletrove not installed — nothing to register
 
@@ -147,7 +147,7 @@ def _make_asset_drop_callback(catalog, asset_id: str):
             # cursor is over a network editor — that produces the best
             # placement (auto-connect, position from cursor, etc.).
             try:
-                from asset_browser.core.drop import build_drop_context
+                from tumbletrove.asset_browser.core.drop import build_drop_context
                 pane = hou.ui.paneTabUnderCursor()
                 drop = build_drop_context(pane) if pane is not None else None
             except Exception:
@@ -196,7 +196,7 @@ def _generate_asset_favorites_radial(radial, menu_dir: "Path", *,
     """
     import json
     try:
-        import asset_browser as ab
+        from tumbletrove import asset_browser as ab
         ab._ensure_initialized()
     except Exception:
         return  # asset_browser not installed/initialised — skip silently

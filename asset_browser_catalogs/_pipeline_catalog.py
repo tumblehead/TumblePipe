@@ -10,18 +10,19 @@ behaviour.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from pathlib import Path
 
-from asset_browser.api.catalog import Catalog
-from asset_browser.api.errors import (
+from tumbletrove.asset_browser.api.catalog import Catalog
+from tumbletrove.asset_browser.api.errors import (
     AssetDiscoveryError,
     CatalogError,
     CatalogInitError,
     ConfigError,
     WorkfileScanError,
 )
-from asset_browser.api.types import (
+from tumbletrove.asset_browser.api.types import (
     Asset,
     AssetAction,
     AssetDetail,
@@ -31,9 +32,9 @@ from asset_browser.api.types import (
     DetailSection,
     ListColumn,
     SortOption,
-    SubCard,
+    DeckItem,
 )
-from asset_browser.core.projects import ProjectConfig, ProjectRegistry
+from tumbletrove.asset_browser.core.projects import ProjectConfig, PipelineProjectRegistry
 
 # Companion modules. Absolute imports (rather than ``from
 # ._pipeline_X``) because tumbletrove's catalog discovery loads
@@ -107,8 +108,8 @@ class PipelineCatalog(Catalog):
 
     # ── Lifecycle ─────────────────────────────────────────
 
-    def __init__(self, registry: ProjectRegistry | None = None) -> None:
-        self._registry = registry or ProjectRegistry(projects_json_path())
+    def __init__(self, registry: PipelineProjectRegistry | None = None) -> None:
+        self._registry = registry or PipelineProjectRegistry(projects_json_path())
         if registry is None:
             self._registry.load()
             if not self._registry:
@@ -447,7 +448,7 @@ class PipelineCatalog(Catalog):
     ) -> tuple[int, int]:
         """Return ``(pending_count, done_count)`` for a project."""
         try:
-            import asset_browser
+            from tumbletrove import asset_browser
             mgr = asset_browser.get_todos()
         except Exception:
             return 0, 0
@@ -491,7 +492,7 @@ class PipelineCatalog(Catalog):
             return sum(1 for a in items if tag in a.tags)
 
         try:
-            import asset_browser
+            from tumbletrove import asset_browser
             mgr = asset_browser.get_todos()
         except Exception:
             mgr = None
@@ -585,7 +586,7 @@ class PipelineCatalog(Catalog):
         self._stamp_todo_tags(all_items)
 
         # Filter by standard tags
-        from asset_browser.api.tags import match_tags
+        from tumbletrove.asset_browser.api.tags import match_tags
         if remaining_tags:
             filter_tags = frozenset(t for t in remaining_tags if not t.startswith("source:"))
             if filter_tags:
@@ -596,19 +597,20 @@ class PipelineCatalog(Catalog):
             q = query.lower()
             all_items = [a for a in all_items if q in a.name.lower()]
 
-        # Pin the active scene asset to the first position and mark
-        # its metadata so the grid renders a highlight border. Clear
-        # the flag on every other item — assets are cached and the
-        # active hip changes independently of a rescan.
+        # Pin the active scene asset to the first position and flag it
+        # so the grid renders a highlight border. ``is_current_scene``
+        # is now a typed frozen field, so rebuild via dataclasses.replace
+        # instead of mutating in place — this also stops the flag from
+        # leaking back into cached Asset objects (the old in-place dict
+        # mutation shared the cache's metadata, which is why it had to
+        # clear stale flags).
         scene_id = self._scene.get_scene_asset_id()
-        for a in all_items:
-            if a.metadata.get("is_current_scene") and a.id != scene_id:
-                a.metadata["is_current_scene"] = False
         if scene_id:
-            pinned = [a for a in all_items if a.id == scene_id]
+            pinned = [
+                dataclasses.replace(a, is_current_scene=True)
+                for a in all_items if a.id == scene_id
+            ]
             rest = [a for a in all_items if a.id != scene_id]
-            for a in pinned:
-                a.metadata["is_current_scene"] = True
             all_items = pinned + rest
 
         # Paginate
@@ -1403,9 +1405,9 @@ class PipelineCatalog(Catalog):
     def _manage_todos(self, asset) -> None:
         """Open the per-asset todos dialog."""
         try:
-            import asset_browser
+            from tumbletrove import asset_browser
             import hou
-            from asset_browser.ui.todos_dialog import TodosDialog
+            from tumbletrove.asset_browser.ui.todos_dialog import TodosDialog
             mgr = asset_browser.get_todos()
             if mgr is None:
                 return
@@ -1426,7 +1428,7 @@ class PipelineCatalog(Catalog):
         current without needing a cache invalidation.
         """
         try:
-            import asset_browser
+            from tumbletrove import asset_browser
             mgr = asset_browser.get_todos()
         except Exception:
             mgr = None
@@ -1468,7 +1470,7 @@ class PipelineCatalog(Catalog):
         """
         try:
             from PySide6.QtWidgets import QApplication
-            from asset_browser.ui.browser import AssetBrowserWidget
+            from tumbletrove.asset_browser.ui.browser import AssetBrowserWidget
             for w in QApplication.allWidgets():
                 if not isinstance(w, AssetBrowserWidget):
                     continue
@@ -1501,7 +1503,7 @@ class PipelineCatalog(Catalog):
             return
         try:
             from PySide6.QtWidgets import QApplication
-            from asset_browser.ui.browser import AssetBrowserWidget
+            from tumbletrove.asset_browser.ui.browser import AssetBrowserWidget
             for w in QApplication.allWidgets():
                 if not isinstance(w, AssetBrowserWidget):
                     continue
@@ -1531,7 +1533,7 @@ class PipelineCatalog(Catalog):
         """
         try:
             from PySide6.QtWidgets import QApplication
-            from asset_browser.ui.detail_panel import DetailPanel
+            from tumbletrove.asset_browser.ui.detail_panel import DetailPanel
             for w in QApplication.allWidgets():
                 if isinstance(w, DetailPanel):
                     w.detail_refresh_requested.emit()
@@ -1547,7 +1549,7 @@ class PipelineCatalog(Catalog):
         # — no scene-actions row, no todos. Groups also get a
         # Departments tab where the user can toggle which depts the
         # group covers; scenes don't (no editable depts field).
-        kind = detail.metadata.get("kind")
+        kind = detail.kind
         if kind == "group":
             return [
                 DetailSection(
@@ -1699,7 +1701,7 @@ class PipelineCatalog(Catalog):
     # ── Drop handling (delegated to DropRouter) ──────────
 
     def get_ghost_data(self, asset):
-        from asset_browser.core.ghost_overlay import GhostData, GhostNode
+        from tumbletrove.asset_browser.core.ghost_overlay import GhostData, GhostNode
         if "type:shot" in asset.tags:
             return GhostData(nodes=[GhostNode("th::import_shot::1.0", 0.0, 0.0)])
         return GhostData(nodes=[GhostNode("th::import_asset::1.0", 0.0, 0.0)])
@@ -1723,7 +1725,7 @@ class PipelineCatalog(Catalog):
     # ── Quick Actions (top bar) ────────────────────────────
 
     def get_quick_actions(self):
-        from asset_browser.api.catalog import QuickAction
+        from tumbletrove.asset_browser.api.catalog import QuickAction
         return [
             QuickAction(id="save", label="Save", icon="save-all", tooltip="Save current scene"),
             QuickAction(id="publish", label="Publish", icon="send", tooltip="Publish exports"),
@@ -1759,7 +1761,7 @@ class PipelineCatalog(Catalog):
         Returns ``None`` for actions we don't track (e.g. ``reload``) so
         the button falls back to its regular QToolTip.
         """
-        from asset_browser.core.hover_info import format_age_html
+        from tumbletrove.asset_browser.core.hover_info import format_age_html
 
         if action_id == "save":
             try:
@@ -1813,7 +1815,7 @@ class PipelineCatalog(Catalog):
         from PySide6.QtWidgets import (
             QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
         )
-        from asset_browser.core.theme import (
+        from tumbletrove.asset_browser.core.theme import (
             BG_MID, BORDER, FONT_BODY, FONT_FAMILY, FONT_SMALL,
             FONT_TINY, FONT_TITLE, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
         )
@@ -1916,7 +1918,7 @@ class PipelineCatalog(Catalog):
         # ── Department grid ──────────────────────────
         if type_tag in ("asset", "shot"):
             grid_widget = self._hover_dept_grid_widget(
-                root, type_tag, metadata,
+                root, type_tag, metadata, asset,
             )
             if grid_widget is not None:
                 add_separator()
@@ -1925,8 +1927,10 @@ class PipelineCatalog(Catalog):
 
         # ── Container info (Multi / Root only) ──────
         extras: list[tuple[str, str]] = []
-        if "member_count" in metadata:
-            extras.append(("Members", str(metadata["member_count"])))
+        # member_count is a typed field now (0 for non-containers); only
+        # Multi/Root cards should surface the Members row.
+        if type_tag in ("group", "scene"):
+            extras.append(("Members", str(asset.member_count)))
         if "shot_count" in metadata:
             extras.append(("Shots", str(metadata["shot_count"])))
         if "sequence" in metadata and metadata["sequence"]:
@@ -1946,17 +1950,25 @@ class PipelineCatalog(Catalog):
 
         return root
 
-    def _hover_dept_grid_widget(self, parent, type_tag, metadata):
-        """Build the department icon grid as a QWidget. Each icon is a
-        small QLabel with a Qt tooltip showing the dept name + version.
+    def _hover_dept_grid_widget(self, parent, type_tag, metadata, asset):
+        """Build the department icon grid as a QWidget.
+
+        Each icon carries a :class:`ButtonHoverInfo` popup that fans out
+        on hover (when the parent popup is pinned) and shows version,
+        last user, last save, and last publish for that department.
 
         Returns ``None`` if no departments are configured for the
         context, so the caller knows to skip the section entirely.
         """
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
-        from asset_browser.core.icons import icon_pixmap
-        from asset_browser.core.theme import TEXT_PRIMARY
+        from tumbletrove.asset_browser.core.hover_info import (
+            ButtonHoverInfo, format_age_html,
+        )
+        from tumbletrove.asset_browser.core.icons import icon_pixmap
+        from tumbletrove.asset_browser.core.theme import (
+            BORDER, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
+        )
         from tumblepipe.config.department import list_departments
 
         context = "shots" if type_tag == "shot" else "assets"
@@ -1984,6 +1996,9 @@ class PipelineCatalog(Catalog):
             for d in raw_depts:
                 active_versions[str(d)] = ""
 
+        asset_id = getattr(asset, "id", None) if asset is not None else None
+        workfiles = getattr(self, "_workfiles", None)
+
         active_color = TEXT_PRIMARY
         inactive_color = "#3e3e44"
         is_shot = type_tag == "shot"
@@ -1995,7 +2010,80 @@ class PipelineCatalog(Catalog):
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(6)
 
-        n_per_row = 7
+        # Min 3, max 4 columns. Below 4 depts we still reserve a 3-wide
+        # grid so single-dept rows don't visually collapse to one icon.
+        n_per_row = min(4, max(3, len(all_depts)))
+
+        def _make_content_fn(dept_name, display_name, is_active, version):
+            def _content():
+                title = (
+                    f"<div style='color:{TEXT_PRIMARY}; font-weight:600; "
+                    f"font-size:13px;'>{display_name}</div>"
+                )
+                if is_active:
+                    sub_text = f"Active · {version}" if version else "Active"
+                else:
+                    sub_text = "Inactive"
+                subtitle = (
+                    f"<div style='color:{TEXT_SECONDARY}; margin-top:2px;'>"
+                    f"{sub_text}</div>"
+                )
+
+                rows: list[str] = []
+                if is_active and asset_id and workfiles is not None:
+                    if version:
+                        try:
+                            user = workfiles.get_user_for_version(
+                                asset_id, dept_name, version,
+                            )
+                        except Exception:
+                            user = None
+                        if user:
+                            rows.append(
+                                f"<div style='margin-top:6px;'>"
+                                f"<span style='color:{TEXT_DIM};'>User:</span> "
+                                f"<span style='color:{TEXT_PRIMARY};'>"
+                                f"{user}</span></div>"
+                            )
+                        try:
+                            saved_dt = workfiles.get_mtime_for_version(
+                                asset_id, dept_name, version,
+                            )
+                        except Exception:
+                            saved_dt = None
+                        saved_ts = (
+                            saved_dt.timestamp() if saved_dt is not None
+                            else None
+                        )
+                        rows.append(
+                            f"<div style='margin-top:6px;'>"
+                            f"{format_age_html('Last saved', saved_ts)}"
+                            f"</div>"
+                        )
+                    try:
+                        pub_dt = workfiles.get_latest_export_mtime(
+                            asset_id, dept_name,
+                        )
+                    except Exception:
+                        pub_dt = None
+                    pub_ts = (
+                        pub_dt.timestamp() if pub_dt is not None else None
+                    )
+                    rows.append(
+                        f"<div style='margin-top:6px;'>"
+                        f"{format_age_html('Last published', pub_ts)}"
+                        f"</div>"
+                    )
+
+                sep = ""
+                if rows:
+                    sep = (
+                        f"<div style='border-top:1px solid {BORDER}; "
+                        f"margin:8px 0 0 0;'></div>"
+                    )
+                return title + subtitle + sep + "".join(rows)
+            return _content
+
         for i, dept in enumerate(all_depts):
             row, col = divmod(i, n_per_row)
             icon_name = None
@@ -2012,17 +2100,20 @@ class PipelineCatalog(Catalog):
             icon_label.setFixedSize(28, 28)
             icon_label.setAlignment(Qt.AlignCenter)
             icon_label.setStyleSheet("background: transparent;")
+            icon_label.setAttribute(Qt.WA_Hover, True)
 
             display_name = (dept.short or dept.name).title()
-            if is_active:
-                version = active_versions.get(dept.name) or ""
-                tip = (
-                    f"{display_name} · {version}" if version
-                    else f"{display_name} · active"
-                )
-            else:
-                tip = f"{display_name} · inactive"
-            icon_label.setToolTip(tip)
+            version = active_versions.get(dept.name) or "" if is_active else ""
+
+            # ButtonHoverInfo replaces the plain QToolTip with a richer
+            # popup (version, user, last save, last publish). Only fires
+            # when the parent hover popup is pinned (cursor can't reach
+            # the dept icons otherwise — see ButtonHoverInfo docstring).
+            ButtonHoverInfo(
+                icon_label,
+                _make_content_fn(dept.name, display_name, is_active, version),
+                placement="above",
+            )
 
             grid.addWidget(icon_label, row, col)
 
@@ -2032,7 +2123,7 @@ class PipelineCatalog(Catalog):
     # ── Entity Creation ────────────────────────────────
 
     def get_creation_options(self, tags=frozenset()):
-        from asset_browser.api.catalog import CreationOption
+        from tumbletrove.asset_browser.api.catalog import CreationOption
         has_asset = "type:asset" in tags
         has_shot = "type:shot" in tags
         opts = []
@@ -2056,7 +2147,7 @@ class PipelineCatalog(Catalog):
         return ""
 
     def get_creation_fields(self, option_id, tags=frozenset()):
-        from asset_browser.api.catalog import CreationField
+        from tumbletrove.asset_browser.api.catalog import CreationField
         projects = [p.name for p in self._registry.all()]
         default_proj = self._resolve_project_from_tags(tags)
 
@@ -2757,7 +2848,7 @@ class PipelineCatalog(Catalog):
 
     # ── Sub-cards (departments) ───────────────────────────
 
-    def get_sub_cards(self, asset: Asset) -> list[SubCard]:
+    def get_sub_cards(self, asset: Asset) -> list[DeckItem]:
         # Group container cards: one sub-card per dept the group
         # covers. "missing" status (no action_id) for covered depts
         # that don't have a workfile yet — right-click → "New:
@@ -2770,7 +2861,7 @@ class PipelineCatalog(Catalog):
             depts_dict = asset.metadata.get("departments") or {}
             covered = list(depts_dict.keys())
             ctx = (
-                asset.metadata.get("context")
+                asset.context
                 or self._containers._group_context_from_tag(asset.id)
                 or "shots"
             )
@@ -2780,12 +2871,12 @@ class PipelineCatalog(Catalog):
                 covered,
                 key=lambda n: (order.get(n, len(order)), n),
             )
-            cards: list[SubCard] = []
+            cards: list[DeckItem] = []
             for dept_name in sorted_depts:
                 short = DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
                 latest = depts_dict.get(dept_name) or ""
                 if latest:
-                    cards.append(SubCard(
+                    cards.append(DeckItem(
                         key=dept_name,
                         label=short,
                         status="available",
@@ -2794,7 +2885,7 @@ class PipelineCatalog(Catalog):
                         action_id=f"open_workfile:{dept_name}",
                     ))
                 else:
-                    cards.append(SubCard(
+                    cards.append(DeckItem(
                         key=dept_name,
                         label=short,
                         status="missing",
@@ -2839,7 +2930,7 @@ class PipelineCatalog(Catalog):
                 # long group name overflows. The tint (border + icon)
                 # signals "covered by a group"; the tooltip carries
                 # the full group name for hover discovery.
-                cards.append(SubCard(
+                cards.append(DeckItem(
                     key=dept_name,
                     label=short,
                     status=status,
@@ -2856,7 +2947,7 @@ class PipelineCatalog(Catalog):
                 status = (
                     "active" if dept_name == active_dept else "available"
                 )
-                cards.append(SubCard(
+                cards.append(DeckItem(
                     key=dept_name,
                     label=short,
                     status=status,
@@ -2865,7 +2956,7 @@ class PipelineCatalog(Catalog):
                     action_id=f"open_workfile:{dept_name}",
                 ))
             else:
-                cards.append(SubCard(
+                cards.append(DeckItem(
                     key=dept_name,
                     label=short,
                     status="missing",
@@ -3078,12 +3169,12 @@ class PipelineCatalog(Catalog):
                 f"category:{category.lower()}",
                 f"project:{proj.name}",
             }),
+            has_sub_cards=True,
             metadata={
                 "departments": depts,
                 "category": category,
                 "project": proj.name,
                 "dept_count": len(depts),
-                "has_sub_cards": True,
                 "latest_update": self._workfiles.latest_update_timestamp(
                     asset_id, depts,
                 ),
@@ -3129,18 +3220,18 @@ class PipelineCatalog(Catalog):
             f"project:{project_name}",
         }
 
-        from asset_browser.api.catalog import Asset
+        from tumbletrove.asset_browser.api.catalog import Asset
         return Asset(
             id=asset_id,
             name=third,
             thumbnail_url="",
             tags=frozenset(tags),
+            has_sub_cards=True,
             metadata={
                 "departments": depts,
                 **({"category": second, "project": project_name} if is_asset
                    else {"sequence": second, "project": project_name}),
                 "dept_count": len(depts),
-                "has_sub_cards": True,
                 "latest_update": self._workfiles.latest_update_timestamp(
                     asset_id, depts,
                 ),
@@ -3195,14 +3286,9 @@ class PipelineCatalog(Catalog):
             kind="group",
         )
         asset = self._containers._container_collection_to_asset(proxy, proj_name, "group")
-        return Asset(
-            id=asset.id,
-            name=asset.name,
-            thumbnail_url=asset.thumbnail_url,
-            tags=asset.tags,
-            metadata=asset.metadata,
-            catalog_id=self.id,
-        )
+        # replace() carries every typed framework field (kind, drill_tag,
+        # member_count, has_sub_cards, …) across — only catalog_id changes.
+        return dataclasses.replace(asset, catalog_id=self.id)
 
     def _refresh_scene_asset(self, scene_id: str):
         """Rebuild a Root container Asset (no workfile detail today —
@@ -3237,14 +3323,9 @@ class PipelineCatalog(Catalog):
             kind="scene",
         )
         asset = self._containers._container_collection_to_asset(proxy, proj_name, "scene")
-        return Asset(
-            id=asset.id,
-            name=asset.name,
-            thumbnail_url=asset.thumbnail_url,
-            tags=asset.tags,
-            metadata=asset.metadata,
-            catalog_id=self.id,
-        )
+        # replace() carries the typed framework fields across; only the
+        # catalog_id stamp changes.
+        return dataclasses.replace(asset, catalog_id=self.id)
 
     def _build_shot_card(
         self, proj: ProjectConfig, entity, segs: tuple[str, ...],
@@ -3290,13 +3371,13 @@ class PipelineCatalog(Catalog):
                 f"sequence:{sequence}",
                 f"project:{proj.name}",
             }),
+            has_sub_cards=True,
             metadata={
                 "departments": depts,
                 "sequence": sequence,
                 "project": proj.name,
                 "frame_range": frame_range,
                 "dept_count": len(depts),
-                "has_sub_cards": True,
                 "latest_update": self._workfiles.latest_update_timestamp(
                     asset_id, depts,
                 ),

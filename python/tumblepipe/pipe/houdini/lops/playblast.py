@@ -142,9 +142,7 @@ class Playblast(ns.Node):
         department_name = self.get_department_name()
         camera_path = self.get_camera_path()
         frame_range = self.get_frame_range()
-        print(f"[DEBUG] FrameRange: start={frame_range.start_frame}, end={frame_range.end_frame}, start_roll={frame_range.start_roll}, end_roll={frame_range.end_roll}, step={frame_range.step_size}")
         render_range = frame_range.full_range()
-        print(f"[DEBUG] BlockRange: first={render_range.first_frame}, last={render_range.last_frame}, step={render_range.step_size}")
         fps = get_fps()
 
         # Check camera path
@@ -212,7 +210,7 @@ class Playblast(ns.Node):
         output_playblast_path = get_latest_playblast_path(shot_uri, department_name)
 
         # Open playblast
-        if not output_playblast_path.exists():
+        if output_playblast_path is None or not output_playblast_path.exists():
             return hou.ui.displayMessage(
                 (
                     f'No playblast found for {shot_uri}.\n'
@@ -229,7 +227,11 @@ class Playblast(ns.Node):
         shot_uri = self.get_shot_uri()
         department_name = self.get_department_name()
         output_playblast_path = get_latest_playblast_path(shot_uri, department_name)
-        output_path = output_playblast_path.parent
+        # No playblast yet → fall back to the (not-yet-populated) output dir.
+        if output_playblast_path is None:
+            output_path = get_next_playblast_path(shot_uri, department_name).parent
+        else:
+            output_path = output_playblast_path.parent
 
         # Create and open the directory containing the playblast
         output_path.mkdir(parents=True, exist_ok=True)

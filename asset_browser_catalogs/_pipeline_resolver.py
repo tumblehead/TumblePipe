@@ -21,8 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from asset_browser.api.errors import CatalogError
-from asset_browser.core.projects import ProjectConfig, ProjectRegistry
+from tumbletrove.asset_browser.api.errors import CatalogError
+from tumbletrove.asset_browser.core.projects import ProjectConfig, PipelineProjectRegistry
 
 from _pipeline_clients import ClientPool
 from _pipeline_types import AssetRef, EntityRef, parse_entity_ref
@@ -76,7 +76,7 @@ class AssetResolver:
     def __init__(
         self,
         catalog_id: str,
-        registry: ProjectRegistry,
+        registry: PipelineProjectRegistry,
         clients: ClientPool,
         categories_for_project: Callable[[str], list[str]],
     ) -> None:

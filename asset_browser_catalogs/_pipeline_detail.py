@@ -106,8 +106,8 @@ class DetailSectionBuilder:
         from PySide6.QtWidgets import (
             QHBoxLayout, QLabel, QPushButton, QWidget,
         )
-        from asset_browser.core.icons import icon as make_icon
-        from asset_browser.core.theme import (
+        from tumbletrove.asset_browser.core.icons import icon as make_icon
+        from tumbletrove.asset_browser.core.theme import (
             BG_MID, BORDER, FONT_SMALL, TEXT_DIM, TEXT_SECONDARY, scaled,
         )
 
@@ -155,8 +155,8 @@ class DetailSectionBuilder:
         from PySide6.QtWidgets import (
             QHBoxLayout, QLabel, QPushButton, QWidget,
         )
-        from asset_browser.core.icons import icon as make_icon
-        from asset_browser.core.theme import (
+        from tumbletrove.asset_browser.core.icons import icon as make_icon
+        from tumbletrove.asset_browser.core.theme import (
             BG_MID, BORDER, FONT_TINY, TEXT_DIM, scaled,
         )
 
@@ -242,11 +242,11 @@ class DetailSectionBuilder:
 
         detail = ctx.detail
         meta = detail.metadata or {}
-        kind = meta.get("kind", "")
+        kind = detail.kind
         proj_name = meta.get("project", "")
         path = meta.get("path", "")
-        member_count = int(meta.get("member_count") or 0)
-        ctx_label = meta.get("context", "")
+        member_count = detail.member_count
+        ctx_label = detail.context
 
         holder = QWidget()
         vbox = QVBoxLayout(holder)
@@ -529,8 +529,8 @@ class DetailSectionBuilder:
         Returns ``None`` when there are no rows."""
         from PySide6.QtWidgets import QGridLayout, QLabel
         from PySide6.QtCore import Qt
-        from asset_browser.ui.detail_panel import make_section_box
-        from asset_browser.core.theme import (
+        from tumbletrove.asset_browser.ui.detail_panel import make_section_box
+        from tumbletrove.asset_browser.core.theme import (
             FONT_FAMILY, FONT_SMALL, TEXT_DIM, TEXT_SECONDARY, scaled,
         )
 
@@ -567,8 +567,8 @@ class DetailSectionBuilder:
         """Show pills for every group and scene this asset belongs to."""
         from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout
         from PySide6.QtCore import Qt
-        from asset_browser.ui.detail_panel import make_section_box
-        from asset_browser.core.theme import (
+        from tumbletrove.asset_browser.ui.detail_panel import make_section_box
+        from tumbletrove.asset_browser.core.theme import (
             ACCENT, BG_MID, BORDER, FONT_FAMILY, FONT_SMALL,
             TEXT_DIM, TEXT_SECONDARY,
         )
@@ -606,16 +606,16 @@ class DetailSectionBuilder:
             QHBoxLayout, QLabel, QLineEdit, QPushButton,
         )
         from PySide6.QtCore import Qt
-        from asset_browser.ui.detail_panel import make_section_box
-        from asset_browser.ui.lucide_checkbox import LucideCheckBox
-        from asset_browser.core.icons import icon
-        from asset_browser.core.theme import (
+        from tumbletrove.asset_browser.ui.detail_panel import make_section_box
+        from tumbletrove.asset_browser.ui.lucide_checkbox import LucideCheckBox
+        from tumbletrove.asset_browser.core.icons import icon
+        from tumbletrove.asset_browser.core.theme import (
             ACCENT, BG_DARK, BORDER, FONT_BODY, FONT_FAMILY,
             FONT_SMALL, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
         )
 
         try:
-            import asset_browser
+            from tumbletrove import asset_browser
             mgr = asset_browser.get_todos()
         except Exception:
             mgr = None
@@ -645,9 +645,9 @@ class DetailSectionBuilder:
                 row = QHBoxLayout()
                 row.setContentsMargins(0, 0, 0, 0)
                 row.setSpacing(6)
-                cb = LucideCheckBox(todo.get("text", ""))
-                cb.setChecked(bool(todo.get("done")))
-                cb.setTextColor(TEXT_DIM if todo.get("done") else TEXT_PRIMARY)
+                cb = LucideCheckBox(todo.text)
+                cb.setChecked(bool(todo.done))
+                cb.setTextColor(TEXT_DIM if todo.done else TEXT_PRIMARY)
                 cb.toggled.connect(
                     lambda done, i=idx: mgr.set_done(
                         self.id, asset_id, i, done,
@@ -708,7 +708,7 @@ class DetailSectionBuilder:
 
         if todos:
             from PySide6.QtWidgets import QMenu
-            from asset_browser.core.theme import MENU_STYLE
+            from tumbletrove.asset_browser.core.theme import MENU_STYLE
             clear_btn = QPushButton()
             clear_btn.setIcon(icon("brush-cleaning", 14, TEXT_SECONDARY))
             clear_btn.setFlat(True)
@@ -744,8 +744,8 @@ class DetailSectionBuilder:
             QVBoxLayout,
         )
         from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QSize, Qt
-        from asset_browser.ui.detail_panel import make_section_box
-        from asset_browser.core.theme import (
+        from tumbletrove.asset_browser.ui.detail_panel import make_section_box
+        from tumbletrove.asset_browser.core.theme import (
             ACCENT, BG_DARK, BG_MID, BORDER, BUTTON_GHOST_STYLE, COMBO_STYLE,
             FONT_FAMILY, FONT_SMALL, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
             scaled,
@@ -758,7 +758,7 @@ class DetailSectionBuilder:
         def _icon_html(name: str, size: int = 11) -> str:
             try:
                 import base64
-                from asset_browser.core.icons import icon_pixmap
+                from tumbletrove.asset_browser.core.icons import icon_pixmap
                 pix = icon_pixmap(name, scaled(size), TEXT_DIM)
                 arr = QByteArray()
                 buf = QBuffer(arr)
@@ -786,9 +786,7 @@ class DetailSectionBuilder:
         # detail metadata; uncovered depts still render as "missing"
         # rows so the user can toggle them on.
         if is_multi:
-            ent_ctx = (
-                (ctx.detail.metadata or {}).get("context") or "shots"
-            )
+            ent_ctx = ctx.detail.context or "shots"
         else:
             ent_ctx = "shots" if is_shot else "assets"
         all_depts = self._catalog._list_entity_departments(ent_ctx)
@@ -990,7 +988,7 @@ class DetailSectionBuilder:
 
                 # Col 3: open icon button — saves space vs the "Open" label
                 # so narrow rows don't force the section box past the panel.
-                from asset_browser.core.icons import icon as make_icon
+                from tumbletrove.asset_browser.core.icons import icon as make_icon
                 open_btn = QPushButton()
                 open_btn.setIcon(make_icon("play", scaled(14), ACCENT))
                 open_btn.setIconSize(QSize(scaled(14), scaled(14)))
@@ -1048,7 +1046,7 @@ class DetailSectionBuilder:
                 # Match the Open button's icon style — clicking creates
                 # v0001 from the dept template, which is intuitive enough
                 # that the green play icon doubles for "create + open".
-                from asset_browser.core.icons import icon as make_icon
+                from tumbletrove.asset_browser.core.icons import icon as make_icon
                 create_btn = QPushButton()
                 create_btn.setIcon(make_icon("play", scaled(14), ACCENT))
                 create_btn.setIconSize(QSize(scaled(14), scaled(14)))
@@ -1092,8 +1090,8 @@ class DetailSectionBuilder:
         it's set as the section ``title`` in :meth:`get_detail_sections`.
         """
         from PySide6.QtWidgets import QHBoxLayout, QPushButton
-        from asset_browser.ui.detail_panel import make_section_box
-        from asset_browser.core.theme import (
+        from tumbletrove.asset_browser.ui.detail_panel import make_section_box
+        from tumbletrove.asset_browser.core.theme import (
             BUTTON_GHOST_STYLE, BUTTON_PRIMARY_STYLE, scaled,
         )
 
@@ -1173,7 +1171,7 @@ class DetailSectionBuilder:
         the widget's bottom-left when ``pos`` is None.
         """
         from PySide6.QtWidgets import QMenu
-        from asset_browser.core.theme import MENU_STYLE
+        from tumbletrove.asset_browser.core.theme import MENU_STYLE
 
         menu = QMenu(source_widget)
         menu.setStyleSheet(MENU_STYLE)

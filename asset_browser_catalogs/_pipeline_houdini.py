@@ -5,7 +5,7 @@ process:
 
 - :func:`run_on_main_thread` — schedule a callable on Houdini's main
   (GUI) thread without forcing each caller to re-import
-  ``_gui_singleshot`` and bake args into a default-arg closure.
+  ``gui_dispatch`` and bake args into a default-arg closure.
 - :class:`ProjectActivator` — switch ``TH_*`` env + the tumblepipe
   ``default_client`` singleton to a given project, with a fast path
   for the no-op case and a one-shot warning when the activated project
@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from asset_browser.core.projects import ProjectConfig
+from tumbletrove.asset_browser.core.projects import ProjectConfig
 
 log = logging.getLogger(__name__)
 
@@ -45,15 +45,15 @@ def run_on_main_thread(func: Callable, *args, **kwargs) -> None:
     """Schedule ``func(*args, **kwargs)`` on Houdini's main thread.
 
     Thin wrapper around
-    ``asset_browser.core.thumbnail._gui_singleshot`` that accepts args
+    ``tumbletrove.common.gui.gui_dispatch`` that accepts args
     and kwargs explicitly instead of forcing callers to construct a
     closure with default-arg capture (``def _do(p=path): ...``).
     """
-    from asset_browser.core.thumbnail import _gui_singleshot
+    from tumbletrove.common.gui import gui_dispatch
     if args or kwargs:
-        _gui_singleshot(lambda: func(*args, **kwargs))
+        gui_dispatch(lambda: func(*args, **kwargs))
     else:
-        _gui_singleshot(func)
+        gui_dispatch(func)
 
 
 class ProjectActivator:
