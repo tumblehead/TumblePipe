@@ -143,12 +143,14 @@ class PipelineSettingsWidget(QWidget):
             "Autosave (version up) on scene change"
         )
         self._autosave_checkbox.setToolTip(
-            "When opening a different workfile from the asset browser, "
-            "version-up-save the current scene first if it has unsaved "
-            "changes — instead of triggering Houdini's save-override "
-            "prompt. The current scene must have a pipeline context "
-            "(an entity URI / department / version); off-pipeline hips "
-            "fall back to the native prompt."
+            "When opening a different workfile from the asset browser and "
+            "the current scene has unsaved changes:\n"
+            "  • On — version-up-save it silently, no prompt.\n"
+            "  • Off — ask first; choosing Save still writes a NEW version "
+            "(it never overwrites the current workfile in place).\n"
+            "The current scene must have a pipeline context (an entity URI "
+            "/ department / version); off-pipeline hips fall back to "
+            "Houdini's native prompt."
         )
         self._autosave_checkbox.setChecked(
             self._catalog._prefs.autosave_on_scene_change
@@ -161,10 +163,12 @@ class PipelineSettingsWidget(QWidget):
         )
         self._auto_refresh_checkbox.setToolTip(
             "After opening a workfile from the asset browser, re-execute "
-            "every import node in the scene (import_asset, import_shot, "
-            "import_layer, import_rigs, build_comp, …) so their 'latest' "
-            "references pull in the newest published versions. Mirrors the "
-            "old Project Browser auto-refresh-on-open behavior."
+            "every import node in the scene (import_asset, import_assets, "
+            "import_shot, import_layer, import_rigs) so their 'latest' "
+            "references pull in the newest published versions. Runs in "
+            "manual update mode and does not re-cook create_model / "
+            "build_comp, so it re-resolves references without cooking the "
+            "whole workgraph."
         )
         self._auto_refresh_checkbox.setChecked(
             self._catalog._prefs.auto_refresh_on_open

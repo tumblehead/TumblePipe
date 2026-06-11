@@ -100,7 +100,8 @@ companion modules:
 - `_pipeline_workfiles.py` — workfile open / create lifecycle plus
   mtime / user-attribution helpers.
 - `_pipeline_scene.py` — scene-state lifecycle: save / publish /
-  reload / autosave-on-swap and the readonly hip-context helpers.
+  reload / save-before-swap (prompt or silent version-up) and the
+  readonly hip-context helpers.
 - `_pipeline_detail.py` — Qt widget construction for every section
   in the right-hand detail panel.
 - `_pipeline_thumbnails.py` — sidecar thumbnail read / write / refresh.

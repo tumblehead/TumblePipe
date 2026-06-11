@@ -58,13 +58,20 @@ class SceneManager:
         """Re-execute every import node in the loaded scene so the latest
         published versions flow in.
 
-        This restores the old project_browser auto-import/update-on-open
-        behavior (``main._refresh_scene``): each ``th::import_*`` /
-        ``th::create_model`` / ``th::build_comp`` node re-resolves its
-        ``latest`` reference and rewrites its prims/geometry. Only meant
-        to run on the GUI thread (it mutates the network), so callers
-        invoke it from inside the ``run_on_main_thread`` open tick, right
-        after :meth:`apply_scene_timeline`.
+        Restores the import side of the old project_browser
+        auto-import/update-on-open behavior (``main._refresh_scene``):
+        each ``th::import_*`` node re-resolves its ``latest`` reference
+        and rewrites its prims/geometry. Only meant to run on the GUI
+        thread (it mutates the network), so callers invoke it from inside
+        the ``run_on_main_thread`` open tick, right after
+        :meth:`apply_scene_timeline`.
+
+        Scoped to import nodes only. The old refresh also re-executed
+        ``th::create_model`` (rebuilds model metadata/geometry) and
+        ``th::build_comp`` (a COP comp) — both heavy, non-import nodes
+        that cooked large swaths of the graph on open without pulling in
+        any newer published version. They're intentionally excluded so a
+        plain open re-resolves references without cooking the comp.
 
         Each node type is wrapped in its own try/except: a single bad
         node (stale HDA, missing export, cross-project reference) must
@@ -74,26 +81,23 @@ class SceneManager:
         try:
             import tumblepipe.pipe.houdini.nodes as ns
             from tumblepipe.pipe.houdini.lops import (
-                create_model, import_shot, import_assets,
+                import_shot, import_assets,
                 import_asset, import_layer,
             )
             from tumblepipe.pipe.houdini.sops import import_rigs
-            from tumblepipe.pipe.houdini.cops import build_comp
         except Exception:
             log.exception("Auto-refresh: failed to import node wrappers")
             return
 
-        # (wrapper class, node type name, network context). Order mirrors
-        # the old _refresh_scene: metadata-generating create_model first,
-        # then the import nodes, then comp last.
+        # (wrapper class, node type name, network context). Import nodes
+        # only — create_model / build_comp are deliberately excluded (see
+        # docstring); they cook heavily without re-resolving references.
         node_specs = [
-            (create_model.CreateModel, "create_model", "Lop"),
             (import_shot.ImportShot, "import_shot", "Lop"),
             (import_assets.ImportAssets, "import_assets", "Lop"),
             (import_asset.ImportAsset, "import_asset", "Lop"),
             (import_layer.ImportLayer, "import_layer", "Lop"),
             (import_rigs.ImportRigs, "import_rigs", "Sop"),
-            (build_comp.BuildComp, "build_comp", "Cop"),
         ]
 
         executed = 0
@@ -459,28 +463,70 @@ class SceneManager:
             except Exception:
                 log.exception("Detail refresh callback failed")
 
-    def autosave_before_scene_swap(self) -> None:
-        """Version-up the current scene if the user opted in and there are
-        unsaved changes. Called from the scene-load paths to bypass
-        Houdini's "save changes?" prompt without losing the user's WIP.
+    def prepare_scene_swap(self):
+        """Handle the current scene's unsaved changes before a scene swap.
 
-        No-op when the pref is off, when the hip is clean, or when the
-        current scene has no pipeline context (untitled, off-pipeline,
-        etc. — falling back to Houdini's native prompt is safer than
-        silently writing to an unknown location).
+        Opening a workfile swaps the whole Houdini scene, so the loaded
+        scene's unsaved changes must be dealt with first. Houdini's
+        native save prompt would overwrite the *current* version in
+        place — which the pipeline never wants — so we intercept it here
+        and make "save" mean "save a NEW version".
+
+        Returns:
+            ``None``  — the user cancelled; the caller must abort the swap.
+            ``True``  — handled here (saved a new version, discarded, or
+                        the scene was already clean); the caller should
+                        load with ``suppress_save_prompt=True``.
+            ``False`` — the current scene has no pipeline context to
+                        version up (untitled / off-pipeline); the caller
+                        should let Houdini's native prompt handle it
+                        rather than risk writing to an unknown location.
         """
-        if not self._catalog._prefs.autosave_on_scene_change:
-            return
         try:
             import hou
             if not hou.hipFile.hasUnsavedChanges():
-                return
+                return True
         except Exception:
-            return
-        # _save_current_scene already guards on context + activates the
-        # correct project, and is safe to call on the GUI thread.
+            return True
+
+        # Untitled / off-pipeline scenes have no version to bump — defer
+        # to Houdini's native prompt rather than guessing a destination.
+        if self.get_loaded_scene_context() is None:
+            return False
+
+        # Opt-in: version up silently, no prompt.
+        if self._catalog._prefs.autosave_on_scene_change:
+            try:
+                self.save_current_scene()
+            except Exception:
+                log.exception("Autosave on scene change failed")
+            return True
+
+        # Otherwise ask — but "Save" always means a new version, never an
+        # in-place overwrite of the current workfile.
         try:
-            self.save_current_scene()
+            import hou
+            choice = hou.ui.displayMessage(
+                "The current scene has unsaved changes.\n\n"
+                "Save a new version before switching?",
+                buttons=("Save new version", "Discard changes", "Cancel"),
+                severity=hou.severityType.ImportantMessage,
+                default_choice=0,
+                close_choice=2,
+                title="Save Scene",
+            )
         except Exception:
-            log.exception("Autosave on scene change failed")
+            # Can't prompt — fall back to Houdini's native prompt rather
+            # than silently discarding the user's work.
+            return False
+
+        if choice == 0:
+            try:
+                self.save_current_scene()
+            except Exception:
+                log.exception("Save on scene change failed")
+            return True
+        if choice == 1:
+            return True  # discard: suppress the native prompt too
+        return None  # cancel
 

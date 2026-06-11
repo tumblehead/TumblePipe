@@ -314,15 +314,24 @@ class WorkfileManager:
         def _do_load(target_proj=proj):
             try:
                 import hou
+                from tumblepipe.pipe.houdini import util
+                decision = self._catalog._scene.prepare_scene_swap()
+                if decision is None:
+                    return  # user cancelled the save prompt
                 self._catalog._activate_project(target_proj)
-                hou.hipFile.load(path_str)
-                log.info("Opened workfile: %s", path_str)
+                # Manual update mode so neither the load, the
+                # hou.setFrame() in apply_scene_timeline, nor the import
+                # re-execute triggers a live full-graph cook. Mirrors
+                # the old Project Browser open flow (main.py).
+                with util.update_mode(hou.updateMode.Manual):
+                    hou.hipFile.load(path_str, suppress_save_prompt=decision)
+                    log.info("Opened workfile: %s", path_str)
+                    self._catalog._scene.apply_scene_timeline(asset_id)
+                    if self._catalog._prefs.auto_refresh_on_open:
+                        self._catalog._scene.refresh_scene_imports()
             except Exception:
                 log.exception("Failed to load %s", path_str)
                 return
-            self._catalog._scene.apply_scene_timeline(asset_id)
-            if self._catalog._prefs.auto_refresh_on_open:
-                self._catalog._scene.refresh_scene_imports()
             if callable(refresh_cb):
                 try:
                     refresh_cb()
@@ -708,16 +717,25 @@ class WorkfileManager:
                 def _do_load(p=hip_path, target_proj=proj):
                     try:
                         import hou
-                        self._catalog._scene.autosave_before_scene_swap()
+                        from tumblepipe.pipe.houdini import util
+                        decision = self._catalog._scene.prepare_scene_swap()
+                        if decision is None:
+                            return  # user cancelled the save prompt
                         self._catalog._activate_project(target_proj)
-                        hou.hipFile.load(str(p))
-                        log.info("Opened workfile: %s", p)
+                        # Manual update mode so neither the load, the
+                        # hou.setFrame() in apply_scene_timeline, nor the
+                        # import re-execute triggers a live full-graph
+                        # cook. Mirrors the old Project Browser open flow
+                        # (main.py).
+                        with util.update_mode(hou.updateMode.Manual):
+                            hou.hipFile.load(str(p), suppress_save_prompt=decision)
+                            log.info("Opened workfile: %s", p)
+                            self._catalog._scene.apply_scene_timeline(asset_id)
+                            if self._catalog._prefs.auto_refresh_on_open:
+                                self._catalog._scene.refresh_scene_imports()
                     except Exception:
                         log.exception("Failed to load workfile %s", p)
                         return
-                    self._catalog._scene.apply_scene_timeline(asset_id)
-                    if self._catalog._prefs.auto_refresh_on_open:
-                        self._catalog._scene.refresh_scene_imports()
                     self._catalog._request_global_detail_refresh()
 
                 run_on_main_thread(_do_load)
@@ -764,18 +782,27 @@ class WorkfileManager:
                 def _do_load(p=hip_path, target_proj=proj):
                     try:
                         import hou
-                        self._catalog._scene.autosave_before_scene_swap()
+                        from tumblepipe.pipe.houdini import util
+                        decision = self._catalog._scene.prepare_scene_swap()
+                        if decision is None:
+                            return  # user cancelled the save prompt
                         self._catalog._activate_project(target_proj)
-                        hou.hipFile.load(str(p))
-                        log.info("Opened group workfile: %s", p)
+                        # Manual update mode so neither the load, the
+                        # hou.setFrame() in apply_scene_timeline, nor the
+                        # import re-execute triggers a live full-graph
+                        # cook. Mirrors the old Project Browser open flow
+                        # (main.py).
+                        with util.update_mode(hou.updateMode.Manual):
+                            hou.hipFile.load(str(p), suppress_save_prompt=decision)
+                            log.info("Opened group workfile: %s", p)
+                            self._catalog._scene.apply_scene_timeline(asset_id)
+                            if self._catalog._prefs.auto_refresh_on_open:
+                                self._catalog._scene.refresh_scene_imports()
                     except Exception:
                         log.exception(
                             "Failed to load group workfile %s", p,
                         )
                         return
-                    self._catalog._scene.apply_scene_timeline(asset_id)
-                    if self._catalog._prefs.auto_refresh_on_open:
-                        self._catalog._scene.refresh_scene_imports()
                     self._catalog._request_global_detail_refresh()
 
                 run_on_main_thread(_do_load)
