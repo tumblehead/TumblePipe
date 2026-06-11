@@ -2883,6 +2883,7 @@ class PipelineCatalog(Catalog):
                         detail=latest,
                         icon=DEPT_ICONS.get(dept_name, "package"),
                         action_id=f"open_workfile:{dept_name}",
+                        dismiss_on_click=True,
                     ))
                 else:
                     cards.append(DeckItem(
@@ -2937,6 +2938,7 @@ class PipelineCatalog(Catalog):
                     detail="ⓜ",
                     icon=_icon_for(dept_name),
                     action_id=f"open_workfile:{dept_name}",
+                    dismiss_on_click=True,
                     tint=_GROUP_ACCENT_COLOR,
                     tooltip=(
                         f"{short} — covered by Multi: {group_label}\n"
@@ -2954,6 +2956,7 @@ class PipelineCatalog(Catalog):
                     detail=version,
                     icon=_icon_for(dept_name),
                     action_id=f"open_workfile:{dept_name}",
+                    dismiss_on_click=True,
                 ))
             else:
                 cards.append(DeckItem(
