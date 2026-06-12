@@ -470,7 +470,7 @@ class DatabaseTransaction:
 
 def _json_path_parts(path) -> list[int | str]:
     """Convert JsonPath to list of keys/indices"""
-    from ..views.json_editor import JsonPathRoot, JsonPathField, JsonPathIndex
+    from .json_editor import JsonPathRoot, JsonPathField, JsonPathIndex
 
     parts = []
     while True:

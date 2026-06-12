@@ -5,7 +5,7 @@ from typing import Optional
 
 from qtpy import QtWidgets, QtCore, QtGui
 
-from ..viewers.usd_viewer import USDViewerLauncher, USDViewerType
+from .usd_viewer import USDViewerLauncher, USDViewerType
 
 
 class USDViewerSettingsDialog(QtWidgets.QDialog):

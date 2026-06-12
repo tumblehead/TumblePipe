@@ -20,7 +20,7 @@ TumblePipe/
 │   ├── pythonrc.py
 │   └── uiready.py
 ├── python_panels/
-│   └── project_browser.pypanel  # The project browser Python panel
+│   └── icon_browser.pypanel     # Icon browser Python panel
 ├── resolver/                    # Pre-built USD asset resolver (native)
 ├── resolver-src/                # Source for the `entity://` USD resolver
 ├── resources/                   # Icons, UI resources, templates

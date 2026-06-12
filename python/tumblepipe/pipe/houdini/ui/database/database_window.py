@@ -14,13 +14,13 @@ from qtpy.QtWidgets import (
 from tumblepipe.util.uri import Uri
 from tumblepipe.api import refresh_global_cache
 
-from ..utils.database_adapter import DatabaseAdapter
-from ..views.json_editor import JsonView
-from ..views.database_uri_view import DatabaseUriView
+from .database_adapter import DatabaseAdapter
+from .json_editor import JsonView
+from .database_uri_view import DatabaseUriView
 
 
 class DatabaseWindow(QMainWindow):
-    """Non-modal database editor window for project_browser integration"""
+    """Non-modal database editor window"""
 
     data_changed = Signal(object)
     window_closed = Signal()
@@ -152,8 +152,8 @@ class DatabaseWindow(QMainWindow):
         new_properties = self._json_view.to_json()
 
         if self._uri.purpose == 'schemas' and self._uri.segments:
-            from ..utils.schema_migration import build_migration, apply_migration
-            from ..dialogs.schema_migration_dialog import SchemaMigrationDialog
+            from .schema_migration import build_migration, apply_migration
+            from .schema_migration_dialog import SchemaMigrationDialog
 
             old_properties = self._original_properties or {}
 
@@ -236,7 +236,7 @@ class DatabaseWindow(QMainWindow):
 
     def _on_uri_change(self, change):
         """Handle entity add/remove/rename in URI tree"""
-        from ..views.database_uri_view import (
+        from .database_uri_view import (
             UriChangeEntity,
             EntityOpInsert,
             EntityOpRemove,

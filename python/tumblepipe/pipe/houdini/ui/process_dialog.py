@@ -5,9 +5,9 @@ from typing import Callable
 from qtpy import QtWidgets
 from qtpy.QtCore import Qt, Signal
 
-from ..models.process_task import ProcessTask, ProcessTaskTreeModel, TaskStatus, TASK_ROLE, IS_ENTITY_ROLE, ENTITY_URI_ROLE
-from ..utils.process_executor import ProcessExecutor
-from ..helpers import has_staged_export
+from .process_task import ProcessTask, ProcessTaskTreeModel, TaskStatus, TASK_ROLE, IS_ENTITY_ROLE, ENTITY_URI_ROLE
+from .process_executor import ProcessExecutor
+from .helpers import has_staged_export
 
 
 class ProcessDialog(QtWidgets.QDialog):
@@ -553,7 +553,7 @@ class ProcessDialog(QtWidgets.QDialog):
         """Open the latest staged export file in USD viewer."""
         import hou
         from tumblepipe.pipe.paths import get_latest_staged_file_path
-        from ..viewers.usd_viewer import USDViewerLauncher, USDViewerType
+        from .usd_viewer import USDViewerLauncher, USDViewerType
 
         try:
             export_file = get_latest_staged_file_path(

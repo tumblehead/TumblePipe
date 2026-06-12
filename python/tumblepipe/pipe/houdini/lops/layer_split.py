@@ -171,7 +171,7 @@ class LayerSplit(ns.Node):
         if force_local:
             return self._execute()
         # Open ProcessDialog
-        from tumblepipe.pipe.houdini.ui.project_browser.utils.process_executor import (
+        from tumblepipe.pipe.houdini.ui.process_executor import (
             open_process_dialog_for_node
         )
         open_process_dialog_for_node(self, dialog_title="Export Shared Layer")
@@ -402,7 +402,7 @@ def validate():
         )
         return
 
-    from tumblepipe.pipe.houdini.ui.project_browser.dialogs.validation_dialog import (
+    from tumblepipe.pipe.houdini.ui.validation_dialog import (
         ValidationConfirmDialog,
     )
     entity_name = uri_str.rsplit('/', 1)[-1] if uri_str else 'unknown'

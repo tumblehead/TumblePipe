@@ -13,6 +13,7 @@ module provides the small surface the rest of the pipeline uses:
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import os
 from pathlib import Path
 
@@ -27,6 +28,49 @@ def set_latest_mode(enabled: bool) -> None:
 
 def get_latest_mode() -> bool:
     return os.environ.get(LATEST_MODE_ENV_VAR, "0") == "1"
+
+
+_defer_depth = 0
+_refresh_pending = False
+
+
+def refresh_context() -> None:
+    """Invalidate USD's resolver caches so the next composition re-resolves
+    every entity:// URI (picking up latest-mode flips and newly published
+    versions).
+
+    This is global - it dirties every composed stage in the session - so it
+    is expensive in large scenes. Inside a :func:`deferred_refresh` block the
+    call is recorded instead, and a single refresh runs when the outermost
+    block exits.
+    """
+    global _refresh_pending
+    if _defer_depth > 0:
+        _refresh_pending = True
+        return
+    from pxr import Ar
+    Ar.GetResolver().RefreshContext(Ar.ResolverContext())
+
+
+@contextmanager
+def deferred_refresh():
+    """Collapse refresh_context() calls in the block into one refresh.
+
+    Used by batch operations (e.g. re-executing every import node on
+    workfile open) where each node requests a refresh but one invalidation
+    at the end is sufficient. No refresh runs if nothing requested one.
+    Re-entrant: nested blocks defer to the outermost exit.
+    """
+    global _defer_depth, _refresh_pending
+    _defer_depth += 1
+    try:
+        yield
+    finally:
+        _defer_depth -= 1
+        if _defer_depth == 0 and _refresh_pending:
+            _refresh_pending = False
+            from pxr import Ar
+            Ar.GetResolver().RefreshContext(Ar.ResolverContext())
 
 
 def resolve_entity_uri(uri: str) -> str:

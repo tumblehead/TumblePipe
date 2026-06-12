@@ -1,14 +1,15 @@
 """Slim submit-jobs dialog for the TumblePipe asset-browser catalog.
 
-A compact PySide6 alternative to the project-browser ``JobSubmissionDialog``.
+A compact dialog (this replaced the retired Project Browser's
+``JobSubmissionDialog``).
 One shared form drives publish + render submission for all selected entities;
 defaults are seeded from the first entity's properties.
 
 Submission is synchronous and per-entity — each call to
 ``tumblepipe.farm.jobs.houdini.batch_submit.submit_entity_batch`` runs on the
 caller's thread, and the dialog reports a single success/failure summary at the
-end. For a richer per-task progress UI, fall back to the project browser's
-ProcessDialog flow.
+end. For a richer per-task progress UI, use the ProcessDialog flow in
+``tumblepipe.pipe.houdini.ui.process_dialog``.
 """
 
 from __future__ import annotations

@@ -1350,7 +1350,7 @@ class PipelineCatalog(Catalog):
             return
         try:
             from tumblepipe.api import default_client
-            from tumblepipe.pipe.houdini.ui.project_browser.windows import (
+            from tumblepipe.pipe.houdini.ui.database import (
                 DatabaseWindow,
             )
 

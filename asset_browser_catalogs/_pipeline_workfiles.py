@@ -127,8 +127,8 @@ class WorkfileManager:
         """Read the user attribution for a specific dept/version.
 
         Reads ``{dept_dir}/_context/{version}.json`` directly instead
-        of going through ``tumblehead.pipe.houdini.ui.project_browser.helpers
-        .get_user_from_context``, which would re-resolve the path
+        of going through ``ui.helpers.get_user_from_context``,
+        which would re-resolve the path
         through the cached single-project ``tumblehead.pipe.paths``
         functions and miss cross-project switches.
         """
@@ -218,7 +218,7 @@ class WorkfileManager:
     @staticmethod
     def format_relative_time(timestamp) -> str:
         """Format a datetime as 'Ns/m/h/d/w/mo/y ago'. Cloned from
-        ``tumblehead.pipe.houdini.ui.project_browser.helpers``."""
+        ``ui.helpers.format_relative_time``."""
         if timestamp is None:
             return ""
         import datetime as dt
@@ -322,7 +322,7 @@ class WorkfileManager:
                 # Manual update mode so neither the load, the
                 # hou.setFrame() in apply_scene_timeline, nor the import
                 # re-execute triggers a live full-graph cook. Mirrors
-                # the old Project Browser open flow (main.py).
+                # the open flow of the since-retired Project Browser.
                 with util.update_mode(hou.updateMode.Manual):
                     hou.hipFile.load(path_str, suppress_save_prompt=decision)
                     log.info("Opened workfile: %s", path_str)
@@ -441,7 +441,7 @@ class WorkfileManager:
                 template_applied = False
                 if template_path is not None and Path(template_path).exists():
                     try:
-                        from tumblepipe.pipe.houdini.ui.project_browser.helpers import (
+                        from tumblepipe.pipe.houdini.ui.helpers import (
                             load_module,
                         )
                         stage = hou.node("/stage")
@@ -725,8 +725,8 @@ class WorkfileManager:
                         # Manual update mode so neither the load, the
                         # hou.setFrame() in apply_scene_timeline, nor the
                         # import re-execute triggers a live full-graph
-                        # cook. Mirrors the old Project Browser open flow
-                        # (main.py).
+                        # cook. Mirrors the open flow of the since-retired
+                        # Project Browser.
                         with util.update_mode(hou.updateMode.Manual):
                             hou.hipFile.load(str(p), suppress_save_prompt=decision)
                             log.info("Opened workfile: %s", p)
@@ -790,8 +790,8 @@ class WorkfileManager:
                         # Manual update mode so neither the load, the
                         # hou.setFrame() in apply_scene_timeline, nor the
                         # import re-execute triggers a live full-graph
-                        # cook. Mirrors the old Project Browser open flow
-                        # (main.py).
+                        # cook. Mirrors the open flow of the since-retired
+                        # Project Browser.
                         with util.update_mode(hou.updateMode.Manual):
                             hou.hipFile.load(str(p), suppress_save_prompt=decision)
                             log.info("Opened group workfile: %s", p)
@@ -969,7 +969,7 @@ class WorkfileManager:
                 # Run the department template against /stage
                 if template_path is not None and Path(template_path).exists():
                     try:
-                        from tumblepipe.pipe.houdini.ui.project_browser.helpers import (
+                        from tumblepipe.pipe.houdini.ui.helpers import (
                             load_module,
                         )
                         stage = hou.node("/stage")

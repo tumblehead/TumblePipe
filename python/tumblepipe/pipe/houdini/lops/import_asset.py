@@ -196,7 +196,6 @@ class ImportAsset(ns.Node):
         version_name = self.get_version_name()
 
         from tumblepipe import resolver
-        from pxr import Ar
 
         # Build the entity URI we want to resolve. 'latest' leaves the version
         # unpinned and turns on latest_mode so any nested entity:// URIs inside
@@ -220,7 +219,7 @@ class ImportAsset(ns.Node):
             staged_uri = f"{asset_uri}?variant={variant_name}&version={pinned_version}"
 
         # Invalidate cached nested resolutions so the new mode takes effect
-        Ar.GetResolver().RefreshContext(Ar.ResolverContext())
+        resolver.refresh_context()
 
         # Resolve via the entity resolver and feed the inner sublayer LOP a
         # plain filesystem path. The URI form does not survive Houdini's

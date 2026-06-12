@@ -19,8 +19,8 @@ from tumblepipe.pipe.houdini.lops import export_layer, layer_split
 from tumblepipe.pipe.houdini.sops import export_rig
 import tumblepipe.pipe.houdini.nodes as ns
 
-from ..models.process_task import ProcessTask, TaskStatus
-from ..helpers import get_entity_type
+from .process_task import ProcessTask, TaskStatus
+from .helpers import get_entity_type
 
 api = default_client()
 
@@ -198,7 +198,7 @@ class ProcessExecutor(QObject):
 
         except Exception as e:
             # Check if this is a user-initiated cancellation (no error dialog needed)
-            from ..dialogs.validation_dialog import ValidationCancelled
+            from .validation_dialog import ValidationCancelled
             if isinstance(e, ValidationCancelled):
                 task.status = TaskStatus.SKIPPED
                 # Don't emit task_failed - this was intentional
@@ -271,7 +271,7 @@ class ProcessExecutor(QObject):
 
             except Exception as e:
                 # Check if this is a user-initiated cancellation
-                from ..dialogs.validation_dialog import ValidationCancelled
+                from .validation_dialog import ValidationCancelled
                 if isinstance(e, ValidationCancelled):
                     child.status = TaskStatus.SKIPPED
                     raise  # Re-raise to skip parent task too
@@ -906,7 +906,7 @@ def _create_validation_task(
     def validate_local_fn():
         from tumblepipe.pipe.houdini.validators import validate_stage_for_department
         from tumblepipe.pipe.houdini.validators.base import ValidationResult
-        from ..dialogs.validation_dialog import ValidationConfirmDialog, ValidationCancelled
+        from .validation_dialog import ValidationConfirmDialog, ValidationCancelled
         import hou
 
         # Collect all validation results
@@ -1411,7 +1411,7 @@ def open_process_dialog_for_node(export_node, dialog_title: str = "Export") -> N
     """
     import hou
     from tumblepipe.pipe.paths import get_workfile_context
-    from ..dialogs.process_dialog import ProcessDialog
+    from .process_dialog import ProcessDialog
 
     file_path = Path(hou.hipFile.path())
     context = get_workfile_context(file_path)

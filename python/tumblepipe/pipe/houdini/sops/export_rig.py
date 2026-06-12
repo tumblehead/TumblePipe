@@ -93,7 +93,7 @@ class ExportRig(ns.Node):
         if force_local:
             return self._execute()
         # Open ProcessDialog
-        from tumblepipe.pipe.houdini.ui.project_browser.utils.process_executor import (
+        from tumblepipe.pipe.houdini.ui.process_executor import (
             open_process_dialog_for_node
         )
         open_process_dialog_for_node(self, dialog_title="Export Rig")

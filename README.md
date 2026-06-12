@@ -43,7 +43,7 @@ ships a working example.
 - `python/tumblepipe/` — pipeline Python modules.
 - `python3.Xlibs/` — per-Python-version libraries and Houdini startup hooks.
 - `scripts/` — TumbleTrove `tt_setup` wizard and bundled project template.
-- `python_panels/` — Python panels (project browser).
+- `python_panels/` — Python panels (icon browser).
 - `desktop/` — Houdini desktop layout.
 - `resources/`, `ocio/` — resource files and OpenColorIO configuration.
 - `resolver-src/` — source for the `entity://` USD asset resolver.

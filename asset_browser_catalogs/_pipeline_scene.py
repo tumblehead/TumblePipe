@@ -85,6 +85,7 @@ class SceneManager:
                 import_asset, import_layer,
             )
             from tumblepipe.pipe.houdini.sops import import_rigs
+            from tumblepipe import resolver
         except Exception:
             log.exception("Auto-refresh: failed to import node wrappers")
             return
@@ -100,26 +101,31 @@ class SceneManager:
             (import_rigs.ImportRigs, "import_rigs", "Sop"),
         ]
 
+        # Each import_shot / import_asset execute() requests a global
+        # resolver-cache refresh (it dirties every composed stage in the
+        # session). Defer them so the whole batch costs one refresh at the
+        # end instead of one per node.
         executed = 0
-        for wrapper_cls, type_name, context in node_specs:
-            try:
-                nodes = ns.list_by_node_type(type_name, context)
-            except Exception:
-                log.exception(
-                    "Auto-refresh: listing %s nodes failed", type_name,
-                )
-                continue
-            for native in nodes:
+        with resolver.deferred_refresh():
+            for wrapper_cls, type_name, context in node_specs:
                 try:
-                    node = wrapper_cls(native)
-                    if not node.is_valid():
-                        continue
-                    node.execute()
-                    executed += 1
+                    nodes = ns.list_by_node_type(type_name, context)
                 except Exception:
                     log.exception(
-                        "Auto-refresh: executing %s node failed", type_name,
+                        "Auto-refresh: listing %s nodes failed", type_name,
                     )
+                    continue
+                for native in nodes:
+                    try:
+                        node = wrapper_cls(native)
+                        if not node.is_valid():
+                            continue
+                        node.execute()
+                        executed += 1
+                    except Exception:
+                        log.exception(
+                            "Auto-refresh: executing %s node failed", type_name,
+                        )
 
         if executed:
             log.info("Auto-refresh: re-executed %d import node(s)", executed)
@@ -176,9 +182,14 @@ class SceneManager:
         def _do_reload(proj=target_proj):
             try:
                 import hou
+                from tumblepipe.pipe.houdini import util
                 if proj is not None:
                     self._catalog._activate_project(proj)
-                hou.hipFile.load(hip)
+                # Manual update mode so the reload itself doesn't trigger
+                # a live full-graph cook - same guard as the three open
+                # paths in WorkfileManager.
+                with util.update_mode(hou.updateMode.Manual):
+                    hou.hipFile.load(hip)
                 log.info("Reloaded scene: %s", hip)
                 self._catalog._request_global_detail_refresh()
             except Exception:

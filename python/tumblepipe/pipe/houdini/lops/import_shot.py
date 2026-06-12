@@ -633,7 +633,6 @@ class ImportShot(ns.Node):
         variant_name = self.get_variant_name()
 
         from tumblepipe import resolver
-        from pxr import Ar
 
         if version_name == 'latest':
             # Enable resolver latest mode for full cascade semantics
@@ -650,8 +649,7 @@ class ImportShot(ns.Node):
             staged_file_path = get_staged_file_path(shot_uri, version_name, variant_name)
 
         # Refresh resolver cache to ensure fresh resolution with the new mode
-        resolver = Ar.GetResolver()
-        resolver.RefreshContext(Ar.ResolverContext())
+        resolver.refresh_context()
 
         if staged_file_path is None or not staged_file_path.exists():
             # No staged build yet - set empty state and return

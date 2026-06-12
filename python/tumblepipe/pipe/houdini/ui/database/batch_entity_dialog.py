@@ -3,7 +3,7 @@ from qtpy.QtCore import Qt, Signal
 
 from tumblepipe.config.schema import Schema, apply_defaults
 from tumblepipe.util.uri import Uri
-from tumblepipe.pipe.houdini.ui.project_browser.models.batch_entity import BatchEntityTableModel
+from .batch_entity_model import BatchEntityTableModel
 
 
 class BatchEntityDialog(QtWidgets.QDialog):

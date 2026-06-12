@@ -45,7 +45,7 @@ def _add_entity_action(widget, item, api=None, on_created=None):
 
     # Use batch dialog for all purposes with segments (not just entity)
     if api is not None and uri.segments:
-        from ..dialogs.batch_entity import BatchEntityDialog
+        from .batch_entity_dialog import BatchEntityDialog
         path = list(uri.segments)
         purpose = uri.purpose
         dialog = BatchEntityDialog(api, path, purpose=purpose, parent=widget)

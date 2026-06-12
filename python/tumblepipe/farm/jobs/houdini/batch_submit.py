@@ -1,4 +1,4 @@
-"""Batch job submission for the project browser dialog.
+"""Batch job submission for the catalog Submit Jobs dialog.
 
 This module orchestrates the creation and submission of publish and render jobs
 based on the job submission dialog configuration.
