@@ -67,7 +67,7 @@
                 "assets": {
                     "properties": {
                         "animatable": false,
-                        "frame_end": 1001
+                        "frame_end": 1200
                     },
                     "children": {
                         "category": {

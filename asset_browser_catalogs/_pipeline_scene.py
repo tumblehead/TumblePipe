@@ -40,11 +40,11 @@ class SceneManager:
         behavior so opening a shot workfile through the asset browser
         lands with the correct timeline.
 
-        Assets inherit the base-entity frame-range default from the
-        schema, so they resolve a degenerate single-frame range
-        (1001-1001) and land on a single-frame timeline. Only entities
-        whose config can't be resolved at all get FPS-only treatment
-        (``_get_frame_range_obj`` returns ``None``).
+        Assets resolve the asset frame-range default from the schema
+        (1001-1200) and land on that working range; shots resolve their
+        own range. Only entities whose config can't be resolved at all
+        get FPS-only treatment (``_get_frame_range_obj`` returns
+        ``None``).
         """
         from tumblepipe.pipe.houdini import util
         frame_range = self._catalog._get_frame_range_obj(asset_id)

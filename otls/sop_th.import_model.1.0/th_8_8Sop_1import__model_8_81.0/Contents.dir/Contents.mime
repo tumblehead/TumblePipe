@@ -447,6 +447,18 @@ Content-Type: text/plain
 
 	 length = 0 expr = $FF }
     }
+    channel timesample {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = strcmp(chs(\"../timesample\"),\"animated\")==0 }
+    }
+    channel staticimportframe {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../staticimportframe\") }
+    }
   }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -461,9 +473,9 @@ excludeinactiveprims	[ 0	locks=0 ]	(	"on"	)
 purpose	[ 0	locks=0 ]	(	proxy	)
 importtraversal	[ 0	locks=0 ]	(	none	)
 striplayers	[ 0	locks=0 ]	(	"off"	)
-timesample	[ 0	locks=0 ]	(	"animated"	)
+timesample	[ 0	locks=0 ]	(	[ timesample	static ] 	)
 importframe	[ 0	locks=0 ]	(	[ importframe	0 ] 	)
-staticimportframe	[ 0	locks=0 ]	(	1001	)
+staticimportframe	[ 0	locks=0 ]	(	[ staticimportframe	1001 ] 	)
 sepparm	[ 0	locks=0 ]	(	)
 addpathattrib	[ 0	locks=0 ]	(	"on"	)
 pathattrib	[ 0	locks=0 ]	(	path	)

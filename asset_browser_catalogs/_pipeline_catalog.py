@@ -1338,8 +1338,6 @@ class PipelineCatalog(Catalog):
             severity=hou.severityType.Message,
         )
 
-    _database_window = None  # singleton DatabaseWindow
-
     def _open_database_editor(self, asset_id: str) -> None:
         """Open the pipeline DatabaseWindow with the entity pre-selected."""
         proj = self._resolver.project_for(asset_id)
@@ -1347,27 +1345,17 @@ class PipelineCatalog(Catalog):
             self._activate_project(proj)
         uri = self._resolver.uri_for(asset_id)
         if uri is None:
-            return
-        try:
-            from tumblepipe.api import default_client
-            from tumblepipe.pipe.houdini.ui.database import (
-                DatabaseWindow,
-            )
-
             import hou
-            parent = hou.qt.mainWindow()
-            # Reuse or create the singleton window
-            w = PipelineCatalog._database_window
-            if w is None or not w.isVisible():
-                api = default_client()
-                w = DatabaseWindow(api, parent=parent)
-                PipelineCatalog._database_window = w
-            w.select_entity(uri)
-            w.show()
-            w.raise_()
-            w.activateWindow()
-        except Exception:
-            log.exception("Failed to open database editor for %s", asset_id)
+            hou.ui.displayMessage(
+                f"Could not resolve a database entity for '{asset_id}'.",
+                severity=hou.severityType.Warning,
+            )
+            return
+        # Delegate to the shared singleton launcher so the shelf tool and
+        # this action open the same window. The launcher surfaces any
+        # error to the user instead of failing silently.
+        from tumblepipe.pipe.houdini.ui.database import open_database_editor
+        open_database_editor(uri)
 
     def _edit_description(self, asset_id: str) -> None:
         """Open a multiline text dialog to edit the description sidecar."""

@@ -93,6 +93,24 @@
             type    toggle
             default { "1" }
         }
+        parm {
+            name    "timesample"
+            label   "Frame Mode"
+            type    string
+            default { "static" }
+            menu {
+                "static"    "Static"
+                "animated"  "Animated"
+            }
+        }
+        parm {
+            name    "staticimportframe"
+            label   "Import Frame"
+            type    integer
+            default { "1001" }
+            disablewhen "{ timesample == animated }"
+            range   { 1001 1200 }
+        }
     }
 
     groupsimple {

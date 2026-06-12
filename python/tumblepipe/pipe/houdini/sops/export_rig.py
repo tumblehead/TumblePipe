@@ -121,6 +121,17 @@ class ExportRig(ns.Node):
         version_path.mkdir(parents=True, exist_ok=True)
         export_node.parm('execute').pressButton()
 
+        # The export node saves synchronously (foreground), so once pressButton
+        # returns the cache must exist. A missing file means the cook failed -
+        # raise so the process dialog marks the task Failed with a clear reason
+        # instead of writing a context that points at nothing (or appearing to
+        # hang).
+        if not output_file_path.exists():
+            raise RuntimeError(
+                f"Rig export produced no output file: {output_file_path}. "
+                f"Check the export node for cook errors."
+            )
+
         # Write context
         save_layer_context(
             target_path=version_path,
