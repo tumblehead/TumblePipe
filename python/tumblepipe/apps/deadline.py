@@ -343,6 +343,34 @@ class Job:
             result['EnvironmentFile'] = path_str(env_file_path)
         return result
 
+    def hpm_manifest_text(self):
+        """The hpm.toml the HPM plugin installs on a worker cache miss.
+
+        Authored here at submit time and bundled in the shared job dir (see
+        Deadline.submit) so the resolved package set is a first-class job
+        artifact reachable by the farm, rather than generated ad-hoc in
+        worker-local temp. Returns None for non-HPM jobs.
+
+        The [package].path field is required — hpm refuses to load a manifest
+        without it. The dependency uses a bare version (exact registry
+        get_version fetch); a "=" prefix is sent verbatim into the registry
+        query and 404s.
+        """
+        if self._plugin != 'HPM':
+            return None
+        package_spec, _ = hpm_package_spec(self._script_path)
+        name, _, version = package_spec.partition('@')
+        return (
+            '[package]\n'
+            'path = "local/deadline-hpm-job"\n'
+            'name = "deadline-hpm-job"\n'
+            'version = "0.0.0"\n\n'
+            '[compat]\n'
+            'houdini = ">=21, <99"\n\n'
+            '[dependencies]\n'
+            f'{name} = "{version}"\n'
+        )
+
 DEADLINE_PATH = None
 REPOSITORY_PATH = None
 POOL_NAMES = None
@@ -503,10 +531,20 @@ class Deadline:
                 job_path /
                 f'{str(job_index).zfill(2)}_plugin_info.job'
             )
-            _write_key_value(
-                plugin_info_path,
-                job.plugin_info(job_path, env_file_path)
-            )
+            plugin_info = job.plugin_info(job_path, env_file_path)
+
+            # Bundle the HPM manifest into the shared job dir (a reachable job
+            # artifact) and point the plugin at it via the Manifest entry.
+            manifest_text = job.hpm_manifest_text()
+            if manifest_text is not None:
+                manifest_path = (
+                    job_path /
+                    f'{str(job_index).zfill(2)}_hpm.toml'
+                )
+                manifest_path.write_text(manifest_text)
+                plugin_info['Manifest'] = path_str(to_windows_path(manifest_path))
+
+            _write_key_value(plugin_info_path, plugin_info)
 
             # Copy files to workspace
             for from_path, rel_to_path in job.paths.items():

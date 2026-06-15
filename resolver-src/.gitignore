@@ -1,1 +1,9 @@
+# Cargo build output.
 /target/
+
+# CMake out-of-source build dir (README: `cmake -B build -S .`); cargo's
+# staticlib also lands under build/rust-target/. Cover the per-Houdini and
+# IDE-named variants too.
+/build/
+/build-*/
+/cmake-build-*/
