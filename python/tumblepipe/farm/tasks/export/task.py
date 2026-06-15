@@ -18,7 +18,7 @@ from tumblepipe.farm.tasks.env import get_base_env
 from tumblepipe.util.io import store_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.naming import random_name
-from tumblepipe.apps.deadline import Job as Task
+from tumblepipe.farm.deadline import Task
 from tumblepipe.config.timeline import BlockRange
 
 api = default_client()

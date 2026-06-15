@@ -53,27 +53,34 @@ For the **HPM** plugin specifically:
 
 ## Submitting a job from TumblePipe
 
-`tumblepipe.apps.deadline` wraps `deadlinecommand` with three primitives:
+`tumblepipe.apps.deadline` is a generic `deadlinecommand` wrapper:
 
 - `Job` — a single task (script + optional `requirements.txt` + args).
 - `Batch` — a named collection of jobs with optional dependencies.
 - `Deadline` — the submission client.
 
+It is intentionally HPM-agnostic. Farm jobs use the thin factory
+`tumblepipe.farm.deadline.Task`, which builds a `Job` **and** generates the
+HPM `hpm.toml` manifest for it (the manifest the worker installs to resolve the
+task's package). `submit()` writes that manifest into the shared job dir and
+hands the plugin only its path — generation is owned by the job creators, not
+the generic wrapper.
+
 ```python
 from pathlib import Path
 
-from tumblepipe.apps.deadline import Batch, Deadline, Job
+from tumblepipe.apps.deadline import Batch, Deadline
+from tumblepipe.farm.deadline import Task
 
 # The script must live inside an installed HPM package, i.e. under
-# ~/.hpm/packages/<name>@<version>/...  — the plugin derives the package
-# identity + a package-relative path from it. Submitting from a dev/editable
-# checkout is rejected, because it has no reproducible version to ship.
-job = Job(
-    Path("/path/to/.hpm/packages/tumblepipe@1.11.0/python/.../script.py"),
+# ~/.hpm/packages/<name>@<version>/...  — the package identity + manifest are
+# derived from it. Submitting from a dev/editable checkout is rejected, because
+# it has no reproducible version to ship.
+job = Task(
+    Path("/path/to/.hpm/packages/tumblepipe@1.12.2/python/.../script.py"),
     None,                       # extra requirements.txt; usually unnecessary
     "arg1",
     "arg2",
-    plugin="HPM",               # omit to use the default (DEFAULT_PLUGIN)
 )
 
 job.name = "My Render Job"
@@ -91,10 +98,11 @@ farm = Deadline()
 farm.submit(batch, Path("/path/to/jobs-dir"))
 ```
 
-The default plugin is set by `DEFAULT_PLUGIN` in `tumblepipe.apps.deadline`.
-Under **HPM**, the task's third-party Python dependencies come from the resolved
-package's `hpm.toml` `[python_dependencies]`, so `requirements_path` is normally
-`None`; pass a `requirements.txt` only for extras a package doesn't declare.
+The default plugin is set by `DEFAULT_PLUGIN` in `tumblepipe.apps.deadline`
+(pass `plugin="UV"` to `Task`/`Job` for the legacy path). Under **HPM**, the
+task's third-party Python dependencies come from the resolved package's
+`hpm.toml` `[python_dependencies]`, so `requirements_path` is normally `None`;
+pass a `requirements.txt` only for extras a package doesn't declare.
 
 Use `Batch.add_dep(first, second)` to mark `second` as a dependency of
 `first`, or `Batch.add_jobs_with_deps(jobs, deps)` to wire a whole graph
