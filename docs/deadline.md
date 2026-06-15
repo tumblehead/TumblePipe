@@ -42,14 +42,18 @@ Each worker needs the same environment as an artist workstation:
   Without matching drive mappings, jobs that reference `P:\...` on the
   Windows side won't resolve on the worker and the job will fail.
 
-For the **HPM** plugin specifically:
+For the **HPM** plugin specifically — **no per-node setup is required**:
 
 - The `hpm` CLI is **self-bootstrapped** under `~/.deadline/hpm` on the first
-  package cache miss (version from `HpmVersion` → `HPM_VERSION` env → `latest`,
-  with the `latest` lookup TTL-cached). No manual install needed.
-- `hpm` must be authenticated to the `tumbletrove` registry so it can pull
-  packages on a cache miss. Pre-warming `~/.hpm/packages` with the versions in
-  flight keeps the render path entirely offline.
+  package cache miss (version from `HpmVersion` → `HPM_VERSION` env → the
+  studio-pinned default `v0.18.0`). No manual install needed.
+- The job manifest declares its own `[[registries]]` (read from the submitter's
+  hpm config at submit time), so a render node that was never
+  `hpm registry add`-ed still resolves packages — no global hpm config on the
+  node. The tumbletrove registry and its package archives are public, so no
+  worker credentials are needed.
+- Pre-warming `~/.hpm/packages` with the versions in flight keeps the render
+  path entirely offline.
 
 ## Submitting a job from TumblePipe
 
