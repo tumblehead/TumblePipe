@@ -46,7 +46,7 @@ For the **HPM** plugin specifically — **no per-node setup is required**:
 
 - The `hpm` CLI is **self-bootstrapped** under `~/.deadline/hpm` on the first
   package cache miss (version from `HpmVersion` → `HPM_VERSION` env → the
-  studio-pinned default `v0.18.0`). No manual install needed.
+  studio-pinned default `v0.21.0`). No manual install needed.
 - The job manifest declares its own `[[registries]]` (read from the submitter's
   hpm config at submit time), so a render node that was never
   `hpm registry add`-ed still resolves packages — no global hpm config on the

@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from _pipeline_houdini import run_on_main_thread
+from _pipeline_houdini import run_on_main_thread, session_nc_type
 from _pipeline_types import latest_workfile, workfile_for_version
 import _pipeline_uris as uris
 
@@ -393,7 +393,7 @@ class WorkfileManager:
 
                 try:
                     next_path = next_hip_file_path(
-                        entity_uri, dept, nc_type=None,
+                        entity_uri, dept, nc_type=session_nc_type(),
                     )
                 except Exception:
                     log.exception(
@@ -532,7 +532,7 @@ class WorkfileManager:
 
                 try:
                     next_path = next_hip_file_path(
-                        entity_uri, dept, nc_type=None,
+                        entity_uri, dept, nc_type=session_nc_type(),
                     )
                 except Exception:
                     log.exception(
@@ -923,7 +923,7 @@ class WorkfileManager:
 
                 try:
                     next_path = next_hip_file_path(
-                        group_uri, dept, nc_type=None,
+                        group_uri, dept, nc_type=session_nc_type(),
                     )
                 except Exception:
                     log.exception(

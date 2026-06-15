@@ -19,7 +19,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from _pipeline_houdini import run_on_main_thread
+from _pipeline_houdini import run_on_main_thread, session_nc_type
 import _pipeline_uris as uris
 
 if TYPE_CHECKING:
@@ -301,66 +301,81 @@ class SceneManager:
             return None
 
     def save_current_scene(self, refresh_cb=None) -> None:
-        """Save the loaded scene as the next workfile version of its own context."""
-        try:
-            import hou
-            from tumblepipe.pipe.paths import (
-                next_hip_file_path, get_workfile_context, Context,
-            )
-            from tumblepipe.pipe.context import save_context, save_entity_context
+        """Save the loaded scene as the next workfile version of its own context.
 
-            hip_path = Path(hou.hipFile.path())
-            prev_ctx = get_workfile_context(hip_path)
-            # Fallback for migrated projects without context.json
-            if prev_ctx is None:
-                prev_ctx = self.context_from_hip_path(hip_path)
-            if prev_ctx is None:
-                hou.ui.setStatusMessage(
-                    "Save: current scene has no pipeline context.",
-                    severity=hou.severityType.Warning,
-                )
-                return
-
-            # Make sure the loaded scene's project is active before
-            # we resolve the next path / save / write context json.
-            scene_proj = self._catalog._project_for_hip_path(hip_path)
-            if scene_proj is not None:
-                self._catalog._activate_project(scene_proj)
-
-            next_path = next_hip_file_path(
-                prev_ctx.entity_uri, prev_ctx.department_name, nc_type=None,
-            )
-            hou.hipFile.save(str(next_path))
-
-            next_ctx = get_workfile_context(next_path) or Context(
-                entity_uri=prev_ctx.entity_uri,
-                department_name=prev_ctx.department_name,
-                version_name=Path(next_path).stem.rsplit("_", 1)[-1],
-            )
-            save_context(
-                Path(next_path).parent, prev_ctx, next_ctx,
-                file_extension=Path(next_path).suffix.lstrip("."),
-            )
-            save_entity_context(Path(next_path).parent, next_ctx)
-
-            log.info("Saved next version: %s", next_path)
-            hou.ui.setStatusMessage(
-                f"Saved {Path(next_path).name}",
-                severity=hou.severityType.Message,
-            )
-            # Drop scan caches so the next browse query re-scans.
-            self._catalog.invalidate_cache()
-        except Exception:
-            log.exception("Save failed")
-        finally:
-            # Always notify the browser so the detail panel and quick-
-            # action label re-sync — even on partial-success saves where
-            # hipFile.save() succeeded but context.json writing raised.
+        The ``hou.hipFile.save`` runs on Houdini's main thread (like
+        :meth:`reload_current_scene` and the open paths). The quick action can
+        fire off the GUI thread, and saving the scene off-thread can capture a
+        mid-cook / inconsistent state and persist a stale ``.hip`` — which is
+        how a Save could drop the last few minutes of work while Houdini's own
+        backup kept it. The old (QWidget) Project Browser saved on the GUI
+        thread implicitly; this restores that.
+        """
+        def _settle():
             if callable(refresh_cb):
                 try:
                     refresh_cb()
                 except Exception:
                     log.exception("Detail refresh after save failed")
+
+        def _do_save():
+            try:
+                import hou
+                from tumblepipe.pipe.paths import (
+                    next_hip_file_path, get_workfile_context, Context,
+                )
+                from tumblepipe.pipe.context import save_context, save_entity_context
+
+                hip_path = Path(hou.hipFile.path())
+                prev_ctx = get_workfile_context(hip_path)
+                # Fallback for migrated projects without context.json
+                if prev_ctx is None:
+                    prev_ctx = self.context_from_hip_path(hip_path)
+                if prev_ctx is None:
+                    hou.ui.setStatusMessage(
+                        "Save: current scene has no pipeline context.",
+                        severity=hou.severityType.Warning,
+                    )
+                    return
+
+                # Make sure the loaded scene's project is active before
+                # we resolve the next path / save / write context json.
+                scene_proj = self._catalog._project_for_hip_path(hip_path)
+                if scene_proj is not None:
+                    self._catalog._activate_project(scene_proj)
+
+                # Match Houdini's Ctrl+S extension (license-driven), else the
+                # file is rewritten to a path the pipeline didn't record.
+                next_path = next_hip_file_path(
+                    prev_ctx.entity_uri, prev_ctx.department_name,
+                    nc_type=session_nc_type(),
+                )
+                hou.hipFile.save(str(next_path))
+
+                next_ctx = get_workfile_context(next_path) or Context(
+                    entity_uri=prev_ctx.entity_uri,
+                    department_name=prev_ctx.department_name,
+                    version_name=Path(next_path).stem.rsplit("_", 1)[-1],
+                )
+                save_context(
+                    Path(next_path).parent, prev_ctx, next_ctx,
+                    file_extension=Path(next_path).suffix.lstrip("."),
+                )
+                save_entity_context(Path(next_path).parent, next_ctx)
+
+                log.info("Saved next version: %s", next_path)
+                hou.ui.setStatusMessage(
+                    f"Saved {Path(next_path).name}",
+                    severity=hou.severityType.Message,
+                )
+                # Drop scan caches so the next browse query re-scans.
+                self._catalog.invalidate_cache()
+            except Exception:
+                log.exception("Save failed")
+            finally:
+                _settle()
+
+        run_on_main_thread(_do_save)
 
     def publish_current_scene(self, refresh_cb=None) -> None:
         """Execute matching ExportLayer / ExportRig nodes for the loaded scene."""

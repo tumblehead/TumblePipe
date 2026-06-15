@@ -56,6 +56,30 @@ def run_on_main_thread(func: Callable, *args, **kwargs) -> None:
         gui_dispatch(func)
 
 
+def session_nc_type() -> str | None:
+    """The license-driven workfile extension type for this Houdini session.
+
+    ``'nc'`` for Apprentice/ApprenticeHD (.hipnc), ``'lc'`` for Indie (.hiplc),
+    ``None`` for commercial (.hip). Pass to ``next_hip_file_path`` so the saved
+    file matches Ctrl+S — hardcoding ``None`` makes Houdini rewrite the extension
+    on a non-commercial license, landing the file where the pipeline didn't
+    record it.
+    """
+    try:
+        import hou
+        category = hou.licenseCategory()
+        if category in (
+            hou.licenseCategoryType.Apprentice,
+            hou.licenseCategoryType.ApprenticeHD,
+        ):
+            return "nc"
+        if category == hou.licenseCategoryType.Indie:
+            return "lc"
+    except Exception:
+        pass
+    return None
+
+
 class ProjectActivator:
     """Tracks and switches the user-active pipeline project.
 
