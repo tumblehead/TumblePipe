@@ -4,9 +4,42 @@ import platform
 import logging
 import getpass
 import shutil
+import re
 
 from tumblepipe.api import fix_path, to_windows_path, path_str
 from tumblepipe.apps import app
+
+# Default farm plugin. 'HPM' runs the task from a package resolved on the worker
+# (see deadline-hpm-plugin); 'UV' is the legacy plugin that bakes the submitter's
+# absolute script path. A job can override per-instance via Job(..., plugin=...).
+DEFAULT_PLUGIN = 'HPM'
+
+# Matches the .hpm/packages/<name>@<version>/<relative...> segment of a script
+# path, regardless of whether it's a Windows (C:/...) or WSL (/mnt/c/...) form.
+_HPM_PACKAGE_RE = re.compile(r'(?:^|/)\.hpm/packages/([^/]+@[^/]+)/(.+)$')
+
+def hpm_package_spec(script_path):
+    """Split an in-package script path into (package_spec, package_relative_path).
+
+    The farm tasks build SCRIPT_PATH from `Path(__file__).parent / 'x.py'`, so
+    under HPM the path runs through the submitter's own
+    ~/.hpm/packages/<name>@<version>/ store. The HPM plugin needs the package
+    identity plus a package-relative ScriptFile so it can re-resolve the same
+    version against the *worker's* store instead of trusting the absolute path.
+
+    Raises if the script isn't under an HPM package store — i.e. a dev/editable
+    checkout — because that has no reproducible identity to ship to the farm.
+    """
+    norm = str(script_path).replace('\\', '/')
+    match = _HPM_PACKAGE_RE.search(norm)
+    if match is None:
+        raise RuntimeError(
+            'Cannot submit to the HPM farm plugin from a non-HPM install: '
+            f'{script_path}. The task script is not under '
+            '~/.hpm/packages/<name>@<version>/ — submit from an installed '
+            'package version, not a dev/editable checkout.'
+        )
+    return match.group(1), match.group(2)
 
 def log_progress(iterable):
     try:
@@ -193,7 +226,8 @@ class Job:
     def __init__(self,
         script_path,
         requirements_path,
-        *args
+        *args,
+        plugin=None
         ):
 
         # Asserts
@@ -201,6 +235,7 @@ class Job:
         assert isinstance(script_path, Path), 'Invalid script path type'
 
         # Members
+        self._plugin = plugin or DEFAULT_PLUGIN
         self.name = None
         self.pool = None
         self.group = None
@@ -250,7 +285,7 @@ class Job:
             'UserName': getpass.getuser(),
             'MachineName': platform.node(),
             'InitialStatus': 'Active',
-            'Plugin': 'UV',
+            'Plugin': self._plugin,
             'Frames': self._frames(),
             'ChunkSize': str(self.chunk_size),
             'EnableFrameTimeouts': 'true',
@@ -281,14 +316,27 @@ class Job:
         }
 
     def plugin_info(self, job_path, env_file_path = None):
-        result = {
-            'ScriptFile': path_str(self._script_path),
-            'Arguments': ' '.join(filter(
-                lambda part: len(part) != 0,
-                self._args
-            )),
-            'StartupDirectory': path_str(job_path / 'data')
-        }
+        arguments = ' '.join(filter(
+            lambda part: len(part) != 0,
+            self._args
+        ))
+        if self._plugin == 'HPM':
+            # Ship a package identity + package-relative script so the worker
+            # re-resolves the same version against its own HPM store.
+            package_spec, relative_script = hpm_package_spec(self._script_path)
+            result = {
+                'Package': package_spec,
+                'ScriptFile': relative_script,
+                'Arguments': arguments,
+                'StartupDirectory': path_str(job_path / 'data')
+            }
+        else:
+            # Legacy UV plugin: bake the absolute script path.
+            result = {
+                'ScriptFile': path_str(self._script_path),
+                'Arguments': arguments,
+                'StartupDirectory': path_str(job_path / 'data')
+            }
         if self._requirements_path is not None:
             result['RequirementsFile'] = path_str(self._requirements_path)
         if env_file_path is not None:
