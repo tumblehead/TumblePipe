@@ -1,9 +1,25 @@
 """Common environment variable setup for farm tasks."""
 import os
+from pathlib import Path
 from typing import Optional
 
 from tumblepipe.api import get_user_name, path_str, to_windows_path, default_client
 from tumblepipe.resolver import plugin_resources_path
+
+
+def job_data_dir() -> Path:
+    """Absolute dir holding the job's bundled data files (context, archives, ...).
+
+    Under the HPM farm plugin the task runs as `hpm run task`, whose script
+    executes in the (worker-local) hpm *manifest* directory, NOT the shared job
+    data dir. So files bundled into the job (and addressed relative to the data
+    dir) must be resolved against this explicit path, which the plugin exports as
+    TH_FARM_DATA. Falls back to the current directory for the legacy in-WSL flow,
+    where the task already ran with its CWD set to the data dir — making this a
+    no-op change there.
+    """
+    base = os.environ.get('TH_FARM_DATA')
+    return Path(base) if base else Path.cwd()
 
 
 # Default environment variables to print for debugging

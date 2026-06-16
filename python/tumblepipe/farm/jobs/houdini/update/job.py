@@ -14,7 +14,6 @@ if tumblehead_packages_path not in sys.path:
 from tumblepipe.api import (
     fix_path,
     path_str,
-    to_wsl_path,
     to_windows_path,
     get_user_name,
     default_client

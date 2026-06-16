@@ -21,9 +21,9 @@ Pick one:
 - **Manual** — grab an archive from
   [Releases](https://github.com/tumblehead/TumblePipe/releases).
 
-A Linux environment (WSL2 on Windows) with `uv`, `ffmpeg`,
-`openimageio-tools`, and `opencolorio-tools` is required for the farm
-scripts. See the
+Render-farm workers need a matching Houdini install — it provides everything the
+farm uses (`husk`, the USD resolver, `iconvert`, and the bundled `hoiiotool`/
+`hffmpeg` for image and video processing). See the
 [installation guide](https://tumblepipe.readthedocs.io/en/latest/installation.html)
 for the full prerequisite list.
 

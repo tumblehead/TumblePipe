@@ -4,24 +4,32 @@ from typing import Optional
 from pathlib import Path
 import datetime as dt
 import shutil
-import sys
 import os
 
 from tumblepipe.api import (
     path_str,
-    to_wsl_path,
+    local_path,
     to_windows_path
 )
 from tumblepipe.apps import app, houdini
-from tumblepipe.apps import wsl
 
-def _run(args, **kwargs):
-    if sys.platform == 'win32': return wsl.run(args, **kwargs)
-    return app.run(args, **kwargs)
+# Native OpenImageIO oiiotool (Houdini's hoiiotool), lazily cached. The farm runs
+# in native Windows python now, so oiiotool runs directly — no WSL bridge — and
+# its path args are native (local_path), not /mnt forms.
+_OIIOTOOL = None
+def _oiiotool():
+    global _OIIOTOOL
+    if _OIIOTOOL is None:
+        _OIIOTOOL = houdini.OIIOTool()
+    return _OIIOTOOL
 
-def _call(args, **kwargs):
-    if sys.platform == 'win32': return wsl.call(args, **kwargs)
-    return app.call(args, **kwargs)
+def _run(command, **kwargs):
+    # command[0] is the 'oiiotool' program name; the native wrapper supplies the
+    # real hoiiotool executable, so drop it.
+    return _oiiotool().run(command[1:], **kwargs)
+
+def _call(command, **kwargs):
+    return _oiiotool().call(command[1:], **kwargs)
 
 @dataclass(frozen=True)
 class ImageInfo:
@@ -135,7 +143,7 @@ def get_image_info(input_path: Path) -> Optional[list[ImageInfo]]:
     # Query the image info
     raw_infos = _split('</ImageSpec>', _call([
         'oiiotool', '--info:format=xml', '-v', '-a',
-        path_str(to_wsl_path(input_path)),
+        path_str(local_path(input_path)),
     ]))
 
     # Parse the image info
@@ -164,9 +172,9 @@ def split_subimages(input_path, output_path):
         temp_output_path = temp_path / '%04d.exr'
         _run([
             'oiiotool',
-            path_str(to_wsl_path(input_path)),
+            path_str(local_path(input_path)),
             '-sisplit', '-o:all=1',
-            path_str(to_wsl_path(temp_output_path))
+            path_str(local_path(temp_output_path))
         ])
 
         # Process and copy subimages to the output path with channel renaming
@@ -212,9 +220,9 @@ def split_subimages(input_path, output_path):
                 # Rename channels using oiiotool
                 _run([
                     'oiiotool',
-                    path_str(to_wsl_path(temp_image_path)),
+                    path_str(local_path(temp_image_path)),
                     '--chnames', channel_rename_list,
-                    '-o', path_str(to_wsl_path(temp_renamed_path))
+                    '-o', path_str(local_path(temp_renamed_path))
                 ])
                 
                 # Copy the renamed file to output
@@ -235,9 +243,9 @@ def dwab_encode(input_path, output_path):
 
     # DWAB compress
     return _run([
-        'oiiotool', path_str(to_wsl_path(input_path)),
+        'oiiotool', path_str(local_path(input_path)),
         '--compression', 'dwab:45',
-        '-o', path_str(to_wsl_path(output_path))
+        '-o', path_str(local_path(output_path))
     ])
 
 def to_jpeg(input_path, output_path):

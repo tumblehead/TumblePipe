@@ -14,7 +14,6 @@ from typing import Optional
 from tumblepipe.api import (
     fix_path,
     path_str,
-    to_wsl_path,
     to_windows_path,
     get_user_name,
     default_client

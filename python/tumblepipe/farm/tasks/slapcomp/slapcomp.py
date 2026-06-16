@@ -12,7 +12,7 @@ if tumblehead_packages_path not in sys.path:
 
 from tumblepipe.api import (
     path_str,
-    to_wsl_path,
+    local_path,
     default_client
 )
 from tumblepipe.util.io import (
@@ -27,7 +27,7 @@ api = default_client()
 
 
 def _get_ocio_env():
-    """Get OCIO environment dict for WSL subprocess calls."""
+    """Get OCIO environment dict for the oiiotool subprocess."""
     return dict(OCIO=os.environ['OCIO'])
 
 def _headline(title):
@@ -59,12 +59,12 @@ def _merge_rgba(
     """Merge RGB beauty with single-channel alpha using oiiotool --chappend"""
     oiiotool_cmd = [
         'oiiotool',
-        path_str(to_wsl_path(beauty_path)),
-        path_str(to_wsl_path(alpha_path)),
+        path_str(local_path(beauty_path)),
+        path_str(local_path(alpha_path)),
         '--chappend',
         '--chnames', 'R,G,B,A',
         '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
-        '-o', path_str(to_wsl_path(output_path))
+        '-o', path_str(local_path(output_path))
     ]
     print(f'    Merging RGBA: beauty + alpha -> temp')
     return exr._run(oiiotool_cmd, env=_get_ocio_env())
@@ -78,7 +78,7 @@ def _composite_frame(
 
     # Check if output already exists
     output_frame_path = _get_frame_path(output_path, frame_index)
-    if to_wsl_path(output_frame_path).exists():
+    if local_path(output_frame_path).exists():
         print(f'Frame {frame_index} already exists, skipping')
         return 0
 
@@ -98,7 +98,7 @@ def _composite_frame(
                 continue
 
             beauty_path = _get_frame_path(layer_aovs['beauty'], frame_index)
-            if not to_wsl_path(beauty_path).exists():
+            if not local_path(beauty_path).exists():
                 print(f'  Warning: Beauty AOV not found at {beauty_path}, skipping')
                 continue
 
@@ -106,7 +106,7 @@ def _composite_frame(
             needs_alpha_merge = 'alpha' in layer_aovs
             if needs_alpha_merge:
                 alpha_path = _get_frame_path(layer_aovs['alpha'], frame_index)
-                if not to_wsl_path(alpha_path).exists():
+                if not local_path(alpha_path).exists():
                     print(f'  Warning: Alpha AOV specified but not found at {alpha_path}')
                     needs_alpha_merge = False
 
@@ -126,12 +126,12 @@ def _composite_frame(
 
                 for lpe_index, (lpe_name, lpe_path) in enumerate(lpe_aovs.items()):
                     lpe_frame_path = _get_frame_path(lpe_path, frame_index)
-                    if not to_wsl_path(lpe_frame_path).exists():
+                    if not local_path(lpe_frame_path).exists():
                         print(f'    Warning: LPE AOV {lpe_name} not found, skipping')
                         continue
 
                     # Add this LPE to the command
-                    oiiotool_cmd.append(path_str(to_wsl_path(lpe_frame_path)))
+                    oiiotool_cmd.append(path_str(local_path(lpe_frame_path)))
 
                     # Add previous result if not first LPE
                     if lpe_index > 0:
@@ -141,7 +141,7 @@ def _composite_frame(
                 rgb_source_path = temp_path / f'layer_{layer_index}_lpe_composite.exr'
                 oiiotool_cmd.extend([
                     '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
-                    '-o', path_str(to_wsl_path(rgb_source_path))
+                    '-o', path_str(local_path(rgb_source_path))
                 ])
 
                 result = exr._run(oiiotool_cmd, env=_get_ocio_env())
@@ -166,10 +166,10 @@ def _composite_frame(
                 layer_rgba_path = temp_path / f'layer_{layer_index}_rgba.exr'
                 add_alpha_cmd = [
                     'oiiotool',
-                    path_str(to_wsl_path(rgb_source_path)),
+                    path_str(local_path(rgb_source_path)),
                     '--ch', 'R,G,B,A=1.0',
                     '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
-                    '-o', path_str(to_wsl_path(layer_rgba_path))
+                    '-o', path_str(local_path(layer_rgba_path))
                 ]
                 result = exr._run(add_alpha_cmd, env=_get_ocio_env())
                 if result != 0:
@@ -184,7 +184,7 @@ def _composite_frame(
             # Only one layer, copy it directly
             _, layer_path, _ = layer_output_paths[0]
             output_frame_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(to_wsl_path(layer_path), to_wsl_path(output_frame_path))
+            shutil.copyfile(local_path(layer_path), local_path(output_frame_path))
         else:
             # Multiple layers, composite them
             print(f'  Compositing {len(layer_output_paths)} layers')
@@ -200,12 +200,12 @@ def _composite_frame(
 
             # Start with the LAST layer (bottom/background)
             _, last_layer_path, _ = layer_output_paths[-1]
-            oiiotool_cmd.append(path_str(to_wsl_path(last_layer_path)))
+            oiiotool_cmd.append(path_str(local_path(last_layer_path)))
 
             # Composite each layer from second-to-last to first (back to front)
             # This way: background ... middle --over foreground --over
             for layer_name, layer_path, beauty_path in reversed(layer_output_paths[:-1]):
-                oiiotool_cmd.append(path_str(to_wsl_path(layer_path)))
+                oiiotool_cmd.append(path_str(local_path(layer_path)))
                 oiiotool_cmd.append('--over')
 
             print(f'    Composite order: {" --over ".join([name for name, _, _ in reversed(layer_output_paths)])}')
@@ -214,7 +214,7 @@ def _composite_frame(
             output_frame_path.parent.mkdir(parents=True, exist_ok=True)
             oiiotool_cmd.extend([
                 '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
-                '-o', path_str(to_wsl_path(output_frame_path))
+                '-o', path_str(local_path(output_frame_path))
             ])
 
             result = exr._run(oiiotool_cmd, env=_get_ocio_env())
@@ -250,7 +250,7 @@ def main(
     missing_receipt_paths = [
         output_frame_path
         for output_frame_path in receipt_paths
-        if not to_wsl_path(output_frame_path).exists()
+        if not local_path(output_frame_path).exists()
     ]
 
     # Check if all receipts already exist
@@ -268,7 +268,7 @@ def main(
     # Check if outputs were generated
     for frame_index in render_range:
         frame_path = _get_frame_path(output_path, frame_index)
-        if to_wsl_path(frame_path).exists(): continue
+        if local_path(frame_path).exists(): continue
         return _error(f'Output frame not found: {frame_path}')
 
     # Create output receipts
@@ -277,7 +277,7 @@ def main(
         current_receipt_path = _get_frame_path(receipt_path, frame_index)
         current_output_path = _get_frame_path(output_path, frame_index)
         print(f'Creating receipt: {current_receipt_path}')
-        store_json(to_wsl_path(current_receipt_path), dict(
+        store_json(local_path(current_receipt_path), dict(
             slapcomp = path_str(current_output_path)
         ))
 

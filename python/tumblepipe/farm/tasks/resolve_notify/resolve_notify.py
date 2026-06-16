@@ -17,7 +17,7 @@ if tumblehead_packages_path not in sys.path:
 
 from tumblepipe.api import (
     path_str,
-    to_wsl_path,
+    local_path,
     default_client
 )
 from tumblepipe.util.uri import Uri
@@ -132,10 +132,10 @@ def cli():
     queue_path_str = config['queue_path']
     try:
         uri = Uri.parse_unsafe(queue_path_str)
-        queue_path = to_wsl_path(api.storage.resolve(uri))
+        queue_path = local_path(api.storage.resolve(uri))
     except Exception:
         # Fallback to treating as regular path
-        queue_path = to_wsl_path(Path(queue_path_str))
+        queue_path = local_path(Path(queue_path_str))
 
     # Get command data
     command_data = config['command']

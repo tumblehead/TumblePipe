@@ -13,12 +13,15 @@ Two plugins can run them:
 
 - **HPM** *(default)* —
   [tumblehead/deadline-hpm-plugin](https://github.com/tumblehead/deadline-hpm-plugin).
-  A job carries the package **identity** (`tumblepipe@1.11.0`) plus a
-  package-relative script path. The worker re-resolves that exact version
-  against its **own** HPM store, so nodes don't have to mirror the submitter's
-  disk. It also reconstructs the package's `[python_dependencies]` into the
-  task venv (the deps HPM provisions in-Houdini), and self-bootstraps the `hpm`
-  CLI so render nodes need no TumbleTrove Desktop install.
+  A job bundles an `hpm.toml` whose dependency is the task package at its exact
+  version and whose `[scripts.task]` runs `python -m <module>` with
+  `package-env = true`. The worker `hpm install`s it against its **own** HPM
+  store (resolving the package + its `[python_dependencies]` and pinning the
+  Houdini-mapped CPython into a package-env venv), then `hpm run task` executes
+  the task **in native python** inside that env — the package importable, its
+  deps on `PYTHONPATH`. No node has to mirror the submitter's disk, and the
+  plugin self-bootstraps the `hpm` CLI so render nodes need no TumbleTrove
+  Desktop install. (Requires hpm ≥ v0.22.1 for `package-env`.)
 - **UV** *(legacy)* —
   [tumblehead/deadline-uv-plugin](https://github.com/tumblehead/deadline-uv-plugin).
   Bakes an **absolute** script path at submit time. This only works when every
@@ -34,19 +37,20 @@ should pick it up. The two can coexist during migration; a job chooses via
 
 Each worker needs the same environment as an artist workstation:
 
-- **WSL2 / Ubuntu** (on Windows workers).
-- **UV, ffmpeg, openimageio-tools, opencolorio-tools** — install via the
-  commands in [Installation](installation.md). UV builds the task venv.
-- **Drive mappings** — `/etc/fstab` mounts must match the workstations
-  exactly, so the worker can resolve the same project paths artists use.
-  Without matching drive mappings, jobs that reference `P:\...` on the
-  Windows side won't resolve on the worker and the job will fail.
+- **Houdini** (matching the project's pinned version). Under HPM the task runs in
+  native Windows python and drives Houdini's bundled tools directly — `husk.exe`,
+  the Windows USD resolver, `iconvert`, and Houdini's `hoiiotool`/`hffmpeg` for
+  image/video processing. **No WSL2 or UV is needed** for HPM jobs (the legacy UV
+  plugin still requires both).
+- **Drive mappings** — workers must map the project drives to the same letters
+  the workstations use, so jobs that reference `P:\...` resolve identically.
+  Without matching drive letters, the job will fail to read project files.
 
 For the **HPM** plugin specifically — **no per-node setup is required**:
 
 - The `hpm` CLI is **self-bootstrapped** under `~/.deadline/hpm` on the first
-  package cache miss (version from `HpmVersion` → `HPM_VERSION` env → the
-  studio-pinned default `v0.21.0`). No manual install needed.
+  job (version from `HpmVersion` → `HPM_VERSION` env → the studio-pinned default
+  `v0.22.1`). No manual install needed.
 - The job manifest declares its own `[[registries]]` (read from the submitter's
   hpm config at submit time), so a render node that was never
   `hpm registry add`-ed still resolves packages — no global hpm config on the
@@ -105,8 +109,8 @@ farm.submit(batch, Path("/path/to/jobs-dir"))
 The default plugin is set by `DEFAULT_PLUGIN` in `tumblepipe.apps.deadline`
 (pass `plugin="UV"` to `Task`/`Job` for the legacy path). Under **HPM**, the
 task's third-party Python dependencies come from the resolved package's
-`hpm.toml` `[python_dependencies]`, so `requirements_path` is normally `None`;
-pass a `requirements.txt` only for extras a package doesn't declare.
+`hpm.toml` `[python_dependencies]` (installed by hpm into the package-env), so
+`requirements_path` is normally `None` and is ignored by the HPM plugin.
 
 Use `Batch.add_dep(first, second)` to mark `second` as a dependency of
 `first`, or `Batch.add_jobs_with_deps(jobs, deps)` to wire a whole graph

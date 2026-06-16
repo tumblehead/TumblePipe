@@ -1,48 +1,27 @@
 # Installation
 
-TumblePipe runs on Windows, Linux, and macOS, but several pipeline tools (the
-render-farm submission scripts in particular) expect a Linux-like environment.
-On Windows, we provide that via WSL2.
+TumblePipe runs on Windows, Linux, and macOS. On Windows render-farm workers,
+tasks run in native Windows python and drive Houdini's bundled tools directly —
+`husk.exe`, the Windows USD resolver, `iconvert`, and Houdini's
+`hoiiotool`/`hffmpeg` for image and video processing.
 
 ## Prerequisites
 
-### WSL2 and Ubuntu (Windows only)
+### Houdini
 
-TumblePipe's farm scripts run in a Linux environment. On Windows this is
-provided by WSL2.
+Render-farm workers need a Houdini install matching the project's pinned version.
+It provides everything the farm uses: `husk`, the USD resolver, `iconvert`, and
+the bundled `hoiiotool` (OpenImageIO) and `hffmpeg`.
 
-1. Install WSL2 following Microsoft's
-   [official guide](https://learn.microsoft.com/en-us/windows/wsl/install).
-   The default Ubuntu distribution works well.
-2. This applies to both artist workstations *and* render farm workers.
-
-### Required Linux tools
-
-Install these on Ubuntu / WSL2:
-
-```bash
-# Astral UV — Python environment management for farm scripts
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Image and video tools used by render processing
-sudo apt install ffmpeg openimageio-tools opencolorio-tools
-```
-
-See the [UV installation guide](https://docs.astral.sh/uv/getting-started/installation/)
-for alternative install methods.
+> The **legacy UV farm plugin** additionally needs WSL2 + UV. See
+> [Deadline and the render farm](deadline.md).
 
 ### Drive mapping
 
-Windows project drives must be accessible from WSL2 using the same mount
-points as the Windows side. Edit `/etc/fstab` in Ubuntu:
-
-```text
-P: /mnt/p drvfs defaults 0 0
-```
-
-The mounts must match what your launcher scripts reference in `TH_PROJECT_PATH`
-and `TH_PIPELINE_PATH`. This is critical on render farm workers — without
-matching drive paths, workers cannot read project files.
+Render-farm workers must map the project drives to the same letters the
+workstations use (e.g. `P:`), so a path like `P:\...` referenced in
+`TH_PROJECT_PATH`/`TH_PIPELINE_PATH` resolves identically everywhere. Without
+matching drive letters, workers cannot read project files.
 
 ## Installing TumblePipe
 

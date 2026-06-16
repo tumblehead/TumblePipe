@@ -13,7 +13,7 @@ from tumblepipe.api import (
     get_user_name,
     path_str,
     fix_path,
-    to_wsl_path,
+    local_path,
     to_windows_path,
     default_client
 )
@@ -135,7 +135,7 @@ def main(
 
     # Check if output receipts were generated
     for receipt_path in missing_receipt_paths:
-        if to_wsl_path(receipt_path).exists(): continue
+        if local_path(receipt_path).exists(): continue
         return _error(f'Output receipt not found: {receipt_path}')
 
     # Done

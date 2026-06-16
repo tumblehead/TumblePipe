@@ -14,7 +14,7 @@ if tumblehead_packages_path not in sys.path:
 from tumblepipe.api import (
     fix_path,
     path_str,
-    to_wsl_path,
+    local_path,
     default_client
 )
 from tumblepipe.util.io import load_json
@@ -66,7 +66,7 @@ def main(
     missing_output_paths = [
         output_path
         for output_path in output_paths
-        if _out_of_date(to_wsl_path(output_path))
+        if _out_of_date(local_path(output_path))
     ]
     if len(missing_output_paths) == 0:
         print('Output files already exist')
@@ -85,14 +85,14 @@ def main(
             input_frame_path = _get_frame_path(input_path, frame_index)
             temp_frame_path = _get_frame_path(temp_input_path, frame_index)
             exr.to_jpeg(
-                to_wsl_path(input_frame_path),
+                local_path(input_frame_path),
                 temp_frame_path
             )
     
         # Encode to mp4
         temp_output_path = temp_path / 'temp.mp4'
         mp4.from_jpg(
-            to_wsl_path(temp_input_path),
+            local_path(temp_input_path),
             render_range,
             get_fps(),
             temp_output_path
@@ -104,13 +104,13 @@ def main(
         
         # Copy to output paths
         for output_path in missing_output_paths:
-            output_path = to_wsl_path(output_path)
+            output_path = local_path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(temp_output_path, output_path)
 
     # Check that all the missing outputs exists
     for output_path in missing_output_paths:
-        if to_wsl_path(output_path).exists(): continue
+        if local_path(output_path).exists(): continue
         return _error(f'Output not generated: {output_path}')
 
     # Done
@@ -174,7 +174,7 @@ def cli():
     input_path = _fix_frame_pattern(Path(config['input_path']), '*')
     for frame_index in render_range:
         frame_path = _get_frame_path(input_path, frame_index)
-        if to_wsl_path(frame_path).exists(): continue
+        if local_path(frame_path).exists(): continue
         return _error(f'Input frame not found: {frame_path}')
     
     # Get the output paths

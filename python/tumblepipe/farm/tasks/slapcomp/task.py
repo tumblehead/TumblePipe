@@ -10,7 +10,7 @@ if tumblehead_packages_path not in sys.path:
 
 from tumblepipe.api import (
     path_str,
-    to_wsl_path,
+    local_path,
     to_windows_path,
     default_client
 )
@@ -111,7 +111,7 @@ def build(config, paths, staging_path):
 
     # Create the task
     task = Task(
-        to_wsl_path(SCRIPT_PATH), None,
+        local_path(SCRIPT_PATH), None,
         path_str(context_path.relative_to(staging_path))
     )
     task.name = title

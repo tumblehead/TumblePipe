@@ -153,12 +153,19 @@ def _scan_path_for_versions(root_path) -> dict[str, dict[str, Path]]:
         if not husk_path.exists(): continue
         if not iconvert_path.exists(): continue
         usdstitch_path = bin_path / 'usdstitch.cmd'
+        # Houdini bundles OpenImageIO's oiiotool and ffmpeg as hoiiotool/hffmpeg.
+        # Using these (instead of a WSL-bridged oiiotool/ffmpeg) lets the farm
+        # run image/video processing natively in Windows python — no WSL.
+        hoiiotool_path = bin_path / 'hoiiotool.exe'
+        hffmpeg_path = bin_path / 'hffmpeg.exe'
         result[version] = dict(
             hython = hython_path,
             husk = husk_path,
             iconvert = iconvert_path,
             itilestitch = itilestitch_path,
-            usdstitch = usdstitch_path
+            usdstitch = usdstitch_path,
+            hoiiotool = hoiiotool_path,
+            hffmpeg = hffmpeg_path
         )
     return result
 
@@ -372,6 +379,56 @@ class ITileStitch:
         return loop.run_until_complete(
             self.run_async(args, cwd, env)
         )
+
+
+class OIIOTool:
+    """Wrapper for Houdini's bundled OpenImageIO `hoiiotool`.
+
+    Runs natively (no WSL bridge): the worker is Windows python and the tool is
+    a Windows binary, so paths passed in should be native (`local_path`/Windows),
+    not `/mnt` forms.
+    """
+    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
+        version = _get_version(version_name, _scan_drives_for_versions())
+        if version is None:
+            assert False, 'No valid Houdini version was found'
+        self._version = version_name
+        self._oiiotool = version['hoiiotool']
+
+    def run(self,
+        args: list[str],
+        cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None
+        ) -> int:
+        return app.run([path_str(self._oiiotool), *args], cwd, env)
+
+    def call(self,
+        args: list[str],
+        cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None
+        ) -> str:
+        return app.call([path_str(self._oiiotool), *args], cwd, env)
+
+
+class FFmpeg:
+    """Wrapper for Houdini's bundled `hffmpeg`.
+
+    SideFX's ffmpeg ships `libopenh264` (software H.264) rather than `libx264`;
+    callers select the encoder explicitly. Runs natively (no WSL bridge).
+    """
+    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
+        version = _get_version(version_name, _scan_drives_for_versions())
+        if version is None:
+            assert False, 'No valid Houdini version was found'
+        self._version = version_name
+        self._ffmpeg = version['hffmpeg']
+
+    def run(self,
+        args: list[str],
+        cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None
+        ) -> int:
+        return app.run([path_str(self._ffmpeg), *args], cwd, env)
 
 
 class UsdStitch:

@@ -12,6 +12,9 @@ def _load_module(path: Path):
     return module
 
 def to_wsl_path(path: Path):
+    # Legacy /mnt mapping. The farm no longer bridges any tool to WSL (image/video
+    # processing runs on Houdini's native hoiiotool/hffmpeg), so this is only used
+    # internally by local_path()/fix_path() for the non-Windows branch.
     raw_path = str(path).replace('\\', '/')
     if raw_path.startswith('/'): return path
     parts = raw_path.split('/')
@@ -24,6 +27,23 @@ def to_windows_path(path: Path):
     parts = raw_path.split('/')
     drive = f'{parts[2].upper()}:/'
     return Path(drive, *parts[3:])
+
+def local_path(path: Path):
+    """Native path for the *current* process: Windows form on Windows, /mnt on WSL.
+
+    The canonical path conversion for farm tasks. Use it for everything the
+    running python touches itself: LOCAL file IO (`.exists()`, `.stat()`,
+    `.open()`, `shutil.copyfile`, `store_json`, `mkdir`) AND arguments to the
+    native tools the task drives (husk, hoiiotool, hffmpeg, iconvert) — all run
+    in this same process's OS, so they want this process's native path.
+
+    Equivalent to `fix_path` for paths (it has no extra short-path handling); kept
+    as a distinct, intention-revealing name for task code. The farm no longer
+    bridges any tool to WSL, so `to_wsl_path` (always `/mnt`) has no task callers.
+    """
+    if platform.system() == 'Windows':
+        return to_windows_path(path)
+    return to_wsl_path(path)
 
 def fix_path(path: Path):
 

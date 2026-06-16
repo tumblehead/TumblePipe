@@ -6,16 +6,19 @@ import shutil
 from tumblepipe.api import (
     path_str,
     fix_path,
-    to_wsl_path,
+    local_path,
     default_client
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import BlockRange
-from tumblepipe.apps import wsl
+from tumblepipe.apps import houdini
 
 api = default_client()
 
-FFMPEG_PATH = '/usr/bin/ffmpeg'
+# Houdini's hffmpeg ships libopenh264 (not libx264); its quality rate-control
+# mode keeps the notify "shrink to fit Discord" path shrinking with resolution.
+# Output is standard yuv420p H.264, universally playable. -q:v is tunable.
+_H264_ENCODE = ['-c:v', 'libopenh264', '-rc_mode', 'quality', '-q:v', '22']
     
 def from_jpg(
     framestack_path: Path,
@@ -94,18 +97,17 @@ def from_jpg(
         # Combine JPEGs into video
         temp_framestack_path = temp_dir_path / 'frame.%04d.jpg'
         temp_output_mp4_path = temp_dir_path / 'output.mp4'
-        wsl.run([
-            FFMPEG_PATH,
+        houdini.FFmpeg().run([
+            '-y',
             '-framerate', str(framerate),
             '-pattern_type', 'sequence',
             '-start_number', str(frame_range.first_frame),
-            '-i', path_str(to_wsl_path(temp_framestack_path)),
+            '-i', path_str(local_path(temp_framestack_path)),
             '-frames:v', str(frame_count),
             '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
-            '-c:v', 'libx264',
-            '-crf', '17',
+            *_H264_ENCODE,
             '-pix_fmt', 'yuv420p',
-            path_str(to_wsl_path(temp_output_mp4_path))
+            path_str(local_path(temp_output_mp4_path))
         ])
         output_mp4_path.parent.mkdir(exist_ok=True, parents=True)
         shutil.copyfile(temp_output_mp4_path, output_mp4_path)
@@ -138,15 +140,17 @@ def scale(
             if scale_factor >= 0 else
             f'/{2**(-scale_factor)}'
         )
-        wsl.run([
-            FFMPEG_PATH, 
-            '-i', path_str(input_mp4_path), 
+        houdini.FFmpeg().run([
+            '-y',
+            '-i', path_str(local_path(input_mp4_path)),
             '-vf', (
                 'scale='
                 f'trunc(iw{scale_expression}/2)*2:'
                 f'trunc(ih{scale_expression}/2)*2'
             ),
-            path_str(to_wsl_path(temp_output_mp4_path))
+            *_H264_ENCODE,
+            '-pix_fmt', 'yuv420p',
+            path_str(local_path(temp_output_mp4_path))
         ])
         output_mp4_path.parent.mkdir(exist_ok=True, parents=True)
         shutil.copyfile(temp_output_mp4_path, output_mp4_path)

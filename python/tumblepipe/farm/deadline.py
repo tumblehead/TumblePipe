@@ -53,6 +53,23 @@ def _package_full_name(script_path, bare_name) -> str:
     return path_match.group(1) if path_match is not None else bare_name
 
 
+def _script_module(relative_script: str) -> str:
+    """Dotted module path for `python -m` from a package-relative script path.
+
+    The HPM plugin runs the task as `hpm run task`, whose `[scripts.task]` cmd is
+    `python -m <module>` executed inside the package-env (the package's python/
+    dir is on PYTHONPATH). Strip the leading `python/` source-root, drop the
+    `.py`, and turn slashes into dots:
+    `python/tumblepipe/farm/tasks/render/render.py` -> `tumblepipe.farm.tasks.render.render`.
+    """
+    norm = relative_script.replace('\\', '/').strip('/')
+    if norm.startswith('python/'):
+        norm = norm[len('python/'):]
+    if norm.endswith('.py'):
+        norm = norm[:-len('.py')]
+    return norm.replace('/', '.')
+
+
 def _submitter_registries() -> list:
     """The [[registries]] from the submitter's own ~/.hpm/config.toml.
 
@@ -84,10 +101,16 @@ def hpm_task_manifest(script_path) -> str:
       fresh worker with no cached registry index.
     - the version is BARE (an exact registry get_version fetch); a "=" prefix
       is sent verbatim into the registry query and 404s.
+    - `[scripts.task]` runs the task module inside the package-env (hpm >=0.22.1):
+      `package-env = true` resolves the full env (the dependency package
+      importable + its [python_dependencies]) and runs `python -m <module>`. The
+      HPM plugin invokes it as `hpm run task -- <context> <first> <last>`; this
+      is what replaces the old hand-built uv venv + PYTHONPATH reconstruction.
     """
-    package_spec, _ = hpm_package_spec(script_path)
+    package_spec, relative_script = hpm_package_spec(script_path)
     bare_name, _, version = package_spec.partition('@')
     full_name = _package_full_name(script_path, bare_name)
+    module = _script_module(relative_script)
     return tomli_w.dumps({
         'package': {
             'path': 'local/deadline-hpm-job',
@@ -97,6 +120,12 @@ def hpm_task_manifest(script_path) -> str:
         'compat': {'houdini': '>=21, <99'},
         'registries': _submitter_registries(),
         'dependencies': {full_name: version},
+        'scripts': {
+            'task': {
+                'cmd': f'python -m {module}',
+                'package-env': True,
+            },
+        },
     })
 
 

@@ -534,24 +534,3 @@ class Deadline:
             ]))
 
         return list(job_ids.values())
-
-    def maintenance(self):
-        root_path = Path(__file__).parent.parent
-        task_path = (
-            root_path /
-            'farm' /
-            'jobs' /
-            'general' /
-            'cleanup' /
-            'task.py'
-        )
-        print(app.call([
-            str(DEADLINE_PATH),
-            '-SubmitCommandLineJob',
-            '-executable', 'c:/Windows/System32/wsl.exe',
-            '-arguments', f'--shell-type login python3 {task_path}',
-            '-priority', '100',
-            '-frames', '1',
-            '-name', 'Worker Maintenance',
-            '-prop', 'MaintenanceJob=True'
-        ]))

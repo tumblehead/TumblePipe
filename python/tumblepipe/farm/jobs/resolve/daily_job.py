@@ -37,7 +37,7 @@ if tumblehead_packages_path not in sys.path:
 
 from tumblepipe.api import (
     path_str,
-    to_wsl_path,
+    local_path,
     fix_path,
     default_client
 )
@@ -103,9 +103,9 @@ def submit_daily_command(config: dict) -> int:
     # Resolve queue path (supports URIs like export:/)
     try:
         uri = Uri.parse_unsafe(queue_path_str)
-        queue_path = to_wsl_path(api.storage.resolve(uri))
+        queue_path = local_path(api.storage.resolve(uri))
     except Exception:
-        queue_path = to_wsl_path(Path(queue_path_str))
+        queue_path = local_path(Path(queue_path_str))
 
     # Build command params
     params = {

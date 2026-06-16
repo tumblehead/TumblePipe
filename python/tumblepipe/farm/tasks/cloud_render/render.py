@@ -16,7 +16,7 @@ if tumblehead_packages_path not in sys.path:
 from tumblepipe.api import (
     path_str,
     fix_path,
-    to_wsl_path,
+    local_path,
     to_windows_path,
     default_client
 )
@@ -28,7 +28,7 @@ from tumblepipe.config.timeline import BlockRange
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Husk, ITileStitch
 from tumblepipe.apps import exr
-from tumblepipe.farm.tasks.env import get_base_env, print_env
+from tumblepipe.farm.tasks.env import get_base_env, print_env, job_data_dir
 
 api = default_client()
 
@@ -87,7 +87,7 @@ def main(
         # Copy the input archive to the temp path
         _headline('Unpack workspace archive')
         print(f'Transfering archive: {temp_archive_path}')
-        shutil.copyfile(to_wsl_path(archive_path), temp_archive_path)
+        shutil.copyfile(local_path(archive_path), temp_archive_path)
 
         # Unpack the input archive
         with tarfile.open(temp_archive_path, 'r:gz') as archive_file:
@@ -171,7 +171,7 @@ def main(
         # Check that the frames were generated
         for frame_index in render_range:
             current_frame_path = _get_frame_path(temp_frame_path, frame_index)
-            if to_wsl_path(current_frame_path).exists(): continue
+            if local_path(current_frame_path).exists(): continue
             return _error(f'Frame not generated: {current_frame_path}')
 
         # Split AOVs into separate stacks
@@ -206,7 +206,7 @@ def main(
         for aov_paths in framestack_aov_paths.values():
             for temp_aov_path, output_aov_path in aov_paths.values():
                 print(f'Copying file: {output_aov_path}')
-                output_aov_path = to_wsl_path(output_aov_path)
+                output_aov_path = local_path(output_aov_path)
                 output_aov_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(temp_aov_path, output_aov_path)
         
@@ -215,7 +215,7 @@ def main(
         for frame_index, aov_paths in framestack_aov_paths.items():
             current_receipt_path = _get_frame_path(receipt_path, frame_index)
             print(f'Creating receipt: {current_receipt_path}')
-            store_json(to_wsl_path(current_receipt_path), {
+            store_json(local_path(current_receipt_path), {
                 aov_name: path_str(output_aov_path)
                 for aov_name, (_, output_aov_path) in aov_paths.items()
             })
@@ -289,8 +289,9 @@ def cli():
     # Get the receipt path
     receipt_path = _fix_frame_pattern(Path(config['receipt_path']), '*')
 
-    # Get the archive path
-    archive_path = Path.cwd() / Path(config['archive_path'])
+    # Get the archive path (bundled into the job data dir; resolve against it
+    # explicitly since the HPM task runs with CWD = the hpm manifest dir).
+    archive_path = job_data_dir() / Path(config['archive_path'])
     if not archive_path.exists():
         return _error(f'Archive path not found: {archive_path}')
 

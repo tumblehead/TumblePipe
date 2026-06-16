@@ -12,11 +12,6 @@ import os
 
 Command = list[str]
 
-def _wsl_patch_env(env):
-    keys = os.environ.get('WSLENV', '').split(':')
-    keys += [key for key in env if key not in keys]
-    return env.copy() | { 'WSLENV': ':'.join(keys) }
-
 def run(
     command: Command,
     cwd: Optional[Path] = None,
@@ -27,7 +22,7 @@ def run(
     _env = os.environ.copy()
     _env['PYTHONUNBUFFERED'] = '1'
     if env is not None:
-        _env.update(_wsl_patch_env(env))
+        _env.update(env)
 
     # Prepare args
     _args = dict(
@@ -62,7 +57,7 @@ def call(
     _env = os.environ.copy()
     _env['PYTHONUNBUFFERED'] = '1'
     if env is not None:
-        _env.update(_wsl_patch_env(env))
+        _env.update(env)
 
     # Prepare args
     _args = dict(
@@ -101,7 +96,7 @@ async def run_async(
     _env = os.environ.copy()
     _env['PYTHONUNBUFFERED'] = '1'
     if env is not None:
-        _env.update(_wsl_patch_env(env))
+        _env.update(env)
 
     # Prepare args
     _args = dict(
@@ -135,7 +130,7 @@ async def call_async(
     _env = os.environ.copy()
     _env['PYTHONUNBUFFERED'] = '1'
     if env is not None:
-        _env.update(_wsl_patch_env(env))
+        _env.update(env)
     
     # Prepare args
     _args = dict(

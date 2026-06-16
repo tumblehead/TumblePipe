@@ -15,7 +15,7 @@ if tumblehead_packages_path not in sys.path:
 from tumblepipe.api import (
     path_str,
     fix_path,
-    to_wsl_path,
+    local_path,
     to_windows_path,
     default_client
 )
@@ -82,7 +82,7 @@ def main(
     missing_receipt_paths = [
         output_receipt_path
         for output_receipt_path in receipt_paths
-        if not to_wsl_path(output_receipt_path).exists()
+        if not local_path(output_receipt_path).exists()
     ]
 
     # Check if all receipts already exist
@@ -173,7 +173,7 @@ def main(
         # Check that the frames were generated
         for frame_index in render_range:
             current_frame_path = _get_frame_path(temp_frame_path, frame_index)
-            if to_wsl_path(current_frame_path).exists(): continue
+            if local_path(current_frame_path).exists(): continue
             return _error(f'Frame not generated: {current_frame_path}')
 
         # Split AOVs into separate stacks
@@ -244,7 +244,7 @@ def main(
         for aov_paths in framestack_aov_paths.values():
             for temp_aov_path, output_aov_path in aov_paths.values():
                 print(f'Copying file: {output_aov_path}')
-                output_aov_path = to_wsl_path(output_aov_path)
+                output_aov_path = local_path(output_aov_path)
                 output_aov_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(temp_aov_path, output_aov_path)
 
@@ -252,7 +252,7 @@ def main(
         _headline('Verifying copied frames')
         for frame_index, aov_paths in framestack_aov_paths.items():
             for aov_name, (_, output_aov_path) in aov_paths.items():
-                output_aov_path = to_wsl_path(output_aov_path)
+                output_aov_path = local_path(output_aov_path)
                 if not output_aov_path.exists():
                     return _error(f'Frame not copied: {output_aov_path}')
                 print(f'Verified: {output_aov_path}')
@@ -262,14 +262,14 @@ def main(
         for frame_index, aov_paths in framestack_aov_paths.items():
             current_receipt_path = _get_frame_path(receipt_path, frame_index)
             print(f'Creating receipt: {current_receipt_path}')
-            store_json(to_wsl_path(current_receipt_path), {
+            store_json(local_path(current_receipt_path), {
                 aov_name: path_str(output_aov_path)
                 for aov_name, (_, output_aov_path) in aov_paths.items()
             })
 
     # Check if output receipts were generated
     for receipt_path in receipt_paths:
-        if to_wsl_path(receipt_path).exists(): continue
+        if local_path(receipt_path).exists(): continue
         return _error(f'Output receipt not found: {receipt_path}')
 
     # Done

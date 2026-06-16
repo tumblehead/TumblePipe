@@ -10,6 +10,7 @@ if tumblehead_packages_path not in sys.path:
     sys.path.append(str(tumblehead_packages_path))
 
 from tumblepipe.api import path_str, fix_path, to_windows_path, default_client
+from tumblepipe.farm.tasks.env import job_data_dir
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.config.variants import list_variants
 from tumblepipe.config.department import list_departments
@@ -34,8 +35,9 @@ def main(
     render_range: BlockRange
     ) -> int:
 
-    # Output files
-    output_path = Path.cwd() / 'data'
+    # Output files (bundled into the job data dir; resolve against it explicitly
+    # since the HPM task runs with CWD = the hpm manifest dir).
+    output_path = job_data_dir() / 'data'
     output_stage_path = output_path / 'stage.usd'
 
     # Check if output already exist

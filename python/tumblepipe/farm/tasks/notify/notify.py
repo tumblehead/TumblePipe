@@ -17,12 +17,12 @@ if tumblehead_packages_path not in sys.path:
 
 from tumblepipe.api import (
     path_str,
-    to_wsl_path,
+    local_path,
     to_windows_path,
     default_client
 )
 from tumblepipe.util.uri import Uri
-from tumblepipe.apps import mp4, wsl
+from tumblepipe.apps import mp4, houdini
 from tumblepipe.apps.houdini import IConvert
 from tumblepipe.util.io import load_json
 from tumblepipe.config.discord import (
@@ -211,13 +211,13 @@ def _post_mp4(
         message: str,
         mp4_path: Path
         ) -> Path:
-        mp4_file_size = to_wsl_path(mp4_path).stat().st_size
+        mp4_file_size = local_path(mp4_path).stat().st_size
         size_scale_factor = _scale_factor(mp4_file_size)
         if size_scale_factor == 0: return mp4_path, message
         temp_mp4_path = temp_path / mp4_path.name
         mp4.scale(
-            input_mp4_path = to_wsl_path(mp4_path),
-            output_mp4_path = to_wsl_path(temp_mp4_path),
+            input_mp4_path = local_path(mp4_path),
+            output_mp4_path = local_path(temp_mp4_path),
             scale_factor = -size_scale_factor
         )
         return temp_mp4_path, (
@@ -227,11 +227,11 @@ def _post_mp4(
         )
 
     # Check if the mp4 exists
-    if not to_wsl_path(mp4_path).exists():
+    if not local_path(mp4_path).exists():
         return _error(f'MP4 not found: {path_str(mp4_path)}')
     
     # Fix the size if the mp4 is too large
-    root_temp_path = to_wsl_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -244,7 +244,7 @@ def _post_mp4(
         )
 
         # Check that the mp4 is not too large
-        notify_mp4_file_size = to_wsl_path(notify_mp4_path).stat().st_size
+        notify_mp4_file_size = local_path(notify_mp4_path).stat().st_size
         if notify_mp4_file_size > MAX_MP4_SIZE:
             return _error(
                 f'MP4 is too large: {path_str(notify_mp4_path)} '
@@ -252,7 +252,7 @@ def _post_mp4(
             )
 
         # Open the mp4 file
-        with to_wsl_path(notify_mp4_path).open('rb') as file:
+        with local_path(notify_mp4_path).open('rb') as file:
             return _post_file(
                 user_name,
                 channel_name,
@@ -298,26 +298,27 @@ def _create_panorama_exr(
     ) -> int:
     """Create a panorama EXR from multiple EXR images using oiiotool."""
     
-    # Build oiiotool command for horizontal mosaic
-    command = ['oiiotool']
-    
+    # Build oiiotool command for horizontal mosaic (native paths; the wrapper
+    # supplies the hoiiotool executable, so no 'oiiotool' program token here).
+    command = []
+
     # Add all input EXR paths
     for image_path in image_paths:
-        command.append(path_str(to_wsl_path(image_path)))
-    
+        command.append(path_str(local_path(image_path)))
+
     # Create horizontal mosaic (Nx1 where N is number of images)
     command.extend(['--mosaic', f'{len(image_paths)}x1'])
-    
+
     # Apply scaling if requested
     if scale != 1.0:
         scale_percent = int(scale * 100)
         command.extend(['--resize', f'{scale_percent}%'])
-    
+
     # Output path
-    command.extend(['-o', path_str(to_wsl_path(output_path))])
-    
-    # Run oiiotool command
-    return wsl.run(command)
+    command.extend(['-o', path_str(local_path(output_path))])
+
+    # Run oiiotool natively
+    return houdini.OIIOTool().run(command)
 
 def _exr_to_jpeg_bytes(path: Path) -> bytes:
     """Convert EXR to JPEG bytes using iconvert, preserving color profiles."""
@@ -329,7 +330,7 @@ def _exr_to_jpeg_bytes(path: Path) -> bytes:
     )
     
     # Create temporary JPEG file
-    root_temp_path = to_wsl_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -364,7 +365,7 @@ def _post_panorama(
     ) -> int:
 
     # Create temporary directory for panorama EXR
-    root_temp_path = to_wsl_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -376,7 +377,7 @@ def _post_panorama(
             return _error(f'Failed to create panorama EXR: {result}')
         
         # Check that panorama was created
-        if not to_wsl_path(panorama_exr_path).exists():
+        if not local_path(panorama_exr_path).exists():
             return _error(f'Panorama EXR not created: {panorama_exr_path}')
         
         # Convert panorama EXR to JPEG bytes
@@ -414,7 +415,7 @@ def _full(
     ) -> int:
 
     # Check the video path
-    if not to_wsl_path(video_path).exists():
+    if not local_path(video_path).exists():
         return _error(f'Video not found: {path_str(video_path)}')
     
     # Post video to discord
@@ -439,11 +440,11 @@ def _partial(
     first_frame_path = _get_frame_path(frame_path, first_frame)
     middle_frame_path = _get_frame_path(frame_path, middle_frame)
     last_frame_path = _get_frame_path(frame_path, last_frame)
-    if not to_wsl_path(first_frame_path).exists():
+    if not local_path(first_frame_path).exists():
         return _error(f'First frame not found: {path_str(first_frame_path)}')
-    if not to_wsl_path(middle_frame_path).exists():
+    if not local_path(middle_frame_path).exists():
         return _error(f'Middle frame not found: {path_str(middle_frame_path)}')
-    if not to_wsl_path(last_frame_path).exists():
+    if not local_path(last_frame_path).exists():
         return _error(f'Last frame not found: {path_str(last_frame_path)}')
     
     # Post panorama to discord
