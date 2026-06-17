@@ -21,7 +21,7 @@ Two plugins can run them:
   the task **in native python** inside that env — the package importable, its
   deps on `PYTHONPATH`. No node has to mirror the submitter's disk, and the
   plugin self-bootstraps the `hpm` CLI so render nodes need no TumbleTrove
-  Desktop install. (Requires hpm ≥ v0.22.1 for `package-env`.)
+  Desktop install. (Requires hpm ≥ v0.22.2 for `package-env`.)
 - **UV** *(legacy)* —
   [tumblehead/deadline-uv-plugin](https://github.com/tumblehead/deadline-uv-plugin).
   Bakes an **absolute** script path at submit time. This only works when every
@@ -50,7 +50,7 @@ For the **HPM** plugin specifically — **no per-node setup is required**:
 
 - The `hpm` CLI is **self-bootstrapped** under `~/.deadline/hpm` on the first
   job (version from `HpmVersion` → `HPM_VERSION` env → the studio-pinned default
-  `v0.22.1`). No manual install needed.
+  `v0.22.2`). No manual install needed.
 - The job manifest declares its own `[[registries]]` (read from the submitter's
   hpm config at submit time), so a render node that was never
   `hpm registry add`-ed still resolves packages — no global hpm config on the

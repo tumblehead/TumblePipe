@@ -311,71 +311,93 @@ class SceneManager:
         backup kept it. The old (QWidget) Project Browser saved on the GUI
         thread implicitly; this restores that.
         """
-        def _settle():
+        run_on_main_thread(lambda: self._save_scene(refresh_cb))
+
+    def emergency_save_current_scene(self, refresh_cb=None) -> None:
+        """Save the loaded scene **inline** on the calling thread.
+
+        The normal :meth:`save_current_scene` defers to ``run_on_main_thread``
+        (``hou.ui.addEventLoopCallback``) so it never persists a mid-cook
+        scene. But that event-loop callback is frozen while Houdini sits in its
+        crash-report ("send report to SideFX") dialog — the queued save
+        silently never runs, which is the capability the off-thread save used
+        to provide by accident. This path runs the save directly so it still
+        completes from the quick-action context-menu handler (whose nested
+        event loop pumps during the crash dialog).
+
+        Saving off the main thread is officially unsupported and may itself
+        fail, but during a crash a maybe-save beats a guaranteed loss. This is
+        a deliberate, explicitly-labeled escape hatch — never the default Save
+        path — surfaced via :meth:`PipelineCatalog.get_quick_action_menu_items`.
+        """
+        self._save_scene(refresh_cb)
+
+    def _save_scene(self, refresh_cb=None) -> None:
+        """Write the next workfile version of the loaded scene's context.
+
+        Runs synchronously on the calling thread. :meth:`save_current_scene`
+        defers this to the main thread via ``run_on_main_thread``;
+        :meth:`emergency_save_current_scene` calls it inline.
+        """
+        try:
+            import hou
+            from tumblepipe.pipe.paths import (
+                next_hip_file_path, get_workfile_context, Context,
+            )
+            from tumblepipe.pipe.context import save_context, save_entity_context
+
+            hip_path = Path(hou.hipFile.path())
+            prev_ctx = get_workfile_context(hip_path)
+            # Fallback for migrated projects without context.json
+            if prev_ctx is None:
+                prev_ctx = self.context_from_hip_path(hip_path)
+            if prev_ctx is None:
+                hou.ui.setStatusMessage(
+                    "Save: current scene has no pipeline context.",
+                    severity=hou.severityType.Warning,
+                )
+                return
+
+            # Make sure the loaded scene's project is active before
+            # we resolve the next path / save / write context json.
+            scene_proj = self._catalog._project_for_hip_path(hip_path)
+            if scene_proj is not None:
+                self._catalog._activate_project(scene_proj)
+
+            # Match Houdini's Ctrl+S extension (license-driven), else the
+            # file is rewritten to a path the pipeline didn't record.
+            next_path = next_hip_file_path(
+                prev_ctx.entity_uri, prev_ctx.department_name,
+                nc_type=session_nc_type(),
+            )
+            hou.hipFile.save(str(next_path))
+
+            next_ctx = get_workfile_context(next_path) or Context(
+                entity_uri=prev_ctx.entity_uri,
+                department_name=prev_ctx.department_name,
+                version_name=Path(next_path).stem.rsplit("_", 1)[-1],
+            )
+            save_context(
+                Path(next_path).parent, prev_ctx, next_ctx,
+                file_extension=Path(next_path).suffix.lstrip("."),
+            )
+            save_entity_context(Path(next_path).parent, next_ctx)
+
+            log.info("Saved next version: %s", next_path)
+            hou.ui.setStatusMessage(
+                f"Saved {Path(next_path).name}",
+                severity=hou.severityType.Message,
+            )
+            # Drop scan caches so the next browse query re-scans.
+            self._catalog.invalidate_cache()
+        except Exception:
+            log.exception("Save failed")
+        finally:
             if callable(refresh_cb):
                 try:
                     refresh_cb()
                 except Exception:
                     log.exception("Detail refresh after save failed")
-
-        def _do_save():
-            try:
-                import hou
-                from tumblepipe.pipe.paths import (
-                    next_hip_file_path, get_workfile_context, Context,
-                )
-                from tumblepipe.pipe.context import save_context, save_entity_context
-
-                hip_path = Path(hou.hipFile.path())
-                prev_ctx = get_workfile_context(hip_path)
-                # Fallback for migrated projects without context.json
-                if prev_ctx is None:
-                    prev_ctx = self.context_from_hip_path(hip_path)
-                if prev_ctx is None:
-                    hou.ui.setStatusMessage(
-                        "Save: current scene has no pipeline context.",
-                        severity=hou.severityType.Warning,
-                    )
-                    return
-
-                # Make sure the loaded scene's project is active before
-                # we resolve the next path / save / write context json.
-                scene_proj = self._catalog._project_for_hip_path(hip_path)
-                if scene_proj is not None:
-                    self._catalog._activate_project(scene_proj)
-
-                # Match Houdini's Ctrl+S extension (license-driven), else the
-                # file is rewritten to a path the pipeline didn't record.
-                next_path = next_hip_file_path(
-                    prev_ctx.entity_uri, prev_ctx.department_name,
-                    nc_type=session_nc_type(),
-                )
-                hou.hipFile.save(str(next_path))
-
-                next_ctx = get_workfile_context(next_path) or Context(
-                    entity_uri=prev_ctx.entity_uri,
-                    department_name=prev_ctx.department_name,
-                    version_name=Path(next_path).stem.rsplit("_", 1)[-1],
-                )
-                save_context(
-                    Path(next_path).parent, prev_ctx, next_ctx,
-                    file_extension=Path(next_path).suffix.lstrip("."),
-                )
-                save_entity_context(Path(next_path).parent, next_ctx)
-
-                log.info("Saved next version: %s", next_path)
-                hou.ui.setStatusMessage(
-                    f"Saved {Path(next_path).name}",
-                    severity=hou.severityType.Message,
-                )
-                # Drop scan caches so the next browse query re-scans.
-                self._catalog.invalidate_cache()
-            except Exception:
-                log.exception("Save failed")
-            finally:
-                _settle()
-
-        run_on_main_thread(_do_save)
 
     def publish_current_scene(self, refresh_cb=None) -> None:
         """Execute matching ExportLayer / ExportRig nodes for the loaded scene."""

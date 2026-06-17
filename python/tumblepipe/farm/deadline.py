@@ -101,7 +101,7 @@ def hpm_task_manifest(script_path) -> str:
       fresh worker with no cached registry index.
     - the version is BARE (an exact registry get_version fetch); a "=" prefix
       is sent verbatim into the registry query and 404s.
-    - `[scripts.task]` runs the task module inside the package-env (hpm >=0.22.1):
+    - `[scripts.task]` runs the task module inside the package-env (hpm >=0.22.2):
       `package-env = true` resolves the full env (the dependency package
       importable + its [python_dependencies]) and runs `python -m <module>`. The
       HPM plugin invokes it as `hpm run task -- <context> <first> <last>`; this

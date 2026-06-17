@@ -24,6 +24,7 @@ from tumblepipe.util.io import (
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Hython
+from tumblepipe.farm.tasks.env import job_data_dir
 from tumblepipe.config.department import is_renderable
 from tumblepipe.pipe.paths import (
     next_export_path
@@ -144,6 +145,10 @@ def main(config):
                 TH_PROJECT_PATH = path_str(to_windows_path(api.PROJECT_PATH)),
                 TH_PIPELINE_PATH = path_str(to_windows_path(api.PIPELINE_PATH)),
                 TH_CONFIG_PATH = path_str(to_windows_path(api.CONFIG_PATH)),
+                # Forward the job data dir so publish_houdini can resolve the
+                # bundled workfile (it runs in hython with CWD = the hpm
+                # manifest dir, not the data dir).
+                TH_FARM_DATA = path_str(job_data_dir()),
                 HOUDINI_PACKAGE_DIR = ';'.join([
                     path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini')))),
                     path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('project:/_pipeline/houdini'))))

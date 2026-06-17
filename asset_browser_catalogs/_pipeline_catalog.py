@@ -1739,6 +1739,28 @@ class PipelineCatalog(Catalog):
         elif action_id == "reload":
             self._scene.reload_current_scene(done_cb)
 
+    def get_quick_action_menu_items(self, action_id: str):
+        """Right-click items for a quick-action toolbar button (asset_browser
+        >= 0.7.8; older hosts simply never call this).
+
+        Only ``save`` carries one: an *inline* emergency save. The normal
+        left-click Save defers to the main-thread event loop, which is frozen
+        while Houdini sits in its crash-report dialog — so the queued save
+        never lands. The menu entry runs the save directly from the context-
+        menu handler so it still completes during a crash. See
+        :meth:`SceneManager.emergency_save_current_scene`.
+        """
+        if action_id == "save":
+            return [("Emergency Save (off-thread)", self._emergency_save)]
+        return []
+
+    def _emergency_save(self) -> None:
+        # Intentionally NOT wrapped in run_catalog_op / gui_dispatch: deferring
+        # would re-queue onto the same dead event loop the normal Save uses,
+        # defeating the point. We run inline (the menu handler's nested loop
+        # pumps during the crash dialog), accepting the brief GUI block.
+        self._scene.emergency_save_current_scene()
+
     def get_quick_action_hover(self, action_id: str) -> str | None:
         """Return rich-text HTML for the hover popup above a quick action.
 

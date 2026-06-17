@@ -4,6 +4,7 @@ import json
 import hou
 
 from tumblepipe.api import path_str, default_client
+from tumblepipe.farm.tasks.env import job_data_dir
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
@@ -342,9 +343,10 @@ def main(config) -> int:
         return 1
 
     bundled_workfile = Path(config['workfile_path'])
-    # Resolve relative to current directory (job data path)
+    # Resolve relative to the job data dir (forwarded as TH_FARM_DATA): the task
+    # runs in hython with CWD = the hpm manifest dir, not the data dir.
     if not bundled_workfile.is_absolute():
-        bundled_workfile = Path.cwd() / bundled_workfile
+        bundled_workfile = job_data_dir() / bundled_workfile
 
     # Parse the entity from the config
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])

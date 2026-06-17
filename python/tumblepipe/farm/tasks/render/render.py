@@ -27,7 +27,7 @@ from tumblepipe.config.timeline import BlockRange
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Husk, ITileStitch
 from tumblepipe.apps import exr
-from tumblepipe.farm.tasks.env import get_base_env, print_env
+from tumblepipe.farm.tasks.env import get_base_env, print_env, job_data_dir
 
 api = default_client()
 
@@ -338,8 +338,10 @@ def cli():
     # Get the receipt path
     receipt_path = _fix_frame_pattern(Path(config['receipt_path']), '*')
 
-    # Check the input path
-    input_path = Path(config['input_path'])
+    # Check the input path (the collapsed USD is bundled into the job data dir
+    # and referenced relatively; resolve it against that dir since the HPM task
+    # runs with CWD = the hpm manifest dir, not the data dir).
+    input_path = job_data_dir() / config['input_path']
     if not input_path.exists():
         return _error(f'Input path not found: {input_path}')
 
