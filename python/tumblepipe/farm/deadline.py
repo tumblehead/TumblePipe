@@ -53,6 +53,35 @@ def _package_full_name(script_path, bare_name) -> str:
     return path_match.group(1) if path_match is not None else bare_name
 
 
+def _parse_requirements(requirements_path) -> list:
+    """Pip requirement specs from a task's requirements.txt, minus comments.
+
+    These per-task requirements were consumed by the old hand-built uv venv;
+    under the HPM `package-env` flow they're merged into the package env as the
+    script's "extra requirements" (see `hpm_task_manifest`). Strips blank lines,
+    full-line `#` comments, and trailing ` # …` inline comments. An all-comments
+    file (e.g. resolve_notify's) yields `[]`, so no `requirements` is emitted.
+    """
+    if requirements_path is None:
+        return []
+    try:
+        text = Path(requirements_path).read_text()
+    except OSError:
+        return []
+    requirements = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#'):
+            continue
+        # Inline comment: pip requires whitespace before the '#'.
+        hash_index = line.find(' #')
+        if hash_index != -1:
+            line = line[:hash_index].strip()
+        if line:
+            requirements.append(line)
+    return requirements
+
+
 def _script_module(relative_script: str) -> str:
     """Dotted module path for `python -m` from a package-relative script path.
 
@@ -85,7 +114,7 @@ def _submitter_registries() -> list:
     return registries if registries else [_FALLBACK_REGISTRY]
 
 
-def hpm_task_manifest(script_path) -> str:
+def hpm_task_manifest(script_path, requirements_path=None) -> str:
     """hpm.toml that resolves the package a farm task runs from.
 
     A synthetic envelope package whose single dependency is the task's package
@@ -106,11 +135,24 @@ def hpm_task_manifest(script_path) -> str:
       importable + its [python_dependencies]) and runs `python -m <module>`. The
       HPM plugin invokes it as `hpm run task -- <context> <first> <last>`; this
       is what replaces the old hand-built uv venv + PYTHONPATH reconstruction.
+    - a task's per-task requirements.txt (e.g. notify's `discord.py`) becomes the
+      script's `requirements` — package-env merges them on top of the package's
+      [python_dependencies] as "extra requirements". Without this the package-env
+      resolves only the package deps and the task ImportErrors on its own libs
+      (the old uv-venv flow consumed requirements.txt; package-env does not unless
+      it's threaded here).
     """
     package_spec, relative_script = hpm_package_spec(script_path)
     bare_name, _, version = package_spec.partition('@')
     full_name = _package_full_name(script_path, bare_name)
     module = _script_module(relative_script)
+    task_script = {
+        'cmd': f'python -m {module}',
+        'package-env': True,
+    }
+    requirements = _parse_requirements(requirements_path)
+    if requirements:
+        task_script['requirements'] = requirements
     return tomli_w.dumps({
         'package': {
             'path': 'local/deadline-hpm-job',
@@ -121,10 +163,7 @@ def hpm_task_manifest(script_path) -> str:
         'registries': _submitter_registries(),
         'dependencies': {full_name: version},
         'scripts': {
-            'task': {
-                'cmd': f'python -m {module}',
-                'package-env': True,
-            },
+            'task': task_script,
         },
     })
 
@@ -138,5 +177,5 @@ def Task(script_path, requirements_path, *args, **kwargs):
     """
     job = Job(script_path, requirements_path, *args, **kwargs)
     if job._plugin == 'HPM':
-        job.manifest = hpm_task_manifest(script_path)
+        job.manifest = hpm_task_manifest(script_path, requirements_path)
     return job

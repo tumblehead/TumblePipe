@@ -15,8 +15,9 @@ Two plugins can run them:
   [tumblehead/deadline-hpm-plugin](https://github.com/tumblehead/deadline-hpm-plugin).
   A job bundles an `hpm.toml` whose dependency is the task package at its exact
   version and whose `[scripts.task]` runs `python -m <module>` with
-  `package-env = true`. The worker `hpm install`s it against its **own** HPM
-  store (resolving the package + its `[python_dependencies]` and pinning the
+  `package-env = true` (plus the task's own `requirements`, if any). The worker
+  `hpm install`s it against its **own** HPM store (resolving the package + its
+  `[python_dependencies]` + the script's extra `requirements`, and pinning the
   Houdini-mapped CPython into a package-env venv), then `hpm run task` executes
   the task **in native python** inside that env — the package importable, its
   deps on `PYTHONPATH`. No node has to mirror the submitter's disk, and the
@@ -86,7 +87,7 @@ from tumblepipe.farm.deadline import Task
 # it has no reproducible version to ship.
 job = Task(
     Path("/path/to/.hpm/packages/tumblepipe@1.12.2/python/.../script.py"),
-    None,                       # extra requirements.txt; usually unnecessary
+    None,                       # per-task requirements.txt; None if the task has none
     "arg1",
     "arg2",
 )
@@ -108,9 +109,15 @@ farm.submit(batch, Path("/path/to/jobs-dir"))
 
 The default plugin is set by `DEFAULT_PLUGIN` in `tumblepipe.apps.deadline`
 (pass `plugin="UV"` to `Task`/`Job` for the legacy path). Under **HPM**, the
-task's third-party Python dependencies come from the resolved package's
-`hpm.toml` `[python_dependencies]` (installed by hpm into the package-env), so
-`requirements_path` is normally `None` and is ignored by the HPM plugin.
+task's third-party Python dependencies come from two places, both resolved into
+the package-env: the package's own `hpm.toml` `[python_dependencies]`, plus any
+per-task `requirements.txt` passed as `requirements_path`. `Task` reads that
+file and writes its specs into the generated manifest's `[scripts.task]`
+`requirements`, which the package-env merges on top of the package deps as
+"extra requirements" (visible in the worker log as
+`N manifest dep(s) + M extra requirement(s)`). A task with libraries the package
+itself doesn't declare — e.g. `notify` needs `discord.py` — relies on this; the
+file is `None` only when the task adds nothing beyond the package deps.
 
 Use `Batch.add_dep(first, second)` to mark `second` as a dependency of
 `first`, or `Batch.add_jobs_with_deps(jobs, deps)` to wire a whole graph
