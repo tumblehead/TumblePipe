@@ -12,7 +12,7 @@
     <toolMenuContext name="network">
       <contextOpType>$HDA_TABLE_AND_NAME</contextOpType>
     </toolMenuContext>
-    <toolSubmenu>_PIPELINE</toolSubmenu>
+    <toolSubmenu>_TumblePipe/pipeline</toolSubmenu>
     <script scriptType="python"><![CDATA[import coptoolutils
 
 coptoolutils.genericTool(kwargs, '$HDA_NAME')]]></script>

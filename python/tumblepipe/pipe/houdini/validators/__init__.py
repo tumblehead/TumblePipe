@@ -24,7 +24,11 @@ from .render_vars import validate_render_var_names, validate_ordered_vars
 from .render_settings import validate_render_settings, validate_render_products
 from .camera import validate_cameras
 from .geometry import validate_rest_geometry, validate_material_bindings
-from .asset_structure import validate_model_structure, validate_lookdev_structure
+from .asset_structure import (
+    validate_model_structure,
+    validate_blendshape_structure,
+    validate_lookdev_structure,
+)
 from .shot_structure import validate_shot_root_prims
 
 # Global registry instance with all built-in validators
@@ -39,6 +43,7 @@ _registry.register('cameras', validate_cameras)
 _registry.register('rest_geometry', validate_rest_geometry)
 _registry.register('material_bindings', validate_material_bindings)
 _registry.register('model_structure', validate_model_structure)
+_registry.register('blendshape_structure', validate_blendshape_structure)
 _registry.register('lookdev_structure', validate_lookdev_structure)
 _registry.register('shot_root_prims', validate_shot_root_prims)
 
@@ -47,7 +52,7 @@ _registry.register('shot_root_prims', validate_shot_root_prims)
 # Project config at config:/validators/{ctx}/{dept}/validators.py overrides these.
 _DEFAULT_VALIDATORS: dict[tuple[str, str], list[str]] = {
     ('assets', 'model'): ['model_structure', 'rest_geometry'],
-    ('assets', 'blendshape'): ['model_structure'],
+    ('assets', 'blendshape'): ['blendshape_structure'],
     ('assets', 'lookdev'): ['lookdev_structure', 'material_bindings'],
     ('assets', 'rig'): ['model_structure'],
     ('shots', 'layout'): ['shot_root_prims'],
@@ -157,6 +162,7 @@ __all__ = [
     'validate_rest_geometry',
     'validate_material_bindings',
     'validate_model_structure',
+    'validate_blendshape_structure',
     'validate_lookdev_structure',
     'validate_shot_root_prims',
 ]

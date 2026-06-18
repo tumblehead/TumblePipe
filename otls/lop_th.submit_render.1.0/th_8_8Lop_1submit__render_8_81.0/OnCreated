@@ -1,3 +1,0 @@
-from tumblepipe.pipe.houdini.lops import submit_render
-
-submit_render.on_created(kwargs['node'])

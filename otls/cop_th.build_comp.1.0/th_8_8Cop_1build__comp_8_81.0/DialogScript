@@ -204,7 +204,7 @@
                 label   "Start/End-Frame"
                 type    intvector2
                 size    2
-                default { [ "import hou\n\nfrom tumblepipe.api import default_client\nfrom tumblepipe.pipe.houdini.lops import submit_render\n\napi = default_client()\n\nnode = submit_render.SubmitRender(hou.pwd())\nsequence_name = node.get_sequence_name()\nshot_name = node.get_shot_name()\n\nframe_range = api.config.get_frame_range(sequence_name, shot_name)\nreturn frame_range.start_frame" python ] [ "import hou\n\nfrom tumblepipe.api import default_client\nfrom tumblepipe.pipe.houdini.lops import submit_render\n\napi = default_client()\n\nnode = submit_render.SubmitRender(hou.pwd())\nsequence_name = node.get_sequence_name()\nshot_name = node.get_shot_name()\n\nframe_range = api.config.get_frame_range(sequence_name, shot_name)\nreturn frame_range.end_frame" python ] }
+                default { [ "import hou\n\nfrom tumblepipe.config.timeline import get_frame_range\nfrom tumblepipe.pipe.houdini.cops.build_comp import BuildComp\n\nnode = BuildComp(hou.pwd())\nshot_uri = node.get_shot_uri()\nframe_range = get_frame_range(shot_uri) if shot_uri is not None else None\nreturn 1001 if frame_range is None else frame_range.start_frame" python ] [ "import hou\n\nfrom tumblepipe.config.timeline import get_frame_range\nfrom tumblepipe.pipe.houdini.cops.build_comp import BuildComp\n\nnode = BuildComp(hou.pwd())\nshot_uri = node.get_shot_uri()\nframe_range = get_frame_range(shot_uri) if shot_uri is not None else None\nreturn 1001 if frame_range is None else frame_range.end_frame" python ] }
                 disablewhen "{ frame_range == from_config }"
                 range   { 1! 999999! }
                 parmtag { "script_callback_language" "python" }
@@ -214,7 +214,7 @@
                 label   "Pre/Post-Roll"
                 type    intvector2
                 size    2
-                default { [ "import hou\n\nfrom tumblepipe.api import default_client\nfrom tumblepipe.pipe.houdini.lops import submit_render\n\napi = default_client()\n\nnode = submit_render.SubmitRender(hou.pwd())\nsequence_name = node.get_sequence_name()\nshot_name = node.get_shot_name()\n\nframe_range = api.config.get_frame_range(sequence_name, shot_name)\nreturn frame_range.start_roll" python ] [ "import hou\n\nfrom tumblepipe.api import default_client\nfrom tumblepipe.pipe.houdini.lops import submit_render\n\napi = default_client()\n\nnode = submit_render.SubmitRender(hou.pwd())\nsequence_name = node.get_sequence_name()\nshot_name = node.get_shot_name()\n\nframe_range = api.config.get_frame_range(sequence_name, shot_name)\nreturn frame_range.end_roll" python ] }
+                default { [ "import hou\n\nfrom tumblepipe.config.timeline import get_frame_range\nfrom tumblepipe.pipe.houdini.cops.build_comp import BuildComp\n\nnode = BuildComp(hou.pwd())\nshot_uri = node.get_shot_uri()\nframe_range = get_frame_range(shot_uri) if shot_uri is not None else None\nreturn 0 if frame_range is None else frame_range.start_roll" python ] [ "import hou\n\nfrom tumblepipe.config.timeline import get_frame_range\nfrom tumblepipe.pipe.houdini.cops.build_comp import BuildComp\n\nnode = BuildComp(hou.pwd())\nshot_uri = node.get_shot_uri()\nframe_range = get_frame_range(shot_uri) if shot_uri is not None else None\nreturn 0 if frame_range is None else frame_range.end_roll" python ] }
                 disablewhen "{ frame_range == from_config }"
                 range   { 0! 999999! }
                 parmtag { "script_callback_language" "python" }

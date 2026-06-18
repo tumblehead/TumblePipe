@@ -10,13 +10,13 @@ def _validate_asset_base(root, context: dict | None, child_prim_name: str) -> Va
 
     Convention (matches create_asset_model HDA):
     - Asset prim is of type Xform (transformable so it can be placed in shots)
-    - Required child prim ('geo' or 'mtl') is of type Scope (pure grouping)
+    - Required child prim ('geo', 'blshp' or 'mtl') is of type Scope (grouping)
     - Mesh content lives inside the Scope as Mesh prims
 
     Args:
         root: USD stage pseudo root prim
         context: Optional dict containing 'entity_uri'
-        child_prim_name: Name of required child prim ('geo' or 'mtl')
+        child_prim_name: Name of required child prim ('geo', 'blshp' or 'mtl')
 
     Returns:
         ValidationResult with any errors found
@@ -124,6 +124,29 @@ def validate_model_structure(root, context: dict | None = None) -> ValidationRes
         ValidationResult with any structure errors
     """
     return _validate_asset_base(root, context, 'geo')
+
+
+def validate_blendshape_structure(root, context: dict | None = None) -> ValidationResult:
+    """Validate blendshape department asset structure.
+
+    For blendshape exports, validates:
+    - Asset prim exists at path derived from entity URI (e.g., /CHAR/Frog)
+    - Asset prim is of type Xform
+    - 'blshp' child prim exists (e.g., /CHAR/Frog/blshp)
+    - 'blshp' prim is of type Scope
+
+    Blendshapes export under <asset>/blshp/ (the create_blendshapes SOP sets
+    pathprefix to '{prim_path}/blshp/'), so the required child prim is 'blshp',
+    not 'geo' as for the model department.
+
+    Args:
+        root: USD stage pseudo root prim
+        context: Optional dict containing 'entity_uri' for the asset
+
+    Returns:
+        ValidationResult with any structure errors
+    """
+    return _validate_asset_base(root, context, 'blshp')
 
 
 def validate_lookdev_structure(root, context: dict | None = None) -> ValidationResult:
