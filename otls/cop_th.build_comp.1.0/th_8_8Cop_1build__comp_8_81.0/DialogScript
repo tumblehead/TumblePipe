@@ -204,7 +204,7 @@
                 label   "Start/End-Frame"
                 type    intvector2
                 size    2
-                default { [ "import hou\n\nfrom tumblepipe.config.timeline import get_frame_range\nfrom tumblepipe.pipe.houdini.cops.build_comp import BuildComp\n\nnode = BuildComp(hou.pwd())\nshot_uri = node.get_shot_uri()\nframe_range = get_frame_range(shot_uri) if shot_uri is not None else None\nreturn 1001 if frame_range is None else frame_range.start_frame" python ] [ "import hou\n\nfrom tumblepipe.config.timeline import get_frame_range\nfrom tumblepipe.pipe.houdini.cops.build_comp import BuildComp\n\nnode = BuildComp(hou.pwd())\nshot_uri = node.get_shot_uri()\nframe_range = get_frame_range(shot_uri) if shot_uri is not None else None\nreturn 1001 if frame_range is None else frame_range.end_frame" python ] }
+                default { 1001 1100 }
                 disablewhen "{ frame_range == from_config }"
                 range   { 1! 999999! }
                 parmtag { "script_callback_language" "python" }
@@ -214,7 +214,7 @@
                 label   "Pre/Post-Roll"
                 type    intvector2
                 size    2
-                default { [ "import hou\n\nfrom tumblepipe.config.timeline import get_frame_range\nfrom tumblepipe.pipe.houdini.cops.build_comp import BuildComp\n\nnode = BuildComp(hou.pwd())\nshot_uri = node.get_shot_uri()\nframe_range = get_frame_range(shot_uri) if shot_uri is not None else None\nreturn 0 if frame_range is None else frame_range.start_roll" python ] [ "import hou\n\nfrom tumblepipe.config.timeline import get_frame_range\nfrom tumblepipe.pipe.houdini.cops.build_comp import BuildComp\n\nnode = BuildComp(hou.pwd())\nshot_uri = node.get_shot_uri()\nframe_range = get_frame_range(shot_uri) if shot_uri is not None else None\nreturn 0 if frame_range is None else frame_range.end_roll" python ] }
+                default { 0 0 }
                 disablewhen "{ frame_range == from_config }"
                 range   { 0! 999999! }
                 parmtag { "script_callback_language" "python" }
