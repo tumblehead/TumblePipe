@@ -370,6 +370,7 @@ def main(config) -> int:
 
     # Process all entities using the same code path
     _headline('Processing Entities')
+    failures: list[tuple[str, str]] = []  # (department, error)
     for curr_entity_uri, curr_dept_name in downstream_entity_pairs:
         print(f'\nDepartment: {curr_dept_name}')
 
@@ -392,11 +393,19 @@ def main(config) -> int:
             _save(curr_entity_uri, curr_dept_name)
 
         except Exception as e:
+            import traceback
             print(f'Error processing department {curr_dept_name}: {e}')
+            traceback.print_exc()
+            failures.append((curr_dept_name, str(e)))
             continue
 
     # Done
     _headline('Done')
+    if failures:
+        print(f'FAILED: {len(failures)} department(s) did not publish:')
+        for dept_name, error in failures:
+            print(f'  - {dept_name}: {error}')
+        return 1
     return 0
 
 def cli():

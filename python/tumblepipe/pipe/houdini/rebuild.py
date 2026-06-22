@@ -10,7 +10,7 @@ import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.lops import (
     import_layer, import_shot, layer_split, export_layer, import_asset
 )
-from tumblepipe.pipe.houdini.sops import import_rig
+from tumblepipe.pipe.houdini.sops import import_rig, export_rig
 
 
 # Map node type names to (wrapper_class, [(getter, setter), ...])
@@ -46,6 +46,10 @@ NODE_CONFIGS = {
         ('get_entity_uri', 'set_entity_uri'),
         ('get_version_name', 'set_version_name'),
         ('get_instances', 'set_instances'),
+    ]),
+    'export_rig': (export_rig.ExportRig, [
+        ('get_entity_uri', 'set_entity_uri'),
+        ('get_variant_name', 'set_variant_name'),
     ]),
 }
 

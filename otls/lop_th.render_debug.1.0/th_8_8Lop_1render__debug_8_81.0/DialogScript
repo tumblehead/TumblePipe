@@ -34,22 +34,6 @@
             }
             parmtag { "script_callback_language" "python" }
         }
-        parm {
-            name    "render_layer"
-            label   "Render Layer"
-            type    string
-            default { "" }
-            menu {
-                [ "from tumblepipe.pipe.houdini.lops import render_debug" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
-                [ "" ]
-                [ "node = render_debug.RenderDebug(hou.pwd())" ]
-                [ "items = node.list_render_layer_names()" ]
-                [ "return util.list_to_menu(items)" ]
-                language python
-            }
-            parmtag { "script_callback_language" "python" }
-        }
     }
 
     groupsimple {

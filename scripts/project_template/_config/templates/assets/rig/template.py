@@ -56,7 +56,7 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
         # Create the export rig node
         export_node = export_rig.create(sop_dive_node, 'export_rig')
         export_node.setInput(0, sop_import_model)
-        export_node.set_asset_uri(member_uri)
+        export_node.set_entity_uri(member_uri)
 
         # Layout the dive nodes
         sop_dive_node.layoutChildren()

@@ -47,7 +47,7 @@
                 [ "from tumblepipe.pipe.houdini import util" ]
                 [ "" ]
                 [ "node = build_comp.BuildComp(hou.pwd())" ]
-                [ "items = node.list_shot_names()" ]
+                [ "items = node.list_shot_uris()" ]
                 [ "return util.list_to_menu(items)" ]
                 language python
             }
@@ -140,7 +140,7 @@
                 [ "from tumblepipe.pipe.houdini import util" ]
                 [ "" ]
                 [ "node = build_comp.BuildComp(hou.pwd())" ]
-                [ "items = ['all'] + node.list_render_layer_names()" ]
+                [ "items = ['all'] + node.list_render_department_names()" ]
                 [ "return util.list_to_menu(items)" ]
                 language python
             }

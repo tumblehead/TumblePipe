@@ -17,7 +17,6 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
         cop_node = scene_node.createNode('copnet', f'composite_shot_{member_name}')
         comp_node = build_comp.create(cop_node, f'composite_shot_{member_name}')
         comp_node.set_shot_uri(member_uri)
-        comp_node.set_department_name(department_name)
 
     scene_node.layoutChildren()
 

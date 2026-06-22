@@ -431,6 +431,7 @@ class SceneManager:
         published = 0
         scanned = 0
         mismatched: list[tuple[str, str]] = []  # (path, entity_uri)
+        failed: list[tuple[str, str]] = []  # (path, error)
         target = str(entity_uri)
 
         try:
@@ -447,10 +448,11 @@ class SceneManager:
                         log.info("Published ExportLayer %s", node.path())
                     else:
                         mismatched.append((node.path(), ent))
-                except Exception:
+                except Exception as exc:
                     log.exception(
                         "ExportLayer wrap/execute failed: %s", node.path(),
                     )
+                    failed.append((node.path(), str(exc)))
         except Exception:
             log.exception("Failed scanning export_layer LOPs")
 
@@ -461,23 +463,35 @@ class SceneManager:
                 scanned += 1
                 try:
                     wrapper = ExportRig(node)
-                    ent = str(wrapper.get_asset_uri())
+                    ent = str(wrapper.get_entity_uri())
                     if ent == target:
                         wrapper.execute()
                         published += 1
                         log.info("Published ExportRig %s", node.path())
                     else:
                         mismatched.append((node.path(), ent))
-                except Exception:
+                except Exception as exc:
                     log.exception(
                         "ExportRig wrap/execute failed: %s", node.path(),
                     )
+                    failed.append((node.path(), str(exc)))
         except Exception:
             log.exception("Failed scanning export_rig SOPs")
+
+        if failed:
+            log.error(
+                "Publish: %d export node(s) errored for %s: %s",
+                len(failed), target, failed,
+            )
 
         if published == 0:
             if scanned == 0:
                 msg = "Publish: no export_layer / export_rig nodes in scene."
+            elif failed:
+                msg = (
+                    f"Publish: {len(failed)} export node(s) errored "
+                    f"(see log). Nothing published."
+                )
             else:
                 msg = (
                     f"Publish: {scanned} export node(s) in scene "
@@ -491,10 +505,17 @@ class SceneManager:
             return
 
         log.info("Published %d export node(s) for %s", published, entity_uri)
-        hou.ui.setStatusMessage(
-            f"Published {published} export node(s).",
-            severity=hou.severityType.Message,
-        )
+        if failed:
+            hou.ui.setStatusMessage(
+                f"Published {published} export node(s), "
+                f"but {len(failed)} errored (see log).",
+                severity=hou.severityType.Warning,
+            )
+        else:
+            hou.ui.setStatusMessage(
+                f"Published {published} export node(s).",
+                severity=hou.severityType.Message,
+            )
         # refresh_cb is dispatched by the outer wrapper's finally;
         # only drop caches here so the next browse re-scans.
         self.refresh_asset(None, None)

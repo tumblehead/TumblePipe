@@ -1571,12 +1571,18 @@ from tumblepipe.api import path_str, default_client
 api = default_client()
 context = build_comp.BuildComp(hou.pwd().parent().parent().parent())
 
-sequence_name = context.get_sequence_name()
-shot_name = context.get_shot_name()
+shot_uri = context.get_shot_uri()
 render_department_name = context.get_render_department_name()
 resolution_name = context.get_proxy_resolution()
-start_frame, end_frame = api.config.get_frame_range(sequence_name, shot_name)
-render_layer_names = api.config.list_render_layer_names(sequence_name, shot_name)
+
+frame_range = api.config.get_frame_range(shot_uri) if shot_uri is not None else None
+if frame_range is not None:
+    block_range = frame_range.full_range()
+    start_frame = block_range.first_frame
+    end_frame = block_range.last_frame
+else:
+    start_frame = 0
+    end_frame = 0
 
 def _aov_included(aov_name):
     if aov_name.startswith('C_'): return True
@@ -1607,11 +1613,16 @@ def _scale(resolution):
         case 'quarter': return 4.0
         case _: assert False, f'Unknown resolution {resolution}'
 
-import_render = get_render(
-    sequence_name,
-    shot_name,
-    render_department_name,
-    purpose = 'render'
+import_render = (
+    get_render(shot_uri, render_department_name, purpose = 'render')
+    if shot_uri is not None
+    else None
+)
+
+render_layer_names = (
+    list(import_render.layers.keys())
+    if import_render is not None
+    else []
 )
 
 for render_layer_name in render_layer_names:
@@ -1628,12 +1639,11 @@ for render_layer_name in render_layer_names:
         if not _aov_included(aov_name): continue
     
         export_aov_path = get_aov_frame_path(
-            sequence_name,
-            shot_name,
+            shot_uri,
             resolution_name,
             render_layer_name,
-            aov_name,
             render_layer.version,
+            aov_name,
             '$F',
             purpose = 'proxy'
         )

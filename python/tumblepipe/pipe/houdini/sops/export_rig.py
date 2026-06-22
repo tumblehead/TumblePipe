@@ -83,6 +83,12 @@ class ExportRig(ns.Node):
             return 'default'
         return variant_name
 
+    def set_variant_name(self, variant_name: str):
+        variant_names = self.list_variant_names()
+        if variant_name not in variant_names:
+            return
+        self.parm('variant').set(variant_name)
+
     def execute(self, force_local: bool = False):
         """
         Execute export.
