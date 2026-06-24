@@ -62,34 +62,10 @@ def entity_sequence(sequence: str) -> "Uri":
 
 
 # ── Entity schema URIs ───────────────────────────────────────
-# ``ProjectConfigConvention.add_entity(uri, properties, schema_uri)``
-# wants the schema for the entity's position. The pipeline declares
-# these four:
-#
-#     schemas:/entity/assets/category          (entity:/assets/<X>)
-#     schemas:/entity/assets/category/asset    (entity:/assets/<X>/<Y>)
-#     schemas:/entity/shots/sequence           (entity:/shots/<X>)
-#     schemas:/entity/shots/sequence/shot      (entity:/shots/<X>/<Y>)
-
-
-def schema_asset() -> "Uri":
-    """``schemas:/entity/assets/category/asset`` — for ``entity:/assets/<cat>/<asset>``."""
-    return _Uri().parse_unsafe("schemas:/entity/assets/category/asset")
-
-
-def schema_shot() -> "Uri":
-    """``schemas:/entity/shots/sequence/shot`` — for ``entity:/shots/<seq>/<shot>``."""
-    return _Uri().parse_unsafe("schemas:/entity/shots/sequence/shot")
-
-
-def schema_category() -> "Uri":
-    """``schemas:/entity/assets/category`` — for the 2-segment category parent."""
-    return _Uri().parse_unsafe("schemas:/entity/assets/category")
-
-
-def schema_sequence() -> "Uri":
-    """``schemas:/entity/shots/sequence`` — for the 2-segment sequence parent."""
-    return _Uri().parse_unsafe("schemas:/entity/shots/sequence")
+# tumblepipe derives an entity's schema from its position in the URI
+# hierarchy (see config_convention.get_entity_schema), so add_entity
+# takes only (uri, properties) — no schema URI is passed or stored.
+# The schema_* helpers that used to build those URIs are gone.
 
 
 def entity_from_suffix(suffix: str) -> "Uri":

@@ -2348,7 +2348,7 @@ class PipelineCatalog(Catalog):
                     f"Category '{category}' already exists."
                 )
                 return None
-            client.config.add_entity(cat_uri, {}, uris.schema_category())
+            client.config.add_entity(cat_uri, {})
             self._cached_assets = None
             return None  # No card to select — empty category
 
@@ -2363,7 +2363,7 @@ class PipelineCatalog(Catalog):
                     f"Sequence '{sequence}' already exists."
                 )
                 return None
-            client.config.add_entity(seq_uri, {}, uris.schema_sequence())
+            client.config.add_entity(seq_uri, {})
             self._cached_shots = None
             return None  # No card to select — empty sequence
 
@@ -2383,9 +2383,7 @@ class PipelineCatalog(Catalog):
                     f"Asset '{name}' already exists in '{category}'."
                 )
                 return None
-            client.config.add_entity(
-                entity_uri, {"name": name}, uris.schema_asset(),
-            )
+            client.config.add_entity(entity_uri, {"name": name})
             self._cached_assets = None
             return f"{proj_name}/{category}/{name}"
 
@@ -2405,7 +2403,6 @@ class PipelineCatalog(Catalog):
             client.config.add_entity(
                 entity_uri,
                 {"frame_start": frame_start, "frame_end": frame_end},
-                uris.schema_shot(),
             )
             self._cached_shots = None
             return f"{proj_name}/{sequence}/{name}"
