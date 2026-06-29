@@ -15,13 +15,8 @@ root {
                 tabs 0 0 {
                     pane panetab2 -a 1 -l 1 -H /stage/ -T LOP -m sceneview
                 }
-                split 0.737056 H R {
-                    tabs 0 0 {
-                        pane panetab3 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
-                    }
-                    tabs 0 0 {
-                        pane panetab15 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
-                    }
+                tabs 0 0 {
+                    pane panetab3 -a 1 -l 10 -H /img/ -T IMG -m pythonpanel
                 }
             }
         }
@@ -253,7 +248,6 @@ viewtype -t ortho_right ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.paneta
 viewtype -t ortho_front ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",3)`
 viewtype -t ortho_top ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",1)`
 viewtype -t perspective ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",2)`
-pythonpanel -s on -t off -n rig_tree panetab15
 networkeditor -p '{\n	"backgroundimagebrightness":"1.0",\n	"gridmode":"0",\n	"showcopsmenu":"1",\n	"taskgraphcollapsemode":"Off",\n	"showtasksmenu":"1",\n	"useworkitemcolorattribute":"1",\n	"typesidebarsplit":"0.25",\n	"showmenu":"0",\n	"gridxstep":"2.0",\n	"treesplit":"0.25",\n	"showparmdialogmax":"1",\n	"perfstatname":"Time",\n	"palettemode":"0",\n	"taskgraphsortdirection":"0",\n	"showchilddep":"1",\n	"backgroundimageediting":"0",\n	"showtaskgraphperf":"0",\n	"showgrouplist":"0",\n	"showperfstats":"1",\n	"showparmdialog":"0",\n	"overviewmode":"2",\n	"showdep":"0",\n	"palettecolors":"",\n	"obj:listmode":"0",\n	"showspareinputdep":"1",\n	"workitemcolorattribute":"",\n	"palettesize":"150 150",\n	"showtypesidebar":"0",\n	"showtimedep":"1",\n	"showtree":"0",\n	"overviewbounds":"0.000000 0.000000 427.500000 567.300000",\n	"taskgraphperfstatname":"Cook Time",\n	"gridystep":"1.0",\n	"taskgraphsortcriteria":"Automatic",\n	"workitemattrtocollapseby":"",\n	"grouplistsplit":"0.75"\n}\n' panetab11
 netcolumns -c display,xray,select,origin,capture,bone -n OBJ panetab11
 netcolumns -c display,render,template,selectabletemplate,highlight,unload,bypass,lock -n SOP panetab11
