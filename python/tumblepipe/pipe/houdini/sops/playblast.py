@@ -132,6 +132,15 @@ class Playblast(ns.Node):
 
     def playblast(self):
 
+        # Refresh the process-global config cache from disk before reading the
+        # entity's frame range: the cache is loaded once at session start and a
+        # shot's frame range may have been written to disk afterwards (shot
+        # import, a producer/another session editing config). A stale cache
+        # makes get_frame_range() return None and the playblast crash. Playblast
+        # does not route through the publish dialog, so it refreshes here.
+        from tumblepipe.api import refresh_global_cache
+        refresh_global_cache()
+
         # Find nodes
         context = self.native()
         objects_node = context.node('objects')

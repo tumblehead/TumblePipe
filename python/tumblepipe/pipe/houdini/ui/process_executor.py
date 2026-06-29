@@ -1410,8 +1410,23 @@ def open_process_dialog_for_node(export_node, dialog_title: str = "Export") -> N
         dialog_title: Title for the dialog window
     """
     import hou
+    from tumblepipe.api import refresh_global_cache
     from tumblepipe.pipe.paths import get_workfile_context
     from .process_dialog import ProcessDialog
+
+    # The API client's config cache is a process-global singleton loaded once
+    # at session start and only refreshed by explicit actions (Database editor,
+    # the "Refresh cache" radial, etc.). An entity's frame range / departments /
+    # downstream deps can be written to disk after this session started (shot
+    # import, a producer or another machine/session editing config), leaving
+    # our cache stale. The publish dialog then both *displays* stale frame
+    # ranges (collected here) and *fails the export* — get_frame_range() finds
+    # no frame_* props and returns None ("Frame range could not be
+    # determined"), the long-standing bug where artists had to switch the node
+    # to "From settings". This is the single entry point for every interactive
+    # export/publish flow (export_layer, layer_split, export_rig), so refresh
+    # the whole config from disk here before any entity-derived value is read.
+    refresh_global_cache()
 
     file_path = Path(hou.hipFile.path())
     context = get_workfile_context(file_path)

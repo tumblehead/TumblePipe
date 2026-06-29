@@ -395,13 +395,11 @@ class ExportLayer(ns.Node):
         return self.parm('frame_range').eval()
 
     def get_frame_range(self) -> tuple[FrameRange, int] | None:
+        # The node's 'frame_range' menu only offers 'from_context' and
+        # 'from_settings'. ('single_frame'/'playback_range' are options on the
+        # cache/archive nodes, not here.)
         frame_range_source = self.get_frame_range_source()
         match frame_range_source:
-            case 'single_frame':
-                return FrameRange(1001, 1001, 0, 0), 1
-            case 'playback_range':
-                frame_range = util.get_frame_range()
-                return frame_range, 1
             case 'from_context':
                 entity_uri = self.get_entity_uri()
                 if entity_uri is None:
@@ -494,7 +492,13 @@ class ExportLayer(ns.Node):
         open_process_dialog_for_node(self, dialog_title="Export Layer")
 
     def _execute(self):
-        """Internal execution - called by ProcessDialog callbacks."""
+        """Internal execution - called by ProcessDialog callbacks.
+
+        The config cache is refreshed once up front in
+        open_process_dialog_for_node (the single entry point for every
+        interactive export/publish flow), so entity-derived values resolved
+        here are read from fresh on-disk config.
+        """
         export_type = self.get_export_type()
         match export_type:
             case 'local':
@@ -528,7 +532,7 @@ class ExportLayer(ns.Node):
                 f"Frame range could not be determined for entity: {entity_uri}. "
                 "Its config resolves no frame range (is the entity registered?) - "
                 "set one on the entity, or switch the node's frame range source to "
-                "'Single Frame' or 'Playback Range'."
+                "'From settings' and enter the range manually."
             )
 
         frame_range, step = frame_range_result
@@ -795,7 +799,7 @@ class ExportLayer(ns.Node):
                 f"Frame range could not be determined for entity: {entity_uri}. "
                 "Its config resolves no frame range (is the entity registered?) - "
                 "set one on the entity, or switch the node's frame range source to "
-                "'Single Frame' or 'Playback Range'."
+                "'From settings' and enter the range manually."
             )
 
         frame_range, _step = frame_range_result
