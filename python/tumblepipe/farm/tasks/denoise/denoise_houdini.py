@@ -124,11 +124,12 @@ def main(
         if aov_name in input_paths: continue
         return _error(f'No output path given for {aov_name}')
 
-    # Set the playback range and FPS
-    util.set_block_range(render_range)
+    # Set FPS before the range so the range can't be shifted by a later
+    # fps change (see util.set_fps; consistent with import_shot).
     fps = get_fps()
     if fps is not None:
         util.set_fps(fps)
+    util.set_block_range(render_range)
 
     # Create denoising network
     scene = hou.node('/stage')

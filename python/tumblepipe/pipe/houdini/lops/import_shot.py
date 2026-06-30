@@ -768,13 +768,16 @@ class ImportShot(ns.Node):
         # Update layer stack UI with checkboxes and link to sublayer enables
         self._update_layer_stack_ui(layers_to_load)
 
-        # Set frame range and FPS
+        # Set FPS and frame range. Apply fps *before* the range so the range
+        # is stored against the final fps from the start; an fps change after
+        # the range is set can otherwise shift the start/end frames. set_fps
+        # also pins the range now, so this ordering is belt-and-suspenders.
         frame_range = self.get_frame_range()
         if frame_range is not None:
-            util.set_frame_range(frame_range)
             fps = get_fps(shot_uri)
             if fps is not None:
                 util.set_fps(fps)
+            util.set_frame_range(frame_range)
 
         # Set shot metadata script
         if frame_range is not None and staged_file_path is not None:

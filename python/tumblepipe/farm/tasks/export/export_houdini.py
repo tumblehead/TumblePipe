@@ -154,11 +154,12 @@ def main(
     export_node.parm('striplayerbreaks').set(False)
     _connect(prev_node, export_node)
 
-    # Set the frame range and FPS
-    util.set_block_range(render_range)
+    # Set FPS before the range so the range can't be shifted by a later
+    # fps change (see util.set_fps; consistent with import_shot).
     fps = get_fps()
     if fps is not None:
         util.set_fps(fps)
+    util.set_block_range(render_range)
 
     # Export the USD stage
     if batch_size > 0:

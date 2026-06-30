@@ -190,7 +190,17 @@ class SceneManager:
                 # paths in WorkfileManager.
                 with util.update_mode(hou.updateMode.Manual):
                     hou.hipFile.load(hip)
-                log.info("Reloaded scene: %s", hip)
+                    log.info("Reloaded scene: %s", hip)
+                    # Reconcile timeline + imports exactly like the open
+                    # paths. Without this a reload lands on whatever stale
+                    # frame range / fps the saved hip happened to carry,
+                    # while opening the same file applies the config-driven
+                    # range - so reload silently disagreed with open.
+                    asset_id = self.get_scene_asset_id()
+                    if asset_id is not None:
+                        self.apply_scene_timeline(asset_id)
+                        if self._catalog._prefs.auto_refresh_on_open:
+                            self.refresh_scene_imports()
                 self._catalog._request_global_detail_refresh()
             except Exception:
                 log.exception("Reload Scene failed")

@@ -69,12 +69,13 @@ def main(
     if render_node is None:
         return _error(f'Node not found: {node_path}')
 
-    # Set the playback range and FPS
-    util.set_block_range(render_range)
+    # Set FPS before the range so the range can't be shifted by a later
+    # fps change (see util.set_fps; consistent with import_shot).
     entity_uri = Uri.parse_unsafe(entity_json['uri']) if entity_json else None
     fps = get_fps(entity_uri)
     if fps is not None:
         util.set_fps(fps)
+    util.set_block_range(render_range)
 
     # HACK: Make sure the graph is cooked
     render_node.parm('f1').set(render_range.first_frame)

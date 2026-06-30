@@ -73,9 +73,25 @@ def set_block_range(block_range: BlockRange):
 def set_fps(fps: int):
     """Set Houdini session FPS.
 
-    Only affects playback speed - does not modify frame count or move keyframes.
+    Only affects playback speed - keeps the frame range, frame count, and
+    keyframes exactly where they are.
+
+    preserve_frame_start=True is load-bearing: hou.setFps defaults it to
+    False, which holds the start *time* (seconds) constant and therefore
+    SHIFTS the start frame by the fps ratio. Paired with
+    modify_frame_count=False (which keeps the frame *count* fixed) that
+    produces the classic "start/end frames wrong but the number of frames
+    is right" symptom whenever the session fps differs from the shot fps
+    (e.g. opening a 25fps shot in a fresh 24fps session). preserve_frame_start
+    pins the start frame, and with modify_frame_count=False the end frame is
+    pinned too, so the range survives the fps change untouched.
     """
-    hou.setFps(fps, modify_frame_count=False, preserve_keyframes=True)
+    hou.setFps(
+        fps,
+        modify_frame_count=False,
+        preserve_keyframes=True,
+        preserve_frame_start=True,
+    )
 
 class _UpdateModeContext:
     def __init__(self, mode):
