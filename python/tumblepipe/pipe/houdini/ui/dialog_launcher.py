@@ -61,3 +61,66 @@ def open_process_dialog_for_node(export_node, dialog_title: str = "Export") -> N
     )
     dialog.exec_()
 
+
+def _all_task_ids(tasks) -> set:
+    """Every task id in the tree — parents and nested children — for enabling all."""
+    ids: set = set()
+
+    def _walk(ts):
+        for task in ts:
+            ids.add(task.id)
+            if task.children:
+                _walk(task.children)
+
+    _walk(tasks)
+    return ids
+
+
+def open_process_dialog_for_publish(context, dialog_title: str = "Publish") -> None:
+    """Open ProcessDialog for a whole scene's publish, with every task enabled.
+
+    Like :func:`open_process_dialog_for_node`, but for the Asset Browser Publish
+    quick action: it publishes the loaded scene's entity as one action, so it
+    enables *all* the context's export/build tasks rather than a single clicked
+    node's subset. This is the one-window replacement for the old headless
+    per-node loop (a bare execute() per node opened one dialog per export node).
+
+    ``context`` is resolved by the caller (``SceneManager.get_loaded_scene_context``)
+    so migrated projects without ``context.json`` still work — do not re-derive
+    it from ``get_workfile_context`` here, which lacks that fallback.
+
+    Must run on Houdini's main thread; the browser quick action fires off the
+    GUI thread and marshals here via ``run_on_main_thread``.
+    """
+    import hou
+    from .task_collection import collect_publish_tasks
+    from .process_dialog import ProcessDialog
+
+    if context is None:
+        hou.ui.displayMessage(
+            "Publish: the loaded scene has no pipeline context.",
+            severity=hou.severityType.Warning,
+        )
+        return
+
+    all_tasks = collect_publish_tasks(context)
+    if not all_tasks:
+        hou.ui.displayMessage(
+            "Publish: no export tasks found for the current scene.",
+            severity=hou.severityType.Warning,
+        )
+        return
+
+    def save_scene():
+        hou.hipFile.save()
+
+    dialog = ProcessDialog(
+        title=dialog_title,
+        tasks=all_tasks,
+        current_department=context.department_name,
+        pre_execute_callback=save_scene,
+        initial_enabled_task_ids=_all_task_ids(all_tasks),
+        parent=hou.qt.mainWindow(),
+    )
+    dialog.exec_()
+

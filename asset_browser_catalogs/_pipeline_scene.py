@@ -410,131 +410,56 @@ class SceneManager:
                     log.exception("Detail refresh after save failed")
 
     def publish_current_scene(self, refresh_cb=None) -> None:
-        """Execute matching ExportLayer / ExportRig nodes for the loaded scene."""
+        """Open the export window (ProcessDialog) for the loaded scene.
+
+        Runs on Houdini's main thread: the quick action can fire off the GUI
+        thread, and opening a Qt dialog (or touching ``hou.hipFile``) off-thread
+        is unsupported — the same reason Save/Reload marshal back here. One
+        dialog publishes the whole asset (all its export/build tasks, grouped by
+        entity, user-toggleable, with the Local/Farm choice). A bare per-node
+        ``execute()`` opened one window per export node; ``3e2d12a`` dodged that
+        by going headless, which removed the window users publish through — this
+        restores the window without the one-per-node bug.
+        """
+        run_on_main_thread(lambda: self._publish_scene(refresh_cb))
+
+    def _publish_scene(self, refresh_cb=None) -> None:
         try:
-            self.publish_current_scene_impl()
+            import hou
+
+            scene_ctx = self.get_loaded_scene_context()
+            if scene_ctx is None:
+                hou.ui.setStatusMessage(
+                    "Publish: the loaded scene has no pipeline context.",
+                    severity=hou.severityType.Warning,
+                )
+                return
+            # Activate the loaded scene's project so the export node wrappers,
+            # config and storage resolve against the correct project before we
+            # collect and run its publish tasks.
+            scene_proj = self._catalog._project_for_hip_path(Path(hou.hipFile.path()))
+            if scene_proj is not None:
+                self._catalog._activate_project(scene_proj)
+
+            from tumblepipe.pipe.houdini.ui.dialog_launcher import (
+                open_process_dialog_for_publish,
+            )
+            # Blocks on the modal dialog until the user runs/closes it.
+            open_process_dialog_for_publish(scene_ctx, dialog_title="Publish")
+
+            # Drop caches so the next browse re-scans the freshly published
+            # versions (refresh_cb below repaints the detail panel).
+            self.refresh_asset(None, None)
+        except Exception:
+            log.exception("Publish failed")
         finally:
-            # Always notify the browser so the spinner/detail can settle
-            # even if publish bailed early or raised.
+            # Always notify the browser so the spinner/detail can settle even if
+            # publish bailed early or raised.
             if callable(refresh_cb):
                 try:
                     refresh_cb()
                 except Exception:
                     log.exception("Detail refresh after publish failed")
-
-    def publish_current_scene_impl(self) -> None:
-        import hou
-
-        scene_ctx = self.get_loaded_scene_context()
-        if scene_ctx is None:
-            hou.ui.setStatusMessage(
-                "Publish: the loaded scene has no pipeline context.",
-                severity=hou.severityType.Warning,
-            )
-            return
-        # Activate the loaded scene's project so the export node
-        # wrappers + storage resolve against the correct config.
-        scene_proj = self._catalog._project_for_hip_path(Path(hou.hipFile.path()))
-        if scene_proj is not None:
-            self._catalog._activate_project(scene_proj)
-        entity_uri = scene_ctx.entity_uri
-        published = 0
-        scanned = 0
-        mismatched: list[tuple[str, str]] = []  # (path, entity_uri)
-        failed: list[tuple[str, str]] = []  # (path, error)
-        target = str(entity_uri)
-
-        try:
-            from tumblepipe.pipe.houdini.lops.export_layer import ExportLayer
-            import tumblepipe.pipe.houdini.nodes as ns
-            for node in ns.list_by_node_type("export_layer", "Lop"):
-                scanned += 1
-                try:
-                    wrapper = ExportLayer(node)
-                    ent = str(wrapper.get_entity_uri())
-                    if ent == target:
-                        # force_local: run the export directly. A bare
-                        # execute() opens the interactive ProcessDialog, which
-                        # would pop one publish window per matching node.
-                        wrapper.execute(force_local=True)
-                        published += 1
-                        log.info("Published ExportLayer %s", node.path())
-                    else:
-                        mismatched.append((node.path(), ent))
-                except Exception as exc:
-                    log.exception(
-                        "ExportLayer wrap/execute failed: %s", node.path(),
-                    )
-                    failed.append((node.path(), str(exc)))
-        except Exception:
-            log.exception("Failed scanning export_layer LOPs")
-
-        try:
-            from tumblepipe.pipe.houdini.sops.export_rig import ExportRig
-            import tumblepipe.pipe.houdini.nodes as ns
-            for node in ns.list_by_node_type("export_rig", "Sop"):
-                scanned += 1
-                try:
-                    wrapper = ExportRig(node)
-                    ent = str(wrapper.get_entity_uri())
-                    if ent == target:
-                        # force_local: run the export directly. A bare
-                        # execute() opens the interactive ProcessDialog, which
-                        # would pop one publish window per matching node.
-                        wrapper.execute(force_local=True)
-                        published += 1
-                        log.info("Published ExportRig %s", node.path())
-                    else:
-                        mismatched.append((node.path(), ent))
-                except Exception as exc:
-                    log.exception(
-                        "ExportRig wrap/execute failed: %s", node.path(),
-                    )
-                    failed.append((node.path(), str(exc)))
-        except Exception:
-            log.exception("Failed scanning export_rig SOPs")
-
-        if failed:
-            log.error(
-                "Publish: %d export node(s) errored for %s: %s",
-                len(failed), target, failed,
-            )
-
-        if published == 0:
-            if scanned == 0:
-                msg = "Publish: no export_layer / export_rig nodes in scene."
-            elif failed:
-                msg = (
-                    f"Publish: {len(failed)} export node(s) errored "
-                    f"(see log). Nothing published."
-                )
-            else:
-                msg = (
-                    f"Publish: {scanned} export node(s) in scene "
-                    f"but none match {entity_uri}."
-                )
-                log.warning(
-                    "Publish mismatch for %s. Scanned nodes: %s",
-                    target, mismatched,
-                )
-            hou.ui.setStatusMessage(msg, severity=hou.severityType.Warning)
-            return
-
-        log.info("Published %d export node(s) for %s", published, entity_uri)
-        if failed:
-            hou.ui.setStatusMessage(
-                f"Published {published} export node(s), "
-                f"but {len(failed)} errored (see log).",
-                severity=hou.severityType.Warning,
-            )
-        else:
-            hou.ui.setStatusMessage(
-                f"Published {published} export node(s).",
-                severity=hou.severityType.Message,
-            )
-        # refresh_cb is dispatched by the outer wrapper's finally;
-        # only drop caches here so the next browse re-scans.
-        self.refresh_asset(None, None)
 
     def refresh_asset(self, asset_id, refresh_cb) -> None:
         """Drop catalog caches for this asset and trigger a re-fetch."""
