@@ -176,6 +176,7 @@
             name    "include_layerbreak"
             label   "Include layerbreak"
             type    toggle
+            invisible
             default { [ "on" hscript-expr ] }
             parmtag { "script_callback_language" "python" }
         }

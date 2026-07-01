@@ -8,15 +8,12 @@ from tempfile import TemporaryDirectory
 from pathlib import Path
 import datetime as dt
 import logging
-import os
-from typing import Optional
 
 from tumblepipe.api import (
-    fix_path,
+    local_path,
     path_str,
-    to_windows_path,
     get_user_name,
-    default_client
+    api
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import store_json, load_json, store_text
@@ -31,16 +28,12 @@ from tumblepipe.apps.deadline import (
 from tumblepipe.pipe.paths import (
     latest_hip_file_path,
     latest_export_path,
-    next_export_path,
     get_latest_staged_file_path,
 )
 from tumblepipe.pipe.usd import collapse_latest_references
 import tumblepipe.farm.tasks.stage.task as stage_task
-import tumblepipe.farm.tasks.render.task as render_task
 import tumblepipe.farm.tasks.publish.task as publish_task
 import tumblepipe.farm.jobs.houdini.render.job as render_job
-
-api = default_client()
 
 # Mapping from column keys to Karma/USD render setting attribute paths
 # These are used to build overrides for render_settings.json
@@ -374,7 +367,7 @@ def submit_entity_batch(config: dict) -> list[str]:
         return job_ids
 
     # Create temp directory for staging files (used by both publish and render jobs)
-    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
 
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:

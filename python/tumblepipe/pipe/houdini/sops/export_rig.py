@@ -6,7 +6,7 @@ import hou
 from tumblepipe.api import (
     get_user_name,
     path_str,
-    default_client
+    api
 )
 from tumblepipe.util.uri import Uri
 import tumblepipe.pipe.houdini.nodes as ns
@@ -17,8 +17,6 @@ from tumblepipe.pipe.paths import (
     get_workfile_context
 )
 from tumblepipe.config.variants import list_variants
-
-api = default_client()
 
 
 class ExportRig(ns.Node):
@@ -99,7 +97,7 @@ class ExportRig(ns.Node):
         if force_local:
             return self._execute()
         # Open ProcessDialog
-        from tumblepipe.pipe.houdini.ui.process_executor import (
+        from tumblepipe.pipe.houdini.ui.dialog_launcher import (
             open_process_dialog_for_node
         )
         open_process_dialog_for_node(self, dialog_title="Export Rig")
@@ -149,15 +147,10 @@ class ExportRig(ns.Node):
         )
 
 def create(scene, name):
-    node_type = ns.find_node_type('export_rig', 'Sop')
-    assert node_type is not None, 'Could not find export_rig node type'
-    native = scene.node(name)
-    if native is not None: return ExportRig(native)
-    return ExportRig(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, ExportRig, 'export_rig', 'Sop')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_EXPORT)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_EXPORT)
 
 def on_created(raw_node):
 

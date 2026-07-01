@@ -5,7 +5,7 @@ import hou
 
 logger = logging.getLogger(__name__)
 
-from tumblepipe.api import path_str, default_client
+from tumblepipe.api import path_str, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
 from tumblepipe.config.department import list_departments
@@ -20,8 +20,6 @@ from tumblepipe.pipe.paths import (
     get_export_uri,
     latest_shared_export_path
 )
-
-api = default_client()
 
 
 def _valid_version_path(path: Path) -> bool:
@@ -362,7 +360,11 @@ class ImportLayer(ns.Node):
         # Update version label
         self.parm('version_label').set(version_name)
 
-        # Generate metadata update script from context.json
+        # Generate metadata update script from context.json. Clear any script
+        # left over from a previous entity/version first: if the new import has
+        # no context.json (or no assets), a stale script would otherwise re-run
+        # against the wrong entity's prim paths.
+        self.parm('metadata_python').set('')
         context_path = version_path / 'context.json'
         context_data = None
         layer_info = None
@@ -411,16 +413,10 @@ class ImportLayer(ns.Node):
         hou.ui.showInFileBrowser(path_str(export_path))
 
 def create(scene, name):
-    node_type = ns.find_node_type('import_layer', 'Lop')
-    assert node_type is not None, 'Could not find import_layer node type'
-    native = scene.node(name)
-    if native is not None:
-        return ImportLayer(native)
-    return ImportLayer(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, ImportLayer, 'import_layer')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
     # Set node style

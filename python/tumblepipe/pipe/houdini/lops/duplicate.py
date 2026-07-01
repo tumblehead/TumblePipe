@@ -1,9 +1,6 @@
 import hou
 
-from tumblepipe.api import default_client
 import tumblepipe.pipe.houdini.nodes as ns
-
-api = default_client()
 
 class Duplicate(ns.Node):
     def __init__(self, native):
@@ -42,15 +39,10 @@ class Duplicate(ns.Node):
         rename_node.parm('primnewname').set(new_name)
 
 def create(scene, name):
-    node_type = ns.find_node_type('duplicate', 'Lop')
-    assert node_type is not None, 'Could not find duplicate node type'
-    native = scene.node(name)
-    if native is not None: return Duplicate(native)
-    return Duplicate(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, Duplicate, 'duplicate')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DEFAULT)
+    ns.set_node_style(raw_node)
 
 def on_created(raw_node):
 

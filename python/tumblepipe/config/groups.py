@@ -1,9 +1,7 @@
 from dataclasses import dataclass
 
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
-
-api = default_client()
 
 GROUPS_URI = Uri.parse_unsafe('groups:/')
 

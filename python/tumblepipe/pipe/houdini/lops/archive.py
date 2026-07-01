@@ -3,13 +3,10 @@ from pathlib import Path
 import hou
 
 from tumblepipe.api import (
-    path_str,
-    default_client
+    path_str
 )
 from tumblepipe.config.timeline import FrameRange
 import tumblepipe.pipe.houdini.nodes as ns
-
-api = default_client()
 
 class Archive(ns.Node):
     def __init__(self, native):
@@ -67,15 +64,10 @@ class Archive(ns.Node):
         export_node.parm('execute').pressButton()
 
 def create(scene, name):
-    node_type = ns.find_node_type('archive', 'Lop')
-    assert node_type is not None, 'Could not find archive node type'
-    native = scene.node(name)
-    if native is not None: return Archive(native)
-    return Archive(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, Archive, 'archive')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DIVE)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_DIVE)
 
 def on_created(raw_node):
 

@@ -14,7 +14,7 @@ def _load_module(path: Path):
 def to_wsl_path(path: Path):
     # Legacy /mnt mapping. The farm no longer bridges any tool to WSL (image/video
     # processing runs on Houdini's native hoiiotool/hffmpeg), so this is only used
-    # internally by local_path()/fix_path() for the non-Windows branch.
+    # internally by local_path() for the non-Windows branch.
     raw_path = str(path).replace('\\', '/')
     if raw_path.startswith('/'): return path
     parts = raw_path.split('/')
@@ -37,26 +37,9 @@ def local_path(path: Path):
     native tools the task drives (husk, hoiiotool, hffmpeg, iconvert) — all run
     in this same process's OS, so they want this process's native path.
 
-    Equivalent to `fix_path` for paths (it has no extra short-path handling); kept
-    as a distinct, intention-revealing name for task code. The farm no longer
-    bridges any tool to WSL, so `to_wsl_path` (always `/mnt`) has no task callers.
+    The farm no longer bridges any tool to WSL, so the non-Windows branch
+    (`to_wsl_path`, always `/mnt`) has no task callers today.
     """
-    if platform.system() == 'Windows':
-        return to_windows_path(path)
-    return to_wsl_path(path)
-
-def fix_path(path: Path):
-
-    def _expand_windows_short_path(path: Path):
-        from ctypes import create_unicode_buffer, windll
-        short_path_name = str(path)
-        BUFFER_SIZE = 500
-        buffer = create_unicode_buffer(BUFFER_SIZE)
-        get_long_path_name = windll.kernel32.GetLongPathNameW
-        get_long_path_name(short_path_name, buffer, BUFFER_SIZE)
-        long_path_name = buffer.value
-        return Path(long_path_name)
-
     if platform.system() == 'Windows':
         return to_windows_path(path)
     return to_wsl_path(path)
@@ -68,21 +51,21 @@ class Client:
     def __init__(self, project_path, pipeline_path, config_path):
 
         # Set project path
-        self.PROJECT_PATH = fix_path(project_path)
+        self.PROJECT_PATH = local_path(project_path)
         assert self.PROJECT_PATH.exists(), (
             'Invalid project path: '
             f'"{self.PROJECT_PATH}"'
         )
 
         # Set pipeline path
-        self.PIPELINE_PATH = fix_path(pipeline_path)
+        self.PIPELINE_PATH = local_path(pipeline_path)
         assert self.PIPELINE_PATH.exists(), (
             'Invalid pipeline path: '
             f'"{self.PIPELINE_PATH}"'
         )
 
         # Set config path
-        self.CONFIG_PATH = fix_path(config_path)
+        self.CONFIG_PATH = local_path(config_path)
         assert self.CONFIG_PATH.exists(), (
             'Invalid config path: '
             f'"{self.CONFIG_PATH}"'
@@ -105,7 +88,7 @@ class Client:
 
 def _env(key):
     assert key in os.environ, f'{key} environment variable not set'
-    return fix_path(Path(os.environ[key]))
+    return local_path(Path(os.environ[key]))
 
 def is_dev():
     return os.environ.get('TH_DEV', '0') == '1'
@@ -132,15 +115,14 @@ def get_config_path():
 
 # Module-level singleton instance with thread safety.
 #
-# Reentrant lock: Client.__init__ loads the project's config_convention.py
-# via importlib, which imports tumblepipe.config, whose submodules execute
-# `api = default_client()` at module-load. That recursive call must succeed
-# while the lock is already held by the outermost default_client() — a
-# plain threading.Lock would deadlock here. RLock lets the same thread
-# reacquire; the double-checked guard still keeps the Client constructor
-# from running twice.
+# A plain, non-reentrant lock is correct: constructing the Client loads the
+# project's naming/storage/config convention modules, and none of them call
+# default_client() at import time, so the first caller never reenters while
+# holding the lock. The config conventions resolve the client lazily (via the
+# ``api`` proxy above) — that is what removed the import-time recursion which
+# previously forced an RLock here.
 _default_client_instance = None
-_default_client_lock = threading.RLock()
+_default_client_lock = threading.Lock()
 
 def default_client():
     """Return the global shared API client instance.
@@ -162,6 +144,39 @@ def default_client():
                 _default_client_instance = Client(project_path, pipeline_path, config_path)
     return _default_client_instance
 
+class _LazyClient:
+    """Attribute-forwarding proxy to the global client (``default_client()``).
+
+    Modules across the package bind this once with::
+
+        from tumblepipe.api import api
+
+    and reference ``api.config`` / ``api.naming`` / ``api.storage`` /
+    ``api.PROJECT_PATH`` etc. in their functions exactly as before. Each access
+    is forwarded to the *current* ``default_client()``.
+
+    The point is that *importing* such a module must construct nothing. Binding
+    ``api = default_client()`` at module load forced ``TH_*`` to be set just to
+    import the package, drove the import-time recursion that the default_client
+    lock had to be reentrant for, and pinned the module to the first client so
+    ``reset_default_client()`` (project switch) left it stale. The proxy is
+    inert at import and resolves the cached singleton at the moment of use, so
+    it always reflects the live client.
+
+    A bare module-global proxy (not a PEP 562 module ``__getattr__``) is
+    required because in-function references compile to a ``LOAD_GLOBAL`` on
+    ``api``, which never consults a module ``__getattr__`` — it needs a real
+    attribute to find.
+    """
+    __slots__ = ()
+
+    def __getattr__(self, name):
+        return getattr(default_client(), name)
+
+
+# Inert lazy handle to the global client; safe to import without TH_* set.
+api = _LazyClient()
+
 def reset_default_client():
     """Reset the global client instance.
 
@@ -173,22 +188,16 @@ def reset_default_client():
         _default_client_instance = None
 
 def refresh_global_cache(purpose: str | None = None):
-    """Refresh the global API client's cache from disk.
+    """Drop the global client's in-memory config cache.
 
     Args:
-        purpose: Specific cache purpose to refresh (e.g., 'entity', 'schemas').
-                 If None, refreshes all known cache purposes.
+        purpose: Specific cache purpose to drop (e.g. 'entity', 'schemas').
+                 If None, drops every purpose.
 
-    This is the recommended way to refresh cache data after external changes
-    (e.g., Database Editor modifications in another process).
+    Reads are coherent — the store reloads any ``db/*.json`` whose stamp
+    changed on the next access — so this is no longer required for
+    correctness. It is kept as an explicit "discard what you have"; the
+    underlying ``refresh_cache`` enumerates the actual cached purposes
+    rather than a hardcoded guessed list, so there is nothing to swallow.
     """
-    client = default_client()
-    if purpose is not None:
-        client.config.refresh_cache(purpose)
-    else:
-        # Refresh all known purposes
-        for p in ['entity', 'schemas', 'departments', 'groups', 'config', 'farm', 'scenes', 'defaults']:
-            try:
-                client.config.refresh_cache(p)
-            except Exception:
-                pass  # Some purposes may not exist
+    default_client().config.refresh_cache(purpose)

@@ -453,7 +453,10 @@ class SceneManager:
                     wrapper = ExportLayer(node)
                     ent = str(wrapper.get_entity_uri())
                     if ent == target:
-                        wrapper.execute()
+                        # force_local: run the export directly. A bare
+                        # execute() opens the interactive ProcessDialog, which
+                        # would pop one publish window per matching node.
+                        wrapper.execute(force_local=True)
                         published += 1
                         log.info("Published ExportLayer %s", node.path())
                     else:
@@ -475,7 +478,10 @@ class SceneManager:
                     wrapper = ExportRig(node)
                     ent = str(wrapper.get_entity_uri())
                     if ent == target:
-                        wrapper.execute()
+                        # force_local: run the export directly. A bare
+                        # execute() opens the interactive ProcessDialog, which
+                        # would pop one publish window per matching node.
+                        wrapper.execute(force_local=True)
                         published += 1
                         log.info("Published ExportRig %s", node.path())
                     else:

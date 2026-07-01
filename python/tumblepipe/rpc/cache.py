@@ -9,15 +9,10 @@ import time
 import threading
 import weakref
 from collections import OrderedDict
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple
 from functools import wraps
 
-try:
-    import hou
-
-    HOUDINI_AVAILABLE = True
-except ImportError:
-    HOUDINI_AVAILABLE = False
+from tumblepipe.util.houdini import hou, HOUDINI_AVAILABLE
 
 
 class CacheEntry:

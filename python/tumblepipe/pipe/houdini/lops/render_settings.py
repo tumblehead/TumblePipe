@@ -1,11 +1,9 @@
 import hou
 
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.util.io import load_json, store_json
 from tumblepipe.util.uri import Uri
 import tumblepipe.pipe.houdini.nodes as ns
-
-api = default_client()
 
 class RenderSettings(ns.Node):
     def __init__(self, native):
@@ -45,15 +43,10 @@ class RenderSettings(ns.Node):
         self.set_save_lock(True)
 
 def create(scene, name):
-    node_type = ns.find_node_type('render_settings', 'Lop')
-    assert node_type is not None, 'Could not find render_settings node type'
-    native = scene.node(name)
-    if native is not None: return RenderSettings(native)
-    return RenderSettings(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, RenderSettings, 'render_settings')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DEFAULT)
+    ns.set_node_style(raw_node)
 
 def on_created(raw_node):
 

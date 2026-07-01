@@ -7,10 +7,10 @@ import hou
 
 from tumblepipe.api import (
     path_str,
-    fix_path,
+    local_path,
     get_user_name,
     to_windows_path,
-    default_client
+    api
 )
 from tumblepipe.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblepipe.config.department import list_departments
@@ -27,8 +27,6 @@ from tumblepipe.pipe.paths import (
     get_next_frame_path,
     load_entity_context
 )
-
-api = default_client()
 
 
 def _entity_from_context_json():
@@ -1202,11 +1200,9 @@ class BuildComp(ns.Node):
     def submit(self):
 
         # Import the job module
-        from importlib import reload
         from tumblepipe.farm.jobs.houdini.composite import (
             job as composite_job
         )
-        reload(composite_job)
 
         # Get the entity
         workfile_path = Path(hou.hipFile.path())
@@ -1251,7 +1247,7 @@ class BuildComp(ns.Node):
             )
         
         # Open temporary directory
-        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
@@ -1361,11 +1357,7 @@ class BuildComp(ns.Node):
                 ))
 
 def create(scene, name):
-    node_type = ns.find_node_type('build_comp', 'Cop')
-    assert node_type is not None, 'Could not find build_comp node type'
-    native = scene.node(name)
-    if native is not None: return BuildComp(native)
-    return BuildComp(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, BuildComp, 'build_comp', 'Cop')
 
 def on_created(raw_node):
     node = BuildComp(raw_node)

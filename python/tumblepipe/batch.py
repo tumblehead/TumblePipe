@@ -6,7 +6,7 @@ import logging
 import sys
 import os
 
-from .api import fix_path, path_str, Client
+from .api import local_path, path_str, Client
 from .util.uri import Uri
 from .config.timeline import get_frame_range
 from .config.department import list_departments
@@ -237,13 +237,13 @@ def cli():
     os.environ['TH_USER'] = user_name
 
     # Check project path
-    project_path = fix_path(Path(args.project_path))
+    project_path = local_path(Path(args.project_path))
     if not project_path.exists():
         parser.error(f'Project path does not exist: {project_path}')
     os.environ['TH_PROJECT_PATH'] = str(project_path)
 
     # Check pipeline path
-    pipeline_path = fix_path(Path(args.pipeline_path))
+    pipeline_path = local_path(Path(args.pipeline_path))
     if not pipeline_path.exists():
         parser.error(f'Pipeline path does not exist: {pipeline_path}')
     os.environ['TH_PIPELINE_PATH'] = str(pipeline_path)
@@ -278,7 +278,7 @@ def cli():
 
     # Prepare deadline
     try: deadline = Deadline()
-    except: parser.error('Failed to connect to Deadline')
+    except Exception: parser.error('Failed to connect to Deadline')
 
     # Check pool
     pool_names = deadline.list_pools()

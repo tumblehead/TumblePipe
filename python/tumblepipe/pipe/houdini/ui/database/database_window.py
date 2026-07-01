@@ -12,7 +12,6 @@ from qtpy.QtWidgets import (
 )
 
 from tumblepipe.util.uri import Uri
-from tumblepipe.api import refresh_global_cache
 
 from .database_adapter import DatabaseAdapter
 from .json_editor import JsonView
@@ -39,7 +38,8 @@ class DatabaseWindow(QMainWindow):
         self.resize(1000, 700)
 
         self._api = api
-        refresh_global_cache()  # Reload cache from disk to pick up external changes
+        # The adapter snapshots from the coherent store, so it opens on current
+        # disk state with no explicit refresh.
         self._adapter = DatabaseAdapter(api)
         self._uri = None
         self._original_properties = None

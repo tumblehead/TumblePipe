@@ -6,7 +6,8 @@ and geometry processing.
 """
 
 import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
+from tumblepipe.util.houdini import require_hou
 from .commands import registry
 from .console_capture import capture_command_output
 
@@ -21,10 +22,7 @@ def get_scene_info() -> Dict[str, Any]:
         Dictionary with scene information including file path, modification status,
         frame range, FPS, and top-level node counts
     """
-    try:
-        import hou
-    except ImportError:
-        raise RuntimeError("Houdini module not available")
+    hou = require_hou()
 
     # Get basic scene info
     scene_info = {
@@ -67,10 +65,7 @@ def set_current_frame(frame: float) -> float:
     Returns:
         The frame that was set
     """
-    try:
-        import hou
-    except ImportError:
-        raise RuntimeError("Houdini module not available")
+    hou = require_hou()
 
     hou.setFrame(frame)
     return hou.frame()
@@ -88,10 +83,7 @@ def set_frame_range(start: float, end: float) -> Dict[str, float]:
     Returns:
         Dictionary with start and end frame values
     """
-    try:
-        import hou
-    except ImportError:
-        raise RuntimeError("Houdini module not available")
+    hou = require_hou()
 
     hou.playbar.setPlaybackRange(start, end)
     current_range = hou.playbar.playbackRange()
@@ -111,10 +103,7 @@ def get_node_info(node_path: str) -> Dict[str, Any]:
     Returns:
         Dictionary with detailed node information
     """
-    try:
-        import hou
-    except ImportError:
-        raise RuntimeError("Houdini module not available")
+    hou = require_hou()
 
     node = hou.node(node_path)
     if node is None:
@@ -184,10 +173,7 @@ def get_node_hierarchy(
     Returns:
         Nested dictionary representing node hierarchy
     """
-    try:
-        import hou
-    except ImportError:
-        raise RuntimeError("Houdini module not available")
+    hou = require_hou()
 
     def build_hierarchy(node, current_depth):
         if current_depth >= max_depth:
@@ -230,10 +216,7 @@ def get_node_parameters(
     Returns:
         Dictionary with parameter information
     """
-    try:
-        import hou
-    except ImportError:
-        raise RuntimeError("Houdini module not available")
+    hou = require_hou()
 
     node = hou.node(node_path)
     if node is None:
@@ -290,10 +273,7 @@ def batch_set_parameters(
     Returns:
         Dictionary with results for each parameter
     """
-    try:
-        import hou
-    except ImportError:
-        raise RuntimeError("Houdini module not available")
+    hou = require_hou()
 
     node = hou.node(node_path)
     if node is None:
@@ -339,10 +319,7 @@ def get_geometry_info(node_path: str) -> Dict[str, Any]:
     Returns:
         Dictionary with geometry information
     """
-    try:
-        import hou
-    except ImportError:
-        raise RuntimeError("Houdini module not available")
+    hou = require_hou()
 
     node = hou.node(node_path)
     if node is None:
@@ -448,10 +425,7 @@ def eval_python(code: str, return_result: bool = True) -> Dict[str, Any]:
         This is a powerful command - use with caution. Code is executed
         in the Houdini Python environment with full access.
     """
-    try:
-        import hou
-    except ImportError:
-        raise RuntimeError("Houdini module not available")
+    hou = require_hou()
 
     # Create execution environment with hou module available
     exec_globals = {"__builtins__": __builtins__, "hou": hou}
@@ -497,10 +471,7 @@ def benchmark_code(code: str, iterations: int = 1) -> Dict[str, Any]:
     Returns:
         Dictionary with timing information
     """
-    try:
-        import hou
-    except ImportError:
-        raise RuntimeError("Houdini module not available")
+    hou = require_hou()
 
     exec_globals = {"__builtins__": __builtins__, "hou": hou}
 

@@ -13,7 +13,7 @@ if tumblehead_packages_path not in sys.path:
 from tumblepipe.api import (
     path_str,
     local_path,
-    default_client
+    api
 )
 from tumblepipe.util.io import (
     load_json,
@@ -22,8 +22,6 @@ from tumblepipe.util.io import (
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.apps import exr
 from tumblepipe.farm.tasks.env import print_env
-
-api = default_client()
 
 
 def _get_ocio_env():

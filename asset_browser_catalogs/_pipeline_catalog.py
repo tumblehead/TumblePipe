@@ -2431,9 +2431,9 @@ class PipelineCatalog(Catalog):
 
         if option_id == "new_scene":
             try:
-                from tumblepipe.config import scenes as scn_mod
+                from tumblepipe.config import scene as scn_mod
                 scene_uri = uris.scene(name)
-                existing = scn_mod.get_scene(scene_uri)
+                existing = scn_mod.get_scene_by_uri(scene_uri)
                 if existing is not None:
                     hou.ui.displayMessage(
                         f"Root '{name}' already exists."
@@ -2640,7 +2640,7 @@ class PipelineCatalog(Catalog):
                 from tumblepipe.config import groups as grp_mod
                 grp_mod.remove_group(ref.uri)
             else:
-                from tumblepipe.config import scenes as scn_mod
+                from tumblepipe.config import scene as scn_mod
                 scn_mod.remove_scene(ref.uri)
         except Exception as exc:
             raise ConfigError(
@@ -3006,16 +3006,16 @@ class PipelineCatalog(Catalog):
     def invalidate_cache(self) -> None:
         """Drop discovered asset/shot caches; next query re-fetches.
 
-        Also reloads each already-built project config's on-disk entity
-        snapshot. The ``ProjectConfigConvention`` reads ``db/*.json``
-        once in ``__init__`` and ``list_entities`` serves purely from
-        that in-memory ``self.cache`` — so without this, a "refresh"
-        re-runs discovery against a stale snapshot and never sees
-        entities written out-of-process (another Houdini session, the
-        project browser, another artist). Reloading the config here is
-        far cheaper than rebuilding every Client (the Shift+Click "hard"
-        reset path), which is the only thing that previously picked up
-        external additions.
+        These are the *catalog's own* discovery caches (``_cached_assets`` /
+        ``_cached_shots`` / membership), which a refresh must clear so the
+        next query re-enumerates.
+
+        The per-project ``config.refresh_cache()`` calls are belt-and-braces:
+        the current ``JsonConfigStore`` keeps ``db/*.json`` coherent and
+        reloads any externally-written file on the next read, so they are not
+        needed for a migrated project. They remain only to also serve any
+        project still on the pre-v1 convention (a frozen once-at-init
+        snapshot) until it is migrated.
         """
         self._cached_assets = None
         self._cached_shots = None
@@ -3314,11 +3314,11 @@ class PipelineCatalog(Catalog):
             return None
         try:
             self._activate_project(proj)
-            from tumblepipe.config import scenes as scn_mod
+            from tumblepipe.config import scene as scn_mod
         except Exception:
             return None
         try:
-            scn = scn_mod.get_scene(uris.scene(path))
+            scn = scn_mod.get_scene_by_uri(uris.scene(path))
         except Exception:
             return None
         if scn is None:

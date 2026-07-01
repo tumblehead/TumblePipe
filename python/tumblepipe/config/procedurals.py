@@ -1,7 +1,5 @@
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
-
-api = default_client()
 
 def list_procedural_names(shot_uri: Uri, asset_uri: Uri) -> list[str]:
     """Return procedural node names for an asset in a shot.

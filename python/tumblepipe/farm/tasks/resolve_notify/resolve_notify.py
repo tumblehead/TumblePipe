@@ -18,7 +18,7 @@ if tumblehead_packages_path not in sys.path:
 from tumblepipe.api import (
     path_str,
     local_path,
-    default_client
+    api
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
@@ -27,8 +27,6 @@ from tumblepipe.apps.resolve import (
     write_command
 )
 from tumblepipe.farm.tasks.env import print_env
-
-api = default_client()
 
 
 def _error(msg):

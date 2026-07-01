@@ -2,15 +2,13 @@ from pathlib import Path
 
 import hou
 
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.pipe.paths import (
     get_workfile_context
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.pipe.houdini.util import uri_to_prim_path
 import tumblepipe.pipe.houdini.nodes as ns
-
-api = default_client()
 
 
 def _metadata_script(asset_uri: Uri) -> str:
@@ -113,15 +111,10 @@ class CreateModel(ns.Node):
 
 
 def create(scene, name):
-    node_type = ns.find_node_type('create_model', 'Lop')
-    assert node_type is not None, 'Could not find create_model node type'
-    native = scene.node(name)
-    if native is not None: return CreateModel(native)
-    return CreateModel(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, CreateModel, 'create_model')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
     # Set node style

@@ -1,9 +1,7 @@
 from dataclasses import dataclass
 
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
-
-api = default_client()
 
 DEPARTMENTS_URI = Uri.parse_unsafe('departments:/')
 
@@ -131,7 +129,7 @@ def list_departments(context: str, include_generated: bool = True, include_disab
                           (useful for Houdini export menus)
         include_disabled: If True, includes disabled/retired departments
     """
-    departments_data = api.config.cache.get('departments', {})
+    departments_data = api.config.root('departments') or {}
     root_children = departments_data.get('children', {})
     context_data = root_children.get(context, {}).get('children', {})
     departments = []

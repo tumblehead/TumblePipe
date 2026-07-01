@@ -1,9 +1,6 @@
 import hou
 
-from tumblepipe.api import default_client
 import tumblepipe.pipe.houdini.nodes as ns
-
-api = default_client()
 
 def _clear_dive(dive_node, output_node):
 
@@ -97,15 +94,10 @@ class SetKinds(ns.Node):
         dive_node.layoutChildren()
 
 def create(scene, name):
-    node_type = ns.find_node_type('set_kinds', 'Lop')
-    assert node_type is not None, 'Could not find set_kinds node type'
-    native = scene.node(name)
-    if native is not None: return SetKinds(native)
-    return SetKinds(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, SetKinds, 'set_kinds')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DEFAULT)
+    ns.set_node_style(raw_node)
 
 def on_created(raw_node):
 

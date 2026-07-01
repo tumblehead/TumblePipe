@@ -2,15 +2,13 @@ from pathlib import Path
 
 import hou
 
-from tumblepipe.api import path_str, default_client
+from tumblepipe.api import path_str, api
 from tumblepipe.config.timeline import FrameRange
 from tumblepipe.pipe.houdini import util
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.paths import (
     list_version_paths
 )
-
-api = default_client()
 
 def _connect(node1, node2):
     port = len(node2.inputs())
@@ -308,15 +306,10 @@ class SopModify(ns.Node):
         native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
 def create(scene, name):
-    node_type = ns.find_node_type('sop_modify', 'Lop')
-    assert node_type is not None, 'Could not find sop_modify node type'
-    native = scene.node(name)
-    if native is not None: return SopModify(native)
-    return SopModify(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, SopModify, 'sop_modify')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DEFAULT)
+    ns.set_node_style(raw_node)
 
 def on_created(raw_node):
 

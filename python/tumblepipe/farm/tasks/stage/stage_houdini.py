@@ -6,8 +6,8 @@ import hou
 
 from tumblepipe.api import (
     path_str,
-    fix_path,
-    default_client
+    local_path,
+    api
 )
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.config.department import list_departments
@@ -18,8 +18,6 @@ from tumblepipe.pipe.houdini.lops import (
     import_shot,
     import_layer
 )
-
-api = default_client()
 
 def _headline(title):
     print(f' {title} '.center(80, '='))
@@ -110,7 +108,7 @@ def main(
 
     # Sublayer root defaults to get render settings and RenderVar prims
     root_defaults_uri = Uri.parse_unsafe('config:/usd/root_default_prims.usda')
-    root_defaults_path = fix_path(api.storage.resolve(root_defaults_uri))
+    root_defaults_path = local_path(api.storage.resolve(root_defaults_uri))
     if root_defaults_path.exists():
         sublayer_node = scene_node.createNode('sublayer', '__root_defaults')
         sublayer_node.parm('filepath1').set(path_str(root_defaults_path))

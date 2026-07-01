@@ -1,9 +1,7 @@
 from dataclasses import dataclass
 
 from tumblepipe.util.uri import Uri
-from tumblepipe.api import default_client
-
-api = default_client()
+from tumblepipe.api import api
 
 @dataclass(frozen=True)
 class BlockRange:

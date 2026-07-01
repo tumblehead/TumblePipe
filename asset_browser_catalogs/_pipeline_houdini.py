@@ -19,26 +19,12 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import Callable
 
 from tumbletrove.asset_browser.core.projects import ProjectConfig
 
 log = logging.getLogger(__name__)
-
-
-# tumblehead modules that cache ``api = default_client()`` at module
-# load. When the active project changes, the cached reference must be
-# patched so calls through these modules use the new project's Client.
-# Order is not significant; new entries can be appended freely.
-_API_BOUND_MODULES: tuple[str, ...] = (
-    "tumblepipe.pipe.paths",
-    "tumblepipe.config.timeline",
-    "tumblepipe.config.variants",
-    "tumblepipe.config.department",
-    "tumblepipe.pipe.houdini.lops.import_layer",
-)
 
 
 def run_on_main_thread(func: Callable, *args, **kwargs) -> None:
@@ -86,10 +72,11 @@ class ProjectActivator:
     A single instance lives on :class:`PipelineCatalog`. Calling
     :meth:`activate` is idempotent on the fast path (env vars already
     match the cached active project); the slow path mutates
-    ``TH_PROJECT_PATH`` / ``TH_CONFIG_PATH`` / ``TH_EXPORT_PATH``,
-    resets tumblepipe's ``default_client`` singleton, and patches the
-    cached ``api`` references on the modules in
-    :data:`_API_BOUND_MODULES`.
+    ``TH_PROJECT_PATH`` / ``TH_CONFIG_PATH`` / ``TH_EXPORT_PATH`` and
+    resets tumblepipe's ``default_client`` singleton. Pipeline modules
+    reach the client through the ``tumblepipe.api.api`` proxy, which
+    forwards to the current singleton, so nothing per-module needs
+    patching on a switch.
 
     The launch project (env at catalog construction) is captured so
     the first activation that switches away can surface a one-shot
@@ -100,9 +87,8 @@ class ProjectActivator:
     def __init__(self) -> None:
         # The project_path of the project whose env is currently bound.
         # ``None`` means "no activation has happened yet" — the first
-        # call must run the full patching pass even if the project
-        # matches the launch env, because tumblepipe modules cached at
-        # import time may still hold a stale ``api`` reference.
+        # call always runs the slow path even if the project matches the
+        # launch env, to bind the client singleton to the active project.
         self._active_project_path: str | None = None
         # Captured at construction so the "you've switched away from the
         # launch project" warning fires at most once per session.
@@ -159,13 +145,13 @@ class ProjectActivator:
         try:
             from tumblepipe.api import reset_default_client, default_client
             reset_default_client()
-            new_client = default_client()
-            for mod_path in _API_BOUND_MODULES:
-                mod = sys.modules.get(mod_path)
-                if mod is not None and hasattr(mod, "api"):
-                    mod.api = new_client
+            # Warm the new project's Client now so the first downstream op
+            # doesn't eat the ~100ms construction. Modules read the client via
+            # the tumblepipe.api.api proxy, which always forwards to the current
+            # singleton, so a switch needs no per-module patching.
+            default_client()
         except Exception:
-            log.debug("reset_default_client unavailable")
+            log.debug("tumblepipe client reset unavailable")
         self._active_project_path = project.project_path
 
         if (

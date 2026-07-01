@@ -55,7 +55,7 @@ def collect_entities_by_schema(config, schema_uri: Uri) -> list[tuple[Uri, dict]
         for name, child in data.get('children', {}).items():
             walk(child, uri / name)
 
-    purpose_data = config.cache.get(purpose, {})
+    purpose_data = config.root(purpose) or {}
     base_uri = Uri.parse_unsafe(f'{purpose}:/')
     for name, child in purpose_data.get('children', {}).items():
         walk(child, base_uri / name)

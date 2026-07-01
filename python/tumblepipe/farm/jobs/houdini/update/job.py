@@ -1,10 +1,7 @@
-from functools import partial
-from tempfile import TemporaryDirectory
 from pathlib import Path
 import datetime as dt
 import logging
 import sys
-import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent
@@ -12,28 +9,23 @@ if tumblehead_packages_path not in sys.path:
     sys.path.append(str(tumblehead_packages_path))
 
 from tumblepipe.api import (
-    fix_path,
     path_str,
-    to_windows_path,
     get_user_name,
-    default_client
+    api
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import get_frame_range
 from tumblepipe.config.department import list_departments
 from tumblepipe.apps.deadline import (
     Deadline,
-    Batch,
     Job
 )
 from tumblepipe.pipe.paths import (
     latest_hip_file_path,
-    latest_export_path,
-    next_export_path
+    latest_export_path
 )
+from tumblepipe.farm.jobs.houdini import _common
 import tumblepipe.farm.tasks.publish.task as publish_task
-
-api = default_client()
 
 """
 config = {
@@ -58,23 +50,8 @@ config = {
 
 def _is_valid_config(config):
 
-    def _is_str(datum):
-        return isinstance(datum, str)
-    
-    def _is_int(datum):
-        return isinstance(datum, int)
-    
-    def _is_bool(datum):
-        return isinstance(datum, bool)
-
-    def _check(value_checker, data, key):
-        if key not in data: return False
-        if not value_checker(data[key]): return False
-        return True
-    
-    _check_str = partial(_check, _is_str)
-    _check_int = partial(_check, _is_int)
-    _check_bool = partial(_check, _is_bool)
+    _check_str = _common.check_str
+    _check_int = _common.check_int
 
     def _valid_entity(entity):
         if not isinstance(entity, dict): return False
@@ -124,10 +101,6 @@ def _is_out_of_date(entity_uri, variant_name, department_name):
     if export_path is None: return True
     if not export_path.exists(): return True
     return hip_path.stat().st_mtime > export_path.stat().st_mtime
-
-def _error(msg):
-    logging.error(msg)
-    return 1
 
 def _create_publish_job(
     entity_uri,
@@ -286,7 +259,7 @@ def build(
 
 def submit(
     config: dict,
-    paths: dict[Path, Path]
+    paths: dict[Path, Path] = None
     ) -> int:
     """Create batch, build jobs, and submit to farm.
 
@@ -301,45 +274,14 @@ def submit(
     project_name = api.PROJECT_PATH.name
     user_name = get_user_name()
     timestamp = dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
+    batch_title = (
+        f'{project_name} '
+        'update '
+        f'{user_name} '
+        f'{timestamp}'
+    )
 
-    # Get deadline ready
-    try: farm = Deadline()
-    except: return _error('Could not connect to Deadline')
-
-    # Open temporary directory for staging job files
-    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
-
-        # Batch
-        batch = Batch(
-            f'{project_name} '
-            'update '
-            f'{user_name} '
-            f'{timestamp}'
-        )
-
-        # Build jobs using the new build() function
-        jobs = {}
-        deps = {}
-        build(config, paths, temp_path, jobs, deps)
-
-        # Check if there are any jobs to submit
-        if not jobs:
-            logging.debug('No updates needed')
-            return 0
-
-        # Add jobs to batch
-        batch.add_jobs_with_deps(jobs, deps)
-
-        # Submit (within temp directory context so files can be copied)
-        farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))
-
-    # Done
-    logging.debug(f'Submitted update batch with {len(jobs)} jobs')
-    return 0
+    return _common.submit_batch(batch_title, build, config, paths)
 
 
 def main(
@@ -389,25 +331,25 @@ def cli():
 
     # Prepare
     try: deadline = Deadline()
-    except: return _error('Could not connect to Deadline')
+    except Exception: return _common.error('Could not connect to Deadline')
 
     # Check department name
     department_name = args.department_name
     shot_departments = list_departments('shots')
     department_names = [d.name for d in shot_departments]
     if department_name not in department_names:
-        return _error(f'Invalid department name: {department_name}')
+        return _common.error(f'Invalid department name: {department_name}')
 
     # Check pool name
     pool_name = args.pool_name
     if pool_name not in deadline.list_pools():
-        return _error(f'Invalid pool name: {pool_name}')
+        return _common.error(f'Invalid pool name: {pool_name}')
 
     # Check priority
     priority = args.priority
     if priority < 0 or priority > 100:
-        return _error(f'Invalid priority: {priority}')
-    
+        return _common.error(f'Invalid priority: {priority}')
+
     # Run main
     return main(
         api,
@@ -417,9 +359,5 @@ def cli():
     )
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level = logging.DEBUG,
-        format = '%(message)s',
-        stream = sys.stdout
-    )
+    _common.configure_logging()
     sys.exit(cli())

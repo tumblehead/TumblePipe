@@ -3,10 +3,8 @@
 from dataclasses import dataclass
 from typing import Any
 
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
-
-api = default_client()
 
 RENDERER_URI = Uri.parse_unsafe('config:/renderer')
 SETTINGS_URI = RENDERER_URI / 'settings'

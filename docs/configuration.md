@@ -51,7 +51,11 @@ contains these Python modules. The filenames are not optional — the pipeline
 imports them by name:
 
 - `config_convention.py` — workspace configuration (departments, shot
-  scaffolding, default task names).
+  scaffolding, default task names). This is a thin shim: the config database
+  engine lives in the package (`tumblepipe.config.store.JsonConfigStore`),
+  and the file just instantiates it (`def create(): return JsonConfigStore()`).
+  Engine fixes therefore ship with the package and reach every project,
+  rather than being frozen into this per-project copy.
 - `naming_convention.py` — how assets, shots, and work files are named.
 - `storage_convention.py` — maps project URIs (`project://`, `entity://`, …)
   to concrete filesystem paths.
@@ -63,6 +67,29 @@ Python module.
 Each module exposes a specific interface that the pipeline calls into. The
 [*Turbulence* tech demo](https://www.sidefx.com/tech-demos/turbulence/)
 publishes a complete working example of these modules.
+
+### Layout versioning and migration
+
+The `_config/` layout is versioned in `_config/version.json` (a project with
+no such file predates the system and counts as version 0). When the layout
+changes, an existing project is brought forward **in place** rather than being
+recreated:
+
+Run it as a project script from TumbleTrove — open the project and click
+**Migrate Project Config** in the Scripts panel — or from a shell:
+
+```
+python scripts/migrate_config.py [project-or-_config-path] [--dry-run]
+```
+
+The path defaults to `$TH_PROJECT_PATH`, so the launcher (which runs project
+scripts with the project's environment) needs no argument. A project is thus
+migrated by whoever opens it with a newer pipeline, not by a central batch.
+Each migration is idempotent and refuses to overwrite a file you have
+customised — re-running is always safe, it writes a `config_convention.py.bak`
+before replacing the stock file, and `--dry-run` shows exactly what would
+change. New projects created by the wizard already ship at the current
+version. The migrations themselves are registered in `tumblepipe.migration`.
 
 ## Where configuration lives in the codebase
 

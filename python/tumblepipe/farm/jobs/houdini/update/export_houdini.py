@@ -4,7 +4,7 @@ import shutil
 
 import hou
 
-from tumblepipe.api import path_str, fix_path, default_client
+from tumblepipe.api import path_str, local_path, api
 from tumblepipe.config.timeline import BlockRange, get_frame_range
 from tumblepipe.config.variants import list_variants
 from tumblepipe.config.department import list_departments
@@ -13,8 +13,6 @@ from tumblepipe.pipe.houdini.lops import (
     import_shot,
     import_layer
 )
-
-api = default_client()
 
 # Helpers
 def _headline(title):
@@ -75,7 +73,7 @@ def main(
     _connect(prev_node, export_node)
 
     # Export
-    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)

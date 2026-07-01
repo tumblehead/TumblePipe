@@ -4,10 +4,10 @@ import re
 
 import hou
 
-from tumblepipe.api import default_client, path_str
+from tumblepipe.api import api, path_str
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.timeline import FrameRange, get_frame_range, get_fps
+from tumblepipe.config.timeline import get_frame_range, get_fps
 from tumblepipe.config.department import list_departments
 from tumblepipe.config.variants import list_variants
 import tumblepipe.pipe.houdini.nodes as ns
@@ -20,8 +20,6 @@ from tumblepipe.pipe.paths import (
     list_version_paths
 )
 from tumblepipe.pipe.graph import get_source_department
-
-api = default_client()
 
 
 def _context_from_workfile():
@@ -136,7 +134,7 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
     """
     from tumblepipe.pipe.paths import latest_export_path, get_current_scene_staged_file_path
     from tumblepipe.config.variants import DEFAULT_VARIANT
-    from tumblepipe.config.scenes import get_inherited_assets
+    from tumblepipe.config.scene import get_inherited_assets
 
     # Get root layer to find scene reference (same approach as graph.py Fix 2)
     root_version_path = latest_export_path(shot_uri, DEFAULT_VARIANT, 'root')
@@ -883,15 +881,10 @@ class ImportShot(ns.Node):
 
 
 def create(scene, name):
-    node_type = ns.find_node_type('import_shot', 'Lop')
-    assert node_type is not None, 'Could not find import_shot node type'
-    native = scene.node(name)
-    if native is not None: return ImportShot(native)
-    return ImportShot(scene.createNode(node_type.name(), name, force_valid_node_name=True))
+    return ns.create_node(scene, name, ImportShot, 'import_shot', force_valid_node_name=True)
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
     # Set node style

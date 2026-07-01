@@ -24,9 +24,7 @@ Config format:
     }
 """
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
-from datetime import datetime
 import logging
 import sys
 
@@ -38,18 +36,14 @@ if tumblehead_packages_path not in sys.path:
 from tumblepipe.api import (
     path_str,
     local_path,
-    fix_path,
-    default_client
+    api
 )
-from tumblepipe.util.io import load_json, store_json
+from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.resolve import (
-    ResolveCommand,
     write_command,
     create_daily_command
 )
-
-api = default_client()
 
 
 def _error(msg):

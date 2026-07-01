@@ -9,7 +9,7 @@ import hou
 
 logger = logging.getLogger(__name__)
 
-from tumblepipe.api import get_user_name, path_str, fix_path, default_client
+from tumblepipe.api import get_user_name, path_str, local_path, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import list_departments
 from tumblepipe.config.variants import get_entity_type, list_variants
@@ -27,8 +27,6 @@ from tumblepipe.pipe.paths import (
 from tumblepipe.pipe.usd import add_sublayer
 from tumblepipe.pipe.context import save_layer_context
 from tumblepipe.apps.houdini import stitch_usd_directories
-
-api = default_client()
 
 
 def _calculate_chunks(first_frame: int, last_frame: int, batch_size: int) -> list[tuple[int, int]]:
@@ -486,7 +484,7 @@ class ExportLayer(ns.Node):
         if force_local:
             return self._execute()
         # Open ProcessDialog
-        from tumblepipe.pipe.houdini.ui.process_executor import (
+        from tumblepipe.pipe.houdini.ui.dialog_launcher import (
             open_process_dialog_for_node
         )
         open_process_dialog_for_node(self, dialog_title="Export Layer")
@@ -582,11 +580,28 @@ class ExportLayer(ns.Node):
             })
             asset_inputs.update(set(map(json.dumps, asset_metadata['inputs'])))
 
+        # Refuse to publish if an asset sitting on the stage lost its pipeline
+        # metadata: list_assets() (and every downstream consumer) only sees
+        # prims with customData, so such an asset would silently drop out of
+        # the export and out of every import that follows.
+        dropped_prims = util.list_dropped_asset_prims(root)
+        if dropped_prims:
+            bullets = "\n  - ".join(dropped_prims)
+            raise ExportLayerError(
+                "Export aborted: asset(s) on the stage carry no pipeline "
+                "metadata, so they would silently drop out of the published "
+                f"layer and every downstream import:\n  - {bullets}\n\n"
+                "This usually means the import node's metadata step didn't "
+                "reach these prims - e.g. a layerbreak stripped the customData, "
+                "or multi-instance duplicates didn't inherit it. Re-run the "
+                "import node (disable any layerbreak on it) and re-export."
+            )
+
         # Set fps
         self.parm('set_metadata_fps').set(fps)
 
         # Export the stage
-        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
@@ -890,17 +905,11 @@ class ExportLayer(ns.Node):
         hou.ui.showInFileBrowser(path_str(export_path))
 
 def create(scene, name):
-    node_type = ns.find_node_type('export_layer', 'Lop')
-    assert node_type is not None, 'Could not find export_layer node type'
-    native = scene.node(name)
-    if native is not None:
-        return ExportLayer(native)
-    return ExportLayer(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, ExportLayer, 'export_layer')
 
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_EXPORT)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_EXPORT)
 
 def on_created(raw_node):
     # Set node style

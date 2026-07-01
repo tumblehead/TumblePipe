@@ -5,20 +5,14 @@ server, enabling external tools to register for and receive notifications about
 Houdini events.
 """
 
-import json
 import threading
 import time
 import weakref
 from collections import defaultdict, deque
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 from uuid import uuid4
 
-try:
-    import hou
-
-    HOUDINI_AVAILABLE = True
-except ImportError:
-    HOUDINI_AVAILABLE = False
+from tumblepipe.util.houdini import hou, HOUDINI_AVAILABLE
 
 
 class CallbackEventManager:

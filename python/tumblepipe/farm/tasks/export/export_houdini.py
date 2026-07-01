@@ -6,14 +6,12 @@ import hou
 
 from tumblepipe.api import (
     path_str,
-    default_client
+    api
 )
 from tumblepipe.util.io import load_json
 from tumblepipe.config.timeline import BlockRange, get_fps
 from tumblepipe.pipe.houdini import util
 from tumblepipe.apps.houdini import stitch_usd_directories
-
-api = default_client()
 
 
 def _calculate_chunks(first_frame: int, last_frame: int, batch_size: int) -> list[tuple[int, int]]:

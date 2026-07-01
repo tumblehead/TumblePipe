@@ -8,10 +8,10 @@ import functools
 import inspect
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Type, get_type_hints
 
-from .protocol import ErrorCode
+from tumblepipe.util.houdini import hou, HOUDINI_AVAILABLE
 
 
 class ThreadSafeCommandRegistry:
@@ -38,14 +38,13 @@ class ThreadSafeCommandRegistry:
         self._houdini_available = False
         self._hdefereval = None
 
-        try:
-            import hou
-            import hdefereval
-
-            self._houdini_available = True
-            self._hdefereval = hdefereval
-        except ImportError:
-            pass
+        if HOUDINI_AVAILABLE:
+            try:
+                import hdefereval
+                self._houdini_available = True
+                self._hdefereval = hdefereval
+            except ImportError:
+                pass
 
     def register(
         self,
@@ -366,8 +365,7 @@ def list_commands() -> List[Dict[str, Any]]:
 
 
 # Houdini-specific commands (require main thread execution)
-try:
-    import hou
+if HOUDINI_AVAILABLE:
 
     @registry.register(
         "scene.save", "Save current Houdini scene", thread_safe=False
@@ -498,16 +496,11 @@ try:
 
         return [node.path() for node in nodes]
 
-except ImportError:
-    # Houdini module not available, skip Houdini-specific commands
-    pass
-
 
 # Python execution commands (thread-safe)
 import traceback
 import importlib
 import sys
-from .console_capture import capture_command_output
 
 
 @registry.register(
@@ -625,7 +618,7 @@ def reload_python_module(module_name: str) -> Dict[str, Any]:
         with capture.capture():
             if module_name in sys.modules:
                 module = sys.modules[module_name]
-                reloaded_module = importlib.reload(module)
+                importlib.reload(module)
                 result_msg = f"Successfully reloaded module: {module_name}"
                 print(result_msg)
             else:

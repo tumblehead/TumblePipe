@@ -1,39 +1,12 @@
-import time
-
 import hou
 
-from tumblepipe.api import path_str, default_client
+from tumblepipe.api import path_str, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.sops import rename_packed
 from tumblepipe.pipe.paths import list_version_paths
 from tumblepipe.config.variants import list_variants
-
-api = default_client()
-
-# Throttle entity-cache refreshes: list_asset_uris is hit on every menu
-# evaluation, so re-reading entity.json each time would lag on large DBs.
-# This bound just coalesces bursts; the EntitySelectorDialog still forces a
-# refresh on open for the interactive path.
-_last_entity_refresh = 0.0
-_ENTITY_REFRESH_INTERVAL = 2.0
-
-def _refresh_entities():
-    """Reload the entity cache from disk, at most once per interval.
-
-    Picks up categories/entities created externally (Database Editor, another
-    artist) even when a node is driven headlessly and the picker never opens.
-    """
-    global _last_entity_refresh
-    now = time.monotonic()
-    if now - _last_entity_refresh < _ENTITY_REFRESH_INTERVAL:
-        return
-    _last_entity_refresh = now
-    try:
-        api.config.refresh_cache('entity')
-    except Exception:
-        pass
 
 def _clear_scene(dive_node, output_node):
 
@@ -51,7 +24,6 @@ class ImportRig(ns.Node):
         super().__init__(native)
 
     def list_asset_uris(self) -> list[Uri]:
-        _refresh_entities()
         asset_entities = api.config.list_entities(
             filter=Uri.parse_unsafe('entity:/assets'),
             closure=True
@@ -235,15 +207,10 @@ class ImportRig(ns.Node):
         ns.set_node_comment(context, f"Imported: {asset_name}\n{version_name}")
 
 def create(scene, name):
-    node_type = ns.find_node_type('import_rig', 'Sop')
-    assert node_type is not None, 'Could not find import_rig node type'
-    native = scene.node(name)
-    if native is not None: return ImportRig(native)
-    return ImportRig(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, ImportRig, 'import_rig', 'Sop')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DIVE)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_DIVE)
 
 def on_created(raw_node):
     set_style(raw_node)

@@ -199,6 +199,7 @@
             name    "include_layerbreak"
             label   "Include Layerbreak"
             type    toggle
+            invisible
             default { "on" }
             parmtag { "script_callback_language" "python" }
         }

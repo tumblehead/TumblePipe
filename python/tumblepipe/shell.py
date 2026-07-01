@@ -21,5 +21,4 @@ sys.path.insert(0, str(packages_path))
 os.environ['OCIO'] = str(pipeline_path / 'ocio' / 'tumblehead.ocio')
 
 # Load the tumblepipe api
-from tumblepipe.api import default_client
-api = default_client()
+from tumblepipe.api import api

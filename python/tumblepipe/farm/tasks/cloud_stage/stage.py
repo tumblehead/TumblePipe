@@ -4,7 +4,6 @@ from pathlib import Path
 import tarfile
 import logging
 import sys
-import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -13,10 +12,9 @@ if tumblehead_packages_path not in sys.path:
 
 from tumblepipe.api import (
     path_str,
-    fix_path,
-    get_user_name,
+    local_path,
     to_windows_path,
-    default_client
+    api
 )
 from tumblepipe.util.io import (
     load_json,
@@ -25,9 +23,7 @@ from tumblepipe.util.io import (
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Hython
 from tumblepipe.farm.jobs.houdini.cloud_render import job as render_job
-from tumblepipe.farm.tasks.env import print_env
-
-api = default_client()
+from tumblepipe.farm.tasks.env import get_hython_env, print_env
 
 def _error(msg):
     logging.error(msg)
@@ -65,7 +61,7 @@ def main(config):
     hython = Hython()
 
     # Open a temporary directory
-    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -96,17 +92,7 @@ def main(config):
             [
                 path_str(to_windows_path(config_path))
             ],
-            env = dict(
-                TH_USER = get_user_name(),
-                TH_CONFIG_PATH = path_str(to_windows_path(api.CONFIG_PATH)),
-                TH_PROJECT_PATH = path_str(to_windows_path(api.PROJECT_PATH)),
-                TH_PIPELINE_PATH = path_str(to_windows_path(api.PIPELINE_PATH)),
-                HOUDINI_PACKAGE_DIR = ';'.join([
-                    path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini')))),
-                    path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('project:/_pipeline/houdini'))))
-                ]),
-                OCIO = path_str(to_windows_path(Path(os.environ['OCIO'])))
-            )
+            env = get_hython_env(api)
         )
 
         # Check if hython process succeeded

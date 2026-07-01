@@ -5,19 +5,12 @@ large amounts of data, enabling efficient transfer and processing of geometry
 data, scene hierarchies, and other large datasets.
 """
 
-import json
 import threading
 import time
 import uuid
-from typing import Any, Dict, Iterator, List, Optional, Union
-from contextlib import contextmanager
+from typing import Any, Dict, Iterator, List, Optional
 
-try:
-    import hou
-
-    HOUDINI_AVAILABLE = True
-except ImportError:
-    HOUDINI_AVAILABLE = False
+from tumblepipe.util.houdini import hou, HOUDINI_AVAILABLE
 
 
 class StreamingSession:

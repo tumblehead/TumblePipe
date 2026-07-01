@@ -1,5 +1,3 @@
-from tempfile import TemporaryDirectory
-from functools import partial
 from pathlib import Path
 import datetime as dt
 import logging
@@ -13,9 +11,7 @@ if tumblehead_packages_path not in sys.path:
 from tumblepipe.api import (
     get_project_name,
     to_windows_path,
-    fix_path,
-    path_str,
-    default_client
+    path_str
 )
 from tumblepipe.util.io import (
     load_json,
@@ -23,11 +19,7 @@ from tumblepipe.util.io import (
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import BlockRange
-from tumblepipe.apps.deadline import (
-    Deadline,
-    Batch,
-    Job
-)
+from tumblepipe.apps.deadline import Job
 from tumblepipe.pipe.paths import (
     get_frame_path,
     get_next_frame_path,
@@ -37,26 +29,13 @@ from tumblepipe.pipe.paths import (
     get_layer_playblast_path,
     get_layer_daily_path
 )
+from tumblepipe.farm.jobs.houdini import _common
 import tumblepipe.farm.tasks.render.task as render_job
 import tumblepipe.farm.tasks.denoise.task as denoise_job
 import tumblepipe.farm.tasks.slapcomp.task as slapcomp_job
 import tumblepipe.farm.tasks.mp4.task as mp4_job
 import tumblepipe.farm.tasks.notify.task as notify_job
 import tumblepipe.farm.tasks.edit.task as edit_task
-
-from importlib import reload
-reload(render_job)
-reload(denoise_job)
-reload(slapcomp_job)
-reload(mp4_job)
-reload(notify_job)
-reload(edit_task)
-
-api = default_client()
-
-def _error(msg):
-    logging.error(msg)
-    return 1
 
 """
 config = {
@@ -95,23 +74,9 @@ config = {
 
 def _is_valid_config(config):
 
-    def _is_str(datum):
-        return isinstance(datum, str)
-
-    def _is_int(datum):
-        return isinstance(datum, int)
-
-    def _is_bool(datum):
-        return isinstance(datum, bool)
-
-    def _check(value_checker, data, key):
-        if key not in data: return False
-        if not value_checker(data[key]): return False
-        return True
-
-    _check_str = partial(_check, _is_str)
-    _check_int = partial(_check, _is_int)
-    _check_bool = partial(_check, _is_bool)
+    _check_str = _common.check_str
+    _check_int = _common.check_int
+    _check_bool = _common.check_bool
 
     def _valid_entity(entity):
         if not isinstance(entity, dict): return False
@@ -1229,7 +1194,7 @@ def build(
 
 def submit(
     config: dict,
-    paths: dict[Path, Path]
+    paths: dict[Path, Path] = None
     ) -> int:
     """Create batch, build jobs, and submit to farm.
 
@@ -1249,66 +1214,21 @@ def submit(
     # Parameters
     project_name = get_project_name()
     timestamp = dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
+    layers_text = f"[{', '.join(variant_names)}]"
+    batch_title = (
+        f'{project_name} '
+        f'{purpose} '
+        f'{entity_uri} '
+        f'{layers_text} '
+        f'{user_name} '
+        f'{timestamp}'
+    )
 
-    # Get deadline ready
-    try: farm = Deadline()
-    except: return _error('Could not connect to Deadline')
-
-    # Open temporary directory
-    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
-        logging.debug(f'Temporary directory: {temp_path}')
-
-        # Batch and jobs
-        layers_text = f"[{', '.join(variant_names)}]"
-        batch = Batch(
-            f'{project_name} '
-            f'{purpose} '
-            f'{entity_uri} '
-            f'{layers_text} '
-            f'{user_name} '
-            f'{timestamp}'
-        )
-
-        # Build jobs using the new build() function
-        jobs = {}
-        deps = {}
-        build(config, paths, temp_path, jobs, deps)
-
-        # Add jobs to batch
-        batch.add_jobs_with_deps(jobs, deps)
-
-        # Submit
-        farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))
-
-    # Done
-    return 0
+    return _common.submit_batch(batch_title, build, config, paths)
 
 def cli():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('config_path', type=str)
-    args = parser.parse_args()
-
-    # Check config path
-    config_path = Path(args.config_path)
-    if not config_path.exists():
-        return _error(f'Config path not found: {config_path}')
-    
-    # Load and check config
-    config = load_json(config_path)
-    if not _is_valid_config(config):
-        return _error(f'Invalid config: {config_path}')
-    
-    # Run submit
-    return submit(config)
+    return _common.run_cli(_is_valid_config, submit)
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level = logging.DEBUG,
-        format = '%(message)s',
-        stream = sys.stdout
-    )
+    _common.configure_logging()
     sys.exit(cli())

@@ -8,6 +8,8 @@ from enum import Enum
 
 from qtpy import QtCore
 
+from tumblepipe.util.houdini import hou
+
 
 logger = logging.getLogger(__name__)
 
@@ -139,11 +141,9 @@ class USDViewerLauncher(QtCore.QObject):
         """
         import platform
 
-        try:
-            import hou
-            hfs = hou.getenv('HFS')
-        except (ImportError, AttributeError):
+        if hou is None:
             return None
+        hfs = hou.getenv('HFS')
 
         if not hfs:
             return None

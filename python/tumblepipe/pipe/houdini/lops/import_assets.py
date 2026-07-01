@@ -2,7 +2,7 @@ import hou
 
 from pathlib import Path
 
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import list_departments
 from tumblepipe.config.variants import list_variants
@@ -11,8 +11,6 @@ from tumblepipe.pipe.houdini.util import uri_to_prim_path
 from tumblepipe.util import result
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.lops import import_asset
-
-api = default_client()
 
 
 def _clear_scene(dive_node, output_node, keep_names=()):
@@ -56,16 +54,22 @@ def _update_script(instances):
     # composed empty (e.g. a payload that didn't resolve), GetPrimAtPath
     # returns an invalid prim — skip it instead of crashing the import.
     # Mirrors import_layer.py's metadata-update guard.
-    for prim_path, instance_name in instances:
+    #
+    # Create the metadata when it's absent rather than only updating it in
+    # place: Houdini's Duplicate LOP does not reliably carry customData onto
+    # the duplicated instances, so without this the copies (e.g. /CHAR/mom0,
+    # /CHAR/mom1) would export with no metadata and silently drop out.
+    for prim_path, asset_uri_str, instance_name in instances:
         prim_var = f'prim_{instance_name}'
         metadata_var = f'metadata_{instance_name}'
         script += [
             f'{prim_var} = root.GetPrimAtPath("{prim_path}")',
             f'if {prim_var}.IsValid():',
             f'    {metadata_var} = util.get_metadata({prim_var})',
-            f'    if {metadata_var} is not None:',
-            f'        {metadata_var}["instance"] = "{instance_name}"',
-            f'        util.set_metadata({prim_var}, {metadata_var})',
+            f'    if {metadata_var} is None:',
+            f"        {metadata_var} = {{'uri': '{asset_uri_str}', 'instance': '{instance_name}', 'inputs': []}}",
+            f'    {metadata_var}["instance"] = "{instance_name}"',
+            f'    util.set_metadata({prim_var}, {metadata_var})',
             ''
         ]
     
@@ -342,7 +346,6 @@ class ImportAssets(ns.Node):
         # Parameters
         asset_imports = self.get_asset_imports()
         exclude_department_names = self.get_exclude_department_names()
-        include_layerbreak = self.get_include_layerbreak()
 
         # Check if any assets to import
         active_imports = [(uri, var, ver, inst) for uri, var, ver, inst in asset_imports if inst > 0]
@@ -376,8 +379,9 @@ class ImportAssets(ns.Node):
             asset_node.set_exclude_department_names(
                 exclude_department_names
             )
-            # Always disable layerbreak on internal nodes - layerbreaks interfere with merge
-            # and cause metadata to be stripped. The parent import_assets can have its own layerbreak.
+            # Always disable layerbreak on internal nodes - layerbreaks interfere
+            # with merge and cause metadata to be stripped. The parent import_assets
+            # keeps its own (now hidden) layerbreak downstream of the metadata step.
             asset_node.set_include_layerbreak(False)
             asset_node.execute()
 
@@ -414,6 +418,7 @@ class ImportAssets(ns.Node):
                 instance_name = api.naming.get_instance_name(base_name, index)
                 script_args.append((
                     f'{asset_prim_base}/{instance_prim_name}',
+                    str(asset_uri),
                     instance_name
                 ))
 
@@ -468,15 +473,10 @@ class ImportAssets(ns.Node):
         return result.Value(None)
 
 def create(scene, name):
-    node_type = ns.find_node_type('import_assets', 'Lop')
-    assert node_type is not None, 'Could not find import_assets node type'
-    native = scene.node(name)
-    if native is not None: return ImportAssets(native)
-    return ImportAssets(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, ImportAssets, 'import_assets')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
     # Set node style

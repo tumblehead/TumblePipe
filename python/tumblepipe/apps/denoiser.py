@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from tumblepipe.api import path_str, fix_path, to_windows_path
+from tumblepipe.api import path_str, local_path, to_windows_path
 from tumblepipe.apps import app
 
 def _find_renderman_denoiser():
-    pixar_path = fix_path(Path('/mnt/c/Program Files/Pixar'))
+    pixar_path = local_path(Path('/mnt/c/Program Files/Pixar'))
     for dir_path in pixar_path.iterdir():
         if not dir_path.is_dir(): continue
         if not dir_path.name.startswith('RenderManProServer-'): continue

@@ -1,0 +1,148 @@
+"""Path resolution for pipeline entities.
+
+Organized by concern into cohesive submodules; this package re-exports the
+full public surface so callers keep importing from ``tumblepipe.pipe.paths``:
+
+- ``version``   — version-name/version-path primitives (shared core)
+- ``render``    — render/AOV/layer dataclasses, frame/playblast/daily paths
+- ``workspace`` — hip workfile paths and workfile context
+- ``export``    — department + shared export paths and layer file names
+- ``staged``    — staged entity paths and scene-staged paths
+"""
+
+from tumblepipe.pipe.paths.version import (
+    get_next_version_name,
+    list_version_paths,
+    get_latest_version_path,
+    get_next_version_path,
+)
+from tumblepipe.pipe.paths.render import (
+    AOV,
+    Layer,
+    Render,
+    AOVContext,
+    LayerContext,
+    RenderContext,
+    get_frame_path,
+    get_next_frame_path,
+    get_latest_frame_path,
+    get_aov_frame_path,
+    get_next_aov_frame_path,
+    get_latest_aov_frame_path,
+    get_layer_playblast_path,
+    get_playblast_path,
+    get_next_layer_playblast_path,
+    get_next_playblast_path,
+    get_latest_layer_playblast_path,
+    get_latest_playblast_path,
+    get_layer_daily_path,
+    get_daily_path,
+    get_render,
+    get_render_context,
+)
+from tumblepipe.pipe.paths.workspace import (
+    HIP_EXTENSIONS,
+    Context,
+    list_hip_file_paths,
+    get_hip_file_path,
+    latest_hip_file_path,
+    latest_hip_file_path_with_context,
+    next_hip_file_path,
+    load_entity_context,
+    get_workfile_context,
+)
+from tumblepipe.pipe.paths.export import (
+    get_export_path,
+    latest_export_path,
+    next_export_path,
+    get_export_uri,
+    get_layer_file_name,
+    get_root_layer_file_name,
+    get_shared_export_path,
+    latest_shared_export_path,
+    next_shared_export_path,
+    get_shared_layer_file_name,
+)
+from tumblepipe.pipe.paths.staged import (
+    get_staged_path,
+    get_staged_file_path,
+    current_staged_path,
+    current_staged_file_path,
+    next_staged_path,
+    next_staged_file_path,
+    get_staged_base_path,
+    get_latest_staged_path,
+    get_latest_staged_file_path,
+    get_scene_staged_path,
+    next_scene_staged_path,
+    get_current_scene_staged_file_path,
+    get_scene_layer_file_name,
+    get_rig_export_path,
+)
+
+__all__ = [
+    # version
+    'get_next_version_name',
+    'list_version_paths',
+    'get_latest_version_path',
+    'get_next_version_path',
+    # render
+    'AOV',
+    'Layer',
+    'Render',
+    'AOVContext',
+    'LayerContext',
+    'RenderContext',
+    'get_frame_path',
+    'get_next_frame_path',
+    'get_latest_frame_path',
+    'get_aov_frame_path',
+    'get_next_aov_frame_path',
+    'get_latest_aov_frame_path',
+    'get_layer_playblast_path',
+    'get_playblast_path',
+    'get_next_layer_playblast_path',
+    'get_next_playblast_path',
+    'get_latest_layer_playblast_path',
+    'get_latest_playblast_path',
+    'get_layer_daily_path',
+    'get_daily_path',
+    'get_render',
+    'get_render_context',
+    # workspace
+    'HIP_EXTENSIONS',
+    'Context',
+    'list_hip_file_paths',
+    'get_hip_file_path',
+    'latest_hip_file_path',
+    'latest_hip_file_path_with_context',
+    'next_hip_file_path',
+    'load_entity_context',
+    'get_workfile_context',
+    # export
+    'get_export_path',
+    'latest_export_path',
+    'next_export_path',
+    'get_export_uri',
+    'get_layer_file_name',
+    'get_root_layer_file_name',
+    'get_shared_export_path',
+    'latest_shared_export_path',
+    'next_shared_export_path',
+    'get_shared_layer_file_name',
+    # staged
+    'get_staged_path',
+    'get_staged_file_path',
+    'current_staged_path',
+    'current_staged_file_path',
+    'next_staged_path',
+    'next_staged_file_path',
+    'get_staged_base_path',
+    'get_latest_staged_path',
+    'get_latest_staged_file_path',
+    'get_scene_staged_path',
+    'next_scene_staged_path',
+    'get_current_scene_staged_file_path',
+    'get_scene_layer_file_name',
+    'get_rig_export_path',
+]

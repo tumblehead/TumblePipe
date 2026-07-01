@@ -42,7 +42,7 @@ packaging.
 ### `python/tumblepipe/`
 
 The pipeline's Python package. This is on Houdini's Python path; import
-with `from tumblehead import ...`.
+with `from tumblepipe import ...`.
 
 ### `python3.11libs/`
 

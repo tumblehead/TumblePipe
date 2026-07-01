@@ -15,10 +15,9 @@ if tumblehead_packages_path not in sys.path:
 
 from tumblepipe.api import (
     path_str,
-    fix_path,
     local_path,
     to_windows_path,
-    default_client
+    api
 )
 from tumblepipe.util.io import (
     load_json,
@@ -28,9 +27,7 @@ from tumblepipe.config.timeline import BlockRange
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Husk, ITileStitch
 from tumblepipe.apps import exr
-from tumblepipe.farm.tasks.env import get_base_env, print_env, job_data_dir
-
-api = default_client()
+from tumblepipe.farm.tasks.env import get_base_env, ocio_value, print_env, job_data_dir
 
 def _headline(title):
     print(f' {title} '.center(80, '='))
@@ -74,7 +71,7 @@ def main(
     itilestitch = ITileStitch()
 
     # Open a temporary directory
-    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -163,9 +160,7 @@ def main(
                 itilestitch.run(
                     [ path_str(to_windows_path(frame_path)) ] +
                     [ path_str(to_windows_path(tile_path)) for tile_path in tile_paths ],
-                    env = dict(
-                        OCIO = path_str(to_windows_path(Path(os.environ['OCIO']))),
-                    )
+                    env = dict(OCIO=ocio_value())
                 )
 
         # Check that the frames were generated

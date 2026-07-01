@@ -1,6 +1,6 @@
 import hou
 
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 from tumblepipe.util import result
 from tumblepipe.config.entities import is_terminal_entity
@@ -8,8 +8,6 @@ import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.sops import import_rig
 from tumblepipe.config.variants import list_variants
 from tumblepipe.pipe.paths import list_version_paths
-
-api = default_client()
 
 def _clear_scene(dive_node, output_node):
 
@@ -36,7 +34,6 @@ class ImportRigs(ns.Node):
         super().__init__(native)
 
     def list_asset_uris(self) -> list[Uri]:
-        import_rig._refresh_entities()
         asset_entities = api.config.list_entities(
             filter=Uri.parse_unsafe('entity:/assets'),
             closure=True
@@ -228,15 +225,10 @@ class ImportRigs(ns.Node):
         return result.Value(None)
 
 def create(scene, name):
-    node_type = ns.find_node_type('import_rigs', 'Sop')
-    assert node_type is not None, 'Could not find import_rigs node type'
-    native = scene.node(name)
-    if native is not None: return ImportRigs(native)
-    return ImportRigs(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, ImportRigs, 'import_rigs', 'Sop')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
 

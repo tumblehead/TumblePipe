@@ -5,8 +5,8 @@ transitions. Catalog-side code goes through this rather than touching
 ``ClientSlot`` directly.
 
 Construction is serialised because tumblepipe's ``Client`` reads
-``TH_*`` env vars inside its ``ProjectConfigConvention`` ``__init__`` —
-two concurrent builds race on the env and cross-wire each other's
+``TH_*`` env vars while building its ``JsonConfigStore`` — two
+concurrent builds race on the env and cross-wire each other's
 config. The lock is catalog-scoped (one per :class:`ClientPool`).
 """
 

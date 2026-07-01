@@ -14,10 +14,8 @@ import importlib.util
 from pathlib import Path
 from typing import Callable
 
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
-
-api = default_client()
 
 VALIDATORS_URI = Uri.parse_unsafe('config:/validators')
 

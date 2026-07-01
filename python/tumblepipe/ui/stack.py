@@ -164,11 +164,6 @@ class ReorderItem(card.Card):
     def set_dragging(self, dragging: bool):
         self._overlay.set_dragging(dragging)
 
-@dataclass
-class ReorderEvent:
-    from_index: int
-    to_index: int
-
 class StackViewItem(card.Card):
     reorder = Signal(object)
 
@@ -306,7 +301,7 @@ class StackView(card.Card):
             try:
                 item.clicked.disconnect(self.clicked.emit)
                 item.dragged.disconnect(self.dragged.emit)
-            except: pass
+            except (RuntimeError, TypeError): pass
         
         # Clear the items
         for item in self._items:

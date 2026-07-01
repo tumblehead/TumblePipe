@@ -3,7 +3,6 @@ from functools import partial
 from pathlib import Path
 import logging
 import sys
-import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -12,11 +11,9 @@ if tumblehead_packages_path not in sys.path:
 
 from tumblepipe.api import (
     path_str,
-    fix_path,
-    get_user_name,
+    local_path,
     to_windows_path,
-    default_client,
-    refresh_global_cache
+    api
 )
 from tumblepipe.util.io import (
     load_json,
@@ -24,14 +21,12 @@ from tumblepipe.util.io import (
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Hython
-from tumblepipe.farm.tasks.env import job_data_dir
+from tumblepipe.farm.tasks.env import get_hython_env, job_data_dir
 from tumblepipe.config.department import is_renderable
 from tumblepipe.pipe.paths import (
     next_export_path
 )
 from tumblepipe.farm.tasks.env import print_env
-
-api = default_client()
 
 def _error(msg):
     logging.error(msg)
@@ -125,7 +120,7 @@ def main(config):
     hython = Hython()
 
     # Open a temporary directory
-    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -140,21 +135,13 @@ def main(config):
             [
                 path_str(to_windows_path(temp_config_path)),
             ],
-            env = dict(
-                TH_USER = get_user_name(),
-                TH_PROJECT_PATH = path_str(to_windows_path(api.PROJECT_PATH)),
-                TH_PIPELINE_PATH = path_str(to_windows_path(api.PIPELINE_PATH)),
-                TH_CONFIG_PATH = path_str(to_windows_path(api.CONFIG_PATH)),
+            env = {
+                **get_hython_env(api),
                 # Forward the job data dir so publish_houdini can resolve the
                 # bundled workfile (it runs in hython with CWD = the hpm
                 # manifest dir, not the data dir).
-                TH_FARM_DATA = path_str(job_data_dir()),
-                HOUDINI_PACKAGE_DIR = ';'.join([
-                    path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini')))),
-                    path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('project:/_pipeline/houdini'))))
-                ]),
-                OCIO = path_str(to_windows_path(Path(os.environ['OCIO'])))
-            )
+                'TH_FARM_DATA': path_str(job_data_dir()),
+            }
         )
 
     # Check if the export was generated (skip for groups - they export individual members)
@@ -166,7 +153,6 @@ def main(config):
     # Auto-trigger asset build if this is a renderable asset department
     entity_type = _get_entity_type(entity_uri)
     variant_name = config['entity'].get('variant', 'default')
-    refresh_global_cache('departments')
     if entity_type == 'asset' and is_renderable('assets', department_name):
         logging.info(f'Renderable asset department published: {department_name}')
         _trigger_asset_build(entity_uri, config.get('settings', {}), variant_name)

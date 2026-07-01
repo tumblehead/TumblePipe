@@ -5,10 +5,10 @@ import shutil
 import hou
 
 from tumblepipe.api import (
-    fix_path,
+    local_path,
     path_str,
     get_user_name,
-    default_client
+    api
 )
 from tumblepipe.config.timeline import FrameRange
 from tumblepipe.config.farm import list_pools
@@ -17,8 +17,6 @@ from tumblepipe.util.uri import Uri
 import tumblepipe.pipe.houdini.nodes as ns
 import tumblepipe.pipe.houdini.util as util
 from tumblepipe.pipe.paths import load_entity_context
-
-api = default_client()
 
 def _entity_from_context_json():
     # Path to current workfile
@@ -77,12 +75,10 @@ class LookdevStudio(ns.Node):
     
     def submit(self):
         
-        # Import the job modules
-        from importlib import reload
+        # Import the job module
         from tumblepipe.farm.jobs.houdini.export_render import (
             job as export_render_job
         )
-        reload(export_render_job)
 
         # Get the entity
         context = _entity_from_context_json()
@@ -99,7 +95,7 @@ class LookdevStudio(ns.Node):
         aov_names = self.get_aov_names()
 
         # Open temporary directory
-        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
@@ -108,7 +104,7 @@ class LookdevStudio(ns.Node):
             input_path = temp_path / 'workfile.hip'
             relative_input_path = input_path.relative_to(temp_path)
             hou.hipFile.save()
-            shutil.copyfile(workfile_path, input_path)
+            shutil.copyfile(hou.hipFile.path(), input_path)
 
             # Prepare tasks
             tasks = dict()
@@ -169,11 +165,7 @@ class LookdevStudio(ns.Node):
             })
 
 def create(scene, name):
-    node_type = ns.find_node_type('lookdev_studio', 'Lop')
-    assert node_type is not None, 'Could not find lookdev_studio node type'
-    native = scene.node(name)
-    if native is not None: return LookdevStudio(native)
-    return LookdevStudio(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, LookdevStudio, 'lookdev_studio')
 
 def submit():
     raw_node = hou.pwd()
@@ -181,8 +173,7 @@ def submit():
     node.submit()
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DEFAULT)
+    ns.set_node_style(raw_node)
 
 def on_created(raw_node):
 

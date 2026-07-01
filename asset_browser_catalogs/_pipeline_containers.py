@@ -213,9 +213,9 @@ class ContainerManager:
             return items
         self._catalog._activate_project(proj)
         try:
-            from tumblepipe.config import scenes as scn_mod
+            from tumblepipe.config import scene as scn_mod
             scene_uri = uris.scene(scene_path)
-            scene = scn_mod.get_scene(scene_uri)
+            scene = scn_mod.get_scene_by_uri(scene_uri)
         except Exception as exc:
             raise TagQueryError(
                 self._catalog.id,
@@ -319,7 +319,7 @@ class ContainerManager:
             return children
         try:
             self._catalog._activate_project(proj)
-            from tumblepipe.config import scenes as scn_mod
+            from tumblepipe.config import scene as scn_mod
             for s in scn_mod.list_scenes():
                 path = "/".join(s.uri.segments) if s.uri.segments else str(s.uri)
                 name = s.uri.segments[-1] if s.uri.segments else path
@@ -472,8 +472,8 @@ class ContainerManager:
             return False
         try:
             self._catalog._activate_project(proj)
-            from tumblepipe.config import scenes as scn_mod
-            scene = scn_mod.get_scene(ref.uri)
+            from tumblepipe.config import scene as scn_mod
+            scene = scn_mod.get_scene_by_uri(ref.uri)
         except Exception:
             log.debug(
                 "_root_is_dirty: get_scene failed for %s",
@@ -784,8 +784,8 @@ class ContainerManager:
                 )
         elif kind == "scene":
             try:
-                from tumblepipe.config import scenes as scn_mod
-                scn = scn_mod.get_scene(uris.scene(path))
+                from tumblepipe.config import scene as scn_mod
+                scn = scn_mod.get_scene_by_uri(uris.scene(path))
                 if scn is not None:
                     member_count = len(scn.assets)
             except Exception:
@@ -830,7 +830,7 @@ class ContainerManager:
                 return result
             self._catalog._activate_project(proj)
             from tumblepipe.config import groups as grp_mod
-            from tumblepipe.config import scenes as scn_mod
+            from tumblepipe.config import scene as scn_mod
 
             # Normalise the entity ID so it matches member URIs.
             entity_suffix = parts[1]  # "CTX/NAME"
@@ -1167,12 +1167,12 @@ class ContainerManager:
         self, ref: SceneContainer, asset_ids: list[str],
     ) -> tuple[int, int, set[str]]:
         try:
-            from tumblepipe.config import scenes as scn_mod
+            from tumblepipe.config import scene as scn_mod
             from tumblepipe.config import scene as scene_mod
         except Exception:
             return (0, 0, set())
         try:
-            scene = scn_mod.get_scene(ref.uri)
+            scene = scn_mod.get_scene_by_uri(ref.uri)
         except Exception:
             log.exception("get_scene failed")
             return (0, 0, set())
@@ -1278,12 +1278,12 @@ class ContainerManager:
         """Returns ``None`` to signal a fatal set_scene_assets failure;
         the caller surfaces a distinct error in that case."""
         try:
-            from tumblepipe.config import scenes as scn_mod
+            from tumblepipe.config import scene as scn_mod
             from tumblepipe.config import scene as scene_mod
         except Exception:
             return (0, 0)
         try:
-            scene = scn_mod.get_scene(ref.uri)
+            scene = scn_mod.get_scene_by_uri(ref.uri)
         except Exception:
             log.exception("get_scene failed")
             return (0, 0)
@@ -1461,7 +1461,7 @@ class ContainerManager:
             return []
         try:
             self._catalog._activate_project(proj)
-            from tumblepipe.config import scenes as scn_mod
+            from tumblepipe.config import scene as scn_mod
         except Exception:
             log.exception("list_root_assigned_shots: imports failed")
             return []
@@ -1492,7 +1492,7 @@ class ContainerManager:
             return (0, [])
         try:
             self._catalog._activate_project(proj)
-            from tumblepipe.config import scene as scene_mod
+            from tumblepipe.pipe.scene_build import generate_root_version
         except Exception:
             log.exception("rebuild_root_assigned_shots: imports failed")
             return (0, list(shots))
@@ -1500,7 +1500,7 @@ class ContainerManager:
         failed: list = []
         for shot_uri in shots:
             try:
-                scene_mod.generate_root_version(shot_uri)
+                generate_root_version(shot_uri)
             except Exception:
                 log.exception(
                     "generate_root_version failed for %s", shot_uri,
@@ -1532,12 +1532,12 @@ class ContainerManager:
             return False
         try:
             self._catalog._activate_project(proj)
-            from tumblepipe.config import scenes as scn_mod
+            from tumblepipe.pipe.scene_build import export_scene_version
         except Exception:
             log.exception("export_root_usd: imports failed")
             return False
         try:
-            scn_mod.export_scene_version(ref.uri)
+            export_scene_version(ref.uri)
         except Exception:
             log.exception(
                 "export_scene_version failed for %s", ref.uri,

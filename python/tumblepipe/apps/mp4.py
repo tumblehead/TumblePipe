@@ -5,15 +5,12 @@ import shutil
 
 from tumblepipe.api import (
     path_str,
-    fix_path,
     local_path,
-    default_client
+    api
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.apps import houdini
-
-api = default_client()
 
 # Houdini's hffmpeg ships libopenh264 (not libx264); its quality rate-control
 # mode keeps the notify "shrink to fit Discord" path shrinking with resolution.
@@ -51,7 +48,7 @@ def from_jpg(
         raise ValueError(f'Missing frames: {missing_frame_indices}')
 
     # Open temporary workspace
-    base_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    base_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     base_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
         temp_dir_path = Path(temp_dir)
@@ -125,7 +122,7 @@ def scale(
         )
     
     # Open temporary workspace
-    base_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    base_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     base_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
         temp_dir_path = Path(temp_dir)

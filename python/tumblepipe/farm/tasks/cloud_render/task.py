@@ -13,15 +13,13 @@ from tumblepipe.api import (
     path_str,
     local_path,
     to_windows_path,
-    default_client
+    api
 )
 from tumblepipe.farm.tasks.env import get_base_env
 from tumblepipe.util.io import store_json
 from tumblepipe.naming import random_name
 from tumblepipe.farm.deadline import Task
 from tumblepipe.config.timeline import BlockRange
-
-api = default_client()
 
 """
 config = {

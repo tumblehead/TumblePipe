@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.16.4"
+version = "1.16.5"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -112,7 +112,6 @@ include = [
 # Carve-outs within the included dirs.
 exclude = [
     "otls/*/**",                 # decompiled HDA source dirs — ship the .hda, not the source
-    "otls/aaronsmithtv__*.hda",  # third-party HDA, not redistributed
     "scripts/verify_*.py",       # in-app verification harnesses — dev-only, not shipped
 ]
 
@@ -153,3 +152,580 @@ python = "3.11"
 cmd = "python scripts/tt_setup.py"
 python = "3.11"
 requirements = ["PySide6>=6.6"]
+
+# migrate-config brings a project's _config layout forward to the current
+# version (tumblepipe.migration). It targets $TH_PROJECT_PATH, so it is meant
+# to be run from the desktop launcher's per-project Scripts panel: a user
+# adopting a new pipeline version clicks Run to update their own project. It
+# writes a config_convention.py.bak first and is idempotent. The migration
+# module is stdlib-only and Houdini-free, so the table form's uv-managed
+# python runs it anywhere (and dodges the Windows bare-`python` 9009 gotcha).
+#
+# label/description are what make the launcher list this in the per-project
+# Scripts panel — the desktop surfaces only scripts that carry a label, so
+# the unlabeled build/lifecycle scripts (build-resolver, compile-hdas,
+# tt_setup) stay hidden from users. Supported since hpm 0.23 (deployed
+# HPM_VERSION is v0.25).
+[scripts.migrate-config]
+cmd = "python scripts/migrate_config.py"
+python = "3.11"
+label = "Migrate Project Config"
+description = "Bring this project's _config layout up to the current pipeline version"
+
+# Operator index. Declares every HDA node type this package bundles so
+# `hpm pack` can emit a searchable asset index for registry-level node
+# discovery without downloading the archive. Generated from the otls/
+# expanded-HDA INDEX__SECTION + Tools.shelf (.ci/gen_operators.py is the
+# generator); regenerate when operators are added, removed, or retyped.
+# `source` is the collapsed otls/<name>.hda that compile-hdas produces at
+# pack time (Recipes.hda ships as a tracked binary). `icon` is omitted:
+# hpm's icon is a Houdini icon identifier, but ours are
+# $TH_PIPELINE_PATH/resources/*.png paths. The same namespaced type_name in
+# two tables (e.g. th::cache::1.0 as both Sop and Lop) is two operators.
+
+[[operators]]
+kind = "hda"
+type_name = "th::build_comp::1.0"
+label = "th build comp"
+category = "Cop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/cop_th.build_comp.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::cop_material::1.0"
+label = "th cop material"
+category = "Cop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/cop_th.cop_material.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::cop_paint::1.0"
+label = "th cop paint"
+category = "Cop"
+tab_submenu = "_TumblePipe/comp"
+source = "otls/cop_th.cop_paint.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::depth_cull::1.0"
+label = "th depth cull"
+category = "Cop"
+tab_submenu = "_TumblePipe/comp"
+source = "otls/cop_th.depth_cull.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::gradient_map::1.0"
+label = "th gradient map"
+category = "Cop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/cop_th.gradient_map.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::import_lop_camera::1.0"
+label = "th import lop camera"
+category = "Cop"
+tab_submenu = "_TumblePipe/comp"
+source = "otls/cop_th.import_lop_camera.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::lop_import::1.0"
+label = "th lop import"
+category = "Cop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/cop_th.lop_import.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::mask_painter::1.0"
+label = "th mask painter"
+category = "Cop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/cop_th.mask_painter.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::paint_scatter::1.0"
+label = "th paint scatter"
+category = "Cop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/cop_th.paint_scatter.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::roto_mask::1.0"
+label = "th roto mask"
+category = "Cop"
+tab_submenu = "_TumblePipe/comp"
+source = "otls/cop_th.roto_mask.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::th_a_b_slider::1.0"
+label = "th a b slide"
+category = "Cop"
+tab_submenu = "_TumblePipe/comp"
+source = "otls/cop_th.th_a_b_slider.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::tileable_texture::1.0"
+label = "th tileable texture"
+category = "Cop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/cop_th.tileable_texture.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::th_configure_forest_gobo"
+label = "th configure forest gobo"
+category = "Data"
+source = "otls/Recipes.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::th_configure_grass"
+label = "th configure grass"
+category = "Data"
+source = "otls/Recipes.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::th_configure_lop_import"
+label = "th configure lop import"
+category = "Data"
+source = "otls/Recipes.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::th_configure_material_override"
+label = "th configure material override"
+category = "Data"
+source = "otls/Recipes.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::th_configure_render_layer_matte"
+label = "th configure render layer matte"
+category = "Data"
+source = "otls/Recipes.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::animate::2.0"
+label = "th animate"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.animate.2.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::archive::1.0"
+label = "th archive"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.archive.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::asset_payload::1.0"
+label = "th asset payload"
+category = "Lop"
+tab_submenu = "_TumblePipe/utils"
+source = "otls/lop_th.asset_payload.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::asset_thumbnail::1.0"
+label = "th asset thumbnail"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.asset_thumbnail.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::cache::1.0"
+label = "th cache"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.cache.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::create_asset::1.0"
+label = "th create asset"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.create_asset.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::create_asset_lookdev::1.0"
+label = "th create asset lookdev"
+category = "Lop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/lop_th.create_asset_lookdev.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::create_asset_model::1.0"
+label = "th create asset model"
+category = "Lop"
+tab_submenu = "_TumblePipe/model"
+source = "otls/lop_th.create_asset_model.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::create_model::1.0"
+label = "th create model"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.create_model.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::duplicate::1.0"
+label = "th duplicate"
+category = "Lop"
+tab_submenu = "_TumblePipe/utils"
+source = "otls/lop_th.duplicate.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::export_asset::1.0"
+label = "th export asset"
+category = "Lop"
+tab_submenu = "_TumblePipe/utils"
+source = "otls/lop_th.export_asset.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::export_layer::1.0"
+label = "th export layer"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.export_layer.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::image_card::1.0"
+label = "th image card"
+category = "Lop"
+tab_submenu = "_TumblePipe/lighting"
+source = "otls/lop_th.image_card.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::image_plane_painter::1.1"
+label = "th image plane painter"
+category = "Lop"
+tab_submenu = "_TumblePipe/utils"
+source = "otls/lop_th.image_plane_painter.1.1.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::import_asset::1.0"
+label = "th import asset"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.import_asset.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::import_assets::2.0"
+label = "th import assets"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.import_assets.2.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::import_layer::1.0"
+label = "th import layer"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.import_layer.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::import_shot::1.0"
+label = "th import shot"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.import_shot.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::karmafogbox::1.0"
+label = "th karma fog box"
+category = "Lop"
+tab_submenu = "_TumblePipe/lighting"
+source = "otls/lop_th.karmafogbox.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::layer_split::1.0"
+label = "th layer split"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.layer_split.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::light_blocker::1.0"
+label = "th light blocker"
+category = "Lop"
+tab_submenu = "_TumblePipe/lighting"
+source = "otls/lop_th.light_blocker.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::light_streaks::1.4"
+label = "th light streaks"
+category = "Lop"
+tab_submenu = "_TumblePipe/lighting"
+source = "otls/lop_th.light_streaks.1.4.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::lookdev_studio::2.0"
+label = "th lookdev studio"
+category = "Lop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/lop_th.lookdev_studio.2.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::lpe_tags::1.0"
+label = "th lpe tags"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.lpe_tags.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::material_assigner::1.0"
+label = "th material assigner"
+category = "Lop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/lop_th.material_assigner.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::mesh_outline::1.0"
+label = "th mesh outline"
+category = "Lop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/lop_th.mesh_outline.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::playblast::1.0"
+label = "th playblast"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.playblast.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::projection_mapping::1.1"
+label = "th projection mapping"
+category = "Lop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/lop_th.projection_mapping.1.1.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::puzzlemattes::4.0"
+label = "th puzzle mattes"
+category = "Lop"
+tab_submenu = "_TumblePipe/rendering"
+source = "otls/lop_th.puzzlemattes.4.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::render_debug::1.0"
+label = "th render debug"
+category = "Lop"
+tab_submenu = "_TumblePipe/debug"
+source = "otls/lop_th.render_debug.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::render_layer_setup::1.0"
+label = "th render layer setup"
+category = "Lop"
+tab_submenu = "_TumblePipe/lighting"
+source = "otls/lop_th.render_layer_setup.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::render_settings::1.0"
+label = "th render settings"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.render_settings.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::render_vars::1.1"
+label = "th render vars"
+category = "Lop"
+tab_submenu = "_TumblePipe/rendering"
+source = "otls/lop_th.render_vars.1.1.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::set_kinds::1.0"
+label = "th set kinds"
+category = "Lop"
+tab_submenu = "_TumblePipe/utils"
+source = "otls/lop_th.set_kinds.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::shot_sequencer::1.0"
+label = "th shot sequencer"
+category = "Lop"
+tab_submenu = "_TumblePipe/utils"
+source = "otls/lop_th.shot_sequencer.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::sop_modify::1.0"
+label = "th sop modify"
+category = "Lop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/lop_th.sop_modify.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "tumblehead::th_cop_material_library::1.0"
+label = "th cop material library"
+category = "Lop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/lop_tumblehead.th_cop_material_library.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::cache::1.0"
+label = "th cache"
+category = "Sop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/sop_th.cache.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::copy_parms::1.0"
+label = "th copy parms"
+category = "Sop"
+tab_submenu = "_TumblePipe/utils"
+source = "otls/sop_th.copy_parms.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::export_rig::1.0"
+label = "th export rig"
+category = "Sop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/sop_th.export_rig.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::geo_path_builder::1.0"
+label = "th geo path builder"
+category = "Sop"
+tab_submenu = "_TumblePipe/utils"
+source = "otls/sop_th.geo_path_builder.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::import_asset::1.0"
+label = "th import asset"
+category = "Sop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/sop_th.import_asset.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::import_model::1.0"
+label = "th import model"
+category = "Sop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/sop_th.import_model.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::import_rig::1.0"
+label = "th import rig"
+category = "Sop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/sop_th.import_rig.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::import_rigs::2.0"
+label = "th import rigs"
+category = "Sop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/sop_th.import_rigs.2.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::maps_baker::1.0"
+label = "th maps baker"
+category = "Sop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/sop_th.maps_baker.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::mesh_blender::1.0"
+label = "th mesh blender"
+category = "Sop"
+tab_submenu = "_TumblePipe/model"
+source = "otls/sop_th.mesh_blender.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::mesh_carver::1.0"
+label = "th mesh carver"
+category = "Sop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/sop_th.mesh_carver.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::mesh_lasso::1.0"
+label = "th mesh lasso"
+category = "Sop"
+tab_submenu = "_TumblePipe/model"
+source = "otls/sop_th.mesh_lasso.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::playblast::2.0"
+label = "th playblast"
+category = "Sop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/sop_th.playblast.2.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::rename_packed::1.0"
+label = "th rename packed"
+category = "Sop"
+tab_submenu = "_TumblePipe/utils"
+source = "otls/sop_th.rename_packed.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::triplanar_projection::1.0"
+label = "th triplanar projection"
+category = "Vop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/vop_th.triplanar_projection.1.0.hda"

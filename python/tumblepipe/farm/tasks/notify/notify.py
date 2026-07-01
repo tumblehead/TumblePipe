@@ -19,7 +19,7 @@ from tumblepipe.api import (
     path_str,
     local_path,
     to_windows_path,
-    default_client
+    api
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps import mp4, houdini
@@ -30,9 +30,7 @@ from tumblepipe.config.discord import (
     get_user_discord_id,
     get_channel_id as get_discord_channel_id
 )
-from tumblepipe.farm.tasks.env import print_env
-
-api = default_client()
+from tumblepipe.farm.tasks.env import ocio_value, print_env
 
 def _error(msg):
     logging.error(msg)
@@ -345,9 +343,7 @@ def _exr_to_jpeg_bytes(path: Path) -> bytes:
                 path_str(to_windows_path(path)),
                 path_str(to_windows_path(temp_jpeg_path))
             ],
-            env = dict(
-                OCIO = path_str(to_windows_path(Path(os.environ['OCIO']))),
-            )
+            env = dict(OCIO=ocio_value())
         )
         
         # Check if conversion was successful

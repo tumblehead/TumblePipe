@@ -6,7 +6,7 @@ import hou
 
 from tumblepipe.api import (
     path_str,
-    default_client
+    api
 )
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.config.department import list_departments
@@ -18,8 +18,6 @@ from tumblepipe.pipe.houdini.lops import (
     import_layer,
     archive
 )
-
-api = default_client()
 
 def _headline(title):
     print(f' {title} '.center(80, '='))

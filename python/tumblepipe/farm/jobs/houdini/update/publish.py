@@ -5,7 +5,6 @@ It builds the config dict and delegates to the publish task infrastructure.
 """
 
 from pathlib import Path
-import logging
 import sys
 
 # Add tumblehead python packages path
@@ -16,12 +15,8 @@ if str(tumblehead_packages_path) not in sys.path:
 from tumblepipe.api import path_str
 from tumblepipe.util.uri import Uri
 from tumblepipe.pipe.paths import latest_hip_file_path
+from tumblepipe.farm.jobs.houdini import _common
 from tumblepipe.farm.tasks.publish import publish
-
-
-def _error(msg):
-    logging.error(msg)
-    return 1
 
 
 def cli():
@@ -39,8 +34,7 @@ def cli():
     entity_uri = Uri.parse_unsafe(args.entity_uri)
     workfile_path = latest_hip_file_path(entity_uri, args.department)
     if workfile_path is None or not workfile_path.exists():
-        logging.error(f'No workfile found for {entity_uri}/{args.department}')
-        return 1
+        return _common.error(f'No workfile found for {entity_uri}/{args.department}')
 
     # Build config matching what publish.main() expects
     config = {
@@ -65,9 +59,5 @@ def cli():
 
 
 if __name__ == '__main__':
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(message)s',
-        stream=sys.stdout
-    )
+    _common.configure_logging()
     sys.exit(cli())

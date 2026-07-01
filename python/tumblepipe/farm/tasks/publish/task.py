@@ -12,7 +12,7 @@ if tumblehead_packages_path not in sys.path:
 from tumblepipe.api import (
     path_str,
     local_path,
-    default_client
+    api
 )
 from tumblepipe.farm.tasks.env import get_base_env
 from tumblepipe.util.io import store_json
@@ -20,8 +20,6 @@ from tumblepipe.util.uri import Uri
 from tumblepipe.naming import random_name
 from tumblepipe.farm.deadline import Task
 from tumblepipe.config.timeline import BlockRange
-
-api = default_client()
 
 """
 config = {

@@ -9,7 +9,7 @@ import hou
 
 logger = logging.getLogger(__name__)
 
-from tumblepipe.api import path_str, fix_path, default_client
+from tumblepipe.api import path_str, local_path, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import list_departments
 from tumblepipe.config.variants import get_entity_type
@@ -22,8 +22,6 @@ from tumblepipe.pipe.paths import (
     get_shared_layer_file_name
 )
 from tumblepipe.pipe.context import save_export_context
-
-api = default_client()
 
 
 class LayerSplit(ns.Node):
@@ -171,7 +169,7 @@ class LayerSplit(ns.Node):
         if force_local:
             return self._execute()
         # Open ProcessDialog
-        from tumblepipe.pipe.houdini.ui.process_executor import (
+        from tumblepipe.pipe.houdini.ui.dialog_launcher import (
             open_process_dialog_for_node
         )
         open_process_dialog_for_node(self, dialog_title="Export Shared Layer")
@@ -218,7 +216,7 @@ class LayerSplit(ns.Node):
         )
 
         # Export to temp first, then copy to network
-        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
@@ -291,17 +289,11 @@ class LayerSplit(ns.Node):
 
 
 def create(scene, name):
-    node_type = ns.find_node_type('layer_split', 'Lop')
-    assert node_type is not None, 'Could not find layer_split node type'
-    native = scene.node(name)
-    if native is not None:
-        return LayerSplit(native)
-    return LayerSplit(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, LayerSplit, 'layer_split')
 
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DEFAULT)
+    ns.set_node_style(raw_node)
 
 
 def on_created(raw_node):

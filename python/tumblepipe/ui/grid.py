@@ -47,7 +47,7 @@ class GridView(card.Card):
             try:
                 item.clicked.disconnect(self.clicked.emit)
                 item.dragged.disconnect(self.dragged.emit)
-            except: pass
+            except (RuntimeError, TypeError): pass
         
         # Clear the items
         for item in self._items:

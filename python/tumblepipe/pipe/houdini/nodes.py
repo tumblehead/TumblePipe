@@ -143,3 +143,25 @@ def set_node_comment(native, message: str):
     """Set node comment and ensure it's visible."""
     native.setComment(message)
     native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+
+##############################################################################
+# Node creation / styling
+##############################################################################
+
+def create_node(scene, name, node_cls, type_name, context = 'Lop', **create_kwargs):
+    """Create-or-wrap the ``th::<type_name>`` node named ``name`` under ``scene``.
+
+    Returns an existing child wrapped in ``node_cls`` if one already exists, else
+    creates it from the latest version of the node type. Extra keyword arguments
+    (e.g. ``force_valid_node_name=True``) are forwarded to ``createNode``.
+    """
+    node_type = find_node_type(type_name, context)
+    assert node_type is not None, f'Could not find {type_name} node type'
+    native = scene.node(name)
+    if native is not None: return node_cls(native)
+    return node_cls(scene.createNode(node_type.name(), name, **create_kwargs))
+
+def set_node_style(raw_node, shape = SHAPE_NODE_DEFAULT, color = COLOR_NODE_DEFAULT):
+    """Apply the standard th:: node styling: node color + node shape."""
+    raw_node.setColor(color)
+    raw_node.setUserData('nodeshape', shape)

@@ -9,15 +9,13 @@ tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
 if tumblehead_packages_path not in sys.path:
     sys.path.append(str(tumblehead_packages_path))
 
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.config.department import list_departments
 from tumblepipe.util.io import load_json, store_json
 from tumblepipe.pipe.paths import get_render_context
 from tumblepipe.util.uri import Uri
 from tumblepipe.farm.tasks.env import print_env
-
-api = default_client()
 
 def _should_sync_aov(aov_name: str) -> bool:
     """Check if an AOV should be synced to edit"""

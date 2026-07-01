@@ -1,5 +1,3 @@
-from tempfile import TemporaryDirectory
-from functools import partial
 from pathlib import Path
 import datetime as dt
 import logging
@@ -13,37 +11,21 @@ if tumblehead_packages_path not in sys.path:
 from tumblepipe.api import (
     get_project_name,
     get_user_name,
-    fix_path,
     path_str,
-    default_client
+    api
 )
-from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import list_departments
 from tumblepipe.config.groups import get_group
 from tumblepipe.config.variants import list_variants
-from tumblepipe.pipe.paths import next_staged_path, next_staged_file_path, latest_hip_file_path
-from tumblepipe.apps.deadline import (
-    Deadline,
-    Batch,
-    Job
-)
+from tumblepipe.pipe.paths import next_staged_file_path, latest_hip_file_path
+from tumblepipe.apps.deadline import Job
 from tumblepipe.pipe import graph
+from tumblepipe.farm.jobs.houdini import _common
 
 import tumblepipe.farm.tasks.publish.task as publish_task
 import tumblepipe.farm.tasks.build.task as build_task
 import tumblepipe.farm.tasks.notify.task as notify_task
-
-from importlib import reload
-reload(publish_task)
-reload(build_task)
-reload(notify_task)
-
-api = default_client()
-
-def _error(msg):
-    logging.error(msg)
-    return 1
 
 """
 config = {
@@ -62,19 +44,8 @@ config = {
 
 def _is_valid_config(config):
 
-    def _is_str(datum):
-        return isinstance(datum, str)
-
-    def _is_int(datum):
-        return isinstance(datum, int)
-
-    def _check(value_checker, data, key):
-        if key not in data: return False
-        if not value_checker(data[key]): return False
-        return True
-
-    _check_str = partial(_check, _is_str)
-    _check_int = partial(_check, _is_int)
+    _check_str = _common.check_str
+    _check_int = _common.check_int
 
     def _valid_entity(entity):
         if not isinstance(entity, dict): return False
@@ -329,7 +300,7 @@ def build(
 
 def submit(
     config: dict,
-    paths: dict[Path, Path]
+    paths: dict[Path, Path] = None
     ) -> int:
     """Create batch, build jobs, and submit to farm.
 
@@ -347,70 +318,19 @@ def submit(
     # Parameters
     project_name = get_project_name()
     timestamp = dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
+    batch_title = (
+        f'{project_name} '
+        f'propagate '
+        f'{entity_uri} '
+        f'{user_name} '
+        f'{timestamp}'
+    )
 
-    # Get deadline ready
-    try: farm = Deadline()
-    except: return _error('Could not connect to Deadline')
-
-    # Open temporary directory
-    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
-    root_temp_path.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
-        logging.debug(f'Temporary directory: {temp_path}')
-
-        # Batch
-        batch = Batch(
-            f'{project_name} '
-            f'propagate '
-            f'{entity_uri} '
-            f'{user_name} '
-            f'{timestamp}'
-        )
-
-        # Build jobs using the new build() function
-        jobs = {}
-        deps = {}
-        build(config, paths, temp_path, jobs, deps)
-
-        # Check if there are any jobs to submit
-        if not jobs:
-            logging.debug('No propagation needed')
-            return 0
-
-        # Add jobs to batch
-        batch.add_jobs_with_deps(jobs, deps)
-
-        # Submit
-        farm.submit(batch, api.storage.resolve(Uri.parse_unsafe('export:/other/jobs')))
-
-    # Done
-    logging.debug(f'Submitted propagate batch with {len(jobs)} jobs')
-    return 0
+    return _common.submit_batch(batch_title, build, config, paths)
 
 def cli():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('config_path', type=str)
-    args = parser.parse_args()
-
-    # Check config path
-    config_path = Path(args.config_path)
-    if not config_path.exists():
-        return _error(f'Config path not found: {config_path}')
-
-    # Load and check config
-    config = load_json(config_path)
-    if not _is_valid_config(config):
-        return _error(f'Invalid config: {config_path}')
-
-    # Run submit
-    return submit(config, {})
+    return _common.run_cli(_is_valid_config, submit)
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level = logging.DEBUG,
-        format = '%(message)s',
-        stream = sys.stdout
-    )
+    _common.configure_logging()
     sys.exit(cli())

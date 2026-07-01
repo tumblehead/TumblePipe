@@ -12,18 +12,15 @@ if tumblehead_packages_path not in sys.path:
     sys.path.append(str(tumblehead_packages_path))
 
 from tumblepipe.api import (
-    fix_path,
     path_str,
     local_path,
-    default_client
+    api
 )
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import BlockRange, get_fps
 from tumblepipe.apps import exr, mp4
 from tumblepipe.farm.tasks.env import print_env
-
-api = default_client()
 
 def _error(msg):
     logging.error(msg)
@@ -73,7 +70,7 @@ def main(
         return 0
     
     # Open a temporary directory
-    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)

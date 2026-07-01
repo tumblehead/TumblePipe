@@ -5,15 +5,10 @@ class RenderVars(ns.Node):
         super().__init__(native)
 
 def create(scene, name):
-    node_type = ns.find_node_type('render_vars', 'Lop')
-    assert node_type is not None, 'Could not find render_vars node type'
-    native = scene.node(name)
-    if native is not None: RenderVars(native)
-    return RenderVars(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, RenderVars, 'render_vars')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DEFAULT)
+    ns.set_node_style(raw_node)
 
 def on_created(raw_node):
 

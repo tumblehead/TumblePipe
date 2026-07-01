@@ -211,6 +211,46 @@ def list_assets(root):
             results.append(info)
     return results
 
+def list_dropped_asset_prims(root):
+    """Return prim paths that sit beside a real asset but carry no metadata.
+
+    An asset's parent (its category Scope) is proven to be a category by the
+    presence of at least one metadata-carrying child. Any *other* Scope child
+    of that same parent that lacks metadata is an asset whose customData was
+    dropped somewhere between import and export: because list_assets() only
+    sees prims with metadata, such a prim silently vanishes from the export
+    and from every downstream import. The classic trigger is multi-instance
+    duplication (the base prim keeps its metadata but the duplicated instances
+    don't) or a layerbreak stripping the authored customData.
+
+    Mirrors iter_scene's traversal: we stop at the first metadata boundary, so
+    an asset's own internal sub-Scopes (e.g. the 'mtl' material scope) are
+    never mistaken for dropped assets.
+    """
+    dropped = []
+
+    def walk(prim):
+        scope_children = [
+            child for child in prim.GetChildren()
+            if child.GetTypeName() == 'Scope'
+        ]
+        has_asset = any(get_metadata(child) is not None for child in scope_children)
+        if has_asset:
+            # This prim is a category: any metadata-less Scope sibling of a
+            # real asset is a drop. Don't descend past this boundary.
+            dropped.extend(
+                str(child.GetPath())
+                for child in scope_children
+                if get_metadata(child) is None
+            )
+            return
+        # No asset here yet — keep looking deeper for category scopes.
+        for child in scope_children:
+            walk(child)
+
+    walk(root)
+    return dropped
+
 def get_shot_metadata(stage) -> dict | None:
     """Get shot metadata from stage-level customLayerData.
 

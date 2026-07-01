@@ -9,7 +9,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Type, get_type_hints
 from functools import wraps
 
-from .protocol import ErrorCode
+from tumblepipe.util.houdini import hou, HOUDINI_AVAILABLE
 
 
 class CommandRegistry:
@@ -228,8 +228,7 @@ def list_commands() -> List[Dict[str, Any]]:
 
 
 # Houdini-specific commands (requires hou module)
-try:
-    import hou
+if HOUDINI_AVAILABLE:
     from .callbacks import register_callback_commands
     from .streaming import register_streaming_commands
     from .cache import register_cache_commands, cached_command
@@ -892,10 +891,6 @@ try:
 
     # Register cache management commands
     register_cache_commands(registry)
-
-except ImportError:
-    # Houdini module not available, skip Houdini-specific commands
-    pass
 
 
 # Note: Python execution commands are now implemented in thread_safe_commands.py

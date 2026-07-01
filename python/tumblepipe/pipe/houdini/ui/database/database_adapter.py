@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from tumblepipe.util.io import load_json, store_json
+from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 
 
@@ -19,23 +19,62 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 class DatabaseAdapter:
-    """Adapter providing database_editor compatible interface over ConfigConvention"""
+    """Editor-side view over the config store.
+
+    The Database Editor needs a *stable working copy* it can mutate and diff
+    while the panel is open: edits must not leak to the rest of the app until
+    the user saves, and an external write must be detected (and merged)
+    rather than silently overwritten. So the adapter keeps its own working
+    copy per purpose, loaded from ``store.snapshot()``, and commits through
+    ``store.write_root()``. It never reaches into the store's private cache —
+    that cache is kept coherent for *read* consumers and is not the editor's
+    scratch space.
+    """
 
     def __init__(self, api):
         self._api = api
-        self._config = api.config
-        self._file_mtimes = {}  # {purpose: mtime} - track when we last loaded each file
-        self._base_snapshots = {}  # {purpose: dict} - snapshot at load time for 3-way merge
-        self._record_file_mtimes()
+        self._config = api.config            # JsonConfigStore
+        self._working: dict[str, dict] = {}  # purpose -> editable working copy
+        self._file_mtimes: dict[str, float] = {}    # purpose -> last-seen external mtime
+        self._base_snapshots: dict[str, dict] = {}  # purpose -> baseline for 3-way merge
+        for purpose in self._config.purposes():
+            self._ensure_loaded(purpose)
+
+    # ------------------------------------------------------------------ #
+    # Working-copy plumbing
+    # ------------------------------------------------------------------ #
+    def _mtime(self, purpose: str) -> float | None:
+        file_path = self._config.db_file(purpose)
+        return file_path.stat().st_mtime if file_path.exists() else None
+
+    def _ensure_loaded(self, purpose: str) -> None:
+        """Populate the working copy for ``purpose`` from disk, once."""
+        if purpose in self._working:
+            return
+        snapshot = self._config.snapshot(purpose)
+        if snapshot is None:
+            return
+        self._working[purpose] = snapshot
+        self._file_mtimes[purpose] = self._mtime(purpose)
+        self._base_snapshots[purpose] = deepcopy(snapshot)
+
+    def _commit(self, purpose: str, data: dict) -> None:
+        """Persist a purpose's full tree through the store and re-baseline."""
+        self._working[purpose] = data
+        self._config.write_root(purpose, data)
+        self._file_mtimes[purpose] = self._mtime(purpose)
+        self._base_snapshots[purpose] = deepcopy(data)
 
     def list_purposes(self) -> list[str]:
-        """List all available purposes from the config cache"""
-        return list(self._config.cache.keys())
+        """List all available purposes from disk."""
+        return self._config.purposes()
 
     def list_entities(self, root_uri: Uri) -> list[Uri]:
         """List all leaf entities under a root URI"""
         purpose = root_uri.purpose
-        if purpose not in self._config.cache:
+        self._ensure_loaded(purpose)
+        data = self._working.get(purpose)
+        if data is None:
             return []
 
         def _collect(data, current_uri):
@@ -49,13 +88,13 @@ class DatabaseAdapter:
                     result.extend(_collect(child_data, child_uri))
             return result
 
-        data = self._config.cache[purpose]
         base_uri = Uri.parse_unsafe(f"{purpose}:/")
         return _collect(data, base_uri)
 
     def lookup(self, uri: Uri) -> dict | None:
         """Get the raw data for a URI (full node including properties and children)"""
-        data = self._config.cache.get(uri.purpose)
+        self._ensure_loaded(uri.purpose)
+        data = self._working.get(uri.purpose)
         if data is None:
             return None
         for segment in uri.segments:
@@ -67,16 +106,18 @@ class DatabaseAdapter:
 
     def lookup_root(self, purpose: str) -> dict | None:
         """Get the raw data for a purpose root"""
-        return self._config.cache.get(purpose)
+        self._ensure_loaded(purpose)
+        return self._working.get(purpose)
 
     def save(self, uri: Uri, data: dict) -> None:
-        """Save changes to a URI by updating cache and persisting to file.
+        """Save changes to a URI by updating the working copy and persisting.
 
         This method merges the new data with existing data to preserve children
         that already exist at the target path.
         """
         purpose = uri.purpose
-        cache_data = self._config.cache.get(purpose)
+        self._ensure_loaded(purpose)
+        cache_data = self._working.get(purpose)
 
         if cache_data is None:
             cache_data = {'properties': {}, 'children': {}}
@@ -105,13 +146,11 @@ class DatabaseAdapter:
 
             children[final_segment] = merged
 
-        self._config.cache[purpose] = cache_data
-        store_json(self._config.db_path / f'{purpose}.json', cache_data)
+        self._commit(purpose, cache_data)
 
     def save_root(self, purpose: str, data: dict) -> None:
         """Save changes to a purpose root"""
-        self._config.cache[purpose] = data
-        store_json(self._config.db_path / f'{purpose}.json', data)
+        self._commit(purpose, data)
 
     def lookup_properties(self, uri: Uri) -> dict:
         """Get just the properties for a URI"""
@@ -156,8 +195,7 @@ class DatabaseAdapter:
 
         # 2. Merge parent entity inheritance on top
         if uri.segments:
-            purpose = uri.purpose
-            cache_data = self._config.cache.get(purpose)
+            cache_data = self.lookup_root(uri.purpose)
             if cache_data:
                 # Merge root properties
                 result = _deep_merge(result, deepcopy(cache_data.get('properties', {})))
@@ -220,20 +258,21 @@ class DatabaseAdapter:
         return DatabaseTransaction(self, uri)
 
     def _record_file_mtimes(self) -> None:
-        """Record modification times for all cached purpose files."""
-        for purpose in self._config.cache.keys():
-            file_path = self._config.db_path / f'{purpose}.json'
-            if file_path.exists():
-                self._file_mtimes[purpose] = file_path.stat().st_mtime
-                self._base_snapshots[purpose] = deepcopy(self._config.cache[purpose])
+        """Re-baseline the merge state for every loaded working copy."""
+        for purpose in list(self._working.keys()):
+            mtime = self._mtime(purpose)
+            if mtime is not None:
+                self._file_mtimes[purpose] = mtime
+                self._base_snapshots[purpose] = deepcopy(self._working[purpose])
 
     def reload_cache(self) -> None:
-        """Reload all data from disk, discarding local changes."""
-        for purpose in list(self._config.cache.keys()):
-            file_path = self._config.db_path / f'{purpose}.json'
-            if file_path.exists():
-                self._config.cache[purpose] = load_json(file_path)
-        self._record_file_mtimes()
+        """Reload all data from disk, discarding local edits."""
+        self._working.clear()
+        self._file_mtimes.clear()
+        self._base_snapshots.clear()
+        self._config.refresh_cache()  # drop the store's cache so snapshots re-read disk
+        for purpose in self._config.purposes():
+            self._ensure_loaded(purpose)
 
     def save_with_merge(self, uri: Uri, data: dict) -> tuple[bool, str]:
         """Save with automatic merge. Returns (success, message).
@@ -244,7 +283,7 @@ class DatabaseAdapter:
             (False, "error: ...") - other error
         """
         purpose = uri.purpose
-        file_path = self._config.db_path / f'{purpose}.json'
+        file_path = self._config.db_file(purpose)
 
         # Check if file was modified externally
         if file_path.exists() and purpose in self._file_mtimes:
@@ -254,8 +293,8 @@ class DatabaseAdapter:
                 disk_data = load_json(file_path)
                 base = self._base_snapshots.get(purpose, {})
 
-                # Build our full cache with the pending change applied
-                ours = deepcopy(self._config.cache.get(purpose, {}))
+                # Build our full tree with the pending change applied
+                ours = deepcopy(self._working.get(purpose, {}))
                 self._apply_uri_data(ours, uri, data)
 
                 merged, has_conflict = self._merge_changes(base, ours, disk_data)
@@ -263,22 +302,17 @@ class DatabaseAdapter:
                 if has_conflict:
                     return False, "conflict"
 
-                # Merge succeeded - update cache with merged data
-                self._config.cache[purpose] = merged
-                store_json(file_path, merged)
-                self._file_mtimes[purpose] = file_path.stat().st_mtime
-                self._base_snapshots[purpose] = deepcopy(merged)
+                # Merge succeeded - commit merged data
+                self._commit(purpose, merged)
                 return True, ""
 
-        # No external changes - normal save
+        # No external changes - normal save (commit re-baselines)
         self.save(uri, data)
-        self._file_mtimes[purpose] = file_path.stat().st_mtime
-        self._base_snapshots[purpose] = deepcopy(self._config.cache[purpose])
         return True, ""
 
     def save_root_with_merge(self, purpose: str, data: dict) -> tuple[bool, str]:
         """Save root with automatic merge. Returns (success, message)."""
-        file_path = self._config.db_path / f'{purpose}.json'
+        file_path = self._config.db_file(purpose)
 
         if file_path.exists() and purpose in self._file_mtimes:
             current_mtime = file_path.stat().st_mtime
@@ -291,15 +325,10 @@ class DatabaseAdapter:
                 if has_conflict:
                     return False, "conflict"
 
-                self._config.cache[purpose] = merged
-                store_json(file_path, merged)
-                self._file_mtimes[purpose] = file_path.stat().st_mtime
-                self._base_snapshots[purpose] = deepcopy(merged)
+                self._commit(purpose, merged)
                 return True, ""
 
         self.save_root(purpose, data)
-        self._file_mtimes[purpose] = file_path.stat().st_mtime
-        self._base_snapshots[purpose] = deepcopy(self._config.cache[purpose])
         return True, ""
 
     def _apply_uri_data(self, cache_data: dict, uri: Uri, data: dict) -> None:
@@ -321,34 +350,24 @@ class DatabaseAdapter:
 
     def _merge_changes(self, base: dict, ours: dict, theirs: dict) -> tuple[dict | None, bool]:
         """Three-way merge using dictdiffer. Returns (merged_data, has_conflict)."""
-        try:
-            from dictdiffer import patch
-            from dictdiffer.merge import Merger, UnresolvedConflictsException
+        from dictdiffer import patch
+        from dictdiffer.merge import Merger, UnresolvedConflictsException
 
-            merger = Merger(base, ours, theirs, {})
+        merger = Merger(base, ours, theirs, {})
+        try:
             merger.run()
-            merged = patch(merger.unified_patches, base)
-            return merged, False
         except UnresolvedConflictsException:
             return None, True
-        except ImportError:
-            # dictdiffer not available - fall back to simple overwrite
-            return ours, False
+        merged = patch(merger.unified_patches, base)
+        return merged, False
 
     def force_save(self, uri: Uri, data: dict) -> None:
         """Force save without merge (user chose to overwrite)."""
-        purpose = uri.purpose
         self.save(uri, data)
-        file_path = self._config.db_path / f'{purpose}.json'
-        self._file_mtimes[purpose] = file_path.stat().st_mtime
-        self._base_snapshots[purpose] = deepcopy(self._config.cache[purpose])
 
     def force_save_root(self, purpose: str, data: dict) -> None:
         """Force save root without merge (user chose to overwrite)."""
         self.save_root(purpose, data)
-        file_path = self._config.db_path / f'{purpose}.json'
-        self._file_mtimes[purpose] = file_path.stat().st_mtime
-        self._base_snapshots[purpose] = deepcopy(self._config.cache[purpose])
 
 
 class DatabaseTransaction:

@@ -109,7 +109,6 @@ from tumblepipe.config.procedurals import (
 
 from tumblepipe.config.variants import (
     DEFAULT_VARIANT,
-    refresh_cache as refresh_variants_cache,
     list_variants,
     add_variant,
     remove_variant,
@@ -204,7 +203,6 @@ __all__ = [
     'list_procedural_names',
     # Variants
     'DEFAULT_VARIANT',
-    'refresh_variants_cache',
     'list_variants',
     'add_variant',
     'remove_variant',

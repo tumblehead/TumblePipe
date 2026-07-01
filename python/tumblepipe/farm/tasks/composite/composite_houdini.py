@@ -9,7 +9,7 @@ import hou
 from tumblepipe.api import (
     path_str,
     to_windows_path,
-    default_client
+    api
 )
 from tumblepipe.util.io import (
     load_json,
@@ -19,8 +19,6 @@ from tumblepipe.config.timeline import BlockRange, get_fps
 from tumblepipe.util.uri import Uri
 from tumblepipe.pipe.houdini import util
 from tumblepipe.apps.deadline import log_progress
-
-api = default_client()
 
 def _headline(title):
     print(f' {title} '.center(80, '='))

@@ -115,10 +115,10 @@ def entity_from_dict(data: dict) -> Optional[tuple[Uri, Optional[str]]]:
 
     try:
         entity_uri = Uri.parse_unsafe(entity_str)
-        department = data.get('department')
-        return entity_uri, department
-    except:
+    except ValueError:
         return None
+    department = data.get('department')
+    return entity_uri, department
 
 
 # === Scanning ===
@@ -529,7 +529,7 @@ def resolve_shot_build(
                                 asset_variants[asset_uri] = variant
 
                 # Add inherited assets from parent scenes
-                from tumblepipe.config.scenes import get_inherited_assets
+                from tumblepipe.config.scene import get_inherited_assets
                 inherited = get_inherited_assets(scene_uri)
                 for entry, parent_uri in inherited:
                     asset_uri = Uri.parse_unsafe(entry.asset)

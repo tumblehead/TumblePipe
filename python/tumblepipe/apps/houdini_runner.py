@@ -13,7 +13,7 @@ if tumblepipe_packages_path not in sys.path:
     sys.path.append(str(tumblepipe_packages_path))
 
 from tumblepipe.util import ipc
-from tumblepipe.api import fix_path
+from tumblepipe.api import local_path
 
 def _headline(msg):
     print(f' {msg} '.center(80, '='))
@@ -60,7 +60,7 @@ def _task_run(task: Task):
     
     # Set CWD
     if task.cwd is not None:
-        os.chdir(fix_path(task.cwd))
+        os.chdir(local_path(task.cwd))
 
     # Load environment variables
     if task.env is not None:

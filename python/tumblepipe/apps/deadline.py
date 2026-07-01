@@ -6,7 +6,7 @@ import getpass
 import shutil
 import re
 
-from tumblepipe.api import fix_path, to_windows_path, path_str
+from tumblepipe.api import local_path, to_windows_path, path_str
 from tumblepipe.apps import app
 
 # Default farm plugin. 'HPM' runs the task from a package resolved on the worker
@@ -129,14 +129,14 @@ def _parse_pools(output):
 def _get_deadline_path():
     raw_path = app.call(['cmd.exe', '/c', 'echo', '%DEADLINE_PATH%']).splitlines()[-1]
     assert raw_path is not None, 'Deadline path not found'
-    bin_path = fix_path(Path(raw_path.replace('\\', '/')))
+    bin_path = local_path(Path(raw_path.replace('\\', '/')))
     assert bin_path.exists(), f'Invalid Deadline installation path: "{bin_path}"'
     return bin_path / 'deadlinecommand.exe'
 
 def _get_repository_path(deadline_path):
     raw_path = app.call([str(deadline_path), 'GetRepositoryPath']).strip()
     assert raw_path is not None, 'Repository path not found'
-    return fix_path(Path(raw_path.replace('\\', '/')))
+    return local_path(Path(raw_path.replace('\\', '/')))
 
 def _find_free_job_path(root_path):
     retries = 10

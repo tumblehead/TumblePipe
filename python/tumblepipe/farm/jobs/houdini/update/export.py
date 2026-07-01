@@ -1,6 +1,5 @@
 from tempfile import TemporaryDirectory
 from pathlib import Path
-import logging
 import shutil
 import sys
 
@@ -9,22 +8,17 @@ tumblehead_packages_path = Path(__file__).parent.parent.parent.parent
 if tumblehead_packages_path not in sys.path:
     sys.path.append(str(tumblehead_packages_path))
 
-from tumblepipe.api import path_str, fix_path, to_windows_path, default_client
+from tumblepipe.api import path_str, local_path, to_windows_path, api
 from tumblepipe.farm.tasks.env import job_data_dir
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.config.variants import list_variants
 from tumblepipe.config.department import list_departments
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Houdini
-
-api = default_client()
+from tumblepipe.farm.jobs.houdini import _common
 
 def _headline(title):
     print(f' {title} '.center(80, '='))
-
-def _error(msg):
-    logging.error(msg)
-    return 1
 
 EXPORT_SCRIPT_PATH = Path(__file__).parent / 'export_houdini.py'
 
@@ -50,7 +44,7 @@ def main(
     houdini = Houdini(houdini_version)
 
     # Export
-    root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
@@ -74,7 +68,7 @@ def main(
 
         # Check if stage was exported
         if not temp_stage_path.exists():
-            return _error(f'Failed to export USD stage: {temp_stage_path}')
+            return _common.error(f'Failed to export USD stage: {temp_stage_path}')
 
         # Copy stage to network
         _headline('Copying files to output')
@@ -101,15 +95,15 @@ def cli():
     # Parse and validate entity URI
     shot_uri = Uri.parse_unsafe(args.entity_uri)
     if shot_uri.purpose != 'entity':
-        return _error(f'Invalid entity URI: {shot_uri}')
+        return _common.error(f'Invalid entity URI: {shot_uri}')
     if shot_uri.segments[0] != 'shots':
-        return _error(f'Invalid entity type: {shot_uri.segments[0]} (expected shots)')
+        return _common.error(f'Invalid entity type: {shot_uri.segments[0]} (expected shots)')
 
     # Check render department name
     render_department_name = args.render_department_name
     render_department_names = [d.name for d in list_departments('render')]
     if render_department_name not in render_department_names:
-        return _error(
+        return _common.error(
             f'Invalid render department name: '
             f'{render_department_name}'
         )
@@ -118,13 +112,13 @@ def cli():
     variant_name = args.variant_name
     variant_names = list_variants(shot_uri)
     if variant_name not in variant_names:
-        return _error(f'Invalid layer name: {variant_name}')
+        return _common.error(f'Invalid layer name: {variant_name}')
 
     # Check render range
     first_frame = args.first_frame
     last_frame = args.last_frame
     if first_frame > last_frame:
-        return _error('Invalid render range')
+        return _common.error('Invalid render range')
     render_range = BlockRange(first_frame, last_frame)
 
     # Run main
@@ -136,9 +130,5 @@ def cli():
     )
 
 if __name__ == '__main__':
-    logging.basicConfig(
-        level = logging.DEBUG,
-        format = '%(message)s',
-        stream = sys.stdout
-    )
+    _common.configure_logging()
     sys.exit(cli())

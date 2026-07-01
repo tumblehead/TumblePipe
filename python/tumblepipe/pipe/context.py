@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from tumblepipe.api import get_user_name
 from tumblepipe.util.io import store_json
+from tumblepipe.util.houdini import hou
 from tumblepipe.pipe.paths import Context, get_hip_file_path
 from tumblepipe.util.uri import Uri
 
@@ -175,13 +176,11 @@ def save_context(target_path: Path, prev_context, next_context, houdini_version:
             return "v0000"
         return context.version_name
 
-    # Get houdini version - try to import hou if not provided
+    # Get houdini version from hou if available and not provided
     if houdini_version is None:
-        try:
-            import hou
-            houdini_version = hou.applicationVersionString()
-        except ImportError:
-            houdini_version = "unknown"
+        houdini_version = (
+            hou.applicationVersionString() if hou is not None else "unknown"
+        )
 
     timestamp = get_timestamp_from_context(next_context)
     prev_version_name = _get_version_name(prev_context)

@@ -2,9 +2,8 @@ from pathlib import Path
 
 import hou
 
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
-from tumblepipe.util.io import load_json
 from tumblepipe.config.department import list_departments
 from tumblepipe.config.variants import list_variants
 from tumblepipe.util import result
@@ -15,8 +14,6 @@ from tumblepipe.pipe.paths import (
     current_staged_path,
     list_version_paths
 )
-
-api = default_client()
 
 
 def _metadata_script(
@@ -260,15 +257,10 @@ class ImportAsset(ns.Node):
         return result.Value(None)
 
 def create(scene, name):
-    node_type = ns.find_node_type('import_asset', 'Lop')
-    assert node_type is not None, 'Could not find import_asset node type'
-    native = scene.node(name)
-    if native is not None: return ImportAsset(native)
-    return ImportAsset(scene.createNode(node_type.name(), name, force_valid_node_name=True))
+    return ns.create_node(scene, name, ImportAsset, 'import_asset', force_valid_node_name=True)
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
     set_style(raw_node)

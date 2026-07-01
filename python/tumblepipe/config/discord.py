@@ -1,7 +1,5 @@
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
-
-api = default_client()
 
 DISCORD_URI = Uri.parse_unsafe('config:/discord')
 
@@ -34,14 +32,14 @@ def get_channel_for_department(department: str) -> str | None:
 
 def list_users() -> list[str]:
     """List all registered Discord usernames."""
-    discord_data = api.config.cache.get('config', {})
+    discord_data = api.config.root('config') or {}
     discord_children = discord_data.get('children', {}).get('discord', {}).get('children', {})
     users_children = discord_children.get('users', {}).get('children', {})
     return list(users_children.keys())
 
 def list_channels() -> list[str]:
     """List all registered Discord channel names."""
-    discord_data = api.config.cache.get('config', {})
+    discord_data = api.config.root('config') or {}
     discord_children = discord_data.get('children', {}).get('discord', {}).get('children', {})
     channels_children = discord_children.get('channels', {}).get('children', {})
     return list(channels_children.keys())

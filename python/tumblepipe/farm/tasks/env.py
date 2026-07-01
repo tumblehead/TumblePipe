@@ -5,6 +5,7 @@ from typing import Optional
 
 from tumblepipe.api import get_user_name, path_str, to_windows_path, default_client
 from tumblepipe.resolver import plugin_resources_path
+from tumblepipe.util.uri import Uri
 
 
 def job_data_dir() -> Path:
@@ -47,6 +48,39 @@ def print_env(env_vars: Optional[list[str]] = None):
     for key in env_vars:
         value = os.environ.get(key, '<not set>')
         print(f'  {key}={value}')
+
+
+def ocio_value() -> str:
+    """Windows-normalized OCIO config path for a spawned tool's environment.
+
+    The native image tools a task drives (iconvert, itilestitch, ...) want the
+    OCIO path in this process's OS form, unlike the raw ``os.environ['OCIO']``
+    that ``get_base_env`` forwards to the outer Deadline task.
+    """
+    return path_str(to_windows_path(Path(os.environ['OCIO'])))
+
+
+def get_hython_env(api=None) -> dict:
+    """Environment for a hython child process a farm task spawns to run a script.
+
+    Core pipeline paths + ``HOUDINI_PACKAGE_DIR`` (so the resolver and HDAs load)
+    + a Windows-normalized ``OCIO``. Distinct from ``get_base_env``, which builds
+    the *outer* Deadline task env (carrying the USD-resolver plugin vars and the
+    raw OCIO); this is what such a task hands to the hython it launches.
+    """
+    if api is None:
+        api = default_client()
+    return dict(
+        TH_USER=get_user_name(),
+        TH_CONFIG_PATH=path_str(to_windows_path(api.CONFIG_PATH)),
+        TH_PROJECT_PATH=path_str(to_windows_path(api.PROJECT_PATH)),
+        TH_PIPELINE_PATH=path_str(to_windows_path(api.PIPELINE_PATH)),
+        HOUDINI_PACKAGE_DIR=';'.join([
+            path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini')))),
+            path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('project:/_pipeline/houdini')))),
+        ]),
+        OCIO=ocio_value(),
+    )
 
 
 def get_base_env(api=None, houdini_major: int = 21):

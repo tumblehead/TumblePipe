@@ -2,7 +2,7 @@ from pathlib import Path
 
 import hou
 
-from tumblepipe.api import default_client
+from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.variants import list_variants
 from tumblepipe.config.department import list_departments
@@ -14,8 +14,6 @@ from tumblepipe.pipe.houdini.lops import (
 from tumblepipe.pipe.paths import (
     get_workfile_context
 )
-
-api = default_client()
 
 
 def _clear_dive(dive_node):
@@ -123,15 +121,10 @@ class RenderDebug(ns.Node):
         variant_subnet.layoutChildren()
 
 def create(scene, name):
-    node_type = ns.find_node_type('render_debug', 'Lop')
-    assert node_type is not None, 'Could not find render_debug node type'
-    native = scene.node(name)
-    if native is not None: return RenderDebug(native)
-    return RenderDebug(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, RenderDebug, 'render_debug')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DEFAULT)
+    ns.set_node_style(raw_node)
 
 def on_created(raw_node):
 

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import hou
 
-from tumblepipe.api import path_str, default_client
+from tumblepipe.api import path_str, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import FrameRange
 from tumblepipe.pipe.houdini import util
@@ -11,8 +11,6 @@ from tumblepipe.pipe.paths import (
     list_version_paths,
     get_workfile_context
 )
-
-api = default_client()
 
 def _cache_frames_exist(cache_path):
     return any(cache_path.parent.glob(cache_path.name.replace('$F4', '*')))
@@ -225,15 +223,10 @@ class Cache(ns.Node):
         native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
 def create(scene, name):
-    node_type = ns.find_node_type('cache', 'Sop')
-    assert node_type is not None, 'Could not find cache node type'
-    native = scene.node(name)
-    if native is not None: return Cache(native)
-    return Cache(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, Cache, 'cache', 'Sop')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DEFAULT)
+    ns.set_node_style(raw_node)
 
 def on_created(raw_node):
 

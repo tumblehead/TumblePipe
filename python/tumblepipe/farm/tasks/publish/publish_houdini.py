@@ -3,7 +3,7 @@ import json
 
 import hou
 
-from tumblepipe.api import path_str, default_client
+from tumblepipe.api import path_str, api
 from tumblepipe.farm.tasks.env import job_data_dir
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
@@ -31,8 +31,6 @@ from tumblepipe.pipe.context import (
     save_context,
     save_entity_context,
 )
-
-api = default_client()
 
 # Helpers
 def _headline(title):

@@ -5,7 +5,7 @@ import os
 
 import hou
 
-from tumblepipe.api import path_str, fix_path, default_client
+from tumblepipe.api import path_str, local_path, api
 from tumblepipe.apps import mp4
 from tumblepipe.config.timeline import get_frame_range, get_fps
 from tumblepipe.pipe.houdini import util
@@ -18,8 +18,6 @@ from tumblepipe.pipe.paths import (
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import list_departments
-
-api = default_client()
 
 
 class Playblast(ns.Node):
@@ -132,14 +130,10 @@ class Playblast(ns.Node):
 
     def playblast(self):
 
-        # Refresh the process-global config cache from disk before reading the
-        # entity's frame range: the cache is loaded once at session start and a
-        # shot's frame range may have been written to disk afterwards (shot
-        # import, a producer/another session editing config). A stale cache
-        # makes get_frame_range() return None and the playblast crash. Playblast
-        # does not route through the publish dialog, so it refreshes here.
-        from tumblepipe.api import refresh_global_cache
-        refresh_global_cache()
+        # Config reads are coherent: a shot's frame range written to disk after
+        # this session started (shot import, a producer/another session editing
+        # config) is picked up on read, so get_frame_range() below is current
+        # with no manual refresh.
 
         # Find nodes
         context = self.native()
@@ -161,7 +155,7 @@ class Playblast(ns.Node):
         camera_node.parm('primpath').set(camera_path)
 
         # Work in a temporary directory
-        root_temp_path = fix_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_dir_path = Path(temp_dir)
@@ -226,15 +220,10 @@ class Playblast(ns.Node):
         hou.ui.showInFileBrowser(f'{path_str(output_path)}')
 
 def create(scene, name):
-    node_type = ns.find_node_type('playblast', 'Sop')
-    assert node_type is not None, 'Could not find playblast node type'
-    native = scene.node(name)
-    if native is not None: return Playblast(native)
-    return Playblast(scene.createNode(node_type.name(), name))
+    return ns.create_node(scene, name, Playblast, 'playblast', 'Sop')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_EXPORT)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_EXPORT)
 
 def on_created(raw_node):
     # Set node style

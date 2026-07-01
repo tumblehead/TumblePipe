@@ -5,15 +5,10 @@ class Animate(ns.Node):
         super().__init__(native)
 
 def create(scene, name):
-    animate_type = ns.find_node_type('animate', 'Lop')
-    assert animate_type is not None, 'Could not find animate node type'
-    native = scene.node(name)
-    if native is not None: return Animate(native)
-    return Animate(scene.createNode(animate_type.name(), name))
+    return ns.create_node(scene, name, Animate, 'animate')
 
 def set_style(raw_node):
-    raw_node.setColor(ns.COLOR_NODE_DEFAULT)
-    raw_node.setUserData('nodeshape', ns.SHAPE_NODE_DIVE)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_DIVE)
 
 def on_created(raw_node):
     set_style(raw_node)
