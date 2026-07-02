@@ -548,7 +548,8 @@ class DropRouter:
         and ``new_uri``.
 
         Preserves the target's position, name, wiring, exclude-departments,
-        and include-layerbreak flag. Returns the new raw node, or ``None``
+        include-layerbreak flag, and import mode. Returns the new raw node,
+        or ``None``
         if the existing asset URI couldn't be read (the caller should
         fall back to the regular drop path in that case).
         """
@@ -562,6 +563,7 @@ class DropRouter:
             old_version = old.get_version_name()
             old_excl = old.get_exclude_department_names()
             old_layerbreak = old.get_include_layerbreak()
+            old_import_mode = old.get_import_mode()
         except Exception:
             log.exception(
                 "Failed to read state from singular import_asset %s",
@@ -603,6 +605,7 @@ class DropRouter:
         try:
             plural.set_exclude_department_names(old_excl)
             plural.set_include_layerbreak(old_layerbreak)
+            plural.set_import_mode(old_import_mode)
         except Exception:
             log.debug(
                 "Could not transfer node-level params to plural",

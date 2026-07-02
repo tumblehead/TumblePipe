@@ -170,6 +170,24 @@ def get_source_department(inputs: list[dict], department_order: list[str]) -> st
 def remove_metadata(prim):
     prim.ClearMetadata('customData')
 
+def mark_inlined(prim):
+    """Replace pipeline metadata with an 'inlined' marker.
+
+    An inlined asset (import node in 'inline' import mode) is deliberately
+    baked into the export instead of being re-referenced, so its customData
+    must carry no 'uri' (or the export scrape would re-add it as a sublayer)
+    while still telling list_dropped_asset_prims the missing metadata is
+    intentional, not a drop.
+    """
+    prim.SetMetadata('customData', {'inlined': True})
+
+def is_inlined(prim):
+    if prim is None or not prim.IsValid(): return False
+    if not prim.HasMetadata('customData'): return False
+    _metadata = prim.GetMetadata('customData')
+    if _metadata is None: return False
+    return bool(_metadata.get('inlined', False))
+
 def is_asset(prim):
     metadata = get_metadata(prim)
     if metadata is None: return False
@@ -226,6 +244,10 @@ def list_dropped_asset_prims(root):
     Mirrors iter_scene's traversal: we stop at the first metadata boundary, so
     an asset's own internal sub-Scopes (e.g. the 'mtl' material scope) are
     never mistaken for dropped assets.
+
+    Prims carrying the 'inlined' marker (see mark_inlined) are deliberately
+    baked into the export by an import node in 'inline' mode — they are
+    neither drops nor descended into.
     """
     dropped = []
 
@@ -241,11 +263,12 @@ def list_dropped_asset_prims(root):
             dropped.extend(
                 str(child.GetPath())
                 for child in scope_children
-                if get_metadata(child) is None
+                if get_metadata(child) is None and not is_inlined(child)
             )
             return
         # No asset here yet — keep looking deeper for category scopes.
         for child in scope_children:
+            if is_inlined(child): continue
             walk(child)
 
     walk(root)

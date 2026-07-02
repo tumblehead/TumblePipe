@@ -58,6 +58,32 @@ if prim.IsValid():
 '''
     return script
 
+def _inline_metadata_script(asset_uri: Uri) -> str:
+    """
+    Generate the metadata script for 'inline' import mode.
+
+    Replaces the pipeline metadata with an 'inlined' marker: the asset is
+    deliberately baked into the export (no layerbreak), so it must not be
+    scraped and re-referenced, and the publish guards must not read the
+    missing metadata as an accidental drop. Targets only this node's prim —
+    assets flowing through from upstream nodes are untouched.
+    """
+    prim_path = uri_to_prim_path(asset_uri)
+
+    script = f'''import hou
+
+from tumblepipe.pipe.houdini import util
+
+node = hou.pwd()
+stage = node.editableStage()
+root = stage.GetPseudoRoot()
+
+prim = root.GetPrimAtPath("{prim_path}")
+if prim.IsValid():
+    util.mark_inlined(prim)
+'''
+    return script
+
 def _list_staged_layers(staged_file_path: Path) -> list[tuple[str | None, str]]:
     """Parse the staged .usda layer stack into (department, ref) pairs.
 
@@ -161,6 +187,13 @@ class ImportAsset(ns.Node):
     def get_include_layerbreak(self):
         return bool(self.parm('include_layerbreak').eval())
 
+    def get_import_mode(self) -> str:
+        """'reference' (pipeline metadata + layerbreak) or 'inline' (baked
+        into the export). Nodes predating the parm read as 'reference'."""
+        parm = self.parm('import_mode')
+        if parm is None: return 'reference'
+        return parm.evalAsString()
+
     def set_asset_uri(self, asset_uri: Uri):
         asset_uris = self.list_asset_uris()
         if asset_uri not in asset_uris: return
@@ -176,6 +209,11 @@ class ImportAsset(ns.Node):
 
     def set_include_layerbreak(self, include_layerbreak):
         self.parm('include_layerbreak').set(int(include_layerbreak))
+
+    def set_import_mode(self, import_mode: str):
+        parm = self.parm('import_mode')
+        if parm is not None:
+            parm.set(import_mode)
 
     def _update_labels(self):
         """Update label parameters to show current entity selection."""
@@ -310,8 +348,13 @@ class ImportAsset(ns.Node):
                 shot_uri = workfile_context.entity_uri
                 shot_department = workfile_context.department_name
 
-        # Generate and set metadata script
-        script = _metadata_script(asset_uri, shot_uri, shot_department)
+        # Generate and set metadata script. Inline mode swaps the pipeline
+        # metadata for a marker so the export bakes the asset in instead of
+        # re-referencing it.
+        if self.get_import_mode() == 'inline':
+            script = _inline_metadata_script(asset_uri)
+        else:
+            script = _metadata_script(asset_uri, shot_uri, shot_department)
         self.parm('metadata_python').set(script)
 
         # Set success comment with import metadata

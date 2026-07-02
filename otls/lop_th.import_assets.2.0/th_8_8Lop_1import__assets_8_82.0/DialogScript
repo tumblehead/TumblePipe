@@ -181,6 +181,18 @@
             default { [ "on" hscript-expr ] }
             parmtag { "script_callback_language" "python" }
         }
+        parm {
+            name    "import_mode"
+            label   "Import Mode"
+            type    ordinal
+            default { "0" }
+            menu {
+                "reference" "Reference"
+                "inline"    "Inline"
+            }
+            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback_language" "python" }
+        }
     }
 
     groupsimple {

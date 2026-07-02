@@ -84,6 +84,41 @@ def _metadata_update_script(
     script = header + _indent(content) + footer
     return '\n'.join(script)
 
+def _inline_marker_script(assets: list[dict]) -> str:
+    """
+    Generate the metadata script for 'inline' import mode.
+
+    Marks each asset prim from the imported layer as 'inlined' instead of
+    updating its pipeline metadata: the layer content is deliberately baked
+    into the export, so its assets must not be scraped and re-referenced,
+    and the publish guards must not read the missing metadata as an
+    accidental drop. Targets only the assets recorded in the imported
+    layer's context.json — assets flowing through from upstream nodes are
+    untouched.
+    """
+    script_lines = [
+        'import hou',
+        '',
+        'from tumblepipe.pipe.houdini import util',
+        '',
+        'node = hou.pwd()',
+        'stage = node.editableStage()',
+        'root = stage.GetPseudoRoot()',
+        '',
+    ]
+
+    for asset_info in assets:
+        asset_uri = Uri.parse_unsafe(asset_info['asset'])
+        prim_path = uri_to_prim_path(asset_uri)
+        script_lines.extend([
+            f"prim = root.GetPrimAtPath('{prim_path}')",
+            'if prim.IsValid():',
+            '    util.mark_inlined(prim)',
+            '',
+        ])
+
+    return '\n'.join(script_lines)
+
 class ImportLayer(ns.Node):
 
     def __init__(self, native):
@@ -221,6 +256,13 @@ class ImportLayer(ns.Node):
     def get_include_layerbreak(self) -> bool:
         return bool(self.parm('include_layerbreak').eval())
 
+    def get_import_mode(self) -> str:
+        """'reference' (pipeline metadata + layerbreak) or 'inline' (baked
+        into the export). Nodes predating the parm read as 'reference'."""
+        parm = self.parm('import_mode')
+        if parm is None: return 'reference'
+        return parm.evalAsString()
+
     def set_entity_uri(self, entity_uri: Uri):
         entity_uris = self.list_entity_uris()
         if str(entity_uri) not in entity_uris:  # Compare strings
@@ -249,6 +291,11 @@ class ImportLayer(ns.Node):
 
     def set_include_layerbreak(self, include_layerbreak: bool):
         self.parm('include_layerbreak').set(int(include_layerbreak))
+
+    def set_import_mode(self, import_mode: str):
+        parm = self.parm('import_mode')
+        if parm is not None:
+            parm.set(import_mode)
 
     def _update_labels(self):
         """Update label parameters to show current entity selection."""
@@ -378,9 +425,15 @@ class ImportLayer(ns.Node):
             if layer_info is not None:
                 assets = layer_info.get('parameters', {}).get('assets', [])
                 if assets:
-                    script = _metadata_update_script(
-                        entity_uri, department_name, version_name, assets
-                    )
+                    # Inline mode swaps the metadata update for a marker on
+                    # each asset prim so the export bakes the layer's assets
+                    # in instead of re-referencing them.
+                    if self.get_import_mode() == 'inline':
+                        script = _inline_marker_script(assets)
+                    else:
+                        script = _metadata_update_script(
+                            entity_uri, department_name, version_name, assets
+                        )
                     self.parm('metadata_python').set(script)
 
         # Set success comment with import metadata

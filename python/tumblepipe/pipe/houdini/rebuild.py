@@ -21,6 +21,7 @@ NODE_CONFIGS = {
         ('get_variant_name', 'set_variant_name'),
         ('get_version_name', 'set_version_name'),
         ('get_include_layerbreak', 'set_include_layerbreak'),
+        ('get_import_mode', 'set_import_mode'),
     ]),
     'import_shot': (import_shot.ImportShot, [
         ('get_shot_uri', 'set_shot_uri'),
@@ -41,6 +42,7 @@ NODE_CONFIGS = {
         ('get_variant_name', 'set_variant_name'),
         ('get_exclude_department_names', 'set_exclude_department_names'),
         ('get_include_layerbreak', 'set_include_layerbreak'),
+        ('get_import_mode', 'set_import_mode'),
     ]),
     'import_rig': (import_rig.ImportRig, [
         ('get_entity_uri', 'set_entity_uri'),

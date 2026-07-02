@@ -85,6 +85,12 @@ def _list_expected_asset_uris(native) -> set[str]:
     for ancestor in native.inputAncestors():
         if ancestor.isBypassed():
             continue
+        # Inline-mode imports deliberately bake their assets into the
+        # export without pipeline metadata, so they are not expected in
+        # the scrape.
+        mode_parm = ancestor.parm('import_mode')
+        if mode_parm is not None and mode_parm.evalAsString() == 'inline':
+            continue
         type_base = ancestor.type().nameComponents()[2]
         entity_raws = []
         if type_base == 'import_asset':
@@ -640,7 +646,9 @@ class ExportLayer(ns.Node):
                 "This usually means the import node's metadata step didn't "
                 "reach these prims - e.g. a layerbreak stripped the customData, "
                 "or multi-instance duplicates didn't inherit it. Re-run the "
-                "import node (disable any layerbreak on it) and re-export."
+                "import node (Import button) and re-export. If you meant to "
+                "bake these assets into the export, set the import node's "
+                "Import Mode to Inline instead."
             )
 
         # The sibling heuristic above is blind when a category holds no

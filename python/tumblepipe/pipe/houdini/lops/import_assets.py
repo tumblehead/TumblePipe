@@ -136,6 +136,38 @@ def _assets_metadata_script(
 
     return '\n'.join(script_lines)
 
+def _inline_marker_script(prim_paths: list[str]) -> str:
+    """
+    Generate the metadata script for 'inline' import mode.
+
+    Marks every imported instance prim (base prims and duplicates) as
+    'inlined' instead of authoring pipeline metadata: the assets are
+    deliberately baked into the export, so they must not be scraped and
+    re-referenced, and the publish guards must not read the missing
+    metadata as an accidental drop. Targets only this node's prims —
+    assets flowing through from upstream nodes are untouched.
+    """
+    script_lines = [
+        'import hou',
+        '',
+        'from tumblepipe.pipe.houdini import util',
+        '',
+        'node = hou.pwd()',
+        'stage = node.editableStage()',
+        'root = stage.GetPseudoRoot()',
+        '',
+    ]
+
+    for prim_path in prim_paths:
+        script_lines.extend([
+            f'prim = root.GetPrimAtPath("{prim_path}")',
+            'if prim.IsValid():',
+            '    util.mark_inlined(prim)',
+            '',
+        ])
+
+    return '\n'.join(script_lines)
+
 class ImportAssets(ns.Node):
     def __init__(self, native):
         super().__init__(native)
@@ -249,6 +281,13 @@ class ImportAssets(ns.Node):
     def get_include_layerbreak(self):
         return bool(self.parm('include_layerbreak').eval())
 
+    def get_import_mode(self) -> str:
+        """'reference' (pipeline metadata + layerbreak) or 'inline' (baked
+        into the export). Nodes predating the parm read as 'reference'."""
+        parm = self.parm('import_mode')
+        if parm is None: return 'reference'
+        return parm.evalAsString()
+
     def set_entity_uri(self, index, asset_uri: Uri):
         asset_uris = self.list_entity_uris(index)
         if asset_uri not in asset_uris: return
@@ -293,6 +332,11 @@ class ImportAssets(ns.Node):
     def set_include_layerbreak(self, include_layerbreak):
         self.parm('include_layerbreak').set(int(include_layerbreak))
 
+    def set_import_mode(self, import_mode: str):
+        parm = self.parm('import_mode')
+        if parm is not None:
+            parm.set(import_mode)
+
     def _update_labels(self, index: int):
         """Update label parameters for the given index."""
         entity_uri = self.get_entity_uri(index)
@@ -336,6 +380,7 @@ class ImportAssets(ns.Node):
         # Parameters
         asset_imports = self.get_asset_imports()
         exclude_department_names = self.get_exclude_department_names()
+        import_mode = self.get_import_mode()
 
         # Check if any assets to import
         active_imports = [(uri, var, ver, inst) for uri, var, ver, inst in asset_imports if inst > 0]
@@ -351,8 +396,10 @@ class ImportAssets(ns.Node):
 
         # Build asset nodes
         script_args = []
+        all_prim_paths = []
         for asset_uri, variant, version, instances in asset_imports:
             if instances == 0: continue
+            asset_prim_path = uri_to_prim_path(asset_uri)
 
             # Create node name from URI segments (include variant for uniqueness)
             uri_name = '_'.join(asset_uri.segments[1:])
@@ -373,15 +420,16 @@ class ImportAssets(ns.Node):
             # with merge and cause metadata to be stripped. The parent import_assets
             # keeps its own (now hidden) layerbreak downstream of the metadata step.
             asset_node.set_include_layerbreak(False)
+            asset_node.set_import_mode(import_mode)
             asset_node.execute()
 
             # In the case of one instance
             if instances == 1:
+                all_prim_paths.append(asset_prim_path)
                 _connect(asset_node.native(), merge_node)
                 continue
 
             # Duplicate the asset (metadata in customData travels with the prim)
-            asset_prim_path = uri_to_prim_path(asset_uri)
             duplicate_node = dive_node.createNode(
                 'duplicate',
                 f'{uri_name}_duplicate'
@@ -412,13 +460,18 @@ class ImportAssets(ns.Node):
                     instance_name
                 ))
 
-        # Update the instances names in the metadata
+        # Update the instances names in the metadata. In inline mode the
+        # update script must not run: it would (re)create pipeline metadata
+        # on the duplicates — the HDA-level marker script downstream handles
+        # every instance prim instead.
+        all_prim_paths.extend(prim_path for prim_path, _, _ in script_args)
         python_node = dive_node.createNode(
             'pythonscript',
             'metadata_update'
         )
         python_node.parm('python').set(
-            '\n'.join(_update_script(script_args))
+            '' if import_mode == 'inline'
+            else '\n'.join(_update_script(script_args))
         )
         python_node.setInput(0, merge_node)
 
@@ -451,12 +504,18 @@ class ImportAssets(ns.Node):
                 shot_uri = entity_uri
                 shot_department = workfile_context.department_name
 
-        # Generate and set metadata script (runs after merge at HDA level)
-        metadata_script = _assets_metadata_script(
-            active_imports,
-            shot_uri,
-            shot_department
-        )
+        # Generate and set metadata script (runs after merge at HDA level).
+        # Inline mode swaps the pipeline metadata for a marker on every
+        # instance prim so the export bakes the assets in instead of
+        # re-referencing them.
+        if import_mode == 'inline':
+            metadata_script = _inline_marker_script(all_prim_paths)
+        else:
+            metadata_script = _assets_metadata_script(
+                active_imports,
+                shot_uri,
+                shot_department
+            )
         self.parm('set_metadata_python').set(metadata_script)
 
         # Done

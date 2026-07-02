@@ -204,7 +204,7 @@ Content-Type: text/plain
       righttype = extend
       flags = 0
       start = 41.666666666666664
-      segment { length = 0 expr = ch(\"../include_layerbreak\") }
+      segment { length = 0 expr = ch(\"../include_layerbreak\") * (ch(\"../import_mode\") == 0) }
     }
   }
 

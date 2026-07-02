@@ -294,7 +294,7 @@ class PipelineCatalog(Catalog):
         return {
             "source": ["pipeline"],
             "type": ["asset", "shot"],
-            "category": [c.lower() for c in cats],
+            "category": list(cats),
             "sequence": seqs,
             "project": [p.name for p in self._registry.all()],
         }
@@ -355,10 +355,10 @@ class PipelineCatalog(Catalog):
         for cat in cats:
             count = self._count_for_project_category(proj.name, cat)
             cat_children.append(Collection(
-                id=f"{proj.name}:category:{cat.lower()}",
+                id=f"{proj.name}:category:{cat}",
                 label=cat,
                 count=count,
-                tag=f"{project_tag}+category:{cat.lower()}",
+                tag=f"{project_tag}+category:{cat}",
                 kind="category",
             ))
         sections.append(Collection(
@@ -431,7 +431,7 @@ class PipelineCatalog(Catalog):
     def _count_for_project_category(self, project_name: str, category: str) -> int:
         """Count assets in ``project_name`` whose category matches."""
         items = self._get_all_items()
-        cat_tag = f"category:{category.lower()}"
+        cat_tag = f"category:{category}"
         proj_tag = f"project:{project_name}"
         return sum(
             1 for a in items
@@ -675,7 +675,7 @@ class PipelineCatalog(Catalog):
         cats = self._list_categories_for_project(project_name)
         if second in cats:
             tags.add("type:asset")
-            tags.add(f"category:{second.lower()}")
+            tags.add(f"category:{second}")
             metadata["category"] = second
             metadata["variants"] = self._get_variants(asset_id, "assets")
         else:
@@ -1826,7 +1826,6 @@ class PipelineCatalog(Catalog):
         the dept icons can carry their own tooltips. All reads come
         from ``asset.metadata`` and ``asset.tags`` — no I/O.
         """
-        from PySide6.QtCore import Qt
         from PySide6.QtWidgets import (
             QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
         )
@@ -2180,18 +2179,21 @@ class PipelineCatalog(Catalog):
             # When invoked from a category row's right-click menu the
             # caller passes a ``category:<name>`` tag; lock the field so
             # the user sees the bound context but can't redirect it.
-            # The tag is lowercased (``category:char``) but URI segments
-            # preserve case (``entity:/assets/CHAR/...``) — look up the
-            # original-case label from the project's category list so we
-            # don't silently spawn a duplicate lowercase category.
+            # Tags now carry the original-case category (matching the
+            # URI segments, e.g. ``entity:/assets/CHAR/...``); the
+            # case-insensitive fallback only recovers stale lowercase
+            # tags persisted by old presets / drag payloads.
             default_cat = ""
             for t in tags:
                 if t.startswith("category:"):
                     tag_val = t.split(":", 1)[1]
-                    default_cat = next(
-                        (c for c in cats if c.lower() == tag_val.lower()),
-                        tag_val,
-                    )
+                    if tag_val in cats:
+                        default_cat = tag_val
+                    else:
+                        default_cat = next(
+                            (c for c in cats if c.lower() == tag_val.lower()),
+                            tag_val,
+                        )
                     break
             fields.append(CreationField(
                 "category", "Category",
@@ -3181,7 +3183,7 @@ class PipelineCatalog(Catalog):
             tags=frozenset({
                 "source:pipeline",
                 "type:asset",
-                f"category:{category.lower()}",
+                f"category:{category}",
                 f"project:{proj.name}",
             }),
             has_sub_cards=True,
@@ -3231,7 +3233,7 @@ class PipelineCatalog(Catalog):
         tags = {
             "source:pipeline",
             f"type:{'asset' if is_asset else 'shot'}",
-            f"{'category' if is_asset else 'sequence'}:{second.lower()}",
+            f"{'category' if is_asset else 'sequence'}:{second}",
             f"project:{project_name}",
         }
 
@@ -3283,7 +3285,6 @@ class PipelineCatalog(Catalog):
         if grp is None:
             return None
 
-        ctx_seg = path.split("/", 1)[0] if "/" in path else "assets"
         label = path.rsplit("/", 1)[-1] if path else group_id
         members = list(getattr(grp, "members", ()))
         # Drop the cached coverage so other shots/assets pick up
@@ -3499,7 +3500,7 @@ class PipelineCatalog(Catalog):
 
     def _count_assets_in_category(self, category: str) -> int:
         items = self._get_all_items()
-        return sum(1 for a in items if f"category:{category.lower()}" in a.tags and "type:asset" in a.tags)
+        return sum(1 for a in items if f"category:{category}" in a.tags and "type:asset" in a.tags)
 
     def _count_shots_in_sequence(self, sequence: str) -> int:
         items = self._get_all_items()
