@@ -660,7 +660,7 @@ class ContainerManager:
 
         Called from :meth:`get_assets` when the active filter is
         ``type:group`` / ``type:scene``. Respects the ``project:``
-        pill, the search box, and standard pagination.
+        filter tag, the search box, and standard pagination.
         """
         self._catalog._discovery_errors = []
         for err in self._catalog._clients.ensure_all():

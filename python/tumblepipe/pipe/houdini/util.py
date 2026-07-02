@@ -232,9 +232,9 @@ def list_assets(root):
 def list_dropped_asset_prims(root):
     """Return prim paths that sit beside a real asset but carry no metadata.
 
-    An asset's parent (its category Scope) is proven to be a category by the
-    presence of at least one metadata-carrying child. Any *other* Scope child
-    of that same parent that lacks metadata is an asset whose customData was
+    An asset's parent (its category prim) is proven to be a category by the
+    presence of at least one metadata-carrying child. Any *other* Scope/Xform
+    child of that same parent that lacks metadata is an asset whose customData was
     dropped somewhere between import and export: because list_assets() only
     sees prims with metadata, such a prim silently vanishes from the export
     and from every downstream import. The classic trigger is multi-instance
@@ -252,9 +252,13 @@ def list_dropped_asset_prims(root):
     dropped = []
 
     def walk(prim):
+        # Categories and asset roots compose as Scope OR Xform depending on
+        # which layer wins (import nodes author Scopes; asset exports type
+        # them Xform via set_kinds) — accept both or Xform-typed assets
+        # become invisible to the guard.
         scope_children = [
             child for child in prim.GetChildren()
-            if child.GetTypeName() == 'Scope'
+            if child.GetTypeName() in ('Scope', 'Xform')
         ]
         has_asset = any(get_metadata(child) is not None for child in scope_children)
         if has_asset:

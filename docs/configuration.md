@@ -91,6 +91,30 @@ before replacing the stock file, and `--dry-run` shows exactly what would
 change. New projects created by the wizard already ship at the current
 version. The migrations themselves are registered in `tumblepipe.migration`.
 
+### Entity casing audits
+
+Entity URIs and USD prim paths are case-sensitive, but Windows storage is
+not — so two config categories differing only in casing (e.g. `Clash` and
+`clash`) share one folder on disk while the pipeline treats them as two
+entities. Assets caught in the split lose their pipeline metadata silently
+and are blocked at publish. Two maintenance CLIs cover this:
+
+```
+python scripts/verify_entity_casing.py <project> [--usd] [--crates]
+python scripts/fix_case_duplicate_category.py <project> --from clash --to Clash [--apply]
+```
+
+The verifier is read-only (exit 1 on findings): it flags case-duplicate
+config keys, sidecar URIs and filename prefixes whose casing disagrees with
+config, and — with `--usd`, run via `uvx --with usd-core python …` — export
+root prims that are case-variants of their config entity. The fixer merges
+the duplicate category in `entity.json` (backing it up first), rewrites the
+wrong-case URIs in `.json`/`.usda` sidecars, and case-renames affected
+files; it is a dry-run report unless `--apply` is passed. Geometry authored
+under a wrong-case root prim, and import parms stored in workfiles, cannot
+be text-patched — fix the workfile in Houdini, re-export, and re-pick the
+entity on affected import nodes.
+
 ## Where configuration lives in the codebase
 
 - `hpm.toml` — Houdini package manifest and HPM metadata (dependencies,

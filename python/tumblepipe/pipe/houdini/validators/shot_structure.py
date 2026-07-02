@@ -6,19 +6,23 @@ from .base import ValidationResult
 # Allowed root prim names (exact matches)
 ALLOWED_ROOT_PRIMS = {'collections', 'lights', 'cameras', 'Render', 'scene'}
 
+# Categories and asset roots compose as either type: import nodes author
+# them as Scopes, but asset exports type them Xform (set_kinds makes
+# assembly/component prims transformable), and whichever layer wins
+# composition decides what the shot stage sees.
+ASSET_CONTAINER_TYPES = {'Scope', 'Xform'}
+
 
 def _is_asset_category_prim(prim) -> bool:
     """Check if a prim looks like an asset category (e.g., /CHAR with /CHAR/mom child).
 
-    Asset categories are Scope prims that contain child Scope prims
-    representing individual assets.
+    Asset categories are Scope or Xform prims that contain child Scope or
+    Xform prims representing individual assets.
     """
-    # Asset categories are Scope prims
-    if prim.GetTypeName() != 'Scope':
+    if prim.GetTypeName() not in ASSET_CONTAINER_TYPES:
         return False
-    # Asset categories have child prims that are also Scopes (individual assets)
     for child in prim.GetChildren():
-        if child.GetTypeName() == 'Scope':
+        if child.GetTypeName() in ASSET_CONTAINER_TYPES:
             return True
     return False
 

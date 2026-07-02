@@ -93,7 +93,7 @@ class PipelineCatalog(Catalog):
         return str(Path(__file__).parent / "icons" / "tumblepipe.png")
 
     def default_filter_tags(self) -> frozenset[str]:
-        """Auto-activate the launch project's pill on first load.
+        """Scope the grid to the launch project on first load.
 
         When Houdini is launched from a project ``.bat`` (which sets
         ``TH_PROJECT_PATH``), the browser pre-filters to that project
@@ -471,71 +471,6 @@ class PipelineCatalog(Catalog):
             elif status == "done":
                 done += 1
         return pending, done
-
-    def get_primary_filters(
-        self, active_tags: frozenset[str] | None = None,
-    ) -> list[Collection]:
-        items = self._get_all_items()
-
-        # When the user has a collection selected, scope pill counts to
-        # items that satisfy the collection's non-type clauses. We strip
-        # the ``type:*`` clauses because each TYPE pill represents its
-        # own type — the count is "how many items of THIS type would be
-        # visible if the user picked this pill", so we don't want the
-        # current type clause forcing the count to zero on the others.
-        if active_tags:
-            non_type = frozenset(
-                t for t in active_tags if not t.startswith("type:")
-            )
-            if non_type:
-                items = [
-                    a for a in items
-                    if non_type.issubset(set(a.tags))
-                ]
-
-        def _tag_count(tag: str) -> int:
-            return sum(1 for a in items if tag in a.tags)
-
-        try:
-            from tumbletrove import asset_browser
-            mgr = asset_browser.get_todos()
-        except Exception:
-            mgr = None
-
-        def _todo_count(status: str) -> int:
-            if mgr is None:
-                return 0
-            return sum(
-                1 for a in items
-                if mgr.status(self.id, a.id) == status
-            )
-
-        pills: list[Collection] = [
-            Collection(id="type:asset", label="Assets", tag="type:asset", icon="box",
-                       count=_tag_count("type:asset")),
-            Collection(id="type:shot", label="Shots", tag="type:shot", icon="clapperboard",
-                       count=_tag_count("type:shot")),
-            Collection(id="type:group", label="Multis", tag="type:group", icon="group",
-                       count=sum(1 for _ in self._containers._iter_group_collections())),
-            Collection(id="type:scene", label="Roots", tag="type:scene", icon="layers",
-                       count=sum(1 for _ in self._containers._iter_scene_collections())),
-        ]
-        projects = list(self._registry.all())
-        if len(projects) > 1:
-            for proj in projects:
-                pills.append(Collection(
-                    id=f"project:{proj.name}",
-                    label=proj.name,
-                    tag=f"project:{proj.name}",
-                    count=_tag_count(f"project:{proj.name}"),
-                ))
-        pills += [
-            Collection(id="todo:pending", label="Pending", tag="todo:pending",
-                       icon="circle-ellipsis", count=_todo_count("pending")),
-            Collection(id="todo:done",    label="Done",    tag="todo:done",
-                       icon="circle-check",   count=_todo_count("done")),
-        ]
-        return pills
 
     # ── Assets ────────────────────────────────────────────
 
