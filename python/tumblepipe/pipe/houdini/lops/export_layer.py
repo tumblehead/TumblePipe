@@ -70,6 +70,52 @@ class ExportLayerError(Exception):
     pass
 
 
+def _list_expected_asset_uris(native) -> set[str]:
+    """Asset URIs that upstream import nodes placed on the stage.
+
+    Walks the export node's input ancestors for import_asset /
+    import_assets instances so the export can cross-check the scraped
+    metadata against what the graph says should be there. The sibling
+    heuristic in util.list_dropped_asset_prims cannot see a drop when a
+    category holds no metadata-carrying asset at all (single asset, or
+    every asset dropped) - this expected-vs-scraped check can.
+    Best-effort: entries it cannot read are skipped, never blocking.
+    """
+    expected = set()
+    for ancestor in native.inputAncestors():
+        if ancestor.isBypassed():
+            continue
+        type_base = ancestor.type().nameComponents()[2]
+        entity_raws = []
+        if type_base == 'import_asset':
+            filepath_parm = ancestor.parm('import_filepath1')
+            entity_parm = ancestor.parm('entity')
+            if (
+                filepath_parm is not None and filepath_parm.eval()
+                and entity_parm is not None
+            ):
+                entity_raws.append(entity_parm.eval())
+        elif type_base == 'import_assets':
+            count_parm = ancestor.parm('asset_imports')
+            count = count_parm.eval() if count_parm is not None else 0
+            for index in range(1, count + 1):
+                instances_parm = ancestor.parm(f'instances{index}')
+                entity_parm = ancestor.parm(f'entity{index}')
+                if instances_parm is None or entity_parm is None:
+                    continue
+                if instances_parm.eval() <= 0:
+                    continue
+                entity_raws.append(entity_parm.eval())
+        for entity_raw in entity_raws:
+            if not entity_raw:
+                continue
+            try:
+                expected.add(str(Uri.parse_unsafe(entity_raw)))
+            except ValueError:
+                continue
+    return expected
+
+
 def _validate_export_files(temp_path: Path, expected_filename: str, operation_desc: str) -> None:
     """Validate that export operation created expected files.
 
@@ -595,6 +641,24 @@ class ExportLayer(ns.Node):
                 "reach these prims - e.g. a layerbreak stripped the customData, "
                 "or multi-instance duplicates didn't inherit it. Re-run the "
                 "import node (disable any layerbreak on it) and re-export."
+            )
+
+        # The sibling heuristic above is blind when a category holds no
+        # metadata-carrying asset at all (a shot's only asset dropped, or
+        # every asset dropped). Cross-check the scrape against what the
+        # upstream import nodes say they placed on the stage.
+        expected_asset_uris = _list_expected_asset_uris(native)
+        missing_asset_uris = sorted(expected_asset_uris - set(assets_by_uri))
+        if missing_asset_uris:
+            bullets = "\n  - ".join(missing_asset_uris)
+            raise ExportLayerError(
+                "Export aborted: asset(s) configured on upstream import "
+                "nodes carry no pipeline metadata on the stage, so they "
+                "would silently drop out of the published layer and every "
+                f"downstream import:\n  - {bullets}\n\n"
+                "Re-run the import node (Import button) so its metadata "
+                "step cooks, then re-export. If it persists, recreate the "
+                "import node or update the pipeline package."
             )
 
         # Set fps

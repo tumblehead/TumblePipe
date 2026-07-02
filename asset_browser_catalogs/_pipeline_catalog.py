@@ -373,12 +373,16 @@ class PipelineCatalog(Catalog):
         seq_children = [shot_multis]
         for seq in seqs:
             count = self._count_for_project_sequence(proj.name, seq)
+            # default_view="list": shots browse better as list rows —
+            # their department sub-cards expand inline in pipeline
+            # (catalog) order, one row per department.
             seq_children.append(Collection(
                 id=f"{proj.name}:sequence:{seq}",
                 label=seq,
                 count=count,
                 tag=f"{project_tag}+sequence:{seq}",
                 kind="sequence",
+                default_view="list",
             ))
         sections.append(Collection(
             id=f"{proj.name}:shots_section",
@@ -386,6 +390,7 @@ class PipelineCatalog(Catalog):
             tag=f"{project_tag}+type:shot",
             icon="clapperboard",
             children=tuple(seq_children),
+            default_view="list",
         ))
 
         scene_children = self._containers._build_scenes_for_project(proj)

@@ -170,6 +170,7 @@
                 [ ")" ]
                 language python
             }
+            parmtag { "script_callback" "hou.phm().execute()" }
             parmtag { "script_callback_language" "python" }
         }
         parm {

@@ -6,6 +6,7 @@ Contents.gz	Contents.gz
 TypePropertiesOptions	TypePropertiesOptions
 Help	Help
 Tools.shelf	Tools.shelf
+EditableNodes	EditableNodes
 PythonModule	PythonModule
 OnCreated	OnCreated
 OnDeleted	OnDeleted

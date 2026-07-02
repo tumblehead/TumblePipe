@@ -1,3 +1,5 @@
+import os
+import re
 from pathlib import Path
 
 import hou
@@ -55,6 +57,30 @@ if prim.IsValid():
     util.set_metadata(prim, metadata)
 '''
     return script
+
+def _list_staged_layers(staged_file_path: Path) -> list[tuple[str | None, str]]:
+    """Parse the staged .usda layer stack into (department, ref) pairs.
+
+    The staged asset file sublayers one layer per exported department,
+    strongest first. The department is read from the entity URI's dept=
+    query param, falling back to the directory layout
+    (../{variant}/{department}/{version}/file.usd) for filesystem refs
+    in old staged files. Refs with no recognizable department yield None.
+    """
+    layers = []
+    content = staged_file_path.read_text()
+    for match in re.finditer(r'@([^@]+)@', content):
+        ref = match.group(1)
+        department = None
+        if ref.startswith('entity:'):
+            uri = Uri.parse_unsafe(ref)
+            department = uri.query.get('dept')
+        else:
+            parts = [part for part in ref.split('/') if part not in ('..', '.')]
+            if len(parts) >= 3:
+                department = parts[-3]
+        layers.append((department, ref))
+    return layers
 
 class ImportAsset(ns.Node):
     def __init__(self, native):
@@ -132,16 +158,6 @@ class ImportAsset(ns.Node):
     def get_exclude_department_names(self):
         return list(filter(len, self.parm('departments').eval().split()))
 
-    def get_department_names(self):
-        department_names = self.list_department_names()
-        if len(department_names) == 0: return []
-        exclude_department_names = self.get_exclude_department_names()
-        return [
-            department_name
-            for department_name in department_names
-            if department_name not in exclude_department_names
-        ]
-    
     def get_include_layerbreak(self):
         return bool(self.parm('include_layerbreak').eval())
 
@@ -231,7 +247,54 @@ class ImportAsset(ns.Node):
             native.bypass(True)
             return result.Value(None)
 
-        self.parm('import_filepath1').set(resolved)
+        # Apply department exclusion by loading the staged file's
+        # per-department sublayers individually — the staged layer itself
+        # composes every department, so it can only be loaded whole.
+        # Without exclusions, load the staged file directly to keep its
+        # header metadata (frame range, metersPerUnit, upAxis).
+        excluded = set(self.get_exclude_department_names())
+        layer_paths = [resolved]
+        if excluded:
+            included = [
+                (department, ref)
+                for department, ref in _list_staged_layers(Path(resolved))
+                if department not in excluded
+            ]
+            # Staged sublayers are strongest-first; the Sublayer LOP
+            # composes its last file strongest, so load in reverse.
+            layer_paths = []
+            for department, ref in reversed(included):
+                if ref.startswith('entity:'):
+                    uri = Uri.parse_unsafe(ref)
+                    # Strip version when in 'latest' mode so the resolver
+                    # picks the actual latest department export.
+                    if version_name == 'latest' and 'version' in uri.query:
+                        stripped = dict(uri.query)
+                        del stripped['version']
+                        uri = Uri(uri.purpose, uri.segments, stripped)
+                    layer_resolved = resolver.resolve_entity_uri(str(uri))
+                else:
+                    layer_resolved = os.path.normpath(
+                        str(Path(resolved).parent / ref)
+                    )
+                if layer_resolved and Path(layer_resolved).exists():
+                    layer_paths.append(layer_resolved)
+
+        import_node = native.node('import')
+        if not layer_paths:
+            self.parm('import_filepath1').set('')
+            import_node.parm('num_files').set(0)
+            ns.set_node_comment(native, "Bypassed: All departments excluded")
+            native.bypass(True)
+            return result.Value(None)
+
+        # filepath1 channels to the HDA-level parm; extra slots are set
+        # directly on the (editable) internal sublayer node.
+        self.parm('import_filepath1').set(layer_paths[0])
+        import_node.parm('num_files').set(len(layer_paths))
+        for index, layer_path in enumerate(layer_paths[1:], start=2):
+            import_node.parm(f'filepath{index}').set(layer_path)
+        native.bypass(False)
 
         # Update version label with resolved folder name
         resolved_version = Path(resolved).parent.name

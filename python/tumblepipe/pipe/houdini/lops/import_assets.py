@@ -233,16 +233,6 @@ class ImportAssets(ns.Node):
     def get_exclude_department_names(self):
         return list(filter(len, self.parm('departments').eval().split()))
 
-    def get_department_names(self):
-        department_names = self.list_department_names()
-        if len(department_names) == 0: return []
-        exclude_department_names = self.get_exclude_department_names()
-        return [
-            department_name
-            for department_name in department_names
-            if department_name not in exclude_department_names
-        ]
-
     def get_asset_imports(self) -> list[tuple[Uri, str, str, int]]:
         """Returns list of (asset_uri, variant, version, instances) for all asset imports."""
         asset_imports = []
