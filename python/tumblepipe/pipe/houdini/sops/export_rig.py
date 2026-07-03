@@ -25,12 +25,11 @@ class ExportRig(ns.Node):
 
     def list_entity_uris(self) -> list[str]:
         """List entity URIs as strings, with 'from_context' as first option."""
-        asset_entities = api.config.list_entities(
+        asset_uris = api.config.list_entity_uris(
             filter = Uri.parse_unsafe('entity:/assets'),
             closure = True
         )
-        uris = [str(entity.uri) for entity in asset_entities]
-        return ['from_context'] + uris
+        return ['from_context'] + [str(uri) for uri in asset_uris]
 
     def get_entity_uri(self) -> Uri | None:
         entity_uri_raw = self.parm('entity').eval()

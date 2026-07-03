@@ -42,11 +42,10 @@ class CreateModel(ns.Node):
         super().__init__(native)
 
     def list_asset_uris(self) -> list[str]:
-        asset_entities = api.config.list_entities(
+        uris = api.config.list_entity_uris(
             filter = Uri.parse_unsafe('entity:/assets'),
             closure = True
         )
-        uris = [entity.uri for entity in asset_entities]
         return ['from_context'] + [str(uri) for uri in uris]
 
     def get_asset_uri(self) -> Uri | None:

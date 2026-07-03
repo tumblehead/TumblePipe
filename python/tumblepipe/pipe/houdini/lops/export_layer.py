@@ -318,30 +318,20 @@ class ExportLayer(ns.Node):
         return get_entity_type(entity_uri)
 
     def list_entity_uris(self) -> list[str]:
-        asset_entities = api.config.list_entities(
-            filter=Uri.parse_unsafe('entity:/assets'),
-            closure=True
-        )
-        shot_entities = api.config.list_entities(
-            filter=Uri.parse_unsafe('entity:/shots'),
-            closure=True
-        )
-        uris = [e.uri for e in asset_entities] + [e.uri for e in shot_entities]
+        uris = self.list_asset_uris() + self.list_shot_uris()
         return ['from_context'] + [str(uri) for uri in uris]
 
     def list_asset_uris(self) -> list[Uri]:
-        asset_entities = api.config.list_entities(
+        return api.config.list_entity_uris(
             filter=Uri.parse_unsafe('entity:/assets'),
             closure=True
         )
-        return [entity.uri for entity in asset_entities]
 
     def list_shot_uris(self) -> list[Uri]:
-        shot_entities = api.config.list_entities(
+        return api.config.list_entity_uris(
             filter=Uri.parse_unsafe('entity:/shots'),
             closure=True
         )
-        return [entity.uri for entity in shot_entities]
 
     def list_department_names(self) -> list[str]:
         entity_type = self.get_entity_type()

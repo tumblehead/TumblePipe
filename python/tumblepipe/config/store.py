@@ -7,15 +7,25 @@ the engine was frozen into a project at creation and could never be fixed for
 existing projects. It now lives in the package, so a single update reaches
 every project, and the per-project convention is a thin ``create()`` shim.
 
-Reads are **coherent**: every read validates the backing file's stamp
+Reads are **coherent**: every public read validates the backing file's stamp
 (``st_mtime_ns`` + ``st_size``) and transparently reloads when another process
 (another Houdini session, the project browser, the Database Editor, the farm)
 has written it. There is no "loaded once at startup" snapshot to go stale, so
 no manual ``refresh_cache`` is needed for correctness — the entity/config reads
 across the codebase are always current.
+
+Coherency is paid for **once per public read, not once per file access**: a
+public call opens a coherent-read scope in which each purpose file is stamped
+at most once, and computed results (resolved properties, parsed schemas) are
+memoized against a store generation that bumps whenever any purpose file
+changes. Without this, ``list_entities(closure=True)`` stamped the db files
+once per entity (~6 stats × entity count per call) — on a network share that
+was a multi-second stall per parameter-pane redraw (the v1.16.5 regression).
 """
 
 import copy
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 from tumblepipe.api import get_config_path
@@ -157,8 +167,9 @@ class JsonConfigStore(ConfigConvention):
     sparsely against schema defaults resolved at query time.
 
     The in-memory copy of each purpose is kept coherent with disk: every
-    access re-stamps the file and reloads if it changed, so a write from any
-    other process is picked up on the next read with no manual refresh.
+    public read re-stamps the file (at most once per coherent-read scope)
+    and reloads if it changed, so a write from any other process is picked
+    up on the next read with no manual refresh.
     """
 
     def __init__(self, config_path: Path | None = None):
@@ -168,6 +179,17 @@ class JsonConfigStore(ConfigConvention):
         # loaded from so a stale entry is detected and reloaded on next read.
         self._cache: dict[str, dict] = {}
         self._stamps: dict[str, tuple[int, int]] = {}
+        # Bumps whenever any purpose file's content changes (reload, delete,
+        # write). Memoized results are tagged with the generation they were
+        # computed under; a mismatch is a miss, so memo hits are exactly as
+        # coherent as the underlying cache.
+        self._generation: int = 0
+        self._generation_lock = threading.Lock()
+        self._memo: dict[tuple[str, str], tuple[int, object]] = {}
+        # Per-thread coherent-read scope: while a public read is on the
+        # stack, each purpose is stamped at most once. Thread-local so a
+        # GUI-thread read and a worker-thread read cannot share a scope.
+        self._scope = threading.local()
 
     # ------------------------------------------------------------------ #
     # Coherent-cache core
@@ -182,27 +204,71 @@ class JsonConfigStore(ConfigConvention):
         of ``st_mtime``; pairing it with ``st_size`` catches the rare
         same-nanosecond rewrite of a different length.
         """
-        file_path = self.db_file(purpose)
-        if not file_path.exists():
+        try:
+            info = self.db_file(purpose).stat()
+        except OSError:
             return None
-        info = file_path.stat()
         return (info.st_mtime_ns, info.st_size)
+
+    def _bump_generation(self) -> None:
+        """Invalidate all memoized results.
+
+        Locked because ``+= 1`` is a read-modify-write: two threads
+        reloading different purpose files concurrently must not collapse
+        into a single generation, or a memo entry computed between the two
+        reloads could later match and serve a stale result.
+        """
+        with self._generation_lock:
+            self._generation += 1
+
+    def _scope_state(self) -> threading.local:
+        scope = self._scope
+        if not hasattr(scope, 'depth'):
+            scope.depth = 0
+            scope.synced = set()
+        return scope
+
+    @contextmanager
+    def _coherent(self):
+        """Re-entrant scope within which each purpose is stamped at most once.
+
+        Nested public reads (``list_entities`` → ``get_properties`` × N →
+        ``get_entity_schema``) share the outermost scope, so one logical read
+        costs one stat per purpose file instead of one per ``_load``.
+        """
+        scope = self._scope_state()
+        scope.depth += 1
+        try:
+            yield
+        finally:
+            scope.depth -= 1
+            if scope.depth == 0:
+                scope.synced.clear()
 
     def _load(self, purpose: str) -> dict | None:
         """Return the coherent in-memory tree for ``purpose`` (None if no file).
 
         Reloads from disk when the file's stamp differs from the one the
-        cached copy was loaded with — i.e. whenever anyone wrote it.
+        cached copy was loaded with — i.e. whenever anyone wrote it. Inside
+        an active coherent-read scope the stamp check runs once per purpose;
+        subsequent loads trust it.
         """
+        scope = self._scope_state()
+        if scope.depth > 0 and purpose in scope.synced:
+            return self._cache.get(purpose)
         stamp = self._stamp(purpose)
         if stamp is None:
-            self._cache.pop(purpose, None)
-            self._stamps.pop(purpose, None)
-            return None
-        if purpose not in self._cache or self._stamps.get(purpose) != stamp:
+            if purpose in self._cache:
+                self._cache.pop(purpose, None)
+                self._stamps.pop(purpose, None)
+                self._bump_generation()
+        elif purpose not in self._cache or self._stamps.get(purpose) != stamp:
             self._cache[purpose] = load_json(self.db_file(purpose))
             self._stamps[purpose] = stamp
-        return self._cache[purpose]
+            self._bump_generation()
+        if scope.depth > 0:
+            scope.synced.add(purpose)
+        return self._cache.get(purpose)
 
     def purposes(self) -> list[str]:
         """Every purpose with a ``<purpose>.json`` file on disk."""
@@ -212,6 +278,16 @@ class JsonConfigStore(ConfigConvention):
             p.stem for p in self.db_path.iterdir()
             if p.is_file() and p.suffix == '.json'
         )
+
+    def coherent(self):
+        """Public coherent-read scope for batching multiple reads.
+
+        ``with config.coherent():`` around a loop of reads stamps each
+        purpose file once for the whole block instead of once per call —
+        the results are a consistent snapshot of the files as they were at
+        first touch inside the block.
+        """
+        return self._coherent()
 
     def root(self, purpose: str) -> dict | None:
         """The coherent top-level tree for ``purpose`` (live object, None if absent).
@@ -235,6 +311,7 @@ class JsonConfigStore(ConfigConvention):
         store_json(self.db_file(purpose), data)
         self._cache[purpose] = data
         self._stamps[purpose] = self._stamp(purpose)
+        self._bump_generation()
 
     def refresh_cache(self, purpose: str | None = None) -> None:
         """Force the next read to reload from disk.
@@ -249,6 +326,8 @@ class JsonConfigStore(ConfigConvention):
         else:
             self._cache.clear()
             self._stamps.clear()
+        self._memo.clear()
+        self._bump_generation()
 
     # ------------------------------------------------------------------ #
     # Entity CRUD
@@ -275,7 +354,26 @@ class JsonConfigStore(ConfigConvention):
         For entity URIs: starts with schema defaults, then deep merges entity
         hierarchy properties from root to leaf. For schema URIs: just merges
         schema hierarchy (no schema-of-schema lookup).
+
+        Memoized per store generation; the caller owns the returned dict.
         """
+        with self._coherent():
+            # Validate the involved purpose files BEFORE consulting the
+            # memo, so an external write bumps the generation and the memo
+            # misses instead of serving a stale result.
+            self._load(uri.purpose)
+            if uri.purpose != 'schemas':
+                self._load('schemas')
+            generation = self._generation
+            key = ('properties', str(uri))
+            hit = self._memo.get(key)
+            if hit is not None and hit[0] == generation:
+                return copy.deepcopy(hit[1])
+            result = self._compute_properties(uri)
+            self._memo[key] = (generation, result)
+            return copy.deepcopy(result)
+
+    def _compute_properties(self, uri: Uri) -> dict | None:
         data = self._load(uri.purpose)
         if data is None:
             return None
@@ -356,44 +454,46 @@ class JsonConfigStore(ConfigConvention):
         return result
 
     def set_properties(self, uri: Uri, properties: dict):
-        # Calculate inherited properties and store only the difference
-        inherited = self._get_inherited_properties(uri)
-        sparse_properties = _deep_diff(inherited, properties)
+        with self._coherent():
+            # Calculate inherited properties and store only the difference
+            inherited = self._get_inherited_properties(uri)
+            sparse_properties = _deep_diff(inherited, properties)
 
-        data = self._load(uri.purpose)
-        if data is None:
-            data = dict(children=dict())
-        _insert(data, sparse_properties, uri.segments)
-        self.write_root(uri.purpose, data)
+            data = self._load(uri.purpose)
+            if data is None:
+                data = dict(children=dict())
+            _insert(data, sparse_properties, uri.segments)
+            self.write_root(uri.purpose, data)
+
+    def list_entity_uris(self, filter: Uri | None = None, closure: bool = False) -> list[Uri]:
+        """The URIs ``list_entities`` would return, without resolving
+        properties — a pure in-memory tree walk after one coherency check.
+        Most listing callers only consume ``.uri``; this spares them the
+        per-entity property resolution entirely.
+        """
+        with self._coherent():
+            return self._list_uris(filter, closure)
 
     def list_entities(self, filter: Uri | None = None, closure: bool = False) -> list[Entity]:
+        with self._coherent():
+            return [
+                Entity(uri=uri, properties=self.get_properties(uri) or {})
+                for uri in self._list_uris(filter, closure)
+            ]
+
+    def _list_uris(self, filter: Uri | None, closure: bool) -> list[Uri]:
         if filter is None:
-            data = self._load('entity')
-            if data is None:
-                return []
-            data = data.get('children', {})
-            root_path = Uri.parse_unsafe('entity:/')
-            if not closure:
-                uris = _list_uri_shallow(data, root_path)
-            else:
-                uris = _list_uri_deep(data, root_path)
+            purpose, filter_path = 'entity', None
         else:
-            purpose = filter.purpose
-            root = self._load(purpose)
-            if root is None:
-                return []
-            data = root.get('children', {})
-            root_path = Uri.parse_unsafe(f'{purpose}:/')
-            filter_path = filter.segments
-            if not closure:
-                uris = _list_uri_shallow(data, root_path, filter_path)
-            else:
-                uris = _list_uri_deep(data, root_path, filter_path)
-        result = [
-            Entity(uri=uri, properties=self.get_properties(uri) or {})
-            for uri in uris
-        ]
-        return result
+            purpose, filter_path = filter.purpose, filter.segments
+        root = self._load(purpose)
+        if root is None:
+            return []
+        data = root.get('children', {})
+        root_path = Uri.parse_unsafe(f'{purpose}:/')
+        if not closure:
+            return _list_uri_shallow(data, root_path, filter_path)
+        return _list_uri_deep(data, root_path, filter_path)
 
     # ------------------------------------------------------------------ #
     # Schemas
@@ -401,10 +501,20 @@ class JsonConfigStore(ConfigConvention):
     def get_schema(self, schema_uri: Uri) -> Schema | None:
         if schema_uri.purpose != 'schemas':
             return None
-        properties = self.get_properties(schema_uri)
-        if properties is None:
-            return None
-        return schema_from_properties(schema_uri, properties)
+        with self._coherent():
+            self._load('schemas')
+            generation = self._generation
+            key = ('schema', str(schema_uri))
+            hit = self._memo.get(key)
+            if hit is not None and hit[0] == generation:
+                return hit[1]
+            properties = self.get_properties(schema_uri)
+            schema = (
+                None if properties is None
+                else schema_from_properties(schema_uri, properties)
+            )
+            self._memo[key] = (generation, schema)
+            return schema
 
     def list_schemas(self, parent_uri: Uri | None = None) -> list[Schema]:
         schemas_data = self._load('schemas')
@@ -464,10 +574,11 @@ class JsonConfigStore(ConfigConvention):
         return Uri.parse_unsafe('schemas:/' + '/'.join(schema_segments))
 
     def get_entity_schema(self, entity_uri: Uri) -> Schema | None:
-        schema_uri = self.get_entity_schema_uri(entity_uri)
-        if schema_uri is None:
-            return None
-        return self.get_schema(schema_uri)
+        with self._coherent():
+            schema_uri = self.get_entity_schema_uri(entity_uri)
+            if schema_uri is None:
+                return None
+            return self.get_schema(schema_uri)
 
     def get_child_schemas(self, schema_uri: Uri) -> list[Schema]:
         if schema_uri.purpose != 'schemas':

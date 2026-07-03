@@ -40,11 +40,10 @@ class Playblast(ns.Node):
         return [d.name for d in list_departments('shots') if d.renderable]
 
     def list_entity_uris(self) -> list[str]:
-        shot_entities = api.config.list_entities(
+        uris = api.config.list_entity_uris(
             filter=Uri.parse_unsafe('entity:/shots'),
             closure=True
         )
-        uris = [entity.uri for entity in shot_entities]
         return ['from_context'] + [str(uri) for uri in uris]
 
     def list_camera_paths(self):

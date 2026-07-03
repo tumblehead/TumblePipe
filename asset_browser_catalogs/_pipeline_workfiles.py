@@ -193,28 +193,6 @@ class WorkfileManager:
         except OSError:
             return None
 
-    def latest_update_timestamp(
-        self, asset_id: str, depts: dict[str, str],
-    ) -> float:
-        """POSIX timestamp of the most recent workfile across departments.
-
-        ``depts`` maps ``dept -> latest_version``. Returns 0.0 when no
-        workfile can be stat'd — callers store this in ``metadata`` and
-        the sort surfaces it last under descending order.
-        """
-        latest = 0.0
-        for dept, version in depts.items():
-            p = self.workfile_path_for(asset_id, dept, version)
-            if p is None:
-                continue
-            try:
-                mt = p.stat().st_mtime
-            except OSError:
-                continue
-            if mt > latest:
-                latest = mt
-        return latest
-
     @staticmethod
     def format_relative_time(timestamp) -> str:
         """Format a datetime as 'Ns/m/h/d/w/mo/y ago'. Cloned from

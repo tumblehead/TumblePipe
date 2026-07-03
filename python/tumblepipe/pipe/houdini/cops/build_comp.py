@@ -203,11 +203,10 @@ class BuildComp(ns.Node):
         super().__init__(native)
 
     def list_shot_uris(self) -> list[str]:
-        shot_entities = api.config.list_entities(
+        uris = api.config.list_entity_uris(
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        uris = [entity.uri for entity in shot_entities]
         return ['from_context'] + [str(uri) for uri in uris]
 
     def list_variant_names(self):

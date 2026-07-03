@@ -56,6 +56,15 @@ imports them by name:
   and the file just instantiates it (`def create(): return JsonConfigStore()`).
   Engine fixes therefore ship with the package and reach every project,
   rather than being frozen into this per-project copy.
+
+  Reads are **coherent and cheap**: each public read validates the backing
+  `db/*.json` stamp at most once (so an out-of-process write is visible on
+  the very next read, with no manual refresh), and resolved
+  properties/schemas are memoized until any db file changes. Two API notes
+  for callers: `list_entity_uris()` lists URIs without resolving per-entity
+  properties (use it whenever only `.uri` is consumed — HDA menus
+  especially), and `with config.coherent():` batches a loop of reads into a
+  single coherency check.
 - `naming_convention.py` — how assets, shots, and work files are named.
 - `storage_convention.py` — maps project URIs (`project://`, `entity://`, …)
   to concrete filesystem paths.

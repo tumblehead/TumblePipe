@@ -29,17 +29,15 @@ class LayerSplit(ns.Node):
         super().__init__(native)
 
     def list_entity_uris(self) -> list[str]:
-        shot_entities = api.config.list_entities(
-            filter=Uri.parse_unsafe('entity:/shots'),
-            closure=True
-        )
-        asset_entities = api.config.list_entities(
-            filter=Uri.parse_unsafe('entity:/assets'),
-            closure=True
-        )
         uris = (
-            [entity.uri for entity in shot_entities] +
-            [entity.uri for entity in asset_entities]
+            api.config.list_entity_uris(
+                filter=Uri.parse_unsafe('entity:/shots'),
+                closure=True
+            ) +
+            api.config.list_entity_uris(
+                filter=Uri.parse_unsafe('entity:/assets'),
+                closure=True
+            )
         )
         return ['from_context'] + [str(uri) for uri in uris]
 

@@ -166,11 +166,10 @@ class ImportAsset(ns.Node):
         super().__init__(native)
 
     def list_asset_uris(self) -> list[Uri]:
-        asset_entities = api.config.list_entities(
+        return api.config.list_entity_uris(
             filter = Uri.parse_unsafe('entity:/assets'),
             closure = True
         )
-        return [entity.uri for entity in asset_entities]
 
     def list_department_names(self):
         return [d.name for d in list_departments('assets') if d.publishable]

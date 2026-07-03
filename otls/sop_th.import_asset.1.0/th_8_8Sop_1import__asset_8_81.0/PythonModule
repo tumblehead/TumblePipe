@@ -1,0 +1,8 @@
+import hou
+from tumblepipe.pipe.houdini.sops import import_asset
+
+def execute():
+    import_asset.execute()
+
+def select():
+    import_asset.select()

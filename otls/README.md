@@ -23,6 +23,19 @@ Editing rules learned the hard way:
 - DialogScript menu/toggle parms follow the existing idioms in each
   file (`hou.phm().execute()` callbacks, python `menu {}` blocks);
   copy a neighbouring parm rather than inventing a new shape.
+- **Menu scripts are read-only.** Houdini evaluates them on every
+  parameter-pane redraw, so a `parm.set()` inside a `menu {}` block
+  dirties the node mid-draw and can re-trigger evaluation (import_assets
+  2.0 did this per multiparm row). Menus list; explicit actions
+  (callbacks, `execute()`) write. They must also stay cheap — a menu
+  script that enumerates config wants `list_entity_uris`, never
+  `list_entities` (which resolves properties per entity).
+- **No absolute node paths in `opmenu` references.** DialogScript
+  `opmenu -l -a <path> <parm>` resolves relative to the HDA instance;
+  an absolute path like `/stage/import_assets1/dive/layout_assets` only
+  works for an instance with that exact name and location — every other
+  instance's menu silently errors. Use the instance-relative form
+  (`dive/layout_assets`).
 - CI's `validate-hdas` step does NOT parse channel expressions — a
   syntactically broken `.chn` sails through the build. The only real
   gate is loading a scene that contains the node in a live Houdini.

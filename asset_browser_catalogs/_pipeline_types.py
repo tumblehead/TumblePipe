@@ -249,12 +249,37 @@ def latest_version(labels: Iterable[str]) -> str | None:
 
 def workfile_versions(dept_dir: Path) -> list[str]:
     """Return sorted ``vNNNN`` version labels parsed from .hip filenames."""
-    if not dept_dir.exists():
-        return []
+    return scan_workfiles(dept_dir)[0]
+
+
+def scan_workfiles(dept_dir: Path) -> tuple[list[str], float]:
+    """One directory pass: ``(sorted version labels, newest .hip mtime)``.
+
+    The single ``os.scandir`` replaces the versions-glob + latest-lookup
+    re-glob + per-file stat the card build used to do per department —
+    on Windows the scandir entries carry their stat info for free, so
+    the whole scan is one directory listing. Returns ``([], 0.0)`` for a
+    missing directory.
+    """
+    import fnmatch
     versions: set[str] = set()
-    for hip in dept_dir.glob(WORKFILE_GLOB):
-        stem = hip.stem
-        tail = stem.rsplit("_", 1)
+    newest = 0.0
+    try:
+        entries = list(os.scandir(dept_dir))
+    except OSError:
+        return [], 0.0
+    for entry in entries:
+        if not fnmatch.fnmatch(entry.name, WORKFILE_GLOB):
+            continue
+        try:
+            if not entry.is_file():
+                continue
+            mtime = entry.stat().st_mtime
+        except OSError:
+            continue
+        if mtime > newest:
+            newest = mtime
+        tail = Path(entry.name).stem.rsplit("_", 1)
         if (
             len(tail) == 2
             and tail[1].startswith("v")
@@ -264,7 +289,7 @@ def workfile_versions(dept_dir: Path) -> list[str]:
     # Sort by numeric code, not lexically: version labels can exceed 4
     # digits (v10000), and every consumer takes [-1] as "latest" — a
     # lexical sort would rank v9999 after v10000 and open a stale workfile.
-    return sorted(versions, key=version_code)
+    return sorted(versions, key=version_code), newest
 
 
 def workfile_for_version(dept_dir: Path, version: str) -> Path | None:

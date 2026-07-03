@@ -30,11 +30,10 @@ class RenderDebug(ns.Node):
         super().__init__(native)
 
     def list_shot_uris(self) -> list[Uri]:
-        shot_entities = api.config.list_entities(
+        return api.config.list_entity_uris(
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return [entity.uri for entity in shot_entities]
 
     def list_variant_names(self):
         shot_uri = self.get_shot_uri()

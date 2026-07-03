@@ -63,7 +63,7 @@ from _pipeline_types import (
     cascade_counts,
     latest_version,
     projects_json_path,
-    workfile_versions,
+    scan_workfiles,
 )
 
 log = logging.getLogger(__name__)
@@ -428,9 +428,43 @@ class PipelineCatalog(Catalog):
 
         return sections
 
+    def _cached_items_or_none(self) -> list | None:
+        """The discovery cache if a pass has completed, else ``None``.
+
+        Sidebar count helpers run on the GUI thread (get_collections);
+        triggering a full discovery there — entity listing plus a
+        workfile scandir per dept per card, possibly over SMB — is a
+        hard UI freeze. They must read the cache or fall back to a
+        cheap uris-only count, never build cards.
+        """
+        if self._cached_assets is None or self._cached_shots is None:
+            return None
+        return self._cached_assets + self._cached_shots
+
+    def _count_uris_for_project(
+        self, project_name: str, kind: str, group: str,
+    ) -> int:
+        """Count ``entity:/{kind}/{group}/...`` leaves via a uris-only
+        listing — no card building, safe on the GUI thread."""
+        if not self._clients.is_ready(project_name):
+            return 0
+        client = self._clients.get(project_name)
+        try:
+            uris = client.config.list_entity_uris(None, closure=True)
+        except Exception:
+            return 0
+        return sum(
+            1 for uri in uris
+            if len(uri.segments) >= 3
+            and uri.segments[0] == kind
+            and uri.segments[1] == group
+        )
+
     def _count_for_project_category(self, project_name: str, category: str) -> int:
         """Count assets in ``project_name`` whose category matches."""
-        items = self._get_all_items()
+        items = self._cached_items_or_none()
+        if items is None:
+            return self._count_uris_for_project(project_name, "assets", category)
         cat_tag = f"category:{category}"
         proj_tag = f"project:{project_name}"
         return sum(
@@ -440,7 +474,9 @@ class PipelineCatalog(Catalog):
 
     def _count_for_project_sequence(self, project_name: str, sequence: str) -> int:
         """Count shots in ``project_name`` whose sequence matches."""
-        items = self._get_all_items()
+        items = self._cached_items_or_none()
+        if items is None:
+            return self._count_uris_for_project(project_name, "shots", sequence)
         seq_tag = f"sequence:{sequence}"
         proj_tag = f"project:{project_name}"
         return sum(
@@ -451,7 +487,13 @@ class PipelineCatalog(Catalog):
     def _count_todos_for_project(
         self, project_name: str,
     ) -> tuple[int, int]:
-        """Return ``(pending_count, done_count)`` for a project."""
+        """Return ``(pending_count, done_count)`` for a project.
+
+        Served from the discovery cache only: todo status needs card
+        ids, and building cards from the GUI thread would freeze the
+        UI. Before the first discovery completes the counts read 0 and
+        correct themselves on the next sidebar rebuild.
+        """
         try:
             from tumbletrove import asset_browser
             mgr = asset_browser.get_todos()
@@ -459,7 +501,9 @@ class PipelineCatalog(Catalog):
             return 0, 0
         if mgr is None:
             return 0, 0
-        items = self._get_all_items()
+        items = self._cached_items_or_none()
+        if items is None:
+            return 0, 0
         proj_tag = f"project:{project_name}"
         pending = done = 0
         for a in items:
@@ -3068,30 +3112,41 @@ class PipelineCatalog(Catalog):
             # Activate this project's env so latest_export_path resolves
             # against the right config.
             self._activate_project(proj)
-            try:
-                all_entities = client.config.list_entities(None, closure=True)
-            except Exception as exc:
-                self._discovery_errors.append(AssetDiscoveryError(
-                    self.id,
-                    f"list_entities failed for {proj.name}: {exc}",
-                    cause=exc,
-                ))
-                continue
-            for entity in all_entities:
-                segs = entity.uri.segments
-                if len(segs) < 3:
+            # coherent(): one config coherency check for the whole
+            # project pass — the per-card department lists and frame
+            # ranges below would otherwise each re-stamp the db files.
+            with client.config.coherent():
+                try:
+                    all_uris = client.config.list_entity_uris(None, closure=True)
+                except Exception as exc:
+                    self._discovery_errors.append(AssetDiscoveryError(
+                        self.id,
+                        f"list_entities failed for {proj.name}: {exc}",
+                        cause=exc,
+                    ))
                     continue
-                kind = segs[0]
-                if kind == "assets":
-                    card = self._build_asset_card(proj, segs)
-                    assets_by_id.setdefault(card.id, card)
-                elif kind == "shots":
-                    card = self._build_shot_card(proj, entity, segs)
-                    shots_by_id.setdefault(card.id, card)
+                # Per-project context, computed ONCE and threaded into the
+                # card builders. Each card used to re-derive it via a full
+                # list_entities + list_departments of its own — (1 + depts)
+                # whole-project enumerations per card.
+                asset_depts = self._list_entity_departments("assets")
+                shot_depts = self._list_entity_departments("shots")
+                for uri in all_uris:
+                    segs = uri.segments
+                    if len(segs) < 3:
+                        continue
+                    kind = segs[0]
+                    if kind == "assets":
+                        card = self._build_asset_card(proj, segs, asset_depts)
+                        assets_by_id.setdefault(card.id, card)
+                    elif kind == "shots":
+                        card = self._build_shot_card(proj, uri, segs, shot_depts)
+                        shots_by_id.setdefault(card.id, card)
         return list(assets_by_id.values()), list(shots_by_id.values())
 
     def _build_asset_card(
         self, proj: ProjectConfig, segs: tuple[str, ...],
+        departments: list[str],
     ) -> Asset:
         category = segs[1]
         name = segs[2]
@@ -3100,16 +3155,20 @@ class PipelineCatalog(Catalog):
         # Use our own filesystem-based scan instead of
         # ``latest_export_path`` — that helper caches
         # ``TH_PROJECT_PATH`` at import time and returns paths under
-        # the wrong project for non-launch projects.
-        # ``_get_department_workfile_info`` returns a
-        # ``{dept: [versions]}`` mapping; collapse to
-        # ``{dept: latest_version}`` for the deck popup label.
-        workfile_info = self._get_department_workfile_info(asset_id)
+        # the wrong project for non-launch projects. One scandir per
+        # dept dir yields versions AND the newest mtime, so no second
+        # glob/stat pass is needed for ``latest_update``.
+        scanned = self._scan_department_workfiles(
+            asset_id, context="assets", departments=departments,
+        )
         depts = {
             dept: versions[-1]
-            for dept, versions in workfile_info.items()
+            for dept, (versions, _) in scanned.items()
             if versions
         }
+        latest_update = max(
+            (mtime for _, mtime in scanned.values()), default=0.0,
+        )
 
         return Asset(
             id=asset_id,
@@ -3127,9 +3186,7 @@ class PipelineCatalog(Catalog):
                 "category": category,
                 "project": proj.name,
                 "dept_count": len(depts),
-                "latest_update": self._workfiles.latest_update_timestamp(
-                    asset_id, depts,
-                ),
+                "latest_update": latest_update,
             },
         )
 
@@ -3156,15 +3213,19 @@ class PipelineCatalog(Catalog):
             return None
 
         self._activate_project(proj)
-        workfile_info = self._get_department_workfile_info(asset_id)
-        depts = {
-            dept: versions[-1]
-            for dept, versions in workfile_info.items()
-            if versions
-        }
-
         cats = self._list_categories_for_project(project_name)
         is_asset = second in cats
+        scanned = self._scan_department_workfiles(
+            asset_id, context="assets" if is_asset else "shots",
+        )
+        depts = {
+            dept: versions[-1]
+            for dept, (versions, _) in scanned.items()
+            if versions
+        }
+        latest_update = max(
+            (mtime for _, mtime in scanned.values()), default=0.0,
+        )
         tags = {
             "source:pipeline",
             f"type:{'asset' if is_asset else 'shot'}",
@@ -3184,9 +3245,7 @@ class PipelineCatalog(Catalog):
                 **({"category": second, "project": project_name} if is_asset
                    else {"sequence": second, "project": project_name}),
                 "dept_count": len(depts),
-                "latest_update": self._workfiles.latest_update_timestamp(
-                    asset_id, depts,
-                ),
+                "latest_update": latest_update,
             },
             catalog_id=self.id,
         )
@@ -3279,31 +3338,37 @@ class PipelineCatalog(Catalog):
         return dataclasses.replace(asset, catalog_id=self.id)
 
     def _build_shot_card(
-        self, proj: ProjectConfig, entity, segs: tuple[str, ...],
+        self, proj: ProjectConfig, uri, segs: tuple[str, ...],
+        departments: list[str],
     ) -> Asset:
         sequence = segs[1]
         shot_name = segs[2]
         asset_id = f"{proj.name}/{sequence}/{shot_name}"
 
-        # See _build_asset_card: use our own filesystem scan instead of
-        # latest_export_path to dodge the cross-project
-        # tumblehead.pipe.paths cache.
-        workfile_info = self._get_department_workfile_info(asset_id)
+        # See _build_asset_card: one scandir per dept dir gives both the
+        # versions and the newest mtime, dodging the cross-project
+        # tumblehead.pipe.paths cache and the old second glob pass.
+        scanned = self._scan_department_workfiles(
+            asset_id, context="shots", departments=departments,
+        )
         depts = {
             dept: versions[-1]
-            for dept, versions in workfile_info.items()
+            for dept, (versions, _) in scanned.items()
             if versions
         }
+        latest_update = max(
+            (mtime for _, mtime in scanned.values()), default=0.0,
+        )
 
         frame_range = ""
         try:
             from tumblepipe.config.timeline import get_frame_range
-            fr = get_frame_range(entity.uri)
+            fr = get_frame_range(uri)
         except Exception as exc:
             # Skip frame range for this entity rather than tanking the
             # whole shot discovery — but log so the failure is visible.
             log.warning(
-                "frame range lookup failed for %s: %s", entity.uri, exc,
+                "frame range lookup failed for %s: %s", uri, exc,
             )
             fr = None
         if fr is not None:
@@ -3329,9 +3394,7 @@ class PipelineCatalog(Catalog):
                 "project": proj.name,
                 "frame_range": frame_range,
                 "dept_count": len(depts),
-                "latest_update": self._workfiles.latest_update_timestamp(
-                    asset_id, depts,
-                ),
+                "latest_update": latest_update,
             },
         )
 
@@ -3346,7 +3409,7 @@ class PipelineCatalog(Catalog):
             return []
         client = self._clients.get(project_name)
         try:
-            entities = client.config.list_entities(None, closure=True)
+            uris = client.config.list_entity_uris(None, closure=True)
         except Exception as exc:
             raise ConfigError(
                 self.id,
@@ -3360,9 +3423,9 @@ class PipelineCatalog(Catalog):
         # surfaced categories that had at least one asset, hiding
         # standalone ones that tumblepipe supports natively.
         return sorted({
-            e.uri.segments[1]
-            for e in entities
-            if len(e.uri.segments) >= 2 and e.uri.segments[0] == "assets"
+            uri.segments[1]
+            for uri in uris
+            if len(uri.segments) >= 2 and uri.segments[0] == "assets"
         })
 
     def _list_sequences_for_project(self, project_name: str) -> list[str]:
@@ -3374,7 +3437,7 @@ class PipelineCatalog(Catalog):
             return []
         client = self._clients.get(project_name)
         try:
-            entities = client.config.list_entities(None, closure=True)
+            uris = client.config.list_entity_uris(None, closure=True)
         except Exception as exc:
             raise ConfigError(
                 self.id,
@@ -3384,9 +3447,9 @@ class PipelineCatalog(Catalog):
         # Same as _list_categories_for_project: include 2-segment
         # sequence-only entities, not just sequences that have shots.
         return sorted({
-            e.uri.segments[1]
-            for e in entities
-            if len(e.uri.segments) >= 2 and e.uri.segments[0] == "shots"
+            uri.segments[1]
+            for uri in uris
+            if len(uri.segments) >= 2 and uri.segments[0] == "shots"
         })
 
     def _list_categories(self) -> list[str]:
@@ -3448,6 +3511,24 @@ class PipelineCatalog(Catalog):
         We extract the trailing ``vNNNN`` token from the stem; this
         matches the convention used by ``next_hip_file_path``.
         """
+        return {
+            dept: versions
+            for dept, (versions, _) in
+            self._scan_department_workfiles(asset_id).items()
+        }
+
+    def _scan_department_workfiles(
+        self, asset_id: str,
+        context: str | None = None,
+        departments: list[str] | None = None,
+    ) -> dict[str, tuple[list[str], float]]:
+        """One scandir per dept dir: ``{dept: (versions, newest_mtime)}``.
+
+        ``context``/``departments`` let the discovery pass thread its
+        per-project card-build context in; when omitted (single-card
+        callers) they are derived here — which costs one project
+        enumeration, so per-card loops must always pass them.
+        """
         parsed = self._resolver.split(asset_id)
         if parsed is None:
             return {}
@@ -3456,19 +3537,18 @@ class PipelineCatalog(Catalog):
         if root is None:
             return {}
         try:
-            cats = self._list_categories_for_project(project_name)
-            if second in cats:
-                base = root / "assets" / second / third
-                context = "assets"
-            else:
-                base = root / "shots" / second / third
-                context = "shots"
+            if context is None:
+                cats = self._list_categories_for_project(project_name)
+                context = "assets" if second in cats else "shots"
+            base = root / context / second / third
+            if departments is None:
+                departments = self._list_entity_departments(context)
 
-            result: dict[str, list[str]] = {}
-            for dept in self._list_entity_departments(context):
-                versions = workfile_versions(base / dept)
+            result: dict[str, tuple[list[str], float]] = {}
+            for dept in departments:
+                versions, newest = scan_workfiles(base / dept)
                 if versions:
-                    result[dept] = versions
+                    result[dept] = (versions, newest)
             return result
         except OSError as exc:
             raise WorkfileScanError(

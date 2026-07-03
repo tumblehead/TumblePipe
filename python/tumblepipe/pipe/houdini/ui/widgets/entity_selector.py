@@ -148,31 +148,32 @@ class EntitySelectorDialog(QtWidgets.QDialog):
             from_context_item.setFont(font)
             model.appendRow(from_context_item)
 
-        # Load entities based on filter
+        # Load entities based on filter. The coherent() scope batches the
+        # listings and the per-uri terminal checks into one coherency check
+        # instead of one file stamp per uri.
         all_uris = []
-        if self._entity_filter in ('assets', 'both'):
-            try:
-                assets = self._api.config.list_entities(
-                    Uri.parse_unsafe('entity:/assets'), closure=True
-                )
-                all_uris.extend([e.uri for e in assets])
-            except Exception:
-                pass
+        with self._api.config.coherent():
+            if self._entity_filter in ('assets', 'both'):
+                try:
+                    all_uris.extend(self._api.config.list_entity_uris(
+                        Uri.parse_unsafe('entity:/assets'), closure=True
+                    ))
+                except Exception:
+                    pass
 
-        if self._entity_filter in ('shots', 'both'):
-            try:
-                shots = self._api.config.list_entities(
-                    Uri.parse_unsafe('entity:/shots'), closure=True
-                )
-                all_uris.extend([e.uri for e in shots])
-            except Exception:
-                pass
+            if self._entity_filter in ('shots', 'both'):
+                try:
+                    all_uris.extend(self._api.config.list_entity_uris(
+                        Uri.parse_unsafe('entity:/shots'), closure=True
+                    ))
+                except Exception:
+                    pass
 
-        # Drop empty categories/sequences: list_entities(closure=True) returns
-        # any childless node, so a category with no assets yet (e.g.
-        # entity:/assets/CHAR) comes back as a selectable leaf. Keep only real
-        # terminal entities (assets/shots) - see config.entities.
-        all_uris = [u for u in all_uris if is_terminal_entity(self._api.config, u)]
+            # Drop empty categories/sequences: list_entities(closure=True)
+            # returns any childless node, so a category with no assets yet
+            # (e.g. entity:/assets/CHAR) comes back as a selectable leaf. Keep
+            # only real terminal entities (assets/shots) - see config.entities.
+            all_uris = [u for u in all_uris if is_terminal_entity(self._api.config, u)]
 
         # Build tree from segment 0 (includes 'assets', 'shots' as top-level items)
         _build_entity_tree(model.invisibleRootItem(), all_uris, 0)

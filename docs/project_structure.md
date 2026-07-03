@@ -11,6 +11,7 @@ TumblePipe/
 ├── asset_browser_catalogs/      # TumbleTrove asset_browser catalog
 │   ├── pipeline.py              #   factory entry point (discovered)
 │   └── _pipeline_*.py           #   catalog implementation + helpers
+├── recipes/                     # Shipped asset-browser recipes (read-only)
 ├── desktop/
 │   └── TumblePipe.desk          # Houdini desktop layout
 ├── ocio/                        # OpenColorIO configuration
@@ -111,3 +112,13 @@ companion modules:
   preferences plus the gear-icon settings UI.
 
 None of the `_pipeline_*` files are loaded by TumbleTrove directly.
+
+### `recipes/`
+
+Network-catalog entries (saved node-cluster recipes) that ship with the
+package. `hpm.toml` prepends this directory to
+`ASSET_BROWSER_NETWORK_PATH`; TumbleTrove's asset browser (> 0.9.1)
+scans it as a **read-only** recipe root alongside the user's personal
+library — entries browse and drop normally but cannot be edited or
+deleted, and new recipes are never saved here. Layout and the authoring
+workflow are documented in `recipes/README.md`.

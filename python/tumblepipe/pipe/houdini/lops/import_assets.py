@@ -175,11 +175,10 @@ class ImportAssets(ns.Node):
         super().__init__(native)
 
     def list_entity_uris(self, index) -> list[Uri]:
-        all_asset_entities = api.config.list_entities(
+        all_asset_uris = api.config.list_entity_uris(
             filter = Uri.parse_unsafe('entity:/assets'),
             closure = True
         )
-        all_asset_uris = [entity.uri for entity in all_asset_entities]
 
         # Filter out already-selected assets
         count = self.parm('asset_imports').eval()
@@ -202,13 +201,19 @@ class ImportAssets(ns.Node):
         return [d.name for d in list_departments('assets') if d.publishable]
 
     def get_entity_uri(self, index) -> Uri | None:
+        """Resolve the entity for a row, read-only.
+
+        Falls back to the first available asset WITHOUT writing the parm:
+        this is called from the variant/version menu scripts, and a parm
+        write during menu evaluation dirties the node mid-draw (and can
+        re-trigger evaluation). The fallback is materialized on the parm
+        only by explicit actions (select/add_asset_entry/execute).
+        """
         asset_uris = self.list_entity_uris(index)
         if len(asset_uris) == 0: return None
         asset_uri_raw = self.parm(f'entity{index}').eval()
         if len(asset_uri_raw) == 0 or Uri.parse_unsafe(asset_uri_raw) not in asset_uris:
-            asset_uri = asset_uris[0]
-            self.parm(f'entity{index}').set(str(asset_uri))
-            return asset_uri
+            return asset_uris[0]
         return Uri.parse_unsafe(asset_uri_raw)
     
     def get_instances(self, index):
@@ -268,12 +273,21 @@ class ImportAssets(ns.Node):
         return list(filter(len, self.parm('departments').eval().split()))
 
     def get_asset_imports(self) -> list[tuple[Uri, str, str, int]]:
-        """Returns list of (asset_uri, variant, version, instances) for all asset imports."""
+        """Returns list of (asset_uri, variant, version, instances) for all asset imports.
+
+        Materializes each row's resolved URI back onto its entity parm —
+        this runs from execute() (an explicit action), and the saved scene
+        must record what the node actually imports (entity-parm sweeps
+        read workfiles, and get_entity_uri's fallback is deliberately
+        read-only for menu evaluation).
+        """
         asset_imports = []
         count = self.parm('asset_imports').eval()
         for index in range(1, count + 1):
             asset_uri = self.get_entity_uri(index)
             if asset_uri is None: continue
+            if self.parm(f'entity{index}').eval() != str(asset_uri):
+                self.parm(f'entity{index}').set(str(asset_uri))
             variant = self.get_variant_name(index)
             version = self.get_version_name(index)
             instances = self.get_instances(index)

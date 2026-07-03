@@ -12,6 +12,16 @@ class Entity:
 from tumblepipe.config.schema import Schema, FieldDefinition
 
 class ConfigConvention:
+    def coherent(self):
+        """Context manager batching multiple reads into one coherency check.
+
+        Implementations that stamp backing files per read (JsonConfigStore)
+        override this so a ``with config.coherent():`` block stamps each
+        file once for the whole block. The default is a no-op scope.
+        """
+        from contextlib import nullcontext
+        return nullcontext()
+
     def add_entity(self, uri: Uri, properties: dict):
         raise NotImplementedError()
 
@@ -50,6 +60,13 @@ class ConfigConvention:
 
     def list_entities(self, filter: Uri | None = None, closure: bool = False) -> list[Entity]:
         raise NotImplementedError()
+
+    def list_entity_uris(self, filter: Uri | None = None, closure: bool = False) -> list[Uri]:
+        """URIs only — no property resolution. Prefer this when the caller
+        consumes ``.uri`` alone; implementations override it to skip the
+        per-entity property cost that ``list_entities`` pays.
+        """
+        return [entity.uri for entity in self.list_entities(filter, closure)]
 
     def get_schema(self, schema_uri: Uri) -> Schema | None:
         raise NotImplementedError()

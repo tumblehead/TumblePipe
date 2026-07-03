@@ -338,7 +338,7 @@ def find_shots_with_scene_ref(scene_uri: Uri) -> list[Uri]:
     Returns:
         List of entity URIs that directly reference this scene
     """
-    shot_entities = api.config.list_entities(
+    shot_uris = api.config.list_entity_uris(
         Uri.parse_unsafe('entity:/shots'),
         closure=True
     )
@@ -346,10 +346,10 @@ def find_shots_with_scene_ref(scene_uri: Uri) -> list[Uri]:
     affected = []
     scene_uri_str = str(scene_uri)
 
-    for entity in shot_entities:
-        scene_ref = get_scene_ref(entity.uri)
+    for shot_uri in shot_uris:
+        scene_ref = get_scene_ref(shot_uri)
         if scene_ref and str(scene_ref) == scene_uri_str:
-            affected.append(entity.uri)
+            affected.append(shot_uri)
 
     return affected
 
@@ -367,7 +367,7 @@ def find_all_shots_using_scene(scene_uri: Uri) -> list[Uri]:
     Returns:
         List of entity URIs that use this scene (directly or inherited)
     """
-    shot_entities = api.config.list_entities(
+    shot_uris = api.config.list_entity_uris(
         Uri.parse_unsafe('entity:/shots'),
         closure=True
     )
@@ -375,11 +375,11 @@ def find_all_shots_using_scene(scene_uri: Uri) -> list[Uri]:
     affected = []
     scene_uri_str = str(scene_uri)
 
-    for entity in shot_entities:
+    for shot_uri in shot_uris:
         # Get resolved scene (with inheritance)
-        resolved_scene, _ = get_inherited_scene_ref(entity.uri)
+        resolved_scene, _ = get_inherited_scene_ref(shot_uri)
         if resolved_scene and str(resolved_scene) == scene_uri_str:
-            affected.append(entity.uri)
+            affected.append(shot_uri)
 
     return affected
 
@@ -558,11 +558,12 @@ def list_available_assets() -> list[Uri]:
     Returns:
         List of all asset URIs from the database
     """
-    asset_entities = api.config.list_entities(
-        filter=Uri.parse_unsafe('entity:/assets'),
-        closure=True
-    )
-    return [
-        entity.uri for entity in asset_entities
-        if is_terminal_entity(api.config, entity.uri)
-    ]
+    with api.config.coherent():
+        asset_uris = api.config.list_entity_uris(
+            filter=Uri.parse_unsafe('entity:/assets'),
+            closure=True
+        )
+        return [
+            uri for uri in asset_uris
+            if is_terminal_entity(api.config, uri)
+        ]

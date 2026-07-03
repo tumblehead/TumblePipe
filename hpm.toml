@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.19.0"
+version = "1.20.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -36,6 +36,9 @@ platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 [runtime]
 TH_PIPELINE_PATH = { method = "set", value = "$HPM_PACKAGE_ROOT" }
 ASSET_BROWSER_CATALOG_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/asset_browser_catalogs" }
+# Read-only network-catalog entries (recipes) shipped with the package —
+# scanned by tumbletrove's asset browser (> 0.9.1); older versions ignore it.
+ASSET_BROWSER_NETWORK_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/recipes" }
 TH_PROJECT_PATH = { method = "set", value = "" }
 TH_CONFIG_PATH = { method = "set", value = "$TH_PROJECT_PATH/_config" }
 TH_EXPORT_PATH = { method = "set", value = "$TH_PROJECT_PATH/export" }
@@ -98,6 +101,7 @@ include = [
     "LICENSE",
     "hpm.toml",
     "asset_browser_catalogs/**",
+    "recipes/**",
     "otls/**",
     "python/tumblepipe/**",
     "python3.11libs/**",

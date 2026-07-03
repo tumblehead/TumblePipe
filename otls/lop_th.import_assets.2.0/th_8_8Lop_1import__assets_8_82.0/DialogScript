@@ -97,11 +97,7 @@
                     [ "" ]
                     [ "index = int(kwargs['parm'].name()[len('variant'):])" ]
                     [ "node = import_assets.ImportAssets(hou.pwd())" ]
-                    [ "variant_names = node.list_variant_names(index)" ]
-                    [ "variant_name = node.get_variant_name(index)" ]
-                    [ "if variant_name is None or variant_name not in variant_names:" ]
-                    [ "    node.set_variant_name(index, variant_names[0])" ]
-                    [ "return util.list_to_menu(variant_names)" ]
+                    [ "return util.list_to_menu(node.list_variant_names(index))" ]
                     language python
                 }
                 parmtag { "script_callback_language" "python" }
@@ -119,11 +115,7 @@
                     [ "" ]
                     [ "index = int(kwargs['parm'].name()[len('version'):])" ]
                     [ "node = import_assets.ImportAssets(hou.pwd())" ]
-                    [ "version_names = node.list_version_names(index)" ]
-                    [ "version_name = node.get_version_name(index)" ]
-                    [ "if version_name is None or version_name not in version_names:" ]
-                    [ "    node.set_version_name(index, version_names[0])" ]
-                    [ "return util.list_to_menu(version_names)" ]
+                    [ "return util.list_to_menu(node.list_version_names(index))" ]
                     language python
                 }
                 parmtag { "script_callback_language" "python" }
@@ -220,7 +212,7 @@
             type    string
             default { "" }
             menutoggle {
-                [ "opmenu -l -a /stage/import_assets1/dive/layout_assets primpattern" ]
+                [ "opmenu -l -a dive/layout_assets primpattern" ]
             }
             parmtag { "autoscope" "0000000000000000" }
             parmtag { "script_action" "import loputils\nimport toolutils\nkwargs['node'].parm('apply').pressButton()\nloputils.selectPrimsInParm(kwargs, True,\n                           inputidx = -1)\nkwargs['parmtuple'][0].pressButton()" }
@@ -403,7 +395,7 @@
         invisible
         default { "" }
         menutoggle {
-            [ "opmenu -l -a /stage/import_assets1/dive/layout_assets physprimpattern" ]
+            [ "opmenu -l -a dive/layout_assets physprimpattern" ]
         }
         parmtag { "autoscope" "0000000000000000" }
         parmtag { "script_action" "import loputils\nimport toolutils\nsv = toolutils.sceneViewer()\ntry:\n    sv.runStateCommand('startphyssel')\nexcept:\n	 pass\nloputils.selectPrimsInParm(kwargs, True,\n                           inputidx = -1)\n" }

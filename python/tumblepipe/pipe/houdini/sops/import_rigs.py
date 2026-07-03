@@ -34,14 +34,15 @@ class ImportRigs(ns.Node):
         super().__init__(native)
 
     def list_asset_uris(self) -> list[Uri]:
-        asset_entities = api.config.list_entities(
-            filter=Uri.parse_unsafe('entity:/assets'),
-            closure=True
-        )
-        return [
-            entity.uri for entity in asset_entities
-            if is_terminal_entity(api.config, entity.uri)
-        ]
+        with api.config.coherent():
+            asset_uris = api.config.list_entity_uris(
+                filter=Uri.parse_unsafe('entity:/assets'),
+                closure=True
+            )
+            return [
+                uri for uri in asset_uris
+                if is_terminal_entity(api.config, uri)
+            ]
 
     def list_entity_uris(self, index: int) -> list[Uri]:
         """List asset URIs excluding those already used by other indices."""

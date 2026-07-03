@@ -34,11 +34,10 @@ class Playblast(ns.Node):
         return stage.GetPseudoRoot()
 
     def list_shot_uris(self) -> list[Uri]:
-        shot_entities = api.config.list_entities(
+        return api.config.list_entity_uris(
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
-        return [entity.uri for entity in shot_entities]
 
     def list_department_names(self):
         return [d.name for d in list_departments('shots') if d.renderable]
