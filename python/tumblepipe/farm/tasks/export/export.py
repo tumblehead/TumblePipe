@@ -16,10 +16,10 @@ from tumblepipe.api import (
     api
 )
 from tumblepipe.util.io import (
-    load_json,
     store_json
 )
 from tumblepipe.util.uri import Uri
+from tumblepipe.farm import _common
 from tumblepipe.apps.houdini import Hython
 from tumblepipe.farm.jobs.houdini.render import job as render_job
 from tumblepipe.farm.tasks.env import get_hython_env, print_env
@@ -247,23 +247,7 @@ def _is_valid_config(config):
     return True
 
 def cli():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('config_path', type=str)
-    parser.add_argument('start_frame', type=int)
-    parser.add_argument('end_frame', type=int)
-    args = parser.parse_args()
-
-    # Load config data
-    config_path = Path(args.config_path)
-    config = load_json(config_path)
-    if config is None:
-        return _error(f'Config file not found: {config_path}')
-    if not _is_valid_config(config):
-        return _error(f'Invalid config file: {config_path}')
-    
-    # Run main
-    return main(config)
+    return _common.run_task_cli(_is_valid_config, main)
 
 if __name__ == '__main__':
     logging.basicConfig(

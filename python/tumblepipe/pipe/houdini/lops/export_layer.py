@@ -112,6 +112,23 @@ def _list_expected_asset_uris(native) -> set[str]:
                 if instances_parm.eval() <= 0:
                     continue
                 entity_raws.append(entity_parm.eval())
+        elif type_base == 'import_layer':
+            # import_layer tags the imported entity's root prim when it
+            # brings in another asset's department layer. 'from_context'
+            # (and any self-import) is the workfile's own entity, which
+            # stays untagged — the caller discards the exporting entity's
+            # URI from the expected set.
+            entity_parm = ancestor.parm('entity')
+            entity_raw = entity_parm.eval() if entity_parm is not None else ''
+            loaded = any(
+                ancestor.parm(f'import_enable{index}') is not None
+                and ancestor.parm(f'import_enable{index}').eval()
+                and ancestor.parm(f'import_filepath{index}') is not None
+                and ancestor.parm(f'import_filepath{index}').eval()
+                for index in (1, 2)
+            )
+            if entity_raw.startswith('entity:/assets/') and loaded:
+                entity_raws.append(entity_raw)
         for entity_raw in entity_raws:
             if not entity_raw:
                 continue
@@ -636,7 +653,13 @@ class ExportLayer(ns.Node):
         # metadata: list_assets() (and every downstream consumer) only sees
         # prims with customData, so such an asset would silently drop out of
         # the export and out of every import that follows.
-        dropped_prims = util.list_dropped_asset_prims(root)
+        # The exporting entity's own root prim legitimately carries no
+        # metadata (it only gets tagged when another workfile imports it),
+        # so exclude it from the sibling check.
+        dropped_prims = util.list_dropped_asset_prims(
+            root,
+            ignore_prim_paths={util.uri_to_prim_path(entity_uri)}
+        )
         if dropped_prims:
             bullets = "\n  - ".join(dropped_prims)
             raise ExportLayerError(
@@ -656,6 +679,9 @@ class ExportLayer(ns.Node):
         # every asset dropped). Cross-check the scrape against what the
         # upstream import nodes say they placed on the stage.
         expected_asset_uris = _list_expected_asset_uris(native)
+        # A self-import (import_layer pulling the exporting entity's own
+        # layer) is deliberately untagged — never expect it in the scrape.
+        expected_asset_uris.discard(str(entity_uri))
         missing_asset_uris = sorted(expected_asset_uris - set(assets_by_uri))
         if missing_asset_uris:
             bullets = "\n  - ".join(missing_asset_uris)

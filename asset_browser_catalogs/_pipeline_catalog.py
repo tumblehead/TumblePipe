@@ -1420,10 +1420,10 @@ class PipelineCatalog(Catalog):
         wouldn't fire because the current detail isn't this container.
         """
         try:
-            fresh = self.refresh_single_asset(asset_id)
+            fresh = self.get_asset(asset_id)
         except Exception:
             log.debug(
-                "refresh_single_asset failed for %s", asset_id,
+                "get_asset failed for %s", asset_id,
                 exc_info=True,
             )
             return
@@ -1701,7 +1701,7 @@ class PipelineCatalog(Catalog):
         # pumps during the crash dialog), accepting the brief GUI block.
         self._scene.emergency_save_current_scene()
 
-    def get_quick_action_hover(self, action_id: str) -> str | None:
+    def get_quick_action_hover_html(self, action_id: str) -> str | None:
         """Return rich-text HTML for the hover popup above a quick action.
 
         - ``save``: last mtime of the currently-loaded hip file.
@@ -3133,7 +3133,7 @@ class PipelineCatalog(Catalog):
             },
         )
 
-    def refresh_single_asset(self, asset_id: str):
+    def get_asset(self, asset_id: str):
         """Rebuild an Asset object with fresh workfile info.
 
         Returns a new Asset with updated department versions, or None.

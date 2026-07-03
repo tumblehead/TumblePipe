@@ -2,7 +2,6 @@ from functools import partial
 from pathlib import Path
 import json
 import sys
-import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent

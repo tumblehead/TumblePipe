@@ -1,7 +1,6 @@
 from pathlib import Path
 import json
 import sys
-import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -9,7 +8,6 @@ if tumblehead_packages_path not in sys.path:
     sys.path.append(str(tumblehead_packages_path))
 
 from tumblepipe.api import (
-    get_user_name,
     path_str,
     local_path,
     to_windows_path,

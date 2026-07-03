@@ -18,6 +18,21 @@ from tumblepipe.pipe.paths.version import (
 ###############################################################################
 # Render Paths
 ###############################################################################
+def _load_frame_range(context_path: Path) -> Optional[BlockRange]:
+    context = load_json(context_path)
+    if context is None: return None
+    first_frame = context.get('first_frame')
+    if first_frame is None: return None
+    last_frame = context.get('last_frame')
+    if last_frame is None: return None
+    step_size = context.get('step_size')
+    if step_size is None: return None
+    return BlockRange(
+        first_frame,
+        last_frame,
+        step_size
+    )
+
 @dataclass(frozen=True)
 class AOV:
     path: Path
@@ -27,37 +42,17 @@ class AOV:
 
     def get_aov_frame_path(self, index_pattern: str) -> Path:
         return self.path / f'{self.name}.{index_pattern}.{self.suffix}'
-    
+
     def get_frame_range(self) -> Optional[BlockRange]:
-        context_path = self.path.parent / 'context.json'
-        context = load_json(context_path)
-        if context is None: return None
-        first_frame = context.get('first_frame')
-        if first_frame is None: return None
-        last_frame = context.get('last_frame')
-        if last_frame is None: return None
-        step_size = context.get('step_size')
-        if step_size is None: return None
-        return BlockRange(
-            first_frame,
-            last_frame,
-            step_size
-        )
+        return _load_frame_range(self.path.parent / 'context.json')
 
     def is_complete(self, expected_frame_range: BlockRange) -> bool:
         frame_path = self.get_aov_frame_path('*')
-        actual_frame_indices = list(sorted(map(
-            lambda path: int(path.stem.split('.')[-1]),
-            frame_path.parent.glob(frame_path.name)
-        )))
-        expected_count = len(expected_frame_range)
-        actual_count = len(actual_frame_indices)
-        if expected_count != actual_count: return False
-        for expected_frame, actual_frame in zip(
-            list(expected_frame_range),
-            actual_frame_indices):
-            if expected_frame != actual_frame: return False
-        return True
+        actual_frame_indices = sorted(
+            int(path.stem.split('.')[-1])
+            for path in frame_path.parent.glob(frame_path.name)
+        )
+        return actual_frame_indices == list(expected_frame_range)
 
 @dataclass(frozen=True)
 class Layer:
@@ -69,20 +64,7 @@ class Layer:
     suffix: str
     
     def get_frame_range(self) -> Optional[BlockRange]:
-        context_path = self.path / 'context.json'
-        context = load_json(context_path)
-        if context is None: return None
-        first_frame = context.get('first_frame')
-        if first_frame is None: return None
-        last_frame = context.get('last_frame')
-        if last_frame is None: return None
-        step_size = context.get('step_size')
-        if step_size is None: return None
-        return BlockRange(
-            first_frame,
-            last_frame,
-            step_size
-        )
+        return _load_frame_range(self.path / 'context.json')
 
     def get_frame_path(self, index_pattern: str) -> Path:
         return self.path / f'{self.name}.{index_pattern}.{self.suffix}'
@@ -105,10 +87,13 @@ class Layer:
         if aov is None: return None
         return aov if aov.is_complete(frame_range) else None
 
-    def is_complete(self) -> bool:
-        frame_range = self.get_frame_range()
+    def is_complete(self, expected_frame_range: Optional[BlockRange] = None) -> bool:
+        frame_range = expected_frame_range
+        if frame_range is None:
+            frame_range = self.get_frame_range()
         if frame_range is None: return False
         if len(self.aovs) == 0:
+            # AOV-less layers write frames directly at the layer path
             layer_frame = AOV(
                 path = self.path,
                 label = self.label,
@@ -116,9 +101,7 @@ class Layer:
                 suffix = self.suffix
             )
             return layer_frame.is_complete(frame_range)
-        for aov in self.aovs.values():
-            if not aov.is_complete(frame_range): return False
-        return True
+        return all(aov.is_complete(frame_range) for aov in self.aovs.values())
 
 @dataclass(frozen=True)
 class Render:
@@ -181,35 +164,14 @@ class Render:
         expected_frame_range: Optional[BlockRange] = None
         ) -> Optional[Layer]:
         if layer_name not in self.layers: return None
-        version_names = list(self.layers[layer_name].keys())
-        if len(version_names) == 0: return None
-        version_names.sort(key = api.naming.get_version_code)
+        version_names = sorted(
+            self.layers[layer_name].keys(),
+            key = api.naming.get_version_code
+        )
         for version_name in reversed(version_names):
             layer = self.layers[layer_name][version_name]
-            if expected_frame_range is not None:
-                # Validate against expected frame range
-                if len(layer.aovs) == 0:
-                    layer_frame = AOV(
-                        path = layer.path,
-                        label = layer.label,
-                        name = layer.name,
-                        suffix = layer.suffix
-                    )
-                    if not layer_frame.is_complete(expected_frame_range):
-                        continue
-                else:
-                    all_complete = True
-                    for aov in layer.aovs.values():
-                        if not aov.is_complete(expected_frame_range):
-                            all_complete = False
-                            break
-                    if not all_complete:
-                        continue
-            else:
-                # Use layer's own frame range from context.json
-                if not layer.is_complete():
-                    continue
-            return layer
+            if layer.is_complete(expected_frame_range):
+                return layer
         return None
 
     def get_newer_latest_complete_layer(
@@ -448,98 +410,67 @@ class RenderContext:
         min_render_department: Optional[str] = None,
         aov_filter: Optional[callable] = None
         ) -> dict[str, dict[str, tuple[str, str, AOV, str]]]:
-        latest_aovs = {}
 
-        # Helper to get department priority index, returns -1 if not in list
         def get_dept_priority(dept, priority_list):
+            if dept is None: return -1
             try:
                 return priority_list.index(dept)
             except ValueError:
                 return -1
 
-        # Determine minimum thresholds
-        min_shot_idx = get_dept_priority(min_shot_department, shot_department_priority) if min_shot_department else -1
-        min_render_idx = get_dept_priority(min_render_department, render_department_priority) if min_render_department else -1
+        def get_latest_layer_with_frame_range(layer_versions):
+            version_names = sorted(
+                layer_versions.keys(),
+                key = api.naming.get_version_code
+            )
+            for version_name in reversed(version_names):
+                layer = layer_versions[version_name]
+                frame_range = layer.get_frame_range()
+                if frame_range is None: continue
+                return version_name, layer, frame_range
+            return None
 
-        # Scan all available render departments
-        for render_department_name in self.renders.keys():
-            # Check if this department meets minimum threshold
+        def get_shot_department(layer):
+            context = load_json(layer.path / 'context.json')
+            return context.get('department') if context else None
+
+        min_shot_idx = get_dept_priority(min_shot_department, shot_department_priority)
+        min_render_idx = get_dept_priority(min_render_department, render_department_priority)
+
+        latest_aovs = {}
+        # Rank of each stored entry: (shot dept, render dept, version) priority,
+        # compared lexicographically - higher wins.
+        ranks = {}
+
+        for render_department_name, render in self.renders.items():
+            # Department must meet the minimum threshold in at least one priority list
             shot_idx = get_dept_priority(render_department_name, shot_department_priority)
             render_idx = get_dept_priority(render_department_name, render_department_priority)
-
-            # Department must be in at least one priority list and meet minimum threshold
-            is_valid_shot = shot_idx >= min_shot_idx
-            is_valid_render = render_idx >= min_render_idx
-
-            if not (is_valid_shot or is_valid_render):
+            if shot_idx < min_shot_idx and render_idx < min_render_idx:
                 continue
 
-            render = self.renders[render_department_name]
-
             for layer_name, layer_versions in render.layers.items():
-                # Get all versions and find the latest complete one
-                version_names = list(layer_versions.keys())
-                if len(version_names) == 0:
-                    continue
-                version_names.sort(key=api.naming.get_version_code)
+                # Only the latest version with a frame range is considered per layer
+                latest = get_latest_layer_with_frame_range(layer_versions)
+                if latest is None: continue
+                version_name, layer, frame_range = latest
 
-                # Try versions from newest to oldest
-                for version_name in reversed(version_names):
-                    layer = layer_versions[version_name]
-                    frame_range = layer.get_frame_range()
-                    if frame_range is None:
-                        continue
+                shot_dept = get_shot_department(layer)
+                rank = (
+                    get_dept_priority(shot_dept, shot_department_priority),
+                    get_dept_priority(render_department_name, render_department_priority),
+                    api.naming.get_version_code(version_name)
+                )
 
-                    for aov_name, aov in layer.aovs.items():
-                        # Apply filter if provided
-                        if aov_filter is not None and not aov_filter(aov_name):
-                            continue
-
-                        # Verify AOV is complete
-                        if not aov.is_complete(frame_range):
-                            continue
-
-                        # Initialize layer dict if needed
-                        if layer_name not in latest_aovs:
-                            latest_aovs[layer_name] = {}
-
-                        # Get shot department from layer context
-                        context_path = layer.path / 'context.json'
-                        context = load_json(context_path)
-                        curr_shot_dept = context.get('department') if context else None
-                        curr_shot_idx = get_dept_priority(curr_shot_dept, shot_department_priority) if curr_shot_dept else -1
-                        curr_render_idx = get_dept_priority(render_department_name, render_department_priority)
-
-                        # Update if this is a better version
-                        if aov_name not in latest_aovs[layer_name]:
-                            latest_aovs[layer_name][aov_name] = (
-                                render_department_name, version_name, aov, curr_shot_dept
-                            )
-                        else:
-                            prev_render_dept, prev_version, _, prev_shot_dept = latest_aovs[layer_name][aov_name]
-                            prev_shot_idx = get_dept_priority(prev_shot_dept, shot_department_priority) if prev_shot_dept else -1
-                            prev_render_idx = get_dept_priority(prev_render_dept, render_department_priority)
-
-                            # Hierarchical comparison: shot dept > render dept > version
-                            should_update = False
-                            if curr_shot_idx > prev_shot_idx:
-                                should_update = True
-                            elif curr_shot_idx == prev_shot_idx:
-                                if curr_render_idx > prev_render_idx:
-                                    should_update = True
-                                elif curr_render_idx == prev_render_idx:
-                                    prev_version_code = api.naming.get_version_code(prev_version)
-                                    curr_version_code = api.naming.get_version_code(version_name)
-                                    if curr_version_code > prev_version_code:
-                                        should_update = True
-
-                            if should_update:
-                                latest_aovs[layer_name][aov_name] = (
-                                    render_department_name, version_name, aov, curr_shot_dept
-                                )
-
-                    # Only take the latest version from this layer
-                    break
+                for aov_name, aov in layer.aovs.items():
+                    if aov_filter is not None and not aov_filter(aov_name): continue
+                    if not aov.is_complete(frame_range): continue
+                    key = (layer_name, aov_name)
+                    if key in ranks and rank <= ranks[key]: continue
+                    ranks[key] = rank
+                    latest_aovs.setdefault(layer_name, {})[aov_name] = (
+                        render_department_name, version_name, aov, shot_dept
+                    )
 
         return latest_aovs
 

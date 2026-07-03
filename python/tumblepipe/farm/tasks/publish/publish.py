@@ -1,5 +1,4 @@
 from tempfile import TemporaryDirectory
-from functools import partial
 from pathlib import Path
 import logging
 import sys
@@ -15,36 +14,20 @@ from tumblepipe.api import (
     to_windows_path,
     api
 )
-from tumblepipe.util.io import (
-    load_json,
-    store_json
-)
+from tumblepipe.util.io import store_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Hython
+from tumblepipe.farm import _common
 from tumblepipe.farm.tasks.env import get_hython_env, job_data_dir
+from tumblepipe.farm.tasks.publish import _spec
 from tumblepipe.config.department import is_renderable
+from tumblepipe.pipe.graph import get_entity_type as _get_entity_type
 from tumblepipe.pipe.paths import (
     next_export_path
 )
 from tumblepipe.farm.tasks.env import print_env
 
-def _error(msg):
-    logging.error(msg)
-    return 1
-
-
-def _get_entity_type(entity_uri: Uri) -> str | None:
-    """Get entity type from URI ('shot' or 'asset')."""
-    if entity_uri.purpose != 'entity':
-        return None
-    if len(entity_uri.segments) < 1:
-        return None
-    context = entity_uri.segments[0]
-    if context == 'shots':
-        return 'shot'
-    if context == 'assets':
-        return 'asset'
-    return None
+_error = _common.error
 
 
 def _get_asset_uri(entity_uri: Uri) -> Uri | None:
@@ -161,107 +144,9 @@ def main(config):
     print('Success')
     return 0
 
-"""
-config = {
-    'entity': {
-        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
-        'department': 'string'
-    },
-    'settings': {
-        'priority': 'int',
-        'pool_name': 'string',
-        'first_frame': 'int',
-        'last_frame': 'int'
-    },
-    'tasks': {
-        'publish': {
-            'downstream_departments': 'list[string]'
-        }
-    }
-}
-"""
-
-def _is_valid_config(config):
-
-    def _is_str(datum):
-        return isinstance(datum, str)
-    
-    def _is_int(datum):
-        return isinstance(datum, int)
-    
-    def _is_list(datum):
-        return isinstance(datum, list)
-
-    def _check(value_checker, data, key):
-        if key not in data: return False
-        if not value_checker(data[key]): return False
-        return True
-    
-    _check_str = partial(_check, _is_str)
-    _check_int = partial(_check, _is_int)
-    _check_list = partial(_check, _is_list)
-
-    def _valid_entity(entity):
-        if not isinstance(entity, dict): return False
-        if not _check_str(entity, 'uri'): return False
-        if not _check_str(entity, 'department'): return False
-        return True
-    
-    def _valid_settings(settings):
-        if not isinstance(settings, dict): return False
-        if not _check_int(settings, 'priority'): return False
-        if not _check_str(settings, 'pool_name'): return False
-        if not _check_int(settings, 'first_frame'): return False
-        if not _check_int(settings, 'last_frame'): return False
-        return True
-    
-    def _valid_tasks(tasks):
-
-        def _valid_publish(publish):
-            if not isinstance(publish, dict): return False
-            if 'downstream_departments' in publish:
-                if not _check_list(publish, 'downstream_departments'): return False
-                for dept in publish['downstream_departments']:
-                    if not isinstance(dept, str): return False
-            return True
-
-        if not isinstance(tasks, dict): return False
-        if 'publish' in tasks:
-            if not _valid_publish(tasks['publish']): return False
-        return True
-    
-    if not isinstance(config, dict): return False
-    if 'entity' not in config: return False
-    if not _valid_entity(config['entity']): return False
-    if 'settings' not in config: return False
-    if not _valid_settings(config['settings']): return False
-    if 'tasks' not in config: return False
-    if not _valid_tasks(config['tasks']): return False
-    return True
-
 def cli():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('config_path', type=str)
-    parser.add_argument('start_frame', type=int)
-    parser.add_argument('end_frame', type=int)
-    args = parser.parse_args()
-    
-   # Load config data
-    config_path = Path(args.config_path)
-    config = load_json(config_path)
-    if config is None:
-        return _error(f'Config file not found: {config_path}')
-    if not _is_valid_config(config):
-        return _error(f'Invalid config file: {config_path}')
-
-    # Run main
-    return main(config)
+    return _common.run_task_cli(_spec.is_valid_config, main)
 
 if __name__ == '__main__':
-    logging.basicConfig(
-        level = logging.DEBUG,
-        format = '%(message)s',
-        stream = sys.stdout
-    )
+    _common.configure_logging()
     sys.exit(cli())

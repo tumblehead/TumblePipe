@@ -1,5 +1,7 @@
 import json
 
+from pxr import Usd
+
 from tumblepipe.config.timeline import BlockRange, FrameRange
 from tumblepipe.util.uri import Uri
 
@@ -23,9 +25,25 @@ def list_to_checked_menu(items: list[str], checked: list[str]) -> list[str]:
         result.append(f'{item} <--' if item in checked else item)
     return result
 
+def _iter_prim_children(prim):
+    """Children including instance proxies and undefined (over) prims.
+
+    GetChildren() skips both, and each hides tracked assets from every
+    scrape built on this traversal: instanceable copies (e.g. Duplicate
+    LOP output) hold their assets in instance proxies, and an asset
+    imported via a department-layer import composes as a typeless *over*
+    once the layerbreak discards its def — the customData survives on
+    the over, and the export scrape must still see it so staging can
+    re-reference the asset's real definition downstream.
+    """
+    predicate = Usd.TraverseInstanceProxies(
+        Usd.PrimIsActive & Usd.PrimIsLoaded & ~Usd.PrimIsAbstract
+    )
+    return prim.GetFilteredChildren(predicate)
+
 def iter_scene(prim, predicate):
     if not prim.IsActive(): return
-    for subprim in prim.GetChildren():
+    for subprim in _iter_prim_children(prim):
         if predicate(subprim):
             yield subprim
             continue
@@ -137,36 +155,6 @@ def add_metadata_input(metadata, input_datum):
     input_data.add(json.dumps(input_datum))
     metadata['inputs'] = list(map(json.loads, input_data))
 
-def get_source_department(inputs: list[dict], department_order: list[str]) -> str | None:
-    """
-    Find the source department (first shot department) from inputs array.
-
-    Extracts all shot department entries from inputs and returns the one
-    that appears earliest in the pipeline department order.
-
-    Args:
-        inputs: List of input dicts with 'uri' and 'department' keys
-        department_order: List of department names in pipeline order
-
-    Returns:
-        The source department name, or None if no shot entries found
-    """
-    # Extract shot department entries (URIs starting with entity:/shots/)
-    shot_depts = [
-        inp['department'] for inp in inputs
-        if inp.get('uri', '').startswith('entity:/shots/')
-    ]
-    if not shot_depts:
-        return None
-
-    # Return the one earliest in pipeline order
-    for dept in department_order:
-        if dept in shot_depts:
-            return dept
-
-    # Fallback to first shot department found
-    return shot_depts[0]
-
 def remove_metadata(prim):
     prim.ClearMetadata('customData')
 
@@ -229,7 +217,7 @@ def list_assets(root):
             results.append(info)
     return results
 
-def list_dropped_asset_prims(root):
+def list_dropped_asset_prims(root, ignore_prim_paths=()):
     """Return prim paths that sit beside a real asset but carry no metadata.
 
     An asset's parent (its category prim) is proven to be a category by the
@@ -237,19 +225,33 @@ def list_dropped_asset_prims(root):
     child of that same parent that lacks metadata is an asset whose customData was
     dropped somewhere between import and export: because list_assets() only
     sees prims with metadata, such a prim silently vanishes from the export
-    and from every downstream import. The classic trigger is multi-instance
-    duplication (the base prim keeps its metadata but the duplicated instances
-    don't) or a layerbreak stripping the authored customData.
+    and from every downstream import. Triggers include a layerbreak
+    stripping the authored customData, a stale import node whose metadata
+    script never cooked against the current entity, or (historically) the
+    scrape itself skipping instance proxies — see _iter_prim_children.
 
     Mirrors iter_scene's traversal: we stop at the first metadata boundary, so
     an asset's own internal sub-Scopes (e.g. the 'mtl' material scope) are
     never mistaken for dropped assets.
 
+    Two kinds of metadata-less sibling are NOT drops:
+    - a grouping prim whose subtree holds metadata-carrying assets (artist
+      set-dressing Xforms, e.g. Duplicate LOP destination prims) — we
+      descend into it and keep checking instead;
+    - a prim listed in ignore_prim_paths (the exporting entity's own root,
+      which only gets tagged when some *other* workfile imports it) — also
+      descended into, not flagged.
+
     Prims carrying the 'inlined' marker (see mark_inlined) are deliberately
     baked into the export by an import node in 'inline' mode — they are
     neither drops nor descended into.
     """
+    ignored = set(ignore_prim_paths)
     dropped = []
+
+    def subtree_has_asset(prim):
+        def has_metadata(p): return get_metadata(p) is not None
+        return next(iter_scene(prim, has_metadata), None) is not None
 
     def walk(prim):
         # Categories and asset roots compose as Scope OR Xform depending on
@@ -257,23 +259,26 @@ def list_dropped_asset_prims(root):
         # them Xform via set_kinds) — accept both or Xform-typed assets
         # become invisible to the guard.
         scope_children = [
-            child for child in prim.GetChildren()
+            child for child in _iter_prim_children(prim)
             if child.GetTypeName() in ('Scope', 'Xform')
         ]
         has_asset = any(get_metadata(child) is not None for child in scope_children)
-        if has_asset:
-            # This prim is a category: any metadata-less Scope sibling of a
-            # real asset is a drop. Don't descend past this boundary.
-            dropped.extend(
-                str(child.GetPath())
-                for child in scope_children
-                if get_metadata(child) is None and not is_inlined(child)
-            )
+        if not has_asset:
+            # No asset here yet — keep looking deeper for category scopes.
+            for child in scope_children:
+                if is_inlined(child): continue
+                walk(child)
             return
-        # No asset here yet — keep looking deeper for category scopes.
+        # This prim is a category: a metadata-less Scope/Xform sibling of a
+        # real asset is a drop, unless it is ignored or merely groups
+        # tracked assets deeper down. Don't descend past asset boundaries.
         for child in scope_children:
+            if get_metadata(child) is not None: continue
             if is_inlined(child): continue
-            walk(child)
+            if str(child.GetPath()) in ignored or subtree_has_asset(child):
+                walk(child)
+                continue
+            dropped.append(str(child.GetPath()))
 
     walk(root)
     return dropped

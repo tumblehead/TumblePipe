@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.18.2"
+version = "1.19.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -385,14 +385,6 @@ label = "th create model"
 category = "Lop"
 tab_submenu = "_TumblePipe/pipeline"
 source = "otls/lop_th.create_model.1.0.hda"
-
-[[operators]]
-kind = "hda"
-type_name = "th::duplicate::1.0"
-label = "th duplicate"
-category = "Lop"
-tab_submenu = "_TumblePipe/utils"
-source = "otls/lop_th.duplicate.1.0.hda"
 
 [[operators]]
 kind = "hda"

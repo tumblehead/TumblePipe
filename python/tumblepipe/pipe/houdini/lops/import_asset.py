@@ -84,14 +84,67 @@ if prim.IsValid():
 '''
     return script
 
+def _expand_staged_layers(
+    staged_path: Path,
+    excluded: set[str],
+    latest: bool,
+    _visited: set | None = None
+) -> list[str]:
+    """Flatten a staged file into resolved leaf layer paths, dropping
+    excluded departments.
+
+    A staged file may sublayer OTHER assets' staged files — the tracked
+    assets of a set-style asset. Those refs carry no dept= parameter, so a
+    flat filter would load them whole and the excluded department would
+    ride back in through every subasset. Recurse into them instead, so an
+    exclusion applies to the entire nesting. Returns strongest-first order
+    (matching the staged file's sublayer order); revisited staged files
+    (cyclic or diamond nesting) are expanded once.
+    """
+    from tumblepipe import resolver
+
+    if _visited is None:
+        _visited = set()
+    key = os.path.normcase(os.path.normpath(str(staged_path)))
+    if key in _visited:
+        return []
+    _visited.add(key)
+
+    layers = []
+    for department, ref in _list_staged_layers(staged_path):
+        if department in excluded:
+            continue
+        if ref.startswith('entity:'):
+            uri = Uri.parse_unsafe(ref)
+            # Strip version when in 'latest' mode so the resolver
+            # picks the actual latest department export.
+            if latest and 'version' in uri.query:
+                stripped = dict(uri.query)
+                del stripped['version']
+                uri = Uri(uri.purpose, uri.segments, stripped)
+            layer_resolved = resolver.resolve_entity_uri(str(uri))
+        else:
+            layer_resolved = os.path.normpath(str(staged_path.parent / ref))
+        if not layer_resolved or not Path(layer_resolved).exists():
+            continue
+        if department is None and '_staged' in Path(layer_resolved).parts:
+            layers.extend(_expand_staged_layers(
+                Path(layer_resolved), excluded, latest, _visited
+            ))
+        else:
+            layers.append(layer_resolved)
+    return layers
+
 def _list_staged_layers(staged_file_path: Path) -> list[tuple[str | None, str]]:
     """Parse the staged .usda layer stack into (department, ref) pairs.
 
     The staged asset file sublayers one layer per exported department,
-    strongest first. The department is read from the entity URI's dept=
-    query param, falling back to the directory layout
+    strongest first, followed by the staged files of any tracked nested
+    assets. The department is read from the entity URI's dept= query
+    param, falling back to the directory layout
     (../{variant}/{department}/{version}/file.usd) for filesystem refs
-    in old staged files. Refs with no recognizable department yield None.
+    in old staged files. Refs with no recognizable department yield None
+    (nested-asset staged refs always do — they carry no dept= param).
     """
     layers = []
     content = staged_file_path.read_text()
@@ -293,30 +346,14 @@ class ImportAsset(ns.Node):
         excluded = set(self.get_exclude_department_names())
         layer_paths = [resolved]
         if excluded:
-            included = [
-                (department, ref)
-                for department, ref in _list_staged_layers(Path(resolved))
-                if department not in excluded
-            ]
-            # Staged sublayers are strongest-first; the Sublayer LOP
-            # composes its last file strongest, so load in reverse.
-            layer_paths = []
-            for department, ref in reversed(included):
-                if ref.startswith('entity:'):
-                    uri = Uri.parse_unsafe(ref)
-                    # Strip version when in 'latest' mode so the resolver
-                    # picks the actual latest department export.
-                    if version_name == 'latest' and 'version' in uri.query:
-                        stripped = dict(uri.query)
-                        del stripped['version']
-                        uri = Uri(uri.purpose, uri.segments, stripped)
-                    layer_resolved = resolver.resolve_entity_uri(str(uri))
-                else:
-                    layer_resolved = os.path.normpath(
-                        str(Path(resolved).parent / ref)
-                    )
-                if layer_resolved and Path(layer_resolved).exists():
-                    layer_paths.append(layer_resolved)
+            # Flatten the staged file (recursing into tracked-asset staged
+            # refs so the exclusion reaches nested assets too). The result
+            # is strongest-first; the Sublayer LOP composes its last file
+            # strongest, so load in reverse.
+            flattened = _expand_staged_layers(
+                Path(resolved), excluded, version_name == 'latest'
+            )
+            layer_paths = list(reversed(flattened))
 
         import_node = native.node('import')
         if not layer_paths:

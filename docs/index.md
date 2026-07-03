@@ -19,6 +19,7 @@ configuration
 :caption: Production
 :maxdepth: 2
 
+composition
 deadline
 ```
 

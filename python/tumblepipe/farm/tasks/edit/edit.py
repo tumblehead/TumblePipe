@@ -56,6 +56,62 @@ def _manifest_get(data, *path_steps):
         data = data.get(step)
     return data
 
+def _compare_with_manifest(
+    prev_data,
+    curr_data,
+    shot_department_priority,
+    render_department_priority
+    ):
+    """
+    Decide whether a resolved AOV beats the manifest entry it would replace.
+
+    Hierarchical comparison: shot dept > render dept > version.
+    Both entries are (shot_department, render_department, version) triples.
+    Returns (should_sync, message).
+    """
+    prev_shot_dept, prev_render_dept, prev_version = prev_data
+    curr_shot_dept, curr_render_dept, curr_version = curr_data
+
+    prev_shot_idx = shot_department_priority.index(prev_shot_dept)
+    curr_shot_idx = shot_department_priority.index(curr_shot_dept)
+    if prev_shot_idx > curr_shot_idx:
+        return False, f'already at higher shot department {prev_shot_dept}/{prev_render_dept}/{prev_version}'
+    if prev_shot_idx < curr_shot_idx:
+        return True, f'upgrading from {prev_shot_dept}/{prev_render_dept}/{prev_version} to {curr_shot_dept}/{curr_render_dept}/{curr_version}'
+
+    prev_render_idx = render_department_priority.index(prev_render_dept)
+    curr_render_idx = render_department_priority.index(curr_render_dept)
+    if prev_render_idx > curr_render_idx:
+        return False, f'already at higher render department {prev_render_dept}/{prev_version}'
+    if prev_render_idx < curr_render_idx:
+        return True, f'upgrading from {prev_render_dept}/{prev_version} to {curr_render_dept}/{curr_version}'
+
+    prev_version_code = api.naming.get_version_code(prev_version)
+    curr_version_code = api.naming.get_version_code(curr_version)
+    if prev_version_code >= curr_version_code:
+        return False, f'already at version {prev_render_dept}/{prev_version}'
+    return True, f'upgrading from {prev_render_dept}/{prev_version} to {curr_render_dept}/{curr_version}'
+
+def _sync_aov_frames(shot_uri, layer_name, aov_name, aov, render_range):
+    """Copy the AOV's frames into the edit folder."""
+    # Build output path using URI segments for hierarchy
+    uri_path_segments = shot_uri.segments[1:]
+    uri_name = '_'.join(uri_path_segments)
+    output_path = (
+        api.storage.resolve(Uri.parse_unsafe('edit:/')) /
+        '/'.join(uri_path_segments) /
+        layer_name /
+        aov_name /
+        f'{uri_name}.####.exr'
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Copy frames
+    for frame_index in render_range:
+        input_frame_path = aov.get_aov_frame_path(str(frame_index).zfill(4))
+        output_frame_path = _get_frame_path(output_path, frame_index)
+        shutil.copyfile(input_frame_path, output_frame_path)
+
 def main(shot_uri: Uri, purpose: str, render_range: BlockRange):
 
     # Print environment variables for debugging
@@ -107,10 +163,6 @@ def main(shot_uri: Uri, purpose: str, render_range: BlockRange):
                 print(f'  {layer_name}/{aov_name}: shot_dept={shot_dept}, render_dept={render_dept}, version={version}')
         print()
 
-    # Department priorities for manifest checking (matching resolve_latest_aovs hierarchy)
-    shot_department_priority = [d.name for d in list_departments('shots')]
-    render_department_priority = [d.name for d in list_departments('render')]
-
     # Sync each resolved layer/AOV combination
     synced_count = 0
     skipped_count = 0
@@ -121,66 +173,21 @@ def main(shot_uri: Uri, purpose: str, render_range: BlockRange):
             # Check manifest to see if we should skip
             prev_data = _manifest_get(manifest_data, shot_key, layer_name, aov_name)
             if prev_data is not None:
-                prev_shot_dept, prev_render_dept, prev_version = prev_data
-
-                # Hierarchical comparison: shot dept > render dept > version
-                prev_shot_idx = shot_department_priority.index(prev_shot_dept)
-                curr_shot_idx = shot_department_priority.index(shot_department_name)
-
-                # Compare shot department priority first
-                if prev_shot_idx > curr_shot_idx:
-                    print(f'Skip {layer_name}/{aov_name}: already at higher shot department {prev_shot_dept}/{prev_render_dept}/{prev_version}')
+                should_sync, message = _compare_with_manifest(
+                    prev_data,
+                    (shot_department_name, render_department_name, aov_version_name),
+                    shot_departments,
+                    render_departments
+                )
+                if not should_sync:
+                    print(f'Skip {layer_name}/{aov_name}: {message}')
                     skipped_count += 1
                     continue
-                elif prev_shot_idx < curr_shot_idx:
-                    # Current has higher shot department, always update
-                    print(f'Update {layer_name}/{aov_name}: upgrading from {prev_shot_dept}/{prev_render_dept}/{prev_version} to {shot_department_name}/{render_department_name}/{aov_version_name}')
-                    pass
-                else:
-                    # Same shot department - compare render department priority
-                    prev_render_idx = render_department_priority.index(prev_render_dept)
-                    curr_render_idx = render_department_priority.index(render_department_name)
-
-                    if prev_render_idx > curr_render_idx:
-                        print(f'Skip {layer_name}/{aov_name}: already at higher render department {prev_render_dept}/{prev_version}')
-                        skipped_count += 1
-                        continue
-                    elif prev_render_idx < curr_render_idx:
-                        # Current has higher render department, always update
-                        print(f'Update {layer_name}/{aov_name}: upgrading from {prev_render_dept}/{prev_version} to {render_department_name}/{aov_version_name}')
-                        pass
-                    else:
-                        # Same shot and render department - compare version
-                        prev_version_code = api.naming.get_version_code(prev_version)
-                        curr_version_code = api.naming.get_version_code(aov_version_name)
-                        if prev_version_code >= curr_version_code:
-                            print(f'Skip {layer_name}/{aov_name}: already at version {prev_render_dept}/{prev_version}')
-                            skipped_count += 1
-                            continue
-                        else:
-                            print(f'Update {layer_name}/{aov_name}: upgrading from {prev_render_dept}/{prev_version} to {render_department_name}/{aov_version_name}')
-                            pass
+                print(f'Update {layer_name}/{aov_name}: {message}')
 
             # Sync this AOV
             print(f'Sync {layer_name}/{aov_name} from {render_department_name}/{aov_version_name}')
-
-            # Build output path using URI segments for hierarchy
-            uri_path_segments = shot_uri.segments[1:]
-            uri_name = '_'.join(uri_path_segments)
-            output_path = (
-                api.storage.resolve(Uri.parse_unsafe('edit:/')) /
-                '/'.join(uri_path_segments) /
-                layer_name /
-                aov_name /
-                f'{uri_name}.####.exr'
-            )
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Copy frames
-            for frame_index in render_range:
-                input_frame_path = aov.get_aov_frame_path(str(frame_index).zfill(4))
-                output_frame_path = _get_frame_path(output_path, frame_index)
-                shutil.copyfile(input_frame_path, output_frame_path)
+            _sync_aov_frames(shot_uri, layer_name, aov_name, aov, render_range)
 
             # Update manifest
             _manifest_set(

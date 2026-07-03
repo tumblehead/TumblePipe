@@ -12,8 +12,7 @@ if tumblehead_packages_path not in sys.path:
 
 from tumblepipe.api import (
     path_str,
-    local_path,
-    api
+    local_path
 )
 from tumblepipe.util.io import (
     load_json,

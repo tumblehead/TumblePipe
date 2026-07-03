@@ -1,7 +1,5 @@
 from tempfile import TemporaryDirectory
-from functools import partial
 from pathlib import Path
-import logging
 import sys
 
 # Add tumblepipe python packages path
@@ -15,18 +13,15 @@ from tumblepipe.api import (
     to_windows_path,
     api
 )
-from tumblepipe.util.io import (
-    load_json,
-    store_json
-)
+from tumblepipe.util.io import store_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Hython
+from tumblepipe.farm import _common
 from tumblepipe.farm.jobs.houdini.render import job as render_job
 from tumblepipe.farm.tasks.env import get_hython_env, print_env
+from tumblepipe.farm.tasks.stage import _spec
 
-def _error(msg):
-    logging.error(msg)
-    return 1
+_error = _common.error
 
 SCRIPT_PATH = Path(__file__).parent / 'stage_houdini.py'
 def main(config):
@@ -129,150 +124,9 @@ def main(config):
     # Done
     return 0
 
-"""
-config = {
-    'entity': {
-        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
-        'department': 'string'
-    },
-    'settings': {
-        'user_name': 'string',
-        'purpose': 'string',
-        'pool_name': 'string',
-        'variant_names': ['string'],
-        'render_department_name': 'string',
-        'render_settings_path': 'string',
-        'tile_count': 'int',
-        'first_frame': 'int',
-        'last_frame': 'int',
-        'step_size': 'int',
-        'batch_size': 'int'
-    },
-    'tasks': {
-        'stage': {
-            'priority': 'int',
-            'channel_name': 'string
-        },
-        'partial_render': {
-            'priority': 'int',
-            'denoise': 'bool',
-            'channel_name': 'string
-        },
-        'full_render': {
-            'priority': 'int',
-            'denoise': 'bool',
-            'channel_name': 'string
-        }
-    }
-}
-"""
-
-def _is_valid_config(config):
-
-    def _is_str(datum):
-        return isinstance(datum, str)
-    
-    def _is_int(datum):
-        return isinstance(datum, int)
-    
-    def _is_bool(datum):
-        return isinstance(datum, bool)
-
-    def _check(value_checker, data, key):
-        if key not in data: return False
-        if not value_checker(data[key]): return False
-        return True
-    
-    _check_str = partial(_check, _is_str)
-    _check_int = partial(_check, _is_int)
-    _check_bool = partial(_check, _is_bool)
-
-    def _valid_entity(entity):
-        if not isinstance(entity, dict): return False
-        if not _check_str(entity, 'uri'): return False
-        if not _check_str(entity, 'department'): return False
-        return True
-    
-    def _valid_settings(settings):
-        if not isinstance(settings, dict): return False
-        if not _check_str(settings, 'user_name'): return False
-        if not _check_str(settings, 'purpose'): return False
-        if not _check_str(settings, 'pool_name'): return False
-        if 'variant_names' not in settings: return False
-        if not isinstance(settings['variant_names'], list): return False
-        if not _check_str(settings, 'render_department_name'): return False
-        if not _check_str(settings, 'render_settings_path'): return False
-        if not _check_int(settings, 'tile_count'): return False
-        if not _check_int(settings, 'first_frame'): return False
-        if not _check_int(settings, 'last_frame'): return False
-        if not _check_int(settings, 'step_size'): return False
-        if not _check_int(settings, 'batch_size'): return False
-        return True
-    
-    def _valid_tasks(tasks):
-
-        def _valid_stage(stage):
-            if not isinstance(stage, dict): return False
-            if not _check_int(stage, 'priority'): return False
-            if not _check_str(stage, 'channel_name'): return False
-            return True
-
-        def _valid_partial_render(partial_render):
-            if not isinstance(partial_render, dict): return False
-            if not _check_int(partial_render, 'priority'): return False
-            if not _check_bool(partial_render, 'denoise'): return False
-            if not _check_str(partial_render, 'channel_name'): return False
-            return True
-    
-        def _valid_full_render(full_render):
-            if not isinstance(full_render, dict): return False
-            if not _check_int(full_render, 'priority'): return False
-            if not _check_bool(full_render, 'denoise'): return False
-            if not _check_str(full_render, 'channel_name'): return False
-            return True
-        
-        if not isinstance(tasks, dict): return False
-        if 'stage' in tasks:
-            if not _valid_stage(tasks['stage']): return False
-        if 'partial_render' in tasks:
-            if not _valid_partial_render(tasks['partial_render']): return False
-        if 'full_render' in tasks:
-            if not _valid_full_render(tasks['full_render']): return False
-        return True
-    
-    if not isinstance(config, dict): return False
-    if 'entity' not in config: return False
-    if not _valid_entity(config['entity']): return False
-    if 'settings' not in config: return False
-    if not _valid_settings(config['settings']): return False
-    if 'tasks' not in config: return False
-    if not _valid_tasks(config['tasks']): return False
-    return True
-
 def cli():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('config_path', type=str)
-    parser.add_argument('start_frame', type=int)
-    parser.add_argument('end_frame', type=int)
-    args = parser.parse_args()
-
-    # Load config data
-    config_path = Path(args.config_path)
-    config = load_json(config_path)
-    if config is None:
-        return _error(f'Config file not found: {config_path}')
-
-    if not _is_valid_config(config):
-        return _error(f'Invalid config file: {config_path}')
-    
-    # Run main
-    return main(config)
+    return _common.run_task_cli(_spec.is_valid_config, main)
 
 if __name__ == '__main__':
-    logging.basicConfig(
-        level = logging.DEBUG,
-        format = '%(message)s',
-        stream = sys.stdout
-    )
+    _common.configure_logging()
     sys.exit(cli())

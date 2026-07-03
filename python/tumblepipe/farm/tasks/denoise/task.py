@@ -1,7 +1,6 @@
 from pathlib import Path
 import json
 import sys
-import os
 
 # Add tumblepipe python packages path
 tumblepipe_packages_path = Path(__file__).parent.parent.parent.parent.parent

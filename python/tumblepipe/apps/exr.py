@@ -11,7 +11,7 @@ from tumblepipe.api import (
     local_path,
     to_windows_path
 )
-from tumblepipe.apps import app, houdini
+from tumblepipe.apps import houdini
 
 # Native OpenImageIO oiiotool (Houdini's hoiiotool), lazily cached. The farm runs
 # in native Windows python now, so oiiotool runs directly — no WSL bridge — and
@@ -152,14 +152,46 @@ def get_image_info(input_path: Path) -> Optional[list[ImageInfo]]:
         for raw_info in raw_infos
     ]
 
+def _rename_channel(image_name: str, channel: str) -> str:
+    # Map common channel suffixes to new names
+    for suffix in ('R', 'G', 'B', 'A'):
+        if channel == suffix or channel.endswith(f'.{suffix}'):
+            return f'{image_name}.{suffix}'
+    # For other channels, use the subimage name as prefix
+    channel_suffix = channel.split('.', 1)[-1] if '.' in channel else channel
+    return f'{image_name}.{channel_suffix}'
+
+def _stage_subimage(temp_path, temp_image_path, image_info, index_name):
+    # Returns the file to copy to the output location; channels are renamed to
+    # match the subimage name first when any of them don't already carry it.
+    image_name = image_info.name
+    channels = image_info.channels or []
+    needs_renaming = any(
+        not channel.lower().startswith(image_name.lower())
+        for channel in channels
+    )
+    if not needs_renaming: return temp_image_path
+
+    temp_renamed_path = temp_path / f'renamed_{index_name}.exr'
+    _run([
+        'oiiotool',
+        path_str(local_path(temp_image_path)),
+        '--chnames', ','.join(
+            _rename_channel(image_name, channel)
+            for channel in channels
+        ),
+        '-o', path_str(local_path(temp_renamed_path))
+    ])
+    return temp_renamed_path
+
 def split_subimages(input_path, output_path):
-    
+
     # Check if input path is an EXR file
     if input_path.suffix.lower() != '.exr': return None
 
     # Check if output path is a directory
     if not output_path.is_dir(): return None
-    
+
     # Get image infos
     image_infos = get_image_info(input_path)
     if len(image_infos) == 0: return None
@@ -177,7 +209,7 @@ def split_subimages(input_path, output_path):
             path_str(local_path(temp_output_path))
         ])
 
-        # Process and copy subimages to the output path with channel renaming
+        # Copy each subimage to the output path, renaming channels when needed
         output_image_paths = dict()
         for index, image_info in enumerate(image_infos, 1):
             image_name = image_info.name
@@ -185,52 +217,10 @@ def split_subimages(input_path, output_path):
             temp_image_path = temp_output_path.with_name(f'{index_name}.exr')
             output_image_path = output_path / image_name / input_path.name
             output_image_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Check if channels need renaming to match subimage name
-            needs_renaming = False
-            if image_info.channels:
-                # Check if any channels don't start with the image name
-                for channel in image_info.channels:
-                    if not channel.lower().startswith(image_name.lower()):
-                        needs_renaming = True
-                        break
-            
-            if needs_renaming and image_info.channels:
-                # Generate new channel names based on subimage name
-                new_channel_names = []
-                for channel in image_info.channels:
-                    # Map common channel suffixes to new names
-                    if channel.endswith('.R') or channel == 'R':
-                        new_channel_names.append(f'{image_name}.R')
-                    elif channel.endswith('.G') or channel == 'G':
-                        new_channel_names.append(f'{image_name}.G')
-                    elif channel.endswith('.B') or channel == 'B':
-                        new_channel_names.append(f'{image_name}.B')
-                    elif channel.endswith('.A') or channel == 'A':
-                        new_channel_names.append(f'{image_name}.A')
-                    else:
-                        # For other channels, use the subimage name as prefix
-                        channel_suffix = channel.split('.', 1)[-1] if '.' in channel else channel
-                        new_channel_names.append(f'{image_name}.{channel_suffix}')
-                
-                # Create temp renamed file
-                temp_renamed_path = temp_path / f'renamed_{index_name}.exr'
-                channel_rename_list = ','.join(new_channel_names)
-                
-                # Rename channels using oiiotool
-                _run([
-                    'oiiotool',
-                    path_str(local_path(temp_image_path)),
-                    '--chnames', channel_rename_list,
-                    '-o', path_str(local_path(temp_renamed_path))
-                ])
-                
-                # Copy the renamed file to output
-                shutil.copyfile(temp_renamed_path, output_image_path)
-            else:
-                # No renaming needed, copy directly
-                shutil.copyfile(temp_image_path, output_image_path)
-            
+            source_path = _stage_subimage(
+                temp_path, temp_image_path, image_info, index_name
+            )
+            shutil.copyfile(source_path, output_image_path)
             output_image_paths[image_name] = output_image_path
 
         # Done

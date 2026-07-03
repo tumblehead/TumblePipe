@@ -1,8 +1,6 @@
-from functools import partial
 from pathlib import Path
 import json
 import sys
-import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -15,92 +13,13 @@ from tumblepipe.api import (
     api
 )
 from tumblepipe.farm.tasks.env import get_base_env
+from tumblepipe.farm.tasks.publish._spec import is_valid_build_config as _is_valid_config
 from tumblepipe.util.io import store_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.naming import random_name
 from tumblepipe.farm.deadline import Task
 from tumblepipe.config.timeline import BlockRange
 
-"""
-config = {
-    'entity': {
-        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
-        'department': 'string'
-    },
-    'settings': {
-        'priority': 'int',
-        'pool_name': 'string',
-        'first_frame': 'int',
-        'last_frame': 'int'
-    },
-    'tasks': {
-        'publish': {
-            'downstream_departments': ['list']
-        }
-    },
-    'workfile_path': 'string'
-}
-"""
-
-def _is_valid_config(config):
-
-    def _is_str(datum):
-        return isinstance(datum, str)
-    
-    def _is_int(datum):
-        return isinstance(datum, int)
-    
-    def _is_list(datum):
-        return isinstance(datum, list)
-
-    def _check(value_checker, data, key):
-        if key not in data: return False
-        if not value_checker(data[key]): return False
-        return True
-    
-    _check_str = partial(_check, _is_str)
-    _check_int = partial(_check, _is_int)
-    _check_list = partial(_check, _is_list)
-
-    def _valid_entity(entity):
-        if not isinstance(entity, dict): return False
-        if not _check_str(entity, 'uri'): return False
-        if not _check_str(entity, 'department'): return False
-        return True
-    
-    def _valid_settings(settings):
-        if not isinstance(settings, dict): return False
-        if not _check_int(settings, 'priority'): return False
-        if not _check_str(settings, 'pool_name'): return False
-        if not _check_int(settings, 'first_frame'): return False
-        if not _check_int(settings, 'last_frame'): return False
-        return True
-    
-    def _valid_tasks(tasks):
-
-        def _valid_publish(publish):
-            if not isinstance(publish, dict): return False
-            if 'downstream_departments' in publish:
-                if not _check_list(publish, 'downstream_departments'): return False
-                # Validate each department name is a string
-                for dept in publish['downstream_departments']:
-                    if not isinstance(dept, str): return False
-            return True
-
-        if not isinstance(tasks, dict): return False
-        if 'publish' in tasks:
-            if not _valid_publish(tasks['publish']): return False
-        return True
-    
-    if not isinstance(config, dict): return False
-    if 'entity' not in config: return False
-    if not _valid_entity(config['entity']): return False
-    if 'settings' not in config: return False
-    if not _valid_settings(config['settings']): return False
-    if 'tasks' not in config: return False
-    if not _valid_tasks(config['tasks']): return False
-    if not _check_str(config, 'workfile_path'): return False
-    return True
 
 SCRIPT_PATH = Path(__file__).parent / 'publish.py'
 def build(config, paths, staging_path):

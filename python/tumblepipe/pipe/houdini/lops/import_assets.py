@@ -56,9 +56,11 @@ def _update_script(instances):
     # Mirrors import_layer.py's metadata-update guard.
     #
     # Create the metadata when it's absent rather than only updating it in
-    # place: Houdini's Duplicate LOP does not reliably carry customData onto
-    # the duplicated instances, so without this the copies (e.g. /CHAR/mom0,
-    # /CHAR/mom1) would export with no metadata and silently drop out.
+    # place. customData does compose through the Duplicate LOP's reference
+    # arcs (the historical "duplicates lose metadata" drops were the scrape
+    # not traversing instance proxies — see util._iter_prim_children), but
+    # re-authoring it per instance keeps each copy's 'instance' name unique
+    # and covers duplicate modes that don't reference the source.
     for prim_path, asset_uri_str, instance_name in instances:
         prim_var = f'prim_{instance_name}'
         metadata_var = f'metadata_{instance_name}'

@@ -21,6 +21,7 @@ from pathlib import Path
 from tumblepipe.api import get_config_path
 from tumblepipe.config import ConfigConvention, Entity
 from tumblepipe.config.schema import Schema, schema_from_properties
+from tumblepipe.util.data import deep_merge as _deep_merge
 from tumblepipe.util.io import load_json, store_json
 from tumblepipe.util.uri import Uri
 
@@ -124,20 +125,6 @@ def _list_uri_deep(data, root_path: Uri, filter_path: list[str] | None = None) -
 
     # Return all descendants of target node
     return _filter_none(current, base_path)
-
-
-def _deep_merge(base: dict, override: dict) -> dict:
-    """Deep merge two dicts. Override values take precedence.
-
-    For nested dicts, merge recursively. For other types, override replaces base.
-    """
-    result = dict(base)
-    for key, value in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = _deep_merge(result[key], value)
-        else:
-            result[key] = value
-    return result
 
 
 def _deep_diff(base: dict, new: dict) -> dict:

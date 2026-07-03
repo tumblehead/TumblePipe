@@ -64,8 +64,8 @@ def get_source_department(inputs: list[dict], department_order: list[str]) -> st
     return shot_depts[0]
 
 
-def _get_entity_type(entity_uri: Uri) -> Optional[str]:
-    """Get entity type from URI."""
+def get_entity_type(entity_uri: Uri) -> Optional[str]:
+    """Get entity type ('asset' or 'shot') from URI."""
     if entity_uri.purpose != 'entity': return None
     if len(entity_uri.segments) < 1: return None
     context = entity_uri.segments[0]
@@ -295,17 +295,17 @@ def find_shots_referencing_asset(graph: Graph, asset_uri: Uri) -> list[Uri]:
 
     shot_uris = set()
 
-    # Check all nodes for shots that reference this asset
+    # Check all nodes for shots that depend on this asset
     for node in graph.nodes.values():
-        # Check if this node is a shot
-        if _get_entity_type(node.entity_uri) == 'shot':
-            # Check if any dependencies are the target asset
-            for dep in node.dependencies:
-                if _get_entity_type(dep.entity_uri) == 'asset':
-                    # Compare URIs directly
-                    if dep.entity_uri == asset_uri:
-                        shot_uris.add(node.entity_uri)
-                        break
+        if get_entity_type(node.entity_uri) != 'shot':
+            continue
+        for dep in node.dependencies:
+            if get_entity_type(dep.entity_uri) != 'asset':
+                continue
+            if dep.entity_uri != asset_uri:
+                continue
+            shot_uris.add(node.entity_uri)
+            break
 
     return sorted(list(shot_uris), key=str)
 
@@ -314,9 +314,161 @@ def find_shots_referencing_asset(graph: Graph, asset_uri: Uri) -> list[Uri]:
 
 # === Resolution ===
 
-def _get_latest_export_path(entity_uri: Uri, variant_name: str, department_name: str) -> Optional[Path]:
-    """Get latest export path for entity/variant/department."""
-    return latest_export_path(entity_uri, variant_name, department_name)
+def _load_shot_layer(
+    shot_uri: Uri,
+    department_name: str,
+    variant_name: str
+) -> Optional[tuple[Path, list[tuple[Uri, str, list]]]]:
+    """
+    Load the latest export of one shot department.
+
+    Returns: (version_path, [(asset_uri, instance_name, inputs), ...]) or None
+    """
+    latest_version_path = latest_export_path(shot_uri, variant_name, department_name)
+    if latest_version_path is None:
+        return None
+
+    context_data = load_json(latest_version_path / 'context.json')
+    if context_data is None:
+        return None
+
+    layer_info = ctx.find_output(
+        context_data,
+        uri=str(shot_uri),
+        department=department_name
+    )
+    if layer_info is None:
+        return None
+
+    asset_entries = [
+        (
+            Uri.parse_unsafe(asset_datum['asset']),
+            asset_datum['instance'],
+            asset_datum.get('inputs', [])
+        )
+        for asset_datum in layer_info['parameters'].get('assets', [])
+    ]
+    return latest_version_path, asset_entries
+
+
+def _resolve_source_department(
+    inputs: list[dict],
+    asset_uri: Uri,
+    all_shot_departments: list[str],
+    source_dept_assets: dict[str, set[Uri]]
+) -> Optional[str]:
+    """Determine which shot department an asset entry originates from."""
+    source_dept = get_source_department(inputs, all_shot_departments)
+    if source_dept is not None:
+        return source_dept
+
+    # Backwards compatibility: use first department in order that has this asset
+    for dept in all_shot_departments:
+        if asset_uri in source_dept_assets.get(dept, ()):
+            return dept
+    return None
+
+
+def _latest_shot_layer_paths(
+    shot_uri: Uri,
+    shot_departments: list[str],
+    variant_name: str,
+    all_shot_departments: list[str]
+) -> tuple[dict, dict, dict]:
+    """
+    Find latest shot layer paths and extract their assets.
+
+    Returns: (
+        {dept: (version_path, {asset_uri: set(instances)})},
+        {asset_uri: set(instances)},
+        {asset_uri: inputs}
+    )
+    """
+    # First pass: load each department's latest layer and its asset entries
+    dept_layers = {}  # {dept: (version_path, [(asset_uri, instance, inputs), ...])}
+    for department_name in shot_departments:
+        layer = _load_shot_layer(shot_uri, department_name, variant_name)
+        if layer is None:
+            continue
+        dept_layers[department_name] = layer
+
+    # Determine which assets exist in each source department (for validation)
+    source_dept_assets = {
+        dept: {asset_uri for asset_uri, _, _ in asset_entries}
+        for dept, (_, asset_entries) in dept_layers.items()
+    }
+
+    # Second pass: keep only assets whose source department is in the resolution list
+    layer_data = dict()
+    shot_assets = dict()
+    asset_inputs = dict()  # Track inputs per asset for staged output (first occurrence)
+    for department_name, (version_path, asset_entries) in dept_layers.items():
+        layer_assets = dict()
+        for asset_uri, instance_name, inputs in asset_entries:
+            source_dept = _resolve_source_department(
+                inputs, asset_uri, all_shot_departments, source_dept_assets
+            )
+            if source_dept not in shot_departments:
+                continue
+            # Verify source department still has this asset
+            if asset_uri not in source_dept_assets.get(source_dept, ()):
+                continue
+
+            shot_assets.setdefault(asset_uri, set()).add(instance_name)
+            layer_assets.setdefault(asset_uri, set()).add(instance_name)
+            asset_inputs.setdefault(asset_uri, inputs)
+
+        layer_data[department_name] = (version_path, layer_assets)
+
+    return layer_data, shot_assets, asset_inputs
+
+
+def _latest_asset_layer_paths(
+    assets: dict,
+    asset_departments: list[str],
+    asset_variants: dict
+) -> dict:
+    """Find latest asset layer paths: {dept: {asset_uri: version_path}}."""
+    layer_data = dict()
+    for asset_uri in assets.keys():
+        asset_variant = asset_variants.get(asset_uri, DEFAULT_VARIANT)
+        for department_name in asset_departments:
+            latest_version_path = latest_export_path(asset_uri, asset_variant, department_name)
+            if latest_version_path is None:
+                continue
+            layer_data.setdefault(department_name, dict())[asset_uri] = latest_version_path
+    return layer_data
+
+
+def _get_root_scene_uri(root_version_path: Path) -> Optional[Uri]:
+    """Read the scene reference from a root layer's context.json."""
+    root_context_data = load_json(root_version_path / 'context.json')
+    if root_context_data is None:
+        return None
+    scene_ref = root_context_data.get('parameters', {}).get('scene')
+    if scene_ref is None:
+        return None
+    return Uri.parse_unsafe(scene_ref)
+
+
+def _iter_scene_assets(scene_uri: Uri):
+    """
+    Yield (asset_uri, variant_name) for every asset composed by a scene.
+
+    Direct scene assets come first so they take precedence over assets
+    inherited from parent scenes.
+    """
+    scene_path = get_current_scene_staged_file_path(scene_uri)
+    if scene_path is not None:
+        scene_context_data = load_json(scene_path.parent / 'context.json')
+        if scene_context_data is not None:
+            for asset_datum in scene_context_data.get('parameters', {}).get('assets', []):
+                asset_uri = Uri.parse_unsafe(asset_datum['asset'])
+                yield asset_uri, asset_datum.get('variant', DEFAULT_VARIANT)
+
+    from tumblepipe.config.scene import get_inherited_assets
+    for entry, _parent_uri in get_inherited_assets(scene_uri):
+        yield Uri.parse_unsafe(entry.asset), entry.variant
 
 
 def resolve_shot_build(
@@ -360,128 +512,11 @@ def resolve_shot_build(
     # Get department order for determining source
     all_shot_departments = [d.name for d in list_departments('shots')]
 
-    # Helper: Find latest shot layer paths and extract assets
-    def _latest_shot_layer_paths(shot_departments, variant_name):
-        layer_data = dict()
-        shot_assets = dict()
-        asset_inputs = dict()  # Track inputs per asset for staged output
-
-        # First pass: collect all assets and their sources from each department
-        dept_asset_data = {}  # {dept: [(asset_uri, instance, inputs, version_path), ...]}
-        dept_version_paths = {}  # {dept: version_path} - track paths separately for layers without assets
-        for department_name in shot_departments:
-            # Find latest layer version (with variant support)
-            latest_version_path = _get_latest_export_path(shot_uri, variant_name, department_name)
-            if latest_version_path is None:
-                continue
-
-            # Find shot info
-            context_file_path = latest_version_path / 'context.json'
-            context_data = load_json(context_file_path)
-            if context_data is None:
-                continue
-
-            layer_info = ctx.find_output(
-                context_data,
-                uri=str(shot_uri),
-                department=department_name
-            )
-
-            if layer_info is None:
-                continue
-
-            # Store version path for this department (even if no assets)
-            dept_version_paths[department_name] = latest_version_path
-
-            # Collect assets with their inputs
-            dept_asset_data[department_name] = []
-            for asset_datum in layer_info['parameters'].get('assets', []):
-                asset_uri = Uri.parse_unsafe(asset_datum['asset'])
-                instance_name = asset_datum['instance']
-                inputs = asset_datum.get('inputs', [])
-                dept_asset_data[department_name].append((asset_uri, instance_name, inputs, latest_version_path))
-
-        # Determine which assets exist in each source department (for validation)
-        source_dept_assets = {}  # {dept: set(asset_uri)}
-        for dept, assets in dept_asset_data.items():
-            source_dept_assets[dept] = {asset_uri for asset_uri, _, _, _ in assets}
-
-        # Second pass: filter assets by source department
-        for department_name, assets in dept_asset_data.items():
-            layer_assets = dict()
-            # Use stored version path (works even if no assets in this department)
-            latest_version_path = dept_version_paths.get(department_name)
-
-            for asset_uri, instance_name, inputs, version_path in assets:
-
-                # Determine source department from inputs
-                source_dept = get_source_department(inputs, all_shot_departments)
-
-                # Backwards compatibility: if no source, use first dept that has it
-                if source_dept is None:
-                    # Find first department in order that has this asset
-                    for dept in all_shot_departments:
-                        if dept in source_dept_assets and asset_uri in source_dept_assets[dept]:
-                            source_dept = dept
-                            break
-
-                # Skip if source department is not in our resolution list
-                if source_dept not in shot_departments:
-                    continue
-
-                # Verify source department still has this asset
-                if source_dept not in source_dept_assets:
-                    continue
-                if asset_uri not in source_dept_assets[source_dept]:
-                    continue
-
-                # Include the asset
-                if asset_uri not in shot_assets:
-                    shot_assets[asset_uri] = set()
-                if asset_uri not in layer_assets:
-                    layer_assets[asset_uri] = set()
-
-                shot_assets[asset_uri].add(instance_name)
-                layer_assets[asset_uri].add(instance_name)
-
-                # Track inputs for this asset (use first occurrence)
-                if asset_uri not in asset_inputs:
-                    asset_inputs[asset_uri] = inputs
-
-            # Store layer data
-            if latest_version_path is not None:
-                layer_data[department_name] = (latest_version_path, layer_assets)
-
-        return layer_data, shot_assets, asset_inputs
-
-
-    # Helper: Find latest asset layer paths
-    def _latest_asset_layer_paths(assets, asset_departments, asset_variants):
-        layer_data = dict()
-
-        for asset_uri in assets.keys():
-            # Get variant for this asset (default if not specified)
-            asset_variant = asset_variants.get(asset_uri, DEFAULT_VARIANT)
-
-            for department_name in asset_departments:
-                # Find latest layer version (with variant support)
-                latest_version_path = _get_latest_export_path(asset_uri, asset_variant, department_name)
-                if latest_version_path is None:
-                    continue
-
-                # Store layer data
-                if department_name not in layer_data:
-                    layer_data[department_name] = dict()
-                layer_data[department_name][asset_uri] = latest_version_path
-
-        return layer_data
-
     # Find latest paths
-    shot_layer_paths, assets, asset_inputs = _latest_shot_layer_paths(shot_departments, shot_variant)
+    shot_layer_paths, assets, asset_inputs = _latest_shot_layer_paths(
+        shot_uri, shot_departments, shot_variant, all_shot_departments
+    )
     asset_layer_paths = _latest_asset_layer_paths(assets, asset_departments, asset_variants)
-
-    # Track which assets come from scene (vs. shot-flow assets from department exports)
-    scene_asset_uris = set()
 
     # Find root department layer (shot-level, stored at _root/)
     root_layer = None
@@ -489,63 +524,25 @@ def resolve_shot_build(
     export_path = api.storage.resolve(export_uri)
     root_version_path = get_latest_version_path(export_path)
     if root_version_path is not None:
-        version_name = root_version_path.name
-        layer_file_name = get_root_layer_file_name(shot_uri, version_name)
+        layer_file_name = get_root_layer_file_name(shot_uri, root_version_path.name)
         root_layer_path = root_version_path / layer_file_name
         if root_layer_path.exists():
             root_layer = root_layer_path
 
-        # Extract assets by following scene reference in root layer context.json
-        # Root layer context has: {parameters: {scene: "scenes:/..."}}
-        # We follow this reference to get current assets (so scene changes don't require root regeneration)
-        root_context_path = root_version_path / 'context.json'
-        root_context_data = load_json(root_context_path)
-        if root_context_data is not None:
-            scene_ref = root_context_data.get('parameters', {}).get('scene')
-            if scene_ref is not None:
-                # Follow scene reference to get current assets
-                scene_uri = Uri.parse_unsafe(scene_ref)
-                scene_path = get_current_scene_staged_file_path(scene_uri)
-                if scene_path is not None:
-                    scene_context_path = scene_path.parent / 'context.json'
-                    scene_context_data = load_json(scene_context_path)
-                    if scene_context_data is not None:
-                        # Add direct scene assets
-                        for asset_datum in scene_context_data.get('parameters', {}).get('assets', []):
-                            asset_uri = Uri.parse_unsafe(asset_datum['asset'])
-                            asset_name = asset_uri.segments[-1]  # Use asset name as instance
-                            variant = asset_datum.get('variant', DEFAULT_VARIANT)
-
-                            # Track as scene asset (for distinguishing from shot-flow assets)
-                            scene_asset_uris.add(asset_uri)
-
-                            # Add to assets if not already present
-                            if asset_uri not in assets:
-                                assets[asset_uri] = set()
-                            assets[asset_uri].add(asset_name)
-
-                            # Store variant for this asset
-                            if asset_uri not in asset_variants:
-                                asset_variants[asset_uri] = variant
-
-                # Add inherited assets from parent scenes
-                from tumblepipe.config.scene import get_inherited_assets
-                inherited = get_inherited_assets(scene_uri)
-                for entry, parent_uri in inherited:
-                    asset_uri = Uri.parse_unsafe(entry.asset)
-                    asset_name = asset_uri.segments[-1]
-                    variant = entry.variant
-
-                    # Track as scene asset (for distinguishing from shot-flow assets)
-                    scene_asset_uris.add(asset_uri)
-
-                    # Add to assets if not already present (direct assets take precedence)
-                    if asset_uri not in assets:
-                        assets[asset_uri] = set()
-                    assets[asset_uri].add(asset_name)
-
-                    if asset_uri not in asset_variants:
-                        asset_variants[asset_uri] = variant
+    # Extract assets by following the scene reference in the root layer's
+    # context.json ({parameters: {scene: "scenes:/..."}}), so scene changes
+    # don't require root regeneration. Track which assets come from the scene
+    # (vs. shot-flow assets from department exports).
+    scene_asset_uris = set()
+    scene_uri = None
+    if root_version_path is not None:
+        scene_uri = _get_root_scene_uri(root_version_path)
+    if scene_uri is not None:
+        for asset_uri, variant in _iter_scene_assets(scene_uri):
+            asset_name = asset_uri.segments[-1]  # Use asset name as instance
+            scene_asset_uris.add(asset_uri)
+            assets.setdefault(asset_uri, set()).add(asset_name)
+            asset_variants.setdefault(asset_uri, variant)
 
     # Done
     return dict(
@@ -584,7 +581,9 @@ def resolve_asset_build(
     Returns: {
         'asset_uri': asset_uri,
         'variant': variant_name,
-        'department_layers': {dept_name: version_path}
+        'department_layers': {dept_name: version_path},
+        'assets': {tracked_asset_uri: instances},
+        'asset_inputs': {tracked_asset_uri: inputs}
     }
     """
     if not graph.scanned:
@@ -593,13 +592,42 @@ def resolve_asset_build(
     # Find latest version for each department (with variant support)
     department_layers = {}
     for department_name in asset_departments:
-        latest_version_path = _get_latest_export_path(asset_uri, variant_name, department_name)
+        latest_version_path = latest_export_path(asset_uri, variant_name, department_name)
         if latest_version_path is None:
             continue
         department_layers[department_name] = latest_version_path
 
+    # Collect the assets tracked in each department layer's context.json:
+    # a set-style asset imports other assets into its workfile, and the
+    # department export carries only overs for them (placement + metadata) —
+    # the staged build must re-reference each tracked asset's own staged
+    # file or those prims compose empty downstream. Mirrors the shot flow's
+    # _latest_shot_layer_paths scrape.
+    assets = {}
+    asset_inputs = {}
+    for department_name, version_path in department_layers.items():
+        context_data = load_json(version_path / 'context.json')
+        if context_data is None:
+            continue
+        layer_info = ctx.find_output(
+            context_data,
+            uri=str(asset_uri),
+            department=department_name
+        )
+        if layer_info is None:
+            continue
+        for asset_datum in layer_info['parameters'].get('assets', []):
+            tracked_uri = Uri.parse_unsafe(asset_datum['asset'])
+            if tracked_uri == asset_uri:
+                continue  # self-import — never sublayer an asset into itself
+            instances = asset_datum.get('instances', 1)
+            assets[tracked_uri] = max(assets.get(tracked_uri, 0), instances)
+            asset_inputs.setdefault(tracked_uri, asset_datum.get('inputs', []))
+
     return dict(
         asset_uri=asset_uri,
         variant=variant_name,
-        department_layers=department_layers
+        department_layers=department_layers,
+        assets=assets,
+        asset_inputs=asset_inputs
     )

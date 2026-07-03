@@ -30,6 +30,7 @@ from tumblepipe.config.discord import (
     get_user_discord_id,
     get_channel_id as get_discord_channel_id
 )
+from tumblepipe.farm.tasks.notify import _spec
 from tumblepipe.farm.tasks.env import ocio_value, print_env
 
 def _error(msg):
@@ -513,27 +514,6 @@ config = {
 """
 
 def _is_valid_config(config):
-
-    def _is_valid_command(command):
-        if not isinstance(command, dict): return False
-        if 'mode' not in command: return False
-        match command['mode']:
-            case 'notify': return True
-            case 'partial':
-                if 'frame_path' not in command: return False
-                if not isinstance(command['frame_path'], str): return False
-                if 'first_frame' not in command: return False
-                if not isinstance(command['first_frame'], int): return False
-                if 'middle_frame' not in command: return False
-                if not isinstance(command['middle_frame'], int): return False
-                if 'last_frame' not in command: return False
-                if not isinstance(command['last_frame'], int): return False
-            case 'full':
-                if 'video_path' not in command: return False
-                if not isinstance(command['video_path'], str): return False
-            case _: return False
-        return True
-    
     if not isinstance(config, dict): return False
     if 'user_name' not in config: return False
     if not isinstance(config['user_name'], str): return False
@@ -542,7 +522,7 @@ def _is_valid_config(config):
     if 'message' not in config: return False
     if not isinstance(config['message'], str): return False
     if 'command' not in config: return False
-    if not _is_valid_command(config['command']): return False
+    if not _spec.is_valid_command(config['command']): return False
     return True
 
 def cli():

@@ -3,7 +3,7 @@ import json
 
 import hou
 
-from tumblepipe.api import path_str, api
+from tumblepipe.api import path_str
 from tumblepipe.farm.tasks.env import job_data_dir
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri

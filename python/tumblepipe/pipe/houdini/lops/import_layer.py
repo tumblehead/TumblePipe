@@ -12,6 +12,7 @@ from tumblepipe.config.department import list_departments
 from tumblepipe.config.variants import get_entity_type, list_variants
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.util import uri_to_prim_path
+from tumblepipe.pipe.houdini.lops import import_asset
 import tumblepipe.pipe.context as ctx
 from tumblepipe.pipe.paths import (
     list_version_paths,
@@ -407,11 +408,11 @@ class ImportLayer(ns.Node):
         # Update version label
         self.parm('version_label').set(version_name)
 
-        # Generate metadata update script from context.json. Clear any script
-        # left over from a previous entity/version first: if the new import has
-        # no context.json (or no assets), a stale script would otherwise re-run
-        # against the wrong entity's prim paths.
-        self.parm('metadata_python').set('')
+        # Generate metadata update script from context.json. Build the script
+        # from scratch each run: if the new import has no context.json (or no
+        # assets), a stale script would otherwise re-run against the wrong
+        # entity's prim paths.
+        script_parts = []
         context_path = version_path / 'context.json'
         context_data = None
         layer_info = None
@@ -429,12 +430,15 @@ class ImportLayer(ns.Node):
                     # each asset prim so the export bakes the layer's assets
                     # in instead of re-referencing them.
                     if self.get_import_mode() == 'inline':
-                        script = _inline_marker_script(assets)
+                        script_parts.append(_inline_marker_script(assets))
                     else:
-                        script = _metadata_update_script(
+                        script_parts.append(_metadata_update_script(
                             entity_uri, department_name, version_name, assets
-                        )
-                    self.parm('metadata_python').set(script)
+                        ))
+        root_script = self._root_metadata_script(entity_uri)
+        if root_script is not None:
+            script_parts.append(root_script)
+        self.parm('metadata_python').set('\n'.join(script_parts))
 
         # Set success comment with import metadata
         if layer_info is not None:
@@ -448,6 +452,34 @@ class ImportLayer(ns.Node):
             ns.set_node_comment(native, f"Imported: {version_name}")
 
         logger.info(f"Import completed: uri={entity_uri}, dept={department_name}, version={version_name}")
+
+    def _root_metadata_script(self, entity_uri: Uri) -> str | None:
+        """Metadata script for the imported entity's own root prim.
+
+        The context.json scripts above only refresh assets recorded INSIDE
+        the imported layer, so importing another asset's department layer
+        (e.g. Arena's model into the SET workfile) left the imported prim
+        itself untagged — it silently dropped out of the export scrape.
+        Tag foreign asset roots the same way import_asset does. Self-imports
+        (pulling this workfile's own entity, e.g. model into lookdev) stay
+        untagged: the exporting entity's root is never tracked by its own
+        export. Shot layers are never root-tagged — tracking metadata is an
+        asset concept.
+        """
+        if len(entity_uri.segments) == 0 or entity_uri.segments[0] != 'assets':
+            return None
+        shot_uri = None
+        shot_department = None
+        workfile_context = get_workfile_context(Path(hou.hipFile.path()))
+        if workfile_context is not None:
+            if str(workfile_context.entity_uri) == str(entity_uri):
+                return None
+            if str(workfile_context.entity_uri).startswith('entity:/shots/'):
+                shot_uri = workfile_context.entity_uri
+                shot_department = workfile_context.department_name
+        if self.get_import_mode() == 'inline':
+            return import_asset._inline_metadata_script(entity_uri)
+        return import_asset._metadata_script(entity_uri, shot_uri, shot_department)
 
     def open_location(self):
         entity_uri = self.get_entity_uri()

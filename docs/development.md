@@ -35,6 +35,34 @@ uv run minigun --test-dir . --time-budget 30
 `tests/README.md` covers writing new properties and the design of the
 project-fixture bootstrap (`_harness.py`).
 
+## Farm task and job modules
+
+Each farm task family under `python/tumblepipe/farm/tasks/<family>/` splits
+into a worker-side CLI script (`<family>.py`, run on the render node), a
+submit-side task builder (`task.py`), and — where the config schema is shared
+between them — a `_spec.py` holding the canonical config validator. The
+matching `farm/jobs/houdini/<name>/job.py` imports the same `_spec`.
+
+Two rules keep these importable in the environments they run in:
+
+- **Worker scripts must not import their family's `task.py`.** The task
+  builder imports `tumblepipe.farm.deadline`, which needs `tomli_w` at module
+  import time — present on submit machines, not guaranteed on workers or dev
+  environments. Shared config schemas therefore live in `_spec.py` (which
+  only depends on `tumblepipe.farm._common`), never in `task.py`.
+- **Generic scaffolding lives in `tumblepipe.farm._common`** (config-check
+  primitives, `valid_entity`, `run_task_cli`, `configure_logging`);
+  `farm/jobs/houdini/_common.py` re-exports it and adds the job-side
+  `submit_batch`/`run_cli`. Don't re-introduce per-module copies.
+
+The farm modules cannot be run-imported outside the farm (Deadline,
+`tomli_w`), so gate changes with a compile + lint pass instead:
+
+```bash
+python -m compileall -q python/tumblepipe/farm/
+ruff check --select F401,F811,F821 python/tumblepipe/farm/
+```
+
 ## Building the documentation locally
 
 The docs are written in [MyST Markdown](https://myst-parser.readthedocs.io)

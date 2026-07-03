@@ -3,59 +3,41 @@
 Every ``farm/jobs/houdini/<name>/job.py`` follows the same shape: validate a
 JSON config, build a Deadline batch of jobs, and submit it. Only the config
 schema, the batch title, and the ``build()`` internals genuinely differ per
-job; everything else was copy-pasted. This module owns the copy-pasted parts:
+job; everything else was copy-pasted. This module owns the job-side parts:
 
-- ``error``                — uniform error-log-and-return-1
-- config-check primitives  — ``is_str``/``is_int``/``is_bool`` + ``check_*``
 - ``submit_batch``         — Deadline connect + temp dir + batch + submit
 - ``run_cli``              — argparse + load + validate + submit
-- ``configure_logging``    — the ``__main__`` logging setup
+
+The generic pieces (``error``, the ``is_*``/``check_*`` config-check
+primitives, ``valid_entity``, ``configure_logging``) live in
+``tumblepipe.farm._common`` — shared with the task modules — and are
+re-exported below so job modules keep their ``_common.*`` import surface.
+Per-task config schemas live in ``farm/tasks/<family>/_spec.py``.
 
 These modules run as standalone scripts on the farm, so imports are absolute
 (``tumblepipe`` is already importable at that point, same as ``tumblepipe.api``).
 """
 
-from functools import partial
 from tempfile import TemporaryDirectory
 from pathlib import Path
 from typing import Callable, Optional
 import argparse
 import logging
-import sys
 
 from tumblepipe.api import local_path, path_str, api
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 
-
-def error(msg: str) -> int:
-    logging.error(msg)
-    return 1
-
-
-# Config-validation primitives ------------------------------------------------
-# Each job's _is_valid_config declares its own schema but shares these checks.
-def is_str(datum) -> bool:
-    return isinstance(datum, str)
-
-def is_int(datum) -> bool:
-    return isinstance(datum, int)
-
-def is_bool(datum) -> bool:
-    return isinstance(datum, bool)
-
-def is_list(datum) -> bool:
-    return isinstance(datum, list)
-
-def check(value_checker: Callable, data: dict, key: str) -> bool:
-    if key not in data: return False
-    if not value_checker(data[key]): return False
-    return True
-
-check_str = partial(check, is_str)
-check_int = partial(check, is_int)
-check_bool = partial(check, is_bool)
-check_list = partial(check, is_list)
+# Config-validation primitives and logging scaffolding live at the farm level
+# (shared with the task modules); re-exported here so the job modules keep
+# their existing `_common.*` import surface.
+from tumblepipe.farm._common import (  # noqa: F401
+    error,
+    is_str, is_int, is_bool, is_list,
+    check, check_str, check_int, check_bool, check_list,
+    valid_entity,
+    configure_logging,
+)
 
 
 def submit_batch(
@@ -132,12 +114,3 @@ def run_cli(
 
     # Run submit
     return submit(config)
-
-
-def configure_logging() -> None:
-    """The standard ``__main__`` logging setup used by every job script."""
-    logging.basicConfig(
-        level = logging.DEBUG,
-        format = '%(message)s',
-        stream = sys.stdout
-    )

@@ -1,8 +1,6 @@
-from functools import partial
 from pathlib import Path
 import json
 import sys
-import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -14,115 +12,13 @@ from tumblepipe.api import (
     local_path,
     api
 )
+from tumblepipe.farm.tasks.cloud_stage._spec import is_valid_config as _is_valid_config
 from tumblepipe.farm.tasks.env import get_base_env
 from tumblepipe.util.io import store_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.naming import random_name
 from tumblepipe.farm.deadline import Task
 from tumblepipe.config.timeline import BlockRange
-
-"""
-config = {
-    'entity': {
-        'uri': 'entity:/assets/category/asset' | 'entity:/shots/sequence/shot',
-        'department': 'string'
-    },
-    'settings': {
-        'user_name': 'string',
-        'purpose': 'string',
-        'priority': 'int',
-        'pool_name': 'string',
-        'variant_name': 'string',
-        'render_department_name': 'string',
-        'render_settings_path': 'string',
-        'tile_count': 'int',
-        'first_frame': 'int',
-        'last_frame': 'int',
-        'step_size': 'int',
-        'batch_size': 'int'
-    },
-    'tasks': {
-        'stage': {
-            'channel_name': 'string'
-        },
-        'render': {
-            'denoise': 'bool',
-            'channel_name': 'string
-        }
-    }
-}
-"""
-
-def _is_valid_config(config):
-
-    def _is_str(datum):
-        return isinstance(datum, str)
-    
-    def _is_int(datum):
-        return isinstance(datum, int)
-    
-    def _is_bool(datum):
-        return isinstance(datum, bool)
-
-    def _check(value_checker, data, key):
-        if key not in data: return False
-        if not value_checker(data[key]): return False
-        return True
-    
-    _check_str = partial(_check, _is_str)
-    _check_int = partial(_check, _is_int)
-    _check_bool = partial(_check, _is_bool)
-
-    def _valid_entity(entity):
-        if not isinstance(entity, dict): return False
-        if not _check_str(entity, 'uri'): return False
-        if not _check_str(entity, 'department'): return False
-        return True
-    
-    def _valid_settings(settings):
-        if not isinstance(settings, dict): return False
-        if not _check_str(settings, 'user_name'): return
-        if not _check_str(settings, 'purpose'): return False
-        if not _check_int(settings, 'priority'): return False
-        if not _check_str(settings, 'pool_name'): return False
-        if not _check_str(settings, 'variant_name'): return False
-        if not _check_str(settings, 'render_department_name'): return False
-        if not _check_str(settings, 'render_settings_path'): return False
-        if not _check_int(settings, 'tile_count'): return False
-        if not _check_int(settings, 'first_frame'): return False
-        if not _check_int(settings, 'last_frame'): return False
-        if not _check_int(settings, 'step_size'): return False
-        if not _check_int(settings, 'batch_size'): return False
-        return True
-    
-    def _valid_tasks(tasks):
-
-        def _valid_stage(stage):
-            if not isinstance(stage, dict): return False
-            if not _check_str(stage, 'channel_name'): return False
-            return True
-    
-        def _valid_render(full_render):
-            if not isinstance(full_render, dict): return False
-            if not _check_bool(full_render, 'denoise'): return False
-            if not _check_str(full_render, 'channel_name'): return False
-            return True
-        
-        if not isinstance(tasks, dict): return False
-        if 'stage' in tasks:
-            if not _valid_stage(tasks['stage']): return False
-        if 'full_render' in tasks:
-            if not _valid_render(tasks['full_render']): return False
-        return True
-    
-    if not isinstance(config, dict): return False
-    if 'entity' not in config: return False
-    if not _valid_entity(config['entity']): return False
-    if 'settings' not in config: return False
-    if not _valid_settings(config['settings']): return False
-    if 'tasks' not in config: return False
-    if not _valid_tasks(config['tasks']): return False
-    return True
 
 SCRIPT_PATH = Path(__file__).parent / 'stage.py'
 def build(config, paths, staging_path):

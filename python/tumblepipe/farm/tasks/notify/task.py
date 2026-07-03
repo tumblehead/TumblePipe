@@ -1,7 +1,6 @@
 from pathlib import Path
 import json
 import sys
-import os
 
 # Add tumblehead python packages path
 tumblehead_packages_path = Path(__file__).parent.parent.parent.parent.parent
@@ -14,6 +13,7 @@ from tumblepipe.api import (
     api
 )
 from tumblepipe.farm.tasks.env import get_base_env
+from tumblepipe.farm.tasks.notify import _spec
 from tumblepipe.util.io import store_json
 from tumblepipe.naming import random_name
 from tumblepipe.farm.deadline import Task
@@ -42,27 +42,6 @@ config = {
 """
 
 def _is_valid_config(config):
-
-    def _is_valid_command(command):
-        if not isinstance(command, dict): return False
-        if 'mode' not in command: return False
-        match command['mode']:
-            case 'notify': return True
-            case 'partial':
-                if 'frame_path' not in command: return False
-                if not isinstance(command['frame_path'], str): return False
-                if 'first_frame' not in command: return False
-                if not isinstance(command['first_frame'], int): return False
-                if 'middle_frame' not in command: return False
-                if not isinstance(command['middle_frame'], int): return False
-                if 'last_frame' not in command: return False
-                if not isinstance(command['last_frame'], int): return False
-            case 'full':
-                if 'video_path' not in command: return False
-                if not isinstance(command['video_path'], str): return False
-            case _: return False
-        return True
-    
     if not isinstance(config, dict): return False
     if 'title' not in config: return False
     if not isinstance(config['title'], str): return False
@@ -77,7 +56,7 @@ def _is_valid_config(config):
     if 'message' not in config: return False
     if not isinstance(config['message'], str): return False
     if 'command' not in config: return False
-    if not _is_valid_command(config['command']): return False
+    if not _spec.is_valid_command(config['command']): return False
     return True
 
 SCRIPT_PATH = Path(__file__).parent / 'notify.py'

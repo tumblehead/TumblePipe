@@ -1,3 +1,0 @@
-from tumblepipe.pipe.houdini.lops import duplicate
-
-duplicate.on_created(kwargs['node'])
