@@ -266,7 +266,7 @@ Content-Type: text/plain
       righttype = extend
       default = 1
       flags = 0
-      segment { length = 0 value = 1 1 expr = ch(\"../include_layerbreak\") * (ch(\"../import_mode\") == 0) }
+      segment { length = 0 value = 1 1 expr = ch(\"../include_layerbreak\")*(1-ch(\"../import_mode\")) }
     }
   }
 

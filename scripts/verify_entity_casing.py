@@ -127,6 +127,12 @@ def check_filenames(project: Path, data: dict) -> list[str]:
     }
     findings = []
     for path in _iter_files(project, TEXT_SUFFIXES | CRATE_SUFFIXES | {'.hip'}):
+        # Export 'stage/' intermediates carry artist- and node-derived names
+        # (e.g. CLASH_SET_POSITION.usd), not pipeline naming - and hips
+        # reference them by that exact name, so they must not be flagged
+        # for a case rename.
+        if 'stage' in path.parts:
+            continue
         segments = path.name.split('_')
         if len(segments) < 2:
             continue
