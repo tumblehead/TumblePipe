@@ -135,37 +135,21 @@ def _subasset_script_lines(
                 )
                 # The set layer's overs carry the placement op VALUES
                 # (translate/rotate/scale/pivot survive the layerbreak)
-                # but not the xformOpOrder that applies them — the order
-                # lived in the Duplicate LOP's defs, which the export
-                # stripped. Author an order listing whichever placement
-                # ops actually composed (CommonAPI ordering, pivot
-                # inverted last). When none composed, fall back to an
-                # identity {base}_dup op so layout tooling still has a
-                # transform surface, mirroring the render stage's defs.
+                # but not the xformOpOrder that applies them — see
+                # util.apply_placement_op_order. When no placement
+                # composed, fall back to an identity {base}_dup op so
+                # layout tooling still has a transform surface,
+                # mirroring the render stage's defs.
                 lines += [
                     f'    inst = stage.DefinePrim("{instance_prim_path}")',
                     '    inst.SetActive(True)',
                     f'    inst.GetReferences().AddInternalReference("{base_path}")',
-                    '    op_order = []',
-                    '    for op_name in (',
-                    '        "xformOp:translate", "xformOp:translate:pivot",',
-                    '        "xformOp:rotateXYZ", "xformOp:rotateXZY",',
-                    '        "xformOp:rotateYXZ", "xformOp:rotateYZX",',
-                    '        "xformOp:rotateZXY", "xformOp:rotateZYX",',
-                    '        "xformOp:scale",',
-                    '    ):',
-                    '        op_attr = inst.GetAttribute(op_name)',
-                    '        if op_attr and op_attr.HasValue():',
-                    '            op_order.append(op_name)',
-                    '    if op_order:',
-                    '        if "xformOp:translate:pivot" in op_order:',
-                    '            op_order.append("!invert!xformOp:translate:pivot")',
-                    '        UsdGeom.Xformable(inst).GetXformOpOrderAttr().Set(op_order)',
-                    f'    elif not inst.GetAttribute("xformOp:transform:{base_name}_dup"):',
-                    '        dup_op = UsdGeom.Xformable(inst).AddTransformOp(',
-                    f'            UsdGeom.XformOp.PrecisionDouble, "{base_name}_dup"',
-                    '        )',
-                    '        dup_op.Set(Gf.Matrix4d(1))',
+                    '    if not util.apply_placement_op_order(inst):',
+                    f'        if not inst.GetAttribute("xformOp:transform:{base_name}_dup"):',
+                    '            dup_op = UsdGeom.Xformable(inst).AddTransformOp(',
+                    f'                UsdGeom.XformOp.PrecisionDouble, "{base_name}_dup"',
+                    '            )',
+                    '            dup_op.Set(Gf.Matrix4d(1))',
                 ]
                 if inline:
                     lines.append('    util.mark_inlined(inst)')

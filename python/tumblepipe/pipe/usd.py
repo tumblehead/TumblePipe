@@ -13,6 +13,43 @@ from typing import Union
 from tumblepipe.api import path_str
 from tumblepipe.util.uri import Uri
 
+# Candidate placement ops in USD XformCommonAPI application order. The
+# pivot's inverse is appended last when the pivot itself is present.
+PLACEMENT_OPS = (
+    'xformOp:translate',
+    'xformOp:translate:pivot',
+    'xformOp:rotateXYZ',
+    'xformOp:rotateXZY',
+    'xformOp:rotateYXZ',
+    'xformOp:rotateYZX',
+    'xformOp:rotateZXY',
+    'xformOp:rotateZYX',
+    'xformOp:scale',
+)
+
+
+def composed_placement_op_order(prim) -> list[str]:
+    """xformOpOrder applying the placement op values composed on ``prim``.
+
+    Exported set layers carry a duplicate's placement op VALUES (they
+    survive the layerbreak in the localized import-node sidecar) but not
+    the xformOpOrder that applies them — the order lived in the Duplicate
+    LOP defs the export stripped. Every point that re-creates instance
+    prims derives the order from what actually composed: ops with a value,
+    XformCommonAPI ordering, pivot inverted last. Returns [] when no
+    placement composed (callers fall back to an identity dup op).
+
+    ``prim`` is a Usd.Prim; this module stays pxr-free at import time, so
+    the caller owns the stage.
+    """
+    order = [
+        op_name for op_name in PLACEMENT_OPS
+        if prim.GetAttribute(op_name) and prim.GetAttribute(op_name).HasValue()
+    ]
+    if order and 'xformOp:translate:pivot' in order:
+        order.append('!invert!xformOp:translate:pivot')
+    return order
+
 
 def generate_usda_content(
     layer_paths: list[Union[Path, str]],
@@ -282,7 +319,10 @@ def _generate_render_overrides_section(overrides: dict) -> str:
     return '\n'.join(lines)
 
 
-def _generate_instance_prim_definitions(instances_by_asset: dict[str, list[str]]) -> str:
+def _generate_instance_prim_definitions(
+    instances_by_asset: dict[str, list[str]],
+    placement_orders: dict[str, list[str]] | None = None
+) -> str:
     """
     Generate USDA prim definitions for asset instances.
 
@@ -292,10 +332,18 @@ def _generate_instance_prim_definitions(instances_by_asset: dict[str, list[str]]
     Args:
         instances_by_asset: Dict mapping asset prim path (e.g., '/CHAR/cupAndBall')
                            to list of instance names
+        placement_orders: Optional {instance_prim_path: [op names]} from
+                          composing the staged stage — instances present
+                          here author that xformOpOrder (applying the
+                          placement values composed from the authoring
+                          department's sidecar) instead of the identity
+                          dup op.
 
     Returns:
         USDA text defining instance prims, or empty string if no multi-instance assets
     """
+    if placement_orders is None:
+        placement_orders = {}
     # Filter to only assets with 2+ instances
     multi_instance_assets = {
         prim_path: instances
@@ -327,15 +375,23 @@ def _generate_instance_prim_definitions(instances_by_asset: dict[str, list[str]]
             base_prim_path = f'/{category}/{asset_name}'
 
             # Generate instance prims (MiniFig0, MiniFig1, MiniFig2, etc.)
-            # Each instance references the base prim and has an identity transform
+            # Each instance references the base prim; the op order applies
+            # the composed placement values when known, else an identity
+            # transform gives the instance a transform surface.
             for instance_name in instances:
+                instance_path = f'/{category}/{instance_name}'
+                order = placement_orders.get(instance_path)
                 lines.append(f'    def "{instance_name}" (')
                 lines.append('        active = true')
                 lines.append(f'        append references = <{base_prim_path}>')
                 lines.append('    )')
                 lines.append('    {')
-                lines.append(f'        matrix4d xformOp:transform:{asset_name}_dup = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )')
-                lines.append(f'        uniform token[] xformOpOrder = ["xformOp:transform:{asset_name}_dup"]')
+                if order:
+                    order_str = ', '.join(f'"{op_name}"' for op_name in order)
+                    lines.append(f'        uniform token[] xformOpOrder = [{order_str}]')
+                else:
+                    lines.append(f'        matrix4d xformOp:transform:{asset_name}_dup = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )')
+                    lines.append(f'        uniform token[] xformOpOrder = ["xformOp:transform:{asset_name}_dup"]')
                 lines.append('    }')
                 lines.append('')
 
@@ -463,6 +519,50 @@ def _collect_leaf_layers(
     return leaf_layers
 
 
+def _composed_placement_orders(
+    staged_file_path: Path,
+    instances_by_asset: dict[str, list[str]]
+) -> dict[str, list[str]]:
+    """Per-instance placement op order, read from the composed staged stage.
+
+    Opens the staged file with USD and derives each instance prim's
+    xformOpOrder from the placement op values that actually composed
+    (composed_placement_op_order). Runs at submission time inside a
+    Houdini/hython session, so pxr and the entity resolver are available;
+    any failure returns {} and the static defs fall back to the identity
+    dup op. The instance prims exist on the staged stage only as typeless
+    overs, which is enough — their attributes compose and are queryable
+    via GetPrimAtPath.
+    """
+    try:
+        from pxr import Usd
+    except ImportError:
+        return {}
+    try:
+        stage = Usd.Stage.Open(str(staged_file_path))
+    except Exception:
+        logging.warning(
+            f'Could not compose {staged_file_path} for placement op '
+            'orders; instance defs fall back to identity transforms'
+        )
+        return {}
+    if stage is None:
+        return {}
+
+    orders = {}
+    for prim_path, instance_names in instances_by_asset.items():
+        parent_path = prim_path.rsplit('/', 1)[0]
+        for instance_name in instance_names:
+            instance_path = f'{parent_path}/{instance_name}'
+            prim = stage.GetPrimAtPath(instance_path)
+            if not prim:
+                continue
+            order = composed_placement_op_order(prim)
+            if order:
+                orders[instance_path] = order
+    return orders
+
+
 def collapse_latest_references(
     staged_file_path: Path,
     output_path: Path,
@@ -521,8 +621,16 @@ def collapse_latest_references(
         use_absolute_paths=True
     )
 
-    # Generate instance prim definitions for multi-instance assets
-    instance_prims = _generate_instance_prim_definitions(instances_by_asset)
+    # Generate instance prim definitions for multi-instance assets, with
+    # each instance's xformOpOrder derived from the composed staged stage
+    # (the placement values ride in department sidecars without an order;
+    # an identity dup op would leave every copy stacked at the prototype).
+    placement_orders = _composed_placement_orders(
+        staged_file_path, instances_by_asset
+    )
+    instance_prims = _generate_instance_prim_definitions(
+        instances_by_asset, placement_orders
+    )
     if instance_prims:
         usda_content = usda_content + '\n' + instance_prims
 

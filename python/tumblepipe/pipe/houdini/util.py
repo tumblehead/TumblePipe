@@ -1,11 +1,29 @@
 import json
 
-from pxr import Usd
+from pxr import Usd, UsdGeom
 
 from tumblepipe.config.timeline import BlockRange, FrameRange
 from tumblepipe.util.uri import Uri
 
 import hou
+
+def apply_placement_op_order(prim) -> bool:
+    """Author the xformOpOrder that applies composed placement op values.
+
+    The order derivation lives in pipe.usd.composed_placement_op_order
+    (shared with the static batch-submit flatten); see its docstring for
+    the why. Called on each re-established instance prim (import_asset's
+    metadata script, import_shot's duplicates subnet) after it is
+    (re)created. Returns True when an order was authored; False when no
+    placement composed (the caller decides the fallback).
+    """
+    from tumblepipe.pipe.usd import composed_placement_op_order
+
+    order = composed_placement_op_order(prim)
+    if not order:
+        return False
+    UsdGeom.Xformable(prim).GetXformOpOrderAttr().Set(order)
+    return True
 
 ###############################################################################
 # Helper functions

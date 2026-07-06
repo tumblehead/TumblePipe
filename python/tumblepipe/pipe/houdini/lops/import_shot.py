@@ -855,6 +855,7 @@ class ImportShot(ns.Node):
 
         # Create duplicate nodes for each asset with instances > 1
         # Metadata in customData travels with the scene prim automatically
+        instance_prim_paths = []
         for asset_info in assets:
             instances = asset_info.get('instances', 1)
             if instances <= 1:
@@ -882,6 +883,45 @@ class ImportShot(ns.Node):
             if prev_node:
                 dup_node.setInput(0, prev_node)
             prev_node = dup_node
+
+            # Duplicate names its copies {name}0..{name}N-1 (0-based
+            # @copy, source deactivated) — collect for the op-order pass.
+            instance_prim_paths.extend(
+                f'{asset_prim_path}{index}' for index in range(instances)
+            )
+
+        # Placement op VALUES compose onto the duplicated prims from the
+        # authoring department's exported sidecar, but the xformOpOrder
+        # that applies them was stripped with the original Duplicate defs
+        # — without this pass the farm render graph (which builds this
+        # exact node network) stacks every copy at the prototype, just
+        # like the GUI import did. Mirrors import_asset's re-established
+        # instances via the same util helper.
+        if instance_prim_paths:
+            script_lines = [
+                'import hou',
+                '',
+                'from tumblepipe.pipe.houdini import util',
+                '',
+                'node = hou.pwd()',
+                'stage = node.editableStage()',
+                'root = stage.GetPseudoRoot()',
+                '',
+            ]
+            for instance_prim_path in instance_prim_paths:
+                script_lines += [
+                    f'prim = root.GetPrimAtPath("{instance_prim_path}")',
+                    'if prim.IsValid():',
+                    '    util.apply_placement_op_order(prim)',
+                    '',
+                ]
+            order_node = duplicates_node.createNode(
+                'pythonscript', 'placement_op_order'
+            )
+            order_node.parm('python').set('\n'.join(script_lines))
+            if prev_node:
+                order_node.setInput(0, prev_node)
+            prev_node = order_node
 
         # Connect last node to output
         if duplicates_output and prev_node and prev_node != duplicates_input:

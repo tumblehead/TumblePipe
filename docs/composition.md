@@ -70,8 +70,17 @@ survive in the sidecar, but the order lived in the stripped Duplicate
 defs), and deactivate any numbered duplicate at or beyond the tracked
 count — a layer exported while an inflated count was live carries the
 phantom defs in its sidecar and would otherwise resurrect them on
-every import. The render-stage flatten generates the same instance
-definitions.
+every import.
+
+The placement op order is derived by one shared rule
+(`pipe.usd.composed_placement_op_order`: ops with composed values, in
+XformCommonAPI order, pivot inverted last, identity dup op as the
+no-placement fallback) at all three points that re-create instance
+prims: the `import_asset` metadata script (GUI), the `import_shot`
+duplicates subnet (also the farm stage-task graph), and the
+batch-submit direct-render flatten, which composes the staged stage at
+submission time to bake real orders into its static defs. GUI and farm
+placement agree by construction.
 `scripts/verify_tracked_asset_counts.py` sweeps a project for staged
 counts that drifted from the department contexts.
 
