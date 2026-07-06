@@ -1,7 +1,7 @@
 """JSON tree editor widget.
 
-Split by concern; this package re-exports the public surface so callers keep
-importing from ``...ui.database.json_editor``:
+Split by concern; this package re-exports the public surface so callers
+import from ``tumblepipe.config_editor.json_editor``:
 
 - ``types``  — JsonValue/JsonRoot aliases, FieldOrigin, value helpers (Qt-free)
 - ``diff``   — value-tree / diff-tree computation (Qt-free)

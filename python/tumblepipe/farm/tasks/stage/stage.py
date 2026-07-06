@@ -53,11 +53,19 @@ def main(config):
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
 
-        # Create output path
+        # Create one output stage per variant. A single stage composing
+        # every variant would render the last variant's opinions for all
+        # of them (husk has no variant selection).
         export_path = temp_path / 'export'
-        stage_path = export_path / 'stage.usd'
         relative_export_path = export_path.relative_to(temp_path)
-        relative_stage_path = stage_path.relative_to(temp_path)
+        stage_paths = {
+            variant_name: export_path / f'stage_{variant_name}.usd'
+            for variant_name in variant_names
+        }
+        relative_stage_paths = {
+            variant_name: stage_path.relative_to(temp_path)
+            for variant_name, stage_path in stage_paths.items()
+        }
 
         # Store stage config
         config_path = temp_path / 'config.json'
@@ -69,14 +77,15 @@ def main(config):
             settings = dict(
                 first_frame = first_frame,
                 last_frame = last_frame,
-                variant_names = variant_names,
-                render_department_name = render_department_name,
                 render_settings_path = path_str(render_settings_path)
             ),
-            output_path = path_str(to_windows_path(stage_path))
+            output_paths = {
+                variant_name: path_str(to_windows_path(stage_path))
+                for variant_name, stage_path in stage_paths.items()
+            }
         ))
-    
-        # Export the USD stage
+
+        # Export the USD stages
         result = hython.run(
             to_windows_path(SCRIPT_PATH),
             [
@@ -89,9 +98,10 @@ def main(config):
         if result != 0:
             return _error(f'Hython export failed with return code: {result}')
 
-        # Check if temp stage was generated
-        if not stage_path.exists():
-            return _error(f'Stage not exported: {stage_path}')
+        # Check if temp stages were generated
+        for variant_name, stage_path in stage_paths.items():
+            if not stage_path.exists():
+                return _error(f'Stage not exported: {stage_path}')
 
         # Submit the render pipe tasks with all render layers
         tasks = config['tasks'].copy()
@@ -108,7 +118,10 @@ def main(config):
                 variant_names = variant_names,
                 render_department_name = render_department_name,
                 render_settings_path = path_str(render_settings_path),
-                input_path = path_str(relative_stage_path),
+                input_paths = {
+                    variant_name: path_str(relative_stage_path)
+                    for variant_name, relative_stage_path in relative_stage_paths.items()
+                },
                 tile_count = tile_count,
                 first_frame = first_frame,
                 last_frame = last_frame,

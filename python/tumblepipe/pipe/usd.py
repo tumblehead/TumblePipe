@@ -386,13 +386,12 @@ def _collect_leaf_layers_and_instances(
         previous_mode = resolver.get_latest_mode()
         resolver.set_latest_mode(True)
         try:
+            # Raises ResolveError if unresolvable — silently returning an
+            # empty layer list here produced incomplete scene builds.
             resolved_path = resolver.resolve_entity_uri(layer_path)
         finally:
             resolver.set_latest_mode(previous_mode)
 
-        if not resolved_path:
-            logging.warning(f"Failed to resolve entity URI: {layer_path}")
-            return ([], instances_by_asset)
         layer_path = resolved_path
 
     # Normalize path separators

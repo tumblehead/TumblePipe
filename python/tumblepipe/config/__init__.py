@@ -152,16 +152,13 @@ from tumblepipe.config.farm import (
     Pool,
     PriorityPreset,
     list_pools,
-    get_default_pool,
     add_pool,
     remove_pool,
-    set_default_pool,
     list_priority_presets,
     get_default_priority,
     add_priority_preset,
     remove_priority_preset,
-    set_default_priority_preset,
-    get_entity_farm_settings
+    set_default_priority_preset
 )
 
 from tumblepipe.config.renderer import (
@@ -236,16 +233,13 @@ __all__ = [
     'Pool',
     'PriorityPreset',
     'list_pools',
-    'get_default_pool',
     'add_pool',
     'remove_pool',
-    'set_default_pool',
     'list_priority_presets',
     'get_default_priority',
     'add_priority_preset',
     'remove_priority_preset',
     'set_default_priority_preset',
-    'get_entity_farm_settings',
     # Renderer
     'RangeSetting',
     'RendererDefaults',

@@ -1,9 +1,11 @@
 """Farm configuration for render pools and priority presets.
 
 Pools and priority presets are stored as properties on the entity root
-(``entity:/``) under the ``farm`` sub-object. The same shape is what
-``get_entity_farm_settings`` cascades to per-entity overrides, so readers
-and writers share one canonical store.
+(``entity:/``) under the ``farm`` sub-object. Consumers that need other
+farm values (``default_pool``, per-entity overrides) read the property
+directly via ``api.config.get_properties`` — the config editor and the
+submit dialog both do — so this module only carries the mutating helpers
+whose invariants need enforcing (pool existence, priority ranges).
 """
 
 from dataclasses import dataclass
@@ -44,11 +46,6 @@ def list_pools() -> list[Pool]:
     return [Pool(name=p) for p in pools]
 
 
-def get_default_pool() -> str:
-    """Get the default pool name."""
-    return _get_root_farm().get('default_pool', '') or 'general'
-
-
 def add_pool(name: str) -> None:
     """Add a new render pool."""
     farm = _get_root_farm()
@@ -70,16 +67,6 @@ def remove_pool(name: str) -> None:
     farm['pools'] = pools
     if farm.get('default_pool') == name:
         farm['default_pool'] = ''
-    _write_root_farm(farm)
-
-
-def set_default_pool(name: str) -> None:
-    """Set the default pool."""
-    farm = _get_root_farm()
-    pools = farm.get('pools', [])
-    if name not in pools:
-        raise ValueError(f'Pool does not exist: {name}')
-    farm['default_pool'] = name
     _write_root_farm(farm)
 
 
@@ -138,18 +125,3 @@ def set_default_priority_preset(name: str) -> None:
     _write_root_farm(farm)
 
 
-def get_entity_farm_settings(entity_uri: Uri) -> dict:
-    """Get resolved farm settings for an entity (with inheritance).
-
-    Returns farm settings merged from root to entity, with child values
-    overriding parent values. This allows per-entity overrides of pool,
-    priority, tile_count, batch_size, and timeout settings.
-
-    Args:
-        entity_uri: The entity URI (e.g., entity:/shots/010/010)
-
-    Returns:
-        Dict with farm settings, or empty dict if none found.
-    """
-    props = api.config.get_properties(entity_uri)
-    return props.get('farm', {}) if props else {}

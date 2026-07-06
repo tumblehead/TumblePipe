@@ -4,21 +4,11 @@ import json
 
 import hou
 
-from tumblepipe.api import (
-    path_str,
-    local_path,
-    api
-)
+from tumblepipe.api import path_str
 from tumblepipe.config.timeline import BlockRange
-from tumblepipe.config.department import list_departments
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
-from tumblepipe.farm.tasks._render_settings import get_render_settings_script as _get_render_settings_script
-from tumblepipe.pipe.houdini import util
-from tumblepipe.pipe.houdini.lops import (
-    import_shot,
-    import_layer
-)
+from tumblepipe.pipe.houdini import render_stage
 
 def _headline(title):
     print(f' {title} '.center(80, '='))
@@ -31,134 +21,54 @@ def _connect(node1, node2):
     port = len(node2.inputs())
     node2.setInput(port, node1)
 
-def _get_aov_names(render_settings_path: Path) -> set:
-
-    # Load render settings
-    render_settings_data = load_json(render_settings_path)
-    if render_settings_data is None: return None
-
-    # Get AOV names
-    if 'aov_names' not in render_settings_data: return None
-    return set(render_settings_data['aov_names'])
-
 def main(
     shot_uri: Uri,
     render_range: BlockRange,
-    variant_names: list[str],
-    render_department_name: str,
     render_settings_path: Path,
-    output_path: Path
+    output_paths: dict[str, Path]
     ) -> int:
     _headline('Stage Shot')
 
     # Prepare scene
     scene_node = hou.node('/stage')
 
-    # Config
-    included_department_names = [
-        d.name for d in list_departments('shots') if d.renderable
-    ]
+    # Build and export one independent graph per variant. Chaining the
+    # variant graphs would compose every variant into a single stage, so
+    # each render layer would get the last variant's opinions.
+    for variant_name, output_path in output_paths.items():
+        _headline(f'Variant {variant_name}')
 
-    # Create import shot node
-    shot_node = import_shot.create(scene_node, '__import_shot')
-    shot_node.set_shot_uri(shot_uri)
-    shot_node.set_include_procedurals(True)
-    shot_node.execute()
-    prev_node = shot_node.native()
-
-    # Sublayer root defaults to get render settings and RenderVar prims
-    root_defaults_uri = Uri.parse_unsafe('config:/usd/root_default_prims.usda')
-    root_defaults_path = local_path(api.storage.resolve(root_defaults_uri))
-    if root_defaults_path.exists():
-        sublayer_node = scene_node.createNode('sublayer', '__root_defaults')
-        sublayer_node.parm('filepath1').set(path_str(root_defaults_path))
-        _connect(prev_node, sublayer_node)
-        prev_node = sublayer_node
-
-    # Loop over each variant to create separate variant subnets
-    for variant_name in variant_names:
-
-        # Prepare import variant layers
-        variant_subnet = scene_node.createNode('subnet', f'__variant_{variant_name}')
-        variant_subnet.node('output0').destroy()
-        variant_subnet_input = variant_subnet.indirectInputs()[0]
-        variant_subnet_output = variant_subnet.createNode(
-            'output', 'output'
+        prev_node = render_stage.build_render_stage_graph(
+            scene_node,
+            shot_uri,
+            variant_name,
+            render_settings_path,
+            name_prefix = f'__{variant_name}_'
         )
 
-        # Connect build shot to subnet
-        _connect(prev_node, variant_subnet)
-        subnet_prev_node = variant_subnet_input
-
-        # Setup variant node for this specific variant
-        for included_department_name in included_department_names:
-            layer_node = import_layer.create(
-                variant_subnet,
-                included_department_name
-            )
-            layer_node.set_entity_uri(shot_uri)
-            layer_node.set_department_name(included_department_name)
-            layer_node.set_variant_name(variant_name)
-            layer_node.set_version_name('current')
-            layer_node.execute()
-            _connect(subnet_prev_node, layer_node.native())
-            subnet_prev_node = layer_node.native()
-
-        # Connect last node to subnet output
-        _connect(subnet_prev_node, variant_subnet_output)
-        prev_node = variant_subnet
-
-    # Setup edit render settings
-    edit_render_settings_node = scene_node.createNode(
-        'pythonscript',
-        '__edit_settings'
-    )
-    edit_render_settings_node.parm('python').set(
-        _get_render_settings_script(render_settings_path)
-    )
-    _connect(prev_node, edit_render_settings_node)
-    prev_node = edit_render_settings_node
-
-    # Setup AOV pruning - use composed stage that includes root defaults
-    included_aov_names = _get_aov_names(render_settings_path)
-    if included_aov_names is not None:
-        root = prev_node.stage().GetPseudoRoot()
-        aov_paths = {
-            aov_path.rsplit('/', 1)[1]: aov_path
-            for aov_path in util.list_render_vars(root)
-        }
-        excluded_aov_names = set(aov_paths.keys()) - included_aov_names
-        prune_aovs_node = scene_node.createNode('prune', '__prune_aovs')
-        prune_aovs_node.parm('primpattern1').set(
-            ' '.join([
-                aov_paths[aov_name]
-                for aov_name in excluded_aov_names
-            ])
+        # Setup export node
+        export_node = scene_node.createNode(
+            'filecache', f'__{variant_name}_export'
         )
-        _connect(prev_node, prune_aovs_node)
-        prev_node = prune_aovs_node
+        export_node.parm('filemethod').set(1)
+        export_node.parm('trange').set(1)
+        export_node.parm('f1').deleteAllKeyframes()
+        export_node.parm('f2').deleteAllKeyframes()
+        export_node.parm('f3').set(1)
+        export_node.parm('striplayerbreaks').set(False)
+        _connect(prev_node, export_node)
 
-    # Setup export node
-    export_node = scene_node.createNode('filecache', '__export')
-    export_node.parm('filemethod').set(1)
-    export_node.parm('trange').set(1)
-    export_node.parm('f1').deleteAllKeyframes()
-    export_node.parm('f1').deleteAllKeyframes()
-    export_node.parm('f3').set(1)
-    export_node.parm('striplayerbreaks').set(False)
-    _connect(prev_node, export_node)
+        # Export the USD stage
+        export_node.parm('file').set(path_str(output_path))
+        export_node.parm('f1').set(render_range.first_frame)
+        export_node.parm('f2').set(render_range.last_frame)
+        export_node.parm('execute').pressButton()
 
-    # Export the USD stage
-    export_node.parm('file').set(path_str(output_path))
-    export_node.parm('f1').set(render_range.first_frame)
-    export_node.parm('f2').set(render_range.last_frame)
-    export_node.parm('execute').pressButton()
+        # Verify the USD file was created
+        if not output_path.exists():
+            return _error(f'Failed to export USD stage: {output_path}')
 
-    # Verify the USD file was created
-    if not output_path.exists():
-        return _error(f'Failed to export USD stage: {output_path}')
-
-    print(f'Successfully exported USD stage: {output_path}')
+        print(f'Successfully exported USD stage: {output_path}')
 
     # Done
     return 0
@@ -172,11 +82,11 @@ config = {
     'settings': {
         'first_frame': 'int',
         'last_frame': 'int',
-        'variant_names': ['string'],
-        'render_department_name': 'string',
         'render_settings_path': 'path/to/render_settings.json'
     },
-    'output_path': 'path/to/stage.usd'
+    'output_paths': {
+        'variant_name': 'path/to/stage_variant_name.usd'
+    }
 }
 """
 
@@ -184,7 +94,7 @@ def _is_valid_config(config):
 
     def _is_str(datum):
         return isinstance(datum, str)
-    
+
     def _is_int(datum):
         return isinstance(datum, int)
 
@@ -192,7 +102,7 @@ def _is_valid_config(config):
         if key not in data: return False
         if not value_checker(data[key]): return False
         return True
-    
+
     _check_str = partial(_check, _is_str)
     _check_int = partial(_check, _is_int)
 
@@ -201,15 +111,20 @@ def _is_valid_config(config):
         if not _check_str(entity, 'uri'): return False
         if not _check_str(entity, 'department'): return False
         return True
-    
+
     def _valid_settings(settings):
         if not isinstance(settings, dict): return False
         if not _check_int(settings, 'first_frame'): return False
         if not _check_int(settings, 'last_frame'): return False
-        if 'variant_names' not in settings: return False
-        if not isinstance(settings['variant_names'], list): return False
-        if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
+        return True
+
+    def _valid_output_paths(output_paths):
+        if not isinstance(output_paths, dict): return False
+        if len(output_paths) == 0: return False
+        for variant_name, output_path in output_paths.items():
+            if not isinstance(variant_name, str): return False
+            if not isinstance(output_path, str): return False
         return True
 
     if not isinstance(config, dict): return False
@@ -217,7 +132,8 @@ def _is_valid_config(config):
     if not _valid_entity(config['entity']): return False
     if 'settings' not in config: return False
     if not _valid_settings(config['settings']): return False
-    if not _check_str(config, 'output_path'): return False
+    if 'output_paths' not in config: return False
+    if not _valid_output_paths(config['output_paths']): return False
     return True
 
 def cli():
@@ -234,7 +150,7 @@ def cli():
         return _error(f'Config file not found: {config_path}')
     if not _is_valid_config(config):
         return _error(f'Invalid config file: {config_path}')
-    
+
     # Print config
     _headline('Config')
     print(json.dumps(config, indent=4))
@@ -250,19 +166,18 @@ def cli():
         settings['first_frame'],
         settings['last_frame']
     )
-    variant_names = settings['variant_names']
-    render_department_name = settings['render_department_name']
     render_settings_path = Path(settings['render_settings_path'])
-    output_path = Path(config['output_path'])
+    output_paths = {
+        variant_name: Path(output_path)
+        for variant_name, output_path in config['output_paths'].items()
+    }
 
     # Run main
     return main(
         entity_uri,
         render_range,
-        variant_names,
-        render_department_name,
         render_settings_path,
-        output_path
+        output_paths
     )
 
 if __name__ == '__main__':

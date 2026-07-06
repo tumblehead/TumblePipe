@@ -10,16 +10,16 @@ from tumblepipe.api import (
 )
 from tumblepipe.util.uri import Uri
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.context import save_layer_context
 from tumblepipe.pipe.paths import (
     get_next_version_path,
     get_rig_export_path,
     get_workfile_context
 )
-from tumblepipe.config.variants import list_variants
 
 
-class ExportRig(ns.Node):
+class ExportRig(EntityNode):
     def __init__(self, native):
         super().__init__(native)
 
@@ -64,21 +64,6 @@ class ExportRig(ns.Node):
 
     def get_department_name(self) -> str:
         return 'rig'
-
-    def list_variant_names(self) -> list[str]:
-        """List available variant names for current asset."""
-        entity_uri = self.get_entity_uri()
-        if entity_uri is None:
-            return ['default']
-        return list_variants(entity_uri)
-
-    def get_variant_name(self) -> str:
-        """Get selected variant name, defaults to 'default'."""
-        variant_names = self.list_variant_names()
-        variant_name = self.parm('variant').eval()
-        if not variant_name or variant_name not in variant_names:
-            return 'default'
-        return variant_name
 
     def set_variant_name(self, variant_name: str):
         variant_names = self.list_variant_names()

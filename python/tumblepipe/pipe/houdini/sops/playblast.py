@@ -10,17 +10,21 @@ from tumblepipe.apps import mp4
 from tumblepipe.config.timeline import get_frame_range, get_fps
 from tumblepipe.pipe.houdini import util
 from tumblepipe.pipe.houdini import nodes as ns
+from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.paths import (
     get_next_playblast_path,
     get_latest_playblast_path,
-    get_daily_path,
-    get_workfile_context
+    get_daily_path
 )
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.department import list_departments
 
 
-class Playblast(ns.Node):
+class Playblast(EntityNode):
+
+    # Playblasts list the renderable shot departments.
+    DEPARTMENT_CONTEXT = 'shots'
+    DEPARTMENT_FILTER = 'renderable'
+
     def __init__(self, native):
         super().__init__(native)
 
@@ -35,9 +39,6 @@ class Playblast(ns.Node):
         stage = stage_node.stage()
         if stage is None: return None
         return stage.GetPseudoRoot()
-
-    def list_department_names(self):
-        return [d.name for d in list_departments('shots') if d.renderable]
 
     def list_entity_uris(self) -> list[str]:
         uris = api.config.list_entity_uris(
@@ -73,38 +74,10 @@ class Playblast(ns.Node):
         if camera_index >= len(camera_paths): return None
         return camera_paths[camera_index]
     
-    def set_department_name(self, department_name):
-        department_names = self.list_department_names()
-        if department_name not in department_names: return
-        self.parm('department').set(department_name)
-        self._update_labels()
-
     def set_camera_name(self, camera_name):
         camera_names = self.list_camera_names()
         if camera_name not in camera_names: return
         self.parm('camera').set(camera_name)
-        self._update_labels()
-
-    def get_entity_uri(self) -> Uri | None:
-        entity_uri_raw = self.parm('entity').eval()
-        if entity_uri_raw == 'from_context':
-            file_path = Path(hou.hipFile.path())
-            context = get_workfile_context(file_path)
-            if context is None: return None
-            # Only accept entity URIs, not group URIs
-            if context.entity_uri.purpose != 'entity': return None
-            return context.entity_uri
-        # From settings
-        entity_uris = self.list_entity_uris()
-        if len(entity_uris) <= 1: return None  # Only 'from_context' means no real URIs
-        if len(entity_uri_raw) == 0: return Uri.parse_unsafe(entity_uris[1])  # Skip 'from_context'
-        if entity_uri_raw not in entity_uris: return None  # Compare strings
-        return Uri.parse_unsafe(entity_uri_raw)
-
-    def set_entity_uri(self, entity_uri: Uri):
-        entity_uris = self.list_entity_uris()
-        if str(entity_uri) not in entity_uris: return  # Compare strings
-        self.parm('entity').set(str(entity_uri))
         self._update_labels()
 
     def _update_labels(self):

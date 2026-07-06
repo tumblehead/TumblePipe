@@ -133,7 +133,9 @@ def _scan_path_for_versions(root_path) -> dict[str, dict[str, Path]]:
     sidefx_path = root_path / 'Program Files' / 'Side Effects Software'
     try:
         if not sidefx_path.exists(): return dict()
-    except:
+    except OSError:
+        # Unreadable drive/mount — treat as "no Houdini here"; anything
+        # else raising is a real bug and must surface.
         return dict()
     result = dict()
     for houdini_version in sidefx_path.iterdir():

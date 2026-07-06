@@ -176,6 +176,5 @@ def Task(script_path, requirements_path, *args, **kwargs):
     submit layer never has to know about packages.
     """
     job = Job(script_path, requirements_path, *args, **kwargs)
-    if job._plugin == 'HPM':
-        job.manifest = hpm_task_manifest(script_path, requirements_path)
+    job.manifest = hpm_task_manifest(script_path, requirements_path)
     return job

@@ -38,7 +38,7 @@ NODE_CONFIGS = {
         ('get_variant_name', 'set_variant_name'),
     ]),
     'import_asset': (import_asset.ImportAsset, [
-        ('get_asset_uri', 'set_asset_uri'),
+        ('get_entity_uri', 'set_entity_uri'),
         ('get_variant_name', 'set_variant_name'),
         ('get_exclude_department_names', 'set_exclude_department_names'),
         ('get_include_layerbreak', 'set_include_layerbreak'),
@@ -82,13 +82,12 @@ def capture_wrapper_values(wrapper, type_name):
     _, getter_setter_pairs = NODE_CONFIGS[type_name]
     values = {}
 
+    # NODE_CONFIGS declares the wrapper's interface — a missing getter is
+    # config/wrapper drift and a raising getter is a real bug. Silently
+    # skipping either rebuilt nodes with quietly lost state (version pins,
+    # variant selections).
     for getter_name, _ in getter_setter_pairs:
-        getter = getattr(wrapper, getter_name, None)
-        if getter:
-            try:
-                values[getter_name] = getter()
-            except Exception:
-                pass  # Skip if getter fails
+        values[getter_name] = getattr(wrapper, getter_name)()
 
     return values
 
@@ -106,14 +105,12 @@ def restore_wrapper_values(wrapper, type_name, values):
 
     _, getter_setter_pairs = NODE_CONFIGS[type_name]
 
+    # Same contract as capture_wrapper_values: setters are declared
+    # interface, and a failing setter must surface, not silently drop
+    # the captured state on the floor.
     for getter_name, setter_name in getter_setter_pairs:
         if getter_name in values:
-            setter = getattr(wrapper, setter_name, None)
-            if setter:
-                try:
-                    setter(values[getter_name])
-                except Exception:
-                    pass  # Skip if setter fails
+            getattr(wrapper, setter_name)(values[getter_name])
 
 
 def capture_connections(node):
@@ -145,22 +142,24 @@ def capture_connections(node):
 
 
 def restore_connections(node, input_connections, output_connections):
-    """Restore input and output connections by resolving paths."""
+    """Restore input and output connections by resolving paths.
+
+    Raises if a captured connection cannot be restored — silently dropping
+    a wire leaves the rebuilt graph subtly different from the original.
+    """
     for input_idx, input_node_path, output_idx in input_connections:
-        try:
-            input_node = hou.node(input_node_path)
-            if input_node is not None:
-                node.setInput(input_idx, input_node, output_idx)
-        except hou.OperationFailed:
-            pass
+        input_node = hou.node(input_node_path)
+        if input_node is None:
+            raise RuntimeError(
+                f'rebuild: input node vanished during rebuild: {input_node_path}')
+        node.setInput(input_idx, input_node, output_idx)
 
     for output_idx, output_node_path, input_idx in output_connections:
-        try:
-            output_node = hou.node(output_node_path)
-            if output_node is not None:
-                output_node.setInput(input_idx, node, output_idx)
-        except hou.OperationFailed:
-            pass
+        output_node = hou.node(output_node_path)
+        if output_node is None:
+            raise RuntimeError(
+                f'rebuild: output node vanished during rebuild: {output_node_path}')
+        output_node.setInput(input_idx, node, output_idx)
 
 
 def rebuild_node(source_node):

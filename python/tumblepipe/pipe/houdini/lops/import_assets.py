@@ -4,12 +4,12 @@ from pathlib import Path
 
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.department import list_departments
 from tumblepipe.config.variants import list_variants
 from tumblepipe.pipe.paths import list_version_paths, get_workfile_context
 from tumblepipe.pipe.houdini.util import uri_to_prim_path
 from tumblepipe.util import result
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.lops import import_asset
 
 
@@ -127,12 +127,13 @@ def _assets_metadata_script(
         script_lines.extend([
             f'# Asset: {asset_uri}',
             f'prim = root.GetPrimAtPath("{prim_path}")',
-            f'if prim.IsValid():',
-            f'    util.set_metadata(prim, {{',
+            'if prim.IsValid():',
+            '    util.set_metadata(prim, {',
             f"        'uri': '{str(asset_uri)}',",
             f"        'instance': '{base_name}',",
+            f"        'variant': '{variant}',",
             f"        'inputs': {inputs_str}",
-            f'    }})',
+            '    })',
             '',
         ])
 
@@ -170,7 +171,7 @@ def _inline_marker_script(prim_paths: list[str]) -> str:
 
     return '\n'.join(script_lines)
 
-class ImportAssets(ns.Node):
+class ImportAssets(EntityNode):
     def __init__(self, native):
         super().__init__(native)
 
@@ -196,9 +197,6 @@ class ImportAssets(ns.Node):
             for asset_uri in all_asset_uris
             if asset_uri not in other_asset_uris
         ]
-
-    def list_department_names(self):
-        return [d.name for d in list_departments('assets') if d.publishable]
 
     def get_entity_uri(self, index) -> Uri | None:
         """Resolve the entity for a row, read-only.
@@ -250,7 +248,14 @@ class ImportAssets(ns.Node):
         if asset_uri is None:
             return ['latest', 'current']
 
-        staged_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / '_staged'
+        # Staged directory for the row's variant
+        # (_staged/<variant>/v####, mirroring import_shot)
+        staged_uri = (
+            Uri.parse_unsafe('export:/') /
+            asset_uri.segments /
+            '_staged' /
+            self.get_variant_name(index)
+        )
         staged_path = api.storage.resolve(staged_uri)
 
         version_paths = list_version_paths(staged_path)
@@ -268,9 +273,6 @@ class ImportAssets(ns.Node):
     def set_version_name(self, index: int, version_name: str):
         """Set version name for this index."""
         self.parm(f'version{index}').set(version_name)
-
-    def get_exclude_department_names(self):
-        return list(filter(len, self.parm('departments').eval().split()))
 
     def get_asset_imports(self) -> list[tuple[Uri, str, str, int]]:
         """Returns list of (asset_uri, variant, version, instances) for all asset imports.
@@ -293,16 +295,6 @@ class ImportAssets(ns.Node):
             instances = self.get_instances(index)
             asset_imports.append((asset_uri, variant, version, instances))
         return asset_imports
-    
-    def get_include_layerbreak(self):
-        return bool(self.parm('include_layerbreak').eval())
-
-    def get_import_mode(self) -> str:
-        """'reference' (pipeline metadata + layerbreak) or 'inline' (baked
-        into the export). Nodes predating the parm read as 'reference'."""
-        parm = self.parm('import_mode')
-        if parm is None: return 'reference'
-        return parm.evalAsString()
 
     def set_entity_uri(self, index, asset_uri: Uri):
         asset_uris = self.list_entity_uris(index)
@@ -336,22 +328,6 @@ class ImportAssets(ns.Node):
 
     def set_instances(self, index, instances):
         self.parm(f'instances{index}').set(instances)
-    
-    def set_exclude_department_names(self, exclude_department_names):
-        department_names = self.list_department_names()
-        self.parm('departments').set(' '.join([
-            department_name
-            for department_name in exclude_department_names
-            if department_name in department_names
-        ]))
-    
-    def set_include_layerbreak(self, include_layerbreak):
-        self.parm('include_layerbreak').set(int(include_layerbreak))
-
-    def set_import_mode(self, import_mode: str):
-        parm = self.parm('import_mode')
-        if parm is not None:
-            parm.set(import_mode)
 
     def _update_labels(self, index: int):
         """Update label parameters for the given index."""
@@ -426,7 +402,7 @@ class ImportAssets(ns.Node):
                 dive_node,
                 node_name
             )
-            asset_node.set_asset_uri(asset_uri)
+            asset_node.set_entity_uri(asset_uri)
             asset_node.set_variant_name(variant)
             asset_node.parm('version').set(version)
             asset_node.set_exclude_department_names(
@@ -458,23 +434,27 @@ class ImportAssets(ns.Node):
             _connect(asset_node.native(), duplicate_node)
             _connect(duplicate_node, merge_node)
 
-            # Update the script arguments to rename instance in metadata
+            # Update the script arguments to rename instance in metadata.
+            # The Duplicate LOP (defaults: deactivate source, 0-based
+            # @copy) names the copies Chair0..ChairN-1 and deactivates
+            # Chair. Tag both spellings for the first instance — the
+            # 0-based copy and the legacy kept-name form — since the
+            # update script skips invalid prim paths; the deactivated
+            # base harmlessly keeps its base metadata.
             asset_prim_base = asset_prim_path.rsplit('/', 1)[0]  # e.g., /CHAR
             prim_name = asset_prim_path.rsplit('/', 1)[1]  # e.g., Chair
             base_name = asset_uri.segments[-1]  # Last segment is the asset name
             for index in range(instances):
-                # Match duplicate node naming: Chair, Chair0, Chair1, etc.
-                if index == 0:
-                    instance_prim_name = prim_name  # Original keeps name
-                else:
-                    instance_prim_name = f'{prim_name}{index}'  # Copies get number suffix
-
                 instance_name = api.naming.get_instance_name(base_name, index)
-                script_args.append((
-                    f'{asset_prim_base}/{instance_prim_name}',
-                    str(asset_uri),
-                    instance_name
-                ))
+                instance_prim_names = [f'{prim_name}{index}']
+                if index == 0:
+                    instance_prim_names.append(prim_name)
+                for instance_prim_name in instance_prim_names:
+                    script_args.append((
+                        f'{asset_prim_base}/{instance_prim_name}',
+                        str(asset_uri),
+                        instance_name
+                    ))
 
         # Update the instances names in the metadata. In inline mode the
         # update script must not run: it would (re)create pipeline metadata

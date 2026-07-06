@@ -11,15 +11,17 @@ TumblePipe/
 ├── asset_browser_catalogs/      # TumbleTrove asset_browser catalog
 │   ├── pipeline.py              #   factory entry point (discovered)
 │   └── _pipeline_*.py           #   catalog implementation + helpers
+├── radial_menus/                # tumbletrove radial menus (shipped JSON + startup-generated)
 ├── recipes/                     # Shipped asset-browser recipes (read-only)
 ├── desktop/
 │   └── TumblePipe.desk          # Houdini desktop layout
 ├── ocio/                        # OpenColorIO configuration
 ├── otls/                        # Houdini Digital Assets (text format)
 ├── python/tumblepipe/           # Core pipeline Python modules
-├── python3.11libs/              # Houdini 21 startup hooks + libraries
+├── python3.11libs/              # Houdini 21 startup stubs
 │   ├── pythonrc.py
 │   └── uiready.py
+├── python3.13libs/              # Houdini 22 startup stubs (byte-identical to 3.11)
 ├── python_panels/
 │   └── icon_browser.pypanel     # Icon browser Python panel
 ├── resolver/                    # Pre-built USD asset resolver (native)
@@ -43,15 +45,40 @@ packaging.
 ### `python/tumblepipe/`
 
 The pipeline's Python package. This is on Houdini's Python path; import
-with `from tumblepipe import ...`.
+with `from tumblepipe import ...`. Subpackages:
 
-### `python3.11libs/`
+- `api.py`, `startup.py`, `naming.py`, `migration.py`, `storage.py` —
+  package root: the lazy `api` client, Houdini-startup registrations
+  (radial menus/actions), naming/storage convention bases, config
+  migration.
+- `util/` — dependency-free primitives (`Uri`, io, logging, the single
+  `hou`-availability gate).
+- `config/` — the JSON config store and typed accessors (entities,
+  departments, variants, timeline, farm, renderer, scene).
+- `pipe/` — pipeline core: `paths/` (all filesystem addressing),
+  `graph.py` (dependency graph), `build.py` (shot/asset build
+  resolution), `context.py`, `usd.py`, `scene_build.py`, and
+  `houdini/` (HDA node wrappers under `lops/`/`sops/`/`cops/`, shared
+  `entity_node.py` base, `render_stage.py` — the single render-stage
+  LOP graph builder shared by the farm stage tasks and the
+  `th::render_debug` HDA — and task/process UI).
+- `apps/` — external-tool launchers (Deadline, hython, ffmpeg/EXR
+  tools, DaVinci Resolve).
+- `farm/` — Deadline job/task builders (`jobs/` submit-side DAGs,
+  `tasks/` per-task build + worker scripts).
+- `config_editor/` — the Qt config-database editor application
+  (launched from the shelf or the asset browser).
+- `tools/`, `ui/` — shelf-tool helpers and the reusable Qt widget kit.
 
-Houdini's per-version Python library location. `pythonrc.py` runs on Houdini
-Python startup; `uiready.py` runs when the UI is ready. The `external/`
-subtree (bundled third-party wheels per platform) is excluded from the git
-mirror — HPM resolves those dependencies on the user's machine via the
-`[python_dependencies]` table in `hpm.toml`.
+### `python3.11libs/` and `python3.13libs/`
+
+Houdini's per-Python-version library locations (Houdini 21 → 3.11,
+Houdini 22 → 3.13). Each holds the same two thin stubs, kept
+byte-identical: `pythonrc.py` runs on Houdini Python startup (puts
+`python/` on `sys.path`, then delegates all registrations to
+`tumblepipe.startup`); `uiready.py` runs when the UI is ready (selects
+the TumblePipe desktop). Everything with actual logic lives in the
+package so the two interpreters cannot drift.
 
 ### `resolver-src/` and `resolver/`
 
@@ -112,6 +139,21 @@ companion modules:
   preferences plus the gear-icon settings UI.
 
 None of the `_pipeline_*` files are loaded by TumbleTrove directly.
+
+### `radial_menus/`
+
+Menus for the tumbletrove radial system (the Space-key Qt radial; the
+Houdini-native `radialmenu/` system was retired in its favour).
+`tumblepipe_pipeline.json` is authored, tracked and shipped (Alt+T:
+pipeline HDA submenus). `tumblepipe_recipes.json` and
+`tumblepipe_asset_favorites.json` are generated (or removed, when fewer
+than the two entries a radial ring requires exist) at startup by
+`tumblepipe.startup` from the live `Recipes.hda` and the asset-browser
+favorites, so they cannot drift from what exists — they are gitignored
+and never ship. The directory is registered via
+`radial.add_custom_menu_dir()`; the `network.cop` / `network.vop`
+context menus are registered from Python in `tumblepipe.startup`
+rather than as JSON.
 
 ### `recipes/`
 

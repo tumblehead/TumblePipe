@@ -9,10 +9,9 @@ import re
 from tumblepipe.api import local_path, to_windows_path, path_str
 from tumblepipe.apps import app
 
-# Default farm plugin. 'HPM' runs the task from a package resolved on the worker
-# (see deadline-hpm-plugin); 'UV' is the legacy plugin that bakes the submitter's
-# absolute script path. A job can override per-instance via Job(..., plugin=...).
-DEFAULT_PLUGIN = 'HPM'
+# Farm plugin. 'HPM' runs the task from a package resolved on the worker
+# (see deadline-hpm-plugin).
+PLUGIN = 'HPM'
 
 # Matches the .hpm/packages/<name>@<version>/<relative...> segment of a script
 # path, regardless of whether it's a Windows (C:/...) or WSL (/mnt/c/...) form.
@@ -226,8 +225,7 @@ class Job:
     def __init__(self,
         script_path,
         requirements_path,
-        *args,
-        plugin=None
+        *args
         ):
 
         # Asserts
@@ -235,7 +233,6 @@ class Job:
         assert isinstance(script_path, Path), 'Invalid script path type'
 
         # Members
-        self._plugin = plugin or DEFAULT_PLUGIN
         self.name = None
         self.pool = None
         self.group = None
@@ -288,7 +285,7 @@ class Job:
             'UserName': getpass.getuser(),
             'MachineName': platform.node(),
             'InitialStatus': 'Active',
-            'Plugin': self._plugin,
+            'Plugin': PLUGIN,
             'Frames': self._frames(),
             'ChunkSize': str(self.chunk_size),
             'EnableFrameTimeouts': 'true',
@@ -323,23 +320,15 @@ class Job:
             lambda part: len(part) != 0,
             self._args
         ))
-        if self._plugin == 'HPM':
-            # Ship a package identity + package-relative script so the worker
-            # re-resolves the same version against its own HPM store.
-            package_spec, relative_script = hpm_package_spec(self._script_path)
-            result = {
-                'Package': package_spec,
-                'ScriptFile': relative_script,
-                'Arguments': arguments,
-                'StartupDirectory': path_str(job_path / 'data')
-            }
-        else:
-            # Legacy UV plugin: bake the absolute script path.
-            result = {
-                'ScriptFile': path_str(self._script_path),
-                'Arguments': arguments,
-                'StartupDirectory': path_str(job_path / 'data')
-            }
+        # Ship a package identity + package-relative script so the worker
+        # re-resolves the same version against its own HPM store.
+        package_spec, relative_script = hpm_package_spec(self._script_path)
+        result = {
+            'Package': package_spec,
+            'ScriptFile': relative_script,
+            'Arguments': arguments,
+            'StartupDirectory': path_str(job_path / 'data')
+        }
         if self._requirements_path is not None:
             result['RequirementsFile'] = path_str(self._requirements_path)
         if env_file_path is not None:

@@ -4,9 +4,9 @@ from tumblepipe.api import path_str, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.sops import rename_packed
 from tumblepipe.pipe.paths import list_version_paths
-from tumblepipe.config.variants import list_variants
 
 def _clear_scene(dive_node, output_node):
 
@@ -19,7 +19,7 @@ def _clear_scene(dive_node, output_node):
         if node.name() == output_node.name(): continue
         node.destroy()
 
-class ImportRig(ns.Node):
+class ImportRig(EntityNode):
     def __init__(self, native):
         super().__init__(native)
 
@@ -33,21 +33,6 @@ class ImportRig(ns.Node):
                 uri for uri in asset_uris
                 if is_terminal_entity(api.config, uri)
             ]
-
-    def list_variant_names(self) -> list[str]:
-        """List available variant names for current asset."""
-        asset_uri = self.get_entity_uri()
-        if asset_uri is None:
-            return ['default']
-        return list_variants(asset_uri)
-
-    def get_variant_name(self) -> str:
-        """Get selected variant name, defaults to 'default'."""
-        variant_names = self.list_variant_names()
-        variant_name = self.parm('variant').eval()
-        if not variant_name or variant_name not in variant_names:
-            return 'default'
-        return variant_name
 
     def list_version_names(self):
         """List available versions including 'latest'."""
@@ -69,13 +54,6 @@ class ImportRig(ns.Node):
         asset_uri = Uri.parse_unsafe(asset_uri_raw)
         if asset_uri not in asset_uris: return None
         return asset_uri
-
-    def get_version_name(self) -> str:
-        """Get selected version name. Default is 'latest'."""
-        version_name = self.parm('version').eval()
-        if len(version_name) == 0:
-            return 'latest'
-        return version_name
 
     def get_instances(self):
         return self.parm('instances').eval()

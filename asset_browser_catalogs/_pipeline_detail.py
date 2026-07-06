@@ -20,11 +20,11 @@ no longer dominates the catalog file.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from _pipeline_catalog import PipelineCatalog
+    from tumbletrove.asset_browser.api.types import DetailContext
 
 log = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ class DetailSectionBuilder:
         )
         from tumbletrove.asset_browser.core.icons import icon as make_icon
         from tumbletrove.asset_browser.core.theme import (
-            BG_MID, BORDER, FONT_TINY, TEXT_DIM, scaled,
+            BG_MID, FONT_TINY, TEXT_DIM, scaled,
         )
 
         try:
@@ -297,6 +297,7 @@ class DetailSectionBuilder:
                 QLabel,
                 QPushButton,
             )
+            from _pipeline_types import DEPT_SHORT_NAMES
             heading = QLabel("Work scenes")
             heading.setStyleSheet("color: #aaa; font-weight: bold;")
             vbox.addWidget(heading)
@@ -565,12 +566,11 @@ class DetailSectionBuilder:
 
     def build_membership_section(self, ctx: DetailContext):
         """Show pills for every group and scene this asset belongs to."""
-        from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout
-        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QHBoxLayout, QLabel
         from tumbletrove.asset_browser.ui.detail_panel import make_section_box
         from tumbletrove.asset_browser.core.theme import (
-            ACCENT, BG_MID, BORDER, FONT_FAMILY, FONT_SMALL,
-            TEXT_DIM, TEXT_SECONDARY,
+            BG_MID, BORDER, FONT_FAMILY, FONT_SMALL,
+            TEXT_SECONDARY,
         )
 
         memberships = self._catalog.get_asset_membership(ctx.detail.id)
@@ -610,7 +610,7 @@ class DetailSectionBuilder:
         from tumbletrove.asset_browser.ui.lucide_checkbox import LucideCheckBox
         from tumbletrove.asset_browser.core.icons import icon
         from tumbletrove.asset_browser.core.theme import (
-            ACCENT, BG_DARK, BORDER, FONT_BODY, FONT_FAMILY,
+            ACCENT, BG_DARK, BORDER, FONT_FAMILY,
             FONT_SMALL, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
         )
 
@@ -624,7 +624,7 @@ class DetailSectionBuilder:
         self._catalog._hook_todo_refresh(mgr)
 
         asset_id = ctx.detail.id
-        todos = mgr.todos(self.id, asset_id)
+        todos = mgr.todos(self._catalog.id, asset_id)
         w, lay = make_section_box()
 
         _flat_btn = (
@@ -650,7 +650,7 @@ class DetailSectionBuilder:
                 cb.setTextColor(TEXT_DIM if todo.done else TEXT_PRIMARY)
                 cb.toggled.connect(
                     lambda done, i=idx: mgr.set_done(
-                        self.id, asset_id, i, done,
+                        self._catalog.id, asset_id, i, done,
                     )
                 )
                 row.addWidget(cb, stretch=1)
@@ -662,7 +662,7 @@ class DetailSectionBuilder:
                 rm.setStyleSheet(_flat_btn)
                 rm.clicked.connect(
                     lambda checked=False, i=idx: mgr.remove(
-                        self.id, asset_id, i,
+                        self._catalog.id, asset_id, i,
                     )
                 )
                 row.addWidget(rm)
@@ -691,7 +691,7 @@ class DetailSectionBuilder:
             if not text:
                 return
             add_input.clear()
-            mgr.add(self.id, asset_id, text)
+            mgr.add(self._catalog.id, asset_id, text)
 
         add_input.returnPressed.connect(_do_add)
         footer.addWidget(add_input, stretch=1)
@@ -728,9 +728,9 @@ class DetailSectionBuilder:
                     )
                 )
                 if chosen is a_done:
-                    mgr.clear_completed(self.id, asset_id)
+                    mgr.clear_completed(self._catalog.id, asset_id)
                 elif chosen is a_all:
-                    mgr.clear(self.id, asset_id)
+                    mgr.clear(self._catalog.id, asset_id)
 
             clear_btn.clicked.connect(_show_clear_menu)
             footer.addWidget(clear_btn)
@@ -746,8 +746,7 @@ class DetailSectionBuilder:
         from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QSize, Qt
         from tumbletrove.asset_browser.ui.detail_panel import make_section_box
         from tumbletrove.asset_browser.core.theme import (
-            ACCENT, BG_DARK, BG_MID, BORDER, BUTTON_GHOST_STYLE, COMBO_STYLE,
-            FONT_FAMILY, FONT_SMALL, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
+            ACCENT, BG_DARK, BG_MID, BORDER, BUTTON_GHOST_STYLE, FONT_FAMILY, FONT_SMALL, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
             scaled,
         )
         from _pipeline_widgets import DeptMetaLabel, DeptNameLabel

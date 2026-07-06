@@ -40,7 +40,7 @@ def _get_frame_range_values(entity_uri: Uri, export_node=None) -> tuple[int | No
         Tuple of (first_frame, last_frame) or (None, None) if unavailable
     """
     # Try to get from export node first (has node-specific settings)
-    if export_node is not None and hasattr(export_node, 'get_frame_range'):
+    if export_node is not None:
         result = export_node.get_frame_range()
         if result is not None:
             frame_range, _ = result

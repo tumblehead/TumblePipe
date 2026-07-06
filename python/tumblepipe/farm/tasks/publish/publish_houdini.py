@@ -171,11 +171,14 @@ def _publish(entity_uri: Uri, department_name: str):
             )
         ))
 
-        # Execute the export node
+        # Execute the export node. Zero matches means the matcher failed
+        # (wrong URI/department or an unresolved node context) — publishing
+        # anyway would save a new version with nothing exported.
         if len(export_nodes) == 0:
-            print(f'WARNING: No export node found for {asset_uri}/{department_name}')
-            print(f'Skipping export for this department')
-            return
+            raise RuntimeError(
+                f'No export node found for {asset_uri}/{department_name} — '
+                'refusing to publish an empty version'
+            )
 
         asset_export_node = export_nodes[0]
         asset_export_node.execute(force_local=True)
@@ -237,22 +240,28 @@ def _publish(entity_uri: Uri, department_name: str):
             )
         ))
 
-        # Execute the export node
+        # Execute the export node. Zero matches means the matcher failed
+        # (wrong URI/department or an unresolved node context) — publishing
+        # anyway would save a new version with nothing exported.
         if len(shot_export_nodes) == 0:
-            print(f'WARNING: No export node found for {shot_uri}/{department_name}')
-            print(f'Skipping export for this department')
-            return
+            raise RuntimeError(
+                f'No export node found for {shot_uri}/{department_name} — '
+                'refusing to publish an empty version'
+            )
 
         shot_export_node = shot_export_nodes[0]
         shot_export_node.execute(force_local=True)
         print(f'Published {shot_export_node.path()}')
 
-    # Get entity type from URI
+    # Get entity type from URI. Failures raise so main()'s per-department
+    # handler records them and the task exits non-zero — a discarded error
+    # return here previously let _save() bump a version after a no-op
+    # publish and report success.
     if entity_uri.purpose == 'groups':
         # Expand group to member shots/assets
         group = get_group(entity_uri)
         if group is None:
-            return _error(f'Group not found: {entity_uri}')
+            raise RuntimeError(f'Group not found: {entity_uri}')
         for member_uri in group.members:
             if member_uri.segments[0] == 'shots':
                 _publish_shot(
@@ -264,6 +273,9 @@ def _publish(entity_uri: Uri, department_name: str):
                     asset_uri = member_uri,
                     department_name = department_name
                 )
+            else:
+                raise RuntimeError(
+                    f'Group {entity_uri} member has unknown entity type: {member_uri}')
     elif entity_uri.segments[0] == 'assets':
         _publish_asset(
             asset_uri = entity_uri,
@@ -275,7 +287,7 @@ def _publish(entity_uri: Uri, department_name: str):
             department_name = department_name
         )
     else:
-        return _error(f'Invalid entity type: {entity_uri.segments[0]}')
+        raise RuntimeError(f'Invalid entity type: {entity_uri.segments[0]}')
 
 def _save(entity_uri: Uri, department_name: str):
     # Get next hip file path using Uri

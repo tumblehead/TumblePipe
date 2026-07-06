@@ -71,12 +71,13 @@ def main(config):
         # Store stage config
         config_path = temp_path / 'config.json'
         store_json(config_path, dict(
-            entity = str(entity_uri),
-            department = department_name,
+            entity = dict(
+                uri = str(entity_uri),
+                department = department_name
+            ),
             first_frame = first_frame,
             last_frame = last_frame,
             variant_name = variant_name,
-            render_department_name = render_department_name,
             render_settings_path = path_str(render_settings_path),
             output_path = path_str(to_windows_path(stage_path))
         ))
@@ -108,8 +109,10 @@ def main(config):
         tasks = config['tasks'].copy()
         tasks.pop('stage')
         render_job.submit(dict(
-            entity = str(entity_uri),
-            department = department_name,
+            entity = dict(
+                uri = str(entity_uri),
+                department = department_name
+            ),
             settings = dict(
                 user_name = user_name,
                 purpose = purpose,

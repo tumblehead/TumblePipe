@@ -22,13 +22,11 @@ def parse_package_spec(spec: str) -> PackageSpec:
 
 def _valid_python_version(version: str) -> bool:
     """Validate Python version string (e.g., '3.11', '3.12')"""
-    try:
-        parts = version.split('.')
-        if len(parts) != 2: return False
-        major, minor = int(parts[0]), int(parts[1])
-        return major == 3 and 10 <= minor <= 13
-    except:
-        return False
+    parts = version.split('.')
+    if len(parts) != 2: return False
+    if not (parts[0].isdigit() and parts[1].isdigit()): return False
+    major, minor = int(parts[0]), int(parts[1])
+    return major == 3 and 10 <= minor <= 13
 
 def _script(commands: list[app.Command]) -> bool:
     for command in commands:

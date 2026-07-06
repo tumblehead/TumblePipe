@@ -50,7 +50,7 @@
             name    "pathprefix"
             label   "Import Path Prefix"
             type    string
-            default { [ "from tumblepipe.pipe.houdini.lops import create_model\nfrom tumblepipe.pipe.houdini.util import uri_to_prim_path\n\nnode = create_model.CreateModel(hou.pwd())\nasset_uri = node.get_asset_uri()\nif asset_uri is None: return ''\nreturn uri_to_prim_path(asset_uri)" python ] }
+            default { [ "from tumblepipe.pipe.houdini.lops import create_model\nfrom tumblepipe.pipe.houdini.util import uri_to_prim_path\n\nnode = create_model.CreateModel(hou.pwd())\nasset_uri = node.get_entity_uri()\nif asset_uri is None: return ''\nreturn uri_to_prim_path(asset_uri)" python ] }
             disablewhen "{ enable_pathprefix == 0 }"
             parmtag { "autoscope" "0000000000000000" }
         }

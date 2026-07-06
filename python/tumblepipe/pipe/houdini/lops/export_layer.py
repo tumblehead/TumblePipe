@@ -12,11 +12,12 @@ logger = logging.getLogger(__name__)
 from tumblepipe.api import get_user_name, path_str, local_path, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import list_departments
-from tumblepipe.config.variants import get_entity_type, list_variants
+from tumblepipe.config.variants import list_variants
 from tumblepipe.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblepipe.config.farm import list_pools
 from tumblepipe.pipe.houdini import util
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.paths import (
     latest_export_path,
     next_export_path,
@@ -306,32 +307,10 @@ def _localize_external_sidecars(layer_path: Path) -> None:
     )
 
 
-class ExportLayer(ns.Node):
+class ExportLayer(EntityNode):
 
     def __init__(self, native):
         super().__init__(native)
-
-    def get_entity_type(self) -> str | None:
-        entity_uri = self.get_entity_uri()
-        if entity_uri is None:
-            return None
-        return get_entity_type(entity_uri)
-
-    def list_entity_uris(self) -> list[str]:
-        uris = self.list_asset_uris() + self.list_shot_uris()
-        return ['from_context'] + [str(uri) for uri in uris]
-
-    def list_asset_uris(self) -> list[Uri]:
-        return api.config.list_entity_uris(
-            filter=Uri.parse_unsafe('entity:/assets'),
-            closure=True
-        )
-
-    def list_shot_uris(self) -> list[Uri]:
-        return api.config.list_entity_uris(
-            filter=Uri.parse_unsafe('entity:/shots'),
-            closure=True
-        )
 
     def list_department_names(self) -> list[str]:
         entity_type = self.get_entity_type()
@@ -366,39 +345,8 @@ class ExportLayer(ns.Node):
         department_index = department_names.index(department_name)
         return department_names[department_index + 1:]
 
-    def list_variant_names(self) -> list[str]:
-        """List available variant names for current entity.
-
-        Returns variants from entity config, always includes 'default'.
-        """
-        entity_uri = self.get_entity_uri()
-        if entity_uri is None:
-            return ['default']
-        return list_variants(entity_uri)
-
     def list_pool_names(self) -> list[str]:
         return [pool.name for pool in list_pools()]
-
-    def get_entity_uri(self) -> Uri | None:
-        entity_uri_raw = self.parm('entity').eval()
-        if entity_uri_raw == 'from_context':
-            file_path = Path(hou.hipFile.path())
-            context = get_workfile_context(file_path)
-            if context is None:
-                return None
-            # Only accept entity URIs, not group URIs
-            if context.entity_uri.purpose != 'entity':
-                return None
-            return context.entity_uri
-        # From settings
-        entity_uris = self.list_entity_uris()
-        if len(entity_uris) <= 1:  # Only 'from_context' means no real URIs
-            return None
-        if len(entity_uri_raw) == 0:
-            return Uri.parse_unsafe(entity_uris[1])  # Skip 'from_context'
-        if entity_uri_raw not in entity_uris:  # Compare strings
-            return None
-        return Uri.parse_unsafe(entity_uri_raw)
 
     def get_department_name(self) -> str | None:
         department_name = self.parm('department').eval()
@@ -417,14 +365,6 @@ class ExportLayer(ns.Node):
         if department_name not in department_names:
             return None
         return department_name
-
-    def get_variant_name(self) -> str:
-        """Get selected variant name, defaults to 'default'."""
-        variant_names = self.list_variant_names()
-        variant_name = self.parm('variant').eval()
-        if not variant_name or variant_name not in variant_names:
-            return 'default'
-        return variant_name
 
     def get_downstream_department_names(self) -> list[str]:
         department_names = self.list_downstream_department_names()
@@ -514,24 +454,6 @@ class ExportLayer(ns.Node):
     def _initialize(self):
         """Initialize node and update labels to show resolved values."""
         self._update_labels()
-
-    def set_entity_uri(self, entity_uri: Uri):
-        entity_uris = self.list_entity_uris()
-        if str(entity_uri) not in entity_uris:  # Compare strings
-            return
-        self.parm('entity').set(str(entity_uri))
-        self._update_labels()
-
-    def set_department_name(self, department_name: str):
-        department_names = self.list_department_names()
-        if department_name not in department_names:
-            return
-        self.parm('department').set(department_name)
-        self._update_labels()
-
-    def set_variant_name(self, variant_name: str):
-        """Set variant name."""
-        self.parm('variant').set(variant_name)
 
     def execute(self, force_local: bool = False):
         """
@@ -635,6 +557,7 @@ class ExportLayer(ns.Node):
             assets_by_uri[asset_uri_str].append({
                 'prim_path': prim_path,
                 'instance': asset_metadata['instance'],
+                'variant': asset_metadata.get('variant', 'default'),
                 'inputs': asset_metadata.get('inputs', [])
             })
             asset_inputs.update(set(map(json.dumps, asset_metadata['inputs'])))
@@ -703,6 +626,7 @@ class ExportLayer(ns.Node):
                     asset=asset_uri_str,
                     instance=first_instance['instance'],
                     instances=len(instances),  # Count of instances
+                    variant=first_instance['variant'],
                     inputs=first_instance['inputs']
                 ))
 

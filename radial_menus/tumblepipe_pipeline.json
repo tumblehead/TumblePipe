@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "name": "tumblepipe_pipeline",
+  "label": "TumblePipe",
+  "key": "Alt+T",
+  "context": "network",
+  "flags": {
+    "latch": true,
+    "tap_release": false,
+    "keep_sub_open": false,
+    "activate_on_release": false
+  },
+  "ring": [
+    {
+      "action": "tumblepipe.show_project_info",
+      "label_override": null,
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": true
+    },
+    {
+      "submenu": "asset",
+      "label_override": "Asset",
+      "icon_override": "lucide:box",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "submenu": "render",
+      "label_override": "Render",
+      "icon_override": "lucide:clapperboard",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "tumblepipe.refresh_global_cache",
+      "label_override": null,
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "network.parms",
+      "label_override": null,
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "network.spreadsheet",
+      "label_override": null,
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    }
+  ],
+  "center": null,
+  "center_right": null,
+  "zones": {
+    "top": null,
+    "bottom": null,
+    "left": null,
+    "right": null,
+    "left2": null,
+    "right2": null
+  },
+  "drawer": [],
+  "menubar": [],
+  "submenus": {
+    "asset": {
+      "label": "Asset",
+      "items": [
+        {
+          "node_type": "Lop/th::import_layer::1.0",
+          "label_override": "Import Layer",
+          "icon_override": null,
+          "hidden": false,
+          "close_on_select": true
+        },
+        {
+          "node_type": "Lop/th::import_assets::2.0",
+          "label_override": "Import Assets",
+          "icon_override": null,
+          "hidden": false,
+          "close_on_select": true
+        },
+        {
+          "node_type": "Lop/th::export_layer::1.0",
+          "label_override": "Export Layer",
+          "icon_override": null,
+          "hidden": false,
+          "close_on_select": true
+        }
+      ]
+    },
+    "render": {
+      "label": "Render",
+      "items": [
+        {
+          "node_type": "Lop/th::puzzlemattes::4.0",
+          "label_override": "Mattes",
+          "icon_override": null,
+          "hidden": false,
+          "close_on_select": true
+        },
+        {
+          "node_type": "Lop/th::lpe_tags::1.0",
+          "label_override": "LPE Tags",
+          "icon_override": null,
+          "hidden": false,
+          "close_on_select": true
+        },
+        {
+          "node_type": "Lop/th::render_settings::1.0",
+          "label_override": "Render Settings",
+          "icon_override": null,
+          "hidden": false,
+          "close_on_select": true
+        },
+        {
+          "node_type": "Lop/th::render_vars::1.1",
+          "label_override": "Render Vars",
+          "icon_override": null,
+          "hidden": false,
+          "close_on_select": true
+        }
+      ]
+    }
+  },
+  "release_action": "",
+  "press_action": "",
+  "mclick_action": ""
+}

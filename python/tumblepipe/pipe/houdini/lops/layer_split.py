@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 from tumblepipe.api import path_str, local_path, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import list_departments
-from tumblepipe.config.variants import get_entity_type
 from tumblepipe.config.timeline import get_frame_range as config_get_frame_range, get_fps, FrameRange
 from tumblepipe.pipe.houdini import nodes as ns
+from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.paths import (
     get_workfile_context,
     next_shared_export_path,
@@ -24,7 +24,7 @@ from tumblepipe.pipe.paths import (
 from tumblepipe.pipe.context import save_export_context
 
 
-class LayerSplit(ns.Node):
+class LayerSplit(EntityNode):
     def __init__(self, native):
         super().__init__(native)
 
@@ -41,12 +41,6 @@ class LayerSplit(ns.Node):
         )
         return ['from_context'] + [str(uri) for uri in uris]
 
-    def get_entity_type(self) -> str | None:
-        entity_uri = self.get_entity_uri()
-        if entity_uri is None:
-            return None
-        return get_entity_type(entity_uri)
-
     def list_department_names(self) -> list[str]:
         entity_type = self.get_entity_type()
         if entity_type is None:
@@ -54,27 +48,6 @@ class LayerSplit(ns.Node):
         context_name = 'assets' if entity_type == 'asset' else 'shots'
         departments = list_departments(context_name, include_generated=False)
         return [dept.name for dept in departments]
-
-    def get_entity_uri(self) -> Uri | None:
-        entity_uri_raw = self.parm('entity').eval()
-        if entity_uri_raw == 'from_context':
-            file_path = Path(hou.hipFile.path())
-            context = get_workfile_context(file_path)
-            if context is None:
-                return None
-            # Only accept entity URIs, not group URIs
-            if context.entity_uri.purpose != 'entity':
-                return None
-            return context.entity_uri
-        # From settings
-        entity_uris = self.list_entity_uris()
-        if len(entity_uris) <= 1:  # Only 'from_context' means no real URIs
-            return None
-        if len(entity_uri_raw) == 0:
-            return Uri.parse_unsafe(entity_uris[1])  # Skip 'from_context'
-        if entity_uri_raw not in entity_uris:  # Compare strings
-            return None
-        return Uri.parse_unsafe(entity_uri_raw)
 
     def get_department_name(self) -> str | None:
         department_names = self.list_department_names()
@@ -110,20 +83,6 @@ class LayerSplit(ns.Node):
                 ), self.parm('frame_settingsz').eval()
             case _:
                 assert False, f'Unknown frame range source: {frame_range_source}'
-
-    def set_entity_uri(self, entity_uri: Uri):
-        entity_uris = self.list_entity_uris()
-        if str(entity_uri) not in entity_uris:  # Compare strings
-            return
-        self.parm('entity').set(str(entity_uri))
-        self._update_labels()
-
-    def set_department_name(self, department_name: str):
-        department_names = self.list_department_names()
-        if department_name not in department_names:
-            return
-        self.parm('department').set(department_name)
-        self._update_labels()
 
     def _update_labels(self):
         """Update label parameters to show current entity/department selection."""
@@ -250,10 +209,10 @@ class LayerSplit(ns.Node):
             f"version={version_name}, output={export_path / file_name}"
         )
 
-        # Generate entity URI for downstream reference
-        # The custom USD resolver handles dynamic version lookup at runtime,
-        # eliminating the need for copy-based "latest" directories
-        entity_uri_str = f"{entity_uri}?dept={department_name}&variant=_shared"
+        # Downstream references use the entity URI form
+        # ({entity_uri}?dept={department_name}&variant=_shared); the custom
+        # USD resolver handles dynamic version lookup at runtime, eliminating
+        # the need for copy-based "latest" directories.
 
     def open_location(self):
         """Open the latest shared export location in file browser."""

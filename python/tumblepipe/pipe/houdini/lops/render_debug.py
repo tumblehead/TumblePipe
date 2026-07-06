@@ -5,12 +5,8 @@ import hou
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.variants import list_variants
-from tumblepipe.config.department import list_departments
 import tumblepipe.pipe.houdini.nodes as ns
-from tumblepipe.pipe.houdini.lops import (
-    import_shot,
-    import_layer
-)
+from tumblepipe.pipe.houdini import render_stage
 from tumblepipe.pipe.paths import (
     get_workfile_context
 )
@@ -77,47 +73,26 @@ class RenderDebug(ns.Node):
 
         # Parameters
         shot_uri = self.get_shot_uri()
-        variant_name = self.get_variant_name()
-        included_shot_departments = [d.name for d in list_departments('shots') if d.renderable]
+        if shot_uri is None:
+            ns.set_node_comment(context, "Bypassed: No shot selected")
+            context.bypass(True)
+            return
+        context.bypass(False)
+        variant_name = self.get_variant_name() or 'default'
 
-        # Setup import shot
-        shot_node = import_shot.create(dive_node, 'import_shot')
-        shot_node.set_shot_uri(shot_uri)
-        shot_node.set_include_procedurals(True)
-        shot_node.execute()
-        prev_node = shot_node.native()
-
-        # Prepare import variants
-        variant_subnet = dive_node.createNode('subnet', 'import_variant')
-        variant_subnet.node('output0').destroy()
-        variant_subnet_input = variant_subnet.indirectInputs()[0]
-        variant_subnet_output = variant_subnet.createNode('output', 'output')
-
-        # Connect build shot to subnet
-        _connect(prev_node, variant_subnet)
-        prev_node = variant_subnet_input
-
-        # Setup import layer
-        for shot_department_name in included_shot_departments:
-            layer_node = import_layer.create(variant_subnet, f'{shot_department_name}_import')
-            layer_node.set_entity_uri(shot_uri)
-            layer_node.set_department_name(shot_department_name)
-            layer_node.set_variant_name(variant_name)
-            layer_node.set_version_name('current')
-            layer_node.execute()
-            _connect(prev_node, layer_node.native())
-            prev_node = layer_node.native()
-
-        # Connect last node to subnet output
-        _connect(prev_node, variant_subnet_output)
-        prev_node = variant_subnet
+        # Build the same graph the farm's stage task exports for rendering
+        last_node = render_stage.build_render_stage_graph(
+            dive_node,
+            shot_uri,
+            variant_name,
+            name_prefix = ''
+        )
 
         # Connect output node
-        _connect(prev_node, output_node)
+        _connect(last_node, output_node)
 
         # Layout nodes
         dive_node.layoutChildren()
-        variant_subnet.layoutChildren()
 
 def create(scene, name):
     return ns.create_node(scene, name, RenderDebug, 'render_debug')

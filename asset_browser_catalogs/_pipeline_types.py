@@ -29,7 +29,7 @@ class PipelineAssetMetadata(TypedDict, total=False):
 
     - Discovery (``_discover_entities`` → ``_build_asset_card`` /
       ``_build_shot_card``) sets ``departments``, ``dept_count``,
-      ``has_sub_cards``, ``latest_update``, plus ``category`` (assets)
+      ``has_deck_items``, ``latest_update``, plus ``category`` (assets)
       or ``sequence`` (shots), and ``project``.
     - ``get_detail`` adds ``frame_start``, ``frame_end``, ``frame_total``,
       ``fps`` for shots, and ``variants`` for assets.
@@ -47,10 +47,10 @@ class PipelineAssetMetadata(TypedDict, total=False):
     category: str        # assets only
     sequence: str        # shots only
 
-    # Department deck (sub-cards)
+    # Department deck (deck items)
     departments: dict[str, list[str]]  # dept name → list of "vNNNN" version labels
     dept_count: int
-    has_sub_cards: bool
+    has_deck_items: bool
 
     # Sort / display hints
     latest_update: float  # epoch seconds of newest dept version
@@ -320,7 +320,7 @@ def latest_workfile(dept_dir: Path) -> Path | None:
 
 
 # Lucide icon names per department — used by Shot/Asset department
-# sub-cards. Add new depts here and they pick up consistent
+# deck items. Add new depts here and they pick up consistent
 # iconography.
 DEPT_ICONS = {
     "model": "shapes",          # 3D shapes

@@ -227,8 +227,8 @@ def main(
                         src_errors = source_file_node.errors()
                         if src_errors:
                             print(f'  Source file node errors: {src_errors}')
-                    except:
-                        pass
+                    except Exception as diag_exc:
+                        print(f'  (could not read node errors: {diag_exc})')
                     # Mark AOV as failed and skip to next AOV
                     failed_aovs.add(aov_name)
                     print(f'  Skipping remaining frames for AOV {aov_name}')

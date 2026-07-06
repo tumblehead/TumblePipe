@@ -76,7 +76,7 @@ class DropRouter:
     """Dispatches asset/shot/Root drops to the right Houdini handler.
 
     The catalog instantiates one and forwards ``on_drop`` /
-    ``on_sub_drop`` / ``on_multi_drop`` / ``attach_network_thumbnail``
+    ``on_deck_drop`` / ``on_multi_drop`` / ``attach_network_thumbnail``
     through it. Catalog-side concerns (project activation, asset
     resolution, sidecar thumbnail lookup, detail fetch) are injected
     via constructor so the router has no implicit dependency on the
@@ -211,7 +211,7 @@ class DropRouter:
             else:
                 from tumblepipe.pipe.houdini.lops import import_asset
                 node = import_asset.create(network, detail.name.replace(" ", "_"))
-                node.set_asset_uri(uris.parse(entity_uri))
+                node.set_entity_uri(uris.parse(entity_uri))
                 node.execute()
             raw = node.native()
             if drop.position is not None:
@@ -235,10 +235,10 @@ class DropRouter:
         )
         return True
 
-    # ── Sub-card drop ────────────────────────────────────
+    # ── Deck item drop ────────────────────────────────────
 
-    def on_sub_drop(self, asset, sub_keys, drop) -> bool:
-        """Asset/shot dept sub-cards fall through to the browser's
+    def on_deck_drop(self, asset, deck_keys, drop) -> bool:
+        """Asset/shot dept deck items fall through to the browser's
         default ``import_layer`` LOP path."""
         return False
 
@@ -343,7 +343,7 @@ class DropRouter:
 
         Public so the asset browser host can call it for non-catalog-
         owned drops too (e.g. ``import_layer`` nodes created by the
-        sub-card drop path). No-op when the sidecar isn't on disk or
+        deck item drop path). No-op when the sidecar isn't on disk or
         the drop didn't land on a network editor.
         """
         import hou
@@ -558,7 +558,7 @@ class DropRouter:
         # Read state from the singular node before we destroy it.
         try:
             old = import_asset.ImportAsset(target)
-            old_uri = old.get_asset_uri()
+            old_uri = old.get_entity_uri()
             old_variant = old.get_variant_name()
             old_version = old.get_version_name()
             old_excl = old.get_exclude_department_names()

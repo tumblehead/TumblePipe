@@ -971,8 +971,8 @@ class WorkfileManager:
                 log.info("Created group workfile: %s", next_path)
                 # The detail-panel-driven refresh path only fires for
                 # the currently-displayed card. After New: Template
-                # from a sub-card right-click we need the Multi card
-                # itself to swap out its "missing" sub-card for the
+                # from a deck item right-click we need the Multi card
+                # itself to swap out its "missing" deck item for the
                 # new "v0001"-bearing one — regardless of whether the
                 # group's detail is open.
                 try:

@@ -588,7 +588,7 @@ def find_upstream_export_nodes(start_node) -> list:
             upstream_exports.append(layer_split.LayerSplit(node))
 
     # Start from inputs of start_node (don't include start_node itself)
-    native = start_node.native() if hasattr(start_node, 'native') else start_node
+    native = start_node.native()
     for input_node in native.inputs():
         if input_node is not None:
             _traverse(input_node)
@@ -620,8 +620,11 @@ def collect_tasks_for_export_node(
     # Enable clicked node's task
     clicked_uri = export_node.get_entity_uri()
     clicked_dept = export_node.get_department_name()
-    clicked_variant = export_node.get_variant_name() if hasattr(export_node, 'get_variant_name') else 'default'
-    clicked_node_path = export_node.path() if hasattr(export_node, 'path') else None
+    # LayerSplit exports shared content and has no variant; every other
+    # export wrapper implements get_variant_name.
+    clicked_variant = ('default' if isinstance(export_node, layer_split.LayerSplit)
+                       else export_node.get_variant_name())
+    clicked_node_path = export_node.path()
 
     def _enable_matching_tasks(uri, dept, variant=None, node_path=None):
         """Enable tasks matching the given criteria, including children of grouped tasks.
@@ -675,8 +678,9 @@ def collect_tasks_for_export_node(
     for upstream_node in upstream_nodes:
         upstream_uri = upstream_node.get_entity_uri()
         upstream_dept = upstream_node.get_department_name()
-        upstream_variant = upstream_node.get_variant_name() if hasattr(upstream_node, 'get_variant_name') else 'default'
-        upstream_path = upstream_node.path() if hasattr(upstream_node, 'path') else None
+        upstream_variant = ('default' if isinstance(upstream_node, layer_split.LayerSplit)
+                            else upstream_node.get_variant_name())
+        upstream_path = upstream_node.path()
         _enable_matching_tasks(upstream_uri, upstream_dept, upstream_variant, upstream_path)
 
     return all_tasks, enabled_task_ids

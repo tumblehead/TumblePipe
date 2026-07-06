@@ -329,48 +329,42 @@ def get_frame_range_from_stage(stage) -> FrameRange | None:
         metadata['end_roll']
     )
 
+def _stage_or_none(node):
+    """The node's stage, or None if the stage fails to cook.
+
+    Only hou.OperationFailed is treated as "no stage" — anything else
+    raising here is a real bug and must surface.
+    """
+    try:
+        return node.stage()
+    except hou.OperationFailed:
+        return None
+
 def get_selected_lop_node():
     """Get the currently selected LOP node, if any."""
     selected = hou.selectedNodes()
     for node in selected:
         if node.type().category().name() != 'Lop':
             continue
-        try:
-            stage = node.stage()
-            if stage is not None:
-                return node
-        except:
-            continue
+        if _stage_or_none(node) is not None:
+            return node
     return None
 
 def get_display_flag_lop_node():
     """Get the LOP node with the display flag set, if any."""
-    try:
-        # Find all LOP networks in the scene
-        lop_networks = hou.nodeType(hou.lopNodeTypeCategory(), "lopnet").instances()
-        for network in lop_networks:
-            display_node = network.displayNode()
-            if display_node is not None:
-                try:
-                    stage = display_node.stage()
-                    if stage is not None:
-                        return display_node
-                except:
-                    continue
+    # Find all LOP networks in the scene
+    lop_networks = hou.nodeType(hou.lopNodeTypeCategory(), "lopnet").instances()
+    for network in lop_networks:
+        display_node = network.displayNode()
+        if display_node is not None and _stage_or_none(display_node) is not None:
+            return display_node
 
-        # Also check /stage context directly
-        stage_context = hou.node("/stage")
-        if stage_context is not None:
-            display_node = stage_context.displayNode()
-            if display_node is not None:
-                try:
-                    stage = display_node.stage()
-                    if stage is not None:
-                        return display_node
-                except:
-                    pass
-    except:
-        pass
+    # Also check /stage context directly
+    stage_context = hou.node("/stage")
+    if stage_context is not None:
+        display_node = stage_context.displayNode()
+        if display_node is not None and _stage_or_none(display_node) is not None:
+            return display_node
     return None
 
 ###############################################################################

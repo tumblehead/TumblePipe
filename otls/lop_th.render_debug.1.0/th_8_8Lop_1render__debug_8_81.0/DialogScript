@@ -34,6 +34,22 @@
             }
             parmtag { "script_callback_language" "python" }
         }
+        parm {
+            name    "variant"
+            label   "Variant"
+            type    string
+            default { "" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import render_debug" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = render_debug.RenderDebug(hou.pwd())" ]
+                [ "items = node.list_variant_names()" ]
+                [ "return util.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
     }
 
     groupsimple {

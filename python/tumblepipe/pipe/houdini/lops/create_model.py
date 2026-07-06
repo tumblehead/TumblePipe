@@ -48,7 +48,7 @@ class CreateModel(ns.Node):
         )
         return ['from_context'] + [str(uri) for uri in uris]
 
-    def get_asset_uri(self) -> Uri | None:
+    def get_entity_uri(self) -> Uri | None:
         asset_uri_raw = self.parm('asset').eval()
         if asset_uri_raw == 'from_context':
             file_path = Path(hou.hipFile.path())
@@ -64,14 +64,14 @@ class CreateModel(ns.Node):
         if asset_uri_raw not in asset_uris: return None  # Compare strings
         return Uri.parse_unsafe(asset_uri_raw)
 
-    def set_asset_uri(self, asset_uri: Uri):
+    def set_entity_uri(self, asset_uri: Uri):
         asset_uris = self.list_asset_uris()
         if str(asset_uri) not in asset_uris: return  # Compare strings
         self.parm('asset').set(str(asset_uri))
 
     def get_metadata_content(self) -> str:
         """Get metadata script content."""
-        asset_uri = self.get_asset_uri()
+        asset_uri = self.get_entity_uri()
         if asset_uri is None:
             return ''
         return _metadata_script(asset_uri)
@@ -80,7 +80,7 @@ class CreateModel(ns.Node):
         """Update label parameters to show resolved values when 'from_context' is selected."""
         asset_raw = self.parm('asset').eval()
         if asset_raw == 'from_context':
-            asset_uri = self.get_asset_uri()
+            asset_uri = self.get_entity_uri()
             self.parm('asset_label').set(str(asset_uri) if asset_uri else '')
         else:
             self.parm('asset_label').set('')
@@ -92,12 +92,12 @@ class CreateModel(ns.Node):
 
         # If valid asset context, set from context
         if context is not None and context.entity_uri.segments[0] == 'assets':
-            self.set_asset_uri(context.entity_uri)
+            self.set_entity_uri(context.entity_uri)
         else:
             # Fall back to first available asset
             asset_uris = self.list_asset_uris()
             if len(asset_uris) > 1:  # Skip 'from_context'
-                self.set_asset_uri(Uri.parse_unsafe(asset_uris[1]))
+                self.set_entity_uri(Uri.parse_unsafe(asset_uris[1]))
 
         # Update labels to show resolved values
         self._update_labels()

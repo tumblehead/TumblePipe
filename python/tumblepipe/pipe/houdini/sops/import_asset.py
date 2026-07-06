@@ -24,8 +24,8 @@ class ImportAsset(ns.Node):
             self.native().node('lopnet/import_asset')
         )
 
-    def get_asset_uri(self):
-        return self.embedded().get_asset_uri()
+    def get_entity_uri(self):
+        return self.embedded().get_entity_uri()
 
     def execute(self):
         return self.embedded().execute()

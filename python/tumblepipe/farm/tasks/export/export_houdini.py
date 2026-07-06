@@ -8,7 +8,7 @@ from tumblepipe.api import (
     path_str
 )
 from tumblepipe.util.io import load_json
-from tumblepipe.farm.tasks._render_settings import get_render_settings_script as _get_render_settings_script
+from tumblepipe.pipe.houdini.render_stage import get_render_settings_script as _get_render_settings_script
 from tumblepipe.config.timeline import BlockRange, get_fps
 from tumblepipe.pipe.houdini import util
 from tumblepipe.apps.houdini import stitch_usd_directories

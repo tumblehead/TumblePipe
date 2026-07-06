@@ -19,7 +19,7 @@ from tumblepipe.pipe.paths import (
     get_staged_file_path,
     list_version_paths
 )
-from tumblepipe.pipe.graph import get_source_department
+from tumblepipe.pipe.build import get_source_department
 
 
 def _context_from_workfile():
@@ -109,6 +109,7 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
             f"    util.set_metadata(asset_prim, {{",
             f"        'uri': '{asset_uri_str}',",
             f"        'instance': '{asset_name}',",
+            f"        'variant': '{asset_info.get('variant', 'default')}',",
             f"        'instances': {instances},",
             f"        'inputs': {asset_inputs!r}",
             f"    }})",
@@ -435,6 +436,12 @@ class ImportShot(ns.Node):
 
     def get_department_name(self) -> str | None:
         department_name = self.parm('department').eval()
+        # Explicit no-department: import the full staged stack with no
+        # department/downstream exclusion. Set by the render stage builder,
+        # where the composition must not depend on the ambient workfile
+        # context (the farm has none, a debug session has an arbitrary one).
+        if department_name == 'none':
+            return None
         if department_name == 'from_context':
             # Use same context source as get_shot_uri() for consistency
             context = _entity_from_context_json()
@@ -484,6 +491,14 @@ class ImportShot(ns.Node):
 
     def set_department_name(self, department_name: str):
         self.parm('department').set(department_name)
+        self._update_labels()
+
+    def set_variant_name(self, variant_name: str):
+        self.parm('variant').set(variant_name)
+        self._update_labels()
+
+    def set_version_name(self, version_name: str):
+        self.parm('version').set(version_name)
         self._update_labels()
 
     def set_include_procedurals(self, include_procedurals):

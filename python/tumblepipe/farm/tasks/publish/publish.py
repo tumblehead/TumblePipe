@@ -21,7 +21,7 @@ from tumblepipe.farm import _common
 from tumblepipe.farm.tasks.env import get_hython_env, job_data_dir
 from tumblepipe.farm.tasks.publish import _spec
 from tumblepipe.config.department import is_renderable
-from tumblepipe.pipe.graph import get_entity_type as _get_entity_type
+from tumblepipe.config.variants import get_entity_type as _get_entity_type
 from tumblepipe.pipe.paths import (
     next_export_path
 )
@@ -48,37 +48,34 @@ def _trigger_asset_build(entity_uri: Uri, settings: dict, variant_name: str = 'd
     """
     Trigger asset build job after successful renderable department publish.
 
+    Raises on failure — a renderable publish whose staged build never
+    submits leaves the asset stale while the task reports success.
+
     Args:
         entity_uri: The asset entity URI
-        settings: Settings from config containing priority and pool_name
+        settings: Settings from config (priority/pool_name guaranteed by _spec)
         variant_name: The variant to build (defaults to 'default')
     """
-    try:
-        from tumblepipe.farm.jobs.houdini.build import job as build_job
+    from tumblepipe.farm.jobs.houdini.build import job as build_job
 
-        # Get asset base URI (without department)
-        asset_uri = _get_asset_uri(entity_uri)
-        if asset_uri is None:
-            logging.warning(f'Cannot determine asset URI from: {entity_uri}')
-            return
+    # Get asset base URI (without department)
+    asset_uri = _get_asset_uri(entity_uri)
+    if asset_uri is None:
+        raise RuntimeError(f'Cannot determine asset URI from: {entity_uri}')
 
-        # Submit asset build job
-        build_config = {
-            'entity_uri': str(asset_uri),
-            'variant_name': variant_name,
-            'priority': settings.get('priority', 50),
-            'pool_name': settings.get('pool_name', 'general')
-        }
+    # Submit asset build job
+    build_config = {
+        'entity_uri': str(asset_uri),
+        'variant_name': variant_name,
+        'priority': settings['priority'],
+        'pool_name': settings['pool_name']
+    }
 
-        logging.info(f'Triggering asset build for: {asset_uri} variant: {variant_name}')
-        result = build_job.submit(build_config)
-        if result != 0:
-            logging.warning(f'Asset build job submission returned non-zero: {result}')
-        else:
-            logging.info(f'Asset build job submitted successfully for: {asset_uri} variant: {variant_name}')
-
-    except Exception as e:
-        logging.warning(f'Failed to trigger asset build: {e}')
+    logging.info(f'Triggering asset build for: {asset_uri} variant: {variant_name}')
+    result = build_job.submit(build_config)
+    if result != 0:
+        raise RuntimeError(f'Asset build job submission failed ({result}) for: {asset_uri}')
+    logging.info(f'Asset build job submitted successfully for: {asset_uri} variant: {variant_name}')
 
 
 def _next_export_path(entity):
@@ -113,7 +110,7 @@ def main(config):
         store_json(temp_config_path, config)
     
         # Run script in hython
-        hython.run(
+        hython_result = hython.run(
             to_windows_path(SCRIPT_PATH),
             [
                 path_str(to_windows_path(temp_config_path)),
@@ -126,6 +123,8 @@ def main(config):
                 'TH_FARM_DATA': path_str(job_data_dir()),
             }
         )
+        if hython_result != 0:
+            return _error(f'publish_houdini failed with exit code {hython_result}')
 
     # Check if the export was generated (skip for groups - they export individual members)
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
@@ -138,7 +137,10 @@ def main(config):
     variant_name = config['entity'].get('variant', 'default')
     if entity_type == 'asset' and is_renderable('assets', department_name):
         logging.info(f'Renderable asset department published: {department_name}')
-        _trigger_asset_build(entity_uri, config.get('settings', {}), variant_name)
+        try:
+            _trigger_asset_build(entity_uri, config['settings'], variant_name)
+        except Exception as e:
+            return _error(f'Publish succeeded but asset build trigger failed: {e}')
 
     # Done
     print('Success')

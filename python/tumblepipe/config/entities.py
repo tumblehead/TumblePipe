@@ -15,14 +15,11 @@ def is_terminal_entity(config, uri: Uri) -> bool:
     schema node (``schemas:/entity/assets/category/asset``) has no children,
     whereas a category's (``.../category``) still does.
 
-    Falls back to a depth heuristic if the schema API is unavailable (older
-    per-project config_convention.py): both terminal entity types live at
-    depth 3 (assets/<category>/<asset>, shots/<sequence>/<shot>).
+    A project whose config lacks the schema API is unmigrated — run
+    scripts/migrate_config.py on it; guessing by URI depth here silently
+    misclassified entities.
     """
-    try:
-        schema_uri = config.get_entity_schema_uri(uri)
-        if schema_uri is None:
-            return False
-        return len(config.get_child_schemas(schema_uri)) == 0
-    except Exception:
-        return len(uri.segments) == 3
+    schema_uri = config.get_entity_schema_uri(uri)
+    if schema_uri is None:
+        return False
+    return len(config.get_child_schemas(schema_uri)) == 0

@@ -73,15 +73,34 @@ def deferred_refresh():
             Ar.GetResolver().RefreshContext(Ar.ResolverContext())
 
 
+class ResolveError(RuntimeError):
+    """An entity:// URI that was required to resolve did not."""
+
+
 def resolve_entity_uri(uri: str) -> str:
     """Resolve an entity:// URI via USD's Ar.
 
-    Returns the resolved filesystem path, or "" if the URI could not be
-    resolved.
+    Returns the resolved filesystem path. Raises :class:`ResolveError` if
+    the URI does not resolve — an unresolvable required URI is a real
+    failure, and an empty string silently poisons downstream path joins.
+    Use :func:`try_resolve_entity_uri` to probe for optional layers.
+    """
+    resolved = try_resolve_entity_uri(uri)
+    if resolved is None:
+        raise ResolveError(f'entity URI did not resolve: {uri}')
+    return resolved
+
+
+def try_resolve_entity_uri(uri: str) -> str | None:
+    """Probe form of :func:`resolve_entity_uri`.
+
+    Returns the resolved filesystem path, or None if the URI does not
+    resolve. For callers where absence is a legitimate outcome (optional
+    shared layers, staged-file existence checks).
     """
     from pxr import Ar
     resolved = Ar.GetResolver().Resolve(uri)
-    return str(resolved) if resolved else ""
+    return str(resolved) if resolved else None
 
 
 def plugin_resources_path(pipeline_path: os.PathLike, houdini_major: int = 21) -> Path:

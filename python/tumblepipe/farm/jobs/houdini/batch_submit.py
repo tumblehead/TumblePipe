@@ -18,22 +18,19 @@ from tumblepipe.api import (
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import store_json, load_json, store_text
 from tumblepipe.pipe.context import get_aov_names_from_context, aggregate_aov_names_from_inputs
-from tumblepipe.config.timeline import get_frame_range
 from tumblepipe.config.department import list_departments
 from tumblepipe.apps.deadline import (
     Deadline,
-    Batch,
-    Job
+    Batch
 )
 from tumblepipe.pipe.paths import (
-    latest_hip_file_path,
     latest_export_path,
     get_latest_staged_file_path,
 )
 from tumblepipe.pipe.usd import collapse_latest_references
 import tumblepipe.farm.tasks.stage.task as stage_task
-import tumblepipe.farm.tasks.publish.task as publish_task
 import tumblepipe.farm.jobs.houdini.render.job as render_job
+from tumblepipe.farm.jobs.houdini import _publish
 
 # Mapping from column keys to Karma/USD render setting attribute paths
 # These are used to build overrides for render_settings.json
@@ -155,99 +152,6 @@ def _get_aov_names(entity_uri: Uri, department: str, variants: list[str]) -> lis
         return aov_names
 
     return []
-
-
-def _is_submissable(entity_uri: Uri, department_name: str) -> bool:
-    """Check if entity/department has a submittable hip file."""
-    # Skip placeholder entities (any segment with '000')
-    if '000' in entity_uri.segments:
-        return False
-    hip_path = latest_hip_file_path(entity_uri, department_name)
-    if hip_path is None:
-        return False
-    return hip_path.exists()
-
-
-def _is_out_of_date(entity_uri: Uri, variant_name: str, department_name: str) -> bool:
-    """Check if export is older than hip file."""
-    hip_path = latest_hip_file_path(entity_uri, department_name)
-    export_path = latest_export_path(entity_uri, variant_name, department_name)
-    if export_path is None:
-        return True
-    if not export_path.exists():
-        return True
-    return hip_path.stat().st_mtime > export_path.stat().st_mtime
-
-
-def _create_publish_job(
-    entity_uri: Uri,
-    department_name: str,
-    pool_name: str,
-    priority: int,
-    paths: dict,
-    temp_path: Path
-) -> Job:
-    """Create a publish job using publish_task.build() pattern.
-
-    Args:
-        entity_uri: Entity URI to publish
-        department_name: Department name
-        pool_name: Deadline pool name
-        priority: Job priority
-        paths: Dict mapping source paths to relative dest paths (modified in place)
-        temp_path: Staging directory for job files
-
-    Returns:
-        Job object or None if workfile not found
-
-    Raises:
-        BatchSubmitError: If frame range cannot be determined
-    """
-    # Find the workfile
-    workfile_path = latest_hip_file_path(entity_uri, department_name)
-    if workfile_path is None or not workfile_path.exists():
-        logging.warning(f'No workfile found for {entity_uri}/{department_name}')
-        return None
-
-    # Get frame range
-    frame_range = get_frame_range(entity_uri)
-    if frame_range is None:
-        raise BatchSubmitError(
-            f"Cannot get frame range for entity: {entity_uri}. "
-            "Ensure the entity has frame_start, frame_end, roll_start, roll_end properties configured."
-        )
-    render_range = frame_range.full_range()
-
-    # Add workfile to paths for bundling
-    workfile_dest = Path('workfiles') / f'{department_name}_{workfile_path.name}'
-    paths[workfile_path] = workfile_dest
-
-    # Bundle context.json alongside workfile (for group workfile detection)
-    context_path = workfile_path.parent / 'context.json'
-    if context_path.exists():
-        context_dest = Path('workfiles') / 'context.json'
-        paths[context_path] = context_dest
-
-    # Build config for publish_task.build()
-    config = {
-        'entity': {
-            'uri': str(entity_uri),
-            'department': department_name
-        },
-        'settings': {
-            'priority': priority,
-            'pool_name': pool_name,
-            'first_frame': render_range.first_frame,
-            'last_frame': render_range.last_frame
-        },
-        'tasks': {
-            'publish': {}
-        },
-        'workfile_path': path_str(workfile_dest)
-    }
-
-    # Build job using publish_task
-    return publish_task.build(config, paths, temp_path)
 
 
 def submit_entity_batch(config: dict) -> list[str]:
@@ -383,22 +287,22 @@ def submit_entity_batch(config: dict) -> list[str]:
             # Use 'default' variant for batch publish jobs
             variant_name = 'default'
             for dept_name in pub_dept_names:
-                if not _is_submissable(entity_uri, dept_name):
+                if not _publish.is_submissable(entity_uri, dept_name):
                     continue
 
                 # Check if out of date (or if downstream changed)
-                if prev_job_name is None and not _is_out_of_date(entity_uri, variant_name, dept_name):
+                if prev_job_name is None and not _publish.is_out_of_date(entity_uri, variant_name, dept_name):
                     continue
 
                 job_name = f'publish_{dept_name}'
                 try:
-                    job = _create_publish_job(entity_uri, dept_name, pub_pool, pub_priority, paths, temp_path)
+                    job = _publish.create_publish_job(entity_uri, dept_name, pub_pool, pub_priority, paths, temp_path)
                     if job is not None:
                         jobs[job_name] = job
                         deps[job_name] = [prev_job_name] if prev_job_name else []
                         prev_job_name = job_name
                         last_publish_job_name = job_name
-                except BatchSubmitError as e:
+                except ValueError as e:
                     logging.warning(f"Could not create publish job for {entity_uri}/{dept_name}: {e}")
 
         # Add stage + render jobs

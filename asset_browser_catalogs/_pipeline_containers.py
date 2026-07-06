@@ -357,20 +357,20 @@ class ContainerManager:
         self, collection: "Collection", project_name: str, kind: str,
     ) -> Asset:
         """Wrap a Group/Scene Collection in an Asset so the grid can
-        render it as a card. The ``drill_tag`` field signals to
+        render it as a card. The ``deck_drill_tag`` field signals to
         the browser's card-click handler that the card represents a
         container — clicking it should drill into its members rather
         than open a detail panel.
 
-        For groups, the asset also advertises ``has_sub_cards=True``
+        For groups, the asset also advertises ``has_deck_items=True``
         and a flat ``departments`` list so the deck popup can render
-        one sub-card per dept (mirroring the shot/asset open-workfile
+        one deck item per dept (mirroring the shot/asset open-workfile
         UX).
         """
         metadata: dict = {}
         dirty = False
         ctx = ""
-        has_sub_cards = False
+        has_deck_items = False
         if kind == "scene":
             # Surface a dirty flag so the renderer can paint an
             # "unsaved" indicator on Roots whose JSON has drifted
@@ -398,15 +398,15 @@ class ContainerManager:
                     collection.tag,
                 )
                 # Same shape as shot/asset metadata: {dept: latest_version
-                # or ""}. Dept-name iteration order (for sub-card render)
-                # comes from get_sub_cards, which sorts by the project's
+                # or ""}. Dept-name iteration order (for deck item render)
+                # comes from get_deck_items, which sorts by the project's
                 # canonical dept order.
                 depts_dict = {}
                 for dept in covered:
                     versions = workfile_info.get(dept) or []
                     depts_dict[dept] = versions[-1] if versions else ""
                 metadata["departments"] = depts_dict
-                has_sub_cards = True
+                has_deck_items = True
         return Asset(
             id=collection.tag,
             name=collection.label,
@@ -418,11 +418,11 @@ class ContainerManager:
                 collection.tag,
             }),
             kind=kind,
-            drill_tag=collection.tag,
+            deck_drill_tag=collection.tag,
             member_count=collection.count,
             dirty=dirty,
             context=ctx,
-            has_sub_cards=has_sub_cards,
+            has_deck_items=has_deck_items,
             metadata=metadata,
         )
 
@@ -804,7 +804,7 @@ class ContainerManager:
                 "source:pipeline",
             }),
             kind=kind,
-            drill_tag=asset_id,
+            deck_drill_tag=asset_id,
             member_count=member_count,
             context=ctx,
             metadata=metadata,

@@ -8,16 +8,10 @@ from tumblepipe.api import (
     path_str
 )
 from tumblepipe.config.timeline import BlockRange
-from tumblepipe.config.department import list_departments
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
-from tumblepipe.farm.tasks._render_settings import get_render_settings_script as _get_render_settings_script
-from tumblepipe.pipe.houdini import util
-from tumblepipe.pipe.houdini.lops import (
-    import_shot,
-    import_layer,
-    archive
-)
+from tumblepipe.pipe.houdini import render_stage
+from tumblepipe.pipe.houdini.lops import archive
 
 def _headline(title):
     print(f' {title} '.center(80, '='))
@@ -30,21 +24,10 @@ def _connect(node1, node2):
     port = len(node2.inputs())
     node2.setInput(port, node1)
 
-def _get_aov_names(render_settings_path: Path) -> set:
-
-    # Load render settings
-    render_settings_data = load_json(render_settings_path)
-    if render_settings_data is None: return None
-
-    # Get AOV names
-    if 'aov_names' not in render_settings_data: return None
-    return set(render_settings_data['aov_names'])
-
 def main(
     shot_uri: Uri,
     render_range: BlockRange,
     variant_name: str,
-    render_department_name: str,
     render_settings_path: Path,
     output_path: Path
     ) -> int:
@@ -53,77 +36,13 @@ def main(
     # Prepare scene
     scene_node = hou.node('/stage')
 
-    # Config
-    included_department_names = [
-        d.name for d in list_departments('shots') if d.renderable
-    ]
-
-    # Create import shot node
-    shot_node = import_shot.create(scene_node, '__import_shot')
-    shot_node.set_shot_uri(shot_uri)
-    shot_node.set_include_procedurals(True)
-    shot_node.execute()
-    prev_node = shot_node.native()
-
-    # Prepare import variants
-    variant_subnet = scene_node.createNode('subnet', '__variants')
-    variant_subnet.node('output0').destroy()
-    variant_subnet_input = variant_subnet.indirectInputs()[0]
-    variant_subnet_output = variant_subnet.createNode(
-        'output', 'output'
+    # Build the shared render-stage graph for this variant
+    prev_node = render_stage.build_render_stage_graph(
+        scene_node,
+        shot_uri,
+        variant_name,
+        render_settings_path
     )
-
-    # Connect build shot to subnet
-    _connect(prev_node, variant_subnet)
-    prev_node = variant_subnet_input
-
-    # Setup layer nodes
-    for included_department_name in included_department_names:
-        layer_node = import_layer.create(
-            variant_subnet,
-            included_department_name
-        )
-        layer_node.set_entity_uri(shot_uri)
-        layer_node.set_department_name(included_department_name)
-        layer_node.set_variant_name(variant_name)
-        layer_node.set_version_name('current')
-        layer_node.execute()
-        _connect(prev_node, layer_node.native())
-        prev_node = layer_node.native()
-
-    # Connect last node to subnet output
-    _connect(prev_node, variant_subnet_output)
-    prev_node = variant_subnet
-
-    # Setup edit render settings
-    edit_render_settings_node = scene_node.createNode(
-        'pythonscript',
-        '__edit_settings'
-    )
-    edit_render_settings_node.parm('python').set(
-        _get_render_settings_script(render_settings_path)
-    )
-    _connect(prev_node, edit_render_settings_node)
-    prev_node = edit_render_settings_node
-
-    # Setup AOV pruning
-    included_aov_names = _get_aov_names(render_settings_path)
-    if included_aov_names is not None:
-        root = shot_node.native().stage().GetPseudoRoot()
-        aov_paths = {
-            aov_path.rsplit('/', 1)[1]: aov_path
-            for aov_path in util.list_render_vars(root)
-        }
-        excluded_aov_names = set(aov_paths.keys()) - included_aov_names
-        prune_aovs_node = scene_node.createNode('prune', '__prune_aovs')
-        prune_aovs_node.parm('primpattern1').set(
-            ' '.join([
-                aov_paths[aov_name]
-                for aov_name in excluded_aov_names
-            ])
-        )
-        _connect(prev_node, prune_aovs_node)
-        prev_node = prune_aovs_node
 
     # Setup archive node
     archive_node = archive.create(scene_node, '__export')
@@ -156,7 +75,6 @@ config = {
     'first_frame': 'int',
     'last_frame': 'int',
     'variant_name': 'string',
-    'render_department_name': 'string',
     'render_settings_path': 'path/to/render_settings.json',
     'output_path': 'path/to/stage.usd'
 }
@@ -190,7 +108,6 @@ def _is_valid_config(config):
     if not _check_int(config, 'first_frame'): return False
     if not _check_int(config, 'last_frame'): return False
     if not _check_str(config, 'variant_name'): return False
-    if not _check_str(config, 'render_department_name'): return False
     if not _check_str(config, 'render_settings_path'): return False
     if not _check_str(config, 'output_path'): return False
     return True
@@ -225,7 +142,6 @@ def cli():
         config['last_frame']
     )
     variant_name = config['variant_name']
-    render_department_name = config['render_department_name']
     render_settings_path = Path(config['render_settings_path'])
     output_path = Path(config['output_path'])
 
@@ -234,7 +150,6 @@ def cli():
         entity_uri,
         render_range,
         variant_name,
-        render_department_name,
         render_settings_path,
         output_path
     )

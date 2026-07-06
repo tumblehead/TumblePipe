@@ -9,8 +9,9 @@ from tumblepipe.api import path_str, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
 from tumblepipe.config.department import list_departments
-from tumblepipe.config.variants import get_entity_type, list_variants
+from tumblepipe.config.variants import list_variants
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.util import uri_to_prim_path
 from tumblepipe.pipe.houdini.lops import import_asset
 import tumblepipe.pipe.context as ctx
@@ -120,32 +121,10 @@ def _inline_marker_script(assets: list[dict]) -> str:
 
     return '\n'.join(script_lines)
 
-class ImportLayer(ns.Node):
+class ImportLayer(EntityNode):
 
     def __init__(self, native):
         super().__init__(native)
-
-    def get_entity_type(self) -> str | None:
-        entity_uri = self.get_entity_uri()
-        if entity_uri is None:
-            return None
-        return get_entity_type(entity_uri)
-
-    def list_entity_uris(self) -> list[str]:
-        uris = self.list_asset_uris() + self.list_shot_uris()
-        return ['from_context'] + [str(uri) for uri in uris]
-
-    def list_asset_uris(self) -> list[Uri]:
-        return api.config.list_entity_uris(
-            filter=Uri.parse_unsafe('entity:/assets'),
-            closure=True
-        )
-
-    def list_shot_uris(self) -> list[Uri]:
-        return api.config.list_entity_uris(
-            filter=Uri.parse_unsafe('entity:/shots'),
-            closure=True
-        )
 
     def list_department_names(self) -> list[str]:
         entity_type = self.get_entity_type()
@@ -154,13 +133,6 @@ class ImportLayer(ns.Node):
         context_name = 'assets' if entity_type == 'asset' else 'shots'
         names = [d.name for d in list_departments(context_name) if d.publishable]
         return ['from_context'] + names
-
-    def list_variant_names(self) -> list[str]:
-        """List available variant names for current entity."""
-        entity_uri = self.get_entity_uri()
-        if entity_uri is None:
-            return ['default']
-        return list_variants(entity_uri)
 
     def list_version_names(self) -> list[str]:
         entity_uri = self.get_entity_uri()
@@ -183,27 +155,6 @@ class ImportLayer(ns.Node):
         # Add 'current' option at the beginning (resolves to highest numbered version)
         return ['current'] + version_names
 
-    def get_entity_uri(self) -> Uri | None:
-        entity_uri_raw = self.parm('entity').eval()
-        if entity_uri_raw == 'from_context':
-            file_path = Path(hou.hipFile.path())
-            context = get_workfile_context(file_path)
-            if context is None:
-                return None
-            # Only accept entity URIs, not group URIs
-            if context.entity_uri.purpose != 'entity':
-                return None
-            return context.entity_uri
-        # From settings
-        entity_uris = self.list_entity_uris()
-        if len(entity_uris) <= 1:  # Only 'from_context' means no real URIs
-            return None
-        if len(entity_uri_raw) == 0:
-            return Uri.parse_unsafe(entity_uris[1])  # Skip 'from_context'
-        if entity_uri_raw not in entity_uris:  # Compare strings
-            return None
-        return Uri.parse_unsafe(entity_uri_raw)
-
     def get_department_name(self) -> str | None:
         department_name_raw = self.parm('department').eval()
         # Handle 'from_context' special value
@@ -223,14 +174,6 @@ class ImportLayer(ns.Node):
             return None
         return department_name_raw
 
-    def get_variant_name(self) -> str:
-        """Get selected variant name, defaults to 'default'."""
-        variant_names = self.list_variant_names()
-        variant_name = self.parm('variant').eval()
-        if not variant_name or variant_name not in variant_names:
-            return 'default'
-        return variant_name
-
     def get_version_name(self) -> str | None:
         version_names = self.list_version_names()
         if len(version_names) == 0:
@@ -244,30 +187,6 @@ class ImportLayer(ns.Node):
             return None
         return version_name
 
-    def get_include_layerbreak(self) -> bool:
-        return bool(self.parm('include_layerbreak').eval())
-
-    def get_import_mode(self) -> str:
-        """'reference' (pipeline metadata + layerbreak) or 'inline' (baked
-        into the export). Nodes predating the parm read as 'reference'."""
-        parm = self.parm('import_mode')
-        if parm is None: return 'reference'
-        return parm.evalAsString()
-
-    def set_entity_uri(self, entity_uri: Uri):
-        entity_uris = self.list_entity_uris()
-        if str(entity_uri) not in entity_uris:  # Compare strings
-            return
-        self.parm('entity').set(str(entity_uri))
-        self._update_labels()
-
-    def set_department_name(self, department_name: str):
-        department_names = self.list_department_names()
-        if department_name not in department_names:
-            return
-        self.parm('department').set(department_name)
-        self._update_labels()
-
     def set_variant_name(self, variant_name: str):
         """Set variant name."""
         self.parm('variant').set(variant_name)
@@ -279,14 +198,6 @@ class ImportLayer(ns.Node):
             return
         self.parm('version').set(version_name)
         self._update_labels()
-
-    def set_include_layerbreak(self, include_layerbreak: bool):
-        self.parm('include_layerbreak').set(int(include_layerbreak))
-
-    def set_import_mode(self, import_mode: str):
-        parm = self.parm('import_mode')
-        if parm is not None:
-            parm.set(import_mode)
 
     def _update_labels(self):
         """Update label parameters to show current entity selection."""
@@ -366,7 +277,7 @@ class ImportLayer(ns.Node):
             if shared_path is not None:
                 shared_version = shared_path.name
                 shared_uri = f"{entity_uri}?dept={department_name}&variant=_shared&version={shared_version}"
-                resolved = _resolver.resolve_entity_uri(shared_uri)
+                resolved = _resolver.try_resolve_entity_uri(shared_uri)
                 if resolved and Path(resolved).exists():
                     shared_resolved = resolved
                     shared_exists = True
@@ -377,7 +288,7 @@ class ImportLayer(ns.Node):
 
         # Variant layer (index 2)
         variant_uri = f"{entity_uri}?dept={department_name}&variant={variant_name}&version={version_name}"
-        resolved_variant = _resolver.resolve_entity_uri(variant_uri)
+        resolved_variant = _resolver.try_resolve_entity_uri(variant_uri)
         variant_exists = bool(resolved_variant) and Path(resolved_variant).exists()
         self.parm('import_filepath2').set(resolved_variant if variant_exists else '')
         self.parm('import_enable2').set(1 if variant_exists else 0)
@@ -469,7 +380,12 @@ class ImportLayer(ns.Node):
                 shot_department = workfile_context.department_name
         if self.get_import_mode() == 'inline':
             return import_asset._inline_metadata_script(entity_uri)
-        return import_asset._metadata_script(entity_uri, shot_uri, shot_department)
+        return import_asset._metadata_script(
+            entity_uri,
+            variant_name=self.get_variant_name(),
+            shot_uri=shot_uri,
+            shot_department=shot_department
+        )
 
     def open_location(self):
         entity_uri = self.get_entity_uri()

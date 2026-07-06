@@ -69,7 +69,7 @@ from _pipeline_types import (
 log = logging.getLogger(__name__)
 
 # Group accent — matches ``TYPE_COLORS["group"]`` in asset_browser's
-# theme.py. Reused as the sub-card tint when a shot/asset dept is
+# theme.py. Reused as the deck item tint when a shot/asset dept is
 # superseded by a group workfile.
 _GROUP_ACCENT_COLOR = "#e08c4a"
 
@@ -374,7 +374,7 @@ class PipelineCatalog(Catalog):
         for seq in seqs:
             count = self._count_for_project_sequence(proj.name, seq)
             # default_view="list": shots browse better as list rows —
-            # their department sub-cards expand inline in pipeline
+            # their department deck items expand inline in pipeline
             # (catalog) order, one row per department.
             seq_children.append(Collection(
                 id=f"{proj.name}:sequence:{seq}",
@@ -1024,8 +1024,8 @@ class PipelineCatalog(Catalog):
         except Exception:
             log.exception("Clear scene_ref failed for %s", asset_id)
 
-    def get_sub_card_menu_items(self, asset: Asset, sub_card_key: str):
-        """Right-click items for a dept sub-card in the deck popup.
+    def get_deck_item_menu_items(self, asset: Asset, deck_item_key: str):
+        """Right-click items for a dept deck item in the deck popup.
 
         Mirrors the detail-panel dept context menu so behavior stays
         consistent across both surfaces. Exposes ``New: Current`` and
@@ -1033,10 +1033,10 @@ class PipelineCatalog(Catalog):
         either the loaded scene or a template regardless of whether
         the dept already has versions.
         """
-        dept = sub_card_key
+        dept = deck_item_key
         asset_id = asset.id
 
-        # Group container sub-cards: simpler menu — Open / Open
+        # Group container deck items: simpler menu — Open / Open
         # Location / New: Template. "New: Current" is intentionally
         # omitted for v1 since the active-scene-context resolver
         # doesn't track group workfiles yet.
@@ -1338,7 +1338,7 @@ class PipelineCatalog(Catalog):
         # Delegate to the shared singleton launcher so the shelf tool and
         # this action open the same window. The launcher surfaces any
         # error to the user instead of failing silently.
-        from tumblepipe.pipe.houdini.ui.database import open_database_editor
+        from tumblepipe.config_editor import open_database_editor
         open_database_editor(uri)
 
     def _edit_description(self, asset_id: str) -> None:
@@ -1682,14 +1682,14 @@ class PipelineCatalog(Catalog):
         """Attach the asset/shot's ``thumbnail.png`` sidecar as a
         ``hou.NetworkImage`` next to the given import node. Public
         because the browser host calls it for non-catalog-owned drops
-        too (e.g. import_layer nodes created by the sub-card path)."""
+        too (e.g. import_layer nodes created by the deck item path)."""
         self._drops.attach_network_thumbnail(asset_id, raw_node, drop)
 
     def on_drop(self, detail, drop) -> bool:
         return self._drops.on_drop(detail, drop)
 
-    def on_sub_drop(self, asset, sub_keys, drop) -> bool:
-        return self._drops.on_sub_drop(asset, sub_keys, drop)
+    def on_deck_drop(self, asset, deck_keys, drop) -> bool:
+        return self._drops.on_deck_drop(asset, deck_keys, drop)
 
     def on_multi_drop(self, assets, drop) -> bool:
         return self._drops.on_multi_drop(assets, drop)
@@ -1755,7 +1755,7 @@ class PipelineCatalog(Catalog):
         Returns ``None`` for actions we don't track (e.g. ``reload``) so
         the button falls back to its regular QToolTip.
         """
-        from tumbletrove.asset_browser.core.hover_info import format_age_html
+        from tumbletrove.asset_browser.core.hover_html import format_age_html
 
         if action_id == "save":
             try:
@@ -1955,9 +1955,8 @@ class PipelineCatalog(Catalog):
         """
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
-        from tumbletrove.asset_browser.core.hover_info import (
-            ButtonHoverInfo, format_age_html,
-        )
+        from tumbletrove.asset_browser.core.hover_html import format_age_html
+        from tumbletrove.asset_browser.core.hover_info import ButtonHoverInfo
         from tumbletrove.asset_browser.core.icons import icon_pixmap
         from tumbletrove.asset_browser.core.theme import (
             BORDER, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
@@ -2839,10 +2838,10 @@ class PipelineCatalog(Catalog):
             else:
                 self._workfiles.open_workfile(target_id, dept)
 
-    # ── Sub-cards (departments) ───────────────────────────
+    # ── Deck items (departments) ───────────────────────────
 
-    def get_sub_cards(self, asset: Asset) -> list[DeckItem]:
-        # Group container cards: one sub-card per dept the group
+    def get_deck_items(self, asset: Asset) -> list[DeckItem]:
+        # Group container cards: one deck item per dept the group
         # covers. "missing" status (no action_id) for covered depts
         # that don't have a workfile yet — right-click → "New:
         # Template" creates one. Active-version tracking against the
@@ -2899,7 +2898,7 @@ class PipelineCatalog(Catalog):
         active_dept = scene_dv[0] if scene_dv else None
 
         # Group coverage: depts where this member's workfile is
-        # superseded by a group's multi-shot workfile. The sub-card
+        # superseded by a group's multi-shot workfile. The deck item
         # detail line shows "ⓖ GroupLabel" instead of a version, and
         # the click action route through ``open_workfile:<dept>`` —
         # which now resolves via ``latest_hip_file_path_with_context``
@@ -2920,7 +2919,7 @@ class PipelineCatalog(Catalog):
                 status = (
                     "active" if dept_name == active_dept else "available"
                 )
-                # Detail text stays short — sub-cards are narrow, so a
+                # Detail text stays short — deck items are narrow, so a
                 # long group name overflows. The tint (border + icon)
                 # signals "covered by a group"; the tooltip carries
                 # the full group name for hover discovery.
@@ -2983,6 +2982,12 @@ class PipelineCatalog(Catalog):
     def get_list_columns(self) -> list[ListColumn]:
         return [
             ListColumn(key="name", label="Name"),
+            # ``deck_detail``: expanded dept deck rows put their detail
+            # text (workfile version, or "ⓜ" for Multi-covered depts)
+            # here instead of trailing the dept name. Top-level rows
+            # leave the cell empty — an entity has no single version.
+            # Requires tumbletrove >= 0.11 (ListColumn.deck_detail).
+            ListColumn(key="version", label="Version", width=70, deck_detail=True),
             ListColumn(key="category", label="Category", width=100),
             ListColumn(key="dept_count", label="Depts", width=60, align="center"),
         ]
@@ -2993,30 +2998,15 @@ class PipelineCatalog(Catalog):
         """Drop discovered asset/shot caches; next query re-fetches.
 
         These are the *catalog's own* discovery caches (``_cached_assets`` /
-        ``_cached_shots`` / membership), which a refresh must clear so the
-        next query re-enumerates.
-
-        The per-project ``config.refresh_cache()`` calls are belt-and-braces:
-        the current ``JsonConfigStore`` keeps ``db/*.json`` coherent and
-        reloads any externally-written file on the next read, so they are not
-        needed for a migrated project. They remain only to also serve any
-        project still on the pre-v1 convention (a frozen once-at-init
-        snapshot) until it is migrated.
+        ``_cached_shots`` / membership). Config reads need no refresh here:
+        ``JsonConfigStore`` keeps ``db/*.json`` coherent and reloads any
+        externally-written file on the next read. A project still on the
+        pre-v1 frozen convention is unmigrated — run
+        ``scripts/migrate_config.py`` on it.
         """
         self._cached_assets = None
         self._cached_shots = None
         self._containers.invalidate_membership_cache()
-        for name, client in self._clients.ready.items():
-            config = getattr(client, "config", None)
-            refresh = getattr(config, "refresh_cache", None)
-            if not callable(refresh):
-                continue
-            try:
-                refresh()
-            except Exception:
-                log.exception(
-                    "config.refresh_cache failed for project %s", name,
-                )
 
     def _invalidate_membership_cache(self) -> None:
         """Drop only the member-coverage cache.
@@ -3180,7 +3170,7 @@ class PipelineCatalog(Catalog):
                 f"category:{category}",
                 f"project:{proj.name}",
             }),
-            has_sub_cards=True,
+            has_deck_items=True,
             metadata={
                 "departments": depts,
                 "category": category,
@@ -3239,7 +3229,7 @@ class PipelineCatalog(Catalog):
             name=third,
             thumbnail_url="",
             tags=frozenset(tags),
-            has_sub_cards=True,
+            has_deck_items=True,
             metadata={
                 "departments": depts,
                 **({"category": second, "project": project_name} if is_asset
@@ -3254,7 +3244,7 @@ class PipelineCatalog(Catalog):
         """Rebuild a Multi container Asset (post-create / -edit).
 
         Re-fetches the group's departments and the latest workfile
-        version per dept so the deck-popup sub-cards switch from
+        version per dept so the deck-popup deck items switch from
         "missing" to "available" without a hard grid refresh.
         """
         try:
@@ -3282,7 +3272,7 @@ class PipelineCatalog(Catalog):
         label = path.rsplit("/", 1)[-1] if path else group_id
         members = list(getattr(grp, "members", ()))
         # Drop the cached coverage so other shots/assets pick up
-        # member-list changes on their next sub-card render too.
+        # member-list changes on their next deck item render too.
         self._containers.invalidate_membership_cache()
 
         # Build a stand-in Collection just to drive the synthesizer —
@@ -3296,8 +3286,8 @@ class PipelineCatalog(Catalog):
             kind="group",
         )
         asset = self._containers._container_collection_to_asset(proxy, proj_name, "group")
-        # replace() carries every typed framework field (kind, drill_tag,
-        # member_count, has_sub_cards, …) across — only catalog_id changes.
+        # replace() carries every typed framework field (kind, deck_drill_tag,
+        # member_count, has_deck_items, …) across — only catalog_id changes.
         return dataclasses.replace(asset, catalog_id=self.id)
 
     def _refresh_scene_asset(self, scene_id: str):
@@ -3387,7 +3377,7 @@ class PipelineCatalog(Catalog):
                 f"sequence:{sequence}",
                 f"project:{proj.name}",
             }),
-            has_sub_cards=True,
+            has_deck_items=True,
             metadata={
                 "departments": depts,
                 "sequence": sequence,
@@ -3627,7 +3617,7 @@ class PipelineCatalog(Catalog):
                     return
                 from tumblepipe.pipe.houdini.lops import import_asset
                 node = import_asset.create(stage, name)
-                node.set_asset_uri(uris.parse(entity_uri))
+                node.set_entity_uri(uris.parse(entity_uri))
                 node.execute()
                 raw = node.native()
                 raw.setDisplayFlag(True)
