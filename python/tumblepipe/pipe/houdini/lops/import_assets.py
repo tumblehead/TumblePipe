@@ -431,14 +431,6 @@ class ImportAssets(EntityNode):
             duplicate_node.parm('duplicatename').set(
                 '`@srcname``@copy`'
             )
-            # Author duplicate transforms as a plain matrix op, not the
-            # XformCommonAPI srt/pivot stack — the CommonAPI writer
-            # conflicts with the matrix ops already composed on imported
-            # prims (edit-node xformOp:transform:* and re-established
-            # instance refs), scrambling/blocking the xformOpOrder.
-            commonapi_parm = duplicate_node.parm('usexformcommonapi')
-            if commonapi_parm is not None:
-                commonapi_parm.set(0)
             _connect(asset_node.native(), duplicate_node)
             _connect(duplicate_node, merge_node)
 

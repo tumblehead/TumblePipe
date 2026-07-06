@@ -48,8 +48,12 @@ def _subasset_script_lines(
     roots trip the export drop-guard. Instance prims mirror the
     Duplicate LOP's output and the render stage's instance definitions:
     copies named {base}0..{base}N-1 referencing the base prim, base
-    deactivated. No transform is authored — placement comes from the
-    set layer's overs on the instance prims.
+    deactivated. Placement op VALUES compose from the set layer's overs
+    (they survive the layerbreak in the localized sidecar) but their
+    xformOpOrder does not — it lived in the stripped Duplicate defs —
+    so each instance authors an order listing whichever placement ops
+    actually composed (CommonAPI ordering, pivot inverted last), with
+    an identity {base}_dup op as the no-placement fallback.
 
     Numbered duplicates AT or beyond the tracked count are deactivated:
     the import node's persistent layer (which holds these re-established
@@ -61,6 +65,9 @@ def _subasset_script_lines(
     sibling is stale and the base is re-activated.
     """
     lines = []
+    if subassets:
+        lines.append('from pxr import UsdGeom, Gf')
+        lines.append('')
     for asset_info in subassets:
         asset_uri_raw = asset_info.get('asset')
         if not asset_uri_raw:
@@ -126,10 +133,39 @@ def _subasset_script_lines(
                 instance_name = api.naming.get_instance_name(
                     base_name, index
                 )
+                # The set layer's overs carry the placement op VALUES
+                # (translate/rotate/scale/pivot survive the layerbreak)
+                # but not the xformOpOrder that applies them — the order
+                # lived in the Duplicate LOP's defs, which the export
+                # stripped. Author an order listing whichever placement
+                # ops actually composed (CommonAPI ordering, pivot
+                # inverted last). When none composed, fall back to an
+                # identity {base}_dup op so layout tooling still has a
+                # transform surface, mirroring the render stage's defs.
                 lines += [
                     f'    inst = stage.DefinePrim("{instance_prim_path}")',
                     '    inst.SetActive(True)',
                     f'    inst.GetReferences().AddInternalReference("{base_path}")',
+                    '    op_order = []',
+                    '    for op_name in (',
+                    '        "xformOp:translate", "xformOp:translate:pivot",',
+                    '        "xformOp:rotateXYZ", "xformOp:rotateXZY",',
+                    '        "xformOp:rotateYXZ", "xformOp:rotateYZX",',
+                    '        "xformOp:rotateZXY", "xformOp:rotateZYX",',
+                    '        "xformOp:scale",',
+                    '    ):',
+                    '        op_attr = inst.GetAttribute(op_name)',
+                    '        if op_attr and op_attr.HasValue():',
+                    '            op_order.append(op_name)',
+                    '    if op_order:',
+                    '        if "xformOp:translate:pivot" in op_order:',
+                    '            op_order.append("!invert!xformOp:translate:pivot")',
+                    '        UsdGeom.Xformable(inst).GetXformOpOrderAttr().Set(op_order)',
+                    f'    elif not inst.GetAttribute("xformOp:transform:{base_name}_dup"):',
+                    '        dup_op = UsdGeom.Xformable(inst).AddTransformOp(',
+                    f'            UsdGeom.XformOp.PrecisionDouble, "{base_name}_dup"',
+                    '        )',
+                    '        dup_op.Set(Gf.Matrix4d(1))',
                 ]
                 if inline:
                     lines.append('    util.mark_inlined(inst)')

@@ -64,11 +64,14 @@ The staged `context.json` is therefore the single authority for
 instance counts, and every consumption point re-establishes from it
 rather than trusting composed defs: the import nodes re-tag each
 tracked asset root, re-define duplicates (`{name}0..{name}N-1`
-referencing the base prim, base deactivated), and deactivate any
-numbered duplicate at or beyond the tracked count — a layer exported
-while an inflated count was live carries the phantom defs in its
-sidecar and would otherwise resurrect them on every import. The
-render-stage flatten generates the same instance definitions.
+referencing the base prim, base deactivated), author the
+`xformOpOrder` that applies the composed placement ops (their values
+survive in the sidecar, but the order lived in the stripped Duplicate
+defs), and deactivate any numbered duplicate at or beyond the tracked
+count — a layer exported while an inflated count was live carries the
+phantom defs in its sidecar and would otherwise resurrect them on
+every import. The render-stage flatten generates the same instance
+definitions.
 `scripts/verify_tracked_asset_counts.py` sweeps a project for staged
 counts that drifted from the department contexts.
 
