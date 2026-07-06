@@ -121,7 +121,7 @@ def _latest_shot_layer_paths(
     Find latest shot layer paths and extract their assets.
 
     Returns: (
-        {dept: (version_path, {asset_uri: instances})},
+        {dept: version_path},
         {asset_uri: instances},
         {asset_uri: inputs}
     )
@@ -153,7 +153,6 @@ def _latest_shot_layer_paths(
     asset_inputs = dict()
     asset_stamps = dict()
     for department_name, (version_path, stamp, asset_entries) in dept_layers.items():
-        layer_assets = dict()
         for asset_uri, instances, inputs in asset_entries:
             source_dept = _resolve_source_department(
                 inputs, asset_uri, all_shot_departments, source_dept_assets
@@ -164,14 +163,13 @@ def _latest_shot_layer_paths(
             if asset_uri not in source_dept_assets.get(source_dept, ()):
                 continue
 
-            layer_assets[asset_uri] = instances
             if asset_uri in asset_stamps and stamp <= asset_stamps[asset_uri]:
                 continue
             asset_stamps[asset_uri] = stamp
             shot_assets[asset_uri] = instances
             asset_inputs[asset_uri] = inputs
 
-        layer_data[department_name] = (version_path, layer_assets)
+        layer_data[department_name] = version_path
 
     return layer_data, shot_assets, asset_inputs
 
@@ -254,7 +252,7 @@ def resolve_shot_build(
 
     Returns: {
         'assets': {asset_uri: instances},
-        'shot_layers': {dept: (version_path, {asset_uri: instances})},
+        'shot_layers': {dept: version_path},
         'asset_layers': {dept: {asset_uri: version_path}},
         'shot_variant': str,
         'asset_variants': {asset_uri: variant_name}

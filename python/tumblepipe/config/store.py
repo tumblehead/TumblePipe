@@ -45,6 +45,30 @@ def _contains(data: dict, path: list[str]) -> bool:
     return True
 
 
+def _find_case_collision(data: dict, path: list[str]) -> tuple[str, str] | None:
+    """First (wanted, existing) pair along ``path`` differing only by case.
+
+    A sibling whose name matches a path step case-insensitively but not
+    exactly would create a parallel case-variant hierarchy — the class of
+    schism where 'clash/…' and 'Clash/…' each accumulate their own
+    entities, sidecars and exports, and every consumer composes whichever
+    spelling it happens to hold. Walking stops where the tree ends: steps
+    below that have no siblings to collide with.
+    """
+    for step in path:
+        children = data.get('children')
+        if children is None:
+            return None
+        if step not in children:
+            step_folded = step.casefold()
+            for existing in children:
+                if existing.casefold() == step_folded:
+                    return step, existing
+            return None
+        data = children[step]
+    return None
+
+
 def _remove(data, path):
     last = path[-1]
     for step in path[:-1]:
@@ -338,6 +362,14 @@ class JsonConfigStore(ConfigConvention):
             data = {'properties': {}, 'children': {}}
         if _contains(data, uri.segments):
             raise ValueError('Entity already exists')
+        collision = _find_case_collision(data, uri.segments)
+        if collision is not None:
+            wanted, existing = collision
+            raise ValueError(
+                f"Entity name '{wanted}' collides with existing "
+                f"'{existing}' (names may not differ only by case — "
+                "case-variant hierarchies split exports and sidecars)"
+            )
         _insert(data, properties, uri.segments)
         self.write_root(uri.purpose, data)
 

@@ -14,7 +14,7 @@ Each command file contains JSON with action, project, params, timestamp, etc.
 """
 
 from dataclasses import dataclass, field, asdict
-from typing import Optional, Any
+from typing import Optional
 from datetime import datetime
 from pathlib import Path
 import logging

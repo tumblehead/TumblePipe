@@ -2,7 +2,6 @@
 Dialog for showing validation failures and asking user to continue or cancel export.
 """
 
-from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QDialog,

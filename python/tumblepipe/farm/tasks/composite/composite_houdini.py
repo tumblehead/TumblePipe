@@ -105,7 +105,7 @@ def main(
             # Set the output path for this layer
             temp_layer_path = temp_path / layer_name
             temp_layer_path.mkdir(parents=True, exist_ok=True)
-            temp_frames_path = temp_layer_path / f'composite.$F4.exr'
+            temp_frames_path = temp_layer_path / 'composite.$F4.exr'
             render_node.parm('copoutput').set(path_str(temp_frames_path))
 
             # Render the frames for this layer

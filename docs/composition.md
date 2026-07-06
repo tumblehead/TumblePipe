@@ -20,7 +20,10 @@ imports actually load. For an asset it sublayers, strongest first:
    own layers, so its placement overrides win. Tracked refs carry the
    sub-asset's variant and are pinned to its staged version at build
    time, so a pinned build stays frozen; `latest`-mode imports strip
-   or ignore the pin, so floating still cascades.
+   or ignore the pin, so floating still cascades. A tracked asset
+   already reachable through another tracked asset's staged file gets
+   no direct ref of its own — a second, independently pinned ref could
+   pin a different version of the same prims.
 
 When department layers disagree about a tracked asset (instance count,
 variant, inputs), the **most recently exported** layer that records it
@@ -53,13 +56,21 @@ asset appears in both.
 Both compose transparently: a shot that imports the set (or a scene
 containing it) resolves the nested assets through the set's staged file.
 
-Because exported layers carry neither pipeline metadata nor the
-Duplicate LOP's instance defs (the layerbreak strips everything the
-authoring workfile composed), every consumption point re-establishes
-them: the import nodes re-tag each tracked asset root from the staged
-`context.json` and re-define multi-instance duplicates
-(`{name}0..{name}N-1` referencing the base prim, base deactivated),
-and the render-stage flatten generates the same instance definitions.
+The layerbreak strips the *imported* composition from an export, but
+the import node's own persistent layer — tracked-asset metadata,
+artist transforms, and the re-established instance defs — is
+localized into the export as a `stage/<node>/transform.usd` sidecar.
+The staged `context.json` is therefore the single authority for
+instance counts, and every consumption point re-establishes from it
+rather than trusting composed defs: the import nodes re-tag each
+tracked asset root, re-define duplicates (`{name}0..{name}N-1`
+referencing the base prim, base deactivated), and deactivate any
+numbered duplicate at or beyond the tracked count — a layer exported
+while an inflated count was live carries the phantom defs in its
+sidecar and would otherwise resurrect them on every import. The
+render-stage flatten generates the same instance definitions.
+`scripts/verify_tracked_asset_counts.py` sweeps a project for staged
+counts that drifted from the department contexts.
 
 ## Department exclusion
 

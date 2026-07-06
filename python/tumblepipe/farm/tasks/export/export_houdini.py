@@ -155,7 +155,7 @@ def main(
 
         # Clean up chunks directory
         shutil.rmtree(chunks_dir)
-        print(f'Cleaned up chunks directory')
+        print('Cleaned up chunks directory')
     else:
         # Standard export: export all frames at once
         export_node.parm('file').set(path_str(output_path))

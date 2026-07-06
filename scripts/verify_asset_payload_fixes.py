@@ -258,8 +258,6 @@ def check_c_export(report):
             return
 
         prim_path = uri_to_prim_path(entity)
-        leaf = prim_path.rstrip("/").rsplit("/", 1)[-1]
-        duplicated_prefix = f"{prim_path}/{leaf}"
 
         stage = hou.node("/stage")
         subnet = stage.createNode("subnet", "verify_export")

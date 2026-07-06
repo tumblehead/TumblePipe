@@ -8,7 +8,6 @@ from qtpy.QtWidgets import (
     QScrollArea,
     QWidget,
 )
-from qtpy.QtCore import Qt
 
 
 class SchemaMigrationDialog(QDialog):

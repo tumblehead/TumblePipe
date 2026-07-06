@@ -24,7 +24,6 @@ import subprocess
 import logging
 import signal
 import time
-import sys
 
 from tumblepipe.apps.resolve.client import ResolveClient
 from tumblepipe.apps.resolve.queue import (

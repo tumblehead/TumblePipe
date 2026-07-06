@@ -52,7 +52,7 @@ def validate_render_var_names(root) -> ValidationResult:
         aov_attr = prim.GetAttribute('driver:parameters:aov:name')
         if not aov_attr.IsValid():
             result.add_warning(
-                f"Missing 'driver:parameters:aov:name' attribute",
+                "Missing 'driver:parameters:aov:name' attribute",
                 prim_path,
                 suggestion=(
                     "Set the AOV name on the Render Var LOP so the prim has a "
@@ -64,7 +64,7 @@ def validate_render_var_names(root) -> ValidationResult:
         aov_name = aov_attr.Get()
         if aov_name is None:
             result.add_warning(
-                f"Empty 'driver:parameters:aov:name' attribute",
+                "Empty 'driver:parameters:aov:name' attribute",
                 prim_path,
                 suggestion=(
                     "Set a non-empty AOV name on the Render Var LOP (e.g. "

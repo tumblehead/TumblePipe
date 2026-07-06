@@ -223,7 +223,7 @@ def main(
 
             if missing_optional:
                 print(f'WARNING: Missing optional AOVs in rendered output: {sorted(missing_optional)}')
-                print(f'  These utility passes were not produced by the renderer')
+                print('  These utility passes were not produced by the renderer')
 
             if missing_required:
                 print(f'ERROR: Missing required AOVs in rendered output: {sorted(missing_required)}')

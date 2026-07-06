@@ -3,7 +3,6 @@ import hou
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
 from tumblepipe.pipe.houdini.sops import export_rig
-from tumblepipe.pipe.houdini.util import uri_to_prim_path
 
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
 

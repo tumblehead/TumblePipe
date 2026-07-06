@@ -1,7 +1,7 @@
 from qtpy import QtWidgets
-from qtpy.QtCore import Qt, Signal
+from qtpy.QtCore import Signal
 
-from tumblepipe.config.schema import Schema, apply_defaults
+from tumblepipe.config.schema import apply_defaults
 from tumblepipe.util.uri import Uri
 from .batch_entity_model import BatchEntityTableModel
 

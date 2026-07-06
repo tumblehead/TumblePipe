@@ -56,11 +56,13 @@ Two rules keep these importable in the environments they run in:
   `submit_batch`/`run_cli`. Don't re-introduce per-module copies.
 
 The farm modules cannot be run-imported outside the farm (Deadline,
-`tomli_w`), so gate changes with a compile + lint pass instead:
+`tomli_w`), so gate changes with a compile + lint pass instead. Use the
+same selection CI enforces (`.woodpecker/ci.yml` runs it over every
+Python tree on tag):
 
 ```bash
 python -m compileall -q python/tumblepipe/farm/
-ruff check --select F401,F811,F821 python/tumblepipe/farm/
+ruff check --select E9,F python/tumblepipe/farm/
 ```
 
 ## Building the documentation locally

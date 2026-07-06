@@ -27,7 +27,7 @@ Usage:
 
 from dataclasses import dataclass, field
 from typing import Optional, Any, Callable
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import logging
 
@@ -384,7 +384,6 @@ class DailyGenerator:
         client = self.client
 
         # Generate output filename
-        date_str = datetime.now().strftime('%Y-%m-%d')
         timeline_name = timeline.GetName() if hasattr(timeline, 'GetName') else 'Daily'
         filename = f"{timeline_name}"
 

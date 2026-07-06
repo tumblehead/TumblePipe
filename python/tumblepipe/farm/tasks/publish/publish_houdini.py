@@ -316,7 +316,7 @@ def _load_workfile(bundled_path: Path, force_reload: bool = True) -> bool:
     # Workfile MUST be provided by job - no searching
     if not bundled_path.exists():
         print(f'ERROR: Bundled workfile not found: {bundled_path}')
-        print(f'The job must provide a valid workfile via workfile_path config')
+        print('The job must provide a valid workfile via workfile_path config')
         return False
 
     print(f'Loading bundled workfile: {bundled_path}')

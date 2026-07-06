@@ -319,9 +319,9 @@ def _generate_instance_prim_definitions(instances_by_asset: dict[str, list[str]]
     lines = []
 
     for category, assets in sorted(assets_by_category.items()):
-        lines.append(f'')
+        lines.append('')
         lines.append(f'def Xform "{category}"')
-        lines.append(f'{{')
+        lines.append('{')
 
         for asset_name, instances in assets:
             base_prim_path = f'/{category}/{asset_name}'
@@ -330,24 +330,24 @@ def _generate_instance_prim_definitions(instances_by_asset: dict[str, list[str]]
             # Each instance references the base prim and has an identity transform
             for instance_name in instances:
                 lines.append(f'    def "{instance_name}" (')
-                lines.append(f'        active = true')
+                lines.append('        active = true')
                 lines.append(f'        append references = <{base_prim_path}>')
-                lines.append(f'    )')
-                lines.append(f'    {{')
+                lines.append('    )')
+                lines.append('    {')
                 lines.append(f'        matrix4d xformOp:transform:{asset_name}_dup = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )')
                 lines.append(f'        uniform token[] xformOpOrder = ["xformOp:transform:{asset_name}_dup"]')
-                lines.append(f'    }}')
-                lines.append(f'')
+                lines.append('    }')
+                lines.append('')
 
             # Deactivate original prototype so it doesn't render
             lines.append(f'    over "{asset_name}" (')
-            lines.append(f'        active = false')
-            lines.append(f'    )')
-            lines.append(f'    {{')
-            lines.append(f'    }}')
-            lines.append(f'')
+            lines.append('        active = false')
+            lines.append('    )')
+            lines.append('    {')
+            lines.append('    }')
+            lines.append('')
 
-        lines.append(f'}}')
+        lines.append('}')
 
     return '\n'.join(lines)
 

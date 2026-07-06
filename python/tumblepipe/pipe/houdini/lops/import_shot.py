@@ -105,14 +105,14 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
             "",
             f"# Asset: {asset_uri_str}",
             f"asset_prim = root.GetPrimAtPath('{asset_prim_path}')",
-            f"if asset_prim.IsValid():",
-            f"    util.set_metadata(asset_prim, {{",
+            "if asset_prim.IsValid():",
+            "    util.set_metadata(asset_prim, {",
             f"        'uri': '{asset_uri_str}',",
             f"        'instance': '{asset_name}',",
             f"        'variant': '{asset_info.get('variant', 'default')}',",
             f"        'instances': {instances},",
             f"        'inputs': {asset_inputs!r}",
-            f"    }})",
+            "    })",
         ])
 
     footer = ["", "update(root)"]

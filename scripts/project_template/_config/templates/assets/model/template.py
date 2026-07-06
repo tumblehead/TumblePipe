@@ -1,4 +1,3 @@
-import hou
 
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group

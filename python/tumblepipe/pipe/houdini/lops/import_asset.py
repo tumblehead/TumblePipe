@@ -50,6 +50,15 @@ def _subasset_script_lines(
     copies named {base}0..{base}N-1 referencing the base prim, base
     deactivated. No transform is authored — placement comes from the
     set layer's overs on the instance prims.
+
+    Numbered duplicates AT or beyond the tracked count are deactivated:
+    the import node's persistent layer (which holds these re-established
+    defs) is localized into department exports as a sidecar, so a layer
+    exported while an inflated count was live carries the phantom defs
+    forever — composition would resurrect them on every import no matter
+    what the corrected count says (the paleindia six-towers relapse).
+    For a count of 1 the base prim is the instance, so every numbered
+    sibling is stale and the base is re-activated.
     """
     lines = []
     for asset_info in subassets:
@@ -74,12 +83,30 @@ def _subasset_script_lines(
             if shot_entry not in inputs:
                 inputs.append(shot_entry)
 
+        # Deactivate stale numbered duplicates at/beyond the tracked
+        # count (see docstring). Runs before the wanted instances are
+        # (re)defined so a later legitimate def downstream still wins.
+        stale_threshold = instances if instances > 1 else 0
+        stale_cleanup = [
+            '    for sibling in list(base.GetParent().GetChildren()):',
+            '        sibling_name = sibling.GetName()',
+            f'        if not sibling_name.startswith("{base_name}"):',
+            '            continue',
+            f'        suffix = sibling_name[{len(base_name)}:]',
+            '        if not suffix.isdigit():',
+            '            continue',
+            f'        if int(suffix) >= {stale_threshold}:',
+            '            sibling.SetActive(False)',
+        ]
+
         lines += [
             f'# Sub-asset: {asset_uri_raw}',
             f'base = root.GetPrimAtPath("{base_path}")',
             'if base.IsValid():',
         ]
+        lines += stale_cleanup
         if instances <= 1:
+            lines.append('    base.SetActive(True)')
             if inline:
                 lines.append('    util.mark_inlined(base)')
             else:

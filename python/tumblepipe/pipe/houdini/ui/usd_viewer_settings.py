@@ -1,9 +1,8 @@
 """USD Viewer Settings Dialog."""
 
 from pathlib import Path
-from typing import Optional
 
-from qtpy import QtWidgets, QtCore, QtGui
+from qtpy import QtWidgets
 
 from .usd_viewer import USDViewerLauncher, USDViewerType
 

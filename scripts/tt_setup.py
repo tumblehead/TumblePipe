@@ -467,7 +467,9 @@ class SetupWizard(QtWidgets.QWizard):
 
 
 def main() -> int:
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+    # Bind the QApplication so a freshly created instance isn't collected
+    # while the wizard runs.
+    _app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     wizard = SetupWizard()
     code = wizard.exec()
     accepted = code == QtWidgets.QDialog.DialogCode.Accepted if hasattr(QtWidgets.QDialog, 'DialogCode') else bool(code)

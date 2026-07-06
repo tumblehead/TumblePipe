@@ -21,7 +21,6 @@ Usage:
 from dataclasses import dataclass, field
 from typing import Optional, Any
 from pathlib import Path
-import subprocess
 import platform
 import logging
 import sys

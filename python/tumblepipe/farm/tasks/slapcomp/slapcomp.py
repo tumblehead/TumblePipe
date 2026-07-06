@@ -63,7 +63,7 @@ def _merge_rgba(
         '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
         '-o', path_str(local_path(output_path))
     ]
-    print(f'    Merging RGBA: beauty + alpha -> temp')
+    print('    Merging RGBA: beauty + alpha -> temp')
     return exr._run(oiiotool_cmd, env=_get_ocio_env())
 
 def _composite_frame(

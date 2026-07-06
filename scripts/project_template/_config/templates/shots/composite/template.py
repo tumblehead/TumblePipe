@@ -4,7 +4,7 @@ from tumblepipe.pipe.houdini.cops import build_comp
 
 def _create_entity(scene_node, department_name: str):
     cop_node = scene_node.createNode('copnet', 'composite_shot')
-    comp_node = build_comp.create(cop_node, 'composite_shot')
+    build_comp.create(cop_node, 'composite_shot')
 
 def _create_group(scene_node, group_uri: Uri, department_name: str):
     group = get_group(group_uri)
