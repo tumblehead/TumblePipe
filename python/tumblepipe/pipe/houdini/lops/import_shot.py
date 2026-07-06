@@ -878,6 +878,12 @@ class ImportShot(ns.Node):
             dup_node.parm('ncy').set(instances)
             dup_node.parm('duplicatename').set('`@srcname``@copy`')
             dup_node.parm('makeinstances').set(int(not animatable))
+            # Plain matrix op instead of the XformCommonAPI srt/pivot
+            # stack — mirrors import_assets; the CommonAPI writer
+            # conflicts with matrix ops already composed on the prims.
+            commonapi_parm = dup_node.parm('usexformcommonapi')
+            if commonapi_parm is not None:
+                commonapi_parm.set(0)
 
             if prev_node:
                 dup_node.setInput(0, prev_node)
