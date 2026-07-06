@@ -32,7 +32,10 @@ and scrapes it back into its own next export.
 
 Shot staged files work the same way: shot department layers, then
 shot-flow assets, then the root department (which carries the scene
-reference).
+reference). The newest-export-wins merge applies to shot-flow asset
+counts and inputs too; scene assets carry the instance counts from
+their scene context, with shot-flow entries taking precedence when an
+asset appears in both.
 
 ## Two ways to build multi-asset environments
 

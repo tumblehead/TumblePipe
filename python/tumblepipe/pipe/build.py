@@ -58,11 +58,13 @@ def _load_shot_layer(
     shot_uri: Uri,
     department_name: str,
     variant_name: str
-) -> Optional[tuple[Path, list[tuple[Uri, str, list]]]]:
+) -> Optional[tuple[Path, str, list[tuple[Uri, int, list]]]]:
     """
     Load the latest export of one shot department.
 
-    Returns: (version_path, [(asset_uri, instance_name, inputs), ...]) or None
+    Returns: (version_path, timestamp, [(asset_uri, instances, inputs), ...])
+    or None. The timestamp is the layer's export time ('' for very old
+    exports without one) — ISO strings compare lexicographically.
     """
     latest_version_path = latest_export_path(shot_uri, variant_name, department_name)
     if latest_version_path is None:
@@ -83,12 +85,12 @@ def _load_shot_layer(
     asset_entries = [
         (
             Uri.parse_unsafe(asset_datum['asset']),
-            asset_datum['instance'],
+            asset_datum.get('instances', 1),
             asset_datum.get('inputs', [])
         )
         for asset_datum in layer_info['parameters'].get('assets', [])
     ]
-    return latest_version_path, asset_entries
+    return latest_version_path, layer_info.get('timestamp', ''), asset_entries
 
 
 def _resolve_source_department(
@@ -119,13 +121,13 @@ def _latest_shot_layer_paths(
     Find latest shot layer paths and extract their assets.
 
     Returns: (
-        {dept: (version_path, {asset_uri: set(instances)})},
-        {asset_uri: set(instances)},
+        {dept: (version_path, {asset_uri: instances})},
+        {asset_uri: instances},
         {asset_uri: inputs}
     )
     """
     # First pass: load each department's latest layer and its asset entries
-    dept_layers = {}  # {dept: (version_path, [(asset_uri, instance, inputs), ...])}
+    dept_layers = {}  # {dept: (version_path, timestamp, [(asset_uri, instances, inputs), ...])}
     for department_name in shot_departments:
         layer = _load_shot_layer(shot_uri, department_name, variant_name)
         if layer is None:
@@ -135,16 +137,24 @@ def _latest_shot_layer_paths(
     # Determine which assets exist in each source department (for validation)
     source_dept_assets = {
         dept: {asset_uri for asset_uri, _, _ in asset_entries}
-        for dept, (_, asset_entries) in dept_layers.items()
+        for dept, (_, _, asset_entries) in dept_layers.items()
     }
 
-    # Second pass: keep only assets whose source department is in the resolution list
+    # Second pass: keep only assets whose source department is in the
+    # resolution list. Per asset, the MOST RECENTLY EXPORTED layer that
+    # records it wins (instances + inputs as one snapshot) — mirroring
+    # resolve_asset_build. The previous union of instance names across
+    # layers had the same stale-layer ratchet as the asset flow's max()
+    # (an old downstream layer pinned instances forever), and it also
+    # collapsed real counts: each layer records one representative
+    # instance name, so the union's size never reflected 'instances'.
     layer_data = dict()
     shot_assets = dict()
-    asset_inputs = dict()  # Track inputs per asset for staged output (first occurrence)
-    for department_name, (version_path, asset_entries) in dept_layers.items():
+    asset_inputs = dict()
+    asset_stamps = dict()
+    for department_name, (version_path, stamp, asset_entries) in dept_layers.items():
         layer_assets = dict()
-        for asset_uri, instance_name, inputs in asset_entries:
+        for asset_uri, instances, inputs in asset_entries:
             source_dept = _resolve_source_department(
                 inputs, asset_uri, all_shot_departments, source_dept_assets
             )
@@ -154,9 +164,12 @@ def _latest_shot_layer_paths(
             if asset_uri not in source_dept_assets.get(source_dept, ()):
                 continue
 
-            shot_assets.setdefault(asset_uri, set()).add(instance_name)
-            layer_assets.setdefault(asset_uri, set()).add(instance_name)
-            asset_inputs.setdefault(asset_uri, inputs)
+            layer_assets[asset_uri] = instances
+            if asset_uri in asset_stamps and stamp <= asset_stamps[asset_uri]:
+                continue
+            asset_stamps[asset_uri] = stamp
+            shot_assets[asset_uri] = instances
+            asset_inputs[asset_uri] = inputs
 
         layer_data[department_name] = (version_path, layer_assets)
 
@@ -193,7 +206,8 @@ def _get_root_scene_uri(root_version_path: Path) -> Optional[Uri]:
 
 def _iter_scene_assets(scene_uri: Uri):
     """
-    Yield (asset_uri, variant_name) for every asset composed by a scene.
+    Yield (asset_uri, variant_name, instances) for every asset composed
+    by a scene.
 
     Direct scene assets come first so they take precedence over assets
     inherited from parent scenes.
@@ -204,11 +218,15 @@ def _iter_scene_assets(scene_uri: Uri):
         if scene_context_data is not None:
             for asset_datum in scene_context_data.get('parameters', {}).get('assets', []):
                 asset_uri = Uri.parse_unsafe(asset_datum['asset'])
-                yield asset_uri, asset_datum.get('variant', DEFAULT_VARIANT)
+                yield (
+                    asset_uri,
+                    asset_datum.get('variant', DEFAULT_VARIANT),
+                    asset_datum.get('instances', 1)
+                )
 
     from tumblepipe.config.scene import get_inherited_assets
     for entry, _parent_uri in get_inherited_assets(scene_uri):
-        yield Uri.parse_unsafe(entry.asset), entry.variant
+        yield Uri.parse_unsafe(entry.asset), entry.variant, entry.instances
 
 
 def resolve_shot_build(
@@ -235,8 +253,8 @@ def resolve_shot_build(
         asset_variants: Optional dict mapping asset_uri to variant_name for per-asset variants
 
     Returns: {
-        'assets': {asset_uri: set(instance_names)},
-        'shot_layers': {dept: (version_path, {asset_uri: set(instances)})},
+        'assets': {asset_uri: instances},
+        'shot_layers': {dept: (version_path, {asset_uri: instances})},
         'asset_layers': {dept: {asset_uri: version_path}},
         'shot_variant': str,
         'asset_variants': {asset_uri: variant_name}
@@ -277,10 +295,12 @@ def resolve_shot_build(
     if root_version_path is not None:
         scene_uri = _get_root_scene_uri(root_version_path)
     if scene_uri is not None:
-        for asset_uri, variant in _iter_scene_assets(scene_uri):
-            asset_name = asset_uri.segments[-1]  # Use asset name as instance
+        for asset_uri, variant, instances in _iter_scene_assets(scene_uri):
             scene_asset_uris.add(asset_uri)
-            assets.setdefault(asset_uri, set()).add(asset_name)
+            # Shot-flow entries win over the scene's count (setdefault):
+            # a department that re-imported the asset is the fresher
+            # authority, matching the pre-count behaviour.
+            assets.setdefault(asset_uri, instances)
             asset_variants.setdefault(asset_uri, variant)
 
     # Done
