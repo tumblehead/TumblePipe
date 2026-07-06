@@ -343,9 +343,19 @@ def resolve_asset_build(
     # the staged build must re-reference each tracked asset's own staged
     # file or those prims compose empty downstream. Mirrors the shot flow's
     # _latest_shot_layer_paths scrape.
+    #
+    # Per tracked asset, the MOST RECENTLY EXPORTED layer that records it
+    # wins (instances, variant, inputs as one consistent snapshot) — never
+    # a max() across layers. A stale department (e.g. lookdev exported
+    # before a model rework halved the copies) would otherwise pin the old
+    # instance count forever: max() can only go up, and any workfile that
+    # imports the staged asset re-composes the inflated count onto its
+    # stage and scrapes it back into its next export — a self-reinforcing
+    # loop that survives every re-stage (the paleindia six-towers bug).
     assets = {}
     asset_inputs = {}
     asset_variants = {}
+    asset_stamps = {}
     for department_name, version_path in department_layers.items():
         context_data = load_json(version_path / 'context.json')
         if context_data is None:
@@ -357,15 +367,20 @@ def resolve_asset_build(
         )
         if layer_info is None:
             continue
+        # ISO timestamps compare lexicographically; layers without one
+        # (very old exports) rank oldest.
+        stamp = layer_info.get('timestamp', '')
         for asset_datum in layer_info['parameters'].get('assets', []):
             tracked_uri = Uri.parse_unsafe(asset_datum['asset'])
             if tracked_uri == asset_uri:
                 continue  # self-import — never sublayer an asset into itself
-            instances = asset_datum.get('instances', 1)
-            assets[tracked_uri] = max(assets.get(tracked_uri, 0), instances)
-            asset_inputs.setdefault(tracked_uri, asset_datum.get('inputs', []))
-            asset_variants.setdefault(
-                tracked_uri, asset_datum.get('variant', DEFAULT_VARIANT)
+            if tracked_uri in asset_stamps and stamp <= asset_stamps[tracked_uri]:
+                continue
+            asset_stamps[tracked_uri] = stamp
+            assets[tracked_uri] = asset_datum.get('instances', 1)
+            asset_inputs[tracked_uri] = asset_datum.get('inputs', [])
+            asset_variants[tracked_uri] = asset_datum.get(
+                'variant', DEFAULT_VARIANT
             )
 
     return dict(

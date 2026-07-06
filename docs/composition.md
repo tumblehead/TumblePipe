@@ -22,6 +22,14 @@ imports actually load. For an asset it sublayers, strongest first:
    time, so a pinned build stays frozen; `latest`-mode imports strip
    or ignore the pin, so floating still cascades.
 
+When department layers disagree about a tracked asset (instance count,
+variant, inputs), the **most recently exported** layer that records it
+wins, as one consistent snapshot. It is never a `max()` across layers:
+a stale department — lookdev exported before a model rework halved the
+copies — would pin the old count forever, because any workfile that
+imports the staged asset re-composes the inflated count onto its stage
+and scrapes it back into its own next export.
+
 Shot staged files work the same way: shot department layers, then
 shot-flow assets, then the root department (which carries the scene
 reference).
