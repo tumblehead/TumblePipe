@@ -65,6 +65,29 @@ python -m compileall -q python/tumblepipe/farm/
 ruff check --select E9,F python/tumblepipe/farm/
 ```
 
+## Building the package locally
+
+`hpm build` produces the install image: it runs the `[stage].prepack`
+scripts (`build-resolver` cmake-builds the tumbleResolver USD plugin into
+`resolver/houdini<major>/`; `compile-hdas` collapses the expanded
+`otls/<name>/` sources into binary `.hda` files) and stages the tree per
+`[stage].include`/`exclude`. Requirements: cmake, a Rust toolchain, and at
+least one Houdini install.
+
+By default the resolver builds every major listed in
+`resolver-src/houdini_majors.toml`, which fails on a machine that doesn't
+have them all installed. Restrict the build to the majors you have with
+`HPM_HOUDINI_MAJORS` (bare space-separated majors, e.g. `22` or `21 22`):
+
+```bash
+HPM_HOUDINI_MAJORS=22 hpm build --platform windows-x86_64
+```
+
+`hpm build --houdini-majors "22"` (hpm ≥ 0.27) and dev-package launches
+from TumbleTrove Desktop (≥ 0.38, which sets the variable from the Houdini
+versions it discovers) do the same thing. Release CI always builds the
+full matrix — see `.woodpecker/build-*.yml`.
+
 ## Building the documentation locally
 
 The docs are written in [MyST Markdown](https://myst-parser.readthedocs.io)
