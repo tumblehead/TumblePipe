@@ -40,6 +40,37 @@ counts and inputs too; scene assets carry the instance counts from
 their scene context, with shot-flow entries taking precedence when an
 asset appears in both.
 
+## Layer save paths and export portability
+
+A published layer travels as a folder — from the export temp directory
+into the version folder, then across machines and the farm — so every
+filesystem path it composes from must stay **inside its own folder**.
+Cross-entity composition goes through `entity:/` URIs, which the
+resolver handles everywhere. The export refuses to publish a layer
+whose sublayer/reference/payload arcs *escape* the folder (absolute
+paths, or relative `../` climbs), even when the target exists at export
+time — such an arc dangles, or silently reads another machine's state,
+after publish.
+
+The common way to author an escaping arc without noticing is the LOP
+**Layer Save Path**: Houdini 22 creates `sopcreate` and `sopimport`
+nodes with it *enabled* and pointing at `$HIP/usd/$OS.usd` (Houdini 21
+shipped it off). On export, a save-path'ed layer is written next to the
+workfile instead of flattening into the published layer, which then
+composes empty everywhere else. The pipeline neutralizes the default at
+node-creation time (`scripts/lop/*_OnCreated.py`) and the scene
+templates pin it off explicitly; if an export still aborts with an
+"outside the export folder" error, disable *Enable Layer Save Path* on
+the named node and re-export.
+
+Deliberate *relative sibling* save paths are fine and used by the asset
+HDAs themselves (`payload.usd`, `geo.usdc`, `lookdev.usdc`) — they stay
+inside the version folder and travel with it.
+
+`scripts/fix_enabled_savepaths.py` (hython) sweeps a project's
+workfiles for nodes that already saved the enabled state — dry-run by
+default, `--apply` disables and resaves with a backup copy.
+
 ## Two ways to build multi-asset environments
 
 - **Scenes and groups** (config-driven): a scene lists member assets in

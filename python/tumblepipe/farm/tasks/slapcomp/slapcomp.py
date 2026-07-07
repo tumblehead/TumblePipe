@@ -161,10 +161,14 @@ def _composite_frame(
                 # No alpha, add constant alpha=1.0 to make RGBA
                 print(f'  Layer {layer_name}: Adding constant alpha=1.0')
                 layer_rgba_path = temp_path / f'layer_{layer_index}_rgba.exr'
+                # Select channels by position, not name: raw render AOVs carry
+                # AOV-prefixed channel names (beauty.R, ...) and a by-name --ch
+                # silently zero-fills missing R,G,B — solid black output.
                 add_alpha_cmd = [
                     'oiiotool',
                     path_str(local_path(rgb_source_path)),
-                    '--ch', 'R,G,B,A=1.0',
+                    '--ch', '0,1,2,A=1.0',
+                    '--chnames', 'R,G,B,A',
                     '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
                     '-o', path_str(local_path(layer_rgba_path))
                 ]

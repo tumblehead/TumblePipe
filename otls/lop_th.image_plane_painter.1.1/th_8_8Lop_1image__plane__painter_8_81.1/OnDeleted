@@ -1,20 +1,32 @@
 import nodegraphutils
 
 def delete_attached_thumbnail():
+    # Headless (hython/farm) has no network editor to clean up.
+    if not hou.isUIAvailable():
+        return
     desktop = hou.ui.curDesktop()
     editor = desktop.paneTabOfType(hou.paneTabType.NetworkEditor)
-    
+    if editor is None:
+        return
+
     # GET ALL IMAGES
     images = list(editor.backgroundImages())
-    
+
     # REMOVE ATTACHED THUMBNAIL
-    images = [
-        img for img in images 
+    remaining = [
+        img for img in images
         if img.relativeToPath() != kwargs['node'].path()
     ]
-    editor.setBackgroundImages(images)
-    
-    nodegraphutils.saveBackgroundImages(editor.pwd(), editor.backgroundImages())
-    nodegraphutils.loadBackgroundImages(editor.pwd())
+    if len(remaining) == len(images):
+        return  # no attached thumbnail - nothing to clean up
+    editor.setBackgroundImages(remaining)
+
+    try:
+        nodegraphutils.saveBackgroundImages(editor.pwd(), editor.backgroundImages())
+        nodegraphutils.loadBackgroundImages(editor.pwd())
+    except hou.OperationFailed:
+        # Saving an empty image list on a network that never stored any
+        # raises from destroyUserData(must_exist=True) - nothing to clean.
+        pass
 
 delete_attached_thumbnail()

@@ -164,6 +164,11 @@ def _rename_channel(image_name: str, channel: str) -> str:
 def _stage_subimage(temp_path, temp_image_path, image_info, index_name):
     # Returns the file to copy to the output location; channels are renamed to
     # match the subimage name first when any of them don't already carry it.
+    # CONTRACT for consumers of the split per-AOV files: channels are named
+    # `<aov>.R/G/B/...`, never plain R,G,B — select channels positionally
+    # (oiiotool `--ch 0,1,2`), not by name. oiiotool's by-name `--ch` silently
+    # zero-fills channels it can't find, producing solid-black output (this
+    # blacked out every denoise-off slapcomp until v1.23.4).
     image_name = image_info.name
     channels = image_info.channels or []
     needs_renaming = any(

@@ -4,6 +4,7 @@ from tumblepipe.pipe.houdini.lops import (
     import_shot,
     export_layer
 )
+from tumblepipe.pipe.houdini.util import disable_layer_save_path
 
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
 
@@ -13,6 +14,7 @@ def _create_entity(scene_node, entity_uri: Uri, department_name: str):
 
     # Create the sop create node for FX work
     sop_node = scene_node.createNode('sopcreate', 'effects')
+    disable_layer_save_path(sop_node)
     sop_node.setInput(0, prev_node)
     prev_node = sop_node
 
@@ -37,6 +39,7 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
 
         # Create the sop create node for FX work
         sop_node = scene_node.createNode('sopcreate', f'effects_{member_name}')
+        disable_layer_save_path(sop_node)
         sop_node.setInput(0, prev_node)
         prev_node = sop_node
 

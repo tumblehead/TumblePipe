@@ -29,6 +29,25 @@ def apply_placement_op_order(prim) -> bool:
 # Helper functions
 ###############################################################################
 
+# H22 flipped the sopcreate/sopimport 'Layer Save Path' default to ON with
+# $HIP/usd/$OS.usd. A save-path'ed layer is written NEXT TO THE WORKFILE by
+# the export ROP (savestyle=flattenimplicitlayers) instead of flattening into
+# the published layer, which then composes empty on every other machine.
+_LAYER_SAVE_PATH_PARMS = (
+    ('enable_savepath', 'savepath'),  # sopcreate / sopimport / sopmodify
+)
+
+def disable_layer_save_path(node) -> None:
+    """Turn off a LOP node's layer save path so its layer flattens on export."""
+    for enable_name, path_name in _LAYER_SAVE_PATH_PARMS:
+        enable_parm = node.parm(enable_name)
+        if enable_parm is None:
+            continue
+        enable_parm.set(False)
+        path_parm = node.parm(path_name)
+        if path_parm is not None:
+            path_parm.set('')
+
 def list_to_menu(items: list[str]) -> list[str]:
     result = []
     for item in items:

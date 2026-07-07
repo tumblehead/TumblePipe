@@ -3,11 +3,13 @@ import hou
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
 from tumblepipe.pipe.houdini.sops import export_rig
+from tumblepipe.pipe.houdini.util import disable_layer_save_path
 
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
 
     # Create the sopcreate node for the rigging network
     sop_node = scene_node.createNode('sopcreate', 'rigging')
+    disable_layer_save_path(sop_node)
     sop_dive_node = sop_node.node('sopnet/create')
 
     # Create the import model HDA (entity defaults to from_context)
@@ -41,6 +43,7 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
 
         # Create the sopcreate node for this member's rigging network
         sop_node = scene_node.createNode('sopcreate', f'rigging_{member_name}')
+        disable_layer_save_path(sop_node)
         sop_dive_node = sop_node.node('sopnet/create')
 
         # Create the import model HDA (entity set explicitly for group members)

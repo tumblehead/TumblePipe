@@ -728,6 +728,51 @@ def find_dangling_layer_paths(
     return dangling
 
 
+def find_escaping_layer_paths(
+    asset_paths, layer_dir: Union[Path, str],
+) -> list:
+    """Return filesystem composition paths that resolve outside ``layer_dir``.
+
+    A published layer travels as a folder (temp export dir → version
+    folder → other machines), so every filesystem arc must stay inside
+    the layer's own directory to survive the move. Existence is
+    deliberately irrelevant: the classic offender — a layer save path
+    left at H22's ``$HIP/usd/$OS.usd`` default — exists at export time
+    and only dangles (or silently goes stale) after publish, which is
+    exactly when ``find_dangling_layer_paths`` can no longer help.
+
+    - URI-scheme arcs (``entity:/``, ``op:/`` …) are the resolver's
+      business and never flagged.
+    - Absolute paths are inherently non-portable and always flagged —
+      even one pointing inside the export dir dies when the folder is
+      copied to the version location.
+    - Relative paths are flagged when they climb out of ``layer_dir``.
+
+    Returns the offending raw path strings, in input order, de-duped.
+    """
+    layer_root = Path(layer_dir).resolve()
+    escaping = []
+    seen = set()
+    for raw in asset_paths:
+        p = (raw or '').strip()
+        if not p or p in seen:
+            continue
+        if _looks_like_uri(p):
+            continue
+        path = Path(p)
+        if path.is_absolute():
+            escapes = True
+        else:
+            try:
+                escapes = not (layer_root / path).resolve().is_relative_to(layer_root)
+            except OSError:
+                continue
+        if escapes:
+            seen.add(p)
+            escaping.append(p)
+    return escaping
+
+
 def collect_layer_composition_paths(layer_path: Union[Path, str]) -> list:
     """Collect the sublayer / reference / payload asset paths declared
     directly in ``layer_path``.

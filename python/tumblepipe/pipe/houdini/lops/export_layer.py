@@ -179,22 +179,31 @@ def _validate_export_files(temp_path: Path, expected_filename: str, operation_de
 
 
 def _check_no_dangling_composition_paths(layer_path: Path) -> None:
-    """Abort the export if the layer composes geometry from a missing file.
+    """Abort the export if the layer composes geometry it can't carry.
 
-    A published layer whose sublayer/reference/payload points at a path
-    that doesn't exist composes to nothing, so every consumer imports an
-    empty asset — and nothing in the pipeline flags it. The classic case
-    is a payload anchored to a machine-local scratch file (e.g. the
-    asset_payload sidecar resolving against the launching app's working
-    directory instead of the export folder).
+    Two confirmed failure classes raise:
+
+    - *Escaping* paths: sublayer/reference/payload arcs that resolve
+      outside the layer's own folder (absolute, or relative ``..``
+      climbs). The layer travels as a folder into the version location,
+      so such an arc dangles — or silently reads another machine's /
+      workfile's state — after publish even when the target exists right
+      now. The classic source is H22's sopcreate/sopimport 'Layer Save
+      Path' default (``$HIP/usd/$OS.usd``), which writes the node's
+      layer next to the workfile and sublayers it by an escaping path,
+      publishing a hollow layer.
+    - *Dangling* paths: arcs whose target doesn't exist at all, so every
+      consumer imports an empty asset (e.g. a payload anchored to a
+      machine-local scratch file).
 
     Fail-open on analysis errors: a problem opening / walking the layer
     only skips the check (preserving the prior behaviour), never blocks a
-    legitimate export. Only a *confirmed* dangling path raises.
+    legitimate export.
     """
     from tumblepipe.pipe.usd import (
         collect_layer_composition_paths,
         find_dangling_layer_paths,
+        find_escaping_layer_paths,
     )
 
     try:
@@ -205,6 +214,20 @@ def _check_no_dangling_composition_paths(layer_path: Path) -> None:
             layer_path, exc_info=True,
         )
         return
+
+    escaping = find_escaping_layer_paths(asset_paths, layer_path.parent)
+    if escaping:
+        bullets = "\n  - ".join(escaping)
+        raise ExportLayerError(
+            "Export aborted: the exported layer composes geometry from "
+            "path(s) outside the export folder, so the published layer "
+            f"would break (or go stale) on every other machine:\n  - {bullets}\n\n"
+            "This usually means a LOP in the scene has 'Layer Save Path' "
+            "enabled — H22 enables it by default on new SOP Create / SOP "
+            "Import nodes, pointing at $HIP/usd/. Disable 'Enable Layer "
+            "Save Path' on the offending node(s) and re-export so the "
+            "geometry flattens into the published layer."
+        )
 
     dangling = find_dangling_layer_paths(asset_paths, layer_path.parent)
     if not dangling:

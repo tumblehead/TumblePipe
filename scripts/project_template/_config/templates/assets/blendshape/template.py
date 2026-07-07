@@ -4,13 +4,14 @@ from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
 from tumblepipe.pipe.houdini.sops import cache
 from tumblepipe.pipe.houdini.lops import export_layer
-from tumblepipe.pipe.houdini.util import uri_to_prim_path
+from tumblepipe.pipe.houdini.util import disable_layer_save_path, uri_to_prim_path
 
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
     prim_path = uri_to_prim_path(entity_uri)
 
     # Create the SOP create node
     sop_node = scene_node.createNode('sopcreate', 'create_blendshapes')
+    disable_layer_save_path(sop_node)
     sop_node.parm('pathprefix').set(f'{prim_path}/blshp/')
     sop_dive_node = sop_node.node('sopnet/create')
 
@@ -61,6 +62,7 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
 
         # Create the SOP create node
         sop_node = scene_node.createNode('sopcreate', f'create_blendshapes_{member_name}')
+        disable_layer_save_path(sop_node)
         sop_node.parm('pathprefix').set(f'{prim_path}/blshp/')
         sop_dive_node = sop_node.node('sopnet/create')
 
