@@ -10,6 +10,7 @@ import hou
 logger = logging.getLogger(__name__)
 
 from tumblepipe.api import path_str, local_path, api
+from tumblepipe.util.progress import report_progress
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import list_departments
 from tumblepipe.config.timeline import get_frame_range as config_get_frame_range, get_fps, FrameRange
@@ -189,6 +190,7 @@ class LayerSplit(EntityNode):
             self.parm('export_f3').set(frame_step)
 
             # Configure and execute export to temp
+            report_progress(f"cooking frames {full_range.first_frame}-{full_range.last_frame}")
             self.parm('export_lopoutput').set(path_str(temp_path / file_name))
             self.parm('export_execute').pressButton()
 
@@ -196,6 +198,7 @@ class LayerSplit(EntityNode):
             save_export_context(temp_path, entity_uri, department_name, version_name, variant_name='_shared')
 
             # Copy all files from temp to export path
+            report_progress(f"copying {version_name} to server")
             export_path.mkdir(parents=True, exist_ok=True)
             for temp_item_path in temp_path.iterdir():
                 output_item_path = export_path / temp_item_path.name

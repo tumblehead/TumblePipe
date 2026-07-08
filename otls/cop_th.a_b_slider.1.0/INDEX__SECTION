@@ -1,7 +1,7 @@
-Operator:     th::th_a_b_slider::1.0
-Label:        th a b slide
-Path:         oplib:/th::Cop/th_a_b_slider::1.0?th::Cop/th_a_b_slider::1.0
-Icon:         COP_th-th_a_b_slider-1.0
+Operator:     th::a_b_slider::1.0
+Label:        th a b slider
+Path:         oplib:/th::Cop/a_b_slider::1.0?th::Cop/a_b_slider::1.0
+Icon:         COP_th-a_b_slider-1.0
 Table:        Cop
 License:      
 Extra:        

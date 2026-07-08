@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from qtpy.QtCore import QObject, QRect, Qt, Signal
 from qtpy.QtGui import QColor, QPainter, QPen, QStandardItem, QStandardItemModel
 from qtpy.QtWidgets import (
+    QAbstractItemDelegate,
     QAbstractItemView,
     QInputDialog,
     QLineEdit,
@@ -305,11 +306,18 @@ class UriPathItem(QStandardItem, QObject):
 
     def _on_label_changed(self, to_label: str):
         from_label = self._label
-        if from_label == to_label:
+        if from_label == to_label or len(to_label) == 0:
             return
+        parent = self.parent()
+        if to_label in parent._items:
+            return  # a sibling already uses this label
         self._label = to_label
+        parent._items = {
+            to_label if label == from_label else label: item
+            for label, item in parent._items.items()
+        }
         self.change.emit(
-            _entity_change_update(self.parent().uri(), from_label, to_label)
+            _entity_change_update(parent.uri(), from_label, to_label)
         )
 
     def _on_add_entity(self):
@@ -338,6 +346,10 @@ class UriPurposeItem(QStandardItem, QObject):
 
         self._label = label
         self._items = dict()
+
+        # Purpose renames are never persisted (the window only handles entity
+        # changes), so don't offer an editor that silently drops them.
+        self.setEditable(False)
 
         # Enable drop for child entity reordering (but not drag - purposes are fixed)
         flags = self.flags()
@@ -506,12 +518,13 @@ class UriModel(QStandardItemModel):
 
 
 class UriDelegate(QStyledItemDelegate):
+    # Renames commit once, when the editor closes (Enter, Tab or clicking
+    # away — Escape cancels), not live per keystroke: every commit is
+    # persisted to the database, so intermediate strings must never land.
     def createEditor(self, parent, option, index):
         item = index.model().itemFromIndex(index)
         if isinstance(item, UriPathItem):
-            editor = QLineEdit(parent)
-            editor.textChanged.connect(item._on_label_changed)
-            return editor
+            return QLineEdit(parent)
         return super().createEditor(parent, option, index)
 
     def setEditorData(self, editor, index):
@@ -520,6 +533,13 @@ class UriDelegate(QStyledItemDelegate):
             editor.setText(item.data(Qt.EditRole))
             return
         return super().setEditorData(editor, index)
+
+    def setModelData(self, editor, model, index):
+        item = model.itemFromIndex(index)
+        if isinstance(item, UriPathItem):
+            item._on_label_changed(editor.text())
+            return
+        return super().setModelData(editor, model, index)
 
 
 class DatabaseUriView(QTreeView):
@@ -647,6 +667,20 @@ class DatabaseUriView(QTreeView):
             else self._model.itemFromIndex(index)
         )
         target._on_context_menu(self.mapToGlobal(position))
+
+    def mousePressEvent(self, event):
+        # Clicking empty space while an editor is open must commit it. Clicks
+        # on other rows commit via currentChanged, but empty space never
+        # changes the current index, so the editor would silently stay open.
+        if (
+            self.state() == QAbstractItemView.EditingState
+            and not self.indexAt(event.pos()).isValid()
+        ):
+            editor = self.indexWidget(self.currentIndex())
+            if editor is not None:
+                self.commitData(editor)
+                self.closeEditor(editor, QAbstractItemDelegate.NoHint)
+        super().mousePressEvent(event)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Delete:

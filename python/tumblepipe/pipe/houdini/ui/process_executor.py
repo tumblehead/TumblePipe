@@ -12,6 +12,8 @@ import sys
 
 from qtpy.QtCore import QObject, Signal, QTimer
 
+from tumblepipe.util.progress import progress_reporter
+
 from .process_task import ProcessTask, TaskStatus
 
 
@@ -81,6 +83,7 @@ class ProcessExecutor(QObject):
     """Executes process tasks sequentially with progress signals"""
 
     task_started = Signal(str)           # task_id
+    task_progress = Signal(str, str)     # task_id, progress message
     task_completed = Signal(str)         # task_id
     task_failed = Signal(str, str)       # task_id, error_message
     all_completed = Signal()
@@ -203,11 +206,15 @@ class ProcessExecutor(QObject):
         # Continue with next task after a short delay to allow UI update
         QTimer.singleShot(100, self._execute_next_task)
 
+    def _task_progress_reporter(self, task: ProcessTask):
+        """Progress reporter that forwards a task's breadcrumbs as a signal."""
+        return lambda message: self.task_progress.emit(task.id, message)
+
     def _execute_single_task(self, task: ProcessTask):
         """Execute a single task (no children)"""
         if self._mode == 'local':
             if task.execute_local is not None:
-                with _silence_output():
+                with _silence_output(), progress_reporter(self._task_progress_reporter(task)):
                     task.execute_local()
             else:
                 raise RuntimeError("No local executor defined for task")
@@ -246,7 +253,7 @@ class ProcessExecutor(QObject):
             try:
                 if self._mode == 'local':
                     if child.execute_local is not None:
-                        with _silence_output():
+                        with _silence_output(), progress_reporter(self._task_progress_reporter(child)):
                             child.execute_local()
                     else:
                         raise RuntimeError(f"No local executor defined for child task: {child.description}")

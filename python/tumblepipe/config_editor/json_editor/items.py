@@ -259,6 +259,67 @@ def _json_path_lookup(model, path: JsonPath) -> QStandardItem:
     return result
 
 
+def _rename_field_key(item, to_key: str):
+    """Rename a field's key, keeping the parent's _fields registry in sync."""
+    from_key = item._key
+    if to_key == from_key or len(to_key) == 0:
+        return
+    parent = _parent(item)
+    if to_key in parent._fields:
+        return  # a sibling already uses this key
+    item._key = to_key
+    parent._fields = {
+        to_key if key == from_key else key: field_item
+        for key, field_item in parent._fields.items()
+    }
+    item.change.emit(_change_field_rename(parent.path(), from_key, to_key))
+
+
+def _original_lookup(model, path: JsonPath) -> tuple[bool, JsonValue]:
+    """Look up a path in the model's pristine document. Returns (found, value)."""
+    value = model._value
+    for part in _json_path_parts(path):
+        match part:
+            case int():
+                if not isinstance(value, list) or part >= len(value):
+                    return False, None
+            case str():
+                if not isinstance(value, dict) or part not in value:
+                    return False, None
+        value = value[part]
+    return True, value
+
+
+def _revert_field_action(item):
+    """Restore a field to its state in the pristine document."""
+    parent = _parent(item)
+    key = item._key
+    found, original = _original_lookup(item.model(), parent.path() / key)
+    inherited = getattr(parent, '_inherited_data', None) or {}
+    if found:
+        if key not in inherited:
+            origin = FieldOrigin.LOCAL
+        elif original == inherited[key]:
+            origin = FieldOrigin.REDUNDANT
+        else:
+            origin = FieldOrigin.OVERRIDE
+        parent._set_field(key, original, origin, inherited.get(key))
+    elif key in inherited:
+        parent._set_field_to_inherited(key, inherited[key])
+    else:
+        parent._remove_field(key)
+
+
+def _revert_field_section(menu: QMenu, item):
+    model = item.model()
+    if model is None or not model.has_change(item.path()):
+        return
+    menu.addSeparator()
+    menu.addAction("Revert Changes").triggered.connect(
+        partial(_revert_field_action, item)
+    )
+
+
 class TypeItem(QStandardItem):
     def __init__(self, type_name: str):
         super().__init__(type_name)
@@ -546,13 +607,7 @@ class FieldBasicItem(QStandardItem, QObject):
                 return super().data(role)
 
     def _on_key_changed(self, to_key):
-        from_key = self._key
-        if from_key == to_key:
-            return
-        self._key = to_key
-        self.change.emit(
-            _change_field_rename(_parent(self).path(), from_key, to_key)
-        )
+        _rename_field_key(self, to_key)
 
     def _on_value_changed(self, value: JsonValue):
         # When overriding an inherited field, change origin to LOCAL
@@ -580,6 +635,7 @@ class FieldBasicItem(QStandardItem, QObject):
         menu = QMenu()
         _change_type_section(menu, self, self._on_type_changed)
         _remove_field_section(menu, self._on_modify_action)
+        _revert_field_section(menu, self)
         menu.exec_(position)
 
     def to_json(self):
@@ -669,7 +725,14 @@ class FieldObjectItem(QStandardItem, QObject):
             return
         self.change.emit(_change_field_insert(self.path(), key, value))
 
-    def _set_field(self, key: str, value: JsonValue, notify: bool = True):
+    def _set_field(
+        self,
+        key: str,
+        value: JsonValue,
+        origin: FieldOrigin = FieldOrigin.LOCAL,
+        inherited_value: JsonValue = None,
+        notify: bool = True
+    ):
         # When modifying an inherited container, change origin to LOCAL
         if notify and self._origin == FieldOrigin.INHERITED:
             self._origin = FieldOrigin.LOCAL
@@ -682,12 +745,20 @@ class FieldObjectItem(QStandardItem, QObject):
         del self._fields[key]
 
         # Add the field to the model
-        field_item = _field_item(key, value)
+        field_item = _field_item(key, value, origin, inherited_value)
         field_item.change.connect(self.change)
         value_item = _value_item(value)
         type_item = _type_item(value)
         self.insertRow(index, [field_item, value_item, type_item])
         self._fields[key] = field_item
+
+        # Rebuild _fields in row order (del + re-add pushed the key to the end)
+        new_fields = {}
+        for row in range(self.rowCount()):
+            child = self.child(row, 0)
+            if hasattr(child, '_key'):
+                new_fields[child._key] = child
+        self._fields = new_fields
 
         # Emit the change signal
         if not notify:
@@ -824,13 +895,7 @@ class FieldObjectItem(QStandardItem, QObject):
             self._add_field(key, value, origin, inherited_value, notify=False)
 
     def _on_key_changed(self, to_key: str):
-        from_key = self._key
-        if from_key == to_key:
-            return
-        self._key = to_key
-        self.change.emit(
-            _change_field_rename(_parent(self).path(), from_key, to_key)
-        )
+        _rename_field_key(self, to_key)
 
     def _on_modify_action(self, action):
         view = self.model().parent()
@@ -851,6 +916,7 @@ class FieldObjectItem(QStandardItem, QObject):
         if self._origin != FieldOrigin.INHERITED:
             _change_type_section(menu, self, self._on_type_changed)
             _remove_field_section(menu, self._on_modify_action)
+            _revert_field_section(menu, self)
         menu.exec_(position)
 
     def to_json(self):
@@ -1067,13 +1133,7 @@ class FieldArrayItem(QStandardItem, QObject):
             self._add_item(value, origin, notify=False)
 
     def _on_key_changed(self, to_key):
-        from_key = self._key
-        if from_key == to_key:
-            return
-        self._key = to_key
-        self.change.emit(
-            _change_field_rename(_parent(self).path(), from_key, to_key)
-        )
+        _rename_field_key(self, to_key)
 
     def _on_modify_action(self, action):
         match action:
@@ -1100,6 +1160,7 @@ class FieldArrayItem(QStandardItem, QObject):
         if self._origin != FieldOrigin.INHERITED:
             _change_type_section(menu, self, self._on_type_changed)
             _remove_field_section(menu, self._on_modify_action)
+            _revert_field_section(menu, self)
         menu.exec_(position)
 
     def to_json(self):
@@ -1271,7 +1332,14 @@ class IndexObjectItem(QStandardItem, QObject):
             return
         self.change.emit(_change_field_insert(self.path(), key, value))
 
-    def _set_field(self, key: str, value: JsonValue, notify: bool = True):
+    def _set_field(
+        self,
+        key: str,
+        value: JsonValue,
+        origin: FieldOrigin = FieldOrigin.LOCAL,
+        inherited_value: JsonValue = None,
+        notify: bool = True
+    ):
         # When modifying an inherited container, change origin to LOCAL
         if notify and self._origin == FieldOrigin.INHERITED:
             self._origin = FieldOrigin.LOCAL
@@ -1284,12 +1352,20 @@ class IndexObjectItem(QStandardItem, QObject):
         del self._fields[key]
 
         # Add the item to the model
-        field_item = _field_item(key, value)
+        field_item = _field_item(key, value, origin, inherited_value)
         field_item.change.connect(self.change)
         value_item = _value_item(value)
         type_item = _type_item(value)
         self.insertRow(index, [field_item, value_item, type_item])
         self._fields[key] = field_item
+
+        # Rebuild _fields in row order (del + re-add pushed the key to the end)
+        new_fields = {}
+        for row in range(self.rowCount()):
+            child = self.child(row, 0)
+            if hasattr(child, '_key'):
+                new_fields[child._key] = child
+        self._fields = new_fields
 
         # Emit the change signal
         if not notify:

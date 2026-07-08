@@ -15,6 +15,9 @@ The ``TH_*`` env vars are authoritative for the launch session: every
 :meth:`PipelineProjectRegistry.bootstrap_from_env`, which adds the env-driven
 project on first run and refreshes its paths on subsequent runs if
 they've changed (e.g. config dir renamed ``_config`` → ``_config2``).
+Env paths that don't exist on disk are ignored with a warning rather
+than registered — a mistyped ``TH_PROJECT_PATH`` must not become a
+persisted project that fails Client init on every later launch.
 ``projects.json`` is just an off-session cache so non-env-launched
 sessions can browse the same projects.
 

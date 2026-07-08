@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.24.2"
+version = "1.25.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -190,6 +190,14 @@ description = "Bring this project's _config layout up to the current pipeline ve
 
 [[operators]]
 kind = "hda"
+type_name = "th::a_b_slider::1.0"
+label = "th a b slider"
+category = "Cop"
+tab_submenu = "_TumblePipe/comp"
+source = "otls/cop_th.a_b_slider.1.0.hda"
+
+[[operators]]
+kind = "hda"
 type_name = "th::build_comp::1.0"
 label = "th build comp"
 category = "Cop"
@@ -267,14 +275,6 @@ label = "th roto mask"
 category = "Cop"
 tab_submenu = "_TumblePipe/comp"
 source = "otls/cop_th.roto_mask.1.0.hda"
-
-[[operators]]
-kind = "hda"
-type_name = "th::th_a_b_slider::1.0"
-label = "th a b slide"
-category = "Cop"
-tab_submenu = "_TumblePipe/comp"
-source = "otls/cop_th.th_a_b_slider.1.0.hda"
 
 [[operators]]
 kind = "hda"
@@ -358,6 +358,14 @@ label = "th cache"
 category = "Lop"
 tab_submenu = "_TumblePipe/pipeline"
 source = "otls/lop_th.cache.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::cop_material_library::1.0"
+label = "th cop material library"
+category = "Lop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/lop_th.cop_material_library.1.0.hda"
 
 [[operators]]
 kind = "hda"
@@ -598,14 +606,6 @@ label = "th sop modify"
 category = "Lop"
 tab_submenu = "_TumblePipe/pipeline"
 source = "otls/lop_th.sop_modify.1.0.hda"
-
-[[operators]]
-kind = "hda"
-type_name = "tumblehead::th_cop_material_library::1.0"
-label = "th cop material library"
-category = "Lop"
-tab_submenu = "_TumblePipe/lookdev"
-source = "otls/lop_tumblehead.th_cop_material_library.1.0.hda"
 
 [[operators]]
 kind = "hda"

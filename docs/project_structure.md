@@ -53,8 +53,8 @@ with `from tumblepipe import ...`. Subpackages:
   package root: the lazy `api` client, Houdini-startup registrations
   (radial menus/actions), naming/storage convention bases, config
   migration.
-- `util/` — dependency-free primitives (`Uri`, io, logging, the single
-  `hou`-availability gate).
+- `util/` — dependency-free primitives (`Uri`, io, logging, progress
+  breadcrumbs, the single `hou`-availability gate).
 - `config/` — the JSON config store and typed accessors (entities,
   departments, variants, timeline, farm, renderer, scene).
 - `pipe/` — pipeline core: `paths/` (all filesystem addressing),

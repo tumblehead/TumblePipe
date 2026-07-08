@@ -35,6 +35,25 @@ uv run minigun --test-dir . --time-budget 30
 `tests/README.md` covers writing new properties and the design of the
 project-fixture bootstrap (`_harness.py`).
 
+## Qt widget harnesses
+
+UI behaviour that pins a fixed bug lives in standalone harnesses under
+`scripts/` that drive the real widgets — no Houdini required, since the
+widget stacks involved are pure qtpy:
+
+- `verify_database_editor_ux.py` — the config editor's commit model
+  (click-away/Enter/Tab commit, key renames, reverts).
+- `verify_process_dialog_ux.py` — the process dialog's execution UX
+  (running-child status label, progress breadcrumbs, the
+  cancel-leaves-steps-unrun warning).
+
+They need a desktop session and a Qt binding:
+
+```bash
+cd scripts
+uv run --python 3.12 --with pyside6 --with qtpy python verify_process_dialog_ux.py
+```
+
 ## Farm task and job modules
 
 Each farm task family under `python/tumblepipe/farm/tasks/<family>/` splits

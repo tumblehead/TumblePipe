@@ -28,6 +28,8 @@ class ProcessDialog(QtWidgets.QDialog):
         self._title = title
         self._executor = ProcessExecutor(self)
         self._is_executing = False
+        self._running_status_text = ""
+        self._was_cancelled = False
         self._pre_execute_callback = pre_execute_callback
         self._current_department = current_department
 
@@ -184,6 +186,7 @@ class ProcessDialog(QtWidgets.QDialog):
     def _connect_signals(self):
         """Connect executor signals to UI updates"""
         self._executor.task_started.connect(self._on_task_started)
+        self._executor.task_progress.connect(self._on_task_progress)
         self._executor.task_completed.connect(self._on_task_completed)
         self._executor.task_failed.connect(self._on_task_failed)
         self._executor.all_completed.connect(self._on_all_completed)
@@ -287,9 +290,10 @@ class ProcessDialog(QtWidgets.QDialog):
     def _on_cancel_clicked(self):
         """Handle cancel button click"""
         if self._is_executing:
-            # Cancel execution
+            # Cancel execution (stops after the currently running task)
+            self._was_cancelled = True
             self._executor.cancel()
-            self._status_label.setText("Cancelling...")
+            self._status_label.setText("Cancelling after the current task...")
             self._status_label.setStyleSheet("color: orange; font-weight: bold;")
         else:
             # Close dialog
@@ -317,6 +321,7 @@ class ProcessDialog(QtWidgets.QDialog):
 
         # Set execution state
         self._is_executing = True
+        self._was_cancelled = False
         self._set_ui_executing(True)
 
         # Reset task statuses
@@ -346,17 +351,39 @@ class ProcessDialog(QtWidgets.QDialog):
         else:
             self._cancel_button.setText("Close")
 
+    def _find_task_with_parent(self, task_id: str) -> tuple[ProcessTask | None, ProcessTask | None]:
+        """Find a task by ID across top-level tasks and their children.
+
+        Returns (task, parent) — parent is None for top-level tasks.
+        """
+        for task in self._model.get_tasks():
+            if task.id == task_id:
+                return task, None
+            for child in task.children or []:
+                if child.id == task_id:
+                    return child, task
+        return None, None
+
     def _on_task_started(self, task_id: str):
         """Handle task started signal"""
         self._model.update_task_status(task_id, TaskStatus.RUNNING)
 
-        # Find task and update status label
-        for task in self._model.get_tasks():
-            if task.id == task_id:
-                self._status_label.setText(f"Running: {task.description}")
-                break
+        # Find task and update status label; children show their parent group
+        # for context (e.g. "Export (render) — Export (chars)")
+        task, parent = self._find_task_with_parent(task_id)
+        if task is not None:
+            if parent is not None:
+                self._running_status_text = f"Running: {parent.description} — {task.description}"
+            else:
+                self._running_status_text = f"Running: {task.description}"
+            self._status_label.setText(self._running_status_text)
 
         # Force UI repaint
+        QtWidgets.QApplication.processEvents()
+
+    def _on_task_progress(self, task_id: str, message: str):
+        """Append a progress breadcrumb from the running task to the label"""
+        self._status_label.setText(f"{self._running_status_text}: {message}")
         QtWidgets.QApplication.processEvents()
 
     def _on_task_completed(self, task_id: str):
@@ -383,6 +410,9 @@ class ProcessDialog(QtWidgets.QDialog):
         completed = [t for t in tasks if t.status == TaskStatus.COMPLETED]
         failed = [t for t in tasks if t.status == TaskStatus.FAILED]
         skipped = [t for t in tasks if t.status == TaskStatus.SKIPPED]
+        # Enabled tasks still pending can only mean execution stopped early
+        # (cancel) - dependency skips and disabled tasks are marked SKIPPED.
+        unrun = [t for t in tasks if t.enabled and t.status == TaskStatus.PENDING]
 
         # Update status
         if failed:
@@ -393,6 +423,12 @@ class ProcessDialog(QtWidgets.QDialog):
 
             # Show error report dialog
             self._show_error_report(failed)
+        elif self._was_cancelled and unrun:
+            self._status_label.setText(
+                f"Cancelled: {len(completed)} completed, {len(unrun)} step(s) did not run"
+            )
+            self._status_label.setStyleSheet("color: orange; font-weight: bold;")
+            self._show_cancelled_incomplete_warning(unrun)
         else:
             self._status_label.setText(
                 f"All tasks completed ({len(completed)} succeeded, {len(skipped)} skipped)"
@@ -405,6 +441,30 @@ class ProcessDialog(QtWidgets.QDialog):
             'failed': [(t.id, t.error_message) for t in failed],
             'skipped': [t.id for t in skipped],
         })
+
+    def _show_cancelled_incomplete_warning(self, unrun_tasks: list):
+        """Warn that cancelling left enabled steps unrun.
+
+        Without this, a cancelled publish looks finished (exports land on
+        disk) but downstream steps like the staged build never ran, and the
+        failure only surfaces later - e.g. render submission erroring with
+        "No staged file found".
+        """
+        bullets = "\n".join(f"  •  {t.description}" for t in unrun_tasks)
+        message = (
+            f"Execution was cancelled before these steps ran:\n\n{bullets}\n\n"
+            "The result on disk is incomplete."
+        )
+        if any(t.department == 'staged' for t in unrun_tasks):
+            message += (
+                "\n\nStaged files were not built, so importing this entity "
+                "and submitting renders will fail until Build USD has run."
+            )
+        message += (
+            "\n\nTo finish without redoing completed steps, re-open this "
+            "dialog with only the unrun steps checked and Execute."
+        )
+        QtWidgets.QMessageBox.warning(self, f"{self._title} incomplete", message)
 
     def _show_error_report(self, failed_tasks: list):
         """Show a dialog with details of failed tasks"""

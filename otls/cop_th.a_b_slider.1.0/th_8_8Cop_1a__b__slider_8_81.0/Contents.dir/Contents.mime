@@ -11,7 +11,7 @@ Cop
 Content-Disposition: attachment; filename="hdaroot.init"
 Content-Type: text/plain
 
-type = th::th_a_b_slider::1.0
+type = th::a_b_slider::1.0
 matchesdef = 0
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY

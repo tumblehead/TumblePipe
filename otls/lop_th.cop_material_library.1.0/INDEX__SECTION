@@ -1,6 +1,6 @@
-Operator:     tumblehead::th_cop_material_library::1.0
+Operator:     th::cop_material_library::1.0
 Label:        th cop material library
-Path:         oplib:/tumblehead::Lop/th_cop_material_library::1.0?tumblehead::Lop/th_cop_material_library::1.0
+Path:         oplib:/th::Lop/cop_material_library::1.0?th::Lop/cop_material_library::1.0
 Icon:         NETWORKS_mat
 Table:        Lop
 License:      

@@ -10,6 +10,7 @@ import hou
 logger = logging.getLogger(__name__)
 
 from tumblepipe.api import get_user_name, path_str, local_path, api
+from tumblepipe.util.progress import report_progress
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import list_departments
 from tumblepipe.config.variants import list_variants
@@ -510,6 +511,25 @@ class ExportLayer(EntityNode):
             case _:
                 assert False, f'Unknown export type: {export_type}'
 
+    def _check_variant_parm_listed(self, entity_uri):
+        """Refuse to export when the variant parm names an unlisted variant.
+
+        get_variant_name() silently falls back to 'default' for unknown
+        names, which is harmless on imports but on an export would quietly
+        publish under the wrong variant path (the casing/typo trap).
+        An empty parm legitimately means 'default'.
+        """
+        raw_variant = self.parm('variant').eval().strip()
+        variant_names = self.list_variant_names()
+        if raw_variant and raw_variant not in variant_names:
+            listed = ', '.join(variant_names)
+            raise ExportLayerError(
+                f"Export aborted: variant '{raw_variant}' is not a variant "
+                f"of {entity_uri} (listed: {listed}), so the export would "
+                "silently publish under 'default'. Fix the node's variant "
+                "parm, or register the variant on the entity."
+            )
+
     def _export_local(self):
         native = self.native()
         stage_node = native.node('IN_stage')
@@ -536,6 +556,8 @@ class ExportLayer(EntityNode):
                 "set one on the entity, or switch the node's frame range source to "
                 "'From settings' and enter the range manually."
             )
+
+        self._check_variant_parm_listed(entity_uri)
 
         frame_range, step = frame_range_result
         render_range = frame_range.full_range()
@@ -669,6 +691,7 @@ class ExportLayer(EntityNode):
                 for chunk_start, chunk_end in chunks:
                     # Each chunk exports to its own subdirectory
                     chunk_name = f"{chunk_start:04d}-{chunk_end:04d}"
+                    report_progress(f"cooking frames {chunk_start}-{chunk_end} of {render_range.last_frame}")
                     chunk_dir = chunks_dir / chunk_name
                     chunk_dir.mkdir(exist_ok=True)
 
@@ -705,6 +728,7 @@ class ExportLayer(EntityNode):
 
                 # Stitch all chunks (main file + sidecar directories)
                 try:
+                    report_progress(f"stitching {len(chunk_dirs)} chunks")
                     logger.info(f"Stitching {len(chunk_dirs)} chunks into final USD")
                     stitch_usd_directories(chunk_dirs, layer_file_name, temp_path)
                     logger.info("Chunk stitching completed successfully")
@@ -723,6 +747,7 @@ class ExportLayer(EntityNode):
                 # Standard export: export all frames at once
                 # Use 'stage.usd' as temp filename so sidecar directory is 'stage/'
                 temp_export_name = 'stage.usd'
+                report_progress(f"cooking frames {render_range.first_frame}-{render_range.last_frame}")
                 logger.info(f"Exporting frames {render_range.first_frame}-{render_range.last_frame}")
                 self.parm('export_f1').deleteAllKeyframes()
                 self.parm('export_f2').deleteAllKeyframes()
@@ -755,11 +780,13 @@ class ExportLayer(EntityNode):
             # Pull the asset_payload geometry sidecar (and any other
             # externally-anchored arc) into the version folder so the
             # published layer is self-contained and travels portably.
+            report_progress("localizing sidecars")
             _localize_external_sidecars(temp_path / layer_file_name)
 
             # Refuse to publish a layer that composes geometry from a
             # missing file (e.g. a payload anchored to a machine-local
             # scratch path) — otherwise the asset silently imports empty.
+            report_progress("checking composition arcs")
             _check_no_dangling_composition_paths(temp_path / layer_file_name)
 
             # Re-fetch root prim after export (stage may have been modified)
@@ -785,6 +812,7 @@ class ExportLayer(EntityNode):
             )
 
             # Copy all files to output path
+            report_progress(f"copying {version_name} to server")
             version_path.mkdir(parents=True, exist_ok=True)
             logger.info(f"Copying exported files to: {version_path}")
 
@@ -851,6 +879,8 @@ class ExportLayer(EntityNode):
                 "set one on the entity, or switch the node's frame range source to "
                 "'From settings' and enter the range manually."
             )
+
+        self._check_variant_parm_listed(entity_uri)
 
         frame_range, _step = frame_range_result
 

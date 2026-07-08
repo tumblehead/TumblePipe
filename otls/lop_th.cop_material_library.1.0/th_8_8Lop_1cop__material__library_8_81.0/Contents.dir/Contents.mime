@@ -23,7 +23,7 @@ Lop
 Content-Disposition: attachment; filename="hdaroot.init"
 Content-Type: text/plain
 
-type = tumblehead::th_cop_material_library::1.0
+type = th::cop_material_library::1.0
 matchesdef = 0
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY

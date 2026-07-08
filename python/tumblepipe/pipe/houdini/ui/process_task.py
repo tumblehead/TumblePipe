@@ -537,7 +537,7 @@ class ProcessTaskTreeModel(QStandardItemModel):
                     col_item.setForeground(QBrush(color))
 
     def get_tasks(self) -> list[ProcessTask]:
-        """Get all tasks in tree order (including children)"""
+        """Get the top-level tasks (children stay nested in task.children)"""
         return self._tasks
 
     def get_enabled_tasks(self) -> list[ProcessTask]:
@@ -632,10 +632,13 @@ class ProcessTaskTreeModel(QStandardItemModel):
                     status_item.setForeground(QBrush(QColor(self.STATUS_COLORS.get(status, '#919191'))))
 
     def reset_all_status(self):
-        """Reset all tasks to pending status"""
+        """Reset all tasks (including children) to pending status"""
         for task in self._tasks:
             task.status = TaskStatus.PENDING
             task.error_message = None
+            for child in task.children or []:
+                child.status = TaskStatus.PENDING
+                child.error_message = None
 
         # Update all status items in the tree
         for task_id, task_item in self._task_items.items():

@@ -5,7 +5,7 @@ and ``JsonView`` (the QTreeView). Builds on the item classes and factories in
 ``items`` — the dependency runs one way (view -> items).
 """
 
-from qtpy.QtCore import QEvent, QRect, Qt, Signal
+from qtpy.QtCore import QRect, Qt, Signal
 from qtpy.QtGui import (
     QColor,
     QIntValidator,
@@ -109,7 +109,14 @@ class JsonModel(QStandardItemModel):
             return
         self.change.emit(_change_field_insert(self.path(), key, value))
 
-    def _set_field(self, key: str, value: JsonValue, notify: bool = True):
+    def _set_field(
+        self,
+        key: str,
+        value: JsonValue,
+        origin: FieldOrigin = FieldOrigin.LOCAL,
+        inherited_value: JsonValue = None,
+        notify: bool = True
+    ):
         # Remove the field from the model
         field_item = self._fields[key]
         field_item.change.disconnect(self.change)
@@ -118,12 +125,20 @@ class JsonModel(QStandardItemModel):
         del self._fields[key]
 
         # Add the field to the model
-        field_item = _field_item(key, value)
+        field_item = _field_item(key, value, origin, inherited_value)
         field_item.change.connect(self.change)
         value_item = _value_item(value)
         type_item = _type_item(value)
         self.insertRow(index, [field_item, value_item, type_item])
         self._fields[key] = field_item
+
+        # Rebuild _fields in row order (del + re-add pushed the key to the end)
+        new_fields = {}
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+            if hasattr(item, '_key'):
+                new_fields[item._key] = item
+        self._fields = new_fields
 
         # Emit the change signal
         if not notify:
@@ -316,6 +331,11 @@ class FloatValidator(QValidator):
 
 
 class JsonItemDelegate(QStyledItemDelegate):
+    # Commits go through setModelData (invoked by commitData on Enter, Tab and
+    # focus-out alike) rather than the editor's editingFinished signal: a
+    # commit triggers dataChanged, which makes the view rewrite the still-open
+    # editor via setEditorData — clobbering the typed text before
+    # editingFinished ever fires.
     def createEditor(self, parent, option, index):
         item = index.model().itemFromIndex(index)
         if isinstance(item, BooleanItem):
@@ -327,48 +347,17 @@ class JsonItemDelegate(QStyledItemDelegate):
             editor.stateChanged.connect(_on_state_changed)
             return editor
         if isinstance(item, IntegerItem):
-
-            def _on_editing_finished():
-                value = editor.text()
-                item._on_value_changed(int(value) if value else 0)
-
             editor = QLineEdit(parent)
             editor.setValidator(QIntValidator(editor))
-            editor.editingFinished.connect(_on_editing_finished)
-            editor.installEventFilter(self)
             return editor
         if isinstance(item, FloatItem):
-
-            def _on_editing_finished():
-                value = editor.text()
-                item._on_value_changed(float(value) if value else 0.0)
-
             editor = QLineEdit(parent)
             editor.setValidator(FloatValidator(editor))
-            editor.editingFinished.connect(_on_editing_finished)
-            editor.installEventFilter(self)
             return editor
-        if isinstance(item, StringItem):
-
-            def _on_editing_finished():
-                value = editor.text()
-                item._on_value_changed(value)
-
-            editor = QLineEdit(parent)
-            editor.editingFinished.connect(_on_editing_finished)
-            editor.installEventFilter(self)
-            return editor
-        if isinstance(item, (FieldBasicItem, FieldObjectItem, FieldArrayItem)):
-
-            def _on_editing_finished():
-                value = editor.text()
-                item._on_key_changed(value)
-
-            editor = QLineEdit(parent)
-            editor.setText(item.data(Qt.EditRole))
-            editor.editingFinished.connect(_on_editing_finished)
-            editor.installEventFilter(self)
-            return editor
+        if isinstance(item, (
+            StringItem, FieldBasicItem, FieldObjectItem, FieldArrayItem,
+        )):
+            return QLineEdit(parent)
         return super().createEditor(parent, option, index)
 
     def setEditorData(self, editor, index):
@@ -390,17 +379,30 @@ class JsonItemDelegate(QStyledItemDelegate):
             return
         return super().setEditorData(editor, index)
 
-    def eventFilter(self, editor, event):
-        if event.type() == QEvent.FocusOut:
-            # Commit data when clicking away - allow event to propagate so editingFinished fires
-            self.commitData.emit(editor)
-            self.closeEditor.emit(editor, QAbstractItemDelegate.EndEditHint.NoHint)
-            return False
-        if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
-            # Cancel edit on Escape - close without committing
-            self.closeEditor.emit(editor, QAbstractItemDelegate.EndEditHint.RevertModelData)
-            return True
-        return super().eventFilter(editor, event)
+    def setModelData(self, editor, model, index):
+        item = model.itemFromIndex(index)
+        if isinstance(item, BooleanItem):
+            item._on_value_changed(editor.isChecked())
+            return
+        if isinstance(item, IntegerItem):
+            try:
+                item._on_value_changed(int(editor.text()))
+            except ValueError:
+                pass  # incomplete input (e.g. "" or "-") — keep the old value
+            return
+        if isinstance(item, FloatItem):
+            try:
+                item._on_value_changed(float(editor.text()))
+            except ValueError:
+                pass
+            return
+        if isinstance(item, StringItem):
+            item._on_value_changed(editor.text())
+            return
+        if isinstance(item, (FieldBasicItem, FieldObjectItem, FieldArrayItem)):
+            item._on_key_changed(editor.text())
+            return
+        return super().setModelData(editor, model, index)
 
 
 class JsonView(QTreeView):
@@ -605,6 +607,20 @@ class JsonView(QTreeView):
             else self._model.itemFromIndex(index)
         )
         target._on_context_menu(self.mapToGlobal(position))
+
+    def mousePressEvent(self, event):
+        # Clicking empty space while an editor is open must commit it. Clicks
+        # on other rows commit via currentChanged, but empty space never
+        # changes the current index, so the editor would silently stay open.
+        if (
+            self.state() == QAbstractItemView.EditingState
+            and not self.indexAt(event.pos()).isValid()
+        ):
+            editor = self.indexWidget(self.currentIndex())
+            if editor is not None:
+                self.commitData(editor)
+                self.closeEditor(editor, QAbstractItemDelegate.NoHint)
+        super().mousePressEvent(event)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Delete:
