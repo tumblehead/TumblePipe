@@ -69,7 +69,8 @@ def run_dialog(tasks: list[ProcessTask]) -> ProcessDialog:
 
 
 def main() -> int:
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    # Keep a reference for the harness' lifetime (F841-exempt dummy name)
+    _app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
     # Capture QMessageBox.warning calls (cancel-incomplete warning)
     warnings = []
