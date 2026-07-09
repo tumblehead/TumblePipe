@@ -99,15 +99,24 @@ def get_frame_range() -> FrameRange:
         end_roll
     )
 
-def set_frame_range(frame_range: FrameRange):
-    hou.playbar.setFrameRange(
-        frame_range.start_frame - frame_range.start_roll,
-        frame_range.end_frame + frame_range.end_roll
-    )
+def set_frame_range(frame_range: FrameRange, preserve_current_frame: bool = False):
+    """Apply a shot frame range to the playbar.
+
+    By default the playhead snaps to the shot's start frame. Pass
+    preserve_current_frame=True to leave the playhead alone when it already
+    sits inside the new range (rolls included) and only snap it to the start
+    when the current frame falls outside — this keeps a re-import from yanking
+    the artist back to frame one every time.
+    """
+    range_start = frame_range.start_frame - frame_range.start_roll
+    range_end = frame_range.end_frame + frame_range.end_roll
+    hou.playbar.setFrameRange(range_start, range_end)
     hou.playbar.setPlaybackRange(
         frame_range.start_frame,
         frame_range.end_frame
     )
+    if preserve_current_frame and range_start <= hou.frame() <= range_end:
+        return
     hou.setFrame(
         frame_range.start_frame
     )

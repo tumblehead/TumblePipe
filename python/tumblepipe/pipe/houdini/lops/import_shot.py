@@ -789,7 +789,9 @@ class ImportShot(ns.Node):
             fps = get_fps(shot_uri)
             if fps is not None:
                 util.set_fps(fps)
-            util.set_frame_range(frame_range)
+            # Don't yank the playhead back to the start on every re-import;
+            # only reset it when the current frame is outside the shot range.
+            util.set_frame_range(frame_range, preserve_current_frame=True)
 
         # Set shot metadata script
         if frame_range is not None and staged_file_path is not None:
