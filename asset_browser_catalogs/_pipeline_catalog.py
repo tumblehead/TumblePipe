@@ -334,8 +334,10 @@ class PipelineCatalog(Catalog):
         return [cascade_counts(c) for c in result]
 
     def _build_project_sections(self, proj) -> list[Collection]:
-        """Return [Assets, Shots, Roots, Tasks] sections for one
-        project, omitting any that are empty. Multis are nested inside
+        """Return [Assets, Shots, Roots] sections for one
+        project, omitting any that are empty. (Tasks is intentionally
+        omitted — see below; the feature isn't implemented yet.) Multis
+        are nested inside
         Assets / Shots based on the Multi's own context (they can't
         mix) — a single ``Multis`` subheader on each side filters the
         grid to that context's Multi cards.
@@ -402,29 +404,12 @@ class PipelineCatalog(Catalog):
             children=tuple(scene_children),
         ))
 
-        pending_count, done_count = self._count_todos_for_project(proj.name)
-        todo_children = [
-            Collection(
-                id=f"{proj.name}:todo:pending",
-                label="Pending",
-                count=pending_count,
-                tag=f"{project_tag}+todo:pending",
-                icon="circle-ellipsis",
-            ),
-            Collection(
-                id=f"{proj.name}:todo:done",
-                label="Done",
-                count=done_count,
-                tag=f"{project_tag}+todo:done",
-                icon="circle-check",
-            ),
-        ]
-        sections.append(Collection(
-            id=f"{proj.name}:todos_section",
-            label="Tasks",
-            icon="list-todo",
-            children=tuple(todo_children),
-        ))
+        # Tasks (Pending / Done todo sections) omitted from the sidebar —
+        # the feature isn't implemented yet. To re-add: restore the
+        # todos_section Collection here, and restore the
+        # _stamp_todo_tags call in get_assets so the todo:* filter tags
+        # are stamped again. The dormant helpers _count_todos_for_project
+        # and _stamp_todo_tags are kept for that (currently uncalled).
 
         return sections
 
@@ -488,6 +473,10 @@ class PipelineCatalog(Catalog):
         self, project_name: str,
     ) -> tuple[int, int]:
         """Return ``(pending_count, done_count)`` for a project.
+
+        Dormant: currently uncalled — kept for the sidebar Tasks section,
+        which is omitted until the feature is implemented (see
+        _build_project_sections).
 
         Served from the discovery cache only: todo status needs card
         ids, and building cards from the GUI thread would freeze the
@@ -565,9 +554,9 @@ class PipelineCatalog(Catalog):
                 all_items = []  # filter failed — empty result, not all items
                 break
 
-        # Inject todo-status tags so sidebar filters can pick up assets
-        # by their todo state (none / pending / done).
-        self._stamp_todo_tags(all_items)
+        # (Todo-status tag stamping omitted — the sidebar Tasks section
+        # that consumed todo:* tags is not implemented yet. When it comes
+        # back, re-add ``self._stamp_todo_tags(all_items)`` here.)
 
         # Filter by standard tags
         from tumbletrove.asset_browser.api.tags import match_tags
@@ -1395,9 +1384,12 @@ class PipelineCatalog(Catalog):
 
     def _stamp_todo_tags(self, items: list) -> None:
         """Rewrite each item's ``todo:*`` tags in place based on the
-        current :class:`TodoManager` state. Called on every
-        ``get_assets`` pass so sidebar filters (Pending / Done) stay
-        current without needing a cache invalidation.
+        current :class:`TodoManager` state.
+
+        Dormant: currently uncalled — was run on every ``get_assets``
+        pass to keep the sidebar Pending / Done filters current. That
+        section is omitted until the Tasks feature is implemented; restore
+        the call in ``get_assets`` when re-adding it.
         """
         try:
             from tumbletrove import asset_browser

@@ -122,6 +122,36 @@ layer stack per department, and applies through nesting: excluding
 `lookdev` when importing a set also drops the lookdev layers of every
 nested asset.
 
+## Picking up new versions on open
+
+A plain scene load does **not** re-resolve imports: the import nodes'
+saved layers restore as-is, so a workfile shows the versions that were
+baked in when it was last built or saved. Because an asset's staged
+build pins each department (e.g. `lookdev`) to its latest-at-build-time
+version (§*Department exports and staged files*), that pin sticks — a
+department published *after* the staged build won't appear just by
+reopening the workfile, and the `latest` label on an import node does
+nothing on its own at load time.
+
+Opening a workfile **through the Asset Browser** closes the gap: it
+re-executes every `th::import_*` node in the scene
+(`_pipeline_scene.refresh_scene_imports`), and each node's `latest`
+reference re-resolves under resolver latest-mode, which ignores the
+baked `version=` pins and floats to the newest published version — the
+same cascade a fresh import would get. So a newly published upstream
+department reaches a downstream workfile on its next catalogue open,
+with no re-import. This is governed by the **Auto-import latest on
+workfile open** preference (Asset Browser → pipeline settings, *on* by
+default), persisted to
+`$HOUDINI_USER_PREF_DIR/asset_browser/pipeline_prefs.json`; disabling it
+restores load-time-frozen behavior.
+
+The refresh only touches import nodes — `create_model` and `build_comp`
+are deliberately excluded, so a plain open re-resolves references
+without cooking the whole workgraph. It does not reach an already-open
+scene until it is reopened, and it does not reach the farm until the
+shot/asset is re-staged (see below — the farm pins `current`).
+
 ## Render staging
 
 Farm renders do not compose the staged file directly. The stage task
