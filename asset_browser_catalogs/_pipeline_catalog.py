@@ -2972,6 +2972,10 @@ class PipelineCatalog(Catalog):
         ]
 
     def get_list_columns(self) -> list[ListColumn]:
+        # ``last_user`` + ``latest_update`` are filled per-card by
+        # ``_latest_update_and_user``. ``fmt="reltime"`` renders the epoch
+        # mtime as a compact "2h ago"; it needs tumbletrove >= 0.15 (older
+        # builds just show the raw number, still fine).
         return [
             ListColumn(key="name", label="Name"),
             # ``deck_detail``: expanded dept deck rows put their detail
@@ -2979,9 +2983,14 @@ class PipelineCatalog(Catalog):
             # here instead of trailing the dept name. Top-level rows
             # leave the cell empty — an entity has no single version.
             # Requires tumbletrove >= 0.11 (ListColumn.deck_detail).
-            ListColumn(key="version", label="Version", width=70, deck_detail=True),
+            ListColumn(key="version", label="Version", width=90, deck_detail=True),
             ListColumn(key="category", label="Category", width=100),
-            ListColumn(key="dept_count", label="Depts", width=60, align="center"),
+            ListColumn(key="dept_count", label="Depts", width=55, align="center"),
+            ListColumn(key="last_user", label="User", width=110),
+            ListColumn(
+                key="latest_update", label="Edited", width=90,
+                fmt="reltime", align="right",
+            ),
         ]
 
     # ── Cache invalidation ────────────────────────────────
@@ -3148,8 +3157,8 @@ class PipelineCatalog(Catalog):
             for dept, (versions, _) in scanned.items()
             if versions
         }
-        latest_update = max(
-            (mtime for _, mtime in scanned.values()), default=0.0,
+        latest_update, last_user = self._latest_update_and_user(
+            asset_id, scanned,
         )
 
         return Asset(
@@ -3169,6 +3178,7 @@ class PipelineCatalog(Catalog):
                 "project": proj.name,
                 "dept_count": len(depts),
                 "latest_update": latest_update,
+                "last_user": last_user,
             },
         )
 
@@ -3205,8 +3215,8 @@ class PipelineCatalog(Catalog):
             for dept, (versions, _) in scanned.items()
             if versions
         }
-        latest_update = max(
-            (mtime for _, mtime in scanned.values()), default=0.0,
+        latest_update, last_user = self._latest_update_and_user(
+            asset_id, scanned,
         )
         tags = {
             "source:pipeline",
@@ -3228,6 +3238,7 @@ class PipelineCatalog(Catalog):
                    else {"sequence": second, "project": project_name}),
                 "dept_count": len(depts),
                 "latest_update": latest_update,
+                "last_user": last_user,
             },
             catalog_id=self.id,
         )
@@ -3338,8 +3349,8 @@ class PipelineCatalog(Catalog):
             for dept, (versions, _) in scanned.items()
             if versions
         }
-        latest_update = max(
-            (mtime for _, mtime in scanned.values()), default=0.0,
+        latest_update, last_user = self._latest_update_and_user(
+            asset_id, scanned,
         )
 
         frame_range = ""
@@ -3377,6 +3388,7 @@ class PipelineCatalog(Catalog):
                 "frame_range": frame_range,
                 "dept_count": len(depts),
                 "latest_update": latest_update,
+                "last_user": last_user,
             },
         )
 
@@ -3538,6 +3550,38 @@ class PipelineCatalog(Catalog):
                 f"failed to scan workfile versions for {asset_id}: {exc}",
                 cause=exc,
             ) from exc
+
+    def _latest_update_and_user(
+        self, asset_id: str,
+        scanned: dict[str, tuple[list[str], float]],
+    ) -> tuple[float, str]:
+        """``(newest_mtime_across_depts, last_author)`` for a scanned entity.
+
+        ``scanned`` is the ``{dept: (versions, mtime)}`` map the card
+        build already gathered, so the mtime is free. The author costs
+        exactly ONE extra ``_context/{version}.json`` read — only for the
+        single newest dept, never one-per-dept — so a large list rebuild
+        stays cheap (see the per-card scan-cost notes on
+        ``_build_asset_card``). Any read failure degrades to ``""``.
+        """
+        latest_update = 0.0
+        best_dept = ""
+        best_versions: list[str] | None = None
+        for dept, (versions, mtime) in scanned.items():
+            if mtime > latest_update:
+                latest_update = mtime
+                best_dept = dept
+                best_versions = versions
+        user = ""
+        if best_dept and best_versions:
+            try:
+                found = self._workfiles.get_user_for_version(
+                    asset_id, best_dept, best_versions[-1],
+                )
+            except Exception:
+                found = None
+            user = found or ""
+        return latest_update, user
 
     def _get_department_info(self, asset_id: str) -> dict[str, list[str]]:
         """Get {dept_name: [versions]} for an asset/shot (publish versions)."""
