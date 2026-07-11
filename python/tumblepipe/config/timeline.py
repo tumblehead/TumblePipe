@@ -146,6 +146,20 @@ def get_frame_range(uri: Uri) -> FrameRange | None:
         properties['roll_end']
     )
 
+def is_animatable(uri: Uri) -> bool:
+    """Whether an entity is time-dependent.
+
+    Assets declare ``animatable: false`` in the schema; shots and any
+    entity that doesn't set the flag default to animatable (i.e.
+    time-dependent). Used on workfile open to decide whether the config
+    frame range should be re-applied to the playbar (animatable, e.g.
+    shots — production can change a shot's length) or left alone so the
+    artist's saved range survives (non-animatable, e.g. assets).
+    """
+    properties = api.config.get_properties(uri)
+    if properties is None: return True
+    return bool(properties.get('animatable', True))
+
 def get_fps(uri: Uri | None = None) -> int | None:
     """Get FPS with optional entity override.
 

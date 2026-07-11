@@ -116,23 +116,37 @@ def _latest_shot_layer_paths(
     shot_departments: list[str],
     variant_name: str,
     all_shot_departments: list[str]
-) -> tuple[dict, dict, dict]:
+) -> tuple[dict, dict, dict, dict]:
     """
     Find latest shot layer paths and extract their assets.
 
     Returns: (
         {dept: version_path},
         {asset_uri: instances},
-        {asset_uri: inputs}
+        {asset_uri: inputs},
+        {dept: variant_name}
     )
     """
-    # First pass: load each department's latest layer and its asset entries
+    # First pass: load each department's latest layer and its asset entries.
+    # A department that has never exported under the requested variant falls
+    # back to its default-variant export: a render variant only overrides the
+    # departments that actually exported it, everything else composes as
+    # default. Without this, a variant staged build sublayered ONLY the
+    # variant-exporting department + root — no animation, no lights, no
+    # camera — and the farm rendered black while the live GUI session (which
+    # composes the full graph, not the staged file) looked fine.
     dept_layers = {}  # {dept: (version_path, timestamp, [(asset_uri, instances, inputs), ...])}
+    dept_variants = {}  # {dept: variant the layer was actually resolved from}
     for department_name in shot_departments:
-        layer = _load_shot_layer(shot_uri, department_name, variant_name)
+        layer_variant = variant_name
+        layer = _load_shot_layer(shot_uri, department_name, layer_variant)
+        if layer is None and variant_name != DEFAULT_VARIANT:
+            layer_variant = DEFAULT_VARIANT
+            layer = _load_shot_layer(shot_uri, department_name, layer_variant)
         if layer is None:
             continue
         dept_layers[department_name] = layer
+        dept_variants[department_name] = layer_variant
 
     # Determine which assets exist in each source department (for validation)
     source_dept_assets = {
@@ -171,7 +185,7 @@ def _latest_shot_layer_paths(
 
         layer_data[department_name] = version_path
 
-    return layer_data, shot_assets, asset_inputs
+    return layer_data, shot_assets, asset_inputs, dept_variants
 
 
 def _latest_asset_layer_paths(
@@ -253,6 +267,7 @@ def resolve_shot_build(
     Returns: {
         'assets': {asset_uri: instances},
         'shot_layers': {dept: version_path},
+        'shot_layer_variants': {dept: variant_name},
         'asset_layers': {dept: {asset_uri: version_path}},
         'shot_variant': str,
         'asset_variants': {asset_uri: variant_name}
@@ -268,8 +283,10 @@ def resolve_shot_build(
     all_shot_departments = [d.name for d in list_departments('shots')]
 
     # Find latest paths
-    shot_layer_paths, assets, asset_inputs = _latest_shot_layer_paths(
-        shot_uri, shot_departments, shot_variant, all_shot_departments
+    shot_layer_paths, assets, asset_inputs, shot_layer_variants = (
+        _latest_shot_layer_paths(
+            shot_uri, shot_departments, shot_variant, all_shot_departments
+        )
     )
     asset_layer_paths = _latest_asset_layer_paths(assets, asset_departments, asset_variants)
 
@@ -306,6 +323,11 @@ def resolve_shot_build(
         assets=assets,
         asset_inputs=asset_inputs,  # Track inputs per asset for staged output
         shot_layers=shot_layer_paths,
+        # Variant each department layer actually resolved from (a department
+        # without exports under the requested variant falls back to default) —
+        # the staged file's sublayer URIs must name the variant that owns the
+        # version, or the resolver points at a path that does not exist.
+        shot_layer_variants=shot_layer_variants,
         asset_layers=asset_layer_paths,
         root_layer=root_layer,  # Root department layer (shot-level, stored at _root/)
         shot_variant=shot_variant,

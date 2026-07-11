@@ -445,6 +445,21 @@ class WorkfileManager:
                         template_path,
                     )
 
+                # Stamp the config timeline into the fresh workfile so it
+                # persists in the hip. force_frame_range=True: creation is
+                # the one time a non-animatable entity (asset) should get
+                # its starting range — subsequent opens leave it be so the
+                # artist can freely move it.
+                try:
+                    self._catalog._scene.apply_scene_timeline(
+                        asset_id, force_frame_range=True,
+                    )
+                except Exception:
+                    log.exception(
+                        "Create: applying scene timeline failed for %s/%s",
+                        asset_id, dept,
+                    )
+
                 hou.hipFile.save(str(next_path))
 
                 log.info(
@@ -967,6 +982,21 @@ class WorkfileManager:
                             "New: Template (group): template apply "
                             "failed for %s/%s", ctx, dept,
                         )
+
+                # Stamp the config timeline into the fresh group workfile
+                # (see the asset/shot create path for the rationale) and
+                # persist it. force_frame_range=True so non-animatable
+                # groups still get a sensible starting range at creation.
+                try:
+                    self._catalog._scene.apply_scene_timeline(
+                        asset_id, force_frame_range=True,
+                    )
+                    hou.hipFile.save(str(next_path))
+                except Exception:
+                    log.exception(
+                        "New: Template (group): applying scene timeline "
+                        "failed for %s/%s", asset_id, dept,
+                    )
 
                 log.info("Created group workfile: %s", next_path)
                 # The detail-panel-driven refresh path only fires for

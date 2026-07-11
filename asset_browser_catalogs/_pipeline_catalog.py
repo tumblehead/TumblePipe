@@ -746,6 +746,27 @@ class PipelineCatalog(Catalog):
                 cause=exc,
             ) from exc
 
+    def _is_entity_animatable(self, asset_id: str) -> bool:
+        """Return whether an entity is time-dependent (animatable).
+
+        Assets set ``animatable: false``; shots and unmarked entities
+        default to ``True``. Drives whether a workfile open re-applies
+        the config frame range. Raises :class:`ConfigError` on lookup
+        failure rather than silently defaulting.
+        """
+        from tumblepipe.config.timeline import is_animatable
+        uri = self._resolver.uri_for(asset_id)
+        if uri is None:
+            return True
+        try:
+            return is_animatable(uri)
+        except Exception as exc:
+            raise ConfigError(
+                self.id,
+                f"animatable lookup failed for {asset_id}: {exc}",
+                cause=exc,
+            ) from exc
+
     # ── Description sidecar ───────────────────────────────
 
     def _description_path(self, asset_id: str) -> Path | None:

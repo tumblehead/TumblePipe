@@ -40,6 +40,17 @@ counts and inputs too; scene assets carry the instance counts from
 their scene context, with shot-flow entries taking precedence when an
 asset appears in both.
 
+A variant staged build only *overrides* the departments that actually
+exported under that variant: a department with no export under the
+build's variant falls back to its default-variant export, and the
+staged file's sublayer URI names the variant the layer really resolved
+from. A render variant that prunes a shot down to its characters
+therefore still composes the default animation, lights, and camera —
+without the fallback the variant's staged stage held only the
+variant-exporting department plus root, and the farm rendered an empty
+(black) scene that the live session, which composes the full node
+graph rather than the staged file, never showed.
+
 ## Layer save paths and export portability
 
 A published layer travels as a folder — from the export temp directory
@@ -172,7 +183,10 @@ composes, weakest to strongest:
    render settings and RenderVar prims),
 3. one import-layer per renderable shot department at its `current`
    export, so a render picks up department publishes made since the
-   last shot build without a rebuild,
+   last shot build without a rebuild. A department with no export
+   under the render's variant re-applies its default-variant export —
+   the same fallback the staged build uses — so this pass refreshes
+   the layer the staged stack actually contains,
 4. the render-settings overrides from the submission's
    `render_settings.json`, then pruning of AOVs not selected for the
    render.

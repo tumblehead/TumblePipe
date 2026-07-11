@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.26.0"
+version = "1.27.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -42,6 +42,13 @@ ASSET_BROWSER_NETWORK_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/re
 TH_PROJECT_PATH = { method = "set", value = "" }
 TH_CONFIG_PATH = { method = "set", value = "$TH_PROJECT_PATH/_config" }
 TH_EXPORT_PATH = { method = "set", value = "$TH_PROJECT_PATH/export" }
+# Root tumbletrove's asset-browser catalog downloads (Poly Haven, AmbientCG, …)
+# under the active project so library assets stay project-local:
+# <project>/library/<catalog>. Read by tumbletrove > 0.16.0 (resolve_download_dir).
+# With NO active project this collapses to a rootless "/library" — tumbletrove
+# detects that (_is_unresolved_project_base) and falls back to ~/Downloads/<catalog>,
+# so a project-less launch never writes to the drive root.
+TT_DOWNLOADS_PATH = { method = "set", value = "$TH_PROJECT_PATH/library" }
 OCIO = { method = "set", value = "$HPM_PACKAGE_ROOT/ocio/tumblehead.ocio" }
 
 # tumbleResolver registration. Houdini applies these env edits during its

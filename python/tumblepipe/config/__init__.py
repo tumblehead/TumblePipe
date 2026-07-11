@@ -94,7 +94,8 @@ from tumblepipe.config.timeline import (
     BlockRange,
     FrameRange,
     get_frame_range,
-    get_fps
+    get_fps,
+    is_animatable
 )
 
 from tumblepipe.config.department import (
@@ -194,6 +195,7 @@ __all__ = [
     'FrameRange',
     'get_frame_range',
     'get_fps',
+    'is_animatable',
     # Department
     'Department',
     'add_department',

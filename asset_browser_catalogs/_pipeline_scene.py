@@ -34,22 +34,38 @@ class SceneManager:
     def __init__(self, catalog: "PipelineCatalog") -> None:
         self._catalog = catalog
 
-    def apply_scene_timeline(self, asset_id: str) -> None:
+    def apply_scene_timeline(
+        self, asset_id: str, *, force_frame_range: bool = False,
+    ) -> None:
         """Apply FPS and frame range from config to the active Houdini
         scene after a workfile load. Mirrors the old project_browser
         behavior so opening a shot workfile through the asset browser
         lands with the correct timeline.
 
-        Assets resolve the asset frame-range default from the schema
-        (1001-1200) and land on that working range; shots resolve their
-        own range. Only entities whose config can't be resolved at all
-        get FPS-only treatment (``_get_frame_range_obj`` returns
-        ``None``).
+        FPS is always applied. The frame range is only re-applied for
+        **animatable** (time-dependent) entities — shots resolve their
+        own range and production can change a shot's length, so the
+        config range stays authoritative on open. **Non-animatable**
+        entities (assets, ``animatable: false``) store the playbar range
+        in their own hip: forcing the config range on every open would
+        shrink the timeline back to the schema default (as small as a
+        single frame) and discard whatever range the artist dragged out.
+        So on open we leave their saved range alone.
+
+        Pass ``force_frame_range=True`` at *workfile creation* to stamp
+        the config range regardless of animatable — that's the one time
+        a non-animatable entity should get a sensible starting range
+        (otherwise a fresh asset workfile would sit at Houdini's 1-240
+        default). After that the artist owns it.
+
+        Only entities whose config can't be resolved at all get FPS-only
+        treatment (``_get_frame_range_obj`` returns ``None``).
         """
         from tumblepipe.pipe.houdini import util
         frame_range = self._catalog._get_frame_range_obj(asset_id)
         if frame_range is not None:
-            util.set_frame_range(frame_range)
+            if force_frame_range or self._catalog._is_entity_animatable(asset_id):
+                util.set_frame_range(frame_range)
         fps = self._catalog._get_fps(asset_id)
         if fps is not None:
             util.set_fps(fps)
@@ -192,10 +208,12 @@ class SceneManager:
                     hou.hipFile.load(hip)
                     log.info("Reloaded scene: %s", hip)
                     # Reconcile timeline + imports exactly like the open
-                    # paths. Without this a reload lands on whatever stale
-                    # frame range / fps the saved hip happened to carry,
-                    # while opening the same file applies the config-driven
-                    # range - so reload silently disagreed with open.
+                    # paths - same unforced apply_scene_timeline call, so
+                    # reload and open agree on which entities get the
+                    # config range re-applied (animatable only) and which
+                    # keep their saved range (assets). Without this a
+                    # reload would land on whatever stale fps the saved hip
+                    # carried while open reconciled it - a silent divergence.
                     asset_id = self.get_scene_asset_id()
                     if asset_id is not None:
                         self.apply_scene_timeline(asset_id)

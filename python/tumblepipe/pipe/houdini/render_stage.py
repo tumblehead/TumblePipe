@@ -41,6 +41,8 @@ from tumblepipe.api import (
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
 from tumblepipe.config.department import list_departments
+from tumblepipe.config.variants import DEFAULT_VARIANT
+from tumblepipe.pipe.paths import latest_export_path
 from tumblepipe.pipe.houdini import util
 from tumblepipe.pipe.houdini.lops import (
     import_shot,
@@ -166,13 +168,22 @@ def build_render_stage_graph(
     subnet_prev_node = variant_subnet_input
 
     for included_department_name in included_department_names:
+        # A department that never exported this variant composes its
+        # default-variant export instead — the same fallback the staged
+        # build applies — so the re-apply pass refreshes the layer the
+        # staged stack actually contains rather than bypassing.
+        layer_variant_name = variant_name
+        if latest_export_path(
+            shot_uri, variant_name, included_department_name
+        ) is None:
+            layer_variant_name = DEFAULT_VARIANT
         layer_node = import_layer.create(
             variant_subnet,
             included_department_name
         )
         layer_node.set_entity_uri(shot_uri)
         layer_node.set_department_name(included_department_name)
-        layer_node.set_variant_name(variant_name)
+        layer_node.set_variant_name(layer_variant_name)
         layer_node.set_version_name('current')
         layer_node.execute()
         _connect(subnet_prev_node, layer_node.native())
