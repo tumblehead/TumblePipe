@@ -20,6 +20,7 @@ configuration
 :maxdepth: 2
 
 composition
+compositing
 deadline
 ```
 

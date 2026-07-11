@@ -5,6 +5,7 @@ from pathlib import Path
 from tumblepipe.api import api
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.config.department import list_departments
+from tumblepipe.config.variants import list_variants
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 
@@ -827,13 +828,9 @@ def get_render(
     render_department_path = api.storage.resolve(render_uri)
     if not render_department_path.exists(): return None
     
-    # Collect render layers
+    # Collect render layers (one per entity variant, plus the slapcomp layer)
     render_layers = dict()
-    properties = api.config.get_properties(entity_uri)
-    if 'render_layers' not in properties:
-        raise ValueError('Invalid shot entity, "render_layer" property missing')
-    render_layer_names = properties['render_layers']
-    render_layer_names.append('slapcomp')
+    render_layer_names = [*list_variants(entity_uri), 'slapcomp']
     for render_layer_path in render_department_path.iterdir():
         render_layer_name = render_layer_path.name
         if render_layer_name not in render_layer_names: continue

@@ -78,6 +78,15 @@ Deliberate *relative sibling* save paths are fine and used by the asset
 HDAs themselves (`payload.usd`, `geo.usdc`, `lookdev.usdc`) — they stay
 inside the version folder and travel with it.
 
+The export also refuses arcs whose target does not exist at all
+(*dangling* paths, e.g. a payload anchored to a machine-local scratch
+file) — every consumer would import the asset empty. One exception:
+bare relative arcs (no `./` or `../` prefix) are USD *search paths*,
+which the resolver looks up in its search roots rather than next to the
+layer. An arc the resolver locates — such as Quick Surface Material's
+`houdini/usd/materials/...` library, resolved against `$HFS` — resolves
+on every machine with the same Houdini install and is allowed through.
+
 `scripts/fix_enabled_savepaths.py` (hython) sweeps a project's
 workfiles for nodes that already saved the enabled state — dry-run by
 default, `--apply` disables and resaves with a backup copy.

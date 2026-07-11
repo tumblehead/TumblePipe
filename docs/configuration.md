@@ -69,9 +69,11 @@ imports them by name:
 - `storage_convention.py` — maps project URIs (`project://`, `entity://`, …)
   to concrete filesystem paths.
 
-Render layer / AOV configuration lives in the schema and entity data
+Render / AOV configuration lives in the schema and entity data
 (`schemas.json`, `entity.json` under the `render` sub-object), not in a
-Python module.
+Python module. A shot's render layers are its `variants` property — the
+same variant list the rest of the pipeline uses (there is no separate
+`render_layers` property; that name is retired).
 
 Each module exposes a specific interface that the pipeline calls into. The
 [*Turbulence* tech demo](https://www.sidefx.com/tech-demos/turbulence/)

@@ -688,6 +688,24 @@ def _looks_like_uri(asset_path: str) -> bool:
     return bool(re.match(r'^[A-Za-z][A-Za-z0-9+.\-]+:', asset_path))
 
 
+def _resolver_locates(asset_path: str) -> bool:
+    """True if the active Ar resolver locates ``asset_path`` on its own.
+
+    Bare relative arcs are USD *search paths*: the resolver looks them
+    up in its search roots rather than next to the referencing layer.
+    Houdini resolves ``houdini/usd/...`` against ``$HFS`` — Quick
+    Surface Material authors its material library that way — so such an
+    arc resolves on every machine with the same Houdini install and is
+    portable without travelling in the layer folder. False when USD is
+    unavailable or resolution fails.
+    """
+    try:
+        from pxr import Ar
+        return bool(str(Ar.GetResolver().Resolve(asset_path)))
+    except Exception:
+        return False
+
+
 def find_dangling_layer_paths(
     asset_paths, layer_dir: Union[Path, str, None] = None,
 ) -> list:
@@ -703,7 +721,11 @@ def find_dangling_layer_paths(
     - Absolute paths are checked directly.
     - Relative paths are resolved against ``layer_dir`` (the layer's own
       directory) when given; with no ``layer_dir`` they're assumed to
-      travel with the layer and skipped.
+      travel with the layer and skipped. A bare relative path absent
+      from ``layer_dir`` is additionally offered to the Ar resolver
+      (search-path semantics — e.g. Houdini-shipped assets under
+      ``$HFS``) before being flagged; ``./``/``../``-anchored paths are
+      not, since USD anchors those to the layer itself.
 
     Returns the offending raw path strings, in input order, de-duped.
     """
@@ -720,6 +742,8 @@ def find_dangling_layer_paths(
             exists = path.exists()
         elif layer_dir is not None:
             exists = (Path(layer_dir) / path).exists()
+            if not exists and not p.startswith(('./', '../')):
+                exists = _resolver_locates(p)
         else:
             continue
         if not exists:
