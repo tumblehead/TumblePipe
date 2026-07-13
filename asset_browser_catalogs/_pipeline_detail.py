@@ -1005,10 +1005,20 @@ class DetailSectionBuilder:
 
                 # Compute the latest export age once per row — it doesn't
                 # depend on which version is selected (the export folder
-                # tracks the latest export for the dept).
+                # tracks the latest export for the dept). The publish
+                # author rides along inside the exported piece ("3d ago
+                # · magnus") so DeptMetaLabel's width-based piece
+                # dropping keeps working unchanged; exports predating
+                # the context.json user stamp just show the age.
                 exported_age = self._catalog._workfiles.format_relative_time(
                     self._catalog._workfiles.get_latest_export_mtime(asset_id, dept_name)
                 )
+                if exported_age:
+                    export_user = self._catalog._workfiles.get_user_for_export(
+                        asset_id, dept_name,
+                    )
+                    if export_user:
+                        exported_age = f"{exported_age} · {export_user}"
 
                 # Initial fill + live update on combo change
                 user_lbl.set_parts(

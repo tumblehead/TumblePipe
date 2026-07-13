@@ -365,6 +365,16 @@ def _extract_asset_uri_from_sublayer(path_value) -> str | None:
     return None
 
 
+def _containing_folder(parm_group, parm_name: str):
+    """Find the folder template holding a parm, or None if absent."""
+    if parm_group.find(parm_name) is None:
+        return None
+    try:
+        return parm_group.containingFolder(parm_name)
+    except hou.OperationFailed:
+        return None
+
+
 class ImportShot(ns.Node):
     def __init__(self, native):
         super().__init__(native)
@@ -602,12 +612,18 @@ class ImportShot(ns.Node):
             )
             layer_folder.addParmTemplate(version_parm)
 
-        # Insert after 'selection' folder (before 'settings')
-        # Fall back to other positions if folders don't exist
-        if parm_group.find('selection'):
-            parm_group.insertAfter('selection', layer_folder)
-        elif parm_group.find('settings'):
-            parm_group.insertBefore('settings', layer_folder)
+        # Insert after the Selection folder (before Settings). Anchor on
+        # definition parms, not folder names: inserting a spare folder makes
+        # Houdini spare-ify the HDA's containers under renamed names
+        # (selection -> selection2), so folder-name lookups go stale after
+        # the first import and the Layer Stack folder would fall through to
+        # append() — jumping below Actions on every re-import.
+        selection_folder = _containing_folder(parm_group, 'entity')
+        settings_folder = _containing_folder(parm_group, 'include_procedurals')
+        if selection_folder is not None:
+            parm_group.insertAfter(selection_folder, layer_folder)
+        elif settings_folder is not None:
+            parm_group.insertBefore(settings_folder, layer_folder)
         else:
             parm_group.append(layer_folder)
 

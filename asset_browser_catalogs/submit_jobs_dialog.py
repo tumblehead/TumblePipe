@@ -3,7 +3,10 @@
 A compact dialog (this replaced the retired Project Browser's
 ``JobSubmissionDialog``).
 One shared form drives publish + render submission for all selected entities;
-defaults are seeded from the first entity's properties.
+defaults are seeded from the first entity's properties. Render starts enabled
+and publish disabled — the dialog opens from the top-bar Render quick action
+(current scene's entity) as well as the multi-select context menu, and
+rendering is the common case for both.
 
 Submission is synchronous and per-entity — each call to
 ``tumblepipe.farm.jobs.houdini.batch_submit.submit_entity_batch`` runs on the
@@ -254,7 +257,9 @@ class SubmitJobsDialog(QDialog):
     def _build_render_section(self) -> QGroupBox:
         box = QGroupBox("Render")
         box.setCheckable(True)
-        box.setChecked(False)
+        # Render is the common case for this dialog (publish has its own
+        # quick action), so it starts enabled.
+        box.setChecked(True)
         form = QFormLayout(box)
         form.setContentsMargins(10, 14, 10, 10)
         form.setSpacing(6)
@@ -279,6 +284,14 @@ class SubmitJobsDialog(QDialog):
         self._rnd_variants = QLineEdit(variants_text)
         self._rnd_variants.setPlaceholderText("default")
         form.addRow("Variants (csv):", self._rnd_variants)
+
+        # Range mode — Full range submits the full_render chain (all
+        # frames + slapcomp/mp4); First / Middle / Last submits the
+        # partial_render chain (3 check frames + notify) for a quick look
+        # before committing the farm to the whole range.
+        self._rnd_mode = QComboBox()
+        self._rnd_mode.addItems(["Full range", "First / Middle / Last"])
+        form.addRow("Range:", self._rnd_mode)
 
         # Frame range row: first / last
         self._rnd_first = QSpinBox()
@@ -413,6 +426,10 @@ class SubmitJobsDialog(QDialog):
             ] or ['default']
             settings.update({
                 'render_department': self._rnd_dept.currentText(),
+                'render_mode': (
+                    'first_middle_last'
+                    if self._rnd_mode.currentIndex() == 1 else 'full'
+                ),
                 'render_pool': self._rnd_pool.text().strip() or 'general',
                 'render_priority': self._rnd_priority.value(),
                 'variants': variants,

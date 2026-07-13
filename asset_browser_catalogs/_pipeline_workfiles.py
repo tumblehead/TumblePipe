@@ -193,6 +193,48 @@ class WorkfileManager:
         except OSError:
             return None
 
+    def get_user_for_export(self, asset_id: str, dept: str):
+        """Read the user attribution for ``dept``'s latest export.
+
+        Export flows stamp a ``context.json`` in the export folder at
+        write time; ``save_export_context`` puts ``user`` at the top
+        level while ``save_layer_context`` nests it in ``outputs[0]``
+        — accept both shapes. Returns ``None`` for exports predating
+        the stamp or on any read failure.
+        """
+        if not asset_id:
+            return None
+        uri = self._catalog._resolver.uri_for(asset_id)
+        if uri is None:
+            return None
+        try:
+            from tumblepipe.pipe.paths import latest_export_path
+            path = latest_export_path(uri, "default", dept)
+        except Exception:
+            return None
+        if path is None:
+            return None
+        ctx_file = path / "context.json"
+        try:
+            if not ctx_file.exists():
+                return None
+            import json
+            data = json.loads(ctx_file.read_text(encoding="utf-8"))
+        except Exception:
+            log.debug(
+                "Failed to read export user for %s/%s",
+                asset_id, dept,
+            )
+            return None
+        if not isinstance(data, dict):
+            return None
+        user = data.get("user")
+        if not user:
+            outputs = data.get("outputs") or []
+            if outputs and isinstance(outputs[0], dict):
+                user = outputs[0].get("user")
+        return str(user) if user else None
+
     @staticmethod
     def format_relative_time(timestamp) -> str:
         """Format a datetime as 'Ns/m/h/d/w/mo/y ago'. Cloned from
@@ -223,18 +265,6 @@ class WorkfileManager:
             return f"{months}mo ago"
         years = days // 365
         return f"{years}y ago"
-
-    def user_mtime_label(
-        self, asset_id: str, dept: str, version: str,
-    ) -> str:
-        """Combined 'user · 2h ago' label for a given dept/version."""
-        user = self.get_user_for_version(asset_id, dept, version) or ""
-        when = self.format_relative_time(
-            self.get_mtime_for_version(asset_id, dept, version)
-        )
-        if user and when:
-            return f"{user} · {when}"
-        return user or when or "—"
 
     def open_version_now(
         self, asset_id: str, dept: str, version: str | None,

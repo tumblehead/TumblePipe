@@ -1,6 +1,6 @@
 """Scene-state interactions for the Pipeline catalog.
 
-Save / Publish / Reload / Autosave-on-swap, plus the readonly
+Save / Publish / Render / Reload / Autosave-on-swap, plus the readonly
 helpers that derive context from the currently-loaded ``.hip``
 file (entity ref, dept, version, project lookup). All of these
 talk to ``hou.hipFile`` and the tumblepipe context layer.
@@ -534,6 +534,57 @@ class SceneManager:
                     refresh_cb()
                 except Exception:
                     log.exception("Detail refresh after publish failed")
+
+    def render_current_scene(self, refresh_cb=None) -> None:
+        """Open the Submit Jobs dialog for the loaded scene's entity.
+
+        The quick-action sibling of :meth:`publish_current_scene`: same
+        main-thread marshalling (the action can fire off the GUI thread,
+        and opening a Qt dialog off-thread is unsupported), same project
+        activation, but it lands in the render-first Submit Jobs dialog
+        instead of the export ProcessDialog.
+        """
+        run_on_main_thread(lambda: self._render_scene(refresh_cb))
+
+    def _render_scene(self, refresh_cb=None) -> None:
+        try:
+            import hou
+
+            scene_ctx = self.get_loaded_scene_context()
+            if scene_ctx is None:
+                hou.ui.setStatusMessage(
+                    "Render: the loaded scene has no pipeline context.",
+                    severity=hou.severityType.Warning,
+                )
+                return
+            # Activate the loaded scene's project so department lookups and
+            # entity properties resolve against the correct install.
+            scene_proj = self._catalog._project_for_hip_path(
+                Path(hou.hipFile.path()),
+            )
+            if scene_proj is not None:
+                self._catalog._activate_project(scene_proj)
+
+            uri = scene_ctx.entity_uri
+            segments = uri.segments
+            context = segments[0] if segments else None
+            if context not in ("shots", "assets"):
+                hou.ui.setStatusMessage(
+                    f"Render: unsupported entity context for {uri}.",
+                    severity=hou.severityType.Warning,
+                )
+                return
+            name = segments[-1]
+            # Blocks on the modal dialog until the user submits/closes it.
+            self._catalog._open_submit_jobs_dialog([uri], [name], context)
+        except Exception:
+            log.exception("Render submit failed")
+        finally:
+            if callable(refresh_cb):
+                try:
+                    refresh_cb()
+                except Exception:
+                    log.exception("Detail refresh after render submit failed")
 
     def refresh_asset(self, asset_id, refresh_cb) -> None:
         """Drop catalog caches for this asset and trigger a re-fetch."""

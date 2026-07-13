@@ -45,6 +45,41 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def _version_from_stem(stem: str) -> str:
+    """``"shot_010_anim_v012"`` → ``"v012"``; ``""`` when the stem
+    doesn't end in a ``_vNNN`` version suffix."""
+    tail = stem.rsplit("_", 1)
+    if (
+        len(tail) == 2
+        and tail[1].startswith("v")
+        and tail[1][1:].isdigit()
+    ):
+        return tail[1]
+    return ""
+
+
+def _hip_context_user(hip_path) -> str:
+    """User attribution for a workfile, from the ``_context/{version}.json``
+    sidecar next to it (the same file the entity save flow writes and
+    ``WorkfileHelper.get_user_for_version`` reads for assets/shots —
+    here the dept dir comes straight from the hip path, so it also
+    works for group workfiles the entity resolver can't split).
+    Degrades to ``""`` on any miss/failure."""
+    version = _version_from_stem(hip_path.stem)
+    if not version:
+        return ""
+    ctx_file = hip_path.parent / "_context" / f"{version}.json"
+    try:
+        if not ctx_file.exists():
+            return ""
+        import json
+        data = json.loads(ctx_file.read_text(encoding="utf-8"))
+        return str(data.get("user") or "")
+    except Exception:
+        log.debug("Failed to read user for %s", hip_path, exc_info=True)
+        return ""
+
+
 @dataclass(frozen=True)
 class GroupContainer:
     """A Multi (group). JSON-backed members list + per-context
@@ -394,19 +429,37 @@ class ContainerManager:
                 collection.tag, project_name,
             )
             if covered:
-                workfile_info = self._get_group_department_workfile_info(
-                    collection.tag,
-                )
+                hips = self._group_dept_latest_hips(collection.tag)
                 # Same shape as shot/asset metadata: {dept: latest_version
                 # or ""}. Dept-name iteration order (for deck item render)
                 # comes from get_deck_items, which sorts by the project's
                 # canonical dept order.
                 depts_dict = {}
+                latest_update = 0.0
+                latest_hip = None
                 for dept in covered:
-                    versions = workfile_info.get(dept) or []
-                    depts_dict[dept] = versions[-1] if versions else ""
+                    hip = hips.get(dept)
+                    depts_dict[dept] = (
+                        _version_from_stem(hip.stem) if hip else ""
+                    )
+                    if hip is None:
+                        continue
+                    try:
+                        mtime = hip.stat().st_mtime
+                    except OSError:
+                        continue
+                    if mtime > latest_update:
+                        latest_update = mtime
+                        latest_hip = hip
                 metadata["departments"] = depts_dict
                 has_deck_items = True
+                # User/Edited list cells, mirroring what
+                # ``_latest_update_and_user`` does for asset/shot
+                # cards: newest dept's mtime, plus ONE _context
+                # sidecar read for that dept only.
+                if latest_hip is not None:
+                    metadata["latest_update"] = latest_update
+                    metadata["last_user"] = _hip_context_user(latest_hip)
         return Asset(
             id=collection.tag,
             name=collection.label,
@@ -580,10 +633,8 @@ class ContainerManager:
             return []
         return [str(d) for d in getattr(grp, "departments", ())]
 
-    def _get_group_department_workfile_info(
-        self, group_tag: str,
-    ) -> dict[str, list[str]]:
-        """Return ``{dept: [latest_version]}`` for a group's workfile
+    def _group_dept_latest_hips(self, group_tag: str) -> dict:
+        """Return ``{dept: latest_hip_Path}`` for a group's workfile
         tree.
 
         Resolution goes through ``latest_hip_file_path_with_context``
@@ -615,7 +666,7 @@ class ContainerManager:
             return {}
         if grp is None:
             return {}
-        result: dict[str, list[str]] = {}
+        result: dict = {}
         for dept in getattr(grp, "departments", ()):
             dept_name = str(dept)
             try:
@@ -630,14 +681,40 @@ class ContainerManager:
                 continue
             if hip_path is None or not hip_path.exists():
                 continue
-            stem = hip_path.stem
-            tail = stem.rsplit("_", 1)
-            if (
-                len(tail) == 2
-                and tail[1].startswith("v")
-                and tail[1][1:].isdigit()
-            ):
-                result[dept_name] = [tail[1]]
+            result[dept_name] = hip_path
+        return result
+
+    def _get_group_department_workfile_info(
+        self, group_tag: str,
+    ) -> dict[str, list[str]]:
+        """Return ``{dept: [latest_version]}`` for a group's workfile
+        tree (depts whose hip stem doesn't carry a ``_vNNN`` suffix
+        are dropped)."""
+        result: dict[str, list[str]] = {}
+        for dept_name, hip in self._group_dept_latest_hips(
+                group_tag).items():
+            version = _version_from_stem(hip.stem)
+            if version:
+                result[dept_name] = [version]
+        return result
+
+    def _group_dept_attribution(self, group_tag: str) -> dict:
+        """Return ``{dept: (user, mtime_epoch)}`` for a group's latest
+        workfiles.
+
+        The mtime is the hip file's stat; the user comes from the
+        ``_context`` sidecar (see :func:`_hip_context_user`). One
+        sidecar read per covered dept — callers only hit this on deck
+        expand, never during grid rebuilds.
+        """
+        result: dict = {}
+        for dept_name, hip in self._group_dept_latest_hips(
+                group_tag).items():
+            try:
+                mtime = hip.stat().st_mtime
+            except OSError:
+                continue
+            result[dept_name] = (_hip_context_user(hip), mtime)
         return result
 
     def _dept_groups_for_member(

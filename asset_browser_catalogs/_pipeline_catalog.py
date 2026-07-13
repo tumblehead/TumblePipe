@@ -970,13 +970,24 @@ class PipelineCatalog(Catalog):
             names.append(a.name or a.id.split("/")[-1])
         if not uris:
             return
+        self._open_submit_jobs_dialog(uris, names, context)
 
-        # Load submit_jobs_dialog by file path: this catalog is loaded
-        # via importlib.util.spec_from_file_location (see registry.py),
-        # so it has no parent package and `from .submit_jobs_dialog`
-        # would raise ImportError. spec_from_file_location keeps the
-        # module out of sys.path entirely, which avoids polluting the
-        # global module namespace.
+    def _open_submit_jobs_dialog(
+        self, uris: list, names: list[str], context: str,
+    ) -> None:
+        """Open :class:`SubmitJobsDialog` for the given entities.
+
+        The caller must have activated the owning project already so
+        department lookups and ``tumblepipe.api.default_client`` resolve
+        against the right install.
+
+        Loads submit_jobs_dialog by file path: this catalog is loaded
+        via importlib.util.spec_from_file_location (see registry.py),
+        so it has no parent package and `from .submit_jobs_dialog`
+        would raise ImportError. spec_from_file_location keeps the
+        module out of sys.path entirely, which avoids polluting the
+        global module namespace.
+        """
         try:
             import importlib.util
             import sys
@@ -1715,6 +1726,10 @@ class PipelineCatalog(Catalog):
             QuickAction(id="save", label="Save", icon="save-all", tooltip="Save current scene"),
             QuickAction(id="publish", label="Publish", icon="send", tooltip="Publish exports"),
             QuickAction(
+                id="render", label="Render", icon="clapperboard",
+                tooltip="Submit render jobs for the current scene's entity",
+            ),
+            QuickAction(
                 id="update", label="Update", icon="download",
                 tooltip="Re-import latest published versions into the "
                         "current scene (no scene reload)",
@@ -1738,6 +1753,8 @@ class PipelineCatalog(Catalog):
             self._scene.save_current_scene(done_cb)
         elif action_id == "publish":
             self._scene.publish_current_scene(done_cb)
+        elif action_id == "render":
+            self._scene.render_current_scene(done_cb)
         elif action_id == "update":
             self._scene.update_scene_imports(done_cb)
         elif action_id == "reload":
@@ -2086,6 +2103,21 @@ class PipelineCatalog(Catalog):
                         f"{format_age_html('Last published', pub_ts)}"
                         f"</div>"
                     )
+                    if pub_ts is not None:
+                        try:
+                            pub_user = workfiles.get_user_for_export(
+                                asset_id, dept_name,
+                            )
+                        except Exception:
+                            pub_user = None
+                        if pub_user:
+                            rows.append(
+                                f"<div style='margin-top:6px;'>"
+                                f"<span style='color:{TEXT_DIM};'>"
+                                f"Published by:</span> "
+                                f"<span style='color:{TEXT_PRIMARY};'>"
+                                f"{pub_user}</span></div>"
+                            )
 
                 sep = ""
                 if rows:
@@ -2883,11 +2915,17 @@ class PipelineCatalog(Catalog):
                 covered,
                 key=lambda n: (order.get(n, len(order)), n),
             )
+            # Per-dept author + save time for the list view's
+            # User/Edited columns (one stat + sidecar read per dept,
+            # deck rows populate lazily on expand).
+            attribution = self._containers._group_dept_attribution(
+                asset.id)
             cards: list[DeckItem] = []
             for dept_name in sorted_depts:
                 short = DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
                 latest = depts_dict.get(dept_name) or ""
                 if latest:
+                    user, mtime = attribution.get(dept_name, ("", 0.0))
                     cards.append(DeckItem(
                         key=dept_name,
                         label=short,
@@ -2896,6 +2934,8 @@ class PipelineCatalog(Catalog):
                         icon=DEPT_ICONS.get(dept_name, "package"),
                         action_id=f"open_workfile:{dept_name}",
                         dismiss_on_click=True,
+                        user=user,
+                        edited=mtime,
                     ))
                 else:
                     cards.append(DeckItem(
@@ -2954,13 +2994,25 @@ class PipelineCatalog(Catalog):
                     tint=_GROUP_ACCENT_COLOR,
                     tooltip=(
                         f"{short} — covered by Multi: {group_label}\n"
-                        "Click to open the Multi's workfile"
+                        "Double-click to open the Multi's workfile"
                     ),
                 ))
             elif version:
                 status = (
                     "active" if dept_name == active_dept else "available"
                 )
+                # Per-dept attribution for the list view's User/Edited
+                # columns (deck_user/deck_edited): who last saved this
+                # dept's latest workfile, and when. One _context JSON
+                # read + one stat per dept, only on deck expand (deck
+                # rows populate lazily). Requires tumbletrove >= 0.18
+                # (DeckItem.user/edited). Group-covered and missing
+                # depts stay blank — the member has no workfile of its
+                # own to attribute.
+                user = self._workfiles.get_user_for_version(
+                    asset.id, dept_name, version) or ""
+                mtime = self._workfiles.get_mtime_for_version(
+                    asset.id, dept_name, version)
                 cards.append(DeckItem(
                     key=dept_name,
                     label=short,
@@ -2969,6 +3021,8 @@ class PipelineCatalog(Catalog):
                     icon=_icon_for(dept_name),
                     action_id=f"open_workfile:{dept_name}",
                     dismiss_on_click=True,
+                    user=user,
+                    edited=mtime.timestamp() if mtime else 0.0,
                 ))
             else:
                 cards.append(DeckItem(
@@ -3014,10 +3068,15 @@ class PipelineCatalog(Catalog):
             ListColumn(key="version", label="Version", width=90, deck_detail=True),
             ListColumn(key="category", label="Category", width=100),
             ListColumn(key="dept_count", label="Depts", width=55, align="center"),
-            ListColumn(key="last_user", label="User", width=110),
+            # ``deck_user``/``deck_edited``: expanded dept deck rows
+            # land their per-workfile author + save time in the same
+            # columns the entity-level values use. Requires
+            # tumbletrove >= 0.18.
+            ListColumn(key="last_user", label="User", width=110,
+                       deck_user=True),
             ListColumn(
                 key="latest_update", label="Edited", width=90,
-                fmt="reltime", align="right",
+                fmt="reltime", align="right", deck_edited=True,
             ),
         ]
 

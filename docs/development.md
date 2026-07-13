@@ -64,6 +64,20 @@ project hython (e.g. TumbleTrove Desktop's run_hython, with dev
 overrides for a local build). It sandboxes `TH_EXPORT_PATH` to a
 tempdir, so it never touches live project data.
 
+## HDA spare-parm UI harness
+
+`scripts/verify_import_shot_layer_stack.py` pins the import_shot Layer
+Stack layout contract (the "parms changing places after import" bug):
+calling `hou.Node.setParmTemplateGroup()` on an HDA *instance*
+spare-ifies the definition's container folders under renamed names
+(`selection` → `selection2`), so folder-name anchor lookups go stale
+after the first rebuild. Code that inserts spare UI into an HDA
+instance must anchor on definition *parm* names (never renamed) via
+`ParmTemplateGroup.containingFolder()`, not on folder names. Run it
+under any project hython (e.g. TumbleTrove Desktop's run_hython with
+dev overrides); it drives the UI rebuild with synthetic layers and
+touches no project data.
+
 ## Farm task and job modules
 
 Each farm task family under `python/tumblepipe/farm/tasks/<family>/` splits

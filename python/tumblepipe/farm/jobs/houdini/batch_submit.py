@@ -168,7 +168,10 @@ def submit_entity_batch(config: dict) -> list[str]:
                 - Render section: render_department, variants, render_pool,
                                   render_priority, tile_count, pre_roll,
                                   first_frame, last_frame, post_roll,
-                                  batch_size, denoise
+                                  batch_size, denoise, render_mode
+                                  ('full' renders the whole range;
+                                  'first_middle_last' renders 3 check
+                                  frames via the partial_render chain)
 
     Returns:
         List of submitted job IDs
@@ -201,6 +204,14 @@ def submit_entity_batch(config: dict) -> list[str]:
     denoise = settings.get('denoise', True)
     copy_to_edit = settings.get('copy_to_edit', False)
     standalone = settings.get('standalone', False)
+    render_mode = settings.get('render_mode', 'full')
+
+    # 'first_middle_last' submits the partial_render chain (3 check frames
+    # + notify) instead of the full_render chain (all frames + slapcomp/mp4).
+    render_task_key = (
+        'partial_render' if render_mode == 'first_middle_last'
+        else 'full_render'
+    )
 
     if not do_publish and not do_render:
         return []
@@ -376,13 +387,13 @@ def submit_entity_batch(config: dict) -> list[str]:
                         batch_size=batch_size,
                         copy_to_edit=copy_to_edit
                     ),
-                    tasks=dict(
-                        full_render=dict(
+                    tasks={
+                        render_task_key: dict(
                             priority=render_priority,
                             denoise=denoise,
                             channel_name='renders'
                         )
-                    )
+                    }
                 )
 
                 # Add render settings to paths for bundling (collapsed stage files already added in loop)
@@ -434,10 +445,10 @@ def submit_entity_batch(config: dict) -> list[str]:
                         batch_size=batch_size,
                         copy_to_edit=copy_to_edit
                     ),
-                    tasks=dict(
-                        stage=dict(priority=render_priority, channel_name='exports'),
-                        full_render=dict(priority=render_priority, denoise=denoise, channel_name='renders')
-                    )
+                    tasks={
+                        'stage': dict(priority=render_priority, channel_name='exports'),
+                        render_task_key: dict(priority=render_priority, denoise=denoise, channel_name='renders')
+                    }
                 )
 
                 # Build stage job using existing task builder
