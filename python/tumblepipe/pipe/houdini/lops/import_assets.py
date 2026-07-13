@@ -353,6 +353,14 @@ class ImportAssets(EntityNode):
             self._update_labels(index)
 
     def execute(self):
+        # Each inner import_asset.execute() requests a global resolver-cache
+        # refresh (it dirties every composed stage in the session); defer
+        # them so a multi-asset rebuild costs one refresh at the end.
+        from tumblepipe import resolver
+        with resolver.deferred_refresh():
+            return self._execute()
+
+    def _execute(self):
 
         # Update labels for all entries
         count = self.parm('asset_imports').eval()

@@ -293,6 +293,13 @@ class ImportLayer(EntityNode):
         self.parm('import_filepath2').set(resolved_variant if variant_exists else '')
         self.parm('import_enable2').set(1 if variant_exists else 0)
 
+        # The paths above are resolved in Python, but nested entity:// URIs
+        # inside the loaded layers resolve at USD compose time — and an
+        # already-composed stage never re-resolves them on its own. Ask the
+        # resolver to notify stages so a re-import also floats the nested
+        # references (batched to one notice inside deferred_refresh()).
+        _resolver.refresh_context()
+
         if not variant_exists:
             logger.warning(f"Variant layer file not found: {variant_uri}")
 

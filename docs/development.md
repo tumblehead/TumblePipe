@@ -54,6 +54,16 @@ cd scripts
 uv run --python 3.12 --with pyside6 --with qtpy python verify_process_dialog_ux.py
 ```
 
+## Resolver harness
+
+`scripts/verify_resolver_refresh.py` pins the resolver-refresh contract
+(`tumblepipe.resolver.refresh_context()` must float already-composed
+stages to newly published versions — the "restart Houdini to see a new
+publish" bug). It needs the tumbleResolver plugin, so run it under a
+project hython (e.g. TumbleTrove Desktop's run_hython, with dev
+overrides for a local build). It sandboxes `TH_EXPORT_PATH` to a
+tempdir, so it never touches live project data.
+
 ## Farm task and job modules
 
 Each farm task family under `python/tumblepipe/farm/tasks/<family>/` splits

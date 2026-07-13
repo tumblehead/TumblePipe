@@ -143,6 +143,23 @@ code is linked in. The Windows job greps the Rust staticlib instead;
 combined with a successful PE32+ link, that proves cargo emitted the
 FFI surface and `link.exe` consumed it.
 
+## Cache invalidation caveat
+
+The shim overrides `_RefreshContext` to send the affects-all
+`ArNotice::ResolverChanged` — but USD's dispatching resolver **never
+forwards `RefreshContext` to URI-scheme resolvers** (verified live on
+Houdini 22.0.367), so nothing reaches that override through
+`Ar.GetResolver().RefreshContext(...)`. The override stays because it is
+what the ArResolver contract asks for and it costs nothing, but do NOT
+rely on it for invalidation. The pipeline's actual mechanism lives in
+`tumblepipe.resolver.refresh_context()` (Python): it re-resolves every
+loaded `entity://` layer and reloads the stale ones — see that module's
+docstring and `scripts/verify_resolver_refresh.py`, which pins the
+behavior end-to-end. Note the Rust core itself keeps NO cache (every
+`_Resolve` re-scans the filesystem); the staleness being busted is USD's
+Sdf layer registry, which reuses the originally-opened layer for an
+identifier forever.
+
 ## C ABI
 
 The C++ shim sees only this surface. Every entry point catches panics

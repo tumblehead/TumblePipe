@@ -117,9 +117,9 @@ class SceneManager:
             (import_rigs.ImportRigs, "import_rigs", "Sop"),
         ]
 
-        # Each import_shot / import_asset execute() requests a global
-        # resolver-cache refresh (it dirties every composed stage in the
-        # session). Defer them so the whole batch costs one refresh at the
+        # Each LOP import wrapper's execute() requests a global resolver
+        # refresh (a re-resolve + reload sweep over every loaded entity://
+        # layer). Defer them so the whole batch costs one sweep at the
         # end instead of one per node.
         executed = 0
         with resolver.deferred_refresh():
@@ -145,6 +145,52 @@ class SceneManager:
 
         if executed:
             log.info("Auto-refresh: re-executed %d import node(s)", executed)
+
+    def update_scene_imports(self, refresh_cb=None) -> None:
+        """Re-execute the loaded scene's import nodes in place — no hip
+        reload, no save prompt.
+
+        This is the mid-session path for "an upstream department just
+        published": :meth:`refresh_scene_imports` only ran on the open /
+        reload flows, so an artist sitting in an open scene had no way to
+        pull a new publish short of reloading (or, in practice, restarting
+        Houdini). Marshals to the main thread (the refresh mutates the
+        network) and runs in Manual update mode like the open paths, so
+        the re-execute itself doesn't trigger a live full-graph cook.
+
+        The loaded scene's project is re-activated first so the import
+        wrappers resolve against the correct project config, matching
+        :meth:`reload_current_scene`.
+        """
+        def _do_update():
+            try:
+                import hou
+                from tumblepipe.pipe.houdini import util
+                hip = hou.hipFile.path()
+                proj = (
+                    self._catalog._project_for_hip_path(Path(hip))
+                    if hip else None
+                )
+                if proj is not None:
+                    self._catalog._activate_project(proj)
+                with util.update_mode(hou.updateMode.Manual):
+                    self.refresh_scene_imports()
+                hou.ui.setStatusMessage(
+                    "Imports updated to latest published versions.",
+                    severity=hou.severityType.Message,
+                )
+            except Exception:
+                log.exception("Update Imports failed")
+            finally:
+                if callable(refresh_cb):
+                    try:
+                        refresh_cb()
+                    except Exception:
+                        log.exception(
+                            "Detail refresh after import update failed",
+                        )
+
+        run_on_main_thread(_do_update)
 
     def get_loaded_scene_context(self):
         """Return the current scene's ``Context`` if it has pipeline metadata.
@@ -199,13 +245,23 @@ class SceneManager:
             try:
                 import hou
                 from tumblepipe.pipe.houdini import util
+                # Same unsaved-changes interception as the three open
+                # paths in WorkfileManager: without it, hou.hipFile.load
+                # pops Houdini's native prompt whose "Save" overwrites
+                # the current workfile version IN PLACE — the exact thing
+                # prepare_scene_swap exists to prevent. Here "Save" means
+                # saving a new version, then reloading the on-disk state
+                # of the current one.
+                decision = self.prepare_scene_swap()
+                if decision is None:
+                    return  # user cancelled; finally-block settles
                 if proj is not None:
                     self._catalog._activate_project(proj)
                 # Manual update mode so the reload itself doesn't trigger
                 # a live full-graph cook - same guard as the three open
                 # paths in WorkfileManager.
                 with util.update_mode(hou.updateMode.Manual):
-                    hou.hipFile.load(hip)
+                    hou.hipFile.load(hip, suppress_save_prompt=decision)
                     log.info("Reloaded scene: %s", hip)
                     # Reconcile timeline + imports exactly like the open
                     # paths - same unforced apply_scene_timeline call, so

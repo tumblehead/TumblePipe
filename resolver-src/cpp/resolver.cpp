@@ -4,6 +4,7 @@
 #include <pxr/base/tf/diagnostic.h>
 #include <pxr/usd/ar/defineResolver.h>
 #include <pxr/usd/ar/filesystemAsset.h>
+#include <pxr/usd/ar/notice.h>
 
 #include <array>
 #include <cstdio>
@@ -139,6 +140,25 @@ ArResolvedPath TumbleResolver::_ResolveForNewAsset(
     _DebugLog("_ResolveForNewAsset", assetPath.c_str());
     // Read-only resolver: write paths go through the default FS resolver.
     return _Resolve(assetPath);
+}
+
+void TumbleResolver::_RefreshContext(const ArResolverContext& /*context*/) {
+    _DebugLog("_RefreshContext", "");
+    // The Rust core keeps no cache — every _Resolve re-scans the
+    // filesystem — but composed stages and the Sdf layer registry hold
+    // whatever an entity: URI resolved to at composition time. Without
+    // this notice they never re-resolve, so a version-less URI stays
+    // stuck on its first resolution for the life of the process (the
+    // "restart Houdini to see a new publish" bug).
+    //
+    // The passed context is deliberately ignored: entity: resolution
+    // depends only on process env (TH_RESOLVER_LATEST_MODE, TH_EXPORT_PATH)
+    // and the filesystem, never on a bound context object, so a refresh
+    // affects every stage regardless of which context it has bound. The
+    // default-constructed notice is the affects-all variant, which
+    // UsdStage::_HandleResolverDidChange answers by re-resolving asset
+    // paths and swapping in layers whose resolved path changed.
+    ArNotice::ResolverChanged().Send();
 }
 
 ArTimestamp TumbleResolver::_GetModificationTimestamp(

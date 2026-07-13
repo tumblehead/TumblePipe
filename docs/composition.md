@@ -168,9 +168,26 @@ restores load-time-frozen behavior.
 
 The refresh only touches import nodes — `create_model` and `build_comp`
 are deliberately excluded, so a plain open re-resolves references
-without cooking the whole workgraph. It does not reach an already-open
-scene until it is reopened, and it does not reach the farm until the
-shot/asset is re-staged (see below — the farm pins `current`).
+without cooking the whole workgraph. It does not reach the farm until
+the shot/asset is re-staged (see below — the farm pins `current`).
+
+## Picking up new versions mid-session
+
+An **already-open** scene has a second staleness layer beyond the node
+parms: USD's layer registry keeps handing back the originally-opened
+layer for an identifier, so a version-less `entity:` reference in a
+composed stage never re-resolves on its own — no matter how often the
+import button is pressed. `tumblepipe.resolver.refresh_context()`
+(requested by every import-node `execute()`) closes it: it re-resolves
+every loaded `entity://` layer and reloads the ones whose resolved path
+changed, which recomposes every stage using them. A no-change refresh is
+milliseconds; only genuinely new versions cost a reload.
+
+The Asset Browser's **Update** quick action runs the same import refresh
+as the on-open path against the current scene — no hip reload, no save
+prompt — so a lighter can pull a mid-session model/anim publish without
+reopening (or restarting) anything. **Reload** remains the heavier
+variant that also reverts the scene to its on-disk state.
 
 ## Render staging
 

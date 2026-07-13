@@ -45,6 +45,8 @@ protected:
 
     ArResolvedPath _ResolveForNewAsset(const std::string& assetPath) const override;
 
+    void _RefreshContext(const ArResolverContext& context) override;
+
     ArTimestamp _GetModificationTimestamp(
         const std::string& assetPath,
         const ArResolvedPath& resolvedPath) const override;

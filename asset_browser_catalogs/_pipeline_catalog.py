@@ -1714,6 +1714,11 @@ class PipelineCatalog(Catalog):
         return [
             QuickAction(id="save", label="Save", icon="save-all", tooltip="Save current scene"),
             QuickAction(id="publish", label="Publish", icon="send", tooltip="Publish exports"),
+            QuickAction(
+                id="update", label="Update", icon="download",
+                tooltip="Re-import latest published versions into the "
+                        "current scene (no scene reload)",
+            ),
             QuickAction(id="reload", label="Reload", icon="rotate-ccw", tooltip="Reload current scene"),
         ]
 
@@ -1733,6 +1738,8 @@ class PipelineCatalog(Catalog):
             self._scene.save_current_scene(done_cb)
         elif action_id == "publish":
             self._scene.publish_current_scene(done_cb)
+        elif action_id == "update":
+            self._scene.update_scene_imports(done_cb)
         elif action_id == "reload":
             self._scene.reload_current_scene(done_cb)
 
