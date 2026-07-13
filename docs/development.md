@@ -78,6 +78,19 @@ under any project hython (e.g. TumbleTrove Desktop's run_hython with
 dev overrides); it drives the UI rebuild with synthetic layers and
 touches no project data.
 
+## Submit Jobs dialog harness
+
+`scripts/verify_submit_jobs_entity_selector.py` pins the Submit Jobs
+dialog's entity-selector contract: single-entity opens show a selector
+listing the project's terminal entities (vetted with
+`is_terminal_entity`, so empty seeded categories don't appear) that
+defaults to the opened entity; picking another entity re-targets the
+submission and reseeds the form from that entity's properties;
+multi-select opens keep their fixed entity list. It reads a real
+project config, so run it under a project hython whose project has at
+least one shot and one asset (e.g. TumbleTrove Desktop's run_hython
+with dev overrides). Qt runs offscreen; no project data is written.
+
 ## Farm task and job modules
 
 Each farm task family under `python/tumblepipe/farm/tasks/<family>/` splits

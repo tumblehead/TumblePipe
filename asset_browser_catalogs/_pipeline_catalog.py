@@ -92,6 +92,19 @@ class PipelineCatalog(Catalog):
         # catalogs don't need to bake icons into TumbleTrove itself.
         return str(Path(__file__).parent / "icons" / "tumblepipe.png")
 
+    def get_sidebar_subtitle(self) -> str:
+        """Project name shown under the catalog name in the sidebar.
+
+        Only when the tree is flattened (single registered project —
+        see :meth:`get_collections`): that's the case where no tree
+        row carries the project name, so the header is the one place
+        it can live.
+        """
+        projects = list(self._registry.all()) if self._registry else []
+        if len(projects) == 1:
+            return projects[0].name
+        return ""
+
     def default_filter_tags(self) -> frozenset[str]:
         """Scope the grid to the launch project on first load.
 

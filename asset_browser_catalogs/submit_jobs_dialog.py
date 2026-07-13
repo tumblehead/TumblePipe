@@ -8,6 +8,11 @@ and publish disabled — the dialog opens from the top-bar Render quick action
 (current scene's entity) as well as the multi-select context menu, and
 rendering is the common case for both.
 
+Single-entity opens get an Entity selector defaulting to the entity the
+dialog was opened for; picking another entity re-targets the submission and
+reseeds the form from that entity's properties. Multi-select opens keep
+their fixed entity list (no selector).
+
 Submission is synchronous and per-entity — each call to
 ``tumblepipe.farm.jobs.houdini.batch_submit.submit_entity_batch`` runs on the
 caller's thread, and the dialog reports a single success/failure summary at the
@@ -147,6 +152,35 @@ def _nested(d: dict, dotted: str, default=None):
     return cur
 
 
+def _list_selectable_entities() -> list[tuple[object, str, str]]:
+    """Return ``(uri, name, context)`` for every terminal entity in the
+    active project, sorted by path. Empty list on failure (the entity
+    selector is simply not shown).
+
+    ``list_entity_uris(closure=True)`` returns childless *category* nodes
+    (e.g. an empty ``assets/CHAR``) alongside real entities, so each URI is
+    vetted with ``is_terminal_entity`` (schema-keyed).
+    """
+    try:
+        from tumblepipe.api import default_client
+        from tumblepipe.config.entities import is_terminal_entity
+        config = default_client().config
+        entities: list[tuple[object, str, str]] = []
+        for uri in config.list_entity_uris(closure=True):
+            segments = uri.segments
+            context = segments[0] if segments else None
+            if context not in ("shots", "assets"):
+                continue
+            if not is_terminal_entity(config, uri):
+                continue
+            entities.append((uri, segments[-1], context))
+        entities.sort(key=lambda item: str(item[0]))
+        return entities
+    except Exception:
+        log.exception("Failed to list entities for the entity selector")
+        return []
+
+
 # ── Dialog ────────────────────────────────────────────────
 
 class SubmitJobsDialog(QDialog):
@@ -189,16 +223,27 @@ class SubmitJobsDialog(QDialog):
         root.setSpacing(10)
 
         # Header — entity count and a truncated name list.
-        header = QLabel(self._build_header_text())
-        header.setWordWrap(True)
-        header.setStyleSheet(f"color: {TEXT_SECONDARY};")
-        root.addWidget(header)
+        self._header = QLabel(self._build_header_text())
+        self._header.setWordWrap(True)
+        self._header.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        root.addWidget(self._header)
+
+        # Entity selector — single-entity opens only (the quick action /
+        # single right-click). A multi-select submit keeps its fixed list;
+        # re-picking N entities in a combobox has no sane UI.
+        self._entity_combo: QComboBox | None = None
+        if len(self._entity_uris) == 1:
+            selector = self._build_entity_selector()
+            if selector is not None:
+                root.addWidget(selector)
 
         self._publish_box = self._build_publish_section()
         root.addWidget(self._publish_box)
 
         self._render_box = self._build_render_section()
         root.addWidget(self._render_box)
+
+        self._apply_entity_defaults()
 
         # Submit / Cancel row.
         buttons = QDialogButtonBox(
@@ -222,6 +267,62 @@ class SubmitJobsDialog(QDialog):
         suffix = "entity" if n == 1 else "entities"
         return f"Submit jobs for {n} {suffix} ({self._context}): {names}"
 
+    def _build_entity_selector(self) -> QWidget | None:
+        """Build the "Entity:" combobox row, or ``None`` when the project's
+        entities can't be listed (the dialog then keeps its fixed target).
+
+        Defaults to the entity the dialog was opened for (the loaded
+        scene's, from the Render quick action); picking another entity
+        re-targets the submission and reseeds the form from its properties.
+        """
+        entities = _list_selectable_entities()
+        if not entities:
+            return None
+
+        combo = QComboBox()
+        current = str(self._entity_uris[0])
+        current_index = -1
+        for i, (uri, name, ctx) in enumerate(entities):
+            combo.addItem("/".join(uri.segments), (uri, name, ctx))
+            if str(uri) == current:
+                current_index = i
+        if current_index < 0:
+            # The opened entity is missing from the config listing (e.g.
+            # off-config scene) — prepend it so the default stays truthful.
+            combo.insertItem(
+                0,
+                "/".join(self._entity_uris[0].segments),
+                (self._entity_uris[0], self._entity_names[0], self._context),
+            )
+            current_index = 0
+        combo.setCurrentIndex(current_index)
+        # Connected after the initial selection so seeding only reruns on
+        # an actual user pick.
+        combo.currentIndexChanged.connect(self._on_entity_changed)
+        self._entity_combo = combo
+
+        wrap = QWidget()
+        row = QHBoxLayout(wrap)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        row.addWidget(QLabel("Entity:"))
+        row.addWidget(combo, 1)
+        return wrap
+
+    def _on_entity_changed(self, index: int) -> None:
+        if self._entity_combo is None:
+            return
+        data = self._entity_combo.itemData(index)
+        if not data:
+            return
+        uri, name, context = data
+        self._entity_uris = [uri]
+        self._entity_names = [name]
+        self._context = context
+        self._defaults = _safe_get_properties(uri)
+        self._header.setText(self._build_header_text())
+        self._apply_entity_defaults()
+
     def _build_publish_section(self) -> QGroupBox:
         box = QGroupBox("Publish")
         box.setCheckable(True)
@@ -231,25 +332,14 @@ class SubmitJobsDialog(QDialog):
         form.setSpacing(6)
 
         self._pub_dept = QComboBox()
-        depts = _list_dept_names(
-            self._context, only_publishable=True, only_renderable=False,
-        )
-        self._pub_dept.addItems(depts)
-        # Seed: prefer entity property `submission.publish.department` if present.
-        seed = _nested(self._defaults, 'submission.publish.department')
-        if seed and seed in depts:
-            self._pub_dept.setCurrentText(seed)
         form.addRow("Department:", self._pub_dept)
 
-        self._pub_pool = QLineEdit(
-            str(_nested(self._defaults, 'farm.default_pool', '') or ''),
-        )
+        self._pub_pool = QLineEdit()
         self._pub_pool.setPlaceholderText("general")
         form.addRow("Pool:", self._pub_pool)
 
         self._pub_priority = QSpinBox()
         self._pub_priority.setRange(0, 100)
-        self._pub_priority.setValue(int(_nested(self._defaults, 'farm.priority', 50)))
         form.addRow("Priority:", self._pub_priority)
 
         return box
@@ -266,22 +356,10 @@ class SubmitJobsDialog(QDialog):
 
         # Department
         self._rnd_dept = QComboBox()
-        depts = _list_dept_names(
-            self._context, only_publishable=False, only_renderable=True,
-        )
-        self._rnd_dept.addItems(depts)
-        seed = _nested(self._defaults, 'submission.render.department')
-        if seed and seed in depts:
-            self._rnd_dept.setCurrentText(seed)
         form.addRow("Department:", self._rnd_dept)
 
         # Variants — comma-separated list
-        variants_default = _nested(self._defaults, 'variants') or ['default']
-        if isinstance(variants_default, list):
-            variants_text = ", ".join(str(v) for v in variants_default)
-        else:
-            variants_text = str(variants_default)
-        self._rnd_variants = QLineEdit(variants_text)
+        self._rnd_variants = QLineEdit()
         self._rnd_variants.setPlaceholderText("default")
         form.addRow("Variants (csv):", self._rnd_variants)
 
@@ -296,10 +374,8 @@ class SubmitJobsDialog(QDialog):
         # Frame range row: first / last
         self._rnd_first = QSpinBox()
         self._rnd_first.setRange(-1_000_000, 1_000_000)
-        self._rnd_first.setValue(int(_nested(self._defaults, 'frame_start', 1001)))
         self._rnd_last = QSpinBox()
         self._rnd_last.setRange(-1_000_000, 1_000_000)
-        self._rnd_last.setValue(int(_nested(self._defaults, 'frame_end', 1100)))
         frame_row = QHBoxLayout()
         frame_row.setSpacing(6)
         frame_row.addWidget(self._rnd_first)
@@ -312,10 +388,8 @@ class SubmitJobsDialog(QDialog):
         # Pre/Post roll
         self._rnd_pre = QSpinBox()
         self._rnd_pre.setRange(0, 1000)
-        self._rnd_pre.setValue(int(_nested(self._defaults, 'roll_start', 0)))
         self._rnd_post = QSpinBox()
         self._rnd_post.setRange(0, 1000)
-        self._rnd_post.setValue(int(_nested(self._defaults, 'roll_end', 0)))
         roll_row = QHBoxLayout()
         roll_row.setSpacing(6)
         roll_row.addWidget(self._rnd_pre)
@@ -326,21 +400,16 @@ class SubmitJobsDialog(QDialog):
         form.addRow("Pre / Post roll:", roll_wrap)
 
         # Pool / Priority / Tile / Batch — pack on two rows
-        self._rnd_pool = QLineEdit(
-            str(_nested(self._defaults, 'farm.default_pool', '') or ''),
-        )
+        self._rnd_pool = QLineEdit()
         self._rnd_pool.setPlaceholderText("general")
         form.addRow("Pool:", self._rnd_pool)
 
         self._rnd_priority = QSpinBox()
         self._rnd_priority.setRange(0, 100)
-        self._rnd_priority.setValue(int(_nested(self._defaults, 'farm.priority', 50)))
         self._rnd_tile = QSpinBox()
         self._rnd_tile.setRange(1, 64)
-        self._rnd_tile.setValue(int(_nested(self._defaults, 'farm.tile_count', 4)))
         self._rnd_batch = QSpinBox()
         self._rnd_batch.setRange(1, 1000)
-        self._rnd_batch.setValue(int(_nested(self._defaults, 'farm.batch_size', 10)))
         ppb_row = QHBoxLayout()
         ppb_row.setSpacing(6)
         ppb_row.addWidget(QLabel("Pri:"))
@@ -356,24 +425,12 @@ class SubmitJobsDialog(QDialog):
         # Samples
         self._rnd_samples = QSpinBox()
         self._rnd_samples.setRange(1, 4096)
-        self._rnd_samples.setValue(
-            int(_nested(self._defaults, 'render.pathtracedsamples', 64)),
-        )
         form.addRow("Samples:", self._rnd_samples)
 
         # Boolean checkboxes
         self._rnd_denoise = QCheckBox("Denoise")
-        self._rnd_denoise.setChecked(
-            bool(_nested(self._defaults, 'render.enabledenoising', True)),
-        )
         self._rnd_mblur = QCheckBox("Motion blur")
-        self._rnd_mblur.setChecked(
-            bool(_nested(self._defaults, 'render.enablemblur', True)),
-        )
         self._rnd_dof = QCheckBox("DOF")
-        self._rnd_dof.setChecked(
-            bool(_nested(self._defaults, 'render.enabledof', True)),
-        )
         self._rnd_standalone = QCheckBox("Standalone")
         self._rnd_standalone.setChecked(False)
         self._rnd_copy_edit = QCheckBox("Copy to edit")
@@ -399,6 +456,65 @@ class SubmitJobsDialog(QDialog):
         form.addRow("", flags_wrap2)
 
         return box
+
+    def _apply_entity_defaults(self) -> None:
+        """Seed the form from the current entity's properties and context.
+
+        Runs once on construction and again on every entity-selector pick.
+        Entity-derived fields (departments, frames, farm settings, render
+        toggles) are re-seeded — deliberately overwriting user edits, since
+        defaults follow the entity. Pure submission choices (range mode,
+        Standalone, Copy to edit, section checkboxes) are left alone.
+        """
+        d = self._defaults
+
+        pub_depts = _list_dept_names(
+            self._context, only_publishable=True, only_renderable=False,
+        )
+        self._pub_dept.clear()
+        self._pub_dept.addItems(pub_depts)
+        # Seed: prefer entity property `submission.publish.department` if present.
+        seed = _nested(d, 'submission.publish.department')
+        if seed and seed in pub_depts:
+            self._pub_dept.setCurrentText(seed)
+
+        self._pub_pool.setText(str(_nested(d, 'farm.default_pool', '') or ''))
+        self._pub_priority.setValue(int(_nested(d, 'farm.priority', 50)))
+
+        rnd_depts = _list_dept_names(
+            self._context, only_publishable=False, only_renderable=True,
+        )
+        self._rnd_dept.clear()
+        self._rnd_dept.addItems(rnd_depts)
+        seed = _nested(d, 'submission.render.department')
+        if seed and seed in rnd_depts:
+            self._rnd_dept.setCurrentText(seed)
+
+        variants_default = _nested(d, 'variants') or ['default']
+        if isinstance(variants_default, list):
+            variants_text = ", ".join(str(v) for v in variants_default)
+        else:
+            variants_text = str(variants_default)
+        self._rnd_variants.setText(variants_text)
+
+        self._rnd_first.setValue(int(_nested(d, 'frame_start', 1001)))
+        self._rnd_last.setValue(int(_nested(d, 'frame_end', 1100)))
+        self._rnd_pre.setValue(int(_nested(d, 'roll_start', 0)))
+        self._rnd_post.setValue(int(_nested(d, 'roll_end', 0)))
+        self._rnd_pool.setText(str(_nested(d, 'farm.default_pool', '') or ''))
+        self._rnd_priority.setValue(int(_nested(d, 'farm.priority', 50)))
+        self._rnd_tile.setValue(int(_nested(d, 'farm.tile_count', 4)))
+        self._rnd_batch.setValue(int(_nested(d, 'farm.batch_size', 10)))
+        self._rnd_samples.setValue(
+            int(_nested(d, 'render.pathtracedsamples', 64)),
+        )
+        self._rnd_denoise.setChecked(
+            bool(_nested(d, 'render.enabledenoising', True)),
+        )
+        self._rnd_mblur.setChecked(
+            bool(_nested(d, 'render.enablemblur', True)),
+        )
+        self._rnd_dof.setChecked(bool(_nested(d, 'render.enabledof', True)))
 
     # ── Submit ────────────────────────────────────────────
 
