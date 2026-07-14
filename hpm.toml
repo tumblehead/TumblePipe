@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.30.0"
+version = "1.31.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -42,6 +42,14 @@ ASSET_BROWSER_NETWORK_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/re
 TH_PROJECT_PATH = { method = "set", value = "" }
 TH_CONFIG_PATH = { method = "set", value = "$TH_PROJECT_PATH/_config" }
 TH_EXPORT_PATH = { method = "set", value = "$TH_PROJECT_PATH/export" }
+# Pipeline user identity = the TumbleTrove account. $TT_USER_NAME passes
+# through hpm verbatim (like $HOUDINI_MAJOR_RELEASE) and is expanded by
+# Houdini's package loader at startup, when the Desktop launcher has already
+# injected TT_USER_NAME into the process env. This is the ONLY place the
+# pipeline knows about TT_USER_NAME — the Python side reads TH_USER alone.
+# Outside a Desktop launch it expands to "" and attribution is blank —
+# deliberately no OS-username fallback (must not leak into project files).
+TH_USER = { method = "set", value = "$TT_USER_NAME" }
 # Root tumbletrove's asset-browser catalog downloads (Poly Haven, AmbientCG, …)
 # under the active project so library assets stay project-local:
 # <project>/library/<catalog>. Read by tumbletrove > 0.16.0 (resolve_download_dir).

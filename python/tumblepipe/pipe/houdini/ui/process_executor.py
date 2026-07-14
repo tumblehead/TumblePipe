@@ -47,6 +47,17 @@ def _silence_output():
         sys.stderr = old_stderr
 
 
+def _version_of(result) -> str | None:
+    """Read the version an export/build callback wrote, if it reported one.
+
+    Only export, shared-export, rig-export and build callbacks return a
+    version name; the rest (validation, render submission) return None.
+    """
+    if isinstance(result, str) and result.startswith('v'):
+        return result
+    return None
+
+
 class ValidationSession:
     """Tracks validation state across multiple validation tasks in a single execution.
 
@@ -215,13 +226,13 @@ class ProcessExecutor(QObject):
         if self._mode == 'local':
             if task.execute_local is not None:
                 with _silence_output(), progress_reporter(self._task_progress_reporter(task)):
-                    task.execute_local()
+                    task.exported_version = _version_of(task.execute_local())
             else:
                 raise RuntimeError("No local executor defined for task")
         else:  # farm
             # Farm mode - let output go to farm logs (no capture)
             if task.execute_farm is not None:
-                task.execute_farm()
+                task.exported_version = _version_of(task.execute_farm())
             else:
                 raise RuntimeError("No farm executor defined for task")
 
@@ -254,12 +265,12 @@ class ProcessExecutor(QObject):
                 if self._mode == 'local':
                     if child.execute_local is not None:
                         with _silence_output(), progress_reporter(self._task_progress_reporter(child)):
-                            child.execute_local()
+                            child.exported_version = _version_of(child.execute_local())
                     else:
                         raise RuntimeError(f"No local executor defined for child task: {child.description}")
                 else:  # farm
                     if child.execute_farm is not None:
-                        child.execute_farm()
+                        child.exported_version = _version_of(child.execute_farm())
                     else:
                         raise RuntimeError(f"No farm executor defined for child task: {child.description}")
 

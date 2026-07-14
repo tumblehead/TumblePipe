@@ -212,6 +212,8 @@ class LayerSplit(EntityNode):
             f"version={version_name}, output={export_path / file_name}"
         )
 
+        return version_name
+
         # Downstream references use the entity URI form
         # ({entity_uri}?dept={department_name}&variant=_shared); the custom
         # USD resolver handles dynamic version lookup at runtime, eliminating

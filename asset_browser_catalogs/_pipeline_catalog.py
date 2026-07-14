@@ -204,6 +204,12 @@ class PipelineCatalog(Catalog):
         self._cached_assets: list[Asset] | None = None
         self._cached_shots: list[Asset] | None = None
 
+        # Tag filter of the most recent grid query. ``get_asset``
+        # (single-card refresh) has no tags parameter, so it replays
+        # this to keep the contextual category prefix (see
+        # ``_apply_category_prefix``) stable across in-place refreshes.
+        self._last_query_tags: frozenset[str] = frozenset()
+
         # Per-asset, per-department version overrides — populated by
         # the detail panel's dept-row combos when a user picks an older
         # version to view, consumed by everything that reads "the
@@ -524,6 +530,10 @@ class PipelineCatalog(Catalog):
         self, query: str = "", tags: frozenset[str] = frozenset(),
         cursor: str | None = None, page_size: int = 50,
     ) -> AssetPage:
+        # Remembered for get_asset's single-card refresh — see
+        # _apply_category_prefix.
+        self._last_query_tags = tags
+
         # Container types (Groups / Scenes) take over the grid: the
         # cards are synthesized from sidebar Collection data rather than
         # the real asset/shot index. Drill-down (card click) clears the
@@ -578,6 +588,12 @@ class PipelineCatalog(Catalog):
             if filter_tags:
                 all_items = [a for a in all_items if match_tags(a.tags, filter_tags)]
 
+        # Contextual path prefix ("Clash/SET") when categories are
+        # mixed in the view. Applied before the search filter so the
+        # query matches what's on screen (searching "clash" finds the
+        # Clash assets from the Assets root).
+        all_items = self._apply_category_prefix(all_items, tags)
+
         # Search
         if query:
             q = query.lower()
@@ -612,6 +628,30 @@ class PipelineCatalog(Catalog):
             total=len(all_items),
             errors=tuple(self._discovery_errors),
         )
+
+    def _apply_category_prefix(
+        self, items: list[Asset], tags: frozenset[str],
+    ) -> list[Asset]:
+        """Prefix asset names with their category when the view mixes
+        categories.
+
+        Sibling assets in different categories can share a bare name
+        ("SET" exists in both Clash and PoP), so the Assets-root,
+        project-root, Multi-member and All views render ambiguous rows.
+        Inside a single category node (a ``category:`` tag is in the
+        filter) the bare name stays. Shots are untouched — their names
+        already carry the sequence.
+        """
+        if any(t.startswith("category:") for t in tags):
+            return items
+        out: list[Asset] = []
+        for a in items:
+            category = (a.metadata or {}).get("category", "")
+            if category and "type:asset" in a.tags:
+                out.append(dataclasses.replace(a, name=f"{category}/{a.name}"))
+            else:
+                out.append(a)
+        return out
 
     # ── Detail ────────────────────────────────────────────
 
@@ -1495,10 +1535,13 @@ class PipelineCatalog(Catalog):
     def _request_card_refresh_for_id(self, asset_id: str) -> None:
         """Rebuild ``asset_id``'s card and swap it in any open grid.
 
-        Used by create/edit actions on container (Multi/Root) cards
-        where the detail-panel-driven refresh path (``refresh_cb`` →
-        ``detail_refresh_requested`` → ``_on_quick_action_done``)
-        wouldn't fire because the current detail isn't this container.
+        Used by any mutation that must update a *specific* entity's
+        card/list row — workfile create (``new_from_template`` /
+        ``new_from_current`` / group variant), Save, and container
+        (Multi/Root) create/edit actions. The detail-panel-driven
+        refresh path (``refresh_cb`` → ``detail_refresh_requested`` →
+        ``_on_quick_action_done``) only covers the currently-displayed
+        detail, which may be a different asset than the one mutated.
         """
         try:
             fresh = self.get_asset(asset_id)
@@ -3326,7 +3369,7 @@ class PipelineCatalog(Catalog):
         }
 
         from tumbletrove.asset_browser.api.catalog import Asset
-        return Asset(
+        card = Asset(
             id=asset_id,
             name=third,
             thumbnail_url="",
@@ -3342,6 +3385,10 @@ class PipelineCatalog(Catalog):
             },
             catalog_id=self.id,
         )
+        # In-place card refresh must keep the contextual category
+        # prefix the grid was built with, or a save/scene-load flips
+        # "Clash/SET" back to "SET" until the next full refresh.
+        return self._apply_category_prefix([card], self._last_query_tags)[0]
 
     def _refresh_group_asset(self, group_id: str):
         """Rebuild a Multi container Asset (post-create / -edit).

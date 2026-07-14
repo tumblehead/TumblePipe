@@ -2,11 +2,10 @@ from pathlib import Path
 from uuid import uuid4
 import platform
 import logging
-import getpass
 import shutil
 import re
 
-from tumblepipe.api import local_path, to_windows_path, path_str
+from tumblepipe.api import local_path, to_windows_path, path_str, get_user_name
 from tumblepipe.apps import app
 
 # Farm plugin. 'HPM' runs the task from a package resolved on the worker
@@ -282,7 +281,7 @@ class Job:
             'Group': self.group,
             'Priority': str(self.priority),
             'Comment': self.comment,
-            'UserName': getpass.getuser(),
+            'UserName': get_user_name(),
             'MachineName': platform.node(),
             'InitialStatus': 'Active',
             'Plugin': PLUGIN,

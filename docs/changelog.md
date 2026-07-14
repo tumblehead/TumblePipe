@@ -1,12 +1,10 @@
-# Changelog
-
-The authoritative record of changes is the
+The full release history is below, generated from the conventional-commit
+subjects between release tags. It is also published per release on the
 [GitHub releases page](https://github.com/tumblehead/TumblePipe/releases),
-which is updated automatically from the release pipeline for every tagged
-version.
+alongside the signed per-platform archives (Windows, Linux, macOS arm64).
 
-Each release entry includes:
+Both come from the same renderer (`.ci/_changelog.py`), so they can't drift.
+See *Changelog* in {doc}`development` for how to regenerate the file.
 
-- the version tag (`vX.Y.Z`),
-- a changelog generated from commits touching shipped paths,
-- signed per-platform archives (Windows, Linux, macOS arm64).
+```{include} ../CHANGELOG.md
+```

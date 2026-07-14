@@ -16,21 +16,41 @@ class Location:
     Project = 'project'
     Proxy = 'proxy'
 
+def _workfile_base_path():
+    """The workfile-derived base the cache convention anchors under, or None."""
+    file_path = Path(hou.hipFile.path())
+    if not file_path.exists(): return None
+    context = get_workfile_context(file_path)
+    if context is None: return None
+    return '/'.join(file_path.parent.parts[-4:])
+
+def _resolve_cache_location(location_name, base_path):
+    return api.storage.resolve(
+        Uri.parse_unsafe(f'{location_name}:/{base_path}/lops_cache')
+    )
+
+def list_cache_locations():
+    """Every cache location the current workfile's th::cache nodes write to.
+
+    These directories hold versioned caches on shared storage, so exported
+    layers may keep composition arcs into them (published by reference).
+    """
+    base_path = _workfile_base_path()
+    if base_path is None: return []
+    locations = [
+        _resolve_cache_location(location_name, base_path)
+        for location_name in (Location.Project, Location.Proxy)
+    ]
+    return [location for location in locations if location is not None]
+
 class Cache(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
     def _get_cache_path(self):
-        file_path = Path(hou.hipFile.path())
-        if not file_path.exists(): return None
-        context = get_workfile_context(file_path)
-        if context is None: return None
-        base_path = '/'.join(file_path.parent.parts[-4:])
-        match self.get_location_name():
-            case Location.Project:
-                return api.storage.resolve(Uri.parse_unsafe(f'project:/{base_path}/lops_cache'))
-            case Location.Proxy:
-                return api.storage.resolve(Uri.parse_unsafe(f'proxy:/{base_path}/lops_cache'))
+        base_path = _workfile_base_path()
+        if base_path is None: return None
+        return _resolve_cache_location(self.get_location_name(), base_path)
 
     def _next_version_name(self):
         version_names = self.list_version_names()

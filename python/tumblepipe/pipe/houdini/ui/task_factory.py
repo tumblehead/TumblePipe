@@ -394,6 +394,8 @@ def _execute_build_local(entity_uri: Uri, variant_name: str = 'default', first_f
     if result != 0:
         raise RuntimeError(f"Build failed with exit code {result}")
 
+    return _get_version_from_path(output_path)
+
 
 def _execute_build_farm(entity_uri: Uri, variant_name: str = 'default', first_frame: int | None = None, last_frame: int | None = None):
     """Submit build job to farm.

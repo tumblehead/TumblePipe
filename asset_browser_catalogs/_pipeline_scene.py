@@ -474,6 +474,20 @@ class SceneManager:
             )
             # Drop scan caches so the next browse query re-scans.
             self._catalog.invalidate_cache()
+            # Swap the saved entity's own card/list row in place — the
+            # refresh_cb → _on_quick_action_done path only refreshes the
+            # currently-displayed detail's card, which may be a
+            # different asset than the one just saved. Group URIs
+            # (groups:/ctx/name, two segments) use a different card id
+            # scheme and are skipped here.
+            try:
+                segs = next_ctx.entity_uri.segments
+                if scene_proj is not None and len(segs) >= 3:
+                    self._catalog._request_card_refresh_for_id(
+                        f"{scene_proj.name}/{segs[1]}/{segs[2]}",
+                    )
+            except Exception:
+                log.debug("card refresh after save failed", exc_info=True)
         except Exception:
             log.exception("Save failed")
         finally:

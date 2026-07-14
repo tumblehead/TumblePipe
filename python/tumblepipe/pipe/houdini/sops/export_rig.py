@@ -130,6 +130,8 @@ class ExportRig(EntityNode):
             user_name=get_user_name()
         )
 
+        return version_name
+
 def create(scene, name):
     return ns.create_node(scene, name, ExportRig, 'export_rig', 'Sop')
 

@@ -78,6 +78,17 @@ Deliberate *relative sibling* save paths are fine and used by the asset
 HDAs themselves (`payload.usd`, `geo.usdc`, `lookdev.usdc`) — they stay
 inside the version folder and travel with it.
 
+One deliberate exemption: **versioned caches** written by `th::cache`
+publish *by reference* instead of being copied into the version folder —
+caches can be far too large to duplicate per publish, live on shared
+storage (the `project:`/`proxy:` `lops_cache` locations), and are
+immutable per cache version. The export pins such arcs to absolute
+paths (so they survive the temp→version move) and the escaping-path
+guard lets them through; a cache version that has since been deleted
+still aborts the export as a dangling arc. Off-site consumers (e.g. a
+cloud render submit) must gather/inline these references, as they
+already must for textures.
+
 The export also refuses arcs whose target does not exist at all
 (*dangling* paths, e.g. a payload anchored to a machine-local scratch
 file) — every consumer would import the asset empty. One exception:

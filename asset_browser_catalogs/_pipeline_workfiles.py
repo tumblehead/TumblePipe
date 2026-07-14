@@ -507,6 +507,16 @@ class WorkfileManager:
                 return
 
             self._catalog.invalidate_cache()
+            # Swap the entity's card/list row in place so the new
+            # dept/version shows instantly — the refresh_cb below only
+            # re-renders the currently-displayed detail, which may be a
+            # different asset (mirrors new_group_from_template).
+            try:
+                self._catalog._request_card_refresh_for_id(asset_id)
+            except Exception:
+                log.exception(
+                    "card refresh failed for new workfile %s", asset_id,
+                )
             if callable(refresh_cb):
                 try:
                     refresh_cb()
@@ -607,6 +617,14 @@ class WorkfileManager:
                 return
 
             self._catalog.invalidate_cache()
+            # See new_from_template: refresh the entity's own card/list
+            # row directly, not just the currently-displayed detail.
+            try:
+                self._catalog._request_card_refresh_for_id(asset_id)
+            except Exception:
+                log.exception(
+                    "card refresh failed for new workfile %s", asset_id,
+                )
             if callable(refresh_cb):
                 try:
                     refresh_cb()

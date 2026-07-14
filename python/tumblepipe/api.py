@@ -1,7 +1,6 @@
 from pathlib import Path
 import importlib.util
 import platform
-import getpass
 import os
 import threading
 
@@ -98,8 +97,11 @@ def get_project_name():
     return project_path.name
 
 def get_user_name():
-    default_user = getpass.getuser()
-    return os.environ.get('TH_USER', default_user)
+    # Deliberately no OS-username fallback — the OS account name must not
+    # leak into sidecars/farm metadata. Unset or empty (the manifest wires
+    # TH_USER to a launcher variable that expands to "" outside a Desktop
+    # launch) resolves to "".
+    return os.environ.get('TH_USER') or ''
 
 def get_edit_path():
     return _env('TH_EDIT_PATH')

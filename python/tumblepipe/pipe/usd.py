@@ -753,7 +753,7 @@ def find_dangling_layer_paths(
 
 
 def find_escaping_layer_paths(
-    asset_paths, layer_dir: Union[Path, str],
+    asset_paths, layer_dir: Union[Path, str], allowed_roots=(),
 ) -> list:
     """Return filesystem composition paths that resolve outside ``layer_dir``.
 
@@ -769,12 +769,21 @@ def find_escaping_layer_paths(
       business and never flagged.
     - Absolute paths are inherently non-portable and always flagged —
       even one pointing inside the export dir dies when the folder is
-      copied to the version location.
+      copied to the version location — unless they resolve under one of
+      ``allowed_roots``: locations on shared storage (versioned pipeline
+      caches) whose files publish by reference. Relative arcs are never
+      exempt; they re-anchor when the layer folder moves.
     - Relative paths are flagged when they climb out of ``layer_dir``.
 
     Returns the offending raw path strings, in input order, de-duped.
     """
     layer_root = Path(layer_dir).resolve()
+    roots = []
+    for root in allowed_roots:
+        try:
+            roots.append(Path(root).resolve())
+        except OSError:
+            continue
     escaping = []
     seen = set()
     for raw in asset_paths:
@@ -785,7 +794,13 @@ def find_escaping_layer_paths(
             continue
         path = Path(p)
         if path.is_absolute():
-            escapes = True
+            try:
+                resolved = path.resolve()
+            except OSError:
+                resolved = None
+            escapes = resolved is None or not any(
+                resolved.is_relative_to(root) for root in roots
+            )
         else:
             try:
                 escapes = not (layer_root / path).resolve().is_relative_to(layer_root)

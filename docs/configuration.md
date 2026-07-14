@@ -16,11 +16,19 @@ typically set in a launcher script that then starts Houdini.
 | `TH_PROJECT_PATH`  | Path to the active project root on disk.         | yes      |
 | `TH_CONFIG_PATH`   | Path to the studio config directory (see below). | no       |
 | `TH_EXPORT_PATH`   | Path where the pipeline writes exports.          | no       |
-| `TH_USER`          | Override the user identity in the pipeline.      | no       |
+| `TH_USER`          | The pipeline user identity (see below).          | no       |
 
 `TH_CONFIG_PATH` defaults to `$TH_PROJECT_PATH/_config` and `TH_EXPORT_PATH`
-defaults to `$TH_PROJECT_PATH/export` when unset. `TH_USER` defaults to your
-operating system username when unset.
+defaults to `$TH_PROJECT_PATH/export` when unset.
+
+`TH_USER` identifies who saved or published a version (it is what the Asset
+Browser's User column and farm job attribution show). The package manifest
+wires it to `$TT_USER_NAME` — the TumbleTrove account name the Desktop
+launcher injects — so under a Desktop launch it is your TumbleTrove username
+automatically. When it is unset or resolves empty (a launch outside the
+Desktop), attribution is simply blank: the pipeline never falls back to the
+operating system username or hostname, so machine-local identity does not
+leak into project files.
 
 ## Project setup wizard
 

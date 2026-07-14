@@ -2,7 +2,6 @@
 
 import logging
 import os
-import socket
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
@@ -18,10 +17,15 @@ _workspace_handler: Optional[logging.Handler] = None
 
 
 def _get_log_filename() -> str:
-    """Get log filename based on hostname and user."""
-    hostname = socket.gethostname()
-    user = os.environ.get('TH_USER', os.environ.get('USERNAME', 'unknown'))
-    return f"{hostname}_{user}.log"
+    """Get log filename based on the pipeline user.
+
+    Never the OS username or hostname — these logs land in shared project
+    storage and must not leak the machine's identity. The anonymous
+    fallback keeps the filename valid; identity-less writers then share
+    one rotating log, which is acceptable degradation.
+    """
+    user = os.environ.get('TH_USER') or 'pipeline'
+    return f"{user}.log"
 
 
 def _create_file_handler(log_path: Path, level: int = logging.INFO) -> RotatingFileHandler:

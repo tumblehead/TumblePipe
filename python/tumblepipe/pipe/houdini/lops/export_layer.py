@@ -179,7 +179,9 @@ def _validate_export_files(temp_path: Path, expected_filename: str, operation_de
         )
 
 
-def _check_no_dangling_composition_paths(layer_path: Path) -> None:
+def _check_no_dangling_composition_paths(
+    layer_path: Path, allowed_roots: list[Path] = (),
+) -> None:
     """Abort the export if the layer composes geometry it can't carry.
 
     Two confirmed failure classes raise:
@@ -196,6 +198,10 @@ def _check_no_dangling_composition_paths(layer_path: Path) -> None:
     - *Dangling* paths: arcs whose target doesn't exist at all, so every
       consumer imports an empty asset (e.g. a payload anchored to a
       machine-local scratch file).
+
+    Absolute arcs under ``allowed_roots`` (versioned th::cache locations
+    on shared storage) are exempt from the escaping check — they publish
+    by reference — but still abort when the cached file is missing.
 
     Fail-open on analysis errors: a problem opening / walking the layer
     only skips the check (preserving the prior behaviour), never blocks a
@@ -216,7 +222,9 @@ def _check_no_dangling_composition_paths(layer_path: Path) -> None:
         )
         return
 
-    escaping = find_escaping_layer_paths(asset_paths, layer_path.parent)
+    escaping = find_escaping_layer_paths(
+        asset_paths, layer_path.parent, allowed_roots=allowed_roots,
+    )
     if escaping:
         bullets = "\n  - ".join(escaping)
         raise ExportLayerError(
@@ -227,7 +235,9 @@ def _check_no_dangling_composition_paths(layer_path: Path) -> None:
             "enabled — H22 enables it by default on new SOP Create / SOP "
             "Import nodes, pointing at $HIP/usd/. Disable 'Enable Layer "
             "Save Path' on the offending node(s) and re-export so the "
-            "geometry flattens into the published layer."
+            "geometry flattens into the published layer. For caches, use "
+            "a th::cache node — its versioned cache locations publish by "
+            "reference and are allowed."
         )
 
     dangling = find_dangling_layer_paths(asset_paths, layer_path.parent)
@@ -247,7 +257,86 @@ def _check_no_dangling_composition_paths(layer_path: Path) -> None:
     )
 
 
-def _localize_external_sidecars(layer_path: Path) -> None:
+def _resolve_under_any(path: Path, roots: list[Path]) -> bool:
+    """True if ``path`` resolves inside one of ``roots`` (already resolved)."""
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    return any(resolved.is_relative_to(root) for root in roots)
+
+
+def _versioned_cache_roots() -> list[Path]:
+    """The th::cache locations whose files may stay referenced by a publish.
+
+    Versioned caches live on shared storage (``project:``/``proxy:``) and are
+    immutable per version, so — unlike other external files — they are safe
+    (and, given their size, necessary) to publish by reference instead of
+    copying into every version folder. Fail-open to no exemptions.
+    """
+    try:
+        from tumblepipe.pipe.houdini.lops.cache import list_cache_locations
+        roots = []
+        for root in list_cache_locations():
+            try:
+                roots.append(Path(root).resolve())
+            except OSError:
+                continue
+        return roots
+    except Exception:
+        logger.warning("Could not determine th::cache locations", exc_info=True)
+        return []
+
+
+def _absolutize_cache_arcs(layer_path: Path, cache_roots: list[Path]) -> None:
+    """Pin arcs into versioned cache locations to absolute paths.
+
+    th::cache files publish by reference, but the layer is exported into a
+    temp folder that is then copied to the version location — so an arc the
+    ROP's "Use Relative Paths" processor relativised against the temp folder
+    would re-anchor wrongly after the copy. Rewrite every arc that resolves
+    into a cache location to its absolute form so it survives the move (and
+    machine hops on the shared mount).
+
+    Fail-open: any analysis error leaves the layer untouched for the
+    escaping-path guard to catch.
+    """
+    if not cache_roots:
+        return
+    try:
+        from pxr import Sdf, UsdUtils
+    except Exception:
+        logger.warning("Cache-arc pinning skipped; USD unavailable", exc_info=True)
+        return
+
+    from tumblepipe.pipe.usd import _looks_like_uri, collect_layer_composition_paths
+
+    layer = Sdf.Layer.FindOrOpen(str(layer_path))
+    if layer is None:
+        return
+
+    layer_dir = layer_path.parent
+    remap: dict[str, str] = {}
+    for raw in collect_layer_composition_paths(layer_path):
+        if not raw or raw in remap or _looks_like_uri(raw):
+            continue
+        src = Path(raw)
+        abs_src = src if src.is_absolute() else (layer_dir / src)
+        if not _resolve_under_any(abs_src, cache_roots):
+            continue
+        pinned = path_str(abs_src.resolve())
+        if pinned != raw:
+            remap[raw] = pinned
+
+    if not remap:
+        return
+
+    UsdUtils.ModifyAssetPaths(layer, lambda p: remap.get(p, p))
+    layer.Save()
+    logger.info("Pinned %d cache arc(s) absolute in %s", len(remap), layer_path)
+
+
+def _localize_external_sidecars(layer_path: Path, skip_roots: list[Path] = ()) -> None:
     """Pull externally-anchored composition sidecars into the layer's folder.
 
     The ``asset_payload`` HDA writes its geometry into a ``payload.usd``
@@ -264,6 +353,9 @@ def _localize_external_sidecars(layer_path: Path) -> None:
     filename. The sidecar then travels into the version folder with the layer
     and resolves portably — fixing both the saved-workfile and the
     unsaved-desktop cases.
+
+    Files under ``skip_roots`` (versioned th::cache locations) are left
+    alone: they publish by reference and may be far too large to copy.
 
     Fail-open: any analysis/copy error is logged and skipped, leaving the
     layer untouched for the downstream dangling-path guard to catch.
@@ -303,6 +395,8 @@ def _localize_external_sidecars(layer_path: Path) -> None:
                         continue  # already a sibling — nothing to do
                 except OSError:
                     pass
+                if _resolve_under_any(abs_src, skip_roots):
+                    continue  # versioned cache — published by reference
                 if not abs_src.is_file():
                     continue  # missing — leave for the dangling-path guard
                 dest_name = abs_src.name
@@ -777,17 +871,25 @@ class ExportLayer(EntityNode):
 
                 logger.info("Export to temp completed successfully")
 
-            # Pull the asset_payload geometry sidecar (and any other
-            # externally-anchored arc) into the version folder so the
-            # published layer is self-contained and travels portably.
+            # Versioned th::cache files stay referenced (they can be huge
+            # and live on shared storage); pin their arcs absolute so they
+            # survive the temp -> version copy. Everything else external
+            # is pulled into the version folder so the published layer is
+            # self-contained and travels portably.
             report_progress("localizing sidecars")
-            _localize_external_sidecars(temp_path / layer_file_name)
+            cache_roots = _versioned_cache_roots()
+            _absolutize_cache_arcs(temp_path / layer_file_name, cache_roots)
+            _localize_external_sidecars(
+                temp_path / layer_file_name, skip_roots=cache_roots,
+            )
 
             # Refuse to publish a layer that composes geometry from a
             # missing file (e.g. a payload anchored to a machine-local
             # scratch path) — otherwise the asset silently imports empty.
             report_progress("checking composition arcs")
-            _check_no_dangling_composition_paths(temp_path / layer_file_name)
+            _check_no_dangling_composition_paths(
+                temp_path / layer_file_name, allowed_roots=cache_roots,
+            )
 
             # Re-fetch root prim after export (stage may have been modified)
             root = stage_node.stage().GetPseudoRoot()
@@ -861,6 +963,8 @@ class ExportLayer(EntityNode):
             f"Export completed: uri={entity_uri}, dept={department_name}, "
             f"version={version_name}, output={version_path}"
         )
+
+        return version_name
 
     def _export_farm(self):
         entity_uri = self.get_entity_uri()

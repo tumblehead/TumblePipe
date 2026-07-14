@@ -390,6 +390,13 @@ class ProcessDialog(QtWidgets.QDialog):
         """Handle task completed signal"""
         self._model.update_task_status(task_id, TaskStatus.COMPLETED)
 
+        # Show the version this run wrote, so the row stops reporting the
+        # version it just superseded. Farm submissions write nothing locally
+        # and report no version, so their row keeps showing what's on disk.
+        task, _ = self._find_task_with_parent(task_id)
+        if task is not None and task.exported_version:
+            self._model.update_task_version(task_id, task.exported_version)
+
         # Force UI repaint
         QtWidgets.QApplication.processEvents()
 

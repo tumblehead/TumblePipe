@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable
 
-from qtpy.QtCore import Qt, QAbstractTableModel, QModelIndex
+from qtpy.QtCore import Qt
 from qtpy.QtGui import QBrush, QColor, QStandardItemModel, QStandardItem
 
 from tumblepipe.util.uri import Uri
@@ -37,6 +37,7 @@ class ProcessTask:
     execute_local: Callable[[], None] | None = None # Function to execute locally
     execute_farm: Callable[[], None] | None = None  # Function to execute on farm
     current_version: str | None = None              # Current export version (if known)
+    exported_version: str | None = None             # Version this run wrote (set on completion)
     variant: str | None = None                      # Variant name (for build tasks)
     first_frame: int | None = None                  # First frame (with roll)
     last_frame: int | None = None                   # Last frame (with roll)
@@ -45,195 +46,6 @@ class ProcessTask:
     parent_id: str | None = None                    # Reference to parent task ID
     node_path: str | None = None                    # Houdini node path (for display)
     depends_on: list[str] = field(default_factory=list)  # List of task IDs this task depends on
-
-
-class ProcessTaskTableModel(QAbstractTableModel):
-    """Model for displaying process tasks in a table with checkboxes"""
-
-    # Column indices
-    COLUMN_ENABLED = 0
-    COLUMN_TASK = 1
-    COLUMN_DEPARTMENT = 2
-    COLUMN_VERSION = 3
-    COLUMN_STATUS = 4
-
-    # Column headers
-    HEADERS = ['', 'Task', 'Department', 'Version', 'Status']
-
-    # Status display mapping
-    STATUS_DISPLAY = {
-        TaskStatus.PENDING: '\u23F3',    # Hourglass
-        TaskStatus.RUNNING: '\u25B6',    # Play symbol
-        TaskStatus.COMPLETED: '\u2714',  # Check mark
-        TaskStatus.FAILED: '\u2716',     # X mark
-        TaskStatus.SKIPPED: '\u23ED',    # Skip symbol
-    }
-
-    STATUS_COLORS = {
-        TaskStatus.PENDING: '#919191',   # Gray
-        TaskStatus.RUNNING: '#4A90E2',   # Blue
-        TaskStatus.COMPLETED: '#6bff6b', # Green
-        TaskStatus.FAILED: '#ff6b6b',    # Red
-        TaskStatus.SKIPPED: '#919191',   # Gray
-    }
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._tasks: list[ProcessTask] = []
-
-    def set_tasks(self, tasks: list[ProcessTask]):
-        """Set the list of tasks to display"""
-        self.beginResetModel()
-        self._tasks = tasks
-        self.endResetModel()
-
-    def get_tasks(self) -> list[ProcessTask]:
-        """Get all tasks"""
-        return self._tasks
-
-    def get_enabled_tasks(self) -> list[ProcessTask]:
-        """Get only enabled tasks"""
-        return [t for t in self._tasks if t.enabled]
-
-    def get_enabled_count(self) -> int:
-        """Get count of enabled tasks"""
-        return len([t for t in self._tasks if t.enabled])
-
-    def set_all_enabled(self, enabled: bool):
-        """Enable or disable all tasks"""
-        for task in self._tasks:
-            task.enabled = enabled
-        if self._tasks:
-            self.dataChanged.emit(
-                self.index(0, self.COLUMN_ENABLED),
-                self.index(len(self._tasks) - 1, self.COLUMN_ENABLED)
-            )
-
-    def update_task_status(self, task_id: str, status: TaskStatus, error: str | None = None):
-        """Update status of a specific task by ID"""
-        for i, task in enumerate(self._tasks):
-            if task.id == task_id:
-                task.status = status
-                task.error_message = error
-                self.dataChanged.emit(
-                    self.index(i, self.COLUMN_STATUS),
-                    self.index(i, self.COLUMN_STATUS)
-                )
-                break
-
-    def reset_all_status(self):
-        """Reset all tasks to pending status"""
-        for task in self._tasks:
-            task.status = TaskStatus.PENDING
-            task.error_message = None
-        if self._tasks:
-            self.dataChanged.emit(
-                self.index(0, self.COLUMN_STATUS),
-                self.index(len(self._tasks) - 1, self.COLUMN_STATUS)
-            )
-
-    # Qt model interface methods
-
-    def columnCount(self, parent=QModelIndex()):
-        return len(self.HEADERS)
-
-    def rowCount(self, parent=QModelIndex()):
-        return len(self._tasks)
-
-    def headerData(self, section, orientation, role):
-        if orientation != Qt.Horizontal:
-            return None
-        if role != Qt.DisplayRole:
-            return None
-        if 0 <= section < len(self.HEADERS):
-            return self.HEADERS[section]
-        return None
-
-    def flags(self, index):
-        if not index.isValid():
-            return Qt.NoItemFlags
-
-        flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable
-
-        # Only the checkbox column is user-checkable
-        if index.column() == self.COLUMN_ENABLED:
-            flags |= Qt.ItemIsUserCheckable
-
-        return flags
-
-    def data(self, index, role):
-        if not index.isValid() or index.row() >= len(self._tasks):
-            return None
-
-        task = self._tasks[index.row()]
-        column = index.column()
-
-        # Checkbox column
-        if column == self.COLUMN_ENABLED:
-            if role == Qt.CheckStateRole:
-                return Qt.Checked if task.enabled else Qt.Unchecked
-            return None
-
-        # Display role
-        if role == Qt.DisplayRole:
-            if column == self.COLUMN_TASK:
-                return task.description
-            elif column == self.COLUMN_DEPARTMENT:
-                return task.department
-            elif column == self.COLUMN_VERSION:
-                return task.current_version or '-'
-            elif column == self.COLUMN_STATUS:
-                return self.STATUS_DISPLAY.get(task.status, '')
-
-        # Tooltip role
-        elif role == Qt.ToolTipRole:
-            if column == self.COLUMN_TASK:
-                return str(task.uri)
-            elif column == self.COLUMN_STATUS:
-                if task.status == TaskStatus.FAILED and task.error_message:
-                    return f"Error: {task.error_message}"
-                return task.status.value.capitalize()
-
-        # Text alignment
-        elif role == Qt.TextAlignmentRole:
-            if column == self.COLUMN_STATUS:
-                return Qt.AlignCenter | Qt.AlignVCenter
-            return Qt.AlignLeft | Qt.AlignVCenter
-
-        # Background color
-        elif role == Qt.BackgroundRole:
-            return QBrush(QColor("#3a3a3a"))  # Normal background
-
-        # Foreground color
-        elif role == Qt.ForegroundRole:
-            if column == self.COLUMN_STATUS:
-                color = self.STATUS_COLORS.get(task.status, '#919191')
-                return QBrush(QColor(color))
-            # Gray out disabled tasks
-            if not task.enabled:
-                return QBrush(QColor("#666666"))
-
-        return None
-
-    def setData(self, index, value, role=Qt.EditRole):
-        if not index.isValid():
-            return False
-
-        if index.row() >= len(self._tasks):
-            return False
-
-        task = self._tasks[index.row()]
-
-        # Handle checkbox toggle
-        if index.column() == self.COLUMN_ENABLED and role == Qt.CheckStateRole:
-            task.enabled = (value == Qt.Checked)
-            self.dataChanged.emit(
-                self.index(index.row(), 0),
-                self.index(index.row(), self.columnCount() - 1)
-            )
-            return True
-
-        return False
 
 
 class ProcessTaskTreeModel(QStandardItemModel):
@@ -631,14 +443,38 @@ class ProcessTaskTreeModel(QStandardItemModel):
                     status_item.setText(self.STATUS_DISPLAY.get(status, ''))
                     status_item.setForeground(QBrush(QColor(self.STATUS_COLORS.get(status, '#919191'))))
 
+    def update_task_version(self, task_id: str, version: str):
+        """Show the version a finished task wrote in its Version column.
+
+        Until the task runs, the column shows the version already on disk (the
+        one being superseded), so without this the row still reads v0007 after
+        publishing v0008.
+        """
+        task = self._find_task_by_id(task_id)
+        if task is None:
+            return
+        task.current_version = version
+
+        task_item = self._task_items.get(task_id)
+        if task_item is None:
+            return
+        parent = task_item.parent()
+        if parent is None:
+            return
+        version_item = parent.child(task_item.row(), self.COLUMN_VERSION)
+        if version_item:
+            version_item.setText(version)
+
     def reset_all_status(self):
         """Reset all tasks (including children) to pending status"""
         for task in self._tasks:
             task.status = TaskStatus.PENDING
             task.error_message = None
+            task.exported_version = None
             for child in task.children or []:
                 child.status = TaskStatus.PENDING
                 child.error_message = None
+                child.exported_version = None
 
         # Update all status items in the tree
         for task_id, task_item in self._task_items.items():

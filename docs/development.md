@@ -80,16 +80,64 @@ touches no project data.
 
 ## Submit Jobs dialog harness
 
-`scripts/verify_submit_jobs_entity_selector.py` pins the Submit Jobs
-dialog's entity-selector contract: single-entity opens show a selector
-listing the project's terminal entities (vetted with
-`is_terminal_entity`, so empty seeded categories don't appear) that
-defaults to the opened entity; picking another entity re-targets the
-submission and reseeds the form from that entity's properties;
-multi-select opens keep their fixed entity list. It reads a real
-project config, so run it under a project hython whose project has at
-least one shot and one asset (e.g. TumbleTrove Desktop's run_hython
-with dev overrides). Qt runs offscreen; no project data is written.
+`scripts/verify_submit_jobs_entity_tree.py` pins the Submit Jobs
+dialog's entity-tree contract: every open shows a checkable tree scoped
+to the dialog's context, listing that context's terminal entities
+(vetted with `is_terminal_entity`, so empty seeded categories don't
+appear) and starting with the opened entities checked. Checking more
+entities fans the submission out to all of them; branch checks cascade
+and roll up to a partial state; an entity that also appears under a
+group is submitted once, not once per group; the filter narrows the
+view without touching check state; and reseeding is keyed on the
+primary (first checked) entity, so growing the batch doesn't clobber a
+tuned form. It also pins the coherent-read contract: the sweep vets
+every URI with `is_terminal_entity` (one read each), so it runs inside
+a `config.coherent()` scope and the harness counts config stats to
+catch a regression back into the stat-storm bug class (see the config
+engine notes in `configuration.md`). It reads a real project config, so
+run it under a project hython whose project has at least two shots and
+one asset (e.g. TumbleTrove Desktop's run_hython with dev overrides). Qt runs
+offscreen; no project data is written and nothing is submitted.
+
+## Changelog
+
+`CHANGELOG.md` is **generated — never hand-edit it**. It is derived from
+the conventional-commit subjects between release tags, one section per
+tag, newest first:
+
+```bash
+uv run --no-project python scripts/generate_changelog.py
+uv run --no-project python scripts/generate_changelog.py --check  # stale?
+```
+
+The section layout lives in `.ci/_changelog.py`, shared with
+`.ci/release_tumblepipe.py` so the file and the notes posted to the
+github release / TumbleTrove version page can't drift. Commits are
+bucketed by prefix (`feat` → Features, `fix` → Fixes, …); a `!` marks a
+breaking change (`refactor!: …`) and leads the release; `ci`, `build`
+and the `release` version-bump commit are excluded. Anything that
+doesn't parse still lands under *Other Changes* rather than being
+dropped, so a forgotten prefix can't lose a change — but it is worth
+writing the prefix.
+
+**Ordering gotcha:** the script reads the *tags*, so a release's section
+can only be rendered once its tag exists. Regenerate and commit
+**after** `git tag`, not before — that commit then rides along in the
+next release. This is why `--check` is not a CI gate: it would
+false-fail on the commit immediately after every tag.
+
+## Export cache-reference harness
+
+`scripts/verify_cache_reference_fixes.py` pins the publish-by-reference
+contract for versioned `th::cache` files (see *Layer save paths and
+export portability* in `composition.md`): arcs into a cache root are
+pinned absolute (`_absolutize_cache_arcs`), skipped by the sidecar
+localizer (`skip_roots`), and exempt from the escaping-path guard
+(`allowed_roots`) — while a missing cache file still aborts as a
+dangling arc. It needs `pxr` but no scene or project data (temp dirs
+only), so run it under any project hython (e.g. TumbleTrove Desktop's
+run_hython). The pure path-classification half is covered by
+`tests/test_usd_paths.py`.
 
 ## Farm task and job modules
 
