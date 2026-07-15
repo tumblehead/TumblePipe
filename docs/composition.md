@@ -172,6 +172,28 @@ placement agree by construction.
 `scripts/verify_tracked_asset_counts.py` sweeps a project for staged
 counts that drifted from the department contexts.
 
+## Dropped-metadata guard
+
+Because a consumer only sees a tracked asset through its `customData`,
+an *imported* asset that lost that tag would silently vanish from the
+published layer and every downstream import. The export refuses to
+publish when it finds such a drop, via two complementary checks: a
+sibling scan (`util.list_dropped_asset_prims` — a metadata-less
+`Scope`/`Xform` beside a real asset) and an upstream cross-check
+(`export_layer._list_expected_asset_uris` — an import node's declared
+URI missing from the stage). Re-running the import node (its metadata
+step re-cooks) clears a genuine drop.
+
+Geometry an artist authors directly into the workfile — an extra group,
+a helper prim, hand-modelled set dressing — is **not** a drop and does
+not block the export. The sibling scan tells the two apart by
+composition: a dropped asset still pulls its geometry from a layer under
+the `export/` tree (the import node sublayers the staged file), while
+artist geometry composes from no pipeline layer. Only the former is
+flagged; the latter passes through (and is logged). To bake a real
+imported asset into the export instead of re-referencing it, set the
+import node's *Import Mode* to Inline rather than leaving it untagged.
+
 ## Department exclusion
 
 The *Exclude departments* setting on the import nodes filters the staged

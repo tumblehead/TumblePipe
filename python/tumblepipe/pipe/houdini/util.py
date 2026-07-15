@@ -1,4 +1,7 @@
 import json
+import logging
+import os
+from pathlib import Path
 
 from pxr import Usd, UsdGeom
 
@@ -6,6 +9,8 @@ from tumblepipe.config.timeline import BlockRange, FrameRange
 from tumblepipe.util.uri import Uri
 
 import hou
+
+logger = logging.getLogger(__name__)
 
 def apply_placement_op_order(prim) -> bool:
     """Author the xformOpOrder that applies composed placement op values.
@@ -263,7 +268,71 @@ def list_assets(root):
             results.append(info)
     return results
 
-def list_dropped_asset_prims(root, ignore_prim_paths=()):
+def _normcased_roots(roots) -> list[str]:
+    """Resolve + normcase the pipeline roots once for containment tests.
+
+    Unreadable roots are dropped, never raised on — a root that cannot be
+    resolved simply stops matching.
+    """
+    normed = []
+    for root in roots:
+        try:
+            normed.append(os.path.normcase(str(Path(root).resolve())))
+        except OSError:
+            continue
+    return normed
+
+
+def _path_under_roots(candidate: str, normed_roots) -> bool:
+    """True if ``candidate`` resolves inside one of ``normed_roots``.
+
+    Case-insensitive and separator-aware so a ``P:\\proj\\export`` root
+    matches a sublayer resolved to ``P:/proj/export/...`` (Windows paths
+    differ freely in case and slash direction; ``is_relative_to`` is
+    purely lexical and case-sensitive, so we normcase both sides).
+    """
+    if not candidate:
+        return False
+    try:
+        target = os.path.normcase(str(Path(candidate).resolve()))
+    except OSError:
+        return False
+    for root in normed_roots:
+        if target == root or target.startswith(root + os.sep):
+            return True
+    return False
+
+
+def _prim_pulls_from_roots(prim, normed_roots) -> bool:
+    """True if any layer composing into ``prim`` resolves under a pipeline root.
+
+    ``GetPrimStack`` returns every PrimSpec contributing to the prim across
+    sublayers, references and payloads, so this recognises an imported
+    asset however its layer arrived — TumblePipe's import nodes sublayer
+    the staged file, but a raw Reference/Payload LOP is covered too. On a
+    live stage each contributing layer carries a resolved ``realPath``; an
+    ``entity:/assets|shots/`` ``identifier`` is matched as a fallback for a
+    layer not yet resolved to a real path.
+
+    Empty ``normed_roots`` yields False — the caller decides what an
+    unknown pipeline root means (list_dropped_asset_prims falls back to
+    flagging every metadata-less sibling).
+    """
+    if not normed_roots:
+        return False
+    for spec in prim.GetPrimStack():
+        layer = getattr(spec, 'layer', None)
+        if layer is None:
+            continue
+        if _path_under_roots(getattr(layer, 'realPath', '') or '', normed_roots):
+            return True
+        identifier = getattr(layer, 'identifier', '') or ''
+        if 'entity:/assets/' in identifier or 'entity:/shots/' in identifier:
+            return True
+    return False
+
+
+def list_dropped_asset_prims(root, ignore_prim_paths=(), pipeline_roots=()):
     """Return prim paths that sit beside a real asset but carry no metadata.
 
     An asset's parent (its category prim) is proven to be a category by the
@@ -280,20 +349,38 @@ def list_dropped_asset_prims(root, ignore_prim_paths=()):
     an asset's own internal sub-Scopes (e.g. the 'mtl' material scope) are
     never mistaken for dropped assets.
 
-    Two kinds of metadata-less sibling are NOT drops:
+    Three kinds of metadata-less sibling are NOT drops:
     - a grouping prim whose subtree holds metadata-carrying assets (artist
       set-dressing Xforms, e.g. Duplicate LOP destination prims) — we
       descend into it and keep checking instead;
     - a prim listed in ignore_prim_paths (the exporting entity's own root,
       which only gets tagged when some *other* workfile imports it) — also
-      descended into, not flagged.
+      descended into, not flagged;
+    - a prim that composes from NO pipeline export layer (see
+      pipeline_roots) — geometry the artist authored or cached directly
+      into the workfile. A real dropped asset still pulls its geometry
+      from the pipeline export tree via the import node's sublayer; only
+      its customData tag went missing. Artist-added geometry never had a
+      pipeline layer, so it is a supported addition to the hierarchy, not
+      a drop, and must never block the export. This is the check that
+      distinguishes "an asset that lost its metadata" (block) from "a new
+      prim the artist modelled directly" (allow).
 
     Prims carrying the 'inlined' marker (see mark_inlined) are deliberately
     baked into the export by an import node in 'inline' mode — they are
     neither drops nor descended into.
+
+    pipeline_roots: filesystem roots (the resolved ``export:/`` tree)
+    against which a metadata-less prim's composed layers are tested. When
+    EMPTY the pipeline test is skipped and every metadata-less sibling is
+    flagged (the historical, fail-closed behaviour) — the export caller
+    resolves the root and passes it; an unresolvable root degrades to
+    over-blocking rather than risking a silent drop.
     """
     ignored = set(ignore_prim_paths)
+    normed_roots = _normcased_roots(pipeline_roots)
     dropped = []
+    allowed = []
 
     def subtree_has_asset(prim):
         def has_metadata(p): return get_metadata(p) is not None
@@ -324,9 +411,21 @@ def list_dropped_asset_prims(root, ignore_prim_paths=()):
             if str(child.GetPath()) in ignored or subtree_has_asset(child):
                 walk(child)
                 continue
+            if normed_roots and not _prim_pulls_from_roots(child, normed_roots):
+                # Composes from no pipeline export layer -> artist-authored
+                # geometry, a supported addition, not a dropped asset.
+                allowed.append(str(child.GetPath()))
+                continue
             dropped.append(str(child.GetPath()))
 
     walk(root)
+    if allowed:
+        logger.info(
+            "export drop-guard: allowed %d metadata-less prim(s) that "
+            "compose from no pipeline export layer (artist-added "
+            "geometry, not dropped assets): %s",
+            len(allowed), ", ".join(allowed)
+        )
     return dropped
 
 def get_shot_metadata(stage) -> dict | None:

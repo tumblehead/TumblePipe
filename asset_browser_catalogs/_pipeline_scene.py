@@ -425,10 +425,8 @@ class SceneManager:
         """
         try:
             import hou
-            from tumblepipe.pipe.paths import (
-                next_hip_file_path, get_workfile_context, Context,
-            )
-            from tumblepipe.pipe.context import save_context, save_entity_context
+            from tumblepipe.pipe.paths import get_workfile_context
+            from tumblepipe.pipe.context import commit_next_workfile
 
             hip_path = Path(hou.hipFile.path())
             prev_ctx = get_workfile_context(hip_path)
@@ -448,24 +446,14 @@ class SceneManager:
             if scene_proj is not None:
                 self._catalog._activate_project(scene_proj)
 
-            # Match Houdini's Ctrl+S extension (license-driven), else the
-            # file is rewritten to a path the pipeline didn't record.
-            next_path = next_hip_file_path(
+            # Reserve + save + record the next version as one atomic commit
+            # (pointer written last). Match Houdini's Ctrl+S extension
+            # (license-driven) via nc_type, else the file is rewritten to a
+            # path the pipeline didn't record.
+            next_path = commit_next_workfile(
                 prev_ctx.entity_uri, prev_ctx.department_name,
-                nc_type=session_nc_type(),
+                prev_context=prev_ctx, nc_type=session_nc_type(),
             )
-            hou.hipFile.save(str(next_path))
-
-            next_ctx = get_workfile_context(next_path) or Context(
-                entity_uri=prev_ctx.entity_uri,
-                department_name=prev_ctx.department_name,
-                version_name=Path(next_path).stem.rsplit("_", 1)[-1],
-            )
-            save_context(
-                Path(next_path).parent, prev_ctx, next_ctx,
-                file_extension=Path(next_path).suffix.lstrip("."),
-            )
-            save_entity_context(Path(next_path).parent, next_ctx)
 
             log.info("Saved next version: %s", next_path)
             hou.ui.setStatusMessage(
@@ -481,7 +469,7 @@ class SceneManager:
             # (groups:/ctx/name, two segments) use a different card id
             # scheme and are skipped here.
             try:
-                segs = next_ctx.entity_uri.segments
+                segs = prev_ctx.entity_uri.segments
                 if scene_proj is not None and len(segs) >= 3:
                     self._catalog._request_card_refresh_for_id(
                         f"{scene_proj.name}/{segs[1]}/{segs[2]}",

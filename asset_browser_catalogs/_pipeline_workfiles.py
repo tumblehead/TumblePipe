@@ -379,7 +379,7 @@ class WorkfileManager:
 
         try:
             from tumblepipe.pipe.paths import (
-                next_hip_file_path, Context,
+                reserve_next_hip_file_path, Context,
             )
         except Exception:
             log.exception("Create: tumblehead imports failed")
@@ -400,12 +400,12 @@ class WorkfileManager:
                 self._catalog._activate_project(target_proj)
 
                 try:
-                    next_path = next_hip_file_path(
+                    next_path = reserve_next_hip_file_path(
                         entity_uri, dept, nc_type=session_nc_type(),
                     )
                 except Exception:
                     log.exception(
-                        "Create: next_hip_file_path failed for %s/%s",
+                        "Create: reserving next version failed for %s/%s",
                         asset_id, dept,
                     )
                     return
@@ -553,7 +553,7 @@ class WorkfileManager:
             try:
                 import hou
                 from tumblepipe.pipe.paths import (
-                    next_hip_file_path, get_workfile_context, Context,
+                    reserve_next_hip_file_path, get_workfile_context, Context,
                 )
                 from tumblepipe.pipe.context import (
                     save_context, save_entity_context,
@@ -564,12 +564,12 @@ class WorkfileManager:
                 self._catalog._activate_project(target_proj)
 
                 try:
-                    next_path = next_hip_file_path(
+                    next_path = reserve_next_hip_file_path(
                         entity_uri, dept, nc_type=session_nc_type(),
                     )
                 except Exception:
                     log.exception(
-                        "New from Current: next_hip_file_path failed for %s/%s",
+                        "New from Current: reserving next version failed for %s/%s",
                         asset_id, dept,
                     )
                     return
@@ -939,7 +939,7 @@ class WorkfileManager:
 
         try:
             from tumblepipe.pipe.paths import (
-                next_hip_file_path, Context,
+                reserve_next_hip_file_path, Context,
             )
         except Exception:
             log.exception("New: Template (group): tumblepipe imports failed")
@@ -963,12 +963,12 @@ class WorkfileManager:
                 self._catalog._activate_project(target_proj)
 
                 try:
-                    next_path = next_hip_file_path(
+                    next_path = reserve_next_hip_file_path(
                         group_uri, dept, nc_type=session_nc_type(),
                     )
                 except Exception:
                     log.exception(
-                        "New: Template (group): next_hip_file_path "
+                        "New: Template (group): reserving next version "
                         "failed for %s/%s", asset_id, dept,
                     )
                     return

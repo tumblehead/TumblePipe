@@ -220,9 +220,10 @@ the two it does depends on how load-bearing the file is:
   and into the project: the package points `OCIO` at
   `$TH_CONFIG_PATH/ocio/tumblehead.ocio`, so an existing project needs the file
   present. Seeded **if absent** and never clobbered — a project that has
-  hand-tuned its color config keeps it. (Owning the config per project also
-  stops it from being pathsep-concatenated with a legacy `_pipeline` OCIO into
-  an unreadable multi-path value.)
+  hand-tuned its color config keeps it. (Owning the config per project stops the
+  *package* from shipping a second copy of its own; retiring the drive-side
+  legacy `_pipeline` setters that also define `OCIO` is a separate sweep — see
+  the *Legacy OCIO retire* section below.)
 
 **Un-migrated projects degrade, they don't crash.** `list_departments`
 reads each department's `independent`/`publishable`/`renderable` via schema
@@ -257,6 +258,28 @@ under a wrong-case root prim, and import parms stored in workfiles, cannot
 be text-patched — fix the workfile in Houdini, re-export, and re-pick the
 entity on affected import nodes.
 
+### Legacy OCIO retire
+
+Color config is now project-owned (the v4 migration above), but the vestigial
+per-project launch scripts at `<project>/_pipeline/_project_config.bat` still
+set `OCIO` under the legacy `W:/_pipeline` tree. Only the old
+double-click-the-bat entry point sources them — Desktop launches never do — but
+any launch that does pins `OCIO` at the drive-side legacy config instead of the
+project's own. A maintenance CLI retires them:
+
+```
+python scripts/audit_legacy_ocio.py <projects-root> [--apply]
+python scripts/audit_legacy_ocio.py --projects P:/paleindia P:/Snail [--apply]
+```
+
+It scans each project's launch bat, resolves the `%VAR%` references against that
+same bat's `SET` lines, and flags any whose effective `OCIO` lands under
+`_pipeline` (read-only, exit 1 on findings). `--apply` repoints the setter at
+`%TH_CONFIG_PATH%/ocio/tumblehead.ocio` — but only for a project that already
+owns `_config/ocio/tumblehead.ocio`; one that doesn't is reported and skipped, so
+run `migrate_config.py` on it first. The original line is backed up and left
+commented above the rewrite, so the edit is reversible.
+
 ## Where configuration lives in the codebase
 
 - `hpm.toml` — Houdini package manifest and HPM metadata (dependencies,
@@ -266,9 +289,11 @@ entity on affected import nodes.
   (`scripts/project_template/_config/ocio/`) and lands at `<project>/_config/`
   per project; the package points `OCIO` at `$TH_CONFIG_PATH/ocio/tumblehead.ocio`
   on Houdini startup. Keeping it project-local (one file, not a package-shipped
-  copy) is what stops it from being pathsep-concatenated with any legacy
-  `_pipeline` OCIO into an unreadable multi-path value. Existing projects gain
-  the file via the v4 config migration (`scripts/migrate_config.py`).
+  copy) means the package no longer contributes its own copy to an `OCIO` that
+  could be pathsep-concatenated with a legacy `_pipeline` source into an
+  unreadable multi-path value; the legacy setters themselves are retired
+  separately (*Legacy OCIO retire*, above). Existing projects gain the file via
+  the v4 config migration (`scripts/migrate_config.py`).
 - `scripts/` — TumbleTrove hooks (`tt_setup.py`, plus the bundled
   `project_template/`) and any Houdini startup scripts that run when the
   package loads.

@@ -9,9 +9,7 @@ from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
 from tumblepipe.pipe.paths import (
-    next_hip_file_path,
     get_workfile_context,
-    Context
 )
 from tumblepipe.pipe.houdini import nodes as ns
 from tumblepipe.pipe.houdini.lops import (
@@ -28,8 +26,7 @@ from tumblepipe.pipe.houdini.cops import (
     build_comp
 )
 from tumblepipe.pipe.context import (
-    save_context,
-    save_entity_context,
+    commit_next_workfile,
 )
 
 # Helpers
@@ -290,25 +287,11 @@ def _publish(entity_uri: Uri, department_name: str):
         raise RuntimeError(f'Invalid entity type: {entity_uri.segments[0]}')
 
 def _save(entity_uri: Uri, department_name: str):
-    # Get next hip file path using Uri
-    hip_file_path = next_hip_file_path(entity_uri, department_name)
-
-    # Save the hip file
-    hou.hipFile.save(path_str(hip_file_path))
-
-    # Extract version name from file path (e.g., "entity_animation_v0005.hip" -> "v0005")
-    version_name = hip_file_path.stem.rsplit('_', 1)[-1]
-
-    # Construct context from known parameters
-    context = Context(
-        entity_uri=entity_uri,
-        department_name=department_name,
-        version_name=version_name
-    )
-
-    # Save context metadata (user, timestamp, version info)
-    save_context(hip_file_path.parent, None, context)
-    save_entity_context(hip_file_path.parent, context)
+    # Reserve + save + record the next version atomically. prev_context=None:
+    # a publish continues the department's existing lineage, so save_context
+    # grounds from_version in the real on-disk predecessor rather than
+    # re-anchoring the chain to v0000.
+    commit_next_workfile(entity_uri, department_name)
 
 def _load_workfile(bundled_path: Path, force_reload: bool = True) -> bool:
     """Load bundled workfile. Returns True if successful."""

@@ -48,6 +48,8 @@ from tumblepipe.pipe.paths.workspace import (
     latest_hip_file_path,
     latest_hip_file_path_with_context,
     next_hip_file_path,
+    reserve_next_hip_file_path,
+    release_reserved_version,
     load_entity_context,
     get_workfile_context,
 )
@@ -117,6 +119,8 @@ __all__ = [
     'latest_hip_file_path',
     'latest_hip_file_path_with_context',
     'next_hip_file_path',
+    'reserve_next_hip_file_path',
+    'release_reserved_version',
     'load_entity_context',
     'get_workfile_context',
     # export

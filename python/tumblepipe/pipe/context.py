@@ -1,10 +1,10 @@
 import datetime as dt
 import logging
 from pathlib import Path
-from tumblepipe.api import get_user_name
+from tumblepipe.api import get_user_name, api
 from tumblepipe.util.io import store_json
 from tumblepipe.util.houdini import hou
-from tumblepipe.pipe.paths import Context, get_hip_file_path
+from tumblepipe.pipe.paths import Context, get_hip_file_path, HIP_EXTENSIONS
 from tumblepipe.util.uri import Uri
 
 logger = logging.getLogger(__name__)
@@ -158,23 +158,65 @@ def get_timestamp_from_context(context: Context):
     return dt.datetime.fromtimestamp(file_path.stat().st_mtime)
 
 
+def _list_present_version_codes(workspace_path: Path) -> set[int]:
+    """Version codes present in a department workspace.
+
+    Unions the evidence from both the hip files and the ``_context/*.json``
+    lineage entries — either is proof a version exists — so a version is not
+    lost from lineage just because one of the two was cleaned up.
+    """
+    codes: set[int] = set()
+    context_dir = workspace_path / "_context"
+    if context_dir.is_dir():
+        for entry in context_dir.glob("*.json"):
+            name = entry.stem
+            if api.naming.is_valid_version_name(name):
+                codes.add(api.naming.get_version_code(name))
+    for ext in HIP_EXTENSIONS:
+        for hip_path in workspace_path.glob(f"*.{ext}"):
+            name = hip_path.stem.rsplit("_", 1)[-1]
+            if api.naming.is_valid_version_name(name):
+                codes.add(api.naming.get_version_code(name))
+    return codes
+
+
+def _predecessor_version_name(workspace_path: Path, version_name: str) -> str:
+    """The real on-disk predecessor of ``version_name``.
+
+    Returns the highest existing version strictly below it, or ``'v0000'`` when
+    none exists (a genuine first save). Grounds a version's ``from_version`` in
+    what is actually on disk instead of a possibly-missing ``context.json``
+    pointer — so an unresolved predecessor can never silently re-anchor the
+    lineage chain to ``v0000`` mid-history.
+    """
+    target_code = api.naming.get_version_code(version_name)
+    prior = [code for code in _list_present_version_codes(workspace_path) if code < target_code]
+    if not prior:
+        return "v0000"
+    return api.naming.get_version_name(max(prior))
+
+
 def save_context(target_path: Path, prev_context, next_context, houdini_version: str = None, file_extension: str = None):
     """Save version context metadata (_context/{version}.json).
 
     Args:
         target_path: Directory to save context in
-        prev_context: Previous Context (or None)
-        next_context: Next Context
+        prev_context: Previous Context (or None). When None (or its version is
+            None) the predecessor is derived from the versions on disk rather
+            than being coerced to ``v0000``.
+        next_context: Next Context. Its version must be concrete — a None
+            version is a caller bug (it would clobber ``_context/v0000.json``
+            and poison the chain), so it raises rather than writing garbage.
         houdini_version: Optional Houdini version string. If None, attempts to get from hou module.
         file_extension: Optional file extension (e.g., 'hip', 'hiplc', 'hipnc'). Used to avoid
             unreliable exists() calls on SMB/CIFS network storage when opening workfiles.
     """
-    def _get_version_name(context):
-        if context is None:
-            return "v0000"
-        if context.version_name is None:
-            return "v0000"
-        return context.version_name
+    if next_context is None or next_context.version_name is None:
+        raise ValueError(
+            f"save_context requires a concrete next version (target={target_path}); "
+            f"got {next_context!r}"
+        )
+    next_version_name = next_context.version_name
 
     # Get houdini version from hou if available and not provided
     if houdini_version is None:
@@ -182,13 +224,28 @@ def save_context(target_path: Path, prev_context, next_context, houdini_version:
             hou.applicationVersionString() if hou is not None else "unknown"
         )
 
+    # from_version records provenance. Trust the caller's explicit predecessor;
+    # otherwise ground it in the real on-disk predecessor rather than silently
+    # re-anchoring the chain to 'v0000' (which snaps the linked list — the farm
+    # publish path passes prev_context=None yet clearly continues a lineage).
+    if prev_context is not None and prev_context.version_name is not None:
+        from_version_name = prev_context.version_name
+    else:
+        from_version_name = _predecessor_version_name(target_path, next_version_name)
+
+    # Timestamp from the saved hip's mtime, falling back to now() so the chain
+    # entry never records an empty timestamp — a network stat() can miss a
+    # just-written file on SMB/CIFS (the same reason exists() is distrusted
+    # elsewhere in the path layer).
     timestamp = get_timestamp_from_context(next_context)
-    prev_version_name = _get_version_name(prev_context)
-    next_version_name = _get_version_name(next_context)
+    timestamp_str = (
+        timestamp.isoformat() if timestamp is not None else dt.datetime.now().isoformat()
+    )
+
     context_path = target_path / "_context" / f"{next_version_name}.json"
 
     logger.info(
-        f"Saving version context: {prev_version_name} -> {next_version_name} "
+        f"Saving version context: {from_version_name} -> {next_version_name} "
         f"at {target_path}"
     )
 
@@ -196,13 +253,66 @@ def save_context(target_path: Path, prev_context, next_context, houdini_version:
         context_path,
         dict(
             user=get_user_name(),
-            timestamp="" if timestamp is None else timestamp.isoformat(),
-            from_version=prev_version_name,
+            timestamp=timestamp_str,
+            from_version=from_version_name,
             to_version=next_version_name,
             houdini_version=houdini_version,
             extension=file_extension,
         ),
     )
+
+
+def commit_next_workfile(
+    entity_uri: Uri,
+    department_name: str,
+    prev_context: Context = None,
+    nc_type: str = None,
+) -> Path:
+    """Reserve, save the loaded hip into, and record the next workfile version.
+
+    The single implementation every workfile-save path shares, so version
+    allocation and the three-step commit are done one correct way:
+
+    1. atomically reserve the next version (:func:`reserve_next_hip_file_path`),
+       so two concurrent saves never pick the same number;
+    2. ``hou.hipFile.save`` the loaded scene into it;
+    3. write the ``_context`` lineage entry, then the ``context.json`` pointer
+       **last** — so a crash always leaves the pointer at or below a
+       fully-committed version, never ahead of a missing one.
+
+    Rollback is deliberately narrow: if the *hip save* fails the reservation is
+    released (the number is reusable). If the hip saved but the bookkeeping
+    afterward fails, the file is **kept** — the artist's work is real — and the
+    reader reconciliation plus ``verify_context_chain`` recover the pointer and
+    chain rather than discarding a genuine save.
+
+    ``prev_context`` records provenance; pass the loaded scene's context on an
+    incremental save, or None (a fresh create / farm publish) to let
+    :func:`save_context` derive the predecessor from disk. Returns the saved path.
+    """
+    from tumblepipe.pipe.paths import (
+        reserve_next_hip_file_path, release_reserved_version,
+    )
+
+    next_path = reserve_next_hip_file_path(entity_uri, department_name, nc_type=nc_type)
+    version_name = next_path.stem.rsplit("_", 1)[-1]
+    try:
+        hou.hipFile.save(str(next_path))
+    except BaseException:
+        release_reserved_version(next_path)
+        raise
+
+    next_context = Context(
+        entity_uri=entity_uri,
+        department_name=department_name,
+        version_name=version_name,
+    )
+    save_context(
+        next_path.parent, prev_context, next_context,
+        file_extension=next_path.suffix.lstrip("."),
+    )
+    save_entity_context(next_path.parent, next_context)
+    return next_path
 
 
 def save_entity_context(target_path: Path, context: Context):

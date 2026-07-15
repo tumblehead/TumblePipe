@@ -161,6 +161,56 @@ uv run python ../scripts/verify_entity_departments.py P:/paleindia
 
 With no argument it audits `$TH_PROJECT_PATH`.
 
+## Context chain audit
+
+`scripts/verify_context_chain.py` checks — and with `--repair`, heals — a
+department workspace's version bookkeeping. Three things must agree for a
+workfile department: the `context.json` `version` pointer, the
+`_context/vNNNN.json` lineage chain (each entry's `from_version` names a real
+prior version), and the hip files on disk. Concurrent saves, a crash between
+the three writes a save makes, or the old `from_version:"v0000"` re-anchor can
+drift them apart — an "unhinged" shot.
+
+The hip files are ground truth (their names encode the true version order), so
+the tool diagnoses drift against them: a stale pointer, a `v0000` re-anchor
+sitting above a real predecessor, a hip with no `_context` entry (or the
+reverse), and leftover reservation stubs. `--repair` fixes only what is broken
+— it never rewrites a valid, possibly non-consecutive `from_version` — and
+backs `_context`/`context.json` up first. `--dry-run` reports what it would do.
+
+Unlike the audits above it parses version names via `api.naming`, so it needs
+the pipeline environment configured (`TH_CONFIG_PATH` etc.):
+
+```bash
+python scripts/verify_context_chain.py "P:/paleindia/shots/000/sh020_Clash/animation"
+python scripts/verify_context_chain.py --scan P:/paleindia/shots            # sweep a project
+python scripts/verify_context_chain.py --scan P:/paleindia/shots --repair   # heal in place
+```
+
+The reservation, lineage, reader, and repair guarantees are pinned headlessly
+by `test_context_chain` (see the test harness README).
+
+## Dropped-metadata guard harness
+
+`scripts/verify_dropped_asset_arc_guard.py` pins the arc-aware export
+drop-guard (see the Dropped-metadata guard section in `composition.md`):
+a metadata-less prim that composes from the `export/` tree is a dropped
+asset and blocks the export, while artist-authored geometry (composing
+from no pipeline layer) passes. It builds an in-memory stage mixing a
+tracked asset, a pipeline-composed drop, and a session-authored prim and
+asserts each verdict, plus the fail-closed fallback when no export root
+is supplied.
+
+Unlike the pure-Python and Qt harnesses above it exercises real USD
+(`Usd.Stage.GetPrimStack`) through the `pxr`-importing pipeline module,
+so it must run under **hython**, not the test venv:
+
+```bash
+hython scripts/verify_dropped_asset_arc_guard.py
+```
+
+Read-only; exits 1 on any failed assertion.
+
 ## Changelog
 
 `CHANGELOG.md` is **generated — never hand-edit it**. It is derived from
