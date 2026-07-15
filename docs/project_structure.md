@@ -15,7 +15,6 @@ TumblePipe/
 ├── recipes/                     # Shipped asset-browser recipes (read-only)
 ├── desktop/
 │   └── TumblePipe.desk          # Houdini desktop layout
-├── ocio/                        # OpenColorIO configuration
 ├── otls/                        # Houdini Digital Assets (text format)
 ├── python/tumblepipe/           # Core pipeline Python modules
 ├── python3.11libs/              # Houdini 21 startup stubs
@@ -94,10 +93,13 @@ USD by prepending this path to `PXR_PLUGINPATH_NAME` (and the OS-specific
 dynamic-linker search path), which Houdini applies before USD initializes
 its plugin registry.
 
-### `ocio/`
+### OCIO / color config
 
-The OCIO config used by Houdini. The package sets the `OCIO` environment
-variable to `$HPM_PACKAGE_ROOT/ocio/tumblehead.ocio` at startup.
+The OCIO config used by Houdini is owned by the *project*, not the package. It
+ships in the config template (`scripts/project_template/_config/ocio/`) and
+lands at `<project>/_config/ocio/tumblehead.ocio`; the package sets the `OCIO`
+environment variable to `$TH_CONFIG_PATH/ocio/tumblehead.ocio` at startup.
+Existing projects gain the file via the v4 config migration.
 
 ### `asset_browser_catalogs/`
 

@@ -216,6 +216,13 @@ the two it does depends on how load-bearing the file is:
   resolve and sparsely store it. Without it, per-entity department scoping
   can't be stored; the rewrite is trivially reversible, so back the file up
   yourself first if you're editing a live share.
+- **`_config/ocio/` is seeded (v4).** Color management moved out of the package
+  and into the project: the package points `OCIO` at
+  `$TH_CONFIG_PATH/ocio/tumblehead.ocio`, so an existing project needs the file
+  present. Seeded **if absent** and never clobbered — a project that has
+  hand-tuned its color config keeps it. (Owning the config per project also
+  stops it from being pathsep-concatenated with a legacy `_pipeline` OCIO into
+  an unreadable multi-path value.)
 
 **Un-migrated projects degrade, they don't crash.** `list_departments`
 reads each department's `independent`/`publishable`/`renderable` via schema
@@ -254,8 +261,14 @@ entity on affected import nodes.
 
 - `hpm.toml` — Houdini package manifest and HPM metadata (dependencies,
   supported Houdini version, native resolver slots).
-- `ocio/tumblehead.ocio` — OpenColorIO config shipped with the package;
-  the package sets `OCIO` to this path on Houdini startup.
+- `_config/ocio/tumblehead.ocio` — OpenColorIO config, owned by the project
+  rather than the package. It ships in the config template
+  (`scripts/project_template/_config/ocio/`) and lands at `<project>/_config/`
+  per project; the package points `OCIO` at `$TH_CONFIG_PATH/ocio/tumblehead.ocio`
+  on Houdini startup. Keeping it project-local (one file, not a package-shipped
+  copy) is what stops it from being pathsep-concatenated with any legacy
+  `_pipeline` OCIO into an unreadable multi-path value. Existing projects gain
+  the file via the v4 config migration (`scripts/migrate_config.py`).
 - `scripts/` — TumbleTrove hooks (`tt_setup.py`, plus the bundled
   `project_template/`) and any Houdini startup scripts that run when the
   package loads.

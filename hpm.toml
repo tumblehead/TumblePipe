@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.32.0"
+version = "1.32.1"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -57,7 +57,17 @@ TH_USER = { method = "set", value = "$TT_USER_NAME" }
 # detects that (_is_unresolved_project_base) and falls back to ~/Downloads/<catalog>,
 # so a project-less launch never writes to the drive root.
 TT_DOWNLOADS_PATH = { method = "set", value = "$TH_PROJECT_PATH/library" }
-OCIO = { method = "set", value = "$HPM_PACKAGE_ROOT/ocio/tumblehead.ocio" }
+# Color config is owned by the project, not the package: it ships in the
+# config template (scripts/project_template/_config/ocio/) and lands at
+# <project>/_config/ocio/ per project. $TH_CONFIG_PATH is set above (line 43)
+# from $TH_PROJECT_PATH, and Houdini expands package vars top-to-bottom, so
+# this resolves at package-load time. The Desktop launcher always launches
+# with an active project, so $TH_PROJECT_PATH is a real path here (a
+# project-less launch would collapse this to /_config/... — not a supported
+# entry point). Keeping OCIO out of the package is also what stops it from
+# fighting a legacy _pipeline OCIO source and getting pathsep-concatenated
+# into an unreadable multi-path value.
+OCIO = { method = "set", value = "$TH_CONFIG_PATH/ocio/tumblehead.ocio" }
 
 # tumbleResolver registration. Houdini applies these env edits during its
 # package-loading phase, *before* USD's Plug.Registry first-touches — that's
@@ -125,7 +135,6 @@ include = [
     "desktop/TumblePipe.desk",
     "scripts/**",
     "resources/**",
-    "ocio/**",
     "resolver/**",
     "resolver-src/**",
 ]

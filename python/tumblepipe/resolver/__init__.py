@@ -82,6 +82,12 @@ def _reload_stale_entity_layers() -> None:
 
     ar = Ar.GetResolver()
     for layer in Sdf.Layer.GetLoadedLayers():
+        # GetLoadedLayers() hands back weak layer handles, and one can be
+        # expired (dropped/GC'd mid-iteration). Touching any attribute on
+        # an expired handle raises Boost.Python.ArgumentError because the
+        # null C++ ptr can't bind the SdfLayer lvalue signature — skip it.
+        if not layer:
+            continue
         identifier = layer.identifier
         if not identifier.startswith("entity:"):
             continue

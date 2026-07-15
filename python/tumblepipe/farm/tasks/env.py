@@ -75,10 +75,16 @@ def get_hython_env(api=None) -> dict:
         TH_CONFIG_PATH=path_str(to_windows_path(api.CONFIG_PATH)),
         TH_PROJECT_PATH=path_str(to_windows_path(api.PROJECT_PATH)),
         TH_PIPELINE_PATH=path_str(to_windows_path(api.PIPELINE_PATH)),
-        HOUDINI_PACKAGE_DIR=';'.join([
-            path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini')))),
-            path_str(to_windows_path(api.storage.resolve(Uri.parse_unsafe('project:/_pipeline/houdini')))),
-        ]),
+        # Only the current package's houdini dir. The legacy per-project
+        # `project:/_pipeline/houdini` bundle was dropped: it ships its own
+        # OCIO-setting package that Houdini pathsep-concatenates with the
+        # package's OCIO into an unreadable multi-path value (the flipbook /
+        # viewport-Karma "could not read OCIO profile" failure). NOTE: needs a
+        # live farm job to confirm nothing still resolves HDAs/resolver content
+        # out of that legacy dir.
+        HOUDINI_PACKAGE_DIR=path_str(to_windows_path(
+            api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini'))
+        )),
         OCIO=ocio_value(),
     )
 

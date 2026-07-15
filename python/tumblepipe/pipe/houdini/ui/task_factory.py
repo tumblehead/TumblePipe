@@ -183,7 +183,14 @@ def _create_validation_task(
         execute_local=validate_local_fn,
         execute_farm=validate_farm_fn,
         variant=variant,
-        status=TaskStatus.PENDING
+        status=TaskStatus.PENDING,
+        # Default OFF for publishes until validator conventions and the
+        # warning/error severity balance are settled — the current output
+        # causes more confusion than it prevents. The task still appears as
+        # an (unchecked) checkbox so artists can opt in per-publish, and the
+        # executor treats a user-disabled validation dependency as non-blocking
+        # (see ProcessExecutor._check_dependencies).
+        enabled=False,
     )
 
 

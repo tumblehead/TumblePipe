@@ -260,6 +260,46 @@ def _add_entity_departments_property(config_dir: Path) -> None:
     logger.info('schemas: declared entity.departments on %s', path)
 
 
+# --------------------------------------------------------------------------- #
+# v4 — seed the project-owned OCIO config
+# --------------------------------------------------------------------------- #
+# Color management moved out of the package and into the project's own
+# `_config/ocio/`, so `OCIO` (set by the package to `$TH_CONFIG_PATH/ocio/...`)
+# resolves to a project-local file instead of a package-shipped one. A package
+# that ships its own OCIO fights any legacy `_pipeline` OCIO source and the two
+# get pathsep-concatenated into an unreadable multi-path value; a per-project
+# file is the single, unambiguous source. New projects get it from the template
+# via tt_setup; existing projects get it here.
+#
+# Seed-if-absent, never clobber: a project may have hand-tuned its color config,
+# so an existing `_config/ocio/*.ocio` is left untouched.
+
+
+def _scaffold_ocio_dir() -> Path:
+    """The packaged scaffold OCIO config — the source seeded into a project."""
+    root = Path(__file__).resolve().parents[2]
+    return root / 'scripts' / 'project_template' / '_config' / 'ocio'
+
+
+def _seed_ocio(config_dir: Path) -> None:
+    source = _scaffold_ocio_dir()
+    if not source.is_dir():
+        raise MigrationError(
+            f'packaged OCIO scaffold not found at {source} — cannot seed'
+        )
+
+    target = config_dir / 'ocio'
+    for src in sorted(source.rglob('*')):
+        if not src.is_file():
+            continue
+        dst = target / src.relative_to(source)
+        if dst.exists():
+            continue  # keep a project's own color config — idempotent
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(src.read_bytes())
+        logger.info('ocio: seeded %s', dst)
+
+
 MIGRATIONS: list[Migration] = [
     Migration(
         version=1,
@@ -275,5 +315,10 @@ MIGRATIONS: list[Migration] = [
         version=3,
         description='declare the entity `departments` property in the schema',
         apply=_add_entity_departments_property,
+    ),
+    Migration(
+        version=4,
+        description='seed the project-owned OCIO config into _config/ocio/',
+        apply=_seed_ocio,
     ),
 ]
