@@ -192,14 +192,16 @@ by `test_context_chain` (see the test harness README).
 
 ## Dropped-metadata guard harness
 
-`scripts/verify_dropped_asset_arc_guard.py` pins the arc-aware export
+`scripts/verify_dropped_asset_arc_guard.py` pins the asset-scoped export
 drop-guard (see the Dropped-metadata guard section in `composition.md`):
-a metadata-less prim that composes from the `export/` tree is a dropped
-asset and blocks the export, while artist-authored geometry (composing
-from no pipeline layer) passes. It builds an in-memory stage mixing a
-tracked asset, a pipeline-composed drop, and a session-authored prim and
-asserts each verdict, plus the fail-closed fallback when no export root
-is supplied.
+a metadata-less prim that composes from the `export/assets/` tree is a
+dropped asset and blocks the export, while artist-authored geometry
+(composing from no pipeline layer) and department-authored shot geometry
+(composing only from a `export/shots/.../<dept>/` export) both pass. It
+builds an in-memory stage mixing a tracked asset, an asset-composed drop,
+a session-authored prim, and a department shot-geometry prim and asserts
+each verdict, plus the fail-closed fallback when no asset export root is
+supplied.
 
 Unlike the pure-Python and Qt harnesses above it exercises real USD
 (`Usd.Stage.GetPrimStack`) through the `pxr`-importing pipeline module,

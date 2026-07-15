@@ -381,10 +381,15 @@ class USDViewerLauncher(QtCore.QObject):
         if not pipeline_path:
             return env
 
-        # Houdini major used by the out-of-process viewer. Keep in sync
-        # with the [compat].houdini lower bound in hpm.toml and the
-        # tumbleResolver CI matrix; bump when we ship for a newer Houdini major.
-        resolver_resources = plugin_resources_path(pipeline_path, houdini_major=21)
+        # The out-of-process viewer links this session's USD, so the resolver
+        # build must match the running Houdini's major (the USD ABI is per-major)
+        # — derive it rather than hardcoding, so it stays correct across upgrades.
+        try:
+            import hou
+            houdini_major = hou.applicationVersion()[0]
+        except Exception:
+            houdini_major = 21
+        resolver_resources = plugin_resources_path(pipeline_path, houdini_major=houdini_major)
         if not resolver_resources.exists():
             logger.warning(f"USD resolver resources not found: {resolver_resources}")
             return env

@@ -38,11 +38,20 @@ should pick it up. The two can coexist during migration; a job chooses via
 
 Each worker needs the same environment as an artist workstation:
 
-- **Houdini** (matching the project's pinned version). Under HPM the task runs in
-  native Windows python and drives Houdini's bundled tools directly — `husk.exe`,
-  the Windows USD resolver, `iconvert`, and Houdini's `hoiiotool`/`hffmpeg` for
-  image/video processing. **No WSL2 or UV is needed** for HPM jobs (the legacy UV
-  plugin still requires both).
+- **Houdini** — a build of the **same major** the job was submitted from. Under
+  HPM the task runs in native Windows python and drives Houdini's bundled tools
+  directly — `husk.exe`, the Windows USD resolver, `iconvert`, and Houdini's
+  `hoiiotool`/`hffmpeg` for image/video processing. **No WSL2 or UV is needed**
+  for HPM jobs (the legacy UV plugin still requires both).
+
+  At submit the creating Houdini's full version is captured into the job env as
+  `TH_HOUDINI_VERSION` (e.g. `22.0.368`); the worker selects a matching install —
+  the newest build of that **major** (preferring one at or above the submitted
+  build within the same minor). Because the USD/resolver ABI is per-major, this
+  is what keeps husk and the tumbleResolver build in sync. A worker with **no
+  Houdini of that major installed** fails the task with
+  `No valid Houdini version was found` — so when the studio moves to a new major,
+  install it on the workers before submitting from it.
 - **Drive mappings** — workers must map the project drives to the same letters
   the workstations use, so jobs that reference `P:\...` resolve identically.
   Without matching drive letters, the job will fail to read project files.

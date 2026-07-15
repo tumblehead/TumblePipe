@@ -3,6 +3,7 @@ from pathlib import Path
 import platform
 import asyncio
 import json
+import os
 
 from tumblepipe.api import path_str, to_windows_path
 from tumblepipe.util import ipc
@@ -120,6 +121,21 @@ def stitch_usd_directories(
 DEFAULT_HOUDINI_VERSION = '21.0.559'
 RUNNER_SCRIPT_PATH = Path(__file__).parent / 'houdini_runner.py'
 
+# Env var carrying the FULL version (e.g. "22.0.368") of the Houdini instance
+# that created a farm job. Captured at submit and forwarded into the job env so
+# the worker's plain-python task selects a matching-major Houdini/husk. See
+# tumblepipe.farm.tasks.env.get_base_env for where it is set.
+HOUDINI_VERSION_ENV = 'TH_HOUDINI_VERSION'
+
+def _resolve_default_version() -> str:
+    """The Houdini version an app wrapper should target when none is given.
+
+    Prefers the creating instance's version forwarded through the job env
+    (``TH_HOUDINI_VERSION``); falls back to ``DEFAULT_HOUDINI_VERSION`` for
+    non-farm callers and legacy jobs that predate the env var.
+    """
+    return os.environ.get(HOUDINI_VERSION_ENV, DEFAULT_HOUDINI_VERSION)
+
 def _is_valid_version(version: str) -> bool:
     if len(version) != 8: return False
     parts = version.split('.')
@@ -197,19 +213,40 @@ def _find_appropriate_version(
     version_name: str,
     versions: dict[str, dict[str, Path]]
     ) -> dict[str, Path]:
+    """Pick the best installed Houdini for a requested version.
+
+    A farm job carries the version of the Houdini instance that created it, and
+    the resolver/USD ABI is stable within a major. So the guarantee we honour is
+    the MAJOR: a job made in Houdini 22 must run against a Houdini 22 install,
+    never 21. Within that:
+
+    1. Prefer the same ``major.minor`` at an equal-or-newer build (closest to
+       what the artist used).
+    2. Otherwise fall back to the newest install sharing the major, so trivial
+       build/minor drift across the farm (e.g. worker on 22.0.345, job from
+       22.0.368) still runs instead of hard-failing.
+    """
     major, minor, build = version_name.split('.')
-    def _valid_version(version: str) -> tuple[int, int, int]:
+    def _parse_version(version: str) -> tuple[int, int, int]:
+        return tuple(map(int, version.split('.')))
+    def _same_major(version: str) -> bool:
+        return version.split('.')[0] == major
+    def _preferred(version: str) -> bool:
         other_major, other_minor, other_build = version.split('.')
         if other_major != major: return False
         if other_minor != minor: return False
         if int(other_build) < int(build): return False
         return True
-    def _parse_version(version: str) -> tuple[int, int, int]:
-        return tuple(map(int, version.split('.')))
-    version_names = list(filter(_valid_version, versions.keys()))
-    version_names.sort(key = _parse_version)
-    if len(version_names) == 0: return None
-    return versions[version_names[-1]]
+
+    preferred = sorted(filter(_preferred, versions.keys()), key = _parse_version)
+    if len(preferred) > 0:
+        return versions[preferred[-1]]
+
+    same_major = sorted(filter(_same_major, versions.keys()), key = _parse_version)
+    if len(same_major) > 0:
+        return versions[same_major[-1]]
+
+    return None
 
 def _get_version(
     version_name: str,
@@ -219,7 +256,8 @@ def _get_version(
     return _find_appropriate_version(version_name, versions)
 
 class Hython:
-    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
+    def __init__(self, version_name: Optional[str] = None):
+        version_name = version_name or _resolve_default_version()
     
         # Check if hython is available
         _versions = _scan_drives_for_versions()
@@ -269,7 +307,8 @@ class Hython:
         )
 
 class Husk:
-    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
+    def __init__(self, version_name: Optional[str] = None):
+        version_name = version_name or _resolve_default_version()
 
         # Check if husk is available
         _versions = _scan_drives_for_versions()
@@ -309,7 +348,8 @@ class Husk:
         )
 
 class IConvert:
-    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
+    def __init__(self, version_name: Optional[str] = None):
+        version_name = version_name or _resolve_default_version()
 
         # Check if iconvert is available
         _versions = _scan_drives_for_versions()
@@ -346,7 +386,8 @@ class IConvert:
         )
 
 class ITileStitch:
-    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
+    def __init__(self, version_name: Optional[str] = None):
+        version_name = version_name or _resolve_default_version()
 
         # Check if iconvert is available
         _versions = _scan_drives_for_versions()
@@ -390,7 +431,8 @@ class OIIOTool:
     a Windows binary, so paths passed in should be native (`local_path`/Windows),
     not `/mnt` forms.
     """
-    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
+    def __init__(self, version_name: Optional[str] = None):
+        version_name = version_name or _resolve_default_version()
         version = _get_version(version_name, _scan_drives_for_versions())
         if version is None:
             assert False, 'No valid Houdini version was found'
@@ -418,7 +460,8 @@ class FFmpeg:
     SideFX's ffmpeg ships `libopenh264` (software H.264) rather than `libx264`;
     callers select the encoder explicitly. Runs natively (no WSL bridge).
     """
-    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
+    def __init__(self, version_name: Optional[str] = None):
+        version_name = version_name or _resolve_default_version()
         version = _get_version(version_name, _scan_drives_for_versions())
         if version is None:
             assert False, 'No valid Houdini version was found'
@@ -436,7 +479,8 @@ class FFmpeg:
 class UsdStitch:
     """Wrapper for Houdini's bundled usdstitch tool."""
 
-    def __init__(self, version_name: str = DEFAULT_HOUDINI_VERSION):
+    def __init__(self, version_name: Optional[str] = None):
+        version_name = version_name or _resolve_default_version()
 
         # Check if usdstitch is available
         _versions = _scan_drives_for_versions()

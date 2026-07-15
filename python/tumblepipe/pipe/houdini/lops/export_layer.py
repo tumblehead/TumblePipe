@@ -715,25 +715,29 @@ class ExportLayer(EntityNode):
         # The exporting entity's own root prim legitimately carries no
         # metadata (it only gets tagged when another workfile imports it),
         # so exclude it from the sibling check.
-        # Only a metadata-less prim that still composes from the pipeline
-        # export tree is a dropped asset; geometry the artist authored
-        # directly (no pipeline layer) is a supported addition and passes.
-        # If the export root can't be resolved we fall back to flagging
-        # every metadata-less sibling (over-block, never silently drop).
-        pipeline_roots = []
+        # Only a metadata-less prim that still composes from the *asset*
+        # export tree (export/assets/...) is a dropped asset; geometry the
+        # artist authored directly, or department-authored shot content
+        # imported from another department's shot export (an FX sim or a
+        # set-dress cache under export/shots/.../<dept>/...), never carried
+        # per-asset metadata and is a supported addition that passes.
+        # If the asset export root can't be resolved we fall back to
+        # flagging every metadata-less sibling (over-block, never silently
+        # drop).
+        asset_export_roots = []
         try:
-            pipeline_roots.append(
-                local_path(api.storage.resolve(Uri.parse_unsafe('export:/')))
+            asset_export_roots.append(
+                local_path(api.storage.resolve(Uri.parse_unsafe('export:/assets')))
             )
         except Exception:
             logger.warning(
-                "Could not resolve the export root for the drop guard; "
+                "Could not resolve the asset export root for the drop guard; "
                 "falling back to flagging every metadata-less sibling."
             )
         dropped_prims = util.list_dropped_asset_prims(
             root,
             ignore_prim_paths={util.uri_to_prim_path(entity_uri)},
-            pipeline_roots=pipeline_roots,
+            asset_export_roots=asset_export_roots,
         )
         if dropped_prims:
             bullets = "\n  - ".join(dropped_prims)

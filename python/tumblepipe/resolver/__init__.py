@@ -156,13 +156,16 @@ def try_resolve_entity_uri(uri: str) -> str | None:
     return str(resolved) if resolved else None
 
 
-def plugin_resources_path(pipeline_path: os.PathLike, houdini_major: int = 21) -> Path:
+def plugin_resources_path(pipeline_path: os.PathLike, houdini_major: int) -> Path:
     """Location of the compiled tumbleResolver plugin's resources dir.
 
     Callers join this into PXR_PLUGINPATH_NAME before spawning a process
     that will load USD. `houdini_major` must match the USD ABI the
-    target process will use — pass 22 when submitting to a Houdini 22
-    farm slot, etc.
+    target process will use — pass 22 for a Houdini 22 process, etc. It is
+    required (no default): silently defaulting to one major is exactly how a
+    job/viewer ends up loading the wrong resolver build against a mismatched
+    USD ABI. Derive it from the target Houdini (hou.applicationVersion()[0] or
+    the job's TH_HOUDINI_VERSION).
     """
     return (
         Path(pipeline_path)

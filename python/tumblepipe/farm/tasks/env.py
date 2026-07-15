@@ -4,8 +4,37 @@ from pathlib import Path
 from typing import Optional
 
 from tumblepipe.api import get_user_name, path_str, to_windows_path, default_client
+from tumblepipe.apps.houdini import DEFAULT_HOUDINI_VERSION, HOUDINI_VERSION_ENV
 from tumblepipe.resolver import plugin_resources_path
 from tumblepipe.util.uri import Uri
+
+
+def resolve_houdini_version(explicit: Optional[str] = None) -> str:
+    """Full Houdini version (e.g. ``"22.0.368"``) the farm env should target.
+
+    A farm job must run against the same Houdini *major* it was created in (the
+    USD/resolver ABI is per-major). This is the single point that decides which
+    version everything downstream keys on, resolved in priority order:
+
+    1. ``explicit`` — a caller forcing a specific version.
+    2. ``TH_HOUDINI_VERSION`` already in the environment — the worker side,
+       where ``get_base_env`` stamped the creating instance's version into the
+       job env at submit.
+    3. The running Houdini/hython's own version — the submit side, where this
+       code executes inside the artist's Houdini and ``hou`` is importable.
+    4. ``DEFAULT_HOUDINI_VERSION`` — non-farm callers and legacy jobs.
+    """
+    if explicit:
+        return explicit
+    from_env = os.environ.get(HOUDINI_VERSION_ENV)
+    if from_env:
+        return from_env
+    try:
+        import hou
+        major, minor, build = hou.applicationVersion()
+        return f'{major}.{minor}.{build}'
+    except Exception:
+        return DEFAULT_HOUDINI_VERSION
 
 
 def job_data_dir() -> Path:
@@ -70,11 +99,11 @@ def get_hython_env(api=None) -> dict:
     """
     if api is None:
         api = default_client()
-    return dict(
-        TH_USER=get_user_name(),
-        TH_CONFIG_PATH=path_str(to_windows_path(api.CONFIG_PATH)),
-        TH_PROJECT_PATH=path_str(to_windows_path(api.PROJECT_PATH)),
-        TH_PIPELINE_PATH=path_str(to_windows_path(api.PIPELINE_PATH)),
+    return {
+        'TH_USER': get_user_name(),
+        'TH_CONFIG_PATH': path_str(to_windows_path(api.CONFIG_PATH)),
+        'TH_PROJECT_PATH': path_str(to_windows_path(api.PROJECT_PATH)),
+        'TH_PIPELINE_PATH': path_str(to_windows_path(api.PIPELINE_PATH)),
         # Only the current package's houdini dir. The legacy per-project
         # `project:/_pipeline/houdini` bundle was dropped: it ships its own
         # OCIO-setting package that Houdini pathsep-concatenates with the
@@ -82,14 +111,17 @@ def get_hython_env(api=None) -> dict:
         # viewport-Karma "could not read OCIO profile" failure). NOTE: needs a
         # live farm job to confirm nothing still resolves HDAs/resolver content
         # out of that legacy dir.
-        HOUDINI_PACKAGE_DIR=path_str(to_windows_path(
+        'HOUDINI_PACKAGE_DIR': path_str(to_windows_path(
             api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini'))
         )),
-        OCIO=ocio_value(),
-    )
+        'OCIO': ocio_value(),
+        # Forward the creating instance's version so a nested plain-python
+        # resolve (apps.houdini) keeps selecting the same-major Houdini.
+        HOUDINI_VERSION_ENV: resolve_houdini_version(),
+    }
 
 
-def get_base_env(api=None, houdini_major: int = 21):
+def get_base_env(api=None, houdini_version: Optional[str] = None):
     """
     Get base environment variables for farm tasks.
 
@@ -97,11 +129,20 @@ def get_base_env(api=None, houdini_major: int = 21):
     - Core pipeline paths (TH_USER, TH_CONFIG_PATH, TH_PROJECT_PATH, etc.)
     - Color management (OCIO)
     - USD resolver configuration (PXR_PLUGINPATH_NAME, TH_EXPORT_PATH)
+    - The creating instance's Houdini version (TH_HOUDINI_VERSION)
+
+    The Houdini version is resolved via ``resolve_houdini_version`` and drives
+    two things that must agree on the major: the tumbleResolver build the env
+    points at (per-major USD ABI) and, on the worker, which husk/hython the
+    plain-python task selects. Building this at submit (inside the artist's
+    Houdini) captures their version and stamps it into the returned env, which
+    the farm plugin forwards to the worker — so a job made in Houdini 22 runs
+    against Houdini 22, never the old hardcoded 21.
 
     Args:
         api: Pipeline API client. If None, uses default_client().
-        houdini_major: major version of Houdini the farm slot will run;
-            determines which tumbleResolver build the env points at.
+        houdini_version: force a specific full version (e.g. "22.0.368");
+            defaults to the creating instance's version.
 
     Returns:
         Dict of environment variables for farm task.
@@ -109,18 +150,24 @@ def get_base_env(api=None, houdini_major: int = 21):
     if api is None:
         api = default_client()
 
+    version = resolve_houdini_version(houdini_version)
+    houdini_major = int(version.split('.')[0])
+
     resources_path = path_str(to_windows_path(
         plugin_resources_path(api.PIPELINE_PATH, houdini_major=houdini_major)
     ))
 
-    return dict(
+    return {
         # Core pipeline variables
-        TH_USER=get_user_name(),
-        TH_CONFIG_PATH=path_str(to_windows_path(api.CONFIG_PATH)),
-        TH_PROJECT_PATH=path_str(to_windows_path(api.PROJECT_PATH)),
-        TH_PIPELINE_PATH=path_str(to_windows_path(api.PIPELINE_PATH)),
-        OCIO=os.environ['OCIO'],
+        'TH_USER': get_user_name(),
+        'TH_CONFIG_PATH': path_str(to_windows_path(api.CONFIG_PATH)),
+        'TH_PROJECT_PATH': path_str(to_windows_path(api.PROJECT_PATH)),
+        'TH_PIPELINE_PATH': path_str(to_windows_path(api.PIPELINE_PATH)),
+        'OCIO': os.environ['OCIO'],
         # USD Resolver variables
-        TH_EXPORT_PATH=path_str(to_windows_path(api.PROJECT_PATH / 'export')),
-        PXR_PLUGINPATH_NAME=resources_path,
-    )
+        'TH_EXPORT_PATH': path_str(to_windows_path(api.PROJECT_PATH / 'export')),
+        'PXR_PLUGINPATH_NAME': resources_path,
+        # Version of the Houdini instance that created the job; the worker's
+        # husk/hython selection keys on this (see apps.houdini).
+        HOUDINI_VERSION_ENV: version,
+    }

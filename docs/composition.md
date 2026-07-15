@@ -184,15 +184,19 @@ sibling scan (`util.list_dropped_asset_prims` — a metadata-less
 URI missing from the stage). Re-running the import node (its metadata
 step re-cooks) clears a genuine drop.
 
-Geometry an artist authors directly into the workfile — an extra group,
-a helper prim, hand-modelled set dressing — is **not** a drop and does
-not block the export. The sibling scan tells the two apart by
-composition: a dropped asset still pulls its geometry from a layer under
-the `export/` tree (the import node sublayers the staged file), while
-artist geometry composes from no pipeline layer. Only the former is
-flagged; the latter passes through (and is logged). To bake a real
-imported asset into the export instead of re-referencing it, set the
-import node's *Import Mode* to Inline rather than leaving it untagged.
+Geometry that never carried per-asset metadata — an extra group or
+helper prim an artist authors directly, hand-modelled set dressing, or
+department-authored shot content pulled from another department's shot
+export (an FX sim, a set-dress cache) — is **not** a drop and does not
+block the export. The sibling scan tells these apart from a real drop by
+composition: a dropped asset still pulls its geometry from the *asset*
+export tree (`export/assets/...`, since assets are referenced rather than
+baked into shot-department layers), while artist geometry composes from
+no pipeline layer and department shot geometry composes only from a
+shot-department export (`export/shots/.../<dept>/...`). Only the first is
+flagged; the rest pass through (and are logged). To bake a real imported
+asset into the export instead of re-referencing it, set the import node's
+*Import Mode* to Inline rather than leaving it untagged.
 
 ## Department exclusion
 

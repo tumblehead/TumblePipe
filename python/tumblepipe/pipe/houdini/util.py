@@ -304,18 +304,27 @@ def _path_under_roots(candidate: str, normed_roots) -> bool:
 
 
 def _prim_pulls_from_roots(prim, normed_roots) -> bool:
-    """True if any layer composing into ``prim`` resolves under a pipeline root.
+    """True if any layer composing into ``prim`` resolves under an asset root.
 
     ``GetPrimStack`` returns every PrimSpec contributing to the prim across
     sublayers, references and payloads, so this recognises an imported
     asset however its layer arrived — TumblePipe's import nodes sublayer
     the staged file, but a raw Reference/Payload LOP is covered too. On a
     live stage each contributing layer carries a resolved ``realPath``; an
-    ``entity:/assets|shots/`` ``identifier`` is matched as a fallback for a
-    layer not yet resolved to a real path.
+    ``entity:/assets/`` ``identifier`` is matched as a fallback for a layer
+    not yet resolved to a real path.
+
+    Only the asset export tree counts (the caller passes ``export:/assets``):
+    department-authored shot geometry composes from a shot-department export
+    (``export/shots/.../<dept>/...`` or an ``entity:/shots/`` arc), which is
+    deliberately NOT matched — such geometry never carried per-asset metadata
+    and is not a dropped asset. A catalogued asset that lost its customData
+    still pulls its geometry through the asset export tree (assets are
+    referenced, not baked, into shot-department layers), so it is still
+    recognised here.
 
     Empty ``normed_roots`` yields False — the caller decides what an
-    unknown pipeline root means (list_dropped_asset_prims falls back to
+    unknown asset root means (list_dropped_asset_prims falls back to
     flagging every metadata-less sibling).
     """
     if not normed_roots:
@@ -327,12 +336,12 @@ def _prim_pulls_from_roots(prim, normed_roots) -> bool:
         if _path_under_roots(getattr(layer, 'realPath', '') or '', normed_roots):
             return True
         identifier = getattr(layer, 'identifier', '') or ''
-        if 'entity:/assets/' in identifier or 'entity:/shots/' in identifier:
+        if 'entity:/assets/' in identifier:
             return True
     return False
 
 
-def list_dropped_asset_prims(root, ignore_prim_paths=(), pipeline_roots=()):
+def list_dropped_asset_prims(root, ignore_prim_paths=(), asset_export_roots=()):
     """Return prim paths that sit beside a real asset but carry no metadata.
 
     An asset's parent (its category prim) is proven to be a category by the
@@ -356,29 +365,34 @@ def list_dropped_asset_prims(root, ignore_prim_paths=(), pipeline_roots=()):
     - a prim listed in ignore_prim_paths (the exporting entity's own root,
       which only gets tagged when some *other* workfile imports it) — also
       descended into, not flagged;
-    - a prim that composes from NO pipeline export layer (see
-      pipeline_roots) — geometry the artist authored or cached directly
-      into the workfile. A real dropped asset still pulls its geometry
-      from the pipeline export tree via the import node's sublayer; only
-      its customData tag went missing. Artist-added geometry never had a
-      pipeline layer, so it is a supported addition to the hierarchy, not
-      a drop, and must never block the export. This is the check that
-      distinguishes "an asset that lost its metadata" (block) from "a new
-      prim the artist modelled directly" (allow).
+    - a prim that composes from NO asset export layer (see
+      asset_export_roots) — geometry the artist authored directly, or
+      department-authored shot content (an FX sim, a set-dress cache)
+      pulled in from another department's shot export. A real dropped
+      asset still pulls its geometry from the *asset* export tree
+      (``export/assets/...``) via the import node's sublayer — assets are
+      referenced, not baked, into shot-department layers — and only its
+      customData tag went missing. Geometry that composes solely from a
+      shot-department export (``export/shots/.../<dept>/...``) or from no
+      pipeline layer at all never carried per-asset metadata, so it is a
+      supported addition to the hierarchy, not a drop, and must never
+      block the export. This is the check that distinguishes "an asset
+      that lost its metadata" (block) from "shot/department geometry that
+      never had any" (allow).
 
     Prims carrying the 'inlined' marker (see mark_inlined) are deliberately
     baked into the export by an import node in 'inline' mode — they are
     neither drops nor descended into.
 
-    pipeline_roots: filesystem roots (the resolved ``export:/`` tree)
-    against which a metadata-less prim's composed layers are tested. When
-    EMPTY the pipeline test is skipped and every metadata-less sibling is
+    asset_export_roots: filesystem roots (the resolved ``export:/assets``
+    tree) against which a metadata-less prim's composed layers are tested.
+    When EMPTY the test is skipped and every metadata-less sibling is
     flagged (the historical, fail-closed behaviour) — the export caller
-    resolves the root and passes it; an unresolvable root degrades to
-    over-blocking rather than risking a silent drop.
+    resolves the asset root and passes it; an unresolvable root degrades
+    to over-blocking rather than risking a silent drop.
     """
     ignored = set(ignore_prim_paths)
-    normed_roots = _normcased_roots(pipeline_roots)
+    normed_roots = _normcased_roots(asset_export_roots)
     dropped = []
     allowed = []
 
@@ -412,8 +426,9 @@ def list_dropped_asset_prims(root, ignore_prim_paths=(), pipeline_roots=()):
                 walk(child)
                 continue
             if normed_roots and not _prim_pulls_from_roots(child, normed_roots):
-                # Composes from no pipeline export layer -> artist-authored
-                # geometry, a supported addition, not a dropped asset.
+                # Composes from no asset export layer -> artist-authored or
+                # department-authored shot geometry, a supported addition,
+                # not a dropped asset.
                 allowed.append(str(child.GetPath()))
                 continue
             dropped.append(str(child.GetPath()))
@@ -422,8 +437,8 @@ def list_dropped_asset_prims(root, ignore_prim_paths=(), pipeline_roots=()):
     if allowed:
         logger.info(
             "export drop-guard: allowed %d metadata-less prim(s) that "
-            "compose from no pipeline export layer (artist-added "
-            "geometry, not dropped assets): %s",
+            "compose from no asset export layer (artist-added or "
+            "department shot geometry, not dropped assets): %s",
             len(allowed), ", ".join(allowed)
         )
     return dropped
