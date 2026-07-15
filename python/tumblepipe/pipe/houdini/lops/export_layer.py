@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 from tumblepipe.api import get_user_name, path_str, local_path, api
 from tumblepipe.util.progress import report_progress
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.department import list_departments
 from tumblepipe.config.variants import list_variants
 from tumblepipe.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblepipe.config.farm import list_pools
@@ -436,9 +435,12 @@ class ExportLayer(EntityNode):
             return ['from_context']
 
         context_name = 'assets' if entity_type == 'asset' else 'shots'
-        # Exclude generated departments and filter to publishable only
+        # Exclude generated departments and filter to publishable only.
+        # scoped_departments narrows the pool to the departments the target
+        # entity actually has.
         names = [
-            d.name for d in list_departments(context_name, include_generated=False)
+            d.name for d in
+            self.scoped_departments(context_name, include_generated=False)
             if d.publishable
         ]
         return ['from_context'] + names
@@ -449,7 +451,7 @@ class ExportLayer(EntityNode):
             return []
 
         context_name = 'assets' if entity_type == 'asset' else 'shots'
-        departments = list_departments(context_name)
+        departments = self.scoped_departments(context_name)
         if len(departments) == 0:
             return []
 
@@ -489,6 +491,11 @@ class ExportLayer(EntityNode):
         if len(department_names) == 0:
             return []
         selected = list(filter(len, self.parm('export_departments').eval().split(' ')))
+        # A stored selection can name a department that is no longer
+        # downstream — the pool was reordered, the department retired, or the
+        # entity scoped away from it. Drop those instead of raising out of
+        # the sort key.
+        selected = [name for name in selected if name in department_names]
         if len(selected) == 0:
             return []
         selected.sort(key=department_names.index)

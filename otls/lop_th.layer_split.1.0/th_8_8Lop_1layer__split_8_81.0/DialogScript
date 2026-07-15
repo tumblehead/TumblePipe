@@ -108,10 +108,10 @@
             joinnext
             default { "from_context" }
             menu {
-                [ "from tumblepipe.pipe.houdini.lops import export_layer" ]
+                [ "from tumblepipe.pipe.houdini.lops import layer_split" ]
                 [ "from tumblepipe.pipe.houdini import util" ]
                 [ "" ]
-                [ "node = export_layer.ExportLayer(hou.pwd())" ]
+                [ "node = layer_split.LayerSplit(hou.pwd())" ]
                 [ "items = node.list_department_names()" ]
                 [ "return util.list_to_menu(items)" ]
                 language python

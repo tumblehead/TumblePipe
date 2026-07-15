@@ -41,12 +41,16 @@ Qt6 wizard with two flows:
   `TH_PROJECT_PATH` as a project-scope override.
 - **Create a new project** — pick a parent directory, project name, and
   FPS. The wizard copies `scripts/project_template/_config/` into
-  `<parent>/<name>/`, customises the JSON databases (farm pool default,
-  fps), creates the standard top-level subdirs (`assets/`, `shots/`,
-  `groups/`, `kits/`, `export/`), and persists `TH_PROJECT_PATH`.
+  `<parent>/<name>/` — the convention modules, the JSON databases, *and*
+  the `templates/` department scaffolding — customises the JSON databases
+  (farm pool default, fps), creates the standard top-level subdirs
+  (`assets/`, `shots/`, `groups/`, `kits/`, `export/`), and persists
+  `TH_PROJECT_PATH`.
 
 The hook source is `scripts/tt_setup.py` and the bundled template lives
-under `scripts/project_template/`. The wizard runs under an
+under `scripts/project_template/`. That scaffold is not only a one-shot
+copy at creation: migration reads it back out of the installed package to
+bring an existing project's `templates/` forward (see below). The wizard runs under an
 hpm-managed `uv` venv (declared in `[scripts.tt_setup]` in `hpm.toml`)
 that pins Python 3.11 and PySide6, so the hook works regardless of what
 the user has on `PATH` — `tt_setup` runs out-of-process and can't reuse
@@ -83,6 +87,88 @@ Python module. A shot's render layers are its `variants` property — the
 same variant list the rest of the pipeline uses (there is no separate
 `render_layers` property; that name is retired).
 
+### Departments
+
+A project's departments live in `_config/db/departments.json`, one **pool** per
+context (`shots`, `assets`, and `render` for the post-render stages). Each
+carries capability flags — `publishable` (it exports a layer), `renderable` (it
+composes into the render stage), `independent` (a publish upstream of it does
+not propagate into it), `generated` (produced by Python, not a workfile) — plus
+`enabled` and an optional `short` label.
+
+Edit the pool from the Asset Browser's gear settings → **Departments…**, per
+project: add, remove, reorder, retire, and set the flags. `enabled` is the safe
+way to drop a department you no longer use — it disappears from every menu,
+deck and job graph while its workfiles and exports stay on disk.
+
+**A department's position in the pool is the pipeline order.** This is not
+cosmetic:
+
+- the staged build sublayers departments in *reversed* pool order, so later in
+  the pool means a **stronger USD layer**;
+- **downstream** is everything below a department in the pool — it drives the
+  Downstream Exports menu, `import_shot`'s layer/asset exclusion, the publish
+  task graph, and the propagate/update farm jobs;
+- AOV precedence ranks by pool index.
+
+So reordering an established pool restages composition for every existing
+entity, and the editor warns before it does. One trap worth naming: the update
+job treats the **last renderable shot department** as the final layer to
+re-import, so a department that is not a render layer (tracking, notes,
+references) must have `renderable` off.
+
+`root`, `staged` and `none` are reserved — they are pipeline pseudo-departments
+(the resolver's root layer, the build task's synthetic department,
+`import_shot`'s exclusion sentinel) — and are refused at creation.
+
+#### Per-entity assignment
+
+A shot or asset may be scoped to a subset of its context's pool through its
+`departments` property, so a shot that only carries tracking work stops
+advertising eight departments it will never have. Set it from the entity's
+**Departments…** dialog (card context menu, or its Departments tab).
+
+An empty list — the default — means **inherit the whole enabled pool**, so an
+entity that was never scoped behaves as it always did, and picks up departments
+added to the pool later. The property inherits like any other, so it can be set
+on `entity:/shots`, on a sequence, or on the single shot, nearest override
+winning. The assignment is a *set*, never an order: it is always resolved by
+filtering the pool, so pipeline order stays the pool's business.
+
+Scoping states what an entity is *expected* to have. It deliberately does not
+reach composition: the staged build and render stage keep iterating the pool
+and skipping departments with no export, so unticking a department in the
+browser cannot change a render, and a department that has work but is not
+assigned still shows in the browser (flagged) rather than vanishing.
+
+`scripts/verify_entity_departments.py` audits a project: the pool in pipeline
+order, which entities are scoped, assignments naming a department the pool no
+longer has, and work that its entity is not scoped to.
+
+### Department templates
+
+`_config/templates/<context>/<department>/template.py` builds the node graph
+of a **new department workfile** — the "New from template" action runs the
+matching module's `create(stage, entity_uri, department_name)` against a
+freshly saved, empty hip.
+
+Each template splits on the URI it is handed:
+
+- `_create_entity` — an ordinary single-entity workfile. It wires the graph
+  and **leaves every entity-aware `th::` HDA on its `from_context` default**,
+  so each node resolves its entity from the workfile it lives in. Writing a
+  concrete URI here would pin the nodes to the entity the file was born in,
+  and a copied scene or a renamed entity would keep publishing to the old one.
+- `_create_group` — a group workfile, which holds several entities at once.
+  `from_context` cannot resolve to one of them, so this branch (and *only*
+  this branch) pins each node to its member via `_pin_entity`, which routes
+  through the HDA's `_apply_entity` so the visible Entity label stays in step
+  with the parm.
+
+`scripts/verify_entity_from_context.py` enforces that split. Templates are
+versioned with the rest of `_config` and refreshed by migration (below), so
+a fix here reaches live projects instead of only new ones.
+
 Each module exposes a specific interface that the pipeline calls into. The
 [*Turbulence* tech demo](https://www.sidefx.com/tech-demos/turbulence/)
 publishes a complete working example of these modules.
@@ -104,11 +190,41 @@ python scripts/migrate_config.py [project-or-_config-path] [--dry-run]
 The path defaults to `$TH_PROJECT_PATH`, so the launcher (which runs project
 scripts with the project's environment) needs no argument. A project is thus
 migrated by whoever opens it with a newer pipeline, not by a central batch.
-Each migration is idempotent and refuses to overwrite a file you have
-customised — re-running is always safe, it writes a `config_convention.py.bak`
-before replacing the stock file, and `--dry-run` shows exactly what would
-change. New projects created by the wizard already ship at the current
-version. The migrations themselves are registered in `tumblepipe.migration`.
+Every migration is idempotent — re-running is always safe — and `--dry-run`
+shows exactly what would change. New projects created by the wizard already
+ship at the current version. The migrations themselves are registered in
+`tumblepipe.migration`.
+
+A migration never replaces a file without preserving the original. Which of
+the two it does depends on how load-bearing the file is:
+
+- **`config_convention.py` is refused, not clobbered.** If it is not the stock
+  engine, the migration raises rather than overwrite a customisation; the
+  stock file is backed up to `config_convention.py.bak` before being replaced
+  by the thin shim.
+- **`_config/templates/` is refreshed.** The department templates are copied
+  from the packaged scaffold, and any project copy that differs is preserved
+  as `template.py.bak` alongside it. They are refreshed rather than refused
+  because a frozen template is the very thing this closes: the templates build
+  a new department workfile's node graph, so a fix there (leaving entity-aware
+  HDAs on their `from_context` default instead of baking an entity URI in)
+  would otherwise never reach a live project. If you *had* hand-tuned a
+  template, reconcile it from the `.bak`.
+- **`_config/db/schemas.json` gains the `entity.departments` default (v3).**
+  Additive and data-neutral — it declares the per-entity department
+  assignment property (default `[]` = "inherit the pool") so the store can
+  resolve and sparsely store it. Without it, per-entity department scoping
+  can't be stored; the rewrite is trivially reversible, so back the file up
+  yourself first if you're editing a live share.
+
+**Un-migrated projects degrade, they don't crash.** `list_departments`
+reads each department's `independent`/`publishable`/`renderable` via schema
+defaults, so a project whose schema predates those defaults returns a
+consistent pool instead of raising `KeyError` (which the asset-browser
+catalogue used to swallow into a differently-shaped fallback pool — the
+source of an intermittent list-view/deck crash). This is a safety net, not
+a substitute: run `migrate_config.py` to bring the project's schema and
+templates properly forward.
 
 ### Entity casing audits
 

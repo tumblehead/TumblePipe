@@ -146,7 +146,7 @@ Content-Type: text/plain
       defaultString = \"/Asset\"
       flags = 0
       start = 41.666666666666664
-      segment { length = 0 expr = chs(\"../primpath\") }
+      segment { length = 0 expr = chs(\"../effective_primpath\") }
     }
   }
 
@@ -529,7 +529,7 @@ Content-Type: text/plain
 {
 version 0.8
 setsavepath	[ 0	locks=0 ]	(	"on"	)
-savepath	[ 0	locks=0 ]	(	`chs(\"../primpath\")`.usda	)
+savepath	[ 0	locks=0 ]	(	`chs(\"../effective_primpath\")`.usda	)
 setdefaultprim	[ 0	locks=0 ]	(	"off"	)
 defaultprim	[ 0	locks=0 ]	(	""	)
 setcomment	[ 0	locks=0 ]	(	"off"	)

@@ -212,7 +212,7 @@ def _build_full_notify_job(
     ):
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     return _render_build.build_playblast_notify_job(
-        config, staging_path, version_name,
+        config, staging_path, render_department_name, version_name,
         title = (
             f'notify full '
             f'{render_department_name} '

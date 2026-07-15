@@ -1,0 +1,2 @@
+node = kwargs['node']
+node.hdaModule().init_entity_from_context(node)

@@ -28,9 +28,15 @@ from tumblepipe.pipe.paths import (
     get_latest_staged_file_path,
 )
 from tumblepipe.pipe.usd import collapse_latest_references
+from tumblepipe.config.timeline import get_fps, get_frame_range
 import tumblepipe.farm.tasks.stage.task as stage_task
 import tumblepipe.farm.jobs.houdini.render.job as render_job
+import tumblepipe.farm.jobs.houdini.playblast.job as playblast_job
 from tumblepipe.farm.jobs.houdini import _publish
+
+# The local playblast HDAs default to 720p; farm playblasts match unless the
+# dialog overrides it.
+DEFAULT_PLAYBLAST_RES = [1280, 720]
 
 # Mapping from column keys to Karma/USD render setting attribute paths
 # These are used to build overrides for render_settings.json
@@ -186,6 +192,7 @@ def submit_entity_batch(config: dict) -> list[str]:
 
     do_publish = settings.get('publish', False)
     do_render = settings.get('render', False)
+    do_playblast = settings.get('playblast', False)
 
     # Publish settings
     pub_department = settings.get('pub_department')
@@ -206,6 +213,12 @@ def submit_entity_batch(config: dict) -> list[str]:
     standalone = settings.get('standalone', False)
     render_mode = settings.get('render_mode', 'full')
 
+    # Playblast settings
+    pb_department = settings.get('pb_department')
+    pb_pool = settings.get('pb_pool', 'general')
+    pb_priority = settings.get('pb_priority', 50)
+    pb_res = settings.get('pb_res', DEFAULT_PLAYBLAST_RES)
+
     # 'first_middle_last' submits the partial_render chain (3 check frames
     # + notify) instead of the full_render chain (all frames + slapcomp/mp4).
     render_task_key = (
@@ -213,8 +226,15 @@ def submit_entity_batch(config: dict) -> list[str]:
         else 'full_render'
     )
 
-    if not do_publish and not do_render:
+    if not do_publish and not do_render and not do_playblast:
         return []
+
+    # Playblast is a shots-only preview (mirrors the shot playblast HDAs). The
+    # dialog only offers the section for the shots context, but guard here too.
+    if do_playblast and entity_context != 'shots':
+        raise BatchSubmitError(
+            f"Playblast is only supported for shots, not '{entity_context}'"
+        )
 
     # Get departments list
     departments = list_departments(entity_context)
@@ -234,6 +254,13 @@ def submit_entity_batch(config: dict) -> list[str]:
         if render_department not in department_names:
             raise BatchSubmitError(f"Invalid render department: {render_department}")
 
+    # Validate playblast department
+    if do_playblast:
+        if pb_department is None:
+            raise BatchSubmitError("Playblast department not specified")
+        if pb_department not in department_names:
+            raise BatchSubmitError(f"Invalid playblast department: {pb_department}")
+
     # Connect to Deadline
     try:
         farm = Deadline()
@@ -250,6 +277,8 @@ def submit_entity_batch(config: dict) -> list[str]:
         batch_name_parts.append('publish')
     if do_render:
         batch_name_parts.append('render')
+    if do_playblast:
+        batch_name_parts.append('playblast')
     batch_name_parts.extend([str(entity_uri), user_name, timestamp])
 
     batch = Batch(' '.join(batch_name_parts))
@@ -460,6 +489,80 @@ def submit_entity_batch(config: dict) -> list[str]:
                     deps[stage_job_name] = [last_publish_job_name] if last_publish_job_name else []
                 except Exception as e:
                     logging.warning(f"Could not create stage job for {entity_uri}: {e}")
+
+        # Add playblast job (GL preview of the shot's staged stage)
+        if do_playblast:
+            # Playblast previews the same staged 'default' stage the render
+            # reads, so husk auto-resolves the same shot camera from its baked
+            # RenderSettings. Collapse the latest staged references (no render
+            # overrides) into a self-contained USD and bundle it.
+            latest_staged_path = get_latest_staged_file_path(entity_uri, 'default')
+            if latest_staged_path is None or not latest_staged_path.exists():
+                raise BatchSubmitError(
+                    f"No staged file found for {entity_uri} variant 'default'. "
+                    "Publish the shot first to create staged files."
+                )
+
+            collapsed_playblast_path = temp_path / 'collapsed_playblast.usda'
+            collapsed_content = collapse_latest_references(
+                latest_staged_path,
+                collapsed_playblast_path,
+                {}
+            )
+            store_text(collapsed_playblast_path, collapsed_content)
+            relative_playblast_input = collapsed_playblast_path.relative_to(temp_path)
+            paths[collapsed_playblast_path] = relative_playblast_input
+
+            fps = get_fps(entity_uri) or 24
+
+            # Derive the range per-entity from config (rolls included), matching
+            # the local playblast HDA -- NOT the render UI's shared first/last,
+            # so each shot in a multi-shot batch plays its own full range.
+            frame_range = get_frame_range(entity_uri)
+            if frame_range is None:
+                raise BatchSubmitError(
+                    f"No frame range configured for {entity_uri}"
+                )
+            playblast_range = frame_range.full_range()
+
+            playblast_config = dict(
+                entity=dict(
+                    uri=str(entity_uri),
+                    department=pb_department
+                ),
+                settings=dict(
+                    user_name=user_name,
+                    purpose='render',
+                    pool_name=pb_pool,
+                    priority=pb_priority,
+                    input_path=path_str(relative_playblast_input),
+                    first_frame=playblast_range.first_frame,
+                    last_frame=playblast_range.last_frame,
+                    step_size=1,
+                    fps=fps,
+                    res=list(pb_res),
+                    channel_name='renders'
+                )
+            )
+
+            # Depend on the publish chain if we're also publishing this entity.
+            playblast_depends_on = (
+                [last_publish_job_name] if last_publish_job_name else []
+            )
+            try:
+                playblast_job.build(
+                    playblast_config,
+                    paths,
+                    temp_path,
+                    jobs,
+                    deps,
+                    depends_on=playblast_depends_on
+                )
+                logging.info(f"Added playblast job for {entity_uri}")
+            except Exception as e:
+                raise BatchSubmitError(
+                    f"Could not build playblast job for {entity_uri}: {e}"
+                )
 
         # Submit batch (within temp directory context so files can be copied)
         return _finalize_batch()

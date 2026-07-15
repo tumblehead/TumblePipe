@@ -180,10 +180,100 @@ def _migrate_convention_to_package(config_dir: Path) -> None:
     path.write_text(_THIN_CONVENTION, encoding='utf-8')
 
 
+# --------------------------------------------------------------------------- #
+# v2 — refresh the department templates from the packaged scaffold
+# --------------------------------------------------------------------------- #
+# `_config/templates/<context>/<dept>/template.py` is copied into a project at
+# creation and then frozen — the same "only new projects get the fix" trap v1
+# closed for the config engine. The templates are what build a new department
+# workfile's node graph, so a fix there (e.g. leaving entity-aware HDAs at
+# their 'from_context' default instead of baking the entity URI in) never
+# reaches a live project without this step.
+
+
+def _scaffold_templates_dir() -> Path:
+    """The packaged scaffold templates — the source of truth for a refresh."""
+    root = Path(__file__).resolve().parents[2]
+    return root / 'scripts' / 'project_template' / '_config' / 'templates'
+
+
+def _refresh_templates(config_dir: Path) -> None:
+    source = _scaffold_templates_dir()
+    if not source.is_dir():
+        raise MigrationError(
+            f'packaged templates not found at {source} — cannot refresh'
+        )
+
+    target = config_dir / 'templates'
+    for src in sorted(source.rglob('template.py')):
+        dst = target / src.relative_to(source)
+        new_text = src.read_text(encoding='utf-8')
+
+        if not dst.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_text(new_text, encoding='utf-8')
+            logger.info('templates: added %s', dst)
+            continue
+
+        old_text = dst.read_text(encoding='utf-8')
+        if old_text == new_text:
+            continue  # already current — idempotent
+
+        # Keep a one-time local backup so a project that had hand-tuned its
+        # template can recover it. Never clobber an existing .bak: a prior run
+        # already preserved the true original.
+        backup = dst.with_name(dst.name + '.bak')
+        if not backup.exists():
+            backup.write_text(old_text, encoding='utf-8')
+        dst.write_text(new_text, encoding='utf-8')
+        logger.info('templates: refreshed %s (previous kept at %s)', dst, backup.name)
+
+
+# --------------------------------------------------------------------------- #
+# v3 — declare the entity `departments` property in the schema
+# --------------------------------------------------------------------------- #
+# An entity may scope itself to a subset of its context's department pool. The
+# assignment is a list property on the entity node, and the schema has to
+# declare its default for the store to resolve (and sparsely store) it. The
+# default is `[]`, which means "inherit the whole pool" — so this migration is
+# data-neutral: no existing shot or asset changes behaviour, it just gains the
+# ability to be scoped.
+
+
+def _add_entity_departments_property(config_dir: Path) -> None:
+    path = config_dir / 'db' / 'schemas.json'
+    if not path.exists():
+        raise MigrationError(f'{path} not found — cannot add the schema default')
+
+    data = json.loads(path.read_text(encoding='utf-8'))
+    try:
+        entity = data['children']['entity']
+    except KeyError as exc:
+        raise MigrationError(f'{path} has no entity schema node') from exc
+
+    properties = entity.setdefault('properties', {})
+    if 'departments' in properties:
+        return  # already declared — idempotent
+
+    properties['departments'] = []
+    path.write_text(json.dumps(data, indent=4) + '\n', encoding='utf-8')
+    logger.info('schemas: declared entity.departments on %s', path)
+
+
 MIGRATIONS: list[Migration] = [
     Migration(
         version=1,
         description='move the config DB engine into the package (thin convention shim)',
         apply=_migrate_convention_to_package,
+    ),
+    Migration(
+        version=2,
+        description='refresh _config/templates from the packaged scaffold',
+        apply=_refresh_templates,
+    ),
+    Migration(
+        version=3,
+        description='declare the entity `departments` property in the schema',
+        apply=_add_entity_departments_property,
     ),
 ]

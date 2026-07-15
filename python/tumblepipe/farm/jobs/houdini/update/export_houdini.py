@@ -70,6 +70,12 @@ def main(
     export_node.parm('f1').deleteAllKeyframes()
     export_node.parm('f2').deleteAllKeyframes()
     export_node.parm('striplayerbreaks').set(0)
+    # Author visibility time samples when an animated switch/blend changes
+    # which prims exist per frame; without this the ROP writes every branch
+    # as always-visible and the animation is lost (the filecache-based farm
+    # export tasks track prim existence inherently — this keeps the usd_rop
+    # path at parity). See export_layer/export_asset HDAs.
+    export_node.parm('trackprimexistence').set(1)
     _connect(prev_node, export_node)
 
     # Export

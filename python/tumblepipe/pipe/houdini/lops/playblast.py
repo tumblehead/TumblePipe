@@ -7,7 +7,10 @@ import hou
 
 from tumblepipe.api import path_str, local_path, api
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.department import list_departments
+from tumblepipe.config.department import (
+    list_departments,
+    list_entity_departments,
+)
 from tumblepipe.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblepipe.apps import mp4
 from tumblepipe.pipe.houdini import util
@@ -40,7 +43,14 @@ class Playblast(ns.Node):
         )
 
     def list_department_names(self):
-        return [d.name for d in list_departments('shots') if d.renderable]
+        # Playblast isn't an EntityNode (it resolves a shot, not a generic
+        # entity), so it narrows to the shot's own departments by hand.
+        shot_uri = self.get_shot_uri()
+        departments = (
+            list_departments('shots') if shot_uri is None
+            else list_entity_departments(shot_uri)
+        )
+        return [d.name for d in departments if d.renderable]
 
     def list_camera_paths(self):
         root = self._get_stage_root()
@@ -54,7 +64,21 @@ class Playblast(ns.Node):
         camera_paths = self.list_camera_paths()
         return [path.rsplit('/', 1)[-1] for path in camera_paths]
 
+    def get_entity_source(self) -> str:
+        """'from_context' (the default) resolves shot + department from the
+        workfile the node lives in; 'from_settings' reads the parms below."""
+        return self.parm('entity_source').eval()
+
+    def _get_context(self):
+        return get_workfile_context(Path(hou.hipFile.path()))
+
     def get_shot_uri(self) -> Uri | None:
+        if self.get_entity_source() == 'from_context':
+            context = self._get_context()
+            if context is None: return None
+            if context.entity_uri.segments[0] != 'shots': return None
+            return context.entity_uri
+        # From settings
         shot_uris = self.list_shot_uris()
         if len(shot_uris) == 0: return None
         shot_uri_raw = self.parm('shot').eval()
@@ -66,6 +90,12 @@ class Playblast(ns.Node):
     def get_department_name(self):
         department_names = self.list_department_names()
         if len(department_names) == 0: return None
+        if self.get_entity_source() == 'from_context':
+            context = self._get_context()
+            if context is None: return None
+            if context.department_name not in department_names: return None
+            return context.department_name
+        # From settings
         department_name = self.parm('department').eval()
         if len(department_name) == 0: return department_names[0]
         if department_name not in department_names: return None
@@ -247,23 +277,10 @@ def set_style(raw_node):
 
 def on_created(raw_node):
 
-    # Set node style
+    # Set node style. 'entity_source' stays at its 'from_context' default,
+    # so shot + department resolve from the workfile at eval time rather
+    # than being baked into the parms at creation.
     set_style(raw_node)
-
-    # Context
-    raw_node_type = raw_node.type()
-    node_type = ns.find_node_type('playblast', 'Lop')
-    if raw_node_type != node_type: return
-    node = Playblast(raw_node)
-
-    # Parse scene file path
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-    if context is None: return
-
-    # Set the default values from context
-    node.set_shot_uri(context.entity_uri)
-    node.set_department_name(context.department_name)
 
 def export():
     raw_node = hou.pwd()

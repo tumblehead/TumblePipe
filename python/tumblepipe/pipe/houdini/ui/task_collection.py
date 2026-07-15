@@ -9,8 +9,12 @@ export node. Builds the individual tasks through ``task_factory``.
 import uuid
 
 from tumblepipe.config.groups import get_group
-from tumblepipe.config.department import list_departments
+from tumblepipe.config.department import (
+    list_departments,
+    list_entity_departments,
+)
 from tumblepipe.pipe.paths import latest_export_path, Context
+from tumblepipe.util.uri import Uri
 from tumblepipe.pipe.houdini.lops import export_layer, layer_split
 from tumblepipe.pipe.houdini.sops import export_rig
 import tumblepipe.pipe.houdini.nodes as ns
@@ -27,14 +31,30 @@ from .task_factory import (
 )
 
 
-def _get_downstream_departments(entity_type: str, current_department: str) -> list[str]:
-    """Get list of downstream departments for an entity type"""
+def _get_downstream_departments(
+    entity_type: str, current_department: str, entity_uri: Uri | None = None,
+    ) -> list[str]:
+    """Get list of downstream departments for an entity.
+
+    Scoped to the entity when we have its URI: a shot that only carries
+    tracking has nothing downstream of it, and offering publish tasks for
+    departments it does not have would be noise. Falls back to the whole pool
+    for a group (whose members can differ) or an unresolvable entity.
+
+    Order is the pool's — an entity's assignment is a filter over it, never a
+    reordering — so "downstream" stays the pipeline's notion of downstream.
+    """
     if entity_type == 'shot':
-        departments = list_departments('shots')
+        context = 'shots'
     elif entity_type == 'asset':
-        departments = list_departments('assets')
+        context = 'assets'
     else:
         return []
+
+    if entity_uri is not None:
+        departments = list_entity_departments(entity_uri)
+    else:
+        departments = list_departments(context)
 
     if len(departments) == 0:
         return []
@@ -63,7 +83,10 @@ def collect_publish_tasks(context: Context) -> list[ProcessTask]:
     department_name = context.department_name
 
     # Get downstream departments to include
-    downstream_departments = _get_downstream_departments(entity_type, department_name)
+    downstream_departments = _get_downstream_departments(
+        entity_type, department_name,
+        entity_uri=context.entity_uri if entity_type in ('shot', 'asset') else None,
+    )
     all_departments = [department_name] + downstream_departments
 
     if entity_type == 'group':

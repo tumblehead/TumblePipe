@@ -43,12 +43,9 @@ def set_style(raw_node):
 def on_created(raw_node):
     set_style(raw_node)
     node = ImportAsset(raw_node)
-    # Default the selection to the first available asset, mirroring the
-    # LOP's on_created. Set on the SOP parm — the embedded node's entity
-    # channels up to it.
-    asset_uris = node.embedded().list_asset_uris()
-    if asset_uris:
-        node.parm('entity').set(str(asset_uris[0]))
+    # 'entity' keeps its 'from_context' default, mirroring the LOP's
+    # on_created. Seeding it with the first asset in the project pinned every
+    # fresh node to an arbitrary asset — whichever sorted first.
     # Prime the embedded node's label parms — the SOP's label defaults
     # mirror them via chs(), and they stay empty until an execute
     # otherwise.
@@ -69,7 +66,7 @@ def select():
     dialog = EntitySelectorDialog(
         api=api,
         entity_filter='assets',
-        include_from_context=False,
+        include_from_context=True,
         current_selection=node.parm('entity').eval(),
         title="Select Asset",
         parent=hou.qt.mainWindow()

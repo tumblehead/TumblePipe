@@ -44,6 +44,19 @@ The **source** switch flips the whole network between farm renders and
 locally generated proxy frames; **Preview** renders the current frame in
 place.
 
+## The shot camera in comp
+
+`th::Cop/import_lop_camera` brings the shot's render camera into COPs, for
+the comp nodes that need real camera data (depth, projections). Like every
+entity-aware `th::` HDA its Entity defaults to `from_context`, so dropped in
+a comp workfile it resolves that shot's camera with nothing to configure.
+
+Internally it composes the shot's staged stage with an embedded
+`th::import_shot`, lifts `/cameras/render_camera` out through a
+`lopimportcam`, and feeds that to a `cameraimport` COP. It loads **no
+payloads** — a camera is a light prim, and comp has no use for the shot's
+geometry, so composing it would be a large bill for nothing.
+
 ## Farm submission and MP4s
 
 **Submit** on the node hands the saved workfile to the composite job
@@ -65,3 +78,34 @@ Independent of comp, every full **render** job also auto-chains a
 beauty/alpha across departments — followed by its own MP4 and Discord
 notify. That quick-comp is what makes fresh renders reviewable before
 any composite workfile exists.
+
+## Playblast
+
+A **playblast** is a fast GL preview of a shot. There are two ways to make
+one, and they write to the same place — the versioned
+`render:/playblast/<shot>/<dept>/v####.mp4` and the shot's rolling daily —
+so their versions interleave:
+
+- **In-session** — the `th::playblast` LOP/SOP node renders through
+  Houdini's own GL (the viewport flipbook / OpenGL ROP) right in the
+  artist's session. It is *viewport-accurate*: what you see is what you
+  get. Use it when the look has to match the viewport.
+- **On the farm** — tick **Playblast** in the Submit Jobs dialog (shots
+  only, alongside Publish and Render) and each checked shot gets one job:
+  a single task renders the shot's staged `default` stage with husk's
+  Hydra **Storm** (GL) delegate — no `--camera`, so husk uses the render
+  camera baked into the stage's `RenderSettings`, the same one the Karma
+  render reads — then encodes an MP4 and writes the versioned playblast
+  **and** the daily, exactly like the render/composite MP4s above. The
+  frame range (rolls included) and fps come from the shot config per
+  shot; department, resolution (720p default) and pool/priority come from
+  the dialog.
+
+The two are not interchangeable look-wise: `husk` cannot load Houdini's
+own GL delegate, so a farm playblast is *Storm-shaded*, not a
+pixel-identical copy of the interactive viewport. That difference is
+exactly why the in-session node stays — playblast locally when the look
+must match the viewport, submit to the farm to offload a batch. The
+farm job's Deadline group is `playblast`, kept separate from `karma` so
+previews never contend with final-frame render slots; those workers must
+have a GL-capable GPU context.

@@ -45,7 +45,8 @@
                 },
                 "variants": [
                     "default"
-                ]
+                ],
+                "departments": []
             },
             "children": {
                 "shots": {

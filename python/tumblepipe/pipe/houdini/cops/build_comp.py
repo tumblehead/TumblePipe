@@ -331,15 +331,10 @@ class BuildComp(ns.Node):
             self.parm('shot_label').set('')
 
     def _initialize(self):
-        """Initialize node with defaults from workfile context and update labels."""
-        # If no context, set first available shot
-        entity = _entity_from_context_json()
-        if entity is None:
-            shot_uris = self.list_shot_uris()
-            if len(shot_uris) > 1:  # Skip 'from_context'
-                self.set_shot_uri(Uri.parse_unsafe(shot_uris[1]))
-
-        # Update labels to show resolved values
+        """Refresh the labels. The 'shot' parm keeps its 'from_context'
+        default even when the context can't be read: falling back to the
+        first shot in the project silently comps the wrong shot, where an
+        unresolved 'from_context' visibly comps nothing."""
         self._update_labels()
 
     def set_render_department_name(self, render_department_name):

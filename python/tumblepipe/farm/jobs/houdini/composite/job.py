@@ -524,9 +524,11 @@ def _build_layer_mp4_job(
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
 
-    # Parameters
-    playblast_path = get_layer_playblast_path(entity_uri, layer_name, version_name, purpose)
-    daily_path = get_layer_daily_path(entity_uri, layer_name, purpose)
+    # Parameters (frames live under the synthetic 'composite' department)
+    playblast_path = get_layer_playblast_path(
+        entity_uri, 'composite', layer_name, version_name, purpose
+    )
+    daily_path = get_layer_daily_path(entity_uri, 'composite', layer_name, purpose)
     title = f'mp4 {layer_name} {version_name}'
     input_path = get_aov_frame_path(
         entity_uri,
@@ -574,9 +576,11 @@ def _build_slapcomp_mp4_job(
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
 
-    # Parameters
-    playblast_path = get_playblast_path(entity_uri, slapcomp_version_name, purpose)
-    daily_path = get_daily_path(entity_uri, purpose)
+    # Parameters (frames live under the synthetic 'composite' department)
+    playblast_path = get_playblast_path(
+        entity_uri, 'composite', slapcomp_version_name, purpose
+    )
+    daily_path = get_daily_path(entity_uri, 'composite', purpose)
     title = (
         f'mp4 composite '
         f'{slapcomp_version_name}'
@@ -699,6 +703,7 @@ def _build_full_notify_job(
     )
     video_path = get_playblast_path(
         entity_uri,
+        'composite',
         version_name,
         purpose
     )
@@ -740,6 +745,7 @@ def _build_slapcomp_notify_job(
     message = f'{entity_uri} - slapcomp - {slapcomp_version_name}'
     video_path = get_playblast_path(
         entity_uri,
+        'composite',
         slapcomp_version_name,
         purpose
     )

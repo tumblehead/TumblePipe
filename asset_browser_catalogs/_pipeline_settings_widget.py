@@ -124,6 +124,17 @@ class PipelineSettingsWidget(QWidget):
         self._config_edit.editingFinished.connect(self._sync_from_form)
         form.addRow("Config Path", self._config_edit)
 
+        # The department pool is per-project, so it hangs off the selected
+        # project rather than the (global) behaviour toggles below.
+        self._departments_btn = QPushButton("Departments…")
+        self._departments_btn.setStyleSheet(BUTTON_GHOST_STYLE)
+        self._departments_btn.setToolTip(
+            "Add, retire, reorder and flag this project's departments. "
+            "Order is the pipeline order."
+        )
+        self._departments_btn.clicked.connect(self._on_departments)
+        form.addRow("Departments", self._departments_btn)
+
         outer.addWidget(self._form_holder)
 
         # ── Behavior toggles (separator + section) ──
@@ -248,6 +259,7 @@ class PipelineSettingsWidget(QWidget):
         has_sel = self._current_index is not None
         for w in (
             self._name_edit, self._project_edit, self._config_edit,
+            self._departments_btn,
         ):
             w.setEnabled(has_sel)
         self._remove_btn.setEnabled(has_sel)
@@ -321,6 +333,27 @@ class PipelineSettingsWidget(QWidget):
             self._list.setCurrentRow(self._current_index or 0)
         else:
             self._on_row_changed(-1)
+
+    def _on_departments(self) -> None:
+        """Open the department pool editor for the selected project.
+
+        It edits the project's live config, so it works against the registered
+        project — not the unsaved working copy. A project that was just added
+        here has to be applied first.
+        """
+        if self._current_index is None:
+            return
+        working = self._working[self._current_index]
+        project = self._catalog._registry.get(working.name)
+        if project is None:
+            QMessageBox.information(
+                self, "Departments",
+                "Apply this project first — the department pool lives in its "
+                "config, which is only read once the project is registered.",
+            )
+            return
+        from _pipeline_departments import DepartmentPoolDialog
+        DepartmentPoolDialog(self._catalog, project, parent=self).exec()
 
     def _on_browse(self) -> None:
         if self._current_index is None:

@@ -407,7 +407,9 @@ class DetailSectionBuilder:
         return a non-empty widget so the detail panel keeps the
         Departments tab visible.
         """
-        from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+        from PySide6.QtWidgets import (
+            QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+        )
 
         holder = QWidget()
         vbox = QVBoxLayout(holder)
@@ -421,6 +423,33 @@ class DetailSectionBuilder:
             mem_w = None
         if mem_w is not None:
             vbox.addWidget(mem_w)
+
+        # Which departments this entity uses (Multis carry their own list,
+        # edited through the Multi's own Edit flow).
+        if "type:group" not in ctx.detail.tags:
+            edit_row = QHBoxLayout()
+            edit_row.addStretch(1)
+            edit_btn = QPushButton("Departments…")
+            edit_btn.setToolTip(
+                "Choose which departments this entity uses. Unticking one "
+                "only hides it — its workfiles and exports are untouched."
+            )
+
+            def _edit(aid: str = ctx.detail.id) -> None:
+                try:
+                    self._catalog._edit_entity_departments(aid)
+                except Exception:
+                    log.exception("Departments dialog failed for %s", aid)
+                    return
+                if ctx.refresh_detail is not None:
+                    try:
+                        ctx.refresh_detail()
+                    except Exception:
+                        log.exception("refresh_detail failed")
+
+            edit_btn.clicked.connect(_edit)
+            edit_row.addWidget(edit_btn)
+            vbox.addLayout(edit_row)
 
         try:
             depts_w = self.build_departments_section(ctx)
@@ -788,7 +817,17 @@ class DetailSectionBuilder:
             ent_ctx = ctx.detail.context or "shots"
         else:
             ent_ctx = "shots" if is_shot else "assets"
-        all_depts = self._catalog._list_entity_departments(ent_ctx)
+        # Multis carry their own department list; a shot or asset shows the
+        # departments it is scoped to, plus any that already have work (an
+        # unassigned department with a workfile is flagged, never hidden).
+        assigned_depts: set[str] = set()
+        if is_multi:
+            all_depts = self._catalog._list_entity_departments(ent_ctx)
+            assigned_depts = set(all_depts)
+        else:
+            all_depts, assigned_depts = self._catalog._entity_department_scope(
+                asset_id, ent_ctx, with_work=dept_info.keys(),
+            )
         dept_shorts = self._catalog._list_entity_dept_shorts(ent_ctx)
         overrides = self._catalog._dept_versions.get(asset_id)
         scene_dv = self._catalog._scene.get_scene_dept_version(asset_id)
@@ -896,6 +935,15 @@ class DetailSectionBuilder:
                 dept_name.title(),
                 short=short_name.title() if short_name else "",
             )
+            if not is_multi and dept_name not in assigned_depts:
+                # Shown because it has work, not because it is assigned. Say
+                # so — the row is not a mistake, and neither the workfile nor
+                # its exports are affected by the scoping.
+                name_lbl.setToolTip(
+                    f"{dept_name.title()} has work but is not one of this "
+                    "entity's departments — its workfile and exports are "
+                    "untouched"
+                )
             row_layout.addWidget(name_lbl)
 
             # Col 1: user · time-ago — right-aligned, drops user then date

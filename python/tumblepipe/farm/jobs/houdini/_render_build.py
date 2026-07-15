@@ -621,8 +621,10 @@ def build_playblast_mp4_job(
     step_size = config['settings']['step_size']
 
     # Parameters - use department-level paths for slapcomp
-    playblast_path = get_playblast_path(entity_uri, slapcomp_version_name, purpose)
-    daily_path = get_daily_path(entity_uri, purpose)
+    playblast_path = get_playblast_path(
+        entity_uri, render_department_name, slapcomp_version_name, purpose
+    )
+    daily_path = get_daily_path(entity_uri, render_department_name, purpose)
     input_path = get_frame_path(
         entity_uri,
         render_department_name,
@@ -725,6 +727,7 @@ def build_partial_notify_job(
 def build_playblast_notify_job(
     config: dict,
     staging_path: Path,
+    render_department_name: str,
     version_name: str,
     *,
     title: str,
@@ -745,6 +748,7 @@ def build_playblast_notify_job(
     # Parameters - final playblast video
     video_path = get_playblast_path(
         entity_uri,
+        render_department_name,
         version_name,
         purpose
     )

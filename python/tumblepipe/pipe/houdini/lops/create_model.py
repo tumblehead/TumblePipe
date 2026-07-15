@@ -86,20 +86,10 @@ class CreateModel(ns.Node):
             self.parm('asset_label').set('')
 
     def _initialize(self):
-        """Initialize node with defaults from workfile context and update labels."""
-        file_path = Path(hou.hipFile.path())
-        context = get_workfile_context(file_path)
-
-        # If valid asset context, set from context
-        if context is not None and context.entity_uri.segments[0] == 'assets':
-            self.set_entity_uri(context.entity_uri)
-        else:
-            # Fall back to first available asset
-            asset_uris = self.list_asset_uris()
-            if len(asset_uris) > 1:  # Skip 'from_context'
-                self.set_entity_uri(Uri.parse_unsafe(asset_uris[1]))
-
-        # Update labels to show resolved values
+        """Refresh the labels. The 'asset' parm keeps its 'from_context'
+        default: baking the workfile's URI in here would pin the node to
+        whichever asset it was born in, so a copied scene (or a renamed
+        entity) would keep publishing to the old asset."""
         self._update_labels()
 
     def execute(self):

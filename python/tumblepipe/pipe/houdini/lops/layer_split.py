@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 from tumblepipe.api import path_str, local_path, api
 from tumblepipe.util.progress import report_progress
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.department import list_departments
 from tumblepipe.config.timeline import get_frame_range as config_get_frame_range, get_fps, FrameRange
 from tumblepipe.pipe.houdini import nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
@@ -45,18 +44,27 @@ class LayerSplit(EntityNode):
     def list_department_names(self) -> list[str]:
         entity_type = self.get_entity_type()
         if entity_type is None:
-            return []
+            return ['from_context']
         context_name = 'assets' if entity_type == 'asset' else 'shots'
-        departments = list_departments(context_name, include_generated=False)
-        return [dept.name for dept in departments]
+        departments = self.scoped_departments(
+            context_name, include_generated=False,
+        )
+        return ['from_context'] + [dept.name for dept in departments]
 
     def get_department_name(self) -> str | None:
-        department_names = self.list_department_names()
-        if len(department_names) == 0:
-            return None
         department_name = self.parm('department').eval()
+        if department_name == 'from_context':
+            file_path = Path(hou.hipFile.path())
+            context = get_workfile_context(file_path)
+            if context is None:
+                return None
+            return context.department_name
+        # From settings
+        department_names = self.list_department_names()
+        if len(department_names) <= 1:  # Only 'from_context' means no real names
+            return None
         if len(department_name) == 0:
-            return department_names[0]
+            return department_names[1]  # Skip 'from_context'
         if department_name not in department_names:
             return None
         return department_name
@@ -104,17 +112,9 @@ class LayerSplit(EntityNode):
             self.parm('department_label').set('')
 
     def _initialize(self):
-        """Initialize node with defaults from workfile context and update labels."""
-        file_path = Path(hou.hipFile.path())
-        context = get_workfile_context(file_path)
-
-        if context is not None:
-            # Set from context
-            self.set_entity_uri(context.entity_uri)
-            if context.department_name:
-                self.set_department_name(context.department_name)
-
-        # Update labels to show resolved values
+        """Refresh the labels. Both 'entity' and 'department' keep their
+        'from_context' defaults — baking the workfile's URI in here would
+        pin the node to whichever entity it was born in."""
         self._update_labels()
 
     def execute(self, force_local: bool = False):

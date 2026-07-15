@@ -1,0 +1,9 @@
+from tumblepipe.pipe.houdini.cops import import_lop_camera
+
+
+def select():
+    import_lop_camera.select()
+
+
+def execute():
+    import_lop_camera.execute()

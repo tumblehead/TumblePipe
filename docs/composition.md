@@ -25,6 +25,20 @@ imports actually load. For an asset it sublayers, strongest first:
    no direct ref of its own — a second, independently pinned ref could
    pin a different version of the same prims.
 
+"Pipeline order" is literally the department's position in the project's
+department pool (see *Departments* in {doc}`configuration`): the build
+sublayers the departments in *reversed* pool order, so a department further
+down the pool composes **stronger**. Reordering the pool therefore restages
+every entity in the project, which is why the pool editor warns before it
+does.
+
+The build composes whatever a department **exported**, not what its entity is
+scoped to. An entity's department assignment governs menus, decks and task
+graphs; a department with an export still composes even if the entity is no
+longer scoped to it, and a department with no export is skipped whether it is
+assigned or not. So scoping an entity in the browser can never change what
+renders.
+
 When department layers disagree about a tracked asset (instance count,
 variant, inputs), the **most recently exported** layer that records it
 wins, as one consistent snapshot. It is never a `max()` across layers:
@@ -88,6 +102,18 @@ guard lets them through; a cache version that has since been deleted
 still aborts the export as a dangling arc. Off-site consumers (e.g. a
 cloud render submit) must gather/inline these references, as they
 already must for textures.
+
+`th::cache` carries an **Entity** parm (defaulting, like every
+entity-aware `th::` HDA, to `from_context`). It drives the **From Entity
+(Database)** frame-range source, which caches over the entity's authored
+range — start/end *plus* pre/post roll — instead of a hand-typed one, so a
+shot whose range is retimed in the database does not silently keep caching
+the old span. The entity deliberately does **not** decide *where* the cache
+is written: the cache directory is derived from the workfile's own location,
+because the export guard above resolves the allowed `lops_cache` roots from
+the workfile (`lops.cache.list_cache_locations()`) and cannot see a per-node
+parm. Pointing a cache node's Entity elsewhere therefore changes what it
+caches, not where it lands.
 
 The export also refuses arcs whose target does not exist at all
 (*dangling* paths, e.g. a payload anchored to a machine-local scratch

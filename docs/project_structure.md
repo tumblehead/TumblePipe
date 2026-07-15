@@ -29,7 +29,7 @@ TumblePipe/
 ├── resources/                   # Icons, UI resources, templates
 ├── scripts/                     # TumbleTrove hooks, node event scripts, maintenance CLIs
 │   ├── tt_setup.py              #   project setup wizard (Qt6)
-│   ├── project_template/        #   new-project scaffolding
+│   ├── project_template/        #   new-project scaffolding (also migration's source of truth)
 │   ├── lop/                     #   per-node-type event scripts (Houdini scans these)
 │   └── fix_*.py / verify_*.py   #   project maintenance / audit CLIs
 └── docs/                        # This documentation (Sphinx)

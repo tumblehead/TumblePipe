@@ -23,6 +23,8 @@ Checks:
     does not clobber an already-tuned form.
  9. Unchecking everything empties the target and says so in the header.
 10. A multi-entity open starts with all of them checked.
+11. The Playblast section is present for shots and absent for assets, and
+    its department list is the renderable shot departments.
 
 Qt runs on the offscreen platform; no project data is written and nothing
 is submitted to the farm.
@@ -270,6 +272,32 @@ def main() -> int:
         and [str(u) for u in dlg3._entity_uris] == [str(asset)],
         f"{actual_depts} != {expected_depts}",
     )
+
+    # 11. Playblast section is shots-only, with the renderable-department list.
+    check(
+        "playblast section present in a shots dialog",
+        dlg._playblast_box is not None,
+    )
+    check(
+        "playblast section absent in an assets dialog",
+        dlg3._playblast_box is None,
+    )
+    if dlg._playblast_box is not None:
+        pb_depts = [
+            dlg._pb_dept.itemText(i) for i in range(dlg._pb_dept.count())
+        ]
+        rnd_depts = mod._list_dept_names(
+            "shots", only_publishable=False, only_renderable=True,
+        )
+        check(
+            "playblast department list == renderable shot departments",
+            pb_depts == rnd_depts,
+            f"{pb_depts} != {rnd_depts}",
+        )
+        check(
+            "playblast section starts unchecked (opt-in)",
+            dlg._playblast_box.isChecked() is False,
+        )
 
     print("ALL PASS" if all(results) else "FAILURES")
     return 0 if all(results) else 1

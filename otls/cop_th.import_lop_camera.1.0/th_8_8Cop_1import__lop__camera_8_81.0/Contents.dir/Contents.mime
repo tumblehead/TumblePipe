@@ -31,12 +31,11 @@ Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
 comment ""
-position -16.9167 1.89489
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+position 0 0
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
 {
-0 "camera"
 }
 inputsNamed3
 {
@@ -48,13 +47,125 @@ stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
 delscript ""
 exprlanguage hscript
 end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot.spareparmdef"
+Content-Type: text/plain
+
+    group {
+        name    "standardfolder"
+        label   "Standard"
+
+    }
+
+    group {
+        name    "standardfolder_1"
+        label   "Spare"
+
+        groupsimple {
+            name    "selection"
+            label   "Selection"
+
+            parm {
+                name    "entity_select"
+                label   "Entity"
+                type    button
+                joinnext
+                default { "0" }
+                parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
+                parmtag { "script_callback" "hou.phm().select()" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "entity"
+                label   "Entity"
+                type    string
+                invisible
+                nolabel
+                joinnext
+                default { "from_context" }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "entity_label"
+                label   "entity_label"
+                type    label
+                nolabel
+                default { "from_context: none" }
+            }
+            parm {
+                name    "variant"
+                label   "Variant"
+                type    string
+                default { "default" }
+                menu {
+                    [ "opmenu -l -a lopnet/import_camera variant" ]
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "department"
+                label   "Department"
+                type    string
+                default { "from_context" }
+                menu {
+                    [ "opmenu -l -a lopnet/import_camera department" ]
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "version"
+                label   "Version"
+                type    string
+                default { "latest" }
+                menu {
+                    [ "opmenu -l -a lopnet/import_camera version" ]
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        groupsimple {
+            name    "settings"
+            label   "Settings"
+
+            parm {
+                name    "xformtype"
+                label   "Transform Type"
+                type    string
+                default { "localtoworld" }
+                menu {
+                    "localtoworld"  "Local to World"
+                    "local"         "Local"
+                    "parenttoworld" "Parent to World"
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+        groupsimple {
+            name    "action"
+            label   "Action"
+
+            parm {
+                name    "import"
+                label   "Import"
+                type    button
+                default { "0" }
+                parmtag { "script_callback" "hou.phm().execute()" }
+                parmtag { "script_callback_language" "python" }
+            }
+        }
+
+    }
+
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.userdata"
@@ -66,6 +177,746 @@ Content-Type: text/plain
 		"value":""
 	}
 }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.init"
+Content-Type: text/plain
+
+type = lopnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.def"
+Content-Type: text/plain
+
+comment ""
+position 2.6559 -2.2801
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 1 0.986 0.65 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+expansioneffect	[ 0	locks=0 ]	(	none	)
+modifiedprimcounttostartnewlayer	[ 0	locks=0 ]	(	0	)
+pinnedprims	[ 0	locks=0 ]	(	""	)
+resolvercontextassetpath	[ 0	locks=0 ]	(	""	)
+resolvercontextstringcount	[ 0	locks=0 ]	(	0	)
+variantselectioncount	[ 0	locks=0 ]	(	0	)
+insertionpointdescriptor	[ 0	locks=0 ]	(	""	)
+rendergallerysource	[ 0	locks=0 ]	(	$HIP/galleries/$HIPNAME.$OS/rendergallery.db	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.datablocks"
+Content-Type: application/octet-stream
+Content-Transfer-Encoding: base64
+
+AAAAAAAAAAIAFF9fb25sb2FkX18uZXhwYW5zaW9uAAlleHBhbnNpb24AAAAAAAAAGnsKCSJleHBhbmRlZHBhdGhzIjp0cnVlCn0KABRfX29ubG9hZF9fLmxvYWRtYXNrcwAJbG9hZG1hc2tzAAAAAAAAAHp7CgkicG9wdWxhdGU=
+YWxsIjp0cnVlLAoJInBvcHVsYXRlcGF0aHMiOlsKCV0sCgkibXV0ZWxheWVycyI6WwoJXSwKCSJsb2FkYWxsIjp0cnVlLAoJImxvYWRwYXRocyI6WwoJXSwKCSJmYWxsYmFja3MiOnsKCX0KfQo=
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera.init"
+Content-Type: text/plain
+
+type = th::import_shot::1.0
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera.def"
+Content-Type: text/plain
+
+comment ""
+position 0 0
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault off exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.631373 0.870588 1 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera.chn"
+Content-Type: text/plain
+
+{
+    channel entity {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"from_context\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../entity\") }
+    }
+    channel variant {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"default\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../variant\") }
+    }
+    channel department {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"from_context\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../department\") }
+    }
+    channel version {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"latest\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../version\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+selection	[ 0	locks=0 ]	(	0	)
+entity_select	[ 0	locks=0 ]	(	0	)
+entity	[ 0	locks=0 ]	(	[ entity	from_context ] 	)
+entity_label	[ 0	locks=0 ]	(	"from_context: none"	)
+variant	[ 0	locks=0 ]	(	[ variant	default ] 	)
+department	[ 0	locks=0 ]	(	[ department	from_context ] 	)
+department_label	[ 0	locks=0 ]	(	"from_context: none"	)
+version	[ 0	locks=0 ]	(	[ version	latest ] 	)
+version_label	[ 0	locks=0 ]	(	""	)
+settings	[ 0	locks=0 ]	(	0	)
+include_procedurals	[ 0	locks=0 ]	(	"off"	)
+loadpayloads	[ 0	locks=0 ]	(	"off"	)
+actions	[ 0	locks=0 ]	(	0	)
+import	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	},
+	"nodeshape":{
+		"type":"string",
+		"value":"bulge_down"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/layerbreak.init"
+Content-Type: text/plain
+
+type = layerbreak
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/layerbreak.def"
+Content-Type: text/plain
+
+comment ""
+position -3.88446 3.29855
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	procedurals 1 1 "input1"
+}
+inputs
+{
+0 	procedurals 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 1 0.3 0 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/layerbreak.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+preseparator	[ 0	locks=0 ]	(	)
+helplabel	[ 0	locks=0 ]	(	"The Layer Break node starts a new active sublayer that subsequent
+nodes will edit, and indicates all previous layers will be
+discarded when saving to disk."	)
+postseparator	[ 0	locks=0 ]	(	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/layerbreak.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/output0.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/output0.def"
+Content-Type: text/plain
+
+comment ""
+position -3.88446 1.03955
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	metadata 1 1 "input1"
+}
+inputs
+{
+0 	metadata 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/output0.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/output0.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/procedurals.init"
+Content-Type: text/plain
+
+type = subnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/procedurals.def"
+Content-Type: text/plain
+
+comment ""
+position -3.88446 4.42805
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	duplicates 1 1 "input1"
+}
+inputs
+{
+0 	duplicates 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/procedurals.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/procedurals.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/procedurals.inp"
+Content-Type: text/plain
+
+4
+0 0 6.3470999999999984 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 3.9535999999999998 5.2175999999999982 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+2 3.9535999999999998 6.3470999999999984 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+3 6.2127999999999997 5.6694000179529169 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/procedurals/output0.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/procedurals/output0.def"
+Content-Type: text/plain
+
+comment ""
+position 0 5.2176
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/procedurals/output0.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/procedurals/output0.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/procedurals.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/metadata.init"
+Content-Type: text/plain
+
+type = pythonscript
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/metadata.def"
+Content-Type: text/plain
+
+comment ""
+position -3.88446 2.16905
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	layerbreak 1 1 "input1"
+}
+inputs
+{
+0 	layerbreak 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/metadata.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+python	[ 0	locks=0 ]	(	""	)
+maintainstate	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/metadata.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/import.init"
+Content-Type: text/plain
+
+type = sublayer
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/import.def"
+Content-Type: text/plain
+
+comment ""
+position -3.88446 6.68705
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	"" "" 1 "input1"
+}
+inputs
+{
+0 	"" 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/import.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+parentlayer_group	[ 0	locks=0 ]	(	0	)
+loadpayloads	[ 0	locks=0 ]	(	"on"	)
+setstagemetadata	[ 0	locks=0 ]	(	auto	)
+editrootlayer	[ 0	locks=0 ]	(	"on"	)
+ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Can only Sublayer into first input's Active Layer."	)
+findsublayers	[ 0	locks=0 ]	(	""	)
+removefoundsublayers	[ 0	locks=0 ]	(	"on"	)
+composition_group	[ 0	locks=0 ]	(	0	)
+sublayertype	[ 0	locks=0 ]	(	filesandinputs	)
+handlemissingfiles	[ 0	locks=0 ]	(	error	)
+positiontype	[ 0	locks=0 ]	(	strongest	)
+positionindex	[ 0	locks=0 ]	(	0	)
+files_separator	[ 0	locks=0 ]	(	)
+num_files	[ 0	locks=0 ]	(	1	)
+reload	[ 0	locks=0 ]	(	0	)
+inputs_separator	[ 0	locks=0 ]	(	)
+enable	[ 0	locks=0 ]	(	"on"	)
+sublayerfile_group1	[ 0	locks=0 ]	(	0	)
+enable1	[ 0	locks=0 ]	(	"on"	)
+filepath1	[ 0	locks=0 ]	(	""	)
+mute1	[ 0	locks=0 ]	(	"off"	)
+timeoffset1	[ 0	locks=0 ]	(	0	)
+timescale1	[ 0	locks=0 ]	(	1	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/import.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/duplicates.init"
+Content-Type: text/plain
+
+type = subnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/duplicates.def"
+Content-Type: text/plain
+
+comment ""
+position -3.88446 5.55755
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	import 1 1 "input1"
+}
+inputs
+{
+0 	import 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/duplicates.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/duplicates.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/duplicates.inp"
+Content-Type: text/plain
+
+4
+0 0 6.3470999999999993 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 3.9535999999999998 5.2175999999999991 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+2 3.9535999999999998 6.3470999999999993 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+3 6.2127999999999997 5.6694000179529178 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/duplicates/output0.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/duplicates/output0.def"
+Content-Type: text/plain
+
+comment ""
+position 0 5.2176
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/duplicates/output0.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/duplicates/output0.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/duplicates.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera.order"
+Content-Type: text/plain
+
+6
+layerbreak
+output0
+procedurals
+metadata
+import
+duplicates
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lopnet.net"
+Content-Type: text/plain
+
+1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/objnet.init"
@@ -81,7 +932,7 @@ Content-Type: text/plain
 objflags objflags =  origin off
 pretransform UT_DMatrix4 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1
 comment ""
-position -19.9671 2.94918
+position 0 -2.2801
 connectornextid 0
 flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on selectable on
 outputsNamed3
@@ -97,7 +948,7 @@ stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
@@ -175,7 +1026,7 @@ Content-Type: text/plain
 objflags objflags =  origin off
 pretransform UT_DMatrix4 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1
 comment ""
-position -14.5032 3.26022
+position 0 0
 connectornextid 0
 flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on selectable on
 outputsNamed3
@@ -191,7 +1042,7 @@ stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
@@ -724,11 +1575,17 @@ Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam.chn"
 Content-Type: text/plain
 
 {
+    channel resy {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 value = 1 1 expr = "pwd().parm('resx').eval() * __import__('lopcamutils').getAspectRatio(pwd(), 'loppath', 'primpath')" language = python }
+    }
     channel projection {
       lefttype = extend
       righttype = extend
       flags = 0
-      segment { length = 0 expr = "__import__('lopcamutils').getProjection(pwd(), 'loppath', 'primpath')" language = python }
+      segment { length = 0 expr = "pwd().parm('projection').menuItems().index(__import__('lopcamutils').getProjection(pwd(), 'loppath', 'primpath'))" language = python }
     }
     channel focal {
       lefttype = extend
@@ -741,6 +1598,12 @@ Content-Type: text/plain
       righttype = extend
       flags = 0
       segment { length = 0 value = 41.421399999999998 41.421399999999998 expr = "__import__('lopcamutils').getAperture(pwd(), 'loppath', 'primpath')" language = python }
+    }
+    channel orthowidth {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 value = 41.421399999999998 41.421399999999998 expr = "__import__('lopcamutils').getOrthoWidth(pwd(), 'loppath', 'primpath')" language = python }
     }
     channel near {
       lefttype = extend
@@ -787,20 +1650,22 @@ Content-Type: text/plain
     channel loppath {
       lefttype = extend
       righttype = extend
-      defaultString = \"../lopnet/import_shot_layer1\"
+      defaultString = \"\"
       flags = 0
-      start = 41.666666666666664
-      segment { length = 0 expr = "node = hou.pwd()
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "node = hou.pwd()
 lop_camera = node.node('../../lopnet/import_camera')
 return lop_camera.path()" language = python }
     }
     channel xformtype {
       lefttype = extend
       righttype = extend
-      defaultString = \"local\"
+      defaultString = \"localtoworld\"
       flags = 0
-      start = 41.666666666666664
-      segment { length = 0 expr = ch(\"../../xformtype\") language = python }
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../xformtype\") }
     }
   }
 
@@ -811,12 +1676,12 @@ Content-Type: text/plain
 {
 version 0.8
 loppath	[ 0	locks=0 ]	(	[ loppath	"" ] 	)
-primpath	[ 0	locks=0 ]	(	/cameras/shotCam/shotCam	)
+primpath	[ 0	locks=0 ]	(	/cameras/render_camera	)
 xformtype	[ 0	locks=0 ]	(	[ xformtype	localtoworld ] 	)
 use_dcolor	[ 0	locks=0 ]	(	"on"	)
 dcolor	[ 0	locks=0 ]	(	1	1	1	)
 picking	[ 0	locks=0 ]	(	"on"	)
-pickscript	[ 8	locks=0 ]	(	""	)
+pickscript	[ 0	locks=0 ]	(	""	)
 caching	[ 0	locks=0 ]	(	"on"	)
 xOrd	[ 0	locks=0 ]	(	"srt"	)
 rOrd	[ 0	locks=0 ]	(	"xyz"	)
@@ -829,7 +1694,7 @@ scale	[ 0	locks=0 ]	(	1	)
 pre_xform	[ 0	locks=0 ]	(	0	)
 keeppos	[ 0	locks=0 ]	(	"off"	)
 childcomp	[ 0	locks=0 ]	(	"off"	)
-constraints_on	[ 0	locks=0 ]	(	"on"	)
+constraints_on	[ 0	locks=0 ]	(	"off"	)
 constraints_path	[ 0	locks=0 ]	(	""	)
 lookatpath	[ 0	locks=0 ]	(	""	)
 lookupobjpath	[ 0	locks=0 ]	(	""	)
@@ -843,9 +1708,9 @@ up	[ 0	locks=0 ]	(	0	1	0	)
 bank	[ 0	locks=0 ]	(	0	)
 tdisplay	[ 0	locks=0 ]	(	"off"	)
 display	[ 0	locks=0 ]	(	1	)
-folder0	[ 0	locks=0 ]	(	1	1	1	)
+folder0	[ 0	locks=0 ]	(	0	0	0	)
 iconscale	[ 0	locks=0 ]	(	1	)
-res	[ 0	locks=0 ]	(	1920	1080	)
+res	[ 0	locks=0 ]	(	1280	[ resy	720 ] 	)
 resMenu	[ 0	locks=0 ]	(	0	)
 aspect	[ 0	locks=0 ]	(	1	)
 projection	[ 0	locks=0 ]	(	[ projection	0 ] 	)
@@ -853,7 +1718,7 @@ vm_lensshader	[ 0	locks=0 ]	(	""	)
 focal	[ 0	locks=0 ]	(	[ focal	50 ] 	)
 focalunits	[ 0	locks=0 ]	(	mm	)
 aperture	[ 0	locks=0 ]	(	[ aperture	41.4214 ] 	)
-orthowidth	[ 0	locks=0 ]	(	2	)
+orthowidth	[ 0	locks=0 ]	(	[ orthowidth	2 ] 	)
 near	[ 0	locks=0 ]	(	[ near	0.001 ] 	)
 far	[ 0	locks=0 ]	(	[ far	10000 ] 	)
 vm_bgenable	[ 0	locks=0 ]	(	"on"	)
@@ -914,7 +1779,7 @@ stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
@@ -990,7 +1855,7 @@ stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.9 0.8 0.55 
@@ -1007,7 +1872,6 @@ Content-Type: text/plain
       lefttype = extend
       righttype = extend
       flags = 0
-      start = 41.666666666666664
       segment { length = 0 expr = $FF-ch(\"f1\") }
     }
   }
@@ -1080,7 +1944,7 @@ stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
@@ -1171,428 +2035,6 @@ Content-Type: text/plain
 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet.init"
-Content-Type: text/plain
-
-type = lopnet
-matchesdef = 0
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet.def"
-Content-Type: text/plain
-
-comment ""
-position -19.9671 1.43545
-connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-}
-inputsNamed3
-{
-}
-inputs
-{
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@matthias-4070
-  access 0777
-}
-color UT_Color RGB 1 0.986 0.65 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-pinnedprims	[ 0	locks=0 ]	(	""	)
-resolvercontextassetpath	[ 0	locks=0 ]	(	""	)
-resolvercontextstringcount	[ 0	locks=0 ]	(	0	)
-variantselectioncount	[ 0	locks=0 ]	(	0	)
-insertionpointdescriptor	[ 0	locks=0 ]	(	""	)
-rendergallerysource	[ 0	locks=0 ]	(	$HIP/galleries/$HIPNAME.$OS/rendergallery.db	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet.datablocks"
-Content-Type: application/octet-stream
-Content-Transfer-Encoding: base64
-
-AAAAAAAAAAIAFF9fb25sb2FkX18uZXhwYW5zaW9uAAlleHBhbnNpb24AAAAAAAAAjXsKCSJleHBhbmRlZCI6dHJ1ZSwKCSJjaGlsZHJlbiI6ewoJCSJjYW1lcmFzIjp7CgkJCSJleHBhbmRlZCI6dHJ1ZSwKCQkJImNoaWxkcmU=
-biI6ewoJCQkJInNob3RDYW0iOnsKCQkJCQkiZXhwYW5kZWQiOnRydWUKCQkJCX0KCQkJfQoJCX0KCX0KfQoAFF9fb25sb2FkX18ubG9hZG1hc2tzAAlsb2FkbWFza3MAAAAAAAAAensKCSJwb3B1bGF0ZWFsbCI6dHJ1ZSwKCSI=
-cG9wdWxhdGVwYXRocyI6WwoJXSwKCSJtdXRlbGF5ZXJzIjpbCgldLAoJImxvYWRhbGwiOnRydWUsCgkibG9hZHBhdGhzIjpbCgldLAoJImZhbGxiYWNrcyI6ewoJfQp9Cg==
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera.init"
-Content-Type: text/plain
-
-type = th::import_shot_layer::1.0
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera.def"
-Content-Type: text/plain
-
-comment ""
-position -14.0729 2.75737
-connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault off exposed on debug off
-outputsNamed3
-{
-}
-inputsNamed3
-{
-}
-inputs
-{
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@matthias-4070
-  access 0777
-}
-color UT_Color RGB 0.631373 0.870588 1 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera.chn"
-Content-Type: text/plain
-
-{
-    channel latest {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      start = 41.666666666666664
-      segment { length = 0 expr = ch(\"../../latest\") }
-    }
-    channel import {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      start = 41.666666666666664
-      segment { length = 0 expr = ch(\"../../import\") }
-    }
-    channel sequence {
-      lefttype = extend
-      righttype = extend
-      defaultString = \"020\"
-      flags = 0
-      start = 41.666666666666664
-      segment { length = 0 expr = chs(\"../../sequence\") }
-    }
-    channel shot {
-      lefttype = extend
-      righttype = extend
-      defaultString = \"030\"
-      flags = 0
-      start = 41.666666666666664
-      segment { length = 0 expr = chs(\"../../shot\") }
-    }
-    channel department {
-      lefttype = extend
-      righttype = extend
-      defaultString = \"animation\"
-      flags = 0
-      start = 41.666666666666664
-      segment { length = 0 expr = chs(\"../../department\") }
-    }
-    channel version {
-      lefttype = extend
-      righttype = extend
-      defaultString = \"v0023\"
-      flags = 0
-      start = 41.666666666666664
-      segment { length = 0 expr = chs(\"../../version\") }
-    }
-  }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-selection	[ 0	locks=0 ]	(	0	)
-refresh	[ 0	locks=0 ]	(	0	)
-sequence	[ 0	locks=0 ]	(	[ sequence	"" ] 	)
-shot	[ 0	locks=0 ]	(	[ shot	"" ] 	)
-department	[ 0	locks=0 ]	(	[ department	"" ] 	)
-version	[ 0	locks=0 ]	(	[ version	"" ] 	)
-latest	[ 0	locks=0 ]	(	[ latest	0 ] 	)
-settings	[ 0	locks=0 ]	(	0	)
-stage_type	[ 0	locks=0 ]	(	cameras	)
-category	[ 0	locks=0 ]	(	""	)
-item	[ 0	locks=0 ]	(	""	)
-instance	[ 0	locks=0 ]	(	""	)
-include_layerbreak	[ 0	locks=0 ]	(	"on"	)
-actions	[ 0	locks=0 ]	(	1	)
-import	[ 0	locks=0 ]	(	[ import	0 ] 	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":""
-	},
-	"nodeshape":{
-		"type":"string",
-		"value":"bulge_down"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/import.def"
-Content-Type: text/plain
-
-comment ""
-position -7.91035 5.77281
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-1 "output1"
-}
-inputsNamed3
-{
-0 	"" "" 1 "input1"
-}
-inputs
-{
-0 	"" 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author Tumblehead@TH2301
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/import.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-parentlayer_group	[ 0	locks=0 ]	(	0	)
-loadpayloads	[ 0	locks=0 ]	(	"on"	)
-setstagemetadata	[ 0	locks=0 ]	(	auto	)
-editrootlayer	[ 0	locks=0 ]	(	"on"	)
-findsublayers	[ 0	locks=0 ]	(	""	)
-removefoundsublayers	[ 0	locks=0 ]	(	"on"	)
-composition_group	[ 0	locks=0 ]	(	0	)
-sublayertype	[ 0	locks=0 ]	(	filesandinputs	)
-handlemissingfiles	[ 0	locks=0 ]	(	error	)
-positiontype	[ 0	locks=0 ]	(	strongest	)
-positionindex	[ 0	locks=0 ]	(	0	)
-files_separator	[ 0	locks=0 ]	(	)
-num_files	[ 0	locks=0 ]	(	1	)
-reload	[ 0	locks=0 ]	(	0	)
-inputs_separator	[ 0	locks=0 ]	(	)
-enable	[ 0	locks=0 ]	(	"on"	)
-sublayerfile_group1	[ 0	locks=0 ]	(	1	)
-enable1	[ 0	locks=0 ]	(	"on"	)
-filepath1	[ 0	locks=0 ]	(	P:/cazoo/export/shots/020/030/animation/v0023/cameras_v0023.usd	)
-mute1	[ 0	locks=0 ]	(	"off"	)
-timeoffset1	[ 0	locks=0 ]	(	0	)
-timescale1	[ 0	locks=0 ]	(	1	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/import.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/switch.def"
-Content-Type: text/plain
-
-comment ""
-position -6.78075 4.34211
-connectornextid 3
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-2 "output1"
-}
-inputsNamed3
-{
-0 	import 1 1 "input1"
-1 	layerbreak 1 1 "input2"
-}
-inputs
-{
-0 	import 0 1
-1 	layerbreak 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author Tumblehead@TH2301
-  access 0777
-}
-color UT_Color RGB 0.8 1 0.7 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/switch.editableinputdata"
-Content-Type: text/plain
-
-[
-	{
-	},
-	{
-	}
-]
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/switch.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-chooseinputbyname	[ 0	locks=0 ]	(	"off"	)
-input	[ 0	locks=0 ]	(	1	)
-selectinputname	[ 0	locks=0 ]	(	""	)
-selectinputvalue	[ 0	locks=0 ]	(	""	)
-config_separator	[ 0	locks=0 ]	(	)
-badinput	[ 0	locks=0 ]	(	ignore	)
-fallback	[ 0	locks=0 ]	(	0	)
-selectfallbackname	[ 0	locks=0 ]	(	""	)
-inputname	[ 0	locks=0 ]	(	"`opinput(\".\", @input)`"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/switch.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/bypass.def"
-Content-Type: text/plain
-
-comment ""
-position -8.14555 1.93251
-connectornextid 3
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-2 "output1"
-}
-inputsNamed3
-{
-0 	(0) "" 1 "input1"
-1 	merge 2 1 "input2"
-}
-inputs
-{
-0 	(0) 0 1
-1 	merge 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author Tumblehead@TH2301
-  access 0777
-}
-color UT_Color RGB 0.8 1 0.7 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/bypass.editableinputdata"
-Content-Type: text/plain
-
-[
-	{
-	},
-	{
-	}
-]
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/bypass.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-chooseinputbyname	[ 0	locks=0 ]	(	"off"	)
-input	[ 0	locks=0 ]	(	1	)
-selectinputname	[ 0	locks=0 ]	(	""	)
-selectinputvalue	[ 0	locks=0 ]	(	""	)
-config_separator	[ 0	locks=0 ]	(	)
-badinput	[ 0	locks=0 ]	(	ignore	)
-fallback	[ 0	locks=0 ]	(	0	)
-selectfallbackname	[ 0	locks=0 ]	(	""	)
-inputname	[ 0	locks=0 ]	(	"`opinput(\".\", @input)`"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet/import_camera/bypass.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lopnet.net"
-Content-Type: text/plain
-
-1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/cameraimport.init"
 Content-Type: text/plain
 
@@ -1604,9 +2046,9 @@ Content-Disposition: attachment; filename="hdaroot/cameraimport.def"
 Content-Type: text/plain
 
 comment ""
-position -16.4036 2.94918
+position 0 5.55112e-17
 connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
 {
 0 "camera_ref"
@@ -1621,7 +2063,7 @@ stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
@@ -1635,7 +2077,7 @@ Content-Type: text/plain
 
 {
 version 0.8
-signature	[ 0	locks=0 ]	(	f1	)
+signature	[ 0	locks=0 ]	(	m	)
 camera	[ 0	locks=0 ]	(	../objnet/lopimportcam	)
 setclipping	[ 0	locks=0 ]	(	"off"	)
 near	[ 0	locks=0 ]	(	0.01	)
@@ -1665,9 +2107,9 @@ Content-Disposition: attachment; filename="hdaroot/output1.def"
 Content-Type: text/plain
 
 comment ""
-position -12.7247 2.94918
+position 2.6559 5.55112e-17
 connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
 {
 }
@@ -1683,7 +2125,7 @@ stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
@@ -1715,8 +2157,8 @@ Content-Disposition: attachment; filename="hdaroot.order"
 Content-Type: text/plain
 
 4
-objnet
 lopnet
+objnet
 cameraimport
 output1
 

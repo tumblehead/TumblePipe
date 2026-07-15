@@ -2,25 +2,32 @@
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
 from tumblepipe.config.variants import list_variants
-from tumblepipe.pipe.houdini.util import uri_to_prim_path
 from tumblepipe.pipe.houdini.lops import (
     import_layer,
     export_layer
 )
 
+def _pin_entity(node, entity_uri: Uri):
+    """Pin an entity-aware th:: HDA to one specific entity.
+
+    Only group workfiles need this: they hold several entities at once, so
+    the 'from_context' default cannot resolve to a single one. Routing
+    through the HDA's _apply_entity keeps the visible Entity label in step
+    with the parm. Single-entity workfiles deliberately leave the parm at
+    'from_context' so the node follows the workfile it lives in.
+    """
+    node.hdaModule()._apply_entity(node, str(entity_uri))
+
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
-    prim_path = uri_to_prim_path(entity_uri)
     variant_names = list_variants(entity_uri)
 
-    # Import the model department
+    # Import the model department (entity resolves from context)
     import_node = import_layer.create(scene_node, 'IMPORT_MODEL')
-    import_node.set_entity_uri(entity_uri)
     import_node.set_department_name('model')
 
-    # Create lookdev variant system via HDA
+    # Create lookdev variant system via HDA (entity + prim path from context)
     lookdev_node = scene_node.createNode('th::create_asset_lookdev::1.0', 'LOOKDEV')
     lookdev_node.setInput(0, import_node.native())
-    lookdev_node.parm('primpath').set(prim_path)
 
     # Populate variants from config and sync internal nodes
     lookdev_node.parm('variants').set(len(variant_names))
@@ -28,7 +35,7 @@ def _create_entity(scene_node, entity_uri: Uri, department_name: str):
         lookdev_node.parm(f'variant_name{i+1}').set(name)
     lookdev_node.hdaModule()._sync_variants(lookdev_node)
 
-    # Create the export layer node
+    # Create the export layer node (entity + department resolve from context)
     export_node = export_layer.create(scene_node, 'export_lookdev')
     export_node.setInput(0, lookdev_node)
 
@@ -40,7 +47,6 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
 
     for member_uri in group.members:
         member_name = '_'.join(member_uri.segments[1:])
-        prim_path = uri_to_prim_path(member_uri)
         variant_names = list_variants(member_uri)
 
         # Import the model department
@@ -51,7 +57,7 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
         # Create lookdev variant system via HDA
         lookdev_node = scene_node.createNode('th::create_asset_lookdev::1.0', f'LOOKDEV_{member_name}')
         lookdev_node.setInput(0, import_node.native())
-        lookdev_node.parm('primpath').set(prim_path)
+        _pin_entity(lookdev_node, member_uri)
 
         # Populate variants from config and sync internal nodes
         lookdev_node.parm('variants').set(len(variant_names))

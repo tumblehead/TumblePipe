@@ -1,2 +1,26 @@
 {
+	"OnCreated/IsExpr":{
+		"type":"bool",
+		"value":false
+	},
+	"OnCreated/IsPython":{
+		"type":"bool",
+		"value":true
+	},
+	"OnCreated/IsScript":{
+		"type":"bool",
+		"value":true
+	},
+	"PythonModule/IsExpr":{
+		"type":"bool",
+		"value":false
+	},
+	"PythonModule/IsPython":{
+		"type":"bool",
+		"value":true
+	},
+	"PythonModule/IsScript":{
+		"type":"bool",
+		"value":true
+	}
 }

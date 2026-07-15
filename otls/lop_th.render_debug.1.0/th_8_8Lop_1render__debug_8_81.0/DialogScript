@@ -22,7 +22,7 @@
             name    "shot"
             label   "Shot"
             type    string
-            default { "" }
+            default { "from_context" }
             menu {
                 [ "from tumblepipe.pipe.houdini.lops import render_debug" ]
                 [ "from tumblepipe.pipe.houdini import util" ]

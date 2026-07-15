@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 
 from tumbletrove.asset_browser.api.catalog import Catalog
@@ -930,6 +931,10 @@ class PipelineCatalog(Catalog):
                 lambda aid=asset_id: self._thumbnails.capture(aid),
             ),
             (
+                "Departments…",
+                lambda aid=asset_id: self._edit_entity_departments(aid),
+            ),
+            (
                 "Open in Database Editor…",
                 lambda aid=asset_id: self._open_database_editor(aid),
             ),
@@ -1395,6 +1400,19 @@ class PipelineCatalog(Catalog):
             f"Master scene saved: {master_hip}",
             severity=hou.severityType.Message,
         )
+
+    def _edit_entity_departments(self, asset_id: str) -> None:
+        """Choose which departments this shot or asset uses."""
+        import hou
+        try:
+            from _pipeline_departments import EntityDepartmentsDialog
+            EntityDepartmentsDialog(self, asset_id).exec()
+        except Exception as exc:
+            log.exception("Departments dialog failed for %s", asset_id)
+            hou.ui.displayMessage(
+                f"Could not edit departments for '{asset_id}': {exc}",
+                severity=hou.severityType.Warning,
+            )
 
     def _open_database_editor(self, asset_id: str) -> None:
         """Open the pipeline DatabaseWindow with the entity pre-selected."""
@@ -2057,19 +2075,28 @@ class PipelineCatalog(Catalog):
         from tumblepipe.config.department import list_departments
 
         context = "shots" if type_tag == "shot" else "assets"
+        raw_depts = metadata.get("departments")
         try:
-            all_depts = [
-                d for d in list_departments(
+            # The card's own departments — its assignment plus anything that
+            # already has work — so the hover grid matches its deck.
+            shown, _assigned = self._entity_department_scope(
+                asset.id, context,
+                with_work=(
+                    raw_depts.keys() if isinstance(raw_depts, dict) else ()
+                ),
+            )
+            by_name = {
+                d.name: d for d in list_departments(
                     context, include_generated=False,
                 )
                 if d.enabled
-            ]
+            }
+            all_depts = [by_name[name] for name in shown if name in by_name]
         except Exception:
             return None
         if not all_depts:
             return None
 
-        raw_depts = metadata.get("departments")
         active_versions: dict[str, str] = {}
         if isinstance(raw_depts, dict):
             for k, v in raw_depts.items():
@@ -3005,9 +3032,15 @@ class PipelineCatalog(Catalog):
         depts = asset.metadata.get("departments", {})
 
         cards = []
-        # Get all possible departments for this entity type
+        # The departments this entity is scoped to, plus any that already
+        # have a workfile — an unassigned department with work still shows,
+        # flagged, rather than vanishing from the deck.
         is_shot = "type:shot" in asset.tags
-        all_depts = self._list_entity_departments("shots" if is_shot else "assets")
+        all_depts, assigned_depts = self._entity_department_scope(
+            asset.id,
+            "shots" if is_shot else "assets",
+            with_work=depts.keys(),
+        )
 
         # Detect the loaded scene's dept so we can mark it "active".
         scene_dv = self._scene.get_scene_dept_version(asset.id)
@@ -3069,6 +3102,13 @@ class PipelineCatalog(Catalog):
                     asset.id, dept_name, version) or ""
                 mtime = self._workfiles.get_mtime_for_version(
                     asset.id, dept_name, version)
+                tooltip = None
+                if dept_name not in assigned_depts:
+                    tooltip = (
+                        f"{short} — has work but is not one of this entity's "
+                        "departments.\nRe-assign it, or leave it: the "
+                        "workfile and its exports are untouched either way."
+                    )
                 cards.append(DeckItem(
                     key=dept_name,
                     label=short,
@@ -3077,6 +3117,7 @@ class PipelineCatalog(Catalog):
                     icon=_icon_for(dept_name),
                     action_id=f"open_workfile:{dept_name}",
                     dismiss_on_click=True,
+                    tooltip=tooltip,
                     user=user,
                     edited=mtime.timestamp() if mtime else 0.0,
                 ))
@@ -3608,14 +3649,72 @@ class PipelineCatalog(Catalog):
         return sorted(out)
 
     def _list_entity_departments(self, context: str) -> list[str]:
-        """List department names for 'assets' or 'shots'."""
+        """The project's whole department pool for 'assets' or 'shots'."""
         try:
             from tumblepipe.config.department import list_departments
             return [d.name for d in list_departments(context, include_generated=False)]
         except Exception:
+            # A last-ditch list so the deck still renders something if the
+            # config read throws. It is the stock pool of the shipped project
+            # template — not an invented one.
+            #
+            # This fallback is a DIFFERENT shape than a real project pool,
+            # so a session that hits it intermittently would feed a
+            # different department count to different builds — the
+            # inconsistency behind the deck-rebuild crash. list_departments
+            # was hardened to stop KeyError-ing on un-migrated nodes, so
+            # this should now only fire on a genuine config-read failure;
+            # log loudly so those stay diagnosable instead of silent.
+            log.warning(
+                "Department pool read failed for %r — using the template "
+                "fallback pool. This project likely needs "
+                "scripts/migrate_config.py.", context, exc_info=True,
+            )
             if context == "assets":
-                return ["model", "lookdev", "rig"]
-            return ["layout", "animation", "lighting", "render", "comp"]
+                return ["model", "blendshape", "lookdev", "rig"]
+            return [
+                "layout", "environment", "animation", "crowd", "effects",
+                "cfx", "light", "render", "composite",
+            ]
+
+    def _entity_department_scope(
+        self, asset_id: str, context: str,
+        with_work: Iterable[str] = (),
+    ) -> tuple[list[str], set[str]]:
+        """``(departments_to_show, assigned)`` for one entity, in pool order.
+
+        An entity may be scoped to a subset of its context's pool
+        (``entity.departments``); one that isn't inherits the whole pool.
+        Departments that already have a workfile are shown even when they
+        are not assigned — scoping states what an entity is *expected* to
+        have, it never hides work that exists.
+        """
+        pool = self._list_entity_departments(context)
+        worked = list(with_work)
+        assigned: list[str] = []
+        try:
+            proj = self._resolver.project_for(asset_id)
+            entity_uri = self._resolver.uri_for(asset_id)
+            if proj is not None and entity_uri is not None:
+                self._activate_project(proj)
+                from tumblepipe.config.department import (
+                    list_entity_departments,
+                )
+                assigned = [
+                    d.name for d in
+                    list_entity_departments(entity_uri, include_generated=False)
+                ]
+        except Exception:
+            log.exception(
+                "Departments: could not resolve the assignment for %s", asset_id,
+            )
+        if not assigned:
+            return pool, set(pool)
+        shown = set(assigned) | set(worked)
+        ordered = [name for name in pool if name in shown]
+        # A department dropped from the pool can still have work on disk.
+        ordered += [name for name in worked if name not in pool]
+        return ordered, set(assigned)
 
     def _list_entity_dept_shorts(self, context: str) -> dict[str, str]:
         """Return ``{dept_name: short}`` for every department, preferring

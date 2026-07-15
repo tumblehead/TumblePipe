@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 from tumblepipe.api import path_str, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
-from tumblepipe.config.department import list_departments
 from tumblepipe.config.variants import list_variants
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
@@ -131,7 +130,10 @@ class ImportLayer(EntityNode):
         if entity_type is None:
             return ['from_context']
         context_name = 'assets' if entity_type == 'asset' else 'shots'
-        names = [d.name for d in list_departments(context_name) if d.publishable]
+        names = [
+            d.name for d in self.scoped_departments(context_name)
+            if d.publishable
+        ]
         return ['from_context'] + names
 
     def list_version_names(self) -> list[str]:
@@ -213,17 +215,10 @@ class ImportLayer(EntityNode):
             self.parm('entity_label').set(entity_raw)
 
     def _initialize(self):
-        """Initialize node with defaults from workfile context and update labels."""
-        file_path = Path(hou.hipFile.path())
-        context = get_workfile_context(file_path)
-
-        # If no context, set first available entity
-        if context is None:
-            entity_uris = self.list_entity_uris()
-            if len(entity_uris) > 1:  # Skip 'from_context'
-                self.set_entity_uri(Uri.parse_unsafe(entity_uris[1]))
-
-        # Update labels to show resolved values
+        """Refresh the labels. The 'entity' parm keeps its 'from_context'
+        default even when the context can't be read: falling back to the
+        first entity in the project silently imports the wrong one, where an
+        unresolved 'from_context' visibly imports nothing."""
         self._update_labels()
 
     def execute(self):

@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.31.0"
+version = "1.32.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -133,6 +133,8 @@ include = [
 exclude = [
     "otls/*/**",                 # decompiled HDA source dirs — ship the .hda, not the source
     "scripts/verify_*.py",       # in-app verification harnesses — dev-only, not shipped
+    "**/__pycache__/**",         # bytecode: the project_template scaffold accumulates it,
+                                 # and tt_setup copies _config/ wholesale into a new project
 ]
 
 # build-resolver ports the cmake loop + arch/symbol verification out of the

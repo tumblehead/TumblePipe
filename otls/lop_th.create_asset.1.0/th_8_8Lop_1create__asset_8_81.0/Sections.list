@@ -6,4 +6,6 @@ Contents.gz	Contents.gz
 TypePropertiesOptions	TypePropertiesOptions
 Help	Help
 Tools.shelf	Tools.shelf
+OnCreated	OnCreated
+PythonModule	PythonModule
 ExtraFileOptions	ExtraFileOptions

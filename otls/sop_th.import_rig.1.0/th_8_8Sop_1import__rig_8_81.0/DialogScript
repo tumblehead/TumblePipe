@@ -35,7 +35,7 @@
             invisible
             nolabel
             joinnext
-            default { "" }
+            default { "from_context" }
             parmtag { "script_callback_language" "python" }
         }
         parm {

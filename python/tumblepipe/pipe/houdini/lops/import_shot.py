@@ -8,7 +8,10 @@ from tumblepipe.api import api, path_str
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import get_frame_range, get_fps
-from tumblepipe.config.department import list_departments
+from tumblepipe.config.department import (
+    list_departments,
+    list_entity_departments,
+)
 from tumblepipe.config.variants import list_variants
 import tumblepipe.pipe.houdini.nodes as ns
 import tumblepipe.pipe.houdini.util as util
@@ -387,14 +390,23 @@ class ImportShot(ns.Node):
         return ['from_context'] + [str(uri) for uri in uris]
 
     def list_asset_department_names(self):
+        # The whole pool: these are the departments of the *assets* this shot
+        # imports, not of the shot itself, and each asset carries its own
+        # scoping.
         return [d.name for d in list_departments('assets') if d.renderable]
 
+    def _shot_departments(self):
+        """The shot's own departments — its assignment, or the whole pool."""
+        shot_uri = self.get_shot_uri()
+        if shot_uri is None:
+            return list_departments('shots')
+        return list_entity_departments(shot_uri)
+
     def list_shot_department_names(self):
-        return [d.name for d in list_departments('shots') if d.renderable]
+        return [d.name for d in self._shot_departments() if d.renderable]
 
     def list_department_names(self) -> list[str]:
-        shot_departments = list_departments('shots')
-        names = [dept.name for dept in shot_departments]
+        names = [d.name for d in self._shot_departments()]
         return ['from_context'] + names
 
     def list_variant_names(self) -> list[str]:

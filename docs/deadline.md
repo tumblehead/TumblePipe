@@ -46,6 +46,13 @@ Each worker needs the same environment as an artist workstation:
 - **Drive mappings** — workers must map the project drives to the same letters
   the workstations use, so jobs that reference `P:\...` resolve identically.
   Without matching drive letters, the job will fail to read project files.
+- **A GL context for the `playblast` group** — playblast jobs render with
+  husk's Hydra Storm (GL) delegate, so any worker assigned to the dedicated
+  `playblast` group needs a GL-capable GPU context (a real display/session,
+  not a headless service with no GPU). A worker without one produces empty
+  frames; the task fails loudly with that hint rather than shipping a black
+  MP4. The group is kept separate from `karma` so previews never take
+  final-render slots.
 
 For the **HPM** plugin specifically — **no per-node setup is required**:
 

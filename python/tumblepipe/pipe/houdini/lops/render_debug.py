@@ -25,25 +25,31 @@ class RenderDebug(ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_shot_uris(self) -> list[Uri]:
-        return api.config.list_entity_uris(
+    def list_shot_uris(self) -> list[str]:
+        uris = api.config.list_entity_uris(
             filter = Uri.parse_unsafe('entity:/shots'),
             closure = True
         )
+        return ['from_context'] + [str(uri) for uri in uris]
 
     def list_variant_names(self):
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return []
         return list_variants(shot_uri)
-    
+
     def get_shot_uri(self) -> Uri | None:
-        shot_uris = self.list_shot_uris()
-        if len(shot_uris) == 0: return None
         shot_uri_raw = self.parm('shot').eval()
-        if len(shot_uri_raw) == 0: return shot_uris[0]
-        shot_uri = Uri.parse_unsafe(shot_uri_raw)
-        if shot_uri not in shot_uris: return None
-        return shot_uri
+        if shot_uri_raw == 'from_context':
+            file_path = Path(hou.hipFile.path())
+            context = get_workfile_context(file_path)
+            if context is None: return None
+            return context.entity_uri
+        # From settings
+        shot_uris = self.list_shot_uris()
+        if len(shot_uris) <= 1: return None  # Only 'from_context' means no real URIs
+        if len(shot_uri_raw) == 0: return Uri.parse_unsafe(shot_uris[1])  # Skip 'from_context'
+        if shot_uri_raw not in shot_uris: return None  # Compare strings
+        return Uri.parse_unsafe(shot_uri_raw)
 
     def get_variant_name(self):
         variant_names = self.list_variant_names()
@@ -55,7 +61,7 @@ class RenderDebug(ns.Node):
     
     def set_shot_uri(self, shot_uri: Uri):
         shot_uris = self.list_shot_uris()
-        if shot_uri not in shot_uris: return
+        if str(shot_uri) not in shot_uris: return  # Compare strings
         self.parm('shot').set(str(shot_uri))
 
     def set_variant_name(self, variant_name):
@@ -102,22 +108,10 @@ def set_style(raw_node):
 
 def on_created(raw_node):
 
-    # Set node style
+    # Set node style. The 'shot' parm keeps its 'from_context' default —
+    # baking the workfile's URI in here would pin the node to whichever
+    # shot it was born in.
     set_style(raw_node)
-
-    # Context
-    raw_node_type = raw_node.type()
-    node_type = ns.find_node_type('render_debug', 'Lop')
-    if raw_node_type != node_type: return
-    node = RenderDebug(raw_node)
-
-    # Parse scene file path
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-    if context is None: return
-
-    # Set the default values from context
-    node.set_shot_uri(context.entity_uri)
 
 def execute():
     raw_node = hou.pwd()

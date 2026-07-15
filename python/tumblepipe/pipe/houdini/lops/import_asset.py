@@ -329,6 +329,11 @@ def _list_staged_layers(staged_file_path: Path) -> list[tuple[str | None, str]]:
     return layers
 
 class ImportAsset(EntityNode):
+
+    # import_asset only ever addresses assets, so 'from_context' inside a
+    # shot workfile resolves to nothing rather than to the shot.
+    ENTITY_CONTEXTS = ('assets',)
+
     def __init__(self, native):
         super().__init__(native)
 
@@ -369,24 +374,18 @@ class ImportAsset(EntityNode):
             variants.insert(0, 'default')
         return variants
 
-    def get_entity_uri(self) -> Uri | None:
-        asset_uris = self.list_asset_uris()
-        if len(asset_uris) == 0: return None
-        asset_uri_raw = self.parm('entity').eval()
-        if len(asset_uri_raw) == 0: return asset_uris[0]
-        asset_uri = Uri.parse_unsafe(asset_uri_raw)
-        if asset_uri not in asset_uris: return None
-        return asset_uri
-
-    def set_entity_uri(self, asset_uri: Uri):
-        asset_uris = self.list_asset_uris()
-        if asset_uri not in asset_uris: return
-        self.parm('entity').set(str(asset_uri))
+    def list_entity_uris(self) -> list[str]:
+        return ['from_context'] + [str(uri) for uri in self.list_asset_uris()]
 
     def _update_labels(self):
         """Update label parameters to show current entity selection."""
+        entity_raw = self.parm('entity').eval()
         entity_uri = self.get_entity_uri()
-        if entity_uri:
+        if entity_raw == 'from_context':
+            self.parm('entity_label').set(
+                f'from_context: {entity_uri}' if entity_uri else 'from_context: none'
+            )
+        elif entity_uri:
             self.parm('entity_label').set(str(entity_uri))
         else:
             self.parm('entity_label').set('none')
@@ -528,10 +527,10 @@ def set_style(raw_node):
 def on_created(raw_node):
     set_style(raw_node)
     node = ImportAsset(raw_node)
-    # Set entity to first available
-    asset_uris = node.list_asset_uris()
-    if asset_uris:
-        node.set_entity_uri(asset_uris[0])
+    # 'entity' keeps its 'from_context' default. Seeding it with the first
+    # asset in the project pinned every fresh node to an arbitrary asset —
+    # whichever sorted first — and the artist had no way to tell that from a
+    # deliberate choice.
     node._update_labels()
 
 def execute():
@@ -549,7 +548,7 @@ def select():
     dialog = EntitySelectorDialog(
         api=api,
         entity_filter='assets',
-        include_from_context=False,
+        include_from_context=True,
         current_selection=node.parm('entity').eval(),
         title="Select Asset",
         parent=hou.qt.mainWindow()

@@ -6,6 +6,18 @@ from tumblepipe.pipe.houdini.sops import cache
 from tumblepipe.pipe.houdini.lops import export_layer
 from tumblepipe.pipe.houdini.util import disable_layer_save_path, uri_to_prim_path
 
+def _pin_entity(sop_import_node, entity_uri: Uri):
+    """Pin a th::import_model HDA to one specific entity.
+
+    Only group workfiles need this: they hold several entities at once, so
+    the 'from_context' default cannot resolve to a single one. The entity
+    parm channel-feeds the embedded import_layer LOP; _update_labels pulls
+    the resolved label back out so the node doesn't keep reading
+    'from_context: none' while pointing at a real asset.
+    """
+    sop_import_node.parm('entity').set(str(entity_uri))
+    sop_import_node.hdaModule()._update_labels(sop_import_node)
+
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
     prim_path = uri_to_prim_path(entity_uri)
 
@@ -68,7 +80,7 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
 
         # Create the import model HDA (entity set explicitly for group members)
         sop_import_node = sop_dive_node.createNode('th::import_model::1.0', 'import_model')
-        sop_import_node.parm('entity').set(str(member_uri))
+        _pin_entity(sop_import_node, member_uri)
 
         # Create the SOP GOZ import node
         sop_goz_import_node = sop_dive_node.createNode('goz_import', 'goz_import')

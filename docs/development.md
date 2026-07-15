@@ -97,7 +97,69 @@ catch a regression back into the stat-storm bug class (see the config
 engine notes in `configuration.md`). It reads a real project config, so
 run it under a project hython whose project has at least two shots and
 one asset (e.g. TumbleTrove Desktop's run_hython with dev overrides). Qt runs
-offscreen; no project data is written and nothing is submitted.
+offscreen; no project data is written and nothing is submitted. It also pins
+the shots-only **Playblast** section (present for shots, absent for assets,
+department list = renderable shot departments, opt-in default).
+
+`scripts/verify_playblast_job.py` pins the farm playblast job family:
+the task/job config validators, and that the versioned playblast + rolling
+daily paths resolve **under the shot's department** (the arity bug the
+department fix closed stays closed). It builds the batch when run from an
+installed package and skips that structural check on a dev checkout (hpm
+won't ship a Task from an editable tree). Run it under a project hython with
+at least one shot.
+
+## Entity `from_context` audit
+
+`scripts/verify_entity_from_context.py` pins the contract that every `th::`
+HDA which addresses a pipeline entity leaves its `entity`/`shot`/`asset` parm
+on the `from_context` sentinel, so the node resolves its entity from the
+workfile it lives in every time it is evaluated. A concrete URI in that parm
+pins the node to whichever entity it was *born* in: copy the scene to another
+asset, rename the entity, or build a shot from a template, and it keeps
+publishing to the old one.
+
+It checks the three ways that contract has been broken:
+
+1. **Parm defaults** — an entity-addressing parm whose default is a concrete
+   URI, or the empty string. Empty is not neutral:
+   `EntityNode.get_entity_uri()` resolves an unset parm to the *first entity
+   in the project*, so the node silently addresses an arbitrary asset and
+   looks in the UI exactly like a deliberate choice.
+2. **`on_created` hooks** — a wrapper that writes a URI into the parm at node
+   creation, defeating the sentinel it just defaulted to. Both shapes count:
+   baking the workfile's own URI, and pinning the first entity in the project.
+3. **Department templates** — the single-entity branch (`_create_entity`)
+   stamping a specific entity URI. Only the multi-entity `_create_group`
+   branch needs to: a group workfile holds several entities at once, so
+   `from_context` cannot resolve to one of them.
+
+It reads the expanded `otls/` DialogScripts and the Python wrappers as text,
+so it needs no Houdini and no project:
+
+```bash
+cd tests
+uv run python ../scripts/verify_entity_from_context.py
+```
+
+Prefer it over grepping — the baking shows up in several shapes that a
+hand-written search misses.
+
+## Department pool audit
+
+`scripts/verify_entity_departments.py` reports a project's department pool in
+**pipeline order** (which is what the pool's key order *is* — see *Departments*
+in {doc}`configuration`), the entities scoped to a subset of it, assignments
+naming a department the pool no longer has, and departments with work on disk
+that their entity is not scoped to. It is read-only, so it is safe against a
+live project; run it before and after migrating one to config v3.
+
+```bash
+cd tests
+uv run python ../scripts/verify_entity_departments.py P:/paleindia
+```
+
+With no argument it audits `$TH_PROJECT_PATH`.
 
 ## Changelog
 
@@ -138,6 +200,35 @@ dangling arc. It needs `pxr` but no scene or project data (temp dirs
 only), so run it under any project hython (e.g. TumbleTrove Desktop's
 run_hython). The pure path-classification half is covered by
 `tests/test_usd_paths.py`.
+
+## Animated switch/blend export (track prim existence)
+
+An animated Switch/Blend that changes **which prims exist** per frame
+(switching between different geometry/assets/takes) only survives a USD
+write if the writer authors visibility time samples — the ROP's *Track
+Primitive Existence to Set Visibility* (`trackprimexistence`). With it
+off, every switched branch is written as always-visible and all branches
+appear at once, so the switch looks broken on the published layer.
+
+The `filecache` LOP tracks prim existence inherently, so the
+`filecache`-based farm export/stage tasks (and `th::cache`) were always
+correct; the plain `usd_rop` export paths were not. `trackprimexistence`
+is therefore baked **on** in the `export_layer` and `export_asset` HDAs'
+internal `usd_rop` (their expanded `Contents.dir/Contents.mime` `.parm`
+line) and `set(1)` on the `usd_rop` in `farm/jobs/houdini/update`.
+
+Editing this on an HDA means editing the definition, not the driver: the
+internal ROP is a locked asset node, so `native.node('export').parm(...)`
+raises `PermissionError` — flip the value in the expanded `.parm` text
+(`"off"`→`"on"`). To verify a repo HDA edit under `run_hython` (which
+loads the *installed* package, not the working tree),
+`hou.hda.installFile(<repo otl dir>)` then `definition.setIsPreferred(True)`
+before instantiating.
+
+Not fixable here: switching a **default-valued** attribute on a single
+prim (e.g. a constant transform) is lost by `usd_rop`, the Cache LOP, and
+`filecache`/`th::cache` alike — a USD default has no time coordinate, so
+the animation must be authored as time samples upstream.
 
 ## Farm task and job modules
 

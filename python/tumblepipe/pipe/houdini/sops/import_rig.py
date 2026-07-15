@@ -20,8 +20,16 @@ def _clear_scene(dive_node, output_node):
         node.destroy()
 
 class ImportRig(EntityNode):
+
+    # import_rig only ever addresses assets, so 'from_context' inside a
+    # shot workfile resolves to nothing rather than to the shot.
+    ENTITY_CONTEXTS = ('assets',)
+
     def __init__(self, native):
         super().__init__(native)
+
+    def list_entity_uris(self) -> list[str]:
+        return ['from_context'] + [str(uri) for uri in self.list_asset_uris()]
 
     def list_asset_uris(self) -> list[Uri]:
         with api.config.coherent():
@@ -46,22 +54,8 @@ class ImportRig(EntityNode):
         version_names = [version_path.name for version_path in version_paths]
         return ['latest'] + version_names
 
-    def get_entity_uri(self) -> Uri | None:
-        asset_uris = self.list_asset_uris()
-        if len(asset_uris) == 0: return None
-        asset_uri_raw = self.parm('entity').eval()
-        if len(asset_uri_raw) == 0: return asset_uris[0]
-        asset_uri = Uri.parse_unsafe(asset_uri_raw)
-        if asset_uri not in asset_uris: return None
-        return asset_uri
-
     def get_instances(self):
         return self.parm('instances').eval()
-
-    def set_entity_uri(self, asset_uri: Uri):
-        asset_uris = self.list_asset_uris()
-        if asset_uri not in asset_uris: return
-        self.parm('entity').set(str(asset_uri))
 
     def set_version_name(self, version_name):
         version_names = self.list_version_names()
@@ -73,8 +67,13 @@ class ImportRig(EntityNode):
 
     def _update_labels(self):
         """Update label parameters to show current entity selection."""
+        entity_raw = self.parm('entity').eval()
         entity_uri = self.get_entity_uri()
-        if entity_uri:
+        if entity_raw == 'from_context':
+            self.parm('entity_label').set(
+                f'from_context: {entity_uri}' if entity_uri else 'from_context: none'
+            )
+        elif entity_uri:
             self.parm('entity_label').set(str(entity_uri))
         else:
             self.parm('entity_label').set('none')
@@ -216,7 +215,7 @@ def select():
     dialog = EntitySelectorDialog(
         api=api,
         entity_filter='assets',
-        include_from_context=False,
+        include_from_context=True,
         current_selection=node.parm('entity').eval(),
         title="Select Asset",
         parent=hou.qt.mainWindow()

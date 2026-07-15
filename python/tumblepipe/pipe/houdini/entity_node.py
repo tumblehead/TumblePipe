@@ -5,10 +5,19 @@ The LOP/SOP wrapper classes under lops/ and sops/ bind a pipeline entity
 common set of parms ('entity', 'department', 'variant', 'version', ...).
 EntityNode hoists only the methods whose bodies were textually identical
 across the adopting wrappers (or identical after parameterizing via the
-DEPARTMENT_* class attributes). Anything wrapper-specific — indexed
-multiparm access (import_assets/import_rigs), shot-only context resolution
-(import_shot, LOP playblast), extra validation (export_rig, create_model) —
-stays an override in the subclass.
+DEPARTMENT_* / ENTITY_CONTEXTS class attributes). Anything wrapper-specific
+— indexed multiparm access (import_assets/import_rigs), shot-only context
+resolution (import_shot, LOP playblast), extra validation (export_rig,
+create_model) — stays an override in the subclass.
+
+The 'entity' parm holds either a concrete URI or the literal 'from_context'
+sentinel, which resolves against the workfile the node lives in on every
+evaluation. That sentinel is the default for every entity-aware th:: HDA:
+a baked URI pins the node to whichever entity it was born in, so a copied
+scene or a renamed entity keeps addressing the old one. Note that an
+*empty* entity parm is NOT neutral — get_entity_uri() below resolves it to
+the first entity in the project — so new parms must default to the sentinel,
+never to ''. scripts/verify_entity_from_context.py audits this.
 """
 
 from pathlib import Path
@@ -17,7 +26,11 @@ import hou
 
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.department import list_departments
+from tumblepipe.config.department import (
+    Department,
+    list_departments,
+    list_entity_departments,
+)
 from tumblepipe.config.variants import get_entity_type, list_variants
 from tumblepipe.pipe.paths import get_workfile_context
 import tumblepipe.pipe.houdini.nodes as ns
@@ -29,6 +42,13 @@ class EntityNode(ns.Node):
     # context to list and which boolean department flag to filter on.
     DEPARTMENT_CONTEXT: str = 'assets'
     DEPARTMENT_FILTER: str = 'publishable'
+
+    # Which entity contexts the 'from_context' sentinel is allowed to
+    # resolve to. None accepts both. Nodes that only ever address one side
+    # (import_asset/import_rig never import a shot) narrow this so that
+    # 'from_context' in the wrong kind of workfile resolves to nothing
+    # rather than to an entity they cannot handle.
+    ENTITY_CONTEXTS: tuple[str, ...] | None = None
 
     def __init__(self, native):
         super().__init__(native)
@@ -69,6 +89,9 @@ class EntityNode(ns.Node):
             # Only accept entity URIs, not group URIs
             if context.entity_uri.purpose != 'entity':
                 return None
+            if (self.ENTITY_CONTEXTS is not None
+                    and context.entity_uri.segments[0] not in self.ENTITY_CONTEXTS):
+                return None
             return context.entity_uri
         # From settings
         entity_uris = self.list_entity_uris()
@@ -89,9 +112,34 @@ class EntityNode(ns.Node):
 
     # Departments
 
+    def scoped_departments(
+        self, context: str, include_generated: bool = True,
+        ) -> list[Department]:
+        """The department pool for ``context``, narrowed to the node's entity.
+
+        An entity may be scoped to a subset of its context's pool, and a menu
+        on a node addressing that entity should offer only what the entity
+        actually has. The narrowing only applies when the entity draws from
+        the context being listed — a node listing *asset* departments while
+        addressing a shot (import_shot) still gets the whole pool.
+
+        Order is the pool's throughout: it is the pipeline order, and the
+        downstream computations below index into it.
+        """
+        entity_uri = self.get_entity_uri()
+        if (
+            entity_uri is not None
+            and entity_uri.segments
+            and entity_uri.segments[0] == context
+        ):
+            return list_entity_departments(
+                entity_uri, include_generated=include_generated,
+            )
+        return list_departments(context, include_generated=include_generated)
+
     def list_department_names(self):
         return [
-            d.name for d in list_departments(self.DEPARTMENT_CONTEXT)
+            d.name for d in self.scoped_departments(self.DEPARTMENT_CONTEXT)
             if getattr(d, self.DEPARTMENT_FILTER)
         ]
 

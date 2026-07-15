@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini.cops import import_lop_camera
+
+import_lop_camera.on_created(kwargs['node'])

@@ -58,6 +58,17 @@ class ConfigConvention:
         """
         raise NotImplementedError()
 
+    def reorder_children(self, uri: Uri, names: list[str]):
+        """Reorder the children of ``uri`` to match ``names``.
+
+        Child order is not cosmetic everywhere: the department pool's order
+        is the pipeline order (it drives USD sublayer strength and every
+        "downstream" computation), so it needs to be settable without
+        rewriting the tree by hand. ``names`` must be a permutation of the
+        node's existing children.
+        """
+        raise NotImplementedError()
+
     def list_entities(self, filter: Uri | None = None, closure: bool = False) -> list[Entity]:
         raise NotImplementedError()
 
@@ -102,9 +113,11 @@ from tumblepipe.config.department import (
     Department,
     add_department,
     remove_department,
+    reorder_departments,
     set_independent,
     set_publishable,
-    list_departments
+    list_departments,
+    list_department_names
 )
 
 from tumblepipe.config.groups import (
@@ -200,9 +213,11 @@ __all__ = [
     'Department',
     'add_department',
     'remove_department',
+    'reorder_departments',
     'set_independent',
     'set_publishable',
     'list_departments',
+    'list_department_names',
     # Groups
     'Group',
     'is_group_uri',

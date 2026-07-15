@@ -85,7 +85,7 @@
             invisible
             nolabel
             joinnext
-            default { "" }
+            default { "from_context" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -93,7 +93,7 @@
             label   "entity_label"
             type    label
             nolabel
-            default { "" }
+            default { "from_context: none" }
         }
         parm {
             name    "variant"

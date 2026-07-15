@@ -255,11 +255,14 @@ def _build_layer_mp4_job(
     # Parameters - use layer-specific paths for individual render layers
     playblast_path = get_layer_playblast_path(
         entity_uri,
+        render_department_name,
         variant_name,
         render_version_name,
         purpose
     )
-    daily_path = get_layer_daily_path(entity_uri, variant_name, purpose)
+    daily_path = get_layer_daily_path(
+        entity_uri, render_department_name, variant_name, purpose
+    )
     title = (
         f'mp4 layer '
         f'{render_department_name} '
@@ -332,7 +335,7 @@ def _build_slapcomp_notify_job(
     ):
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     return _render_build.build_playblast_notify_job(
-        config, staging_path, version_name,
+        config, staging_path, render_department_name, version_name,
         title = (
             f'notify slapcomp '
             f'{render_department_name} '

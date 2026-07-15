@@ -4,9 +4,10 @@ import hou
 
 from tumblepipe.api import path_str, api
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.timeline import FrameRange
+from tumblepipe.config.timeline import FrameRange, get_frame_range
 from tumblepipe.pipe.houdini import util
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.paths import (
     list_version_paths,
     get_workfile_context
@@ -19,7 +20,20 @@ class Location:
     Project = 'project'
     Proxy = 'proxy'
 
-class Cache(ns.Node):
+class Cache(EntityNode):
+    """SOP cache wrapper.
+
+    The 'entity' parm (default 'from_context') is what ties the cache to the
+    pipeline: it feeds the 'from_config' frame-range source, which reads the
+    shot's authored range — start/end plus pre/post roll — straight out of
+    the database instead of making the artist retype it.
+
+    It deliberately does NOT drive _get_cache_path(): the cache directory is
+    still derived from the workfile's own location on disk, because
+    lops.cache.list_cache_locations() has to agree with it for the
+    export-by-reference guard, and it cannot see a per-node entity parm.
+    """
+
     def __init__(self, native):
         super().__init__(native)
 
@@ -93,7 +107,7 @@ class Cache(ns.Node):
     
     def get_frame_range_source(self):
         return self.parm('frame_range').eval()
-    
+
     def get_frame_range(self):
         frame_range_source = self.get_frame_range_source()
         match frame_range_source:
@@ -103,6 +117,13 @@ class Cache(ns.Node):
             case 'playback_range':
                 frame_range = util.get_frame_range()
                 return frame_range, 1
+            case 'from_config':
+                # The entity's authored range, roll included.
+                entity_uri = self.get_entity_uri()
+                if entity_uri is None: return None
+                frame_range = get_frame_range(entity_uri)
+                if frame_range is None: return None
+                return frame_range, frame_range.step_size
             case 'from_settings':
                 return FrameRange(
                     self.parm('frame_settingsx').eval(),
@@ -112,6 +133,16 @@ class Cache(ns.Node):
                 ), self.parm('frame_settingsz').eval()
             case _:
                 assert False, f'Unknown frame range setting "{frame_range_source}"'
+
+    def _update_labels(self):
+        entity_raw = self.parm('entity').eval()
+        entity_uri = self.get_entity_uri()
+        if entity_raw == 'from_context':
+            self.parm('entity_label').set(
+                f'from_context: {entity_uri}' if entity_uri else 'from_context: none'
+            )
+        else:
+            self.parm('entity_label').set(str(entity_uri) if entity_uri else 'none')
     
     def set_cache_name(self, name):
         self.parm('name').set('' if name is None else name)
@@ -139,13 +170,26 @@ class Cache(ns.Node):
             native.parm('cache/loadfromdisk').set(0)
             return
 
+        # Frame range. 'from_config' yields nothing when the entity can't be
+        # resolved (unsaved scene, no authored range) — refuse rather than
+        # silently cache a single arbitrary frame.
+        resolved_range = self.get_frame_range()
+        if resolved_range is None:
+            native.parm('cache/file').set('')
+            native.parm('cache/loadfromdisk').set(0)
+            ns.set_node_comment(
+                native,
+                'No frame range: the entity has none authored in the database.'
+            )
+            return
+
         # Output path
         version_name = self._next_version_name()
         cache_path = self._get_cache_path()
         output_path = cache_path / cache_name / version_name / f'{version_name}.$F4.bgeo.sc'
 
         # Cache the scene
-        frame_range, frame_step = self.get_frame_range()
+        frame_range, frame_step = resolved_range
         render_range = frame_range.full_range()
         native.parm('cache/file').set(path_str(output_path))
         native.parm('cache/f1').set(render_range.first_frame)
@@ -180,6 +224,17 @@ class Cache(ns.Node):
             native.parm('cache/loadfromdisk').set(0)
             return
 
+        # Frame range (see cache() — 'from_config' can yield nothing)
+        resolved_range = self.get_frame_range()
+        if resolved_range is None:
+            native.parm('cache/file').set('')
+            native.parm('cache/loadfromdisk').set(0)
+            ns.set_node_comment(
+                native,
+                'No frame range: the entity has none authored in the database.'
+            )
+            return
+
         # Input path
         cache_path = self._get_cache_path()
         uncompressed_output_path = cache_path / cache_name / version_name / f'{version_name}.$F4.bgeo'
@@ -191,7 +246,7 @@ class Cache(ns.Node):
         )
 
         # Cache the scene
-        frame_range, frame_step = self.get_frame_range()
+        frame_range, frame_step = resolved_range
         render_range = frame_range.full_range()
         native.parm('cache/file').set(path_str(output_path))
         native.parm('cache/f1').set(render_range.first_frame)
@@ -230,8 +285,30 @@ def set_style(raw_node):
 
 def on_created(raw_node):
 
-    # Set node style
+    # Set node style. 'entity' keeps its 'from_context' default.
     set_style(raw_node)
+    Cache(raw_node)._update_labels()
+
+def select():
+    """Entity picker button callback."""
+    from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
+
+    raw_node = hou.pwd()
+    node = Cache(raw_node)
+
+    dialog = EntitySelectorDialog(
+        api=api,
+        include_from_context=True,
+        current_selection=raw_node.parm('entity').eval(),
+        title="Select Entity",
+        parent=hou.qt.mainWindow()
+    )
+
+    if dialog.exec_():
+        selected_uri = dialog.get_selected_uri()
+        if selected_uri:
+            raw_node.parm('entity').set(selected_uri)
+            node._update_labels()
 
 def latest():
     raw_node = hou.pwd()

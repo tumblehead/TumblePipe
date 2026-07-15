@@ -307,6 +307,13 @@ class SubmitJobsDialog(QDialog):
         self._render_box = self._build_render_section()
         root.addWidget(self._render_box)
 
+        # Playblast is a shots-only GL preview; the section is absent entirely
+        # for the assets context.
+        self._playblast_box = None
+        if self._context == "shots":
+            self._playblast_box = self._build_playblast_section()
+            root.addWidget(self._playblast_box)
+
         self._apply_entity_defaults()
 
         # Submit / Cancel row.
@@ -730,6 +737,49 @@ class SubmitJobsDialog(QDialog):
 
         return box
 
+    def _build_playblast_section(self) -> QGroupBox:
+        """A GL (Storm) preview on the farm — shots only.
+
+        The department is just the output label (which
+        ``playblast/<shot>/<dept>/`` and daily the mp4 lands under); the input
+        is always the shot's staged 'default' stage, and the frame range is
+        derived per-shot from config at submit time, so there is no frame or
+        variant field here. Starts unchecked — it's an opt-in extra alongside
+        render.
+        """
+        box = QGroupBox("Playblast")
+        box.setCheckable(True)
+        box.setChecked(False)
+        form = QFormLayout(box)
+        form.setContentsMargins(10, 14, 10, 10)
+        form.setSpacing(6)
+
+        self._pb_dept = QComboBox()
+        form.addRow("Department:", self._pb_dept)
+
+        self._pb_width = QSpinBox()
+        self._pb_width.setRange(16, 8192)
+        self._pb_height = QSpinBox()
+        self._pb_height.setRange(16, 8192)
+        res_row = QHBoxLayout()
+        res_row.setSpacing(6)
+        res_row.addWidget(self._pb_width)
+        res_row.addWidget(QLabel("×"))
+        res_row.addWidget(self._pb_height)
+        res_wrap = QWidget()
+        res_wrap.setLayout(res_row)
+        form.addRow("Resolution:", res_wrap)
+
+        self._pb_pool = QLineEdit()
+        self._pb_pool.setPlaceholderText("general")
+        form.addRow("Pool:", self._pb_pool)
+
+        self._pb_priority = QSpinBox()
+        self._pb_priority.setRange(0, 100)
+        form.addRow("Priority:", self._pb_priority)
+
+        return box
+
     def _apply_entity_defaults(self) -> None:
         """Seed the form from the *primary* entity — the first checked one.
 
@@ -801,6 +851,18 @@ class SubmitJobsDialog(QDialog):
         )
         self._rnd_dof.setChecked(bool(_nested(d, 'render.enabledof', True)))
 
+        # Playblast (shots only) — department is the renderable-department
+        # output label; resolution defaults to the HDA's 720p.
+        if self._playblast_box is not None:
+            self._pb_dept.clear()
+            self._pb_dept.addItems(rnd_depts)
+            if seed and seed in rnd_depts:
+                self._pb_dept.setCurrentText(seed)
+            self._pb_width.setValue(int(_nested(d, 'playblast.res_x', 1280)))
+            self._pb_height.setValue(int(_nested(d, 'playblast.res_y', 720)))
+            self._pb_pool.setText(str(_nested(d, 'farm.default_pool', '') or ''))
+            self._pb_priority.setValue(int(_nested(d, 'farm.priority', 50)))
+
     # ── Submit ────────────────────────────────────────────
 
     def _on_submit(self) -> None:
@@ -814,19 +876,31 @@ class SubmitJobsDialog(QDialog):
 
         publish = self._publish_box.isChecked()
         render = self._render_box.isChecked()
-        if not publish and not render:
+        playblast = (
+            self._playblast_box.isChecked()
+            if self._playblast_box is not None else False
+        )
+        if not publish and not render and not playblast:
             QMessageBox.warning(
                 self, "Submit Jobs",
-                "Enable at least one of Publish or Render before submitting.",
+                "Enable at least one of Publish, Render or Playblast before "
+                "submitting.",
             )
             return
+
+        kinds = [
+            kind for kind, on in (
+                ('publish', publish), ('render', render),
+                ('playblast', playblast),
+            ) if on
+        ]
 
         # A wide fan-out is expensive and easy to trigger by mis-clicking a
         # branch, so make the user own it.
         if len(self._entity_uris) > 1:
             confirm = QMessageBox.question(
                 self, "Submit Jobs",
-                f"Submit {'publish + render' if publish and render else 'render' if render else 'publish'} "
+                f"Submit {' + '.join(kinds)} "
                 f"jobs for {len(self._entity_uris)} {self._context}?\n\n"
                 "The same settings are applied to every one of them.",
                 QMessageBox.Ok | QMessageBox.Cancel,
@@ -837,7 +911,9 @@ class SubmitJobsDialog(QDialog):
 
         # Build the shared settings dict once — it's the same for every entity
         # in the slim flow. Per-entity overrides are out of scope.
-        settings: dict = {'publish': publish, 'render': render}
+        settings: dict = {
+            'publish': publish, 'render': render, 'playblast': playblast,
+        }
         if publish:
             settings['pub_department'] = self._pub_dept.currentText()
             settings['pub_pool'] = self._pub_pool.text().strip() or 'general'
@@ -868,6 +944,13 @@ class SubmitJobsDialog(QDialog):
                 'standalone': self._rnd_standalone.isChecked(),
                 'copy_to_edit': self._rnd_copy_edit.isChecked(),
                 'samples': self._rnd_samples.value(),
+            })
+        if playblast:
+            settings.update({
+                'pb_department': self._pb_dept.currentText(),
+                'pb_pool': self._pb_pool.text().strip() or 'general',
+                'pb_priority': self._pb_priority.value(),
+                'pb_res': [self._pb_width.value(), self._pb_height.value()],
             })
 
         try:

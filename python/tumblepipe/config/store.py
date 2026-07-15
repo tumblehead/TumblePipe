@@ -380,6 +380,24 @@ class JsonConfigStore(ConfigConvention):
         _remove(data, uri.segments)
         self.write_root(uri.purpose, data)
 
+    def reorder_children(self, uri: Uri, names: list[str]):
+        data = self._load(uri.purpose)
+        if data is None:
+            raise ValueError('Entity does not exist')
+        node = data
+        for step in uri.segments:
+            children = node.get('children', {})
+            if step not in children:
+                raise ValueError('Entity does not exist')
+            node = children[step]
+        children = node.get('children', {})
+        if sorted(names) != sorted(children):
+            raise ValueError(
+                'Reorder list must be a permutation of the existing children'
+            )
+        node['children'] = {name: children[name] for name in names}
+        self.write_root(uri.purpose, data)
+
     def get_properties(self, uri: Uri) -> dict | None:
         """Get properties with hierarchical resolution.
 
