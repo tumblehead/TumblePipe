@@ -55,6 +55,13 @@ def _subasset_script_lines(
     actually composed (CommonAPI ordering, pivot inverted last), with
     an identity {base}_dup op as the no-placement fallback.
 
+    The base prim gets the same treatment: it is the prototype the
+    instances reference, but it never passes through the import node's
+    Transform LOP (that only runs on a directly imported root), so
+    without this it composes with no transform at all — importing a set
+    left a bare prototype where manually importing the same asset gave
+    the full CommonAPI op set.
+
     Numbered duplicates AT or beyond the tracked count are deactivated:
     the import node's persistent layer (which holds these re-established
     defs) is localized into department exports as a sidecar, so a layer
@@ -112,6 +119,15 @@ def _subasset_script_lines(
             'if base.IsValid():',
         ]
         lines += stale_cleanup
+        # Give the base the transform a direct import would have given it
+        # (see util.author_identity_placement_ops). Runs before the
+        # instances below are defined so the op set composes onto them
+        # through the internal reference — their own placement values,
+        # authored locally, still win over the referenced identities.
+        lines += [
+            '    if not util.apply_placement_op_order(base):',
+            '        util.author_identity_placement_ops(base)',
+        ]
         if instances <= 1:
             lines.append('    base.SetActive(True)')
             if inline:

@@ -886,6 +886,7 @@ class ImportShot(ns.Node):
         # Create duplicate nodes for each asset with instances > 1
         # Metadata in customData travels with the scene prim automatically
         instance_prim_paths = []
+        prototype_prim_paths = []
         for asset_info in assets:
             instances = asset_info.get('instances', 1)
             if instances <= 1:
@@ -915,10 +916,13 @@ class ImportShot(ns.Node):
             prev_node = dup_node
 
             # Duplicate names its copies {name}0..{name}N-1 (0-based
-            # @copy, source deactivated) — collect for the op-order pass.
+            # @copy, source deactivated) — collect for the op-order pass,
+            # along with the source it deactivated: that prim is the
+            # prototype the copies reference.
             instance_prim_paths.extend(
                 f'{asset_prim_path}{index}' for index in range(instances)
             )
+            prototype_prim_paths.append(asset_prim_path)
 
         # Placement op VALUES compose onto the duplicated prims from the
         # authoring department's exported sidecar, but the xformOpOrder
@@ -938,6 +942,20 @@ class ImportShot(ns.Node):
                 'root = stage.GetPseudoRoot()',
                 '',
             ]
+            # Prototypes first: the Duplicate LOP leaves its deactivated
+            # source with whatever transform composed, which for a prim
+            # that never passed an import Transform LOP is none at all.
+            # Authoring here before the copies below lets the op set reach
+            # them through Duplicate's reference arc, matching the GUI
+            # import (see util.author_identity_placement_ops).
+            for prototype_prim_path in prototype_prim_paths:
+                script_lines += [
+                    f'prim = root.GetPrimAtPath("{prototype_prim_path}")',
+                    'if prim.IsValid():',
+                    '    if not util.apply_placement_op_order(prim):',
+                    '        util.author_identity_placement_ops(prim)',
+                    '',
+                ]
             for instance_prim_path in instance_prim_paths:
                 script_lines += [
                     f'prim = root.GetPrimAtPath("{instance_prim_path}")',

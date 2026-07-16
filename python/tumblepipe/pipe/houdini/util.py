@@ -3,7 +3,7 @@ import logging
 import os
 from pathlib import Path
 
-from pxr import Usd, UsdGeom
+from pxr import Gf, Usd, UsdGeom
 
 from tumblepipe.config.timeline import BlockRange, FrameRange
 from tumblepipe.util.uri import Uri
@@ -29,6 +29,38 @@ def apply_placement_op_order(prim) -> bool:
         return False
     UsdGeom.Xformable(prim).GetXformOpOrderAttr().Set(order)
     return True
+
+def author_identity_placement_ops(prim) -> bool:
+    """Author the identity XformCommonAPI op set on a prototype prim.
+
+    Mirrors what th::import_asset's internal Transform LOP (xformdescription
+    'import', usexformcommonapi on) authors on a DIRECTLY imported asset
+    root: translate, translate:pivot, rotateXYZ, scale and the inverted
+    pivot, all identity. Sub-asset roots re-established from a staged
+    context.json never pass through that LOP, so without this the prototype
+    the instance prims reference carries no transform at all — importing a
+    set gave a bare base while manually importing the same asset gave the
+    full op set.
+
+    Only call this when no placement composed (see
+    apply_placement_op_order): the values authored here are identity, and
+    the import node's layer is stronger than the set layer's placement
+    overs, so authoring unconditionally would zero out an instances==1
+    sub-asset's placement. Returns False when the prim's existing op stack
+    is not XformCommonAPI-compatible (e.g. a baked xformOp:transform), in
+    which case the caller leaves it alone.
+    """
+    common_api = UsdGeom.XformCommonAPI(prim)
+    if not common_api:
+        return False
+    return common_api.SetXformVectors(
+        Gf.Vec3d(0.0, 0.0, 0.0),  # translation
+        Gf.Vec3f(0.0, 0.0, 0.0),  # rotation
+        Gf.Vec3f(1.0, 1.0, 1.0),  # scale
+        Gf.Vec3f(0.0, 0.0, 0.0),  # pivot
+        UsdGeom.XformCommonAPI.RotationOrderXYZ,
+        Usd.TimeCode.Default()
+    )
 
 ###############################################################################
 # Helper functions

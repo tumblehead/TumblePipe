@@ -86,6 +86,51 @@ def call(
         process.send_signal(signal.SIGINT)
         return None
 
+def run_capture(
+    command: Command,
+    cwd: Optional[Path] = None,
+    env: Optional[dict[str, str]] = None
+    ) -> tuple[int, str]:
+    """Run a command, streaming its output to stdout AND returning it.
+
+    `run` gives the exit code but discards the text; `call` captures the text
+    but discards the exit code. A tool that reports hard failures through its
+    exit code while reporting a *silent* degradation only in its output (see
+    apps.houdini.IDenoise) needs both at once.
+    """
+
+    # Prepare env
+    _env = os.environ.copy()
+    _env['PYTHONUNBUFFERED'] = '1'
+    if env is not None:
+        _env.update(env)
+
+    # Prepare args
+    _args = dict(
+        stdout = subprocess.PIPE,
+        stderr = subprocess.STDOUT,
+        text = True,
+        bufsize = 1,
+        env = _env
+    )
+    if cwd is not None:
+        _args['cwd'] = str(cwd)
+
+    # Run command
+    try:
+        logging.debug(' '.join(command))
+        process = subprocess.Popen(command, **_args)
+        result = ''
+        with process.stdout:
+            for line in process.stdout:
+                result += line
+                print(line, end='')
+                sys.stdout.flush()
+        return process.wait(), result
+    except KeyboardInterrupt:
+        process.send_signal(signal.SIGINT)
+        return 1, ''
+
 async def run_async(
     command: Command,
     cwd: Optional[Path] = None,

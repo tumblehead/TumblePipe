@@ -40,9 +40,10 @@ Each worker needs the same environment as an artist workstation:
 
 - **Houdini** — a build of the **same major** the job was submitted from. Under
   HPM the task runs in native Windows python and drives Houdini's bundled tools
-  directly — `husk.exe`, the Windows USD resolver, `iconvert`, and Houdini's
-  `hoiiotool`/`hffmpeg` for image/video processing. **No WSL2 or UV is needed**
-  for HPM jobs (the legacy UV plugin still requires both).
+  directly — `husk.exe`, the Windows USD resolver, `iconvert`, `idenoise` for
+  denoising, and Houdini's `hoiiotool`/`hffmpeg` for image/video processing.
+  **No WSL2 or UV is needed** for HPM jobs (the legacy UV plugin still requires
+  both).
 
   At submit the creating Houdini's full version is captured into the job env as
   `TH_HOUDINI_VERSION` (e.g. `22.0.368`); the worker selects a matching install —
@@ -52,6 +53,18 @@ Each worker needs the same environment as an artist workstation:
   Houdini of that major installed** fails the task with
   `No valid Houdini version was found` — so when the studio moves to a new major,
   install it on the workers before submitting from it.
+- **Houdini licenses — for some tasks, not all.** The tasks that drive **hython**
+  (`stage`, `export`, `composite`, `publish`) check out a **Houdini Engine**
+  license, *falling back to Core/FX when no Engine seat is free* — so a busy farm
+  can take seats artists are waiting for. Size the Engine pool with that in mind.
+
+  The **`denoise`** task deliberately takes **no license at all**: it drives
+  Houdini's `idenoise` CLI, which is a front-end onto the same Intel OIDN the
+  `denoiseai` COP uses but needs no token (verified by running it with
+  `SESI_LMHOST` pointed at a dead host, where hython cannot license at all). It
+  still needs a Houdini *install* — that is where `idenoise` lives — but the
+  `denoise` group never contends for seats. See
+  `designs/denoise-without-hython.md`.
 - **Drive mappings** — workers must map the project drives to the same letters
   the workstations use, so jobs that reference `P:\...` resolve identically.
   Without matching drive letters, the job will fail to read project files.

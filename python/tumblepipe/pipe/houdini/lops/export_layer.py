@@ -788,9 +788,21 @@ class ExportLayer(EntityNode):
             for asset_uri_str, instances in assets_by_uri.items():
                 # Use first instance for metadata, count all instances
                 first_instance = instances[0]
+                # 'instance' names the asset's BASE prim, so derive it from
+                # the URI. instances[0] is whichever copy the scrape walked
+                # first — and since the prototype is deactivated, list_assets
+                # skips it and the first LIVE copy wins, having tagged itself
+                # with its own name (Haybale9, not Haybale). Consumers read
+                # this as the base name and regenerate <base>0..<base>N-1
+                # from it, so an arbitrary copy's name spawned a phantom set
+                # at the origin.
+                try:
+                    base_name = Uri.parse_unsafe(asset_uri_str).segments[-1]
+                except (ValueError, IndexError):
+                    base_name = first_instance['instance']
                 parameter_assets.append(dict(
                     asset=asset_uri_str,
-                    instance=first_instance['instance'],
+                    instance=base_name,
                     instances=len(instances),  # Count of instances
                     variant=first_instance['variant'],
                     inputs=first_instance['inputs']

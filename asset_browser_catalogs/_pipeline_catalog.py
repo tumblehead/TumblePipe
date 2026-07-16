@@ -1415,7 +1415,21 @@ class PipelineCatalog(Catalog):
             )
 
     def _open_database_editor(self, asset_id: str) -> None:
-        """Open the pipeline DatabaseWindow with the entity pre-selected."""
+        """Open the pipeline DatabaseWindow with the entity pre-selected.
+
+        Reached from two threads, which is why the guard is here rather than
+        at one call site: the card menu (GUI thread) and ``execute_action``,
+        which the catalog contract runs on a worker. Everything below is GUI
+        work — a modal, then a QMainWindow via the launcher — and Qt objects
+        are thread-affine. Constructing them off the GUI thread corrupts
+        memory rather than raising, so it surfaces as Houdini vanishing with
+        no crash log. See TumblePipe designs/qt-thread-safety.md.
+        """
+        from tumbletrove.common.gui import is_main_thread
+        if not is_main_thread():
+            run_on_main_thread(self._open_database_editor, asset_id)
+            return
+
         proj = self._resolver.project_for(asset_id)
         if proj is not None:
             self._activate_project(proj)

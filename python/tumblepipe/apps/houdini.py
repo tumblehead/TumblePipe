@@ -176,6 +176,10 @@ def _scan_path_for_versions(root_path) -> dict[str, dict[str, Path]]:
         # run image/video processing natively in Windows python — no WSL.
         hoiiotool_path = bin_path / 'hoiiotool.exe'
         hffmpeg_path = bin_path / 'hffmpeg.exe'
+        # Houdini's CLI front-end onto the OIDN/OptiX denoisers it bundles.
+        # Unlike hython it checks out no license token, which is the whole
+        # reason the denoise task drives it instead (designs/denoise-without-hython.md).
+        idenoise_path = bin_path / 'idenoise.exe'
         result[version] = dict(
             hython = hython_path,
             husk = husk_path,
@@ -183,7 +187,8 @@ def _scan_path_for_versions(root_path) -> dict[str, dict[str, Path]]:
             itilestitch = itilestitch_path,
             usdstitch = usdstitch_path,
             hoiiotool = hoiiotool_path,
-            hffmpeg = hffmpeg_path
+            hffmpeg = hffmpeg_path,
+            idenoise = idenoise_path
         )
     return result
 
@@ -452,6 +457,47 @@ class OIIOTool:
         env: Optional[dict[str, str]] = None
         ) -> str:
         return app.call([path_str(self._oiiotool), *args], cwd, env)
+
+
+class IDenoise:
+    """Wrapper for Houdini's bundled `idenoise`.
+
+    The same Intel OIDN the `denoiseai` COP drives, minus Houdini: idenoise
+    consumes NO license token (verified by running it with SESI_LMHOST pointed
+    at a dead host, where hython fails to license). Runs natively, so paths
+    passed in should be native Windows forms.
+
+    Reads its guide planes (`--normal`/`--albedo`) from *inside* the input
+    file, so callers must merge the per-AOV EXRs first (`exr.combine_aovs`).
+    """
+    def __init__(self, version_name: Optional[str] = None):
+        version_name = version_name or _resolve_default_version()
+        version = _get_version(version_name, _scan_drives_for_versions())
+        if version is None:
+            assert False, 'No valid Houdini version was found'
+        self._version = version_name
+        self._idenoise = version['idenoise']
+
+    def run(self,
+        args: list[str],
+        cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None
+        ) -> int:
+        return app.run([path_str(self._idenoise), *args], cwd, env)
+
+    def call(self,
+        args: list[str],
+        cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None
+        ) -> tuple[int, str]:
+        """Run and return `(exit_code, output)`.
+
+        Callers MUST use this rather than `run` when guide planes are in play:
+        a `--normal`/`--albedo` name that doesn't resolve only prints
+        "Warning: can't find specified AOV '<name>'" and still exits 0, having
+        silently denoised unguided. The exit code cannot see that; the text can.
+        """
+        return app.run_capture([path_str(self._idenoise), *args], cwd, env)
 
 
 class FFmpeg:

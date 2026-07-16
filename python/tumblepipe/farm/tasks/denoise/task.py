@@ -14,73 +14,17 @@ from tumblepipe.api import (
     api
 )
 from tumblepipe.farm.tasks.env import get_base_env
+from tumblepipe.farm.tasks.denoise import _spec
 from tumblepipe.util.io import store_json
 from tumblepipe.naming import random_name
 from tumblepipe.farm.deadline import Task
 from tumblepipe.config.timeline import BlockRange
 
-"""
-config = {
-    'title': 'denoise',
-    'priority': 50,
-    'pool_name': 'general',
-    'first_frame': 1,
-    'last_frame': 100,
-    'frames': [1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-    'step_size': 1,
-    'batch_size': 10,
-    'receipt_path': 'path/to/receipt.####.json',
-    'input_paths': {
-        'diffuse': 'path/to/diffuse.####.exr',
-        'depth': 'path/to/depth.####.exr'
-    },
-    'output_paths': {
-        'diffuse': 'path/to/diffuse.####.exr',
-        'depth': 'path/to/depth.####.exr'
-    }
-}
-"""
-
-def _is_valid_config(config):
-
-    def _is_valid_layer(layer):
-        if not isinstance(layer, dict): return False
-        for aov_name, aov_path in layer.items():
-            if not isinstance(aov_name, str): return False
-            if not isinstance(aov_path, str): return False
-        return True
-
-    if 'title' not in config: return False
-    if not isinstance(config['title'], str): return False
-    if 'priority' not in config: return False
-    if not isinstance(config['priority'], int): return False
-    if 'pool_name' not in config: return False
-    if not isinstance(config['pool_name'], str): return False
-    if 'first_frame' not in config: return False
-    if not isinstance(config['first_frame'], int): return False
-    if 'last_frame' not in config: return False
-    if not isinstance(config['last_frame'], int): return False
-    if 'frames' not in config: return False
-    if not isinstance(config['frames'], list): return False
-    for frame in config['frames']:
-        if not isinstance(frame, int): return False
-    if 'step_size' not in config: return False
-    if not isinstance(config['step_size'], int): return False
-    if 'batch_size' not in config: return False
-    if not isinstance(config['batch_size'], int): return False
-    if 'receipt_path' not in config: return False
-    if not isinstance(config['receipt_path'], str): return False
-    if 'input_paths' not in config: return False
-    if not _is_valid_layer(config['input_paths']): return False
-    if 'output_paths' not in config: return False
-    if not _is_valid_layer(config['output_paths']): return False
-    return True
-
 SCRIPT_PATH = Path(__file__).parent / 'denoise.py'
 def build(config, paths, staging_path):
 
-    # Check if the config is valid
-    assert _is_valid_config(config), (
+    # Check if the config is valid (schema lives in _spec, shared with the worker)
+    assert _spec.is_valid_config(config), (
         'Invalid config: '
         f'{json.dumps(config, indent=4)}'
     )
@@ -98,13 +42,18 @@ def build(config, paths, staging_path):
     batch_size = config['batch_size']
     receipt_path = Path(config['receipt_path'])
 
-    # Task context
+    # Task context. Only the path keys and force_cpu reach the worker; the
+    # scheduling keys above are consumed here, and Deadline appends the frame
+    # range on the command line.
     task_path = staging_path / f'denoise_{random_name(8)}'
     context_path = task_path / 'context.json'
     store_json(context_path, dict(
         receipt_path = config['receipt_path'],
         input_paths = config['input_paths'],
-        output_paths = config['output_paths']
+        output_paths = config['output_paths'],
+        # Off by default: OIDN picks its own device, using the CUDA backend
+        # Houdini bundles when the worker has a usable GPU.
+        force_cpu = config.get('force_cpu', False)
     ))
 
     # Create the task

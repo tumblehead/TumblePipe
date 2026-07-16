@@ -160,15 +160,59 @@ count — a layer exported while an inflated count was live carries the
 phantom defs in its sidecar and would otherwise resurrect them on
 every import.
 
-The placement op order is derived by one shared rule
-(`pipe.usd.composed_placement_op_order`: ops with composed values, in
+The context is the authority for the *count* only — `{name}` always
+comes from the asset's URI, never from the entry's `instance` field.
+That field is written from whichever tracked prim the export scrape
+walked first, and since the prototype is deactivated the scrape only
+sees live copies, so it records a copy's own name: paleindia's
+30-haybale set recorded `instance: "Haybale9"`. Reading a base name
+back out of it regenerated `Haybale90..Haybale929` — a second set of
+30, referencing the real prototype and so carrying its geometry, with
+no placement to compose, stacked at the origin.
+
+The prototype those duplicates reference is re-established too. Only a
+*directly* imported root passes through the import node's Transform LOP
+(`xformdescription 'import'`), so a sub-asset root named by a staged
+`context.json` composes with no transform at all unless the importing
+side authors one — importing a set left a bare prototype where importing
+the same asset by hand gave the full XformCommonAPI op set. Each point
+authors the identity set on it
+(`pipe.houdini.util.author_identity_placement_ops`, mirrored as USDA text
+in `pipe.usd.IDENTITY_PLACEMENT_OPS_USDA` for the flatten), before the
+duplicates, so the op set reaches them through the reference arc while
+their own locally-authored placement values still win.
+
+Authoring the prototype is guarded by the same order derivation, and the
+guard is load-bearing: a single-instance sub-asset's base *is* the live
+prim and carries the set layer's placement, while the import node's layer
+is stronger than that layer's overs — so where placement already composed,
+only its order is applied and the identity values are skipped, which would
+otherwise snap the asset to the origin. Note that order alone cannot tell
+a clobbered prototype from a guarded one (both end up with five ops); only
+the values distinguish them.
+
+The placement op order comes from one shared rule
+(`pipe.usd.composed_placement_op_order`) at all three points that
+re-create instance prims and their prototype: the `import_asset`
+metadata script (GUI), the `import_shot` duplicates subnet (also the
+farm stage-task graph), and the batch-submit direct-render flatten,
+which composes the staged stage at submission time to bake real orders
+into its static defs.
+
+The rule is: **an order that composed is returned verbatim.** Only when
+none composed is one derived (ops with composed values, in
 XformCommonAPI order, pivot inverted last, identity dup op as the
-no-placement fallback) at all three points that re-create instance
-prims: the `import_asset` metadata script (GUI), the `import_shot`
-duplicates subnet (also the farm stage-task graph), and the
-batch-submit direct-render flatten, which composes the staged stage at
-submission time to bake real orders into its static defs. GUI and farm
-placement agree by construction.
+no-placement fallback) — that derivation exists solely for values the
+stripped Duplicate defs left orderless, and it is not a second opinion
+about an order that survived. Deriving unconditionally was a real
+divergence, not a hypothetical one: the flatten authors its result into
+the collapsed *root* layer, stronger than every department sublayer, so
+a set whose duplicates kept a baked `xformOp:transform` had that order
+replaced by a CommonAPI set applying the stale translate/rotate/scale
+values sitting beside it, and every copy moved on the farm while the GUI
+stayed put. `xformOp:transform` is not in `PLACEMENT_OPS`, so the
+derivation cannot see it — which is exactly why it must not override.
+
 `scripts/verify_tracked_asset_counts.py` sweeps a project for staged
 counts that drifted from the department contexts.
 
@@ -254,7 +298,44 @@ variant that also reverts the scene to its on-disk state.
 
 ## Render staging
 
-Farm renders do not compose the staged file directly. The stage task
+A submission takes one of two paths, chosen by the `standalone` setting.
+**Direct render (`standalone=False`) is the default**; the stage task
+below runs only when it is set.
+
+### Direct render (default): the static flatten
+
+`batch_submit` collapses the shot's latest staged build into a single
+`collapsed_stage_<variant>.usda` at submission time
+(`pipe.usd.collapse_latest_references`), and husk renders that. It walks
+the staged file's sublayers recursively, resolves every `entity:` URI to
+an absolute filesystem path, and emits them as one flat sublayer stack —
+so the render needs no resolver at all. The instance defs described under
+*Nested assets* are re-synthesized into this file's **root** layer, with
+each order read off the staged stage composed at submission time.
+
+Two things to know about it:
+
+- The flat stack preserves the nested staged files' relative strength, so
+  the sublayers alone compose exactly what `import_shot` shows. Anything
+  the flatten *authors on top* is therefore the only thing that can make
+  the farm disagree with the session — which is what makes the root-layer
+  strength above load-bearing rather than incidental.
+- It resolves every entity URI in **latest mode**, so it does *not* honour
+  the `version=` pins the staged build froze into its sublayer URIs. For
+  shot departments that lands close to the stage task's intent (point 3
+  below refreshes them to `current` on purpose). For *assets* the two
+  paths genuinely disagree: the stage task keeps them pinned via the
+  staged build, while the flatten floats them. A shot pinning
+  `Clash/SET?version=v0073` (lookdev `v0018`, model `v0055`) flattens to
+  SET `v0075`'s layers (lookdev `v0019`, model `v0056`) — geometry the
+  session never composed, and prims can appear or vanish accordingly.
+  Because the flatten bakes absolute paths once at submission this is at
+  least stable across workers and frames, so it avoids the hazard point 1
+  warns about. Known divergence, not a settled decision.
+
+### Stage task (`standalone=True`)
+
+This path does not compose the staged file directly. The stage task
 builds a dedicated LOP graph per render layer (variant) and exports it
 to a `stage_<variant>.usd` that husk then renders. The graph — built by
 `tumblepipe.pipe.houdini.render_stage.build_render_stage_graph`, and
@@ -284,9 +365,12 @@ Each variant gets its **own** graph and export — variants are
 alternative opinions on the same prims, so a single stage composing
 several of them would just render the strongest one for every layer.
 
-To preview exactly what the farm will render, drop a
-`th::render_debug` node and pick the shot and variant; its dive target
-contains the same graph the stage task exports.
+To preview what this path renders, drop a `th::render_debug` node and
+pick the shot and variant; its dive target contains the same graph the
+stage task exports. It previews the stage task specifically — a default
+(direct-render) submission renders the flattened stage above instead, so
+inspect that submission's `collapsed_stage_<variant>.usda` in the job's
+`data/` directory to see what husk actually got.
 
 ## Performance note
 
