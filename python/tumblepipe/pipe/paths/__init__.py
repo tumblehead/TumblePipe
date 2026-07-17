@@ -126,6 +126,7 @@ __all__ = [
     'release_reserved_version',
     'load_entity_context',
     'get_workfile_context',
+    'get_workspace_relpath',
     # export
     'get_export_path',
     'latest_export_path',
