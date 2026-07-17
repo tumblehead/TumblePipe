@@ -118,14 +118,18 @@ entity's authored range — start/end *plus* pre/post roll — instead of a
 hand-typed one, so a shot whose range is retimed in the database does not
 silently keep caching the old span. Together, Entity and Department also
 decide *where* the cache is read and written: the directory is the
-addressed workfile's `lops_cache` (`project:`/`proxy:` per the Location
-parm). Leaving both on `from_context` targets the node's own workfile — the
-common case, byte-identical to the pre-Department behaviour — while pointing
-Department (or Entity) elsewhere lets a node **load a cache another workfile
-produced**. The export guard stays in agreement because
-`lops.cache.list_cache_locations()` resolves its allowed roots by walking
-the actual `th::cache` nodes in the scene, not the workfile's own location,
-so it sees wherever each node's parms point.
+addressed workfile's cache folder (`project:`/`proxy:` per the Location
+parm) — `lops_cache` (USD) for the LOP `th::cache`, `cache` (`.bgeo.sc`) for
+the SOP `th::cache`. Leaving both on `from_context` targets the node's own
+workfile — the common case, byte-identical to the pre-Department behaviour —
+while pointing Department (or Entity) elsewhere lets a node **load a cache
+another workfile produced**. The export guard stays in agreement because
+`_versioned_cache_roots()` walks the actual `th::cache` nodes in the scene —
+both the LOP `lops.cache.list_cache_locations()` and the SOP
+`sops.cache.list_cache_locations()`, not the workfile's own location — so it
+sees wherever each node's parms point, and a `.bgeo.sc` sequence referenced
+from another shot's SOP cache publishes by reference instead of aborting the
+export.
 
 The export also refuses arcs whose target does not exist at all
 (*dangling* paths, e.g. a payload anchored to a machine-local scratch

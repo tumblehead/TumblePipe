@@ -699,17 +699,15 @@ class ContainerManager:
         return result
 
     def _group_dept_attribution(self, group_tag: str) -> dict:
-        """Return ``{dept: (user, mtime_epoch, extension)}`` for a
-        group's latest workfiles.
+        """Return ``{dept: (user, mtime_epoch)}`` for a group's latest
+        workfiles.
 
         The mtime is the hip file's stat; the user comes from the
-        ``_context`` sidecar (see :func:`_hip_context_user`); the
-        extension is the resolved file's own suffix — the licence the
-        workfile was saved under, free here because the path is already
-        in hand (the entity-side equivalent is
-        ``WorkfileManager.get_dept_row_meta``). One sidecar read per
-        covered dept — callers hit this on deck expand, never during grid
-        rebuilds.
+        ``_context`` sidecar (see :func:`_hip_context_user`). These feed
+        the list view's User/Edited columns for a group's deck rows (the
+        entity-side equivalent is ``WorkfileManager.get_dept_row_meta``).
+        One sidecar read per covered dept — callers hit this on deck
+        expand, never during grid rebuilds.
         """
         result: dict = {}
         for dept_name, hip in self._group_dept_latest_hips(
@@ -718,9 +716,7 @@ class ContainerManager:
                 mtime = hip.stat().st_mtime
             except OSError:
                 continue
-            result[dept_name] = (
-                _hip_context_user(hip), mtime, hip.suffix.lstrip("."),
-            )
+            result[dept_name] = (_hip_context_user(hip), mtime)
         return result
 
     def _dept_groups_for_member(

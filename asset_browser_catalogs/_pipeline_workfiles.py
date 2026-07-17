@@ -190,33 +190,22 @@ class WorkfileManager:
 
     def get_dept_row_meta(
         self, asset_id: str, dept: str, version: str,
-    ) -> tuple[str, float, str]:
-        """Return ``(user, mtime_epoch, extension)`` for one dept row.
+    ) -> tuple[str, float]:
+        """Return ``(user, mtime_epoch)`` for one dept row.
 
         One resolve, one glob, one stat, one sidecar read — the deck-item
-        builder wants the user and mtime together and would otherwise pay
-        the dept-dir resolve and the workfile glob twice over, once via
-        ``get_user_for_version`` and again via ``get_mtime_for_version``.
-        Over a share that is the difference that shows.
-
-        The extension is the *real* one — ``.hip`` / ``.hiplc`` /
-        ``.hipnc`` — because the extension **is** the licence the file
-        was saved under. It comes from the resolved file's suffix, with
-        the sidecar's ``extension`` key as the fallback for the case the
-        suffix cannot cover: no workfile on disk. The sidecar cannot be
-        the primary source — ``save_context`` only started stamping
-        ``extension`` later, so it is ``None`` on every version saved
-        before that, and preferring it would blank the licence on exactly
-        the old workfiles most likely to be a different one. (The open
-        workspace's own licence is surfaced by the session panel via
-        :meth:`get_open_workspace_meta`, which reads the same suffix.)
+        builder wants the user and mtime together (the list view's
+        User/Edited columns) and would otherwise pay the dept-dir resolve
+        and the workfile glob twice over, once via ``get_user_for_version``
+        and again via ``get_mtime_for_version``. Over a share that is the
+        difference that shows.
 
         Missing values are blank/zero rather than ``None``: these feed
         ``DeckItem``, whose fields are typed ``str``/``float``.
         """
         dept_dir = self.dept_dir_for(asset_id, dept)
         if dept_dir is None or not version:
-            return "", 0.0, ""
+            return "", 0.0
 
         sidecar = self._read_version_sidecar(dept_dir, version)
         user = sidecar.get("user")
@@ -228,17 +217,13 @@ class WorkfileManager:
             path = None
 
         mtime = 0.0
-        ext = ""
         if path is not None:
-            ext = path.suffix.lstrip(".")
             try:
                 mtime = path.stat().st_mtime
             except OSError:
                 mtime = 0.0
-        if not ext:
-            ext = str(sidecar.get("extension") or "")
 
-        return (str(user) if user else ""), mtime, ext
+        return (str(user) if user else ""), mtime
 
     def get_latest_export_mtime(self, asset_id: str, dept: str):
         """Return the latest export folder's mtime for ``dept`` as a
@@ -367,8 +352,8 @@ class WorkfileManager:
 
         return version, mtime, user
 
-    def get_open_workspace_meta(self) -> tuple[str, float, str]:
-        """Return ``(user, mtime_epoch, extension)`` for the OPEN ``.hip``.
+    def get_open_workspace_meta(self) -> tuple[str, float]:
+        """Return ``(user, mtime_epoch)`` for the OPEN ``.hip``.
 
         The session panel's "Current Workspace" block. Derived purely from
         ``hou.hipFile.path()`` — deliberately **not** from an asset id like
@@ -382,20 +367,19 @@ class WorkfileManager:
         same file :meth:`get_dept_row_meta` reads, reached by path here.
 
         Reading ``hou.hipFile.path()`` off the worker thread is safe (HOM
-        lock); this builds no Qt. All-blank means no saved pipeline
+        lock); this builds no Qt. Blank/zero means no saved pipeline
         workfile is open (untitled, or a stray scene).
         """
         try:
             import hou
             hip = hou.hipFile.path()
         except Exception:
-            return "", 0.0, ""
+            return "", 0.0
         if not hip or hip == "untitled.hip":
-            return "", 0.0, ""
+            return "", 0.0
 
         from pathlib import Path
         p = Path(hip)
-        ext = p.suffix.lstrip(".")
 
         mtime = 0.0
         try:
@@ -410,7 +394,7 @@ class WorkfileManager:
             raw = sidecar.get("user")
             user = str(raw) if raw else ""
 
-        return user, mtime, ext
+        return user, mtime
 
     @staticmethod
     def format_relative_time(timestamp) -> str:

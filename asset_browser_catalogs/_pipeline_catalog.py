@@ -59,7 +59,6 @@ from _pipeline_types import (
     DEPT_API_SHORT_FALLBACK,
     DEPT_ICONS,
     DEPT_SHORT_NAMES,
-    EXTENSION_LICENCES,
     SESSION_HAS_SECTIONS,
     SHOT_DEPT_ICONS,
     DeptVersionStore,
@@ -1945,9 +1944,7 @@ class PipelineCatalog(Catalog):
 
         # Current Workspace — the open .hip, read by path so a Multi's
         # group workfile resolves the same as a regular entity's.
-        ws_user, ws_mtime, ws_ext = (
-            self._workfiles.get_open_workspace_meta()
-        )
+        ws_user, ws_mtime = self._workfiles.get_open_workspace_meta()
         workspace = SessionSection(
             title="Current Workspace", icon="save-all",
             fields=(
@@ -1956,13 +1953,6 @@ class PipelineCatalog(Catalog):
                     "Time", self._fmt_ts(ws_mtime), dim=not ws_mtime,
                 ),
                 SessionField("User", ws_user or "—", dim=not ws_user),
-                # The extension is the licence the file was saved under —
-                # surfaced so a commercial-over-Indie mix is visible.
-                SessionField(
-                    "License",
-                    EXTENSION_LICENCES.get(ws_ext, ws_ext.upper() or "—"),
-                    dim=not ws_ext,
-                ),
             ),
         )
 
@@ -3253,8 +3243,8 @@ class PipelineCatalog(Catalog):
                 short = DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
                 latest = depts_dict.get(dept_name) or ""
                 if latest:
-                    user, mtime, _ext = attribution.get(
-                        dept_name, ("", 0.0, ""),
+                    user, mtime = attribution.get(
+                        dept_name, ("", 0.0),
                     )
                     cards.append(DeckItem(
                         key=dept_name,
@@ -3343,10 +3333,8 @@ class PipelineCatalog(Catalog):
                 # stat + sidecar read per dept — see get_dept_row_meta,
                 # which exists so this isn't two of each. Group-covered
                 # and missing depts stay blank: the member has no workfile
-                # of its own to attribute. (The licence/extension the meta
-                # also carries is surfaced by the session panel's Current
-                # Workspace block, not here.)
-                user, mtime, _ext = self._workfiles.get_dept_row_meta(
+                # of its own to attribute.
+                user, mtime = self._workfiles.get_dept_row_meta(
                     asset.id, dept_name, version,
                 )
                 tooltip = None

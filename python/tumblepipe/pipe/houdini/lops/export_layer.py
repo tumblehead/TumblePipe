@@ -268,23 +268,35 @@ def _resolve_under_any(path: Path, roots: list[Path]) -> bool:
 def _versioned_cache_roots() -> list[Path]:
     """The th::cache locations whose files may stay referenced by a publish.
 
-    Versioned caches live on shared storage (``project:``/``proxy:``) and are
-    immutable per version, so — unlike other external files — they are safe
-    (and, given their size, necessary) to publish by reference instead of
-    copying into every version folder. Fail-open to no exemptions.
+    Versioned caches — both the LOP ``th::cache`` (``lops_cache``, USD) and the
+    SOP ``th::cache`` (``cache``, ``.bgeo.sc``) — live on shared storage
+    (``project:``/``proxy:``) and are immutable per version, so — unlike other
+    external files — they are safe (and, given their size, necessary) to
+    publish by reference instead of copying into every version folder. Both
+    node types carry entity/department parms, so a node may address another
+    workfile's cache; walking the actual nodes keeps the exemption in agreement
+    with each node's resolved path wherever it points. Fail-open to no
+    exemptions.
     """
-    try:
-        from tumblepipe.pipe.houdini.lops.cache import list_cache_locations
-        roots = []
-        for root in list_cache_locations():
+    from tumblepipe.pipe.houdini.lops.cache import (
+        list_cache_locations as list_lop_cache_locations,
+    )
+    from tumblepipe.pipe.houdini.sops.cache import (
+        list_cache_locations as list_sop_cache_locations,
+    )
+    roots = []
+    for list_locations in (list_lop_cache_locations, list_sop_cache_locations):
+        try:
+            locations = list_locations()
+        except Exception:
+            logger.warning("Could not determine th::cache locations", exc_info=True)
+            continue
+        for root in locations:
             try:
                 roots.append(Path(root).resolve())
             except OSError:
                 continue
-        return roots
-    except Exception:
-        logger.warning("Could not determine th::cache locations", exc_info=True)
-        return []
+    return roots
 
 
 def _absolutize_cache_arcs(layer_path: Path, cache_roots: list[Path]) -> None:

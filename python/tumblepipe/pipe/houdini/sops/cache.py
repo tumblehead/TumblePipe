@@ -21,6 +21,38 @@ class Location:
     Project = 'project'
     Proxy = 'proxy'
 
+def _resolve_cache_location(location_name, base_path):
+    return api.storage.resolve(
+        Uri.parse_unsafe(f'{location_name}:/{base_path}/cache')
+    )
+
+def list_cache_locations():
+    """Every SOP cache directory the th::cache SOP nodes in this scene address.
+
+    These directories hold versioned ``.bgeo.sc`` caches on shared storage, so
+    exported layers may keep composition arcs into them (published by
+    reference) — the SOP-cache counterpart of ``lops.cache.list_cache_locations``.
+    The list is derived by walking the actual cache nodes rather than the
+    workfile's own location, so it stays in agreement with each node's
+    ``_get_cache_path()`` even when a node's entity/department parms point it at
+    another workfile's cache. Both storage purposes (project + proxy) are
+    exempted per base path; a purpose with no cache on disk is a harmless no-op
+    exemption.
+    """
+    seen = set()
+    locations = []
+    for raw_node in ns.list_by_node_type('cache', 'Sop'):
+        base_path = Cache(raw_node)._cache_base_path()
+        if base_path is None: continue
+        for location_name in (Location.Project, Location.Proxy):
+            location = _resolve_cache_location(location_name, base_path)
+            if location is None: continue
+            key = str(location)
+            if key in seen: continue
+            seen.add(key)
+            locations.append(location)
+    return locations
+
 class Cache(EntityNode):
     """SOP cache wrapper.
 
@@ -33,6 +65,10 @@ class Cache(EntityNode):
     'entity' also feeds the 'from_config' frame-range source, which reads the
     shot's authored range — start/end plus pre/post roll — straight out of
     the database instead of making the artist retype it.
+
+    list_cache_locations() above walks the actual cache nodes, so the
+    export-by-reference guard stays in agreement with _get_cache_path() no
+    matter where the parms point.
     """
 
     def __init__(self, native):
@@ -79,9 +115,7 @@ class Cache(EntityNode):
     def _get_cache_path(self):
         base_path = self._cache_base_path()
         if base_path is None: return None
-        return api.storage.resolve(
-            Uri.parse_unsafe(f'{self.get_location_name()}:/{base_path}/cache')
-        )
+        return _resolve_cache_location(self.get_location_name(), base_path)
 
     def _next_version_name(self):
         version_names = self.list_version_names()

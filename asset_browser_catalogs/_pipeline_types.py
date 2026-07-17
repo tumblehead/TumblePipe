@@ -381,26 +381,6 @@ def _type_supports(type_name: str, field_name: str) -> bool:
 SESSION_HAS_SECTIONS = _type_supports("SessionInfo", "sections")
 
 
-# ── Workfile licence labels ──────────────────────────────────────
-
-
-# Human label per workfile extension. The extension *is* the licence the
-# file was saved under, and mixing them has consequences a filename does
-# not advertise — an .hipnc cannot be opened commercially, and saving a
-# commercial scene over an Indie licence silently downgrades it. The
-# session panel surfaces this as the "License" field of its Current
-# Workspace block so the fact is visible at a glance.
-#
-# (This replaces the per-extension badge the retired Project Browser and
-# the earlier session panel used; the colour vocabulary went with the
-# badge, the fact it conveyed did not.)
-EXTENSION_LICENCES = {
-    "hip": "Commercial",
-    "hiplc": "Indie",
-    "hipnc": "Non-commercial",
-}
-
-
 # ── Department iconography ───────────────────────────────────────
 
 
