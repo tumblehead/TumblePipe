@@ -817,8 +817,33 @@ def find_dangling_layer_paths(
     return dangling
 
 
+def _is_workfile_cache(resolved: Path, storage_roots) -> bool:
+    """True if ``resolved`` is a versioned cache under a workfile directory.
+
+    Caches always land in a ``cache/`` directory inside a workfile's
+    workspace on shared ``project:``/``proxy:`` storage
+    (``<...>/<entity>/<dept>/cache/<name>/<version>/...``), immutable per
+    version and visible on every machine — so such an arc publishes by
+    reference safely no matter how it was loaded (a ``th::cache`` node, a
+    raw ``sublayer``/reference of the ``.bgeo.sc`` files, a file SOP …).
+    The anchor is a ``cache`` path component *below* a storage root: the
+    H22 ``$HIP/usd/`` hollow-layer default lands under ``usd/`` (not
+    ``cache/``) and stays flagged, and a machine-local scratch path is
+    not under a storage root at all.
+    """
+    for root in storage_roots:
+        try:
+            rel = resolved.relative_to(root)
+        except ValueError:
+            continue
+        if any(part.lower() == 'cache' for part in rel.parts):
+            return True
+    return False
+
+
 def find_escaping_layer_paths(
     asset_paths, layer_dir: Union[Path, str], allowed_roots=(),
+    cache_storage_roots=(),
 ) -> list:
     """Return filesystem composition paths that resolve outside ``layer_dir``.
 
@@ -835,9 +860,11 @@ def find_escaping_layer_paths(
     - Absolute paths are inherently non-portable and always flagged —
       even one pointing inside the export dir dies when the folder is
       copied to the version location — unless they resolve under one of
-      ``allowed_roots``: locations on shared storage (versioned pipeline
-      caches) whose files publish by reference. Relative arcs are never
-      exempt; they re-anchor when the layer folder moves.
+      ``allowed_roots`` (explicit versioned-cache locations) or land in a
+      ``cache/`` directory below one of ``cache_storage_roots`` (the
+      ``project:``/``proxy:`` storage roots), i.e. a versioned cache next
+      to some workfile, which publishes by reference. Relative arcs are
+      never exempt; they re-anchor when the layer folder moves.
     - Relative paths are flagged when they climb out of ``layer_dir``.
 
     Returns the offending raw path strings, in input order, de-duped.
@@ -847,6 +874,12 @@ def find_escaping_layer_paths(
     for root in allowed_roots:
         try:
             roots.append(Path(root).resolve())
+        except OSError:
+            continue
+    storage_roots = []
+    for root in cache_storage_roots:
+        try:
+            storage_roots.append(Path(root).resolve())
         except OSError:
             continue
     escaping = []
@@ -863,8 +896,9 @@ def find_escaping_layer_paths(
                 resolved = path.resolve()
             except OSError:
                 resolved = None
-            escapes = resolved is None or not any(
-                resolved.is_relative_to(root) for root in roots
+            escapes = resolved is None or (
+                not any(resolved.is_relative_to(root) for root in roots)
+                and not _is_workfile_cache(resolved, storage_roots)
             )
         else:
             try:

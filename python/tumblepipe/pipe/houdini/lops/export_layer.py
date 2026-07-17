@@ -178,8 +178,37 @@ def _validate_export_files(temp_path: Path, expected_filename: str, operation_de
         )
 
 
+def _workfile_cache_storage_roots() -> list[Path]:
+    """The ``project:``/``proxy:`` storage roots of the active project.
+
+    Any absolute composition arc that lands in a ``cache/`` directory
+    below one of these roots is a versioned cache next to some workfile
+    (``<...>/<entity>/<dept>/cache/<name>/<version>/...``) and publishes
+    by reference — regardless of how it was loaded into the scene (a
+    ``th::cache`` node, a raw ``sublayer`` of the ``.bgeo.sc`` files, a
+    file SOP …). Unlike ``_versioned_cache_roots`` this needs no scene
+    node, so it also covers caches pulled from another workfile's folder.
+    Fail-open to no roots.
+    """
+    roots: list[Path] = []
+    for scheme in ('project', 'proxy'):
+        try:
+            base = api.storage.resolve(Uri.parse_unsafe(f'{scheme}:/'))
+        except Exception:
+            logger.warning("Could not resolve %s: storage root", scheme, exc_info=True)
+            continue
+        if base is None:
+            continue
+        try:
+            roots.append(Path(base).resolve())
+        except OSError:
+            continue
+    return roots
+
+
 def _check_no_dangling_composition_paths(
     layer_path: Path, allowed_roots: list[Path] = (),
+    cache_storage_roots: list[Path] = (),
 ) -> None:
     """Abort the export if the layer composes geometry it can't carry.
 
@@ -198,9 +227,13 @@ def _check_no_dangling_composition_paths(
       consumer imports an empty asset (e.g. a payload anchored to a
       machine-local scratch file).
 
-    Absolute arcs under ``allowed_roots`` (versioned th::cache locations
-    on shared storage) are exempt from the escaping check — they publish
-    by reference — but still abort when the cached file is missing.
+    Absolute arcs into a versioned cache on shared storage are exempt
+    from the escaping check — they publish by reference — whether the
+    location comes from a ``th::cache`` node (``allowed_roots``) or is any
+    ``cache/`` directory below a ``project:``/``proxy:`` storage root
+    (``cache_storage_roots``), which also covers a cache loaded straight
+    off another workfile's folder via a raw sublayer/reference. Either
+    way the dangling check still aborts when the cached file is missing.
 
     Fail-open on analysis errors: a problem opening / walking the layer
     only skips the check (preserving the prior behaviour), never blocks a
@@ -223,6 +256,7 @@ def _check_no_dangling_composition_paths(
 
     escaping = find_escaping_layer_paths(
         asset_paths, layer_path.parent, allowed_roots=allowed_roots,
+        cache_storage_roots=cache_storage_roots,
     )
     if escaping:
         bullets = "\n  - ".join(escaping)
@@ -940,6 +974,7 @@ class ExportLayer(EntityNode):
             report_progress("checking composition arcs")
             _check_no_dangling_composition_paths(
                 temp_path / layer_file_name, allowed_roots=cache_roots,
+                cache_storage_roots=_workfile_cache_storage_roots(),
             )
 
             # Re-fetch root prim after export (stage may have been modified)
