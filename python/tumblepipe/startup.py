@@ -1,12 +1,16 @@
-"""Houdini-startup registrations for the tumbletrove radial system.
+"""Houdini-startup registrations for the Radial menu system.
 
 Called by the per-interpreter startup stubs (``python3.11libs/pythonrc.py``
 and ``python3.13libs/pythonrc.py``) so Houdini 21 and Houdini 22 register
 exactly the same menus — the two stubs must stay thin and identical.
 
-Everything here targets the tumbletrove radial (the Space-key Qt radial).
-The old Houdini-native ``radialmenu/`` system was purged in favour of it;
-the pipeline-specific menus it carried live on here as:
+Everything here targets the radial (the Space-key Qt radial), which ships as
+its own package — python package ``tumbleradial``. It used to live inside
+tumbletrove as ``tumbletrove.radial`` and was split out into its own repo in
+tumbletrove v0.14.0; importing it from tumbletrove now fails, and because the
+guard below used to swallow that silently, every menu here quietly stopped
+registering. The old Houdini-native ``radialmenu/`` system was purged in
+favour of the radial; the pipeline-specific menus it carried live on here as:
 
 - ``network.cop`` / ``network.vop`` context menus (registered Python menus,
   same mechanism tumbletrove uses for its built-in sop/lop/network menus).
@@ -19,19 +23,31 @@ the pipeline-specific menus it carried live on here as:
 
 from pathlib import Path
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def register_radial(pipeline_path: Path) -> None:
     """Register TumblePipe's actions, context menus and JSON menu directory.
 
-    Order matters: this runs at Houdini startup (synchronous), well before
-    tumbletrove's deferred ``radial.install()`` call, so the autoload picks
-    up the menus in ``radial_menus/``.
+    Order matters: this runs at Houdini startup (synchronous), well before the
+    radial's own deferred ``install()`` call, so the autoload picks up the
+    menus in ``radial_menus/``.
     """
     try:
-        from tumbletrove import radial
+        import tumbleradial as radial
     except ImportError:
-        return  # tumbletrove not installed — nothing to register
+        # Warn rather than return bare. This guard read "tumbletrove not
+        # installed — nothing to register" and swallowed the import error
+        # when the radial moved out of tumbletrove (v0.14.0), so every menu
+        # below silently stopped registering and nothing said a word.
+        logger.warning(
+            "tumbleradial is not installed, so TumblePipe's radial menus "
+            "(pipeline submenus, recipes, asset favorites, cop/vop network "
+            "menus) will not register"
+        )
+        return
 
     _register_general_actions(radial)
     _register_cop_menu(radial)

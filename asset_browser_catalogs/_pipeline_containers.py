@@ -36,7 +36,7 @@ from tumbletrove.asset_browser.api.errors import TagQueryError
 from tumbletrove.asset_browser.api.types import Asset, AssetDetail, AssetPage, Collection
 
 import _pipeline_uris as uris
-from _pipeline_types import version_code
+from _pipeline_types import latest_by_dept, version_code
 
 if TYPE_CHECKING:
     from tumblepipe.util.uri import Uri
@@ -398,9 +398,9 @@ class ContainerManager:
         than open a detail panel.
 
         For groups, the asset also advertises ``has_deck_items=True``
-        and a flat ``departments`` list so the deck popup can render
-        one deck item per dept (mirroring the shot/asset open-workfile
-        UX).
+        and a ``departments`` map (``{dept: latest_version}``, the same
+        card shape shots/assets use) so the deck popup can render one
+        deck item per dept (mirroring the shot/asset open-workfile UX).
         """
         metadata: dict = {}
         dirty = False
@@ -699,13 +699,17 @@ class ContainerManager:
         return result
 
     def _group_dept_attribution(self, group_tag: str) -> dict:
-        """Return ``{dept: (user, mtime_epoch)}`` for a group's latest
-        workfiles.
+        """Return ``{dept: (user, mtime_epoch, extension)}`` for a
+        group's latest workfiles.
 
         The mtime is the hip file's stat; the user comes from the
-        ``_context`` sidecar (see :func:`_hip_context_user`). One
-        sidecar read per covered dept — callers only hit this on deck
-        expand, never during grid rebuilds.
+        ``_context`` sidecar (see :func:`_hip_context_user`); the
+        extension is the resolved file's own suffix — the licence badge
+        on a department row, free here because the path is already in
+        hand (the entity-side equivalent is
+        ``WorkfileManager.get_dept_row_meta``). One sidecar read per
+        covered dept — callers hit this on deck expand and on a session
+        read, never during grid rebuilds.
         """
         result: dict = {}
         for dept_name, hip in self._group_dept_latest_hips(
@@ -714,7 +718,9 @@ class ContainerManager:
                 mtime = hip.stat().st_mtime
             except OSError:
                 continue
-            result[dept_name] = (_hip_context_user(hip), mtime)
+            result[dept_name] = (
+                _hip_context_user(hip), mtime, hip.suffix.lstrip("."),
+            )
         return result
 
     def _dept_groups_for_member(
@@ -838,14 +844,19 @@ class ContainerManager:
                     covered = [
                         str(d) for d in getattr(grp, "departments", ())
                     ]
-                # Shape ``departments`` like shots/assets ({dept:
-                # [versions]}) so the rich dept section can render
-                # version dropdowns + active highlights uniformly.
-                # The covered/uncovered toggle state lives separately
-                # in ``covered_departments``.
-                metadata["departments"] = (
+                # Shape both dept keys like shots/assets so the rich
+                # dept section renders version dropdowns + active
+                # highlights uniformly: ``department_versions`` carries
+                # the full {dept: [versions]} the dropdowns need, while
+                # ``departments`` stays card-shaped ({dept: latest}) —
+                # a detail is turned into a grid card verbatim for
+                # favourite / shelf refs. The covered/uncovered toggle
+                # state lives separately in ``covered_departments``.
+                group_dept_versions = (
                     self._get_group_department_workfile_info(asset_id)
                 )
+                metadata["departments"] = latest_by_dept(group_dept_versions)
+                metadata["department_versions"] = group_dept_versions
                 metadata["covered_departments"] = covered
                 ctx = path.split("/", 1)[0] if "/" in path else "assets"
                 try:

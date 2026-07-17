@@ -94,10 +94,8 @@ class WorkfileManager:
                 "View Latest Export failed for %s/%s", asset_id, dept,
             )
 
-    def workfile_path_for(
-        self, asset_id: str, dept: str, version: str,
-    ) -> Path | None:
-        """Return the .hip workfile :class:`Path` for an asset/dept/version.
+    def dept_dir_for(self, asset_id: str, dept: str) -> Path | None:
+        """Return an asset/dept's directory, or ``None``.
 
         Uses direct filesystem math via the asset's project root —
         does NOT call ``tumblehead.pipe.paths.get_hip_file_path``,
@@ -105,7 +103,7 @@ class WorkfileManager:
         import time and returns paths under the wrong project for any
         non-launch project.
         """
-        if not asset_id or not version:
+        if not asset_id or not dept:
             return None
         parsed = self._catalog._resolver.split(asset_id)
         if parsed is None:
@@ -117,60 +115,129 @@ class WorkfileManager:
         try:
             cats = self._catalog._list_categories_for_project(project_name)
             kind = "assets" if second in cats else "shots"
-            return workfile_for_version(
-                root / kind / second / third / dept, version,
-            )
+            return root / kind / second / third / dept
         except Exception:
             return None
 
-    def get_user_for_version(self, asset_id: str, dept: str, version: str):
-        """Read the user attribution for a specific dept/version.
-
-        Reads ``{dept_dir}/_context/{version}.json`` directly instead
-        of going through ``ui.helpers.get_user_from_context``,
-        which would re-resolve the path
-        through the cached single-project ``tumblehead.pipe.paths``
-        functions and miss cross-project switches.
-        """
-        if not asset_id or not version:
+    def workfile_path_for(
+        self, asset_id: str, dept: str, version: str,
+    ) -> Path | None:
+        """Return the .hip workfile :class:`Path` for an asset/dept/version."""
+        if not version:
             return None
-        parsed = self._catalog._resolver.split(asset_id)
-        if parsed is None:
-            return None
-        project_name, second, third = parsed
-        root = self._catalog._resolver.root_for(asset_id)
-        if root is None:
+        dept_dir = self.dept_dir_for(asset_id, dept)
+        if dept_dir is None:
             return None
         try:
-            cats = self._catalog._list_categories_for_project(project_name)
-            kind = "assets" if second in cats else "shots"
-            ctx_file = (
-                root / kind / second / third / dept
-                / "_context" / f"{version}.json"
-            )
+            return workfile_for_version(dept_dir, version)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _read_version_sidecar(dept_dir: Path | None, version: str) -> dict:
+        """Return ``{dept_dir}/_context/{version}.json``, or ``{}``.
+
+        Takes a resolved *dept_dir* rather than an asset id so a caller
+        wanting several fields resolves the directory once. Read
+        directly rather than through ``ui.helpers``, which would
+        re-resolve the path via the cached single-project
+        ``tumblehead.pipe.paths`` functions and miss cross-project
+        switches.
+        """
+        if dept_dir is None or not version:
+            return {}
+        try:
+            ctx_file = dept_dir / "_context" / f"{version}.json"
             if not ctx_file.exists():
-                return None
+                return {}
             import json
             data = json.loads(ctx_file.read_text(encoding="utf-8"))
-            user = data.get("user")
-            return str(user) if user else None
+            return data if isinstance(data, dict) else {}
         except Exception:
             log.debug(
-                "Failed to read user for %s/%s/%s",
-                asset_id, dept, version,
+                "Failed to read version sidecar %s/%s", dept_dir, version,
             )
-            return None
+            return {}
+
+    def get_user_for_version(self, asset_id: str, dept: str, version: str):
+        """Read the user attribution for a specific dept/version."""
+        sidecar = self._read_version_sidecar(
+            self.dept_dir_for(asset_id, dept), version,
+        )
+        user = sidecar.get("user")
+        return str(user) if user else None
 
     def get_mtime_for_version(self, asset_id: str, dept: str, version: str):
-        """Return the .hip file's modification time as a datetime, or None."""
+        """Return the .hip file's modification time as a datetime, or None.
+
+        No ``exists()`` pre-check: the path came back from a glob of the
+        directory, so it existed a moment ago, and a second probe only
+        buys another round trip that SMB may answer wrongly anyway (the
+        same reason ``save_context`` stamps the extension). ``stat`` on a
+        file deleted in between raises, which is the real answer.
+        """
         p = self.workfile_path_for(asset_id, dept, version)
-        if p is None or not p.exists():
+        if p is None:
             return None
         try:
             import datetime as dt
             return dt.datetime.fromtimestamp(p.stat().st_mtime)
-        except Exception:
+        except (OSError, ValueError, OverflowError):
+            # stat: gone/unreachable. fromtimestamp: an mtime outside the
+            # platform's representable range — a real thing on restored
+            # or clock-skewed shares.
             return None
+
+    def get_dept_row_meta(
+        self, asset_id: str, dept: str, version: str,
+    ) -> tuple[str, float, str]:
+        """Return ``(user, mtime_epoch, extension)`` for one dept row.
+
+        One resolve, one glob, one stat, one sidecar read — the callers
+        that want all three (session panel rows, deck items) would
+        otherwise pay the dept-dir resolve and the workfile glob twice
+        over, once via ``get_user_for_version`` and again via
+        ``get_mtime_for_version``. Over a share that is the difference
+        that shows.
+
+        The extension is the *real* one — ``.hip`` / ``.hiplc`` /
+        ``.hipnc`` — because the licence type is what the badge means.
+        It comes from the resolved file's suffix, with the sidecar's
+        ``extension`` key as the fallback for the case the suffix cannot
+        cover: no workfile on disk. The sidecar cannot be the primary
+        source — ``save_context`` only started stamping ``extension``
+        later, so it is ``None`` on every version saved before that, and
+        preferring it would blank the badge on exactly the old workfiles
+        most likely to be a different licence.
+
+        Missing values are blank/zero rather than ``None``: these feed
+        ``DeckItem``, whose fields are typed ``str``/``float``.
+        """
+        dept_dir = self.dept_dir_for(asset_id, dept)
+        if dept_dir is None or not version:
+            return "", 0.0, ""
+
+        sidecar = self._read_version_sidecar(dept_dir, version)
+        user = sidecar.get("user")
+
+        path = None
+        try:
+            path = workfile_for_version(dept_dir, version)
+        except Exception:
+            path = None
+
+        mtime = 0.0
+        ext = ""
+        if path is not None:
+            ext = path.suffix.lstrip(".")
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                mtime = 0.0
+        if not ext:
+            ext = str(sidecar.get("extension") or "")
+
+        return (str(user) if user else ""), mtime, ext
 
     def get_latest_export_mtime(self, asset_id: str, dept: str):
         """Return the latest export folder's mtime for ``dept`` as a

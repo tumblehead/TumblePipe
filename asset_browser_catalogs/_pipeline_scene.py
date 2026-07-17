@@ -286,7 +286,30 @@ class SceneManager:
     def get_scene_asset_id(self) -> str | None:
         """Return the asset_id (``PROJECT/CATEGORY/Name``) for the
         currently loaded .hip file, or ``None`` if it can't be determined.
+
+        Entities only. A Multi's workfile is addressed by a container id,
+        not an asset id, and yields ``None`` here — see
+        :meth:`get_scene_id` when you want whatever addresses the loaded
+        scene rather than specifically an entity.
         """
+        return self._scene_id(entities_only=True)
+
+    def get_scene_id(self) -> str | None:
+        """Return the browser id addressing the loaded .hip — an entity
+        id (``PROJECT/CATEGORY/Name``) *or* a Multi's container id
+        (``group:PROJECT:<ctx>/<name>``) — or ``None``.
+
+        Separate from :meth:`get_scene_asset_id` rather than folded into
+        it: that method's callers feed the id to entity-shaped lookups
+        (``_get_frame_range_obj`` resolves it through
+        ``AssetResolver.uri_for``, which does not know container ids), so
+        widening its contract would change reload behaviour for Multis as
+        a side effect. Callers that genuinely mean "whatever is open"
+        — the session panel — ask for it explicitly.
+        """
+        return self._scene_id(entities_only=False)
+
+    def _scene_id(self, *, entities_only: bool) -> str | None:
         try:
             import hou
             from tumblepipe.pipe.paths import get_workfile_context
@@ -297,13 +320,41 @@ class SceneManager:
             proj = self._catalog._project_for_hip_path(hip_path)
             if proj is None:
                 return None
-            # Build the asset_id from entity URI segments:
-            # entity:/assets/CATEGORY/NAME → PROJECT/CATEGORY/NAME
-            uri = scene_ctx.entity_uri
-            if uri is not None and len(uri.segments) >= 3:
-                return f"{proj.name}/{uri.segments[1]}/{uri.segments[2]}"
+            return self.id_from_scene_uri(
+                scene_ctx.entity_uri, proj.name,
+                entities_only=entities_only,
+            )
         except Exception:
-            pass
+            return None
+
+    @staticmethod
+    def id_from_scene_uri(
+        uri, project_name: str, *, entities_only: bool,
+    ) -> str | None:
+        """Map a loaded scene's entity URI + project to a browser id.
+
+        Split out from the ``hou``/filesystem lookup around it so the
+        mapping itself is testable — it is pure string math, and it is
+        where the Multi bug lived.
+
+        Two URI shapes reach here and they are not the same length. An
+        entity is ``entity:/<kind>/<second>/<third>`` — three segments,
+        and the id is ``PROJECT/<second>/<third>``. A Multi is
+        ``groups:/<ctx>/<name>`` — **two**, and its id is
+        ``group:PROJECT:<ctx>/<name>``, matching what
+        ``GroupContainer.collection_id`` builds. A length check alone
+        therefore rejects every Multi, which is right for "give me an
+        asset id" and wrong for "what is open".
+        """
+        if uri is None or not project_name:
+            return None
+        segments = list(uri.segments or ())
+        if getattr(uri, "purpose", "") == "groups":
+            if entities_only or not segments:
+                return None
+            return f"group:{project_name}:{'/'.join(segments)}"
+        if len(segments) >= 3:
+            return f"{project_name}/{segments[1]}/{segments[2]}"
         return None
 
     def scene_matches_asset(self, asset_id: str) -> bool:

@@ -13,7 +13,7 @@ pipeline asset present on the exported stage (scraped from the
 The *staged* file (`_staged/<variant>/v####/<Entity>_v####.usda`) is what
 imports actually load. For an asset it sublayers, strongest first:
 
-1. the asset's own department layers in pipeline order
+1. the asset's own **renderable** department layers in pipeline order
    (e.g. lookdev over model),
 2. the staged file of every asset tracked in those department layers —
    the *nested assets* of a set-style asset — weaker than the asset's
@@ -24,6 +24,14 @@ imports actually load. For an asset it sublayers, strongest first:
    already reachable through another tracked asset's staged file gets
    no direct ref of its own — a second, independently pinned ref could
    pin a different version of the same prims.
+
+**Renderable** in step 1 is load-bearing: a department with
+`renderable: false` never composes into a staged asset, however often it
+publishes, because it is not a render layer. `rig` and `blendshape` ship that
+way, so their exports are real, versioned, and correctly absent from the
+composed asset — by design, not staleness. Re-staging will never pull them
+in, and the only way to reach that work from a shot is its workfile
+(§*Seeing what composed*).
 
 "Pipeline order" is literally the department's position in the project's
 department pool (see *Departments* in {doc}`configuration`): the build
@@ -144,6 +152,39 @@ default, `--apply` disables and resaves with a backup copy.
 Both compose transparently: a shot that imports the set (or a scene
 containing it) resolves the nested assets through the set's staged file.
 
+### Nesting is not containment
+
+"Tower in Arena in Set" describes the *bookkeeping*, not the stage. A
+prim path comes from the asset's own URI and nothing else —
+`entity:/assets/Clash/KingTower` is always `/Clash/KingTower`, whoever
+imports it and at whatever depth. **A nested asset is a stage-root
+sibling of the asset that nests it**, never its child. Nesting exists
+as sublayer arcs plus `context.json` tracking; there is no parent
+pointer, no depth, and no identity for a nested asset beyond its URI.
+
+Two consequences, both load-bearing before you plan a hierarchy:
+
+- **Duplicating a nester does not duplicate what it nests.** `Arena`
+  with `instances: 2` gives `/Clash/Arena0` and `/Clash/Arena1`, each
+  internally referencing `/Clash/Arena`. Its towers live at
+  `/Clash/KingTower0..2` — *outside* that prim — so the reference does
+  not carry them. Two Arenas share one set of towers, in one place.
+- **A diamond collapses to one prim.** If two assets nest the same
+  sub-asset, there is still one `/Clash/KingTower`, and the staged
+  build drops the dominated ref outright (see above). Neither nester
+  can place it independently.
+
+Depth also flattens in the tracking: the import side re-tags every
+asset the staged `context.json` records, so a set that nests an arena
+that nests a tower ends up listing *both* the arena and the tower in
+its own context. The build re-derives the structure to decide which
+refs to omit; the list itself stays flat.
+
+If you need a sub-asset to move with its nester, place it in the
+nester's workfile — placement composes onto the URI-derived prim from
+the nester's layer. That is the mechanism the pipeline actually
+provides, and it is why placement lives in the set's workfile above.
+
 The layerbreak strips the *imported* composition from an export, but
 the import node's own persistent layer — tracked-asset metadata,
 artist transforms, and the re-established instance defs — is
@@ -248,6 +289,48 @@ The *Exclude departments* setting on the import nodes filters the staged
 layer stack per department, and applies through nesting: excluding
 `lookdev` when importing a set also drops the lookdev layers of every
 nested asset.
+
+It is a **working view, and it does not survive the session**. The setting
+lives only on the node: it is never written to `context.json`, the render
+stage never reads it, and no farm job sets it. A staged build re-sublayers
+each tracked asset's staged file whole, so exclude `lookdev`, export, and
+the next build composes lookdev straight back in.
+
+That is the intended shape — the setting exists so you can drop weight you
+do not need while you work, not to state what an asset *is*. But it means
+the exclusion is not a way to keep a department out of a build. To do that,
+set the department `renderable: false` (§*Department exports and staged
+files*), which is a property of the department rather than of one artist's
+node.
+
+## Seeing what composed
+
+`th::import_shot`'s **Layer Stack** lists what the node loaded, one row per
+sublayer, with the version each one resolved to. The version shown is always
+the version that *composed* — not the one recorded in the staged build. The
+two differ whenever the node is on `latest`, which strips the pins and floats
+to the newest publish (§*Picking up new versions on open*), so a row can read
+`v0029` against a build that pinned `v0004`.
+
+An `Asset:` row is a whole composed asset behind a single version, so it
+carries a **`...`** button opening a read-only breakdown: the asset's
+department layers with the version each contributed, and the sub-assets it
+brings with it. Each department reports one of
+
+| The row reads | Meaning |
+|---|---|
+| *(nothing)* | composing |
+| newer export not composing | a newer publish exists and is not in the build. Only possible on a **pinned** import — on `latest` the newest publish *is* what loads |
+| exported after this build | published since the asset was staged; a re-stage picks it up |
+| never exported | assigned to the asset, has never published |
+| not a render layer | never composes, by design (§*Department exports and staged files*) — a re-stage will not change it |
+
+Departments with a workfile also offer **Open**, in this session or a new
+Houdini one. Worth reaching for precisely where the export tree tells you
+nothing: a rig never composes, so its workfile is the only way to see it from
+here.
+
+The breakdown is read-only — nothing in it changes what loads.
 
 ## Picking up new versions on open
 

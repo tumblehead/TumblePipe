@@ -4,6 +4,11 @@ from pathlib import Path
 
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
+from tumblepipe.config.department import (
+    Department,
+    list_departments,
+    list_entity_departments,
+)
 from tumblepipe.config.variants import list_variants
 from tumblepipe.pipe.paths import list_version_paths, get_workfile_context
 from tumblepipe.pipe.houdini.util import uri_to_prim_path
@@ -174,6 +179,53 @@ def _inline_marker_script(prim_paths: list[str]) -> str:
 class ImportAssets(EntityNode):
     def __init__(self, native):
         super().__init__(native)
+
+    def scoped_departments(
+        self, context: str, include_generated: bool = True,
+        ) -> list[Department]:
+        """The pool narrowed to the union of the rows' assets.
+
+        The base resolves one entity and narrows to it. This node addresses
+        N assets at once and its exclusion is node-level, so there is no
+        single entity to narrow to — and narrowing to any one row would hide
+        departments that another row's asset has. Union instead, ordered by
+        the pool, because pool order is pipeline order and is load-bearing
+        (designs/per-entity-departments.md §3).
+
+        Overriding this at all is not cosmetic: the base calls
+        ``self.get_entity_uri()`` with no args, which this class's indexed
+        override cannot serve. That was an unguarded TypeError, so
+        ``list_department_names()`` and ``set_exclude_department_names()``
+        raised on every import_assets node — the exclusion menu could not
+        populate, and the singular→plural upgrade dropped the exclusion into
+        a log.debug.
+
+        Read-only throughout. This runs from the exclusion menu's script, and
+        ``get_asset_imports()`` materializes each row's URI back onto its
+        parm — a parm write during menu evaluation dirties the node mid-draw
+        (see ``get_entity_uri``).
+        """
+        pool = list_departments(context, include_generated=include_generated)
+        assigned: set[str] = set()
+        for index in range(1, self.parm('asset_imports').eval() + 1):
+            entity_uri = self.get_entity_uri(index)
+            if entity_uri is None:
+                continue
+            if not entity_uri.segments or entity_uri.segments[0] != context:
+                continue
+            assigned.update(
+                department.name
+                for department in list_entity_departments(
+                    entity_uri, include_generated=include_generated,
+                )
+            )
+        if not assigned:
+            # No rows, or none drawing from this context. The base's own
+            # answer for an entity it cannot narrow to is the whole pool.
+            return pool
+        return [
+            department for department in pool if department.name in assigned
+        ]
 
     def list_entity_uris(self, index) -> list[Uri]:
         all_asset_uris = api.config.list_entity_uris(

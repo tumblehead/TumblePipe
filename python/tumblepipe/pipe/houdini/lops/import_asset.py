@@ -271,7 +271,8 @@ def _expand_staged_layers(
     staged_path: Path,
     excluded: set[str],
     latest: bool,
-    _visited: set | None = None
+    _visited: set | None = None,
+    _dropped: set[str] | None = None
 ) -> list[str]:
     """Flatten a staged file into resolved leaf layer paths, dropping
     excluded departments.
@@ -283,6 +284,12 @@ def _expand_staged_layers(
     exclusion applies to the entire nesting. Returns strongest-first order
     (matching the staged file's sublayer order); revisited staged files
     (cyclic or diamond nesting) are expanded once.
+
+    ``_dropped`` accumulates the departments an exclusion actually removed,
+    anywhere in the nesting. It lets the caller tell a real exclusion from
+    one naming a department that composes nothing — and it reports what the
+    *files* contain rather than what the config now says, so a staged build
+    made before a department was flipped non-renderable still counts.
     """
     from tumblepipe import resolver
 
@@ -296,6 +303,8 @@ def _expand_staged_layers(
     layers = []
     for department, ref in _list_staged_layers(staged_path):
         if department in excluded:
+            if _dropped is not None:
+                _dropped.add(department)
             continue
         if ref.startswith('entity:'):
             uri = Uri.parse_unsafe(ref)
@@ -312,7 +321,7 @@ def _expand_staged_layers(
             continue
         if department is None and '_staged' in Path(layer_resolved).parts:
             layers.extend(_expand_staged_layers(
-                Path(layer_resolved), excluded, latest, _visited
+                Path(layer_resolved), excluded, latest, _visited, _dropped
             ))
         else:
             layers.append(layer_resolved)
@@ -471,8 +480,22 @@ class ImportAsset(EntityNode):
         # Apply department exclusion by loading the staged file's
         # per-department sublayers individually — the staged layer itself
         # composes every department, so it can only be loaded whole.
-        # Without exclusions, load the staged file directly to keep its
-        # header metadata (frame range, metersPerUnit, upAxis).
+        #
+        # Without exclusions, load the staged file directly. That is a
+        # shortcut, NOT a correctness requirement: this comment used to
+        # claim the whole-file load was needed "to keep its header metadata
+        # (frame range, metersPerUnit, upAxis)", and it is not. Every
+        # department export authors the same header the staged root does,
+        # and the Sublayer LOP composes stage metadata from its sublayers,
+        # so the flatten preserves it. Verified in hython against paleindia
+        # (SET, Arena, KingTower — excluding a composing department, and a
+        # non-renderable one that composes nothing either way): every case
+        # produced a stage identical to the whole-file load on upAxis,
+        # metersPerUnit, start/endTimeCode and fps. See
+        # designs/nested-asset-workflow.md §4.1.
+        #
+        # It stays because it is one layer to open instead of eight, and
+        # because it is the common case — not because the paths differ.
         excluded = set(self.get_exclude_department_names())
         layer_paths = [resolved]
         if excluded:
@@ -480,10 +503,21 @@ class ImportAsset(EntityNode):
             # refs so the exclusion reaches nested assets too). The result
             # is strongest-first; the Sublayer LOP composes its last file
             # strongest, so load in reverse.
+            dropped: set[str] = set()
             flattened = _expand_staged_layers(
-                Path(resolved), excluded, version_name == 'latest'
+                Path(resolved), excluded, version_name == 'latest',
+                _dropped=dropped
             )
-            layer_paths = list(reversed(flattened))
+            # Only take the flatten if it actually removed something. An
+            # exclusion naming a department that composes nothing — a
+            # non-renderable one (only renderable department exports are
+            # ever sublayered into a staged asset), or one this asset does
+            # not have — otherwise buys N layers to compose the very same
+            # stage: excluding 'rig' took Clash/SET from 1 layer to 8, for
+            # a prim-for-prim identical result (1281 prims either way,
+            # verified in hython; designs/nested-asset-workflow.md §4.1).
+            if dropped:
+                layer_paths = list(reversed(flattened))
 
         import_node = native.node('import')
         if not layer_paths:

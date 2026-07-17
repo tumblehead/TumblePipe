@@ -6,6 +6,6 @@ def execute():
 def select():
     import_shot.select()
 
-def on_parm_changed(parm_name):
+def inspect_asset_layer(index):
     node = import_shot.ImportShot(hou.pwd())
-    node.on_parm_changed(parm_name)
+    node.inspect_asset_layer(index)

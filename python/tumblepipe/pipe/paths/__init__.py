@@ -12,6 +12,7 @@ full public surface so callers keep importing from ``tumblepipe.pipe.paths``:
 
 from tumblepipe.pipe.paths.version import (
     get_next_version_name,
+    version_name_from_path,
     list_version_paths,
     get_latest_version_path,
     get_next_version_path,
@@ -85,6 +86,7 @@ from tumblepipe.pipe.paths.staged import (
 __all__ = [
     # version
     'get_next_version_name',
+    'version_name_from_path',
     'list_version_paths',
     'get_latest_version_path',
     'get_next_version_path',

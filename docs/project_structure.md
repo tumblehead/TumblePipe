@@ -11,7 +11,7 @@ TumblePipe/
 ├── asset_browser_catalogs/      # TumbleTrove asset_browser catalog
 │   ├── pipeline.py              #   factory entry point (discovered)
 │   └── _pipeline_*.py           #   catalog implementation + helpers
-├── radial_menus/                # tumbletrove radial menus (shipped JSON + startup-generated)
+├── radial_menus/                # Radial menus (shipped JSON + startup-generated)
 ├── recipes/                     # Shipped asset-browser recipes (read-only)
 ├── desktop/
 │   └── TumblePipe.desk          # Houdini desktop layout
@@ -129,13 +129,19 @@ companion modules:
   export USD).
 - `_pipeline_uris.py` — typed factories for tumblepipe URIs.
 - `_pipeline_drops.py` — the LOP / SOP / sublayer drop router.
-- `_pipeline_workfiles.py` — workfile open / create lifecycle plus
-  mtime / user-attribution helpers.
+- `_pipeline_workfiles.py` — workfile open / create lifecycle plus the
+  per-row reads (user / mtime / licence) behind a department row.
 - `_pipeline_scene.py` — scene-state lifecycle: save / publish /
   reload / save-before-swap (prompt or silent version-up) and the
-  readonly hip-context helpers.
+  readonly hip-context helpers, including which browser id addresses
+  the open .hip.
 - `_pipeline_detail.py` — Qt widget construction for every section
-  in the right-hand detail panel.
+  in the right-hand detail panel. Note the detail panel is only
+  reachable at the unscoped **All** scope: in the Pipeline scope the
+  right pane is tumbletrove's *session* panel, which tracks the open
+  .hip rather than the selection (`get_session`). The Info / Tasks /
+  Departments sections still build for All, and a Multi's coverage
+  editor is hosted from the card menu.
 - `_pipeline_thumbnails.py` — sidecar thumbnail read / write / refresh.
 - `_pipeline_widgets.py` — detail-panel custom QLabel / QComboBox.
 - `_pipeline_types.py` — value-types and module-level constants.
@@ -146,8 +152,11 @@ None of the `_pipeline_*` files are loaded by TumbleTrove directly.
 
 ### `radial_menus/`
 
-Menus for the tumbletrove radial system (the Space-key Qt radial; the
-Houdini-native `radialmenu/` system was retired in its favour).
+Menus for the radial (the Space-key Qt radial; the Houdini-native
+`radialmenu/` system was retired in its favour). The radial ships as its
+own package — python package `tumbleradial`. It lived inside tumbletrove
+as `tumbletrove.radial` until tumbletrove v0.14.0 split it into its own
+repo, so nothing below registers unless that package is installed.
 `tumblepipe_pipeline.json` is authored, tracked and shipped (Alt+T:
 pipeline HDA submenus). `tumblepipe_recipes.json` and
 `tumblepipe_asset_favorites.json` are generated (or removed, when fewer

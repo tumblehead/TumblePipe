@@ -126,7 +126,12 @@ references) must have `renderable` off.
 A shot or asset may be scoped to a subset of its context's pool through its
 `departments` property, so a shot that only carries tracking work stops
 advertising eight departments it will never have. Set it from the entity's
-**Departments…** dialog (card context menu, or its Departments tab).
+**Departments…** dialog on the card's right-click menu.
+
+A Multi's **Departments…** opens a different editor, because its departments
+are a *coverage* decision — which departments this Multi's workfile overrides
+for its members — rather than an assignment. Both live on the same menu item;
+it forks on what you right-clicked.
 
 An empty list — the default — means **inherit the whole enabled pool**, so an
 entity that was never scoped behaves as it always did, and picks up departments

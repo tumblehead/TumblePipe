@@ -10,6 +10,18 @@ def get_next_version_name(version_name: str) -> str:
     version_code = api.naming.get_version_code(version_name) + 1
     return api.naming.get_version_name(version_code)
 
+def version_name_from_path(path: Path) -> Optional[str]:
+    """The version a versioned file sits in, or None if it isn't in one.
+
+    Everything versioned is laid out ``…/{version}/{file}``, so this is the
+    parent directory — when it is a valid version name. For reading a version
+    back off a path the resolver handed you, rather than re-deriving one.
+    """
+    version_name = Path(path).parent.name
+    if not api.naming.is_valid_version_name(version_name):
+        return None
+    return version_name
+
 def list_version_paths(path: Path) -> list[Path]:
     if not path.exists(): return []
     version_paths = [

@@ -1,5 +1,8 @@
 import tumblepipe.pipe.houdini.lops.cache as th_cache
 
+def select():
+    th_cache.select()
+
 def latest():
     th_cache.latest()
 

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import os
 import re
@@ -20,9 +21,18 @@ from tumblepipe.pipe.paths import (
     load_entity_context,
     current_staged_file_path,
     get_staged_file_path,
-    list_version_paths
+    list_version_paths,
+    version_name_from_path,
 )
 from tumblepipe.pipe.build import get_source_department
+from tumblepipe.pipe.usd import (
+    read_staged_sublayer_refs,
+    parse_entity_sublayer_uri,
+)
+from tumblepipe.pipe.asset_layers import build_asset_layer_report
+from tumblepipe import resolver
+
+logger = logging.getLogger(__name__)
 
 
 def _context_from_workfile():
@@ -278,13 +288,8 @@ def _parse_staged_sublayers(staged_file_path: Path) -> list[dict]:
     sublayers = []
     staged_dir = staged_file_path.parent
 
-    with open(staged_file_path, 'r') as f:
-        content = f.read()
-
     # Extract sublayer paths/URIs from USDA
-    for match in re.finditer(r'@([^@]+)@', content):
-        ref = match.group(1)
-
+    for ref in read_staged_sublayer_refs(staged_file_path):
         # Check if this is an entity URI
         if ref.startswith('entity:/'):
             # Entity URI - parse parameters to get info
@@ -330,7 +335,12 @@ def _get_layer_display_name(layer_info: dict) -> str:
 
 
 def _extract_layer_version(layer_info: dict) -> str:
-    """Extract version string from layer info."""
+    """The version *recorded* in the layer ref — the staged build's pin.
+
+    In 'latest' mode this is not what loads: ``execute`` strips the pin so
+    the resolver floats to the newest export. Use :func:`_layer_display_version`
+    for anything artist-facing.
+    """
     path_value = layer_info.get('path', '')
 
     if isinstance(path_value, str) and 'version=' in path_value:
@@ -342,6 +352,42 @@ def _extract_layer_version(layer_info: dict) -> str:
         if parent_name.startswith('v') and parent_name[1:].isdigit():
             return parent_name
     return 'latest'
+
+
+def _resolve_effective_version(layer_ref: str) -> str | None:
+    """The version the resolver actually lands on for ``layer_ref``.
+
+    ``layer_ref`` must be the exact string handed to the Sublayer LOP — the
+    point is to report what composed, so anything re-derived here instead of
+    asked of the resolver can disagree with the loaded stage.
+
+    Returns None when the ref does not resolve (never exported, or a target
+    that vanished); the caller falls back to the recorded pin.
+    """
+    try:
+        resolved = resolver.try_resolve_entity_uri(layer_ref)
+    except Exception:
+        # A resolver hiccup must not take the Import button down: the
+        # version column is cosmetic, the composition is not.
+        logger.debug("Effective-version resolve failed: %s", layer_ref,
+                     exc_info=True)
+        return None
+    if resolved is None:
+        return None
+    return version_name_from_path(resolved)
+
+
+def _layer_display_version(layer_info: dict) -> str:
+    """The version to show an artist: what composed, not what was pinned.
+
+    ``effective_version`` is stamped by ``execute`` when the resolver was
+    asked; absent (a pinned import, or a caller driving the UI directly)
+    it falls back to the recorded pin, which is correct in pinned mode.
+    """
+    effective = layer_info.get('effective_version')
+    if effective:
+        return effective
+    return _extract_layer_version(layer_info)
 
 
 def _sanitize_parm_name(name: str) -> str:
@@ -600,7 +646,7 @@ class ImportShot(ns.Node):
         # Add parameters for each layer
         for i, layer_info in enumerate(layers_to_load):
             display_name = _get_layer_display_name(layer_info)
-            version = _extract_layer_version(layer_info)
+            version = _layer_display_version(layer_info)
             safe_name = f"layer_{i}"
 
             # Pad the display name for column alignment
@@ -622,7 +668,36 @@ class ImportShot(ns.Node):
                 column_labels=(version,),
                 is_label_hidden=True  # Hide parameter name
             )
+
+            # Asset rows get a third column: an asset is a composed blob, and
+            # this is the only way to see the department layers inside it.
+            # Other row types are already a single department — there is
+            # nothing to open.
+            inspectable = (
+                layer_info.get('type') == 'asset'
+                and _extract_asset_uri_from_sublayer(layer_info.get('path'))
+                is not None
+            )
+            if inspectable:
+                version_parm.setJoinWithNext(True)
             layer_folder.addParmTemplate(version_parm)
+
+            if inspectable:
+                inspect_parm = hou.ButtonParmTemplate(
+                    f'{safe_name}_inspect',
+                    '...',
+                    # Route through the HDA's PythonModule (the convention the
+                    # definition's own buttons use) rather than baking a module
+                    # path into every artist's .hip: spare-parm callbacks are
+                    # serialized into the file, and this indirection ships with
+                    # the package.
+                    script_callback=f'hou.phm().inspect_asset_layer({i})',
+                    script_callback_language=hou.scriptLanguage.Python,
+                )
+                inspect_parm.setHelp(
+                    "Show the department layers composing this asset"
+                )
+                layer_folder.addParmTemplate(inspect_parm)
 
         # Insert after the Selection folder (before Settings). Anchor on
         # definition parms, not folder names: inserting a spare folder makes
@@ -648,6 +723,72 @@ class ImportShot(ns.Node):
             enable_parm = import_node.parm(f'enable{i+1}')
             enable_parm.setExpression(f'ch("../{safe_name}_enable")')
 
+    def inspect_asset_layer(self, index: int):
+        """Open the layer inspector for the asset on Layer Stack row ``index``.
+
+        Driven by the row's spare button. The ref is re-read from the node
+        rather than baked into the callback string: spare-parm callbacks are
+        serialized into the .hip, so a file saved against an older stack would
+        otherwise reopen with a stale asset URI in the button.
+        """
+        native = self.native()
+        import_node = native.node('import')
+
+        ref_parm = import_node.parm(f'filepath{index + 1}')
+        if ref_parm is None:
+            hou.ui.displayMessage(
+                "That layer is no longer in the stack. Re-import to refresh.",
+                severity=hou.severityType.Warning,
+            )
+            return
+
+        ref = ref_parm.eval()
+        asset_uri_string = _extract_asset_uri_from_sublayer(ref)
+        if asset_uri_string is None:
+            hou.ui.displayMessage(
+                "That layer is not an asset.",
+                severity=hou.severityType.Warning,
+            )
+            return
+
+        asset_uri = Uri.parse_unsafe(asset_uri_string)
+        pinned = self.get_version_name() != 'latest'
+
+        # Resolve the row's own ref rather than looking up "the latest staged
+        # file": in latest mode those are the same, but pinned they are not,
+        # and reporting a build the node is not composing is the exact lie
+        # this dialog exists to kill.
+        with resolver.latest_mode(not pinned):
+            staged = resolver.try_resolve_entity_uri(ref)
+
+        if staged is None:
+            hou.ui.displayMessage(
+                f"{asset_uri.segments[-1]} has no staged build to inspect.",
+                severity=hou.severityType.Warning,
+            )
+            return
+
+        # The asset's own variant, from its ref — not the node's variant parm,
+        # which is the *shot's*. They are independent, and a department that
+        # isn't composing is looked up under this one.
+        asset_ref = parse_entity_sublayer_uri(ref)
+        asset_variant = asset_ref.variant if asset_ref is not None else 'default'
+
+        staged_path = Path(staged)
+        report = build_asset_layer_report(
+            asset_uri,
+            staged_path,
+            pinned,
+            variant=asset_variant,
+            staged_version=staged_path.parent.name,
+        )
+
+        from tumblepipe.pipe.houdini.ui.asset_layer_dialog import (
+            AssetLayerDialog,
+        )
+        dialog = AssetLayerDialog(report, parent=hou.qt.mainWindow())
+        dialog.show()
+
     def _initialize(self):
         """Initialize node and update labels to show resolved values."""
         self._update_labels()
@@ -671,8 +812,6 @@ class ImportShot(ns.Node):
         # Get staged file path based on version and variant selection
         version_name = self.get_version_name()
         variant_name = self.get_variant_name()
-
-        from tumblepipe import resolver
 
         if version_name == 'latest':
             # Enable resolver latest mode for full cascade semantics
@@ -788,6 +927,7 @@ class ImportShot(ns.Node):
         for i, info in enumerate(layers_to_load):
             # Handle both filesystem paths (Path objects) and entity URIs (strings)
             path_value = info['path']
+            pin_stripped = False
             if isinstance(path_value, str) and path_value.startswith('entity:'):
                 # Entity URI - parse to manipulate query params
                 uri = Uri.parse_unsafe(path_value)
@@ -796,6 +936,7 @@ class ImportShot(ns.Node):
                     stripped = dict(uri.query)
                     del stripped['version']
                     uri = Uri(uri.purpose, uri.segments, stripped)
+                    pin_stripped = True
                 layer_path = str(uri)
             elif isinstance(path_value, str):
                 # Other string path - pass through directly
@@ -804,6 +945,14 @@ class ImportShot(ns.Node):
                 # Filesystem Path object
                 layer_path = path_str(path_value)
             import_node.parm(f'filepath{i+1}').set(layer_path)
+
+            # Stamp what the resolver actually lands on, so the Layer Stack
+            # reports the loaded version rather than the pin we just stripped.
+            # Only when a pin was stripped: otherwise the ref carries its own
+            # version and the recorded pin is already the truth — no reason to
+            # pay a resolve per layer for a value we have.
+            if pin_stripped:
+                info['effective_version'] = _resolve_effective_version(layer_path)
 
         # Update layer stack UI with checkboxes and link to sublayer enables
         self._update_layer_stack_ui(layers_to_load)

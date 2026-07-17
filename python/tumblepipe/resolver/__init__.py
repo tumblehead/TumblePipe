@@ -34,6 +34,28 @@ def get_latest_mode() -> bool:
     return os.environ.get(LATEST_MODE_ENV_VAR, "0") == "1"
 
 
+@contextmanager
+def latest_mode(enabled: bool):
+    """Resolve as a given mode for the block, then restore the previous one.
+
+    For callers that need to answer "what would *this node* load?" without
+    leaving the session's mode flipped behind them — an import node sets the
+    mode for its own execute() and leaves it set, so the global mode reflects
+    whichever node ran last, not the one being asked about.
+
+    Does not refresh_context(): the Rust core reads the env var on every
+    resolve, so a bare Ar.Resolve() honours the override immediately. Already
+    -composed stages are untouched, which is the point — this is for asking
+    questions, not for changing what is loaded.
+    """
+    previous = get_latest_mode()
+    set_latest_mode(enabled)
+    try:
+        yield
+    finally:
+        set_latest_mode(previous)
+
+
 _defer_depth = 0
 _refresh_pending = False
 

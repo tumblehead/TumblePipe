@@ -57,11 +57,14 @@ import _pipeline_uris as uris
 from _pipeline_workfiles import WorkfileManager
 from _pipeline_types import (
     DEPT_API_SHORT_FALLBACK,
+    DECK_ITEM_HAS_BADGE,
     DEPT_ICONS,
     DEPT_SHORT_NAMES,
+    EXTENSION_COLORS,
     SHOT_DEPT_ICONS,
     DeptVersionStore,
     cascade_counts,
+    latest_by_dept,
     latest_version,
     projects_json_path,
     scan_workfiles,
@@ -690,7 +693,16 @@ class PipelineCatalog(Catalog):
         # generated text. See _edit_description.
         tags = {"source:pipeline", f"project:{project_name}"}
         metadata: dict = {
-            "departments": dept_info,
+            # An AssetDetail becomes a grid card verbatim when the
+            # browser resolves a favourite / shelf / collection ref
+            # (``_resolve_ref_pairs`` and ``core.shelf.resolve_asset``
+            # both ``replace()`` the detail into a card), so
+            # ``departments`` MUST carry the card shape here — dept →
+            # latest version — exactly like the discovery builders. The
+            # full per-dept version list lives under its own key for the
+            # detail panel's version dropdowns.
+            "departments": latest_by_dept(dept_info),
+            "department_versions": dept_info,
             "project": project_name,
         }
 
@@ -932,7 +944,18 @@ class PipelineCatalog(Catalog):
             ),
             (
                 "Departments…",
-                lambda aid=asset_id: self._edit_entity_departments(aid),
+                # A Multi's departments are a coverage decision, not an
+                # assignment, and EntityDepartmentsDialog rejects it
+                # outright (uri_for has no answer for a container id).
+                # Route it to the coverage editor instead. This is the
+                # one surface the session panel displaced that had no
+                # right-click equivalent: everything else on the retired
+                # detail tabs is already in this menu.
+                (
+                    lambda aid=asset_id: self._edit_group_departments(aid)
+                ) if "type:group" in (asset.tags or ()) else (
+                    lambda aid=asset_id: self._edit_entity_departments(aid)
+                ),
             ),
             (
                 "Open in Database Editor…",
@@ -1414,6 +1437,64 @@ class PipelineCatalog(Catalog):
                 severity=hou.severityType.Warning,
             )
 
+    def _edit_group_departments(self, asset_id: str) -> None:
+        """Choose which departments a Multi covers for its members.
+
+        Hosts the *same* widget the detail panel's Departments tab used
+        (``build_combined_departments_section``, which grows a coverage
+        checkbox per row when it sees a Multi) rather than a second
+        editor: two implementations of "which depts does this Multi
+        override" would drift, and the toggles write through on click —
+        there is no OK to wire, so a dialog frame is all that was
+        missing.
+
+        That tab is unreachable while the session panel owns the right
+        pane, which is what makes this the Multi's only way in.
+        """
+        import hou
+        from tumbletrove.common.gui import is_main_thread
+        if not is_main_thread():
+            # Reached from the card menu (GUI) today, but Qt objects are
+            # thread-affine and a modal built off the GUI thread corrupts
+            # memory rather than raising — see designs/qt-thread-safety.md.
+            run_on_main_thread(self._edit_group_departments, asset_id)
+            return
+        try:
+            from PySide6.QtWidgets import (
+                QDialog, QDialogButtonBox, QVBoxLayout,
+            )
+            from tumbletrove.asset_browser.api.catalog import DetailContext
+            from tumbletrove.asset_browser.core.theme import scaled
+
+            detail = self.get_detail(asset_id)
+            dlg = QDialog(hou.qt.mainWindow())
+            dlg.setWindowTitle(f"Departments — {detail.name}")
+            layout = QVBoxLayout(dlg)
+            layout.setSpacing(scaled(6))
+            section = self._detail.build_combined_departments_section(
+                DetailContext(
+                    detail=detail, catalog=self, parent=dlg,
+                    refresh_detail=None,
+                ),
+            )
+            layout.addWidget(section)
+            buttons = QDialogButtonBox(QDialogButtonBox.Close, parent=dlg)
+            buttons.rejected.connect(dlg.reject)
+            buttons.accepted.connect(dlg.accept)
+            layout.addWidget(buttons)
+            dlg.resize(scaled(420), scaled(360))
+            dlg.exec()
+            # No refresh call here: each toggle already invalidates the
+            # cache and refreshes the card + detail panel on write (see
+            # _toggle_group_dept_coverage). Adding one on close would
+            # just re-do it.
+        except Exception as exc:
+            log.exception("Multi departments dialog failed for %s", asset_id)
+            hou.ui.displayMessage(
+                f"Could not edit departments for '{asset_id}': {exc}",
+                severity=hou.severityType.Warning,
+            )
+
     def _open_database_editor(self, asset_id: str) -> None:
         """Open the pipeline DatabaseWindow with the entity pre-selected.
 
@@ -1806,6 +1887,120 @@ class PipelineCatalog(Catalog):
     def on_multi_drop(self, assets, drop) -> bool:
         return self._drops.on_multi_drop(assets, drop)
 
+    # ── Session panel ──────────────────────────────────────
+
+    def session_panel_mode(self) -> str:
+        """The right pane tracks the open .hip, not the grid selection.
+
+        Our entities *are* the open scene — "what am I in?" is the
+        question this catalog's users ask of that pane, and the answer
+        never depends on what they last clicked.
+        """
+        return "replace"
+
+    def get_session(self):
+        """Return the loaded workfile's entity + its departments.
+
+        Runs on a worker thread (see ``Catalog.get_session``): this
+        stats a file and reads a sidecar per department, over a share.
+
+        Departments come straight from :meth:`get_deck_items` — the deck
+        popup, the list view's sub-rows and this pane must not disagree
+        about what a department's version, author or licence is, and one
+        builder is how that stays true.
+        """
+        try:
+            from tumbletrove.asset_browser.api.catalog import SessionInfo
+        except ImportError:
+            # Older tumbletrove (< 0.21): no session panel to fill. The
+            # framework never calls this without the type, but the
+            # import must not take catalog load down.
+            log.debug("SessionInfo unavailable; session panel disabled")
+            return None
+
+        scene_ctx = self._scene.get_loaded_scene_context()
+        if scene_ctx is None:
+            return None                      # not a pipeline scene
+        # get_scene_id, not get_scene_asset_id: a Multi's workfile is
+        # addressed by a container id, and this pane must show it rather
+        # than go blank the moment someone opens one.
+        scene_id = self._scene.get_scene_id()
+        if not scene_id:
+            return None
+        asset = self.get_asset(scene_id)
+        if asset is None:
+            return None
+
+        try:
+            rows = tuple(self.get_deck_items(asset))
+        except Exception:
+            log.exception("get_deck_items failed for session %s", scene_id)
+            rows = ()
+        rows = self._mark_active_dept(rows, scene_ctx.department_name)
+
+        return SessionInfo(
+            title=asset.name,
+            breadcrumb=self._session_breadcrumb(scene_id),
+            subtitle=(
+                f"{scene_ctx.department_name} · "
+                f"{scene_ctx.version_name or '?'}"
+            ),
+            asset_id=scene_id,
+            icon=asset.icon or (
+                "layers-3" if "type:group" in asset.tags
+                else "clapperboard" if "type:shot" in asset.tags
+                else "box"
+            ),
+            rows=rows,
+        )
+
+    @staticmethod
+    def _mark_active_dept(rows: tuple, dept_name: str) -> tuple:
+        """Flag the loaded department's row ``"active"``.
+
+        ``get_deck_items`` already does this for assets and shots, via
+        ``get_scene_dept_version``. It does *not* for a Multi — that
+        branch has no equivalent and hard-codes ``"available"`` — so
+        without this the pane would highlight nothing at all for exactly
+        the entity whose workfile is open.
+
+        Doing it here rather than in the deck branch keeps the fix where
+        the answer is certain: a session read already knows the loaded
+        scene's department outright, no matching required. Rows that are
+        already ``"active"`` (the asset/shot path) pass through
+        unchanged, so the two never disagree.
+        """
+        if not dept_name:
+            return rows
+        import dataclasses
+        return tuple(
+            dataclasses.replace(r, status="active")
+            if (r.key == dept_name and r.status != "missing"
+                and r.status != "active")
+            else r
+            for r in rows
+        )
+
+    def _session_breadcrumb(self, scene_id: str) -> tuple[str, ...]:
+        """``(project, category-or-sequence)`` for the session header.
+
+        Both id shapes land here: an entity's ``PROJECT/CATEGORY/NAME``
+        and a Multi's ``group:PROJECT:<ctx>/<name>``.
+        """
+        if scene_id.startswith("group:"):
+            try:
+                _, rest = scene_id.split(":", 1)
+                project_name, path = rest.split(":", 1)
+                head = path.split("/", 1)[0] if "/" in path else "assets"
+                return (project_name, head)
+            except ValueError:
+                return ()
+        parsed = self._resolver.split(scene_id)
+        if parsed is None:
+            return ()
+        project_name, second, _third = parsed
+        return (project_name, second)
+
     # ── Quick Actions (top bar) ────────────────────────────
 
     def get_quick_actions(self):
@@ -2111,16 +2306,11 @@ class PipelineCatalog(Catalog):
         if not all_depts:
             return None
 
+        # ``departments`` is dict[str, str] on every card and every
+        # detail alike (see ``latest_by_dept``), so read it straight.
         active_versions: dict[str, str] = {}
         if isinstance(raw_depts, dict):
-            for k, v in raw_depts.items():
-                if isinstance(v, list) and v:
-                    active_versions[k] = str(v[-1])
-                elif isinstance(v, str) and v:
-                    active_versions[k] = v
-        elif isinstance(raw_depts, list):
-            for d in raw_depts:
-                active_versions[str(d)] = ""
+            active_versions = {k: v for k, v in raw_depts.items() if v}
 
         asset_id = getattr(asset, "id", None) if asset is not None else None
         workfiles = getattr(self, "_workfiles", None)
@@ -2989,6 +3179,21 @@ class PipelineCatalog(Catalog):
 
     # ── Deck items (departments) ───────────────────────────
 
+    @staticmethod
+    def _badge_kwargs(ext: str) -> dict:
+        """Badge fields for a DeckItem, or nothing on an older framework.
+
+        Splatted rather than passed directly: DeckItem is frozen, so an
+        unknown keyword raises inside get_deck_items and takes the deck
+        popup and the list view down with it. See DECK_ITEM_HAS_BADGE.
+        """
+        if not ext or not DECK_ITEM_HAS_BADGE:
+            return {}
+        return {
+            "badge": ext.upper(),
+            "badge_color": EXTENSION_COLORS.get(ext, ""),
+        }
+
     def get_deck_items(self, asset: Asset) -> list[DeckItem]:
         # Group container cards: one deck item per dept the group
         # covers. "missing" status (no action_id) for covered depts
@@ -3012,9 +3217,10 @@ class PipelineCatalog(Catalog):
                 covered,
                 key=lambda n: (order.get(n, len(order)), n),
             )
-            # Per-dept author + save time for the list view's
-            # User/Edited columns (one stat + sidecar read per dept,
-            # deck rows populate lazily on expand).
+            # Per-dept author, save time and licence for the list view's
+            # User/Edited columns and the session panel's rows (one stat
+            # + sidecar read per dept, deck rows populate lazily on
+            # expand).
             attribution = self._containers._group_dept_attribution(
                 asset.id)
             cards: list[DeckItem] = []
@@ -3022,7 +3228,9 @@ class PipelineCatalog(Catalog):
                 short = DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
                 latest = depts_dict.get(dept_name) or ""
                 if latest:
-                    user, mtime = attribution.get(dept_name, ("", 0.0))
+                    user, mtime, ext = attribution.get(
+                        dept_name, ("", 0.0, ""),
+                    )
                     cards.append(DeckItem(
                         key=dept_name,
                         label=short,
@@ -3033,6 +3241,7 @@ class PipelineCatalog(Catalog):
                         dismiss_on_click=True,
                         user=user,
                         edited=mtime,
+                        **self._badge_kwargs(ext),
                     ))
                 else:
                     cards.append(DeckItem(
@@ -3105,17 +3314,16 @@ class PipelineCatalog(Catalog):
                     "active" if dept_name == active_dept else "available"
                 )
                 # Per-dept attribution for the list view's User/Edited
-                # columns (deck_user/deck_edited): who last saved this
-                # dept's latest workfile, and when. One _context JSON
-                # read + one stat per dept, only on deck expand (deck
-                # rows populate lazily). Requires tumbletrove >= 0.18
-                # (DeckItem.user/edited). Group-covered and missing
-                # depts stay blank — the member has no workfile of its
-                # own to attribute.
-                user = self._workfiles.get_user_for_version(
-                    asset.id, dept_name, version) or ""
-                mtime = self._workfiles.get_mtime_for_version(
-                    asset.id, dept_name, version)
+                # columns (deck_user/deck_edited) and the session panel's
+                # rows: who last saved this dept's latest workfile, when,
+                # and which licence it is. One resolve + glob + stat +
+                # sidecar read per dept — see get_dept_row_meta, which
+                # exists so this isn't two of each. Group-covered and
+                # missing depts stay blank: the member has no workfile of
+                # its own to attribute.
+                user, mtime, ext = self._workfiles.get_dept_row_meta(
+                    asset.id, dept_name, version,
+                )
                 tooltip = None
                 if dept_name not in assigned_depts:
                     tooltip = (
@@ -3133,7 +3341,8 @@ class PipelineCatalog(Catalog):
                     dismiss_on_click=True,
                     tooltip=tooltip,
                     user=user,
-                    edited=mtime.timestamp() if mtime else 0.0,
+                    edited=mtime,
+                    **self._badge_kwargs(ext),
                 ))
             else:
                 cards.append(DeckItem(

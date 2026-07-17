@@ -4,6 +4,7 @@ Shared USD utilities for generating USDA file content.
 
 from pathlib import Path
 from collections import defaultdict
+from dataclasses import dataclass
 import os
 import re
 import json
@@ -998,3 +999,128 @@ def generate_staged_sublayer_uri(
     if version_name:
         uri_str += f"&version={version_name}"
     return uri_str
+
+
+###############################################################################
+# Reading sublayer refs back
+###############################################################################
+# The inverse of the generate_*_sublayer_uri family above. A staged .usda is
+# read as text rather than through Sdf: these callers want to know what a
+# staged build *recorded* without composing the stage, resolving anything, or
+# needing a USD runtime — so this stays importable (and testable) outside
+# Houdini.
+###############################################################################
+
+# Sublayer/reference asset paths in USDA text: @…@
+_ASSET_REF_RE = re.compile(r'@([^@]+)@')
+
+
+@dataclass(frozen=True)
+class SublayerRef:
+    """One ``@…@`` reference scraped from a staged .usda.
+
+    ``department`` is set exactly when the ref was written by
+    :func:`generate_entity_sublayer_uri` — an entity's own department layer.
+    It is None when the ref came from :func:`generate_staged_sublayer_uri`,
+    which points at a whole staged entity (from an asset's staged file, a
+    nested sub-asset). That is the only structural difference between the
+    two, and it is what separates "SET's model layer" from "an asset SET
+    imports".
+    """
+    uri: str                    # the ref verbatim, query and all
+    base: str                   # the ref with the query stripped
+    department: str | None
+    variant: str
+    version: str | None
+
+
+def parse_entity_sublayer_uri(uri_string: str) -> SublayerRef | None:
+    """Parse an ``entity:/`` sublayer ref written by this module.
+
+    Returns None for anything that is not an entity URI — a staged file may
+    also carry plain relative paths (older builds), which are the caller's
+    problem, not this function's.
+
+    A ref with no query at all is still a valid entity ref (version-less,
+    variant-less); it parses with ``variant='default'`` to match what the
+    resolver assumes.
+
+    Example:
+        >>> ref = parse_entity_sublayer_uri(
+        ...     'entity:/assets/SET/Arena?dept=lookdev&variant=_shared&version=v0013')
+        >>> ref.department, ref.variant, ref.version
+        ('lookdev', '_shared', 'v0013')
+    """
+    if not uri_string.startswith('entity:/'):
+        return None
+
+    base, _, query_string = uri_string.partition('?')
+
+    params: dict[str, str] = {}
+    if query_string:
+        for param in query_string.split('&'):
+            key, sep, value = param.partition('=')
+            if sep:
+                params[key] = value
+
+    return SublayerRef(
+        uri=uri_string,
+        base=base,
+        department=params.get('dept'),
+        variant=params.get('variant', 'default'),
+        version=params.get('version'),
+    )
+
+
+def read_staged_sublayer_refs(staged_file_path: Path) -> list[str]:
+    """Every ``@…@`` asset ref in a staged .usda, in file order.
+
+    Raw strings: entity URIs and (for older builds) relative filesystem
+    paths alike. Callers classify.
+    """
+    with open(staged_file_path, 'r') as f:
+        content = f.read()
+    return [match.group(1) for match in _ASSET_REF_RE.finditer(content)]
+
+
+def read_asset_department_layers(
+    asset_uri: Uri,
+    staged_file_path: Path
+) -> tuple[list[SublayerRef], list[SublayerRef]]:
+    """Split an asset's staged file into its own department layers and the
+    sub-assets it imports.
+
+    ``_store_asset_stage`` writes both into one sublayer list: the asset's
+    department exports (``?dept=…``, same entity as the asset) and, for a
+    set-style asset, a staged ref per tracked sub-asset (no ``dept``, a
+    different entity). Telling them apart is the whole job here.
+
+    Returns ``(department_layers, nested_assets)``, each in file order —
+    which is *reverse* pipeline order, since the build emits sublayers
+    strongest-first. Callers that want pipeline order must not rely on this
+    ordering; order departments through the config pool instead.
+
+    Entity bases are compared exactly. Casing is significant in entity URIs
+    (a ``Clash``/``clash`` schism is a real failure mode in live projects),
+    so a case-different base is a different asset here — not silently folded
+    into this one.
+    """
+    asset_base = str(asset_uri)
+
+    department_layers: list[SublayerRef] = []
+    nested_assets: list[SublayerRef] = []
+
+    for raw in read_staged_sublayer_refs(staged_file_path):
+        ref = parse_entity_sublayer_uri(raw)
+        if ref is None:
+            continue
+        if ref.department is not None and ref.base == asset_base:
+            department_layers.append(ref)
+        elif ref.department is None and ref.base != asset_base:
+            nested_assets.append(ref)
+        # Anything else — a department ref for a *different* entity, or a
+        # dept-less ref to this same asset — is not something
+        # _store_asset_stage writes. Skipping keeps a hand-edited or
+        # future-format staged file from being reported as fact.
+
+    return department_layers, nested_assets

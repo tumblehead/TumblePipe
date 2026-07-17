@@ -32,6 +32,19 @@ uv sync
 uv run minigun --test-dir . --time-budget 30
 ```
 
+On Windows that dies in the reporter, not the tests:
+
+```
+UnicodeEncodeError: 'charmap' codec can't encode character '∞'
+```
+
+minigun's execution-plan table prints `∞`, and the console lands on
+cp1252. It says nothing about whether the suite passes. Force UTF-8:
+
+```bash
+PYTHONIOENCODING=utf-8 uv run minigun --test-dir . --time-budget 30
+```
+
 `tests/README.md` covers writing new properties and the design of the
 project-fixture bootstrap (`_harness.py`).
 
@@ -109,6 +122,29 @@ installed package and skips that structural check on a dev checkout (hpm
 won't ship a Task from an editable tree). Run it under a project hython with
 at least one shot.
 
+`scripts/verify_asset_payload_fixes.py` pins the two asset-payload fixes
+against regression. It is the **only** coverage of either, so run it after
+touching `th::asset_payload` or `export_layer`'s publish path:
+
+- the `th::asset_payload` primpath duplication — it composes
+  create_asset → create_asset_model → geo → asset_payload in a scratch
+  subnet and asserts no duplicated `/char/test/test` prim appears. The fix
+  it guards (`primpath1` = `` `lopinputprim('../payload_layer', 0)` `` rather
+  than `` `@sourcename` ``) is still what ships.
+- `export_layer._localize_external_sidecars` — it crafts a layer whose
+  payload arc points at an external `payload.usd` and asserts the sidecar is
+  copied beside the layer and the arc rewritten to the bare relative form.
+  That function is live (called from `export_layer`'s publish), and the
+  `tests/` suite does not cover it.
+
+Unlike the audits below it needs a live Houdini: it imports both `hou` and
+`pxr`, and `pxr` is not in the `tests/` venv, so it cannot run there. Drive it
+through TumbleTrove Desktop's `sessions_exec_python`, or paste it into a
+Houdini Python Shell and call `main()`. Each check prints PASS / FAIL / SKIP
+and degrades to SKIP rather than failing when a prerequisite is absent. A
+third end-to-end export check exists but is off behind `RUN_EXPORT = False`
+because it publishes a real version — only enable it with a throwaway entity.
+
 ## Entity `from_context` audit
 
 `scripts/verify_entity_from_context.py` pins the contract that every `th::`
@@ -144,6 +180,57 @@ uv run python ../scripts/verify_entity_from_context.py
 
 Prefer it over grepping — the baking shows up in several shapes that a
 hand-written search misses.
+
+## HDA callback audit
+
+`scripts/verify_hda_callbacks.py` pins the contract that every HDA callback
+reaches a function that exists. A parm's callback does not call
+`python/tumblepipe/…` directly — the HDA's own `PythonModule` section sits in
+between as a hand-maintained shim of one-line forwarders:
+
+```text
+DialogScript            PythonModule            python/tumblepipe/…
+hou.phm().select()  ->  def select():       ->  def select():
+                            th_cache.select()       …
+```
+
+Three files, and the middle one is the one nobody edits. Add the parm and the
+backing function and both ends look finished while the button is dead: a
+callback is a *string*, so nothing resolves it until an artist clicks and gets
+`AttributeError: 'module' object has no attribute 'select'`. That is how
+`th::cache` shipped its Entity button broken on both the SOP and the LOP
+(93e4dc1 touched only the two DialogScripts). CI's `validate-hdas` does not
+resolve callbacks, so nothing else catches this.
+
+It checks both directions of the shim:
+
+1. **Dangling callback** — a name a DialogScript calls that the `PythonModule`
+   does not define, including the case of no `PythonModule` section at all.
+2. **Dangling forwarder** — a forwarder whose backing function is gone from
+   the module it delegates to. This is the near-miss class (`get_asset_uri` vs
+   `get_entity_uri`): the wrapper gets renamed and the shim keeps calling the
+   old name.
+
+It reads the `otls/` sections and the wrappers as text, so it needs no Houdini
+and no project:
+
+```bash
+cd tests
+uv run python ../scripts/verify_hda_callbacks.py
+```
+
+Reading rather than importing is deliberate. Importing a `PythonModule`
+outside a GUI Houdini fails for reasons unrelated to the callback —
+`lop_th.image_plane_painter` imports `nodegraphutils`, which touches `hou.ui`
+at import time — and that failure is indistinguishable from a missing name, so
+an import-based check reports healthy HDAs as broken.
+
+Pre-existing gaps live in `KNOWN_GAPS` with the reason they are not
+regressions, so the audit stays green and any *new* break stands out.
+`sop_th.mesh_blender.1.0` is the only entry: it has never had a `PythonModule`
+(it shipped without one in 52df04b), so its Rename/Reset buttons have never
+worked for anyone. Repairing it means reconstructing an attribute-paint module
+from its internal network — a feature task, not a forwarder fix.
 
 ## Department pool audit
 

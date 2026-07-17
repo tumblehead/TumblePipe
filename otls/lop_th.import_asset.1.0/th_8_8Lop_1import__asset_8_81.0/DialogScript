@@ -152,8 +152,10 @@
                 [ "from tumblepipe.pipe.houdini import util" ]
                 [ "" ]
                 [ "node = import_asset.ImportAsset(hou.pwd())" ]
-                [ "items = node.list_department_names()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "return util.list_to_checked_menu(" ]
+                [ "    node.list_department_names()," ]
+                [ "    node.get_exclude_department_names()" ]
+                [ ")" ]
                 language python
             }
             parmtag { "script_callback" "hou.phm().execute()" }

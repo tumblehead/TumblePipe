@@ -807,7 +807,13 @@ class DetailSectionBuilder:
         _icon_w = scaled(13)
 
         asset_id = ctx.detail.id
-        dept_info: dict = (ctx.detail.metadata or {}).get("departments", {})
+        # ``department_versions``, not ``departments``: this section
+        # needs every version per dept for the dropdowns, whereas
+        # ``departments`` is the card-shaped {dept: latest} the grid
+        # and deck popup read.
+        dept_info: dict = (
+            (ctx.detail.metadata or {}).get("department_versions", {})
+        )
         is_shot = "type:shot" in ctx.detail.tags
         is_multi = "type:group" in ctx.detail.tags
         # Multis carry their context (``shots`` / ``assets``) on the

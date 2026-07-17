@@ -23,6 +23,9 @@ Checks:
      the bottom) and keeps it stable on a third pass (no rename cascade).
   3. An unchecked layer toggle survives a re-update.
   4. The Sublayer LOP enable parms are wired to the HDA checkboxes.
+  5. The asset inspector button lands on asset rows and only asset rows,
+     is wired through the HDA's PythonModule to a method that exists, and
+     survives a re-update like the toggles do.
 """
 
 import sys
@@ -101,6 +104,63 @@ check(
     "Sublayer enables wired to HDA checkboxes",
     expr == 'ch("../layer_1_enable")',
     f"expr={expr!r}",
+)
+
+# --- the asset inspector button ------------------------------------------
+# LAYERS[2] is the only asset row; 0 is root and 1 is a shot department.
+check(
+    "inspect button on the asset row",
+    raw.parm("layer_2_inspect") is not None,
+)
+check(
+    "no inspect button on the root row",
+    raw.parm("layer_0_inspect") is None,
+)
+check(
+    "no inspect button on a shot department row",
+    raw.parm("layer_1_inspect") is None,
+)
+
+inspect_parm = raw.parm("layer_2_inspect")
+if inspect_parm is not None:
+    callback = inspect_parm.parmTemplate().scriptCallback()
+    # Routed through the HDA's PythonModule rather than a baked module path:
+    # spare-parm callbacks are serialized into the artist's .hip, and this
+    # indirection is what ships with the package.
+    check(
+        "inspect button calls the PythonModule with its row index",
+        callback == "hou.phm().inspect_asset_layer(2)",
+        f"callback={callback!r}",
+    )
+    check(
+        "inspect callback is Python",
+        inspect_parm.parmTemplate().scriptCallbackLanguage()
+        == hou.scriptLanguage.Python,
+    )
+
+# The button is a spare parm like the rest of the folder, so it must survive
+# the same rebuild the toggles do.
+node._update_layer_stack_ui(LAYERS)
+check(
+    "inspect button survives a re-update",
+    raw.parm("layer_2_inspect") is not None,
+)
+check(
+    "layout still stable with the button present",
+    top_level(raw) == first,
+    f"order={top_level(raw)}",
+)
+
+# The PythonModule side of the callback — a near-miss name here is swallowed
+# as a silent no-op, so assert the method actually exists.
+phm = raw.hdaModule()
+check(
+    "PythonModule exposes inspect_asset_layer",
+    hasattr(phm, "inspect_asset_layer"),
+)
+check(
+    "ImportShot implements inspect_asset_layer",
+    callable(getattr(import_shot.ImportShot, "inspect_asset_layer", None)),
 )
 
 print()

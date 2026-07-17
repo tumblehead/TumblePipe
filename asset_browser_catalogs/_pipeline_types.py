@@ -31,8 +31,9 @@ class PipelineAssetMetadata(TypedDict, total=False):
       ``_build_shot_card``) sets ``departments``, ``dept_count``,
       ``has_deck_items``, ``latest_update``, plus ``category`` (assets)
       or ``sequence`` (shots), and ``project``.
-    - ``get_detail`` adds ``frame_start``, ``frame_end``, ``frame_total``,
-      ``fps`` for shots, and ``variants`` for assets.
+    - ``get_detail`` adds ``department_versions``, plus ``frame_start``,
+      ``frame_end``, ``frame_total``, ``fps`` for shots, and
+      ``variants`` for assets.
     - ``get_assets`` overlays ``is_current_scene`` for the asset whose
       hip file is open in Houdini.
 
@@ -48,9 +49,17 @@ class PipelineAssetMetadata(TypedDict, total=False):
     sequence: str        # shots only
 
     # Department deck (deck items)
-    departments: dict[str, list[str]]  # dept name → list of "vNNNN" version labels
+    departments: dict[str, str]  # dept name → latest "vNNNN" label
     dept_count: int
     has_deck_items: bool
+
+    # Every workfile version per dept, for the detail panel's version
+    # dropdowns. ``get_detail`` only — but note that ``departments``
+    # above keeps its card shape even there: the browser turns an
+    # AssetDetail into a grid card verbatim when it resolves a
+    # favourite / shelf / collection ref, and the deck popup reads
+    # ``departments`` off whichever it is handed. See ``latest_by_dept``.
+    department_versions: dict[str, list[str]]
 
     # Sort / display hints
     latest_update: float  # epoch seconds of newest dept version
@@ -247,6 +256,23 @@ def latest_version(labels: Iterable[str]) -> str | None:
     return max(labels, key=version_code)
 
 
+def latest_by_dept(dept_versions: dict[str, list[str]]) -> dict[str, str]:
+    """Collapse ``{dept: [versions]}`` to the card shape ``{dept: latest}``.
+
+    Depts with no workfiles drop out, matching what the discovery card
+    builders emit. Cards and details must agree on this shape: the
+    browser turns an ``AssetDetail`` into a grid card verbatim for
+    favourites / shelf / collection refs, and ``get_deck_items`` reads
+    ``metadata["departments"]`` off whichever one it is handed.
+    """
+    out: dict[str, str] = {}
+    for dept, versions in dept_versions.items():
+        newest = latest_version(versions or ())
+        if newest is not None:
+            out[dept] = newest
+    return out
+
+
 def workfile_versions(dept_dir: Path) -> list[str]:
     """Return sorted ``vNNNN`` version labels parsed from .hip filenames."""
     return scan_workfiles(dept_dir)[0]
@@ -314,6 +340,57 @@ def latest_workfile(dept_dir: Path) -> Path | None:
         reverse=True,
     )
     return hip_files[0] if hip_files else None
+
+
+# ── Framework capability probes ──────────────────────────────────
+
+
+def _deck_item_supports(field_name: str) -> bool:
+    """Whether the installed tumbletrove's ``DeckItem`` has *field_name*.
+
+    hpm declares no dependency between this package and tumbletrove —
+    the coupling is a convention (ship tumbletrove first) and a comment.
+    That is survivable for a field the framework *reads*, which an older
+    version simply ignores. It is not survivable for one we *pass*:
+    ``DeckItem`` is a frozen dataclass, so an unknown keyword is a
+    ``TypeError`` raised inside ``get_deck_items`` — which takes down the
+    deck popup and the list view's sub-rows, not just the new field. A
+    studio that updates one package and not the other should lose the
+    badge, not two views.
+    """
+    try:
+        import dataclasses
+        from tumbletrove.asset_browser.api.types import DeckItem
+        return any(
+            f.name == field_name for f in dataclasses.fields(DeckItem)
+        )
+    except Exception:
+        return False
+
+
+#: tumbletrove >= 0.21 (DeckItem.badge / .badge_color, SessionInfo).
+DECK_ITEM_HAS_BADGE = _deck_item_supports("badge")
+
+
+# ── Workfile licence badges ──────────────────────────────────────
+
+
+# Fill colour per workfile extension, for the badge on a department row
+# (``DeckItem.badge`` / ``badge_color``). The extension is the licence
+# the file was saved under, and mixing them has consequences a filename
+# does not advertise — an .hipnc cannot be opened commercially, and
+# saving a commercial scene over an Indie licence silently downgrades
+# it. The badge is there to make that visible at a glance, which is why
+# it carries the real extension rather than a "has a workfile" tick.
+#
+# Recovered from the retired Project Browser (f310d35^, its
+# widgets/table.py) — the panel went, but the colour vocabulary artists
+# already read is worth keeping.
+EXTENSION_COLORS = {
+    "hip": "#4a8a4a",    # green  — commercial
+    "hiplc": "#8a6a4a",  # orange — Indie
+    "hipnc": "#6a4a8a",  # purple — non-commercial
+}
 
 
 # ── Department iconography ───────────────────────────────────────
