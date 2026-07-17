@@ -193,22 +193,23 @@ class WorkfileManager:
     ) -> tuple[str, float, str]:
         """Return ``(user, mtime_epoch, extension)`` for one dept row.
 
-        One resolve, one glob, one stat, one sidecar read — the callers
-        that want all three (session panel rows, deck items) would
-        otherwise pay the dept-dir resolve and the workfile glob twice
-        over, once via ``get_user_for_version`` and again via
-        ``get_mtime_for_version``. Over a share that is the difference
-        that shows.
+        One resolve, one glob, one stat, one sidecar read — the deck-item
+        builder wants the user and mtime together and would otherwise pay
+        the dept-dir resolve and the workfile glob twice over, once via
+        ``get_user_for_version`` and again via ``get_mtime_for_version``.
+        Over a share that is the difference that shows.
 
         The extension is the *real* one — ``.hip`` / ``.hiplc`` /
-        ``.hipnc`` — because the licence type is what the badge means.
-        It comes from the resolved file's suffix, with the sidecar's
-        ``extension`` key as the fallback for the case the suffix cannot
-        cover: no workfile on disk. The sidecar cannot be the primary
-        source — ``save_context`` only started stamping ``extension``
-        later, so it is ``None`` on every version saved before that, and
-        preferring it would blank the badge on exactly the old workfiles
-        most likely to be a different licence.
+        ``.hipnc`` — because the extension **is** the licence the file
+        was saved under. It comes from the resolved file's suffix, with
+        the sidecar's ``extension`` key as the fallback for the case the
+        suffix cannot cover: no workfile on disk. The sidecar cannot be
+        the primary source — ``save_context`` only started stamping
+        ``extension`` later, so it is ``None`` on every version saved
+        before that, and preferring it would blank the licence on exactly
+        the old workfiles most likely to be a different one. (The open
+        workspace's own licence is surfaced by the session panel via
+        :meth:`get_open_workspace_meta`, which reads the same suffix.)
 
         Missing values are blank/zero rather than ``None``: these feed
         ``DeckItem``, whose fields are typed ``str``/``float``.
@@ -301,6 +302,115 @@ class WorkfileManager:
             if outputs and isinstance(outputs[0], dict):
                 user = outputs[0].get("user")
         return str(user) if user else None
+
+    def get_export_meta(
+        self, asset_id: str, dept: str,
+    ) -> tuple[str, float, str]:
+        """Return ``(version, mtime_epoch, user)`` for ``dept``'s latest
+        export — the session panel's "Latest Export" block in one shot.
+
+        The workspace analogue is :meth:`get_dept_row_meta`; this is its
+        export-side twin. It resolves ``latest_export_path`` **once** —
+        the standalone ``get_latest_export_mtime`` / ``get_user_for_export``
+        each resolve it again, and over a share that repeat shows — and
+        derives all three values from that single path:
+
+        - ``version`` is the export folder's name (``v0049``); the folder
+          layout *is* the version, validated by ``is_valid_version_name``
+          on the way in, so no sidecar read is needed for it.
+        - ``mtime`` from ``stat`` on the folder.
+        - ``user`` from the folder's ``context.json`` (both the top-level
+          and ``outputs[0]`` shapes, as ``get_user_for_export`` accepts).
+
+        All-blank/zero (``"", 0.0, ""``) means no export exists yet — the
+        caller renders the "Latest Export" fields dimmed rather than
+        dropping them. Values are ``str``/``float`` for the same reason
+        :meth:`get_dept_row_meta`'s are: they feed typed value fields.
+        """
+        if not asset_id:
+            return "", 0.0, ""
+        uri = self._catalog._resolver.uri_for(asset_id)
+        if uri is None:
+            return "", 0.0, ""
+        try:
+            from tumblepipe.pipe.paths import latest_export_path
+            path = latest_export_path(uri, "default", dept)
+        except Exception:
+            return "", 0.0, ""
+        if path is None:
+            return "", 0.0, ""
+
+        version = path.name
+        mtime = 0.0
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+
+        user = ""
+        ctx_file = path / "context.json"
+        try:
+            if ctx_file.exists():
+                import json
+                data = json.loads(ctx_file.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    raw = data.get("user")
+                    if not raw:
+                        outputs = data.get("outputs") or []
+                        if outputs and isinstance(outputs[0], dict):
+                            raw = outputs[0].get("user")
+                    user = str(raw) if raw else ""
+        except Exception:
+            log.debug(
+                "Failed to read export context for %s/%s", asset_id, dept,
+            )
+
+        return version, mtime, user
+
+    def get_open_workspace_meta(self) -> tuple[str, float, str]:
+        """Return ``(user, mtime_epoch, extension)`` for the OPEN ``.hip``.
+
+        The session panel's "Current Workspace" block. Derived purely from
+        ``hou.hipFile.path()`` — deliberately **not** from an asset id like
+        :meth:`get_dept_row_meta` — because the open document may be a
+        Multi/group workfile, whose id does not ``split`` into the
+        ``PROJECT/CATEGORY/NAME`` shape that ``dept_dir_for`` needs, and
+        which would therefore come back blank. A path always resolves.
+
+        Workfiles are flat in their dept dir, so the version sidecar sits
+        beside the open file at ``{parent}/_context/{version}.json`` — the
+        same file :meth:`get_dept_row_meta` reads, reached by path here.
+
+        Reading ``hou.hipFile.path()`` off the worker thread is safe (HOM
+        lock); this builds no Qt. All-blank means no saved pipeline
+        workfile is open (untitled, or a stray scene).
+        """
+        try:
+            import hou
+            hip = hou.hipFile.path()
+        except Exception:
+            return "", 0.0, ""
+        if not hip or hip == "untitled.hip":
+            return "", 0.0, ""
+
+        from pathlib import Path
+        p = Path(hip)
+        ext = p.suffix.lstrip(".")
+
+        mtime = 0.0
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+
+        user = ""
+        tail = p.stem.rsplit("_", 1)
+        if len(tail) == 2:
+            sidecar = self._read_version_sidecar(p.parent, tail[1])
+            raw = sidecar.get("user")
+            user = str(raw) if raw else ""
+
+        return user, mtime, ext
 
     @staticmethod
     def format_relative_time(timestamp) -> str:

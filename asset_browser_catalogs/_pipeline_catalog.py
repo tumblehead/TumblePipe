@@ -57,10 +57,10 @@ import _pipeline_uris as uris
 from _pipeline_workfiles import WorkfileManager
 from _pipeline_types import (
     DEPT_API_SHORT_FALLBACK,
-    DECK_ITEM_HAS_BADGE,
     DEPT_ICONS,
     DEPT_SHORT_NAMES,
-    EXTENSION_COLORS,
+    EXTENSION_LICENCES,
+    SESSION_HAS_SECTIONS,
     SHOT_DEPT_ICONS,
     DeptVersionStore,
     cascade_counts,
@@ -1899,22 +1899,31 @@ class PipelineCatalog(Catalog):
         return "replace"
 
     def get_session(self):
-        """Return the loaded workfile's entity + its departments.
+        """Return the open workfile as titled detail sections.
 
-        Runs on a worker thread (see ``Catalog.get_session``): this
-        stats a file and reads a sidecar per department, over a share.
+        Runs on a worker thread (see ``Catalog.get_session``): stats the
+        open ``.hip`` and its latest export and reads a sidecar for each,
+        over a share.
 
-        Departments come straight from :meth:`get_deck_items` — the deck
-        popup, the list view's sub-rows and this pane must not disagree
-        about what a department's version, author or licence is, and one
-        builder is how that stays true.
+        Two sections — **Current Workspace** (the open ``.hip``) and
+        **Latest Export** (its published output) — so the pane answers
+        "what am I in, and is my export current with it?". It deliberately
+        does *not* re-list the entity's departments: the centre grid's
+        deck expander already shows that list, and a second copy of it on
+        the right was the duplication this shape removed.
         """
+        if not SESSION_HAS_SECTIONS:
+            # Older tumbletrove (< 0.22): its SessionInfo still takes
+            # ``rows``, so a ``sections=`` build would TypeError on a
+            # frozen dataclass every scope/hip change. Degrade to an empty
+            # pane. Ship tumbletrove first — the coupling is a convention,
+            # not an hpm dependency.
+            return None
         try:
-            from tumbletrove.asset_browser.api.catalog import SessionInfo
+            from tumbletrove.asset_browser.api.catalog import (
+                SessionField, SessionInfo, SessionSection,
+            )
         except ImportError:
-            # Older tumbletrove (< 0.21): no session panel to fill. The
-            # framework never calls this without the type, but the
-            # import must not take catalog load down.
             log.debug("SessionInfo unavailable; session panel disabled")
             return None
 
@@ -1931,55 +1940,86 @@ class PipelineCatalog(Catalog):
         if asset is None:
             return None
 
-        try:
-            rows = tuple(self.get_deck_items(asset))
-        except Exception:
-            log.exception("get_deck_items failed for session %s", scene_id)
-            rows = ()
-        rows = self._mark_active_dept(rows, scene_ctx.department_name)
+        dept = scene_ctx.department_name
+        version = scene_ctx.version_name or ""
+
+        # Current Workspace — the open .hip, read by path so a Multi's
+        # group workfile resolves the same as a regular entity's.
+        ws_user, ws_mtime, ws_ext = (
+            self._workfiles.get_open_workspace_meta()
+        )
+        workspace = SessionSection(
+            title="Current Workspace", icon="save-all",
+            fields=(
+                SessionField("Version", version or "—", dim=not version),
+                SessionField(
+                    "Time", self._fmt_ts(ws_mtime), dim=not ws_mtime,
+                ),
+                SessionField("User", ws_user or "—", dim=not ws_user),
+                # The extension is the licence the file was saved under —
+                # surfaced so a commercial-over-Indie mix is visible.
+                SessionField(
+                    "License",
+                    EXTENSION_LICENCES.get(ws_ext, ws_ext.upper() or "—"),
+                    dim=not ws_ext,
+                ),
+            ),
+        )
+
+        # Latest Export — one resolve; N/A + dim when nothing published
+        # yet (or, for a Multi, where per-dept export tracking is
+        # deferred and the group id does not resolve to one export).
+        ex_ver, ex_mtime, ex_user = self._workfiles.get_export_meta(
+            scene_id, dept,
+        )
+        has_export = bool(ex_ver)
+        export = SessionSection(
+            title="Latest Export", icon="send",
+            fields=(
+                SessionField(
+                    "Version", ex_ver or "N/A", dim=not has_export,
+                ),
+                SessionField(
+                    "Time",
+                    self._fmt_ts(ex_mtime) if has_export else "N/A",
+                    dim=not has_export,
+                ),
+                SessionField(
+                    "User", ex_user or "N/A", dim=not has_export,
+                ),
+            ),
+        )
 
         return SessionInfo(
             title=asset.name,
             breadcrumb=self._session_breadcrumb(scene_id),
-            subtitle=(
-                f"{scene_ctx.department_name} · "
-                f"{scene_ctx.version_name or '?'}"
-            ),
+            subtitle=dept,
             asset_id=scene_id,
             icon=asset.icon or (
                 "layers-3" if "type:group" in asset.tags
                 else "clapperboard" if "type:shot" in asset.tags
                 else "box"
             ),
-            rows=rows,
+            sections=(workspace, export),
         )
 
     @staticmethod
-    def _mark_active_dept(rows: tuple, dept_name: str) -> tuple:
-        """Flag the loaded department's row ``"active"``.
+    def _fmt_ts(epoch: float) -> str:
+        """Format an epoch as ``2026/07/17 (14:02)``, or ``—`` for 0.
 
-        ``get_deck_items`` already does this for assets and shots, via
-        ``get_scene_dept_version``. It does *not* for a Multi — that
-        branch has no equivalent and hard-codes ``"available"`` — so
-        without this the pane would highlight nothing at all for exactly
-        the entity whose workfile is open.
-
-        Doing it here rather than in the deck branch keeps the fix where
-        the answer is certain: a session read already knows the loaded
-        scene's department outright, no matching required. Rows that are
-        already ``"active"`` (the asset/shot path) pass through
-        unchanged, so the two never disagree.
+        Absolute, not relative: the list view's deck columns already
+        answer "how long ago" — this block answers "exactly when", the
+        detail the old Project Browser's workspace/export panels showed.
         """
-        if not dept_name:
-            return rows
-        import dataclasses
-        return tuple(
-            dataclasses.replace(r, status="active")
-            if (r.key == dept_name and r.status != "missing"
-                and r.status != "active")
-            else r
-            for r in rows
-        )
+        if not epoch:
+            return "—"
+        import datetime as dt
+        try:
+            return dt.datetime.fromtimestamp(epoch).strftime(
+                "%Y/%m/%d (%H:%M)"
+            )
+        except (OSError, ValueError, OverflowError):
+            return "—"
 
     def _session_breadcrumb(self, scene_id: str) -> tuple[str, ...]:
         """``(project, category-or-sequence)`` for the session header.
@@ -3179,21 +3219,6 @@ class PipelineCatalog(Catalog):
 
     # ── Deck items (departments) ───────────────────────────
 
-    @staticmethod
-    def _badge_kwargs(ext: str) -> dict:
-        """Badge fields for a DeckItem, or nothing on an older framework.
-
-        Splatted rather than passed directly: DeckItem is frozen, so an
-        unknown keyword raises inside get_deck_items and takes the deck
-        popup and the list view down with it. See DECK_ITEM_HAS_BADGE.
-        """
-        if not ext or not DECK_ITEM_HAS_BADGE:
-            return {}
-        return {
-            "badge": ext.upper(),
-            "badge_color": EXTENSION_COLORS.get(ext, ""),
-        }
-
     def get_deck_items(self, asset: Asset) -> list[DeckItem]:
         # Group container cards: one deck item per dept the group
         # covers. "missing" status (no action_id) for covered depts
@@ -3228,7 +3253,7 @@ class PipelineCatalog(Catalog):
                 short = DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
                 latest = depts_dict.get(dept_name) or ""
                 if latest:
-                    user, mtime, ext = attribution.get(
+                    user, mtime, _ext = attribution.get(
                         dept_name, ("", 0.0, ""),
                     )
                     cards.append(DeckItem(
@@ -3241,7 +3266,6 @@ class PipelineCatalog(Catalog):
                         dismiss_on_click=True,
                         user=user,
                         edited=mtime,
-                        **self._badge_kwargs(ext),
                     ))
                 else:
                     cards.append(DeckItem(
@@ -3314,14 +3338,15 @@ class PipelineCatalog(Catalog):
                     "active" if dept_name == active_dept else "available"
                 )
                 # Per-dept attribution for the list view's User/Edited
-                # columns (deck_user/deck_edited) and the session panel's
-                # rows: who last saved this dept's latest workfile, when,
-                # and which licence it is. One resolve + glob + stat +
-                # sidecar read per dept — see get_dept_row_meta, which
-                # exists so this isn't two of each. Group-covered and
-                # missing depts stay blank: the member has no workfile of
-                # its own to attribute.
-                user, mtime, ext = self._workfiles.get_dept_row_meta(
+                # columns (deck_user/deck_edited): who last saved this
+                # dept's latest workfile and when. One resolve + glob +
+                # stat + sidecar read per dept — see get_dept_row_meta,
+                # which exists so this isn't two of each. Group-covered
+                # and missing depts stay blank: the member has no workfile
+                # of its own to attribute. (The licence/extension the meta
+                # also carries is surfaced by the session panel's Current
+                # Workspace block, not here.)
+                user, mtime, _ext = self._workfiles.get_dept_row_meta(
                     asset.id, dept_name, version,
                 )
                 tooltip = None
@@ -3342,7 +3367,6 @@ class PipelineCatalog(Catalog):
                     tooltip=tooltip,
                     user=user,
                     edited=mtime,
-                    **self._badge_kwargs(ext),
                 ))
             else:
                 cards.append(DeckItem(

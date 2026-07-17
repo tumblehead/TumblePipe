@@ -345,51 +345,59 @@ def latest_workfile(dept_dir: Path) -> Path | None:
 # ── Framework capability probes ──────────────────────────────────
 
 
-def _deck_item_supports(field_name: str) -> bool:
-    """Whether the installed tumbletrove's ``DeckItem`` has *field_name*.
+def _type_supports(type_name: str, field_name: str) -> bool:
+    """Whether the installed tumbletrove's *type_name* has *field_name*.
 
     hpm declares no dependency between this package and tumbletrove —
     the coupling is a convention (ship tumbletrove first) and a comment.
     That is survivable for a field the framework *reads*, which an older
-    version simply ignores. It is not survivable for one we *pass*:
-    ``DeckItem`` is a frozen dataclass, so an unknown keyword is a
-    ``TypeError`` raised inside ``get_deck_items`` — which takes down the
-    deck popup and the list view's sub-rows, not just the new field. A
-    studio that updates one package and not the other should lose the
-    badge, not two views.
+    version simply ignores. It is not survivable for one we *pass*: these
+    are frozen dataclasses, so an unknown keyword is a ``TypeError`` at
+    construction. For ``SessionInfo`` that means a studio on an older
+    tumbletrove (whose ``SessionInfo`` still takes ``rows``, not
+    ``sections``) would crash ``get_session`` every scope/hip change; the
+    probe lets it degrade to an empty session pane instead.
     """
     try:
         import dataclasses
-        from tumbletrove.asset_browser.api.types import DeckItem
+        import importlib
+        types = importlib.import_module(
+            "tumbletrove.asset_browser.api.types"
+        )
+        cls = getattr(types, type_name, None)
+        if cls is None:
+            return False
         return any(
-            f.name == field_name for f in dataclasses.fields(DeckItem)
+            f.name == field_name for f in dataclasses.fields(cls)
         )
     except Exception:
         return False
 
 
-#: tumbletrove >= 0.21 (DeckItem.badge / .badge_color, SessionInfo).
-DECK_ITEM_HAS_BADGE = _deck_item_supports("badge")
+#: tumbletrove >= 0.22 (SessionInfo carries ``sections`` of SessionSection
+#: rather than ``rows`` of DeckItem). Below this, ``get_session`` must
+#: return ``None`` — building a ``sections=`` SessionInfo against the old
+#: rows-based type is a ``TypeError`` on a frozen dataclass.
+SESSION_HAS_SECTIONS = _type_supports("SessionInfo", "sections")
 
 
-# ── Workfile licence badges ──────────────────────────────────────
+# ── Workfile licence labels ──────────────────────────────────────
 
 
-# Fill colour per workfile extension, for the badge on a department row
-# (``DeckItem.badge`` / ``badge_color``). The extension is the licence
-# the file was saved under, and mixing them has consequences a filename
-# does not advertise — an .hipnc cannot be opened commercially, and
-# saving a commercial scene over an Indie licence silently downgrades
-# it. The badge is there to make that visible at a glance, which is why
-# it carries the real extension rather than a "has a workfile" tick.
+# Human label per workfile extension. The extension *is* the licence the
+# file was saved under, and mixing them has consequences a filename does
+# not advertise — an .hipnc cannot be opened commercially, and saving a
+# commercial scene over an Indie licence silently downgrades it. The
+# session panel surfaces this as the "License" field of its Current
+# Workspace block so the fact is visible at a glance.
 #
-# Recovered from the retired Project Browser (f310d35^, its
-# widgets/table.py) — the panel went, but the colour vocabulary artists
-# already read is worth keeping.
-EXTENSION_COLORS = {
-    "hip": "#4a8a4a",    # green  — commercial
-    "hiplc": "#8a6a4a",  # orange — Indie
-    "hipnc": "#6a4a8a",  # purple — non-commercial
+# (This replaces the per-extension badge the retired Project Browser and
+# the earlier session panel used; the colour vocabulary went with the
+# badge, the fact it conveyed did not.)
+EXTENSION_LICENCES = {
+    "hip": "Commercial",
+    "hiplc": "Indie",
+    "hipnc": "Non-commercial",
 }
 
 

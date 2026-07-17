@@ -48,6 +48,28 @@ def _resolve_workspace(
     )
     return workfile_uri, api.storage.resolve(workspace_uri)
 
+def get_workspace_relpath(
+    entity_uri: Uri,
+    department_name: str
+    ) -> Optional[str]:
+    """The entity/department workspace as a path relative to the project root.
+
+    This is the ``<context>/<group>/<entity>/<department>`` sub-path that
+    per-workfile sidecar areas (caches, ``_context``, ...) anchor under. It is
+    purpose-independent: the same relpath re-anchors under ``project:`` for the
+    live tree or ``proxy:`` for the shared proxy mirror. Grouped entities
+    resolve under ``project:/groups/...`` (``groups:`` lives inside the project
+    tree), so the relpath stays valid for both purposes.
+
+    Returns None if the workspace resolves outside the project root.
+    """
+    _, workspace_path = _resolve_workspace(entity_uri, department_name)
+    project_root = api.storage.resolve(Uri.parse_unsafe('project:/'))
+    try:
+        return '/'.join(workspace_path.relative_to(project_root).parts)
+    except ValueError:
+        return None
+
 def _list_valid_hip_files(
     workspace_path: Path,
     base_pattern: str

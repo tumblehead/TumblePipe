@@ -704,12 +704,12 @@ class ContainerManager:
 
         The mtime is the hip file's stat; the user comes from the
         ``_context`` sidecar (see :func:`_hip_context_user`); the
-        extension is the resolved file's own suffix — the licence badge
-        on a department row, free here because the path is already in
-        hand (the entity-side equivalent is
+        extension is the resolved file's own suffix — the licence the
+        workfile was saved under, free here because the path is already
+        in hand (the entity-side equivalent is
         ``WorkfileManager.get_dept_row_meta``). One sidecar read per
-        covered dept — callers hit this on deck expand and on a session
-        read, never during grid rebuilds.
+        covered dept — callers hit this on deck expand, never during grid
+        rebuilds.
         """
         result: dict = {}
         for dept_name, hip in self._group_dept_latest_hips(

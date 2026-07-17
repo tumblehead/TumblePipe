@@ -53,6 +53,7 @@ from tumblepipe.pipe.paths.workspace import (
     release_reserved_version,
     load_entity_context,
     get_workfile_context,
+    get_workspace_relpath,
 )
 from tumblepipe.pipe.paths.export import (
     get_export_path,

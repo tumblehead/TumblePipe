@@ -111,17 +111,21 @@ still aborts the export as a dangling arc. Off-site consumers (e.g. a
 cloud render submit) must gather/inline these references, as they
 already must for textures.
 
-`th::cache` carries an **Entity** parm (defaulting, like every
-entity-aware `th::` HDA, to `from_context`). It drives the **From Entity
-(Database)** frame-range source, which caches over the entity's authored
-range — start/end *plus* pre/post roll — instead of a hand-typed one, so a
-shot whose range is retimed in the database does not silently keep caching
-the old span. The entity deliberately does **not** decide *where* the cache
-is written: the cache directory is derived from the workfile's own location,
-because the export guard above resolves the allowed `lops_cache` roots from
-the workfile (`lops.cache.list_cache_locations()`) and cannot see a per-node
-parm. Pointing a cache node's Entity elsewhere therefore changes what it
-caches, not where it lands.
+`th::cache` carries **Entity** and **Department** parms (both defaulting,
+like every entity-aware `th::` HDA, to `from_context`). Entity drives the
+**From Entity (Database)** frame-range source, which caches over the
+entity's authored range — start/end *plus* pre/post roll — instead of a
+hand-typed one, so a shot whose range is retimed in the database does not
+silently keep caching the old span. Together, Entity and Department also
+decide *where* the cache is read and written: the directory is the
+addressed workfile's `lops_cache` (`project:`/`proxy:` per the Location
+parm). Leaving both on `from_context` targets the node's own workfile — the
+common case, byte-identical to the pre-Department behaviour — while pointing
+Department (or Entity) elsewhere lets a node **load a cache another workfile
+produced**. The export guard stays in agreement because
+`lops.cache.list_cache_locations()` resolves its allowed roots by walking
+the actual `th::cache` nodes in the scene, not the workfile's own location,
+so it sees wherever each node's parms point.
 
 The export also refuses arcs whose target does not exist at all
 (*dangling* paths, e.g. a payload anchored to a machine-local scratch

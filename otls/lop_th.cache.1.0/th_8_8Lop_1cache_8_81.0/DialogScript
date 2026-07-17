@@ -132,6 +132,21 @@
             default { "from_context: none" }
         }
         parm {
+            name    "department"
+            label   "Department"
+            type    string
+            default { "from_context" }
+            menu {
+                [ "import tumblepipe.pipe.houdini.lops.cache as th_cache" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = th_cache.Cache(hou.pwd())" ]
+                [ "return util.list_to_menu(node.list_department_names())" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
             name    "name"
             label   "Name"
             type    string

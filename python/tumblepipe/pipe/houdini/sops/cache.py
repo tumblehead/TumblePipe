@@ -10,7 +10,8 @@ import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.paths import (
     list_version_paths,
-    get_workfile_context
+    get_workfile_context,
+    get_workspace_relpath,
 )
 
 def _cache_frames_exist(cache_path):
@@ -23,31 +24,64 @@ class Location:
 class Cache(EntityNode):
     """SOP cache wrapper.
 
-    The 'entity' parm (default 'from_context') is what ties the cache to the
-    pipeline: it feeds the 'from_config' frame-range source, which reads the
+    The 'entity' and 'department' parms (both default 'from_context') address
+    which workfile's cache directory this node reads and writes. Leaving both
+    at 'from_context' targets the node's own workfile — the common case, and
+    identical to the pre-department behaviour. Pointing 'department' (or
+    'entity') elsewhere lets a node load a cache another workfile produced.
+
+    'entity' also feeds the 'from_config' frame-range source, which reads the
     shot's authored range — start/end plus pre/post roll — straight out of
     the database instead of making the artist retype it.
-
-    It deliberately does NOT drive _get_cache_path(): the cache directory is
-    still derived from the workfile's own location on disk, because
-    lops.cache.list_cache_locations() has to agree with it for the
-    export-by-reference guard, and it cannot see a per-node entity parm.
     """
 
     def __init__(self, native):
         super().__init__(native)
 
+    # Department resolution (same idiom as import_layer/import_shot: a
+    # 'from_context' sentinel plus the entity's departments). Unlike those
+    # nodes, the list is NOT filtered to publishable departments — a cache can
+    # be written from, and loaded into, any workfile.
+
+    def list_department_names(self):
+        entity_uri = self.get_entity_uri()
+        if entity_uri is None or not entity_uri.segments:
+            return ['from_context']
+        names = [d.name for d in self.scoped_departments(entity_uri.segments[0])]
+        return ['from_context'] + names
+
+    def get_department_name(self):
+        """The resolved department name driving the cache path, or None.
+
+        'from_context' resolves to the workfile's own department; a concrete
+        value is honoured only if it is a department of the addressed entity.
+        """
+        department_name_raw = self.parm('department').eval()
+        if department_name_raw == 'from_context':
+            file_path = Path(hou.hipFile.path())
+            context = get_workfile_context(file_path)
+            if context is None: return None
+            return context.department_name
+        department_names = self.list_department_names()
+        if department_name_raw not in department_names: return None
+        return department_name_raw
+
+    # Cache path --------------------------------------------------------------
+
+    def _cache_base_path(self):
+        """The project-relative base this node's cache anchors under, or None."""
+        entity_uri = self.get_entity_uri()
+        if entity_uri is None: return None
+        department_name = self.get_department_name()
+        if department_name is None: return None
+        return get_workspace_relpath(entity_uri, department_name)
+
     def _get_cache_path(self):
-        file_path = Path(hou.hipFile.path())
-        if not file_path.exists(): return None
-        context = get_workfile_context(file_path)
-        if context is None: return None
-        base_path = '/'.join(file_path.parent.parts[-4:])
-        match self.get_location_name():
-            case Location.Project:
-                return api.storage.resolve(Uri.parse_unsafe(f'project:/{base_path}/cache'))
-            case Location.Proxy:
-                return api.storage.resolve(Uri.parse_unsafe(f'proxy:/{base_path}/cache'))
+        base_path = self._cache_base_path()
+        if base_path is None: return None
+        return api.storage.resolve(
+            Uri.parse_unsafe(f'{self.get_location_name()}:/{base_path}/cache')
+        )
 
     def _next_version_name(self):
         version_names = self.list_version_names()
@@ -285,7 +319,8 @@ def set_style(raw_node):
 
 def on_created(raw_node):
 
-    # Set node style. 'entity' keeps its 'from_context' default.
+    # Set node style. 'entity' and 'department' keep their 'from_context'
+    # defaults (never bake a concrete value here — see EntityNode).
     set_style(raw_node)
     Cache(raw_node)._update_labels()
 
