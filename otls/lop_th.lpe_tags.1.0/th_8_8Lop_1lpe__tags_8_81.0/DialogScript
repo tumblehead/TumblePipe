@@ -15,6 +15,15 @@
     inputlabel	4	"Input 4"
 
     parm {
+        name    "status"
+        label   "Status"
+        type    string
+        default { [ "chs(\"validate/message\")" hscript-expr ] }
+        help    "Tags that no light in the stage carries. Each one silently costs its beauty_<tag> AOV."
+        disablewhen "{ tags >= 0 }"
+        hidewhen "{ status == \"\" }"
+    }
+    parm {
         name    "generate_lpes"
         label   "Generate LPEs from scene"
         type    button
@@ -54,9 +63,6 @@
             type    string
             default { "`lopinputprims(\".\", 0)`" }
             disablewhen "{ enable# == 0 }"
-            menutoggle {
-                [ "opmenu -l -a edit_lpetag primpattern" ]
-            }
             parmtag { "autoscope" "0000000000000000" }
             parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
             parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nShift-click to select using the primitive pattern editor.\nAlt-click to toggle movement of the display flag." }

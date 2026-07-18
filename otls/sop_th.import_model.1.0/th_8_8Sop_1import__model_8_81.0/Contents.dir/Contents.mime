@@ -325,7 +325,32 @@ Content-Type: text/plain
       flags = 0
       segment { options = {	 autoslope  ai ao }
 
-	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "try:
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "def input_prims():
+    # Fallback for when the entity URI can't be resolved (unsaved hip,
+    # scratch scene, missing context.json). A glob is NOT usable here:
+    # setvariant resolves a concrete prim, so \"/*\" (and even \"/**\")
+    # collapse the variant menu to just the empty \"Clear From Active
+    # Layer\" entry, which reads to artists as a missing dropdown.
+    # lopinputprims() via hou.hscriptExpression() returns empty inside a
+    # parm expression, so scan the incoming stage instead. Shallow, and
+    # only ever reached on the failure path.
+    node = hou.pwd()
+    inputs = node.inputs()
+    if not inputs:
+        return \"\"
+    stage = inputs[0].stage()
+    if stage is None:
+        return \"\"
+    pending = [(child, 1) for child in stage.GetPseudoRoot().GetChildren()]
+    while pending:
+        prim, depth = pending.pop(0)
+        if prim.GetVariantSets().GetNames():
+            return str(prim.GetPath())
+        if depth < 3:
+            pending.extend((c, depth + 1) for c in prim.GetChildren())
+    return \"\"
+
+try:
     from tumblepipe.pipe.houdini.util import uri_to_prim_path
     from tumblepipe.util.uri import Uri
     entity = hou.parm(\"../../entity\").eval()
@@ -335,13 +360,22 @@ Content-Type: text/plain
         context = get_workfile_context(Path(hou.hipFile.path()))
         if context and context.entity_uri.purpose == \"entity\":
             return uri_to_prim_path(context.entity_uri)
-        return \"/*\"
+        return input_prims()
     if entity:
         uri = Uri.parse_unsafe(entity)
         return uri_to_prim_path(uri)
-    return \"/*\"
-except:
-    return \"/*\"" language = python }
+    return input_prims()
+except Exception:
+    return input_prims()" language = python }
+    }
+    channel variantset1 {
+      lefttype = extend
+      righttype = extend
+      defaultString = "model"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../department\") }
     }
     channel variantname1 {
       lefttype = extend
@@ -364,7 +398,7 @@ num_variants	[ 0	locks=0 ]	(	1	)
 enable1	[ 0	locks=0 ]	(	"on"	)
 primpattern1	[ 0	locks=0	autoscope=1	autosel=4294967295 ]	(	[ primpattern1	"`lopinputprims('.', 0)`" ] 	)
 variantsetuseindex1	[ 0	locks=0 ]	(	"off"	)
-variantset1	[ 0	locks=0 ]	(	model	)
+variantset1	[ 0	locks=0	autoscope=1	autosel=4294967295 ]	(	[ variantset1	model ] 	)
 variantsetindex1	[ 0	locks=0 ]	(	0	)
 variantnameuseindex1	[ 0	locks=0 ]	(	"off"	)
 variantname1	[ 0	locks=0	autoscope=1	autosel=4294967295 ]	(	[ variantname1	"" ] 	)

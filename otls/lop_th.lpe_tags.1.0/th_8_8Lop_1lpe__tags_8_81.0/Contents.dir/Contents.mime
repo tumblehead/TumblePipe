@@ -31,9 +31,9 @@ Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
 comment ""
-position 0.263098 1.62677
+position 0 0
 connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
 }
@@ -3843,6 +3843,13 @@ Content-Type: text/plain
         invisible
         export  none
     }
+    parm {
+        name    "dataWindowNDCmenu"
+        baseparm
+        label   "Choose Overscan"
+        nolabel
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/update_denoiser_settings.chn"
@@ -3993,6 +4000,7 @@ aspectRatioConformPolicy_control	[ 0	locks=0 ]	(	none	)
 aspectRatioConformPolicy	[ 0	locks=0 ]	(	expandAperture	)
 dataWindowNDC_control	[ 0	locks=0 ]	(	none	)
 dataWindowNDC	[ 0	locks=0 ]	(	0	0	1	1	)
+dataWindowNDCmenu	[ 0	locks=0 ]	(	0	)
 pixelAspectRatio_control	[ 0	locks=0 ]	(	none	)
 pixelAspectRatio	[ 0	locks=0 ]	(	1	)
 errorseverity	[ 0	locks=0 ]	(	"1"	)
@@ -4462,45 +4470,11 @@ Content-Type: text/plain
       defaultString = \"\"
       flags = 0
       start = 41.666666666666664
-      segment { length = 0 expr = "from pxr import UsdGeom
-
-from tumblepipe.pipe.houdini import util
-
-def _flatten(xss):
-    return { x for xs in xss for x in xs }
-
-def _light_tags(light_prim):
-    
-    def _is_lpe_tag_prop(prop):
-        prop_name = prop.GetName()
-        return prop_name.endswith('karma:light:lpetag')
-
-    if UsdGeom.Imageable(light_prim).ComputeVisibility() == \"invisible\": return []
-    tag_props = [
-        prop for prop in light_prim.GetProperties()
-        if _is_lpe_tag_prop(prop)
-    ]
-    tag_names = list()
-    for tag_prop in tag_props:
-        if not tag_prop.IsValid(): continue
-        tag_name = (
-            tag_prop.Get(1001)
-            if tag_prop.GetNumTimeSamples() else
-            tag_prop.Get()
-        )
-        if tag_name is None: continue
-        if tag_name == 'Untagged_Lights': continue
-        if tag_name in tag_names: continue
-        tag_names.append(tag_name)
-    return tag_names
+      segment { length = 0 expr = "from tumblepipe.pipe.houdini import util
 
 node = hou.node('../IN_stage')
 root = node.stage().GetPseudoRoot()
-tag_names = _flatten([
-    _light_tags(root.GetPrimAtPath(light_path))
-    for light_path in util.list_lights(root)
-])
-return ' '.join(tag_names)" language = python }
+return ' '.join(util.list_lpe_tags(root))" language = python }
     }
   }
 
@@ -4520,6 +4494,7 @@ combineiterations	[ 0	locks=0 ]	(	flattened	)
 ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block. Flattening Into First Input's Active Layer."	)
 striplayerbreaks	[ 0	locks=0 ]	(	"on"	)
 lastmodifiedfromiteration	[ 0	locks=0 ]	(	"off"	)
+mergeloadmasks	[ 0	locks=0 ]	(	"off"	)
 separator_options	[ 0	locks=0 ]	(	)
 iterationname	[ 0	locks=0 ]	(	ITERATION	)
 iterationcountname	[ 0	locks=0 ]	(	NUMITERATIONS	)
@@ -8381,6 +8356,18 @@ Content-Type: text/plain
         default { "" }
         parmtag { "script_callback_language" "python" }
     }
+    parm {
+        name    "allowedprimtypes"
+        baseparm
+        label   "Allowed Primitive Types"
+        export  none
+    }
+    parm {
+        name    "handledisallowedtypes"
+        baseparm
+        label   "Handle Mismatched Types"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/update_lpe_aovs/reorder_aovs.chn"
@@ -8440,6 +8427,8 @@ sample_count	[ 0	locks=0 ]	(	2	)
 sample_includeframe	[ 0	locks=0 ]	(	"on"	)
 editinterface	[ 0	locks=0 ]	(	0	)
 primpattern	[ 0	locks=0 ]	(	/Render/Products/renderproduct	)
+allowedprimtypes	[ 0	locks=0 ]	(	""	)
+handledisallowedtypes	[ 0	locks=0 ]	(	"ignore"	)
 primpath	[ 0	locks=0 ]	(	/$OS	)
 createprims	[ 0	locks=0 ]	(	"forceedit"	)
 initforedit	[ 0	locks=0 ]	(	0	)
@@ -9689,14 +9678,115 @@ Content-Type: text/plain
 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/validate.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/validate.def"
+Content-Type: text/plain
+
+comment ""
+position 3.01809 2.74017
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/validate.spareparmdef"
+Content-Type: text/plain
+
+    parm {
+        name    "message"
+        label   "Message"
+        type    string
+        default { "" }
+    }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/validate.chn"
+Content-Type: text/plain
+
+{
+    channel message {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini import util
+
+try:
+    hda = hou.node(\"..\")
+    source = hou.node(\"../define_lpetags\")
+    stage = source.stage() if source is not None else None
+    if stage is None: return \"\"
+    tag_names = [
+        hda.parm(\"lpetag%d\" % i).eval()
+        for i in range(hda.parm(\"tags\").eval())
+        if hda.parm(\"enable%d\" % i).eval()
+    ]
+    missing = util.unmatched_lpe_tags(stage.GetPseudoRoot(), tag_names)
+    if not missing: return \"\"
+    return \"No light carries: %s. Check the Lights pattern - no beauty_<tag> AOV is built for a tag nothing carries.\" % \", \".join(missing)
+except Exception:
+    return \"\"
+" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/validate.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+message	[ 0	locks=0 ]	(	[ message	"" ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/validate.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.order"
 Content-Type: text/plain
 
-4
+5
 output
 define_lpetags
 update_denoiser_settings
 update_lpe_aovs
+validate
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.net"

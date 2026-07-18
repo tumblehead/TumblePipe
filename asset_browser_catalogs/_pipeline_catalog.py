@@ -2047,7 +2047,7 @@ class PipelineCatalog(Catalog):
                 tooltip="Re-import latest published versions into the "
                         "current scene (no scene reload)",
             ),
-            QuickAction(id="reload", label="Reload", icon="rotate-ccw", tooltip="Reload current scene"),
+            QuickAction(id="reload", label="Reload", icon="file-input", tooltip="Reload current scene"),
         ]
 
     def get_quick_actions_label(self) -> str:

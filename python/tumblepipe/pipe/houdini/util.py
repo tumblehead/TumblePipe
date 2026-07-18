@@ -3,7 +3,7 @@ import logging
 import os
 from pathlib import Path
 
-from pxr import Gf, Usd, UsdGeom
+from pxr import Gf, Usd, UsdGeom, UsdLux
 
 from tumblepipe.config.timeline import BlockRange, FrameRange
 from tumblepipe.util.uri import Uri
@@ -268,9 +268,6 @@ def is_asset(prim):
 def is_camera(prim):
     return prim.GetTypeName() == 'Camera'
 
-def is_light(prim):
-    return prim.GetTypeName().endswith('Light')
-
 def is_render_var(prim):
     return prim.GetTypeName() == 'RenderVar'
 
@@ -499,13 +496,110 @@ def list_cameras(prim):
     def _get_path(prim): return str(prim.GetPath())
     return list(map(_get_path, iter_scene(prim, is_camera)))
 
-def list_lights(prim):
-    def _get_path(prim): return str(prim.GetPath())
-    return list(map(_get_path, iter_scene(prim, is_light)))
-
 def list_render_vars(prim):
     def _get_path(prim): return str(prim.GetPath())
     return list(map(_get_path, iter_scene(prim, is_render_var)))
+
+# The LPE Tag LOP writes the tag to one of two attributes depending on what it
+# tagged: lights get inputs:karma:light:lpetag, geometry lights get
+# primvars:karma:object:lpetag. Both are matched by suffix because the leading
+# namespace differs (inputs: vs primvars:).
+LPE_TAG_LIGHT_ATTR = 'karma:light:lpetag'
+LPE_TAG_GEO_ATTR = 'karma:object:lpetag'
+
+# The LOP's own fallback for anything it did not match. Never a real tag.
+UNTAGGED_LPE_TAG = 'Untagged_Lights'
+
+def _iter_prims(prim):
+    """Every descendant, including instance proxies and overs.
+
+    Unlike iter_scene this does not stop descending at a match: a tagged
+    prim can contain further tagged prims.
+    """
+    for subprim in _iter_prim_children(prim):
+        yield subprim
+        yield from _iter_prims(subprim)
+
+def _prim_lpe_tags(prim):
+    if UsdGeom.Imageable(prim).ComputeVisibility() == 'invisible': return []
+    tag_names = list()
+    for prop in prim.GetProperties():
+        prop_name = prop.GetName()
+        if not prop_name.endswith((LPE_TAG_LIGHT_ATTR, LPE_TAG_GEO_ATTR)): continue
+        if not prop.IsValid(): continue
+        tag_name = (
+            prop.Get(1001)
+            if prop.GetNumTimeSamples() else
+            prop.Get()
+        )
+        if not tag_name: continue
+        if tag_name == UNTAGGED_LPE_TAG: continue
+        if tag_name in tag_names: continue
+        tag_names.append(tag_name)
+    return tag_names
+
+def list_lpe_tags(prim):
+    """Ordered LPE tag names carried by any prim in the subtree.
+
+    Drives the th::lpe_tags render var loop. This deliberately does NOT
+    filter on prim type. LightAPI is an *applied schema*, so a mesh light
+    keeps the type name 'Mesh' — the predecessor here filtered on
+    GetTypeName().endswith('Light') and silently dropped every mesh-light
+    tag, so the matching beauty_<tag> RenderVar was never built.
+
+    Order is traversal order so the generated vars are stable between
+    cooks; reorder_aovs sorts them for the render product afterwards.
+    """
+    tag_names = list()
+    for subprim in _iter_prims(prim):
+        for tag_name in _prim_lpe_tags(subprim):
+            if tag_name in tag_names: continue
+            tag_names.append(tag_name)
+    return tag_names
+
+def is_light_prim(prim):
+    """Whether a prim renders as a light.
+
+    LightAPI is an applied schema, so a mesh light reports the type name
+    'Mesh'; a type-name test alone misses every one of them.
+    """
+    if prim.HasAPI(UsdLux.LightAPI): return True
+    return prim.GetTypeName().endswith('Light')
+
+def list_light_prims(prim):
+    return [subprim for subprim in _iter_prims(prim) if is_light_prim(subprim)]
+
+def propose_lpe_tags(prim, separator='_'):
+    """Suggest (tag, [prim paths]) from how the lights are named.
+
+    Groups every light in the stage by the leading token of its name, so
+    'side_key' and 'side_rim' both propose the tag 'side'. Lights whose
+    name carries no separator have no tag to infer and are skipped.
+
+    Backs the node's Generate button, which is only ever a starting point:
+    tags are a lighting decision and often have nothing to do with names.
+    """
+    proposals = dict()
+    for light_prim in list_light_prims(prim):
+        name = light_prim.GetName()
+        if separator not in name: continue
+        tag_name = name.split(separator, 1)[0]
+        if not tag_name: continue
+        proposals.setdefault(tag_name, []).append(str(light_prim.GetPath()))
+    return [(tag_name, proposals[tag_name]) for tag_name in proposals]
+
+def unmatched_lpe_tags(prim, tag_names):
+    """Configured tags that no prim in the stage actually carries.
+
+    Each one silently costs a beauty_<tag> RenderVar: the var loop reads
+    tags back off the cooked stage, so a row whose Lights pattern selects
+    nothing simply produces no output.
+    """
+    present = list_lpe_tags(prim)
+    return [
+        tag_name for tag_name in tag_names
+        if tag_name and tag_name not in present
+    ]
 
 def get_frame_range_from_stage(stage) -> FrameRange | None:
     """Extract frame range from USD stage shot metadata.

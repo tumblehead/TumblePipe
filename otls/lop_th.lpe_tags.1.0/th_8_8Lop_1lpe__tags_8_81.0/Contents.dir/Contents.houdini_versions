@@ -1,5 +1,5 @@
 {
-	"values":["21.0.559","2.0"
+	"values":["22.0.368","2.0"
 	],
 	"indexes":{
 		"hdaroot/update_lpe_aovs/specular/switch.userdata":0,
@@ -26,6 +26,7 @@
 		"hdaroot/update_lpe_aovs/volume/IN_stage.userdata":0,
 		"hdaroot/update_lpe_aovs/beauty.userdata":0,
 		"hdaroot/update_lpe_aovs/loop_tags_end.userdata":0,
+		"hdaroot/validate.userdata":0,
 		"hdaroot/update_denoiser_settings.userdata":1,
 		"hdaroot/update_lpe_aovs/volume.userdata":0,
 		"hdaroot/update_lpe_aovs/output0.userdata":0,

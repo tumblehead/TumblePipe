@@ -327,6 +327,63 @@ can only be rendered once its tag exists. Regenerate and commit
 next release. This is why `--check` is not a CI gate: it would
 false-fail on the commit immediately after every tag.
 
+## LPE tag harness
+
+`scripts/verify_lpe_tags.py` pins the contract that `th::lpe_tags` builds a
+render var for every tag a light actually carries. The node does not read its
+render vars off the multiparm: a foreach loop scrapes the lpetag attributes
+back off the *cooked stage*, so anything the scrape cannot see produces no
+`beauty_<tag>` AOV — silently, with no node error and no warning.
+
+That is how mesh lights broke. `LightAPI` is an **applied** schema, so a mesh
+light keeps the type name `Mesh`; the scrape filtered on
+`GetTypeName().endswith('Light')` and dropped every one of them. A shot with
+three configured tags rendered a single `beauty_fill` var and nothing said so.
+
+The harness covers both halves — that mesh lights and light-typed prims alike
+reach the loop, and that a tag nothing carries is named in the node's **Status**
+field rather than vanishing. The empty-pattern case is the one that matters
+most: an empty Lights pattern is the parm's own default, it makes the LPE Tag
+LOP fall back to tagging everything `Untagged_Lights`, and the loop skips that
+name by design, so *every* tagged AOV disappears at once.
+
+It builds its stage in memory and touches no project data, but it drives real
+nodes, so it needs Houdini with `otls/` on `HOUDINI_OTLSCAN_PATH` and `python/`
+on `PYTHONPATH` (e.g. TumbleTrove Desktop's `run_hython`).
+
+## Editing an HDA definition
+
+Reach for this when a fix lives inside an HDA rather than in `python/`. The
+tracked source of truth is the expanded `otls/<name>/` directory; the `.hda`
+beside it is a gitignored build artifact.
+
+- **Expand with `hotl -t`, never `hotl -x`.** `-t` writes the uncompressed
+  `Contents.dir/Contents.mime` the repo tracks and round-trips **losslessly**
+  (zero diff), so an HDA edit produces a reviewable diff of just the change.
+  `-x` writes a compressed binary `Contents.gz`, which still builds but is
+  undiffable. `compile-hdas` collapses the other way with `hotl -l`.
+- **Edit the definition's interface, not an instance's.** Calling
+  `setParmTemplateGroup()` on an HDA *instance* and then `updateFromNode()`
+  silently fails to carry nested multiparm children. Use
+  `definition.parmTemplateGroup()` / `definition.setParmTemplateGroup()`. And
+  order matters: do `updateFromNode()` for *contents* first, since it replaces
+  the whole definition and would clobber an interface edit made before it.
+  (For inserting *spare* UI into an instance, see *HDA spare-parm UI harness*
+  above — a different hazard with the same call.)
+- **Nested `folder.parmTemplates()` returns copies.** Mutating one changes
+  nothing until you `folder.setParmTemplates(...)` and then
+  `group.replace(group.find('<folder>'), folder)`.
+- **Warnings do not escape an HDA.** A child's warning leaves the parent's
+  `warnings()` empty, and `hou.pwd().parent().addWarning()` fails outright.
+  Errors *do* propagate. So a failed parm expression becomes a node error that
+  breaks the whole chain — any status or validation affordance must be fully
+  guarded, including the no-input case where `stage()` returns `None`.
+- **Python parm expressions on an HDA are unreliable.** `hou.pwd().path()` and
+  `hou.pwd().type().name()` both evaluate to an empty string inside one, even
+  though `hou.pwd().parm(...)` works. Compute the value on an internal node,
+  where relative paths like `hou.node('../define_lpetags')` behave, and read it
+  out from the interface with `chs("<child>/<parm>")`.
+
 ## Export cache-reference harness
 
 `scripts/verify_cache_reference_fixes.py` pins the publish-by-reference

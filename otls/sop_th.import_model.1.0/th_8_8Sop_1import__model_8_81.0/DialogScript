@@ -80,7 +80,7 @@
 
         parm {
             name    "model_variant"
-            label   "Model Variant"
+            label   "Variant"
             type    string
             default { "" }
             menu {

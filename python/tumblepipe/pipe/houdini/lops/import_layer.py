@@ -255,6 +255,13 @@ class ImportLayer(EntityNode):
             _bypass("No version selected")
             return
 
+        # The guards above are the only bypass sources, and they are sticky:
+        # nothing else ever cleared the flag, so a node bypassed once (e.g. by
+        # switching Department to one this entity has no export for) stayed
+        # dead after switching back to a valid selection, despite a resolved
+        # version and filepath. Clear it here, symmetrically with _bypass().
+        native.bypass(False)
+
         logger.info(f"Importing layer: uri={entity_uri}, dept={department_name}, variant={variant_name}, version={version_name}")
 
         from tumblepipe import resolver as _resolver
