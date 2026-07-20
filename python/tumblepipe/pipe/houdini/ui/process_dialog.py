@@ -189,6 +189,7 @@ class ProcessDialog(QtWidgets.QDialog):
         self._executor.task_progress.connect(self._on_task_progress)
         self._executor.task_completed.connect(self._on_task_completed)
         self._executor.task_failed.connect(self._on_task_failed)
+        self._executor.task_skipped.connect(self._on_task_skipped)
         self._executor.all_completed.connect(self._on_all_completed)
 
         # Update status when model changes (tree model uses itemChanged)
@@ -407,6 +408,13 @@ class ProcessDialog(QtWidgets.QDialog):
         # Force UI repaint
         QtWidgets.QApplication.processEvents()
 
+    def _on_task_skipped(self, task_id: str, reason: str):
+        """Handle task skipped signal - a no-op task, not a failure"""
+        self._model.update_task_status(task_id, TaskStatus.SKIPPED, reason)
+
+        # Force UI repaint
+        QtWidgets.QApplication.processEvents()
+
     def _on_all_completed(self):
         """Handle all tasks completed signal"""
         self._is_executing = False
@@ -442,12 +450,42 @@ class ProcessDialog(QtWidgets.QDialog):
             )
             self._status_label.setStyleSheet("color: green; font-weight: bold;")
 
+            # A task that skipped itself wrote nothing. Say so - "All tasks
+            # completed" over a silently missing variant reads as success.
+            explained_skips = self._explained_skips()
+            if explained_skips:
+                self._show_skipped_warning(explained_skips)
+
         # Emit results
         self.process_completed.emit({
             'completed': [t.id for t in completed],
             'failed': [(t.id, t.error_message) for t in failed],
             'skipped': [t.id for t in skipped],
         })
+
+    def _explained_skips(self) -> list:
+        """Skipped tasks that gave a reason, children included.
+
+        Tasks the user unchecked are also SKIPPED but carry no reason, so
+        they stay out of the warning - the artist skipped those on purpose.
+        """
+        explained = []
+        for task in self._model.get_tasks():
+            for candidate in [task, *(task.children or [])]:
+                if candidate.status == TaskStatus.SKIPPED and candidate.error_message:
+                    explained.append(candidate)
+        return explained
+
+    def _show_skipped_warning(self, skipped_tasks: list):
+        """Warn that some steps ran to no effect, and why."""
+        bullets = "\n".join(
+            f"  •  {t.description}: {t.error_message}" for t in skipped_tasks
+        )
+        QtWidgets.QMessageBox.warning(
+            self,
+            f"{self._title}: {len(skipped_tasks)} step(s) skipped",
+            f"These steps were skipped and wrote nothing:\n\n{bullets}",
+        )
 
     def _show_cancelled_incomplete_warning(self, unrun_tasks: list):
         """Warn that cancelling left enabled steps unrun.

@@ -85,6 +85,13 @@
             default { "" }
         }
         parm {
+            name    "exclude_downstream_of"
+            label   "Exclude Downstream Of"
+            type    string
+            default { "" }
+            invisible
+        }
+        parm {
             name    "version"
             label   "Version"
             type    string

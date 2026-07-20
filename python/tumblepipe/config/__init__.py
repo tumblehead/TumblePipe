@@ -117,7 +117,8 @@ from tumblepipe.config.department import (
     set_independent,
     set_publishable,
     list_departments,
-    list_department_names
+    list_department_names,
+    department_names_up_to
 )
 
 from tumblepipe.config.groups import (
@@ -218,6 +219,7 @@ __all__ = [
     'set_publishable',
     'list_departments',
     'list_department_names',
+    'department_names_up_to',
     # Groups
     'Group',
     'is_group_uri',

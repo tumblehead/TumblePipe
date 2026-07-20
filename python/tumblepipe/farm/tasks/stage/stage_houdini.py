@@ -25,7 +25,8 @@ def main(
     shot_uri: Uri,
     render_range: BlockRange,
     render_settings_path: Path,
-    output_paths: dict[str, Path]
+    output_paths: dict[str, Path],
+    render_department_name: str | None = None
     ) -> int:
     _headline('Stage Shot')
 
@@ -43,7 +44,8 @@ def main(
             shot_uri,
             variant_name,
             render_settings_path,
-            name_prefix = f'__{variant_name}_'
+            name_prefix = f'__{variant_name}_',
+            render_department_name = render_department_name
         )
 
         # Setup export node
@@ -82,7 +84,8 @@ config = {
     'settings': {
         'first_frame': 'int',
         'last_frame': 'int',
-        'render_settings_path': 'path/to/render_settings.json'
+        'render_settings_path': 'path/to/render_settings.json',
+        'render_department_name': 'string'
     },
     'output_paths': {
         'variant_name': 'path/to/stage_variant_name.usd'
@@ -171,13 +174,18 @@ def cli():
         variant_name: Path(output_path)
         for variant_name, output_path in config['output_paths'].items()
     }
+    # Optional, not required by _is_valid_config: a job submitted before this
+    # key existed is still in flight on the farm, and it means 'compose every
+    # department' — the behaviour it was submitted under.
+    render_department_name = settings.get('render_department_name') or None
 
     # Run main
     return main(
         entity_uri,
         render_range,
         render_settings_path,
-        output_paths
+        output_paths,
+        render_department_name
     )
 
 if __name__ == '__main__':

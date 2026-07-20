@@ -543,6 +543,51 @@ class ImportShot(ns.Node):
         shot_department_index = shot_department_names.index(department_name)
         return shot_department_names[shot_department_index + 1:]
 
+    def get_exclude_downstream_of(self) -> str | None:
+        """Department whose *downstream* alone should be excluded, or None.
+
+        A workfile excludes its own department too (it authors that layer),
+        but a render must keep it — 'render up to lighting' includes
+        lighting. This parm expresses that second, strictly-downstream cut,
+        and is set by the render stage builder.
+
+        It is a parm rather than a transient attribute on purpose: the HDA
+        rebuilds ``ImportShot(hou.pwd())`` on every cook, so anything not
+        persisted here would be silently lost on a re-cook and the node
+        would quietly go back to composing every department.
+        """
+        parm = self.parm('exclude_downstream_of')
+        if parm is None: return None  # older HDA binary; no strict cut
+        department_name = parm.eval()
+        if len(department_name) == 0: return None
+        return department_name
+
+    def set_exclude_downstream_of(self, department_name: str | None):
+        parm = self.parm('exclude_downstream_of')
+        if parm is None: return
+        parm.set(department_name or '')
+
+    def get_strictly_downstream_department_names(self):
+        """Departments after ``exclude_downstream_of``, itself included.
+
+        Resolved against this node's own department list — the shot's
+        assignment, not the whole pool — so a scoped entity cuts where its
+        own pipeline actually ends. Raises when the department is not in
+        that list: composing everything instead is the renders-too-much
+        bug this exists to prevent.
+        """
+        department_name = self.get_exclude_downstream_of()
+        if department_name is None: return []
+        shot_department_names = self.list_shot_department_names()
+        if department_name not in shot_department_names:
+            raise ValueError(
+                f"exclude_downstream_of '{department_name}' is not a "
+                f"renderable department of {self.get_shot_uri()}: "
+                f"[{', '.join(shot_department_names)}]"
+            )
+        index = shot_department_names.index(department_name)
+        return shot_department_names[index + 1:]
+
     def get_frame_range(self):
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return None
@@ -889,6 +934,13 @@ class ImportShot(ns.Node):
         departments_to_exclude = set(self.get_downstream_shot_department_names())
         if department_name is not None:
             departments_to_exclude.add(department_name)
+
+        # A render cut excludes downstream only — the selected department is
+        # what the render is *of*, so it stays. Additive, so it composes with
+        # the workfile exclusion above rather than replacing it.
+        departments_to_exclude.update(
+            self.get_strictly_downstream_department_names()
+        )
 
         # Build set of asset URIs to exclude (introduced by current/downstream departments)
         # This prevents import_shot from loading assets that import_assets will handle

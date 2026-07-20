@@ -12,6 +12,7 @@ import logging
 from typing import Union
 
 from tumblepipe.api import path_str
+from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 
 # Candidate placement ops in USD XformCommonAPI application order. The
@@ -467,7 +468,8 @@ def _generate_instance_prim_definitions(
 def _collect_leaf_layers_and_instances(
     layer_path: str,
     visited: set = None,
-    instances_by_asset: dict = None
+    instances_by_asset: dict = None,
+    excluded_refs: set = None
 ) -> tuple[list[str], dict[str, list[str]]]:
     """
     Recursively collect all leaf USD layers and instance info from a sublayer hierarchy.
@@ -479,6 +481,9 @@ def _collect_leaf_layers_and_instances(
         layer_path: Filesystem path or entity URI to start from
         visited: Set of already-visited paths to prevent cycles
         instances_by_asset: Dict to accumulate instance info (modified in place)
+        excluded_refs: Refs to skip at *this* level only (not propagated into
+                       the recursion) — a partial-department render drops the
+                       shot's own layers past the cut, never an asset's
 
     Returns:
         Tuple of (leaf_layers, instances_by_asset) where:
@@ -545,6 +550,12 @@ def _collect_leaf_layers_and_instances(
     # This has sublayers - recursively collect from each
     leaf_layers = []
     for ref in sublayer_refs:
+        # Dropped by a partial-department render. Checked before path
+        # normalisation so it matches the ref as the staged file wrote it,
+        # which is the form excluded_staged_refs() reports.
+        if excluded_refs and ref in excluded_refs:
+            logging.info(f"Excluding department layer from render: {ref}")
+            continue
         # Handle relative paths (not entity URIs)
         if not ref.startswith('entity:') and not Path(ref).is_absolute():
             ref = os.path.normpath(str(path.parent / ref)).replace('\\', '/')
@@ -628,10 +639,78 @@ def _composed_placement_orders(
     return orders
 
 
+def excluded_staged_refs(
+    staged_file_path: Path,
+    included_department_names: list[str],
+    department_order: list[str],
+) -> set[str]:
+    """Top-level refs to drop when rendering only part of the department stack.
+
+    A staged build composes every department that exported, so "render up
+    to lighting" cannot be expressed by picking layers to add — it has to
+    drop the ones past the cut. Two kinds of ref go:
+
+    * the shot's own department layers past the cut, recognised by the
+      ``dept`` query param that ``generate_entity_sublayer_uri`` writes;
+    * assets *introduced by* those departments, which are staged refs with
+      no ``dept`` of their own — their provenance lives in the staged
+      ``context.json`` ``inputs``, the same source ``import_shot`` uses.
+
+    Only the shot's own staged file is filtered. Departments nested deeper
+    (an asset's lookdev, say) come from the assets pool and are unrelated
+    to the shot's cut, even where the two pools share a name.
+    """
+    excluded: set[str] = set()
+    included = set(included_department_names)
+
+    refs = read_staged_sublayer_refs(staged_file_path)
+    parsed = {ref: parse_entity_sublayer_uri(ref) for ref in refs}
+
+    # The shot's own department layers past the cut
+    for ref, parsed_ref in parsed.items():
+        if parsed_ref is None:
+            continue
+        if parsed_ref.department is None:
+            continue
+        if parsed_ref.department not in included:
+            excluded.add(ref)
+
+    # Assets introduced by those departments
+    from tumblepipe.pipe.build import get_source_department
+
+    context_path = staged_file_path.parent / 'context.json'
+    context_data = load_json(context_path) if context_path.exists() else None
+    if context_data is None:
+        return excluded
+
+    assets = context_data.get('parameters', {}).get('assets', [])
+    excluded_asset_uris = set()
+    for asset_info in assets:
+        source_dept = get_source_department(
+            asset_info.get('inputs', []), department_order
+        )
+        if source_dept is not None and source_dept not in included:
+            excluded_asset_uris.add(asset_info['asset'])
+
+    if not excluded_asset_uris:
+        return excluded
+
+    for ref, parsed_ref in parsed.items():
+        if parsed_ref is None:
+            continue
+        if parsed_ref.department is not None:
+            continue
+        if parsed_ref.base in excluded_asset_uris:
+            excluded.add(ref)
+
+    return excluded
+
+
 def collapse_latest_references(
     staged_file_path: Path,
     output_path: Path,
-    render_overrides: dict = None
+    render_overrides: dict = None,
+    excluded_refs: set[str] = None
 ) -> str:
     """
     Create a fully baked USDA with all sublayers resolved to filesystem paths.
@@ -651,6 +730,9 @@ def collapse_latest_references(
         output_path: Output path (kept for API compatibility)
         render_overrides: Optional dict mapping Karma attribute names to values
                          e.g. {'karma:global:pathtracedsamples': 128}
+        excluded_refs: Optional set of top-level sublayer refs to drop, from
+                       excluded_staged_refs(). Used to render only part of
+                       the department stack; None composes everything.
 
     Returns:
         USDA file content as string with all leaf layers as absolute paths,
@@ -671,7 +753,9 @@ def collapse_latest_references(
 
     # Recursively collect all leaf layers and instance information
     # This traverses all _staged files and entity URIs, flattening the hierarchy
-    leaf_layers, instances_by_asset = _collect_leaf_layers_and_instances(str(staged_file_path))
+    leaf_layers, instances_by_asset = _collect_leaf_layers_and_instances(
+        str(staged_file_path), excluded_refs=excluded_refs
+    )
 
     if not leaf_layers:
         logging.warning(f"No leaf layers found in {staged_file_path}")

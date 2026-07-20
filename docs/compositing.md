@@ -98,8 +98,10 @@ so their versions interleave:
   render reads — then encodes an MP4 and writes the versioned playblast
   **and** the daily, exactly like the render/composite MP4s above. The
   frame range (rolls included) and fps come from the shot config per
-  shot; department, resolution (720p default) and pool/priority come from
-  the dialog.
+  shot; resolution (720p default) and pool/priority come from the dialog.
+  The **department** comes from the dialog too, and cuts the composed
+  stack the same way a render's does — up to and including the one picked,
+  see [Composition → The department cut](composition.md#the-department-cut).
 
 The two are not interchangeable look-wise: `husk` cannot load Houdini's
 own GL delegate, so a farm playblast is *Storm-shaded*, not a

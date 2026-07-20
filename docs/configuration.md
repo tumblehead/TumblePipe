@@ -92,7 +92,8 @@ same variant list the rest of the pipeline uses (there is no separate
 A project's departments live in `_config/db/departments.json`, one **pool** per
 context (`shots`, `assets`, and `render` for the post-render stages). Each
 carries capability flags — `publishable` (it exports a layer), `renderable` (it
-composes into the render stage), `independent` (a publish upstream of it does
+composes into the render stage, and may be picked as a render's department
+cut), `independent` (a publish upstream of it does
 not propagate into it), `generated` (produced by Python, not a workfile) — plus
 `enabled` and an optional `short` label.
 
@@ -141,10 +142,18 @@ winning. The assignment is a *set*, never an order: it is always resolved by
 filtering the pool, so pipeline order stays the pool's business.
 
 Scoping states what an entity is *expected* to have. It deliberately does not
-reach composition: the staged build and render stage keep iterating the pool
-and skipping departments with no export, so unticking a department in the
-browser cannot change a render, and a department that has work but is not
-assigned still shows in the browser (flagged) rather than vanishing.
+reach composition: the staged build keeps iterating the pool and skipping
+departments with no export, so unticking a department in the browser cannot
+change a render, and a department that has work but is not assigned still
+shows in the browser (flagged) rather than vanishing.
+
+That boundary is about the *checkbox*. It is not a claim that composition
+ignores departments generally — a submission's explicitly chosen render (or
+playblast) department does cut the composed stack, up to and including
+itself; see [Composition → The department cut](composition.md#the-department-cut).
+The distinction is intent: a scoping checkbox is a statement about what an
+entity has, and must not silently black out a render; a department picked in
+the submission dialog is a direct instruction about what to render.
 
 `scripts/verify_entity_departments.py` audits a project: the pool in pipeline
 order, which entities are scoped, assignments naming a department the pool no

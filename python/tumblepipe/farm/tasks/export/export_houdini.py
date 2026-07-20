@@ -85,7 +85,16 @@ def main(
     # Setup AOV pruning
     included_aov_names = _get_aov_names(render_settings_path)
     if included_aov_names is not None:
-        root = input_node.stage().GetPseudoRoot()
+        stage = input_node.stage()
+        if stage is None:
+            # Same disconnected-node case the interactive executor skips over.
+            # A worker has nobody watching, so it fails - but it must say why
+            # rather than dying on None.GetPseudoRoot().
+            return _error(
+                f'Node has no stage input connected: {node_path}. '
+                'Check for a disconnected export node in the workfile.'
+            )
+        root = stage.GetPseudoRoot()
         aov_paths = {
             aov_path.rsplit('/', 1)[1]: aov_path
             for aov_path in util.list_render_vars(root)

@@ -56,6 +56,31 @@ def list_department_names(context: str, include_disabled: bool = True) -> list[s
     ]
 
 
+def department_names_up_to(
+    department_names: list[str],
+    department_name: str,
+    ) -> list[str]:
+    """The pool-order prefix ending at (and including) ``department_name``.
+
+    The inclusive counterpart of the ``names[index + 1:]`` "downstream"
+    slice: this is "everything this department composes on top of, plus
+    itself". Used by the publish task graph and by the render stage, which
+    must agree on what "render up to lighting" means.
+
+    Raises ValueError when the department is not in the list. Callers pass
+    a list that is already filtered (renderable-only, or an entity's own
+    assignment), so a miss means the caller and the pool disagree — and
+    silently composing the whole pool instead is exactly the
+    renders-too-much bug this slice exists to prevent.
+    """
+    if department_name not in department_names:
+        raise ValueError(
+            f"Department '{department_name}' is not in "
+            f"[{', '.join(department_names)}]"
+        )
+    return department_names[:department_names.index(department_name) + 1]
+
+
 def add_department(
     context: str,
     name: str,

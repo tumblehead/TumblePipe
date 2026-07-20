@@ -18,6 +18,12 @@ than the one it superseded:
   5. a finished export shows the version it wrote (and a task that reports no
      version — validation, farm submission — keeps whatever was on disk)
 
+...and that a task with nothing to do skips instead of failing (tumblepipe__rfe
+2026-07-20, the disconnected render-variant export node):
+
+  6. a child raising TaskSkipped is SKIPPED, its siblings still run, and the
+     skip is surfaced in a warning — while a user-unchecked task stays quiet
+
 Run:
     cd scripts
     uv run --python 3.12 --with pyside6 --with qtpy python verify_process_dialog_ux.py
@@ -32,6 +38,7 @@ sys.path.insert(0, str(REPO_ROOT / 'python'))
 
 from qtpy import QtWidgets
 
+from tumblepipe.util.errors import TaskSkipped
 from tumblepipe.util.progress import report_progress
 from tumblepipe.pipe.houdini.ui.process_task import ProcessTask, TaskStatus
 from tumblepipe.pipe.houdini.ui.process_dialog import ProcessDialog
@@ -217,6 +224,71 @@ def main() -> int:
         'group row itself reports no version',
         version_cell(grouped_dialog, group) == '-',
         version_cell(grouped_dialog, group),
+    )
+
+    # --- Case 6: a skipped child must not take its siblings down -----------
+    # A disconnected export node has nothing to publish. It raises TaskSkipped
+    # rather than crashing on a None stage, and unlike a real failure that
+    # must not abort the rest of the department (tumblepipe__rfe 2026-07-20).
+    warnings.clear()
+    ran = []
+
+    def disconnected_body():
+        raise TaskSkipped(
+            "Nothing exported for variant 'fx': the node /stage/export1 "
+            "has no stage input connected."
+        )
+
+    skipped_child = make_task('Export (fx)', 'render', disconnected_body)
+    sibling = make_task('Export (chars)', 'render', lambda: ran.append('chars') or 'v0005')
+    skip_group = make_task(
+        'Export (render)', 'render', None,
+        children=[skipped_child, sibling], task_type='export_group',
+    )
+    skip_dialog = run_dialog([skip_group])
+
+    check(
+        'disconnected child is SKIPPED, not FAILED',
+        skipped_child.status == TaskStatus.SKIPPED,
+        str(skipped_child.status),
+    )
+    check(
+        'the sibling export still ran',
+        ran == ['chars'] and sibling.status == TaskStatus.COMPLETED,
+        f'{ran} / {sibling.status}',
+    )
+    check(
+        'the group as a whole still completes',
+        skip_group.status == TaskStatus.COMPLETED,
+        str(skip_group.status),
+    )
+    check(
+        'the skip reason is kept on the task',
+        'no stage input connected' in (skipped_child.error_message or ''),
+        repr(skipped_child.error_message),
+    )
+    check(
+        'the skip is reported, not swallowed',
+        len(warnings) == 1 and 'no stage input connected' in warnings[0][1],
+        repr(warnings),
+    )
+    check(
+        'no error report — nothing actually failed',
+        skip_dialog._status_label.text().startswith('All tasks completed'),
+        skip_dialog._status_label.text(),
+    )
+
+    # A user-unchecked task is SKIPPED too, but on purpose — it must stay out
+    # of the warning, or every partial publish nags.
+    warnings.clear()
+    unchecked = make_task('Export (fx)', 'render', lambda: None)
+    unchecked.enabled = False
+    kept = make_task('Export (chars)', 'render', lambda: 'v0006')
+    run_dialog([unchecked, kept])
+    check(
+        'a deliberately unchecked task raises no warning',
+        not warnings,
+        repr(warnings),
     )
 
     failed = [name for name, ok, _ in _checks if not ok]

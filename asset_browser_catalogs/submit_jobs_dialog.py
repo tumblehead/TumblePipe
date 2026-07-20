@@ -612,6 +612,10 @@ class SubmitJobsDialog(QDialog):
         form.setSpacing(6)
 
         self._pub_dept = QComboBox()
+        self._pub_dept.setToolTip(
+            "Publishes every department up to and including this one, in "
+            "pipeline order."
+        )
         form.addRow("Department:", self._pub_dept)
 
         self._pub_pool = QLineEdit()
@@ -636,6 +640,11 @@ class SubmitJobsDialog(QDialog):
 
         # Department
         self._rnd_dept = QComboBox()
+        self._rnd_dept.setToolTip(
+            "Renders every department up to and including this one, in "
+            "pipeline order — departments after it are left out of the "
+            "composed stage. Also names the render output."
+        )
         form.addRow("Department:", self._rnd_dept)
 
         # Variants — comma-separated list
@@ -755,6 +764,10 @@ class SubmitJobsDialog(QDialog):
         form.setSpacing(6)
 
         self._pb_dept = QComboBox()
+        self._pb_dept.setToolTip(
+            "Playblasts every department up to and including this one, in "
+            "pipeline order — the same cut the render uses."
+        )
         form.addRow("Department:", self._pb_dept)
 
         self._pb_width = QSpinBox()

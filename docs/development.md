@@ -58,7 +58,8 @@ widget stacks involved are pure qtpy:
   (click-away/Enter/Tab commit, key renames, reverts).
 - `verify_process_dialog_ux.py` — the process dialog's execution UX
   (running-child status label, progress breadcrumbs, the
-  cancel-leaves-steps-unrun warning).
+  cancel-leaves-steps-unrun warning, exported-version reporting, and the
+  skip-vs-fail split described below).
 
 They need a desktop session and a Qt binding:
 
@@ -66,6 +67,45 @@ They need a desktop session and a Qt binding:
 cd scripts
 uv run --python 3.12 --with pyside6 --with qtpy python verify_process_dialog_ux.py
 ```
+
+## Skipping a task instead of failing it
+
+A task callback that finds it has **nothing to do** raises
+`tumblepipe.util.errors.TaskSkipped` instead of returning or blowing up.
+`ProcessExecutor` marks that task SKIPPED with the exception message as its
+reason and carries on — crucially, a skipped *child* does not abort its
+siblings, whereas any other exception fails the whole group. The canonical
+case is an export node left disconnected in the network: its stage is `None`,
+so there is nothing to publish, and the other render variants in the same
+department must still export.
+
+Two rules:
+
+- Raise it only for a genuine no-op. Anything that would publish a wrong or
+  empty layer must still fail loudly — a skip is quieter than a failure, so
+  reaching for it to quieten a real problem buries it.
+- Every skip carries a reason, and reasons are surfaced: after an otherwise
+  clean run the dialog warns with the list of skipped steps. Without that,
+  "All tasks completed" over a silently missing variant reads as success.
+  (Tasks the artist unchecked are SKIPPED too, but carry no reason and stay
+  out of the warning.)
+
+`TaskSkipped` lives in `util.errors`, not in the `ui` package, so lops and
+farm-side code can raise it without importing Qt. Note that the executor
+tests for it *before* resolving `ValidationCancelled`, because that import
+pulls in the validators and `pxr`.
+
+The farm path deliberately does **not** skip: a worker hitting the same
+disconnected node still fails its job, since nobody is watching a farm log to
+notice a skip. It does report it legibly though — `farm/tasks/export/
+export_houdini.py` returns a named error rather than dying on
+`None.GetPseudoRoot()`.
+
+Note that `node.stage()` returning `None` is a recurring shape, and several
+other call sites still dereference it unguarded (`lookdev_studio`,
+`render_stage`, the two `playblast` nodes). They are not part of this fix;
+each needs its own decision about whether a missing stage is a skip or an
+error.
 
 ## Resolver harness
 

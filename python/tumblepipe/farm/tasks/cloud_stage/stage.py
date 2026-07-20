@@ -78,6 +78,7 @@ def main(config):
             first_frame = first_frame,
             last_frame = last_frame,
             variant_name = variant_name,
+            render_department_name = render_department_name,
             render_settings_path = path_str(render_settings_path),
             output_path = path_str(to_windows_path(stage_path))
         ))

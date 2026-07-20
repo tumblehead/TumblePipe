@@ -12,6 +12,7 @@ import sys
 
 from qtpy.QtCore import QObject, Signal, QTimer
 
+from tumblepipe.util.errors import TaskSkipped
 from tumblepipe.util.progress import progress_reporter
 
 from .process_task import ProcessTask, TaskStatus
@@ -45,6 +46,26 @@ def _silence_output():
     finally:
         sys.stdout = old_stdout
         sys.stderr = old_stderr
+
+
+class _NeverRaised(Exception):
+    """Sentinel that no `raise` ever produces - see below."""
+
+
+def _validation_cancelled_type() -> type:
+    """The ValidationCancelled class, or a type nothing is an instance of.
+
+    Resolving it imports the validators, which need `pxr` - unavailable in
+    the headless Qt harness. Falling back to a sentinel keeps an unrelated
+    ImportError from masking the exception actually being handled; a real
+    cancellation can only reach us from code that already imported the
+    dialog, so the fallback never hides one.
+    """
+    try:
+        from .validation_dialog import ValidationCancelled
+    except ImportError:
+        return _NeverRaised
+    return ValidationCancelled
 
 
 def _version_of(result) -> str | None:
@@ -97,6 +118,7 @@ class ProcessExecutor(QObject):
     task_progress = Signal(str, str)     # task_id, progress message
     task_completed = Signal(str)         # task_id
     task_failed = Signal(str, str)       # task_id, error_message
+    task_skipped = Signal(str, str)      # task_id, skip reason
     all_completed = Signal()
 
     def __init__(self, parent=None):
@@ -182,6 +204,7 @@ class ProcessExecutor(QObject):
         if not can_run:
             task.status = TaskStatus.SKIPPED
             task.error_message = skip_reason
+            self.task_skipped.emit(task.id, skip_reason or '')
             self._current_index += 1
             QTimer.singleShot(0, self._execute_next_task)
             return
@@ -201,9 +224,16 @@ class ProcessExecutor(QObject):
             self.task_completed.emit(task.id)
 
         except Exception as e:
+            # TaskSkipped is tested first: resolving ValidationCancelled drags
+            # in the validators (and pxr), so doing that first would turn a
+            # perfectly handled skip into an unrelated ImportError.
+            if isinstance(e, TaskSkipped):
+                # Nothing to do, not a failure - report it and move on
+                task.status = TaskStatus.SKIPPED
+                task.error_message = str(e)
+                self.task_skipped.emit(task.id, str(e))
             # Check if this is a user-initiated cancellation (no error dialog needed)
-            from .validation_dialog import ValidationCancelled
-            if isinstance(e, ValidationCancelled):
+            elif isinstance(e, _validation_cancelled_type()):
                 task.status = TaskStatus.SKIPPED
                 # Don't emit task_failed - this was intentional
             else:
@@ -278,9 +308,17 @@ class ProcessExecutor(QObject):
                 self.task_completed.emit(child.id)
 
             except Exception as e:
+                # Checked before ValidationCancelled is resolved - see
+                # _validation_cancelled_type().
+                if isinstance(e, TaskSkipped):
+                    # This child had nothing to export (e.g. a disconnected
+                    # node). Its siblings are unaffected, so don't re-raise -
+                    # one dead variant must not abort the whole department.
+                    child.status = TaskStatus.SKIPPED
+                    child.error_message = str(e)
+                    self.task_skipped.emit(child.id, str(e))
                 # Check if this is a user-initiated cancellation
-                from .validation_dialog import ValidationCancelled
-                if isinstance(e, ValidationCancelled):
+                elif isinstance(e, _validation_cancelled_type()):
                     child.status = TaskStatus.SKIPPED
                     raise  # Re-raise to skip parent task too
                 else:

@@ -29,7 +29,8 @@ def main(
     render_range: BlockRange,
     variant_name: str,
     render_settings_path: Path,
-    output_path: Path
+    output_path: Path,
+    render_department_name: str | None = None
     ) -> int:
     _headline('Stage Shot')
 
@@ -41,7 +42,8 @@ def main(
         scene_node,
         shot_uri,
         variant_name,
-        render_settings_path
+        render_settings_path,
+        render_department_name = render_department_name
     )
 
     # Setup archive node
@@ -75,6 +77,7 @@ config = {
     'first_frame': 'int',
     'last_frame': 'int',
     'variant_name': 'string',
+    'render_department_name': 'string',
     'render_settings_path': 'path/to/render_settings.json',
     'output_path': 'path/to/stage.usd'
 }
@@ -144,6 +147,10 @@ def cli():
     variant_name = config['variant_name']
     render_settings_path = Path(config['render_settings_path'])
     output_path = Path(config['output_path'])
+    # Optional, not required by _is_valid_config: a job submitted before this
+    # key existed is still in flight on the farm, and it means 'compose every
+    # department' — the behaviour it was submitted under.
+    render_department_name = config.get('render_department_name') or None
 
     # Run main
     return main(
@@ -151,7 +158,8 @@ def cli():
         render_range,
         variant_name,
         render_settings_path,
-        output_path
+        output_path,
+        render_department_name
     )
 
 if __name__ == '__main__':

@@ -17,7 +17,9 @@ Composition semantics (deliberate, see the render/farm divergence notes):
 - ``department='none'`` (explicit sentinel) disables import_shot's
   department/asset exclusion, so the graph does not change shape with the
   ambient workfile context (the farm has none, a debug session has an
-  arbitrary one).
+  arbitrary one). An explicit ``render_department_name`` is a different
+  thing and still honoured: the point is that composition follows what the
+  submitter *asked for*, never what workfile happens to be open.
 - The variant is set explicitly; without it every variant used to compose
   on top of the *default* variant's staged stack.
 - One import_layer per renderable shot department re-applies the current
@@ -40,7 +42,10 @@ from tumblepipe.api import (
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
-from tumblepipe.config.department import list_departments
+from tumblepipe.config.department import (
+    list_departments,
+    department_names_up_to
+)
 from tumblepipe.config.variants import DEFAULT_VARIANT
 from tumblepipe.pipe.paths import latest_export_path
 from tumblepipe.pipe.houdini import util
@@ -116,7 +121,8 @@ def build_render_stage_graph(
     shot_uri: Uri,
     variant_name: str,
     render_settings_path: Path | None = None,
-    name_prefix: str = '__'
+    name_prefix: str = '__',
+    render_department_name: str | None = None
     ):
     """Build the render-stage graph for one variant; return the last node.
 
@@ -124,11 +130,24 @@ def build_render_stage_graph(
     variants can be built side by side in the same network. When
     ``render_settings_path`` is None the render-settings edit and AOV
     pruning stages are skipped (the debug node has no settings JSON).
+
+    ``render_department_name`` cuts the department stack at that department
+    (inclusive) — 'render up to lighting'. None composes every renderable
+    department, which is what a full render wants and what this function
+    always did. The cut takes two steps, because the departments arrive by
+    two routes: the staged stack already contains every department that
+    exported (excluded via import_shot), and the re-apply pass below
+    refreshes them (truncated). Cutting only one leaves the other composing
+    the layers we meant to drop.
     """
 
     included_department_names = [
         d.name for d in list_departments('shots') if d.renderable
     ]
+    if render_department_name is not None:
+        included_department_names = department_names_up_to(
+            included_department_names, render_department_name
+        )
 
     # Import the staged shot build, pinned to the current staged version
     # with no context-dependent exclusions (see module docstring).
@@ -137,6 +156,7 @@ def build_render_stage_graph(
     )
     shot_node.set_shot_uri(shot_uri)
     shot_node.set_department_name('none')
+    shot_node.set_exclude_downstream_of(render_department_name)
     shot_node.set_variant_name(variant_name)
     shot_node.set_version_name('current')
     shot_node.set_include_procedurals(True)

@@ -121,10 +121,19 @@ def _reload_stale_entity_layers() -> None:
         if _norm(resolved) == _norm(layer.realPath or ""):
             continue
         # Re-resolve the identifier so the layer points at the new file,
-        # then re-read the contents from it. force=True: the layer's own
+        # then re-read the contents from it. force: the layer's own
         # dirtiness bookkeeping is about the OLD file and must not veto
         # the reload.
+        #
+        # UpdateAssetInfo() re-resolves and can trigger change processing
+        # that drops the layer, so the handle we validated above can be
+        # expired by the time we get here — re-check before Reload() or it
+        # raises Boost.Python.ArgumentError ("Layer.Reload(Layer) did not
+        # match ... Reload(SdfLayer {lvalue}, bool force=False)": the null
+        # self, not the arg, is what fails to bind).
         layer.UpdateAssetInfo()
+        if not layer:
+            continue
         layer.Reload(force=True)
 
 

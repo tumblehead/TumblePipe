@@ -10,6 +10,7 @@ import hou
 logger = logging.getLogger(__name__)
 
 from tumblepipe.api import get_user_name, path_str, local_path, api
+from tumblepipe.util.errors import TaskSkipped
 from tumblepipe.util.progress import report_progress
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.variants import list_variants
@@ -718,7 +719,16 @@ class ExportLayer(EntityNode):
         version_name = version_path.name
 
         # Prepare for stage scrape
-        root = stage_node.stage().GetPseudoRoot()
+        stage = stage_node.stage() if stage_node is not None else None
+        if stage is None:
+            # Usually a node left disconnected in the network. There is
+            # nothing to publish, so skip this one and let the other exports
+            # in the group run - it used to crash on None.GetPseudoRoot().
+            raise TaskSkipped(
+                f"Nothing exported for variant '{variant_name}': the node "
+                f"{self.path()} has no stage input connected."
+            )
+        root = stage.GetPseudoRoot()
 
         # Check if we're exporting a shot (to add shot dept entry to inputs)
         is_shot_export = str(entity_uri).startswith('entity:/shots/')

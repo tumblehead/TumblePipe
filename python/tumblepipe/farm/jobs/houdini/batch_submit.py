@@ -18,7 +18,7 @@ from tumblepipe.api import (
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import store_json, load_json, store_text
 from tumblepipe.pipe.context import get_aov_names_from_context, aggregate_aov_names_from_inputs
-from tumblepipe.config.department import list_departments
+from tumblepipe.config.department import list_departments, department_names_up_to
 from tumblepipe.apps.deadline import (
     Deadline,
     Batch
@@ -27,7 +27,7 @@ from tumblepipe.pipe.paths import (
     latest_export_path,
     get_latest_staged_file_path,
 )
-from tumblepipe.pipe.usd import collapse_latest_references
+from tumblepipe.pipe.usd import collapse_latest_references, excluded_staged_refs
 from tumblepipe.config.timeline import get_fps, get_frame_range
 import tumblepipe.farm.tasks.stage.task as stage_task
 import tumblepipe.farm.jobs.houdini.render.job as render_job
@@ -239,6 +239,7 @@ def submit_entity_batch(config: dict) -> list[str]:
     # Get departments list
     departments = list_departments(entity_context)
     department_names = [d.name for d in departments]
+    renderable_names = [d.name for d in departments if d.renderable]
 
     # Validate publish department
     if do_publish:
@@ -247,19 +248,51 @@ def submit_entity_batch(config: dict) -> list[str]:
         if pub_department not in department_names:
             raise BatchSubmitError(f"Invalid publish department: {pub_department}")
 
-    # Validate render department
+    # Validate render department. The render composes the pool prefix ending
+    # at this department (see render_department_names below), so it has to be
+    # renderable as well as real — a non-renderable pick has no layer to end
+    # on, and silently composing the whole pool is the bug this prevents.
+    render_department_names = []
     if do_render:
         if render_department is None:
             raise BatchSubmitError("Render department not specified")
         if render_department not in department_names:
             raise BatchSubmitError(f"Invalid render department: {render_department}")
+        if render_department not in renderable_names:
+            raise BatchSubmitError(
+                f"Render department '{render_department}' is not renderable. "
+                f"Renderable departments: {', '.join(renderable_names)}"
+            )
+        # Departments up to and including the selection — the render mirrors
+        # the publish slice above, so 'render lighting' means the same cut of
+        # the pipeline in both sections of the dialog.
+        #
+        # Sliced over the whole pool, not just the renderable ones: the cut is
+        # by pipeline position, and a non-renderable upstream department
+        # (tracking, notes) composes into the staged build today. Slicing the
+        # renderable-only list would drop those too, which is a second,
+        # unasked-for behaviour change.
+        render_department_names = department_names_up_to(
+            department_names, render_department
+        )
 
-    # Validate playblast department
+    # Validate playblast department. Same cut as the render: a playblast
+    # previews the same staged stage husk renders, so 'playblast lighting'
+    # has to mean the same slice of the pipeline that 'render lighting' does.
+    pb_department_names = []
     if do_playblast:
         if pb_department is None:
             raise BatchSubmitError("Playblast department not specified")
         if pb_department not in department_names:
             raise BatchSubmitError(f"Invalid playblast department: {pb_department}")
+        if pb_department not in renderable_names:
+            raise BatchSubmitError(
+                f"Playblast department '{pb_department}' is not renderable. "
+                f"Renderable departments: {', '.join(renderable_names)}"
+            )
+        pb_department_names = department_names_up_to(
+            department_names, pb_department
+        )
 
     # Connect to Deadline
     try:
@@ -321,7 +354,7 @@ def submit_entity_batch(config: dict) -> list[str]:
         # Add publish jobs
         if do_publish:
             # Get departments up to and including publish target
-            pub_dept_names = department_names[:department_names.index(pub_department) + 1]
+            pub_dept_names = department_names_up_to(department_names, pub_department)
 
             prev_job_name = None
             # Use 'default' variant for batch publish jobs
@@ -379,12 +412,22 @@ def submit_entity_batch(config: dict) -> list[str]:
                             "Publish the entity first to create staged files."
                         )
 
+                    # Drop the department layers past the render cut. The
+                    # staged build composes every department that exported, so
+                    # this is what makes 'render up to lighting' mean it.
+                    excluded_refs = excluded_staged_refs(
+                        latest_staged_path,
+                        render_department_names,
+                        department_names
+                    )
+
                     # Create collapsed USD for this variant
                     collapsed_stage_path = temp_path / f'collapsed_stage_{variant_name}.usda'
                     collapsed_content = collapse_latest_references(
                         latest_staged_path,
                         collapsed_stage_path,
-                        render_overrides
+                        render_overrides,
+                        excluded_refs=excluded_refs
                     )
                     store_text(collapsed_stage_path, collapsed_content)
                     relative_collapsed_path = collapsed_stage_path.relative_to(temp_path)
@@ -503,11 +546,22 @@ def submit_entity_batch(config: dict) -> list[str]:
                     "Publish the shot first to create staged files."
                 )
 
+            # Drop the department layers past the playblast cut, exactly as
+            # the render does — the staged build carries every department
+            # that exported, so this is what makes the selection mean
+            # anything.
+            pb_excluded_refs = excluded_staged_refs(
+                latest_staged_path,
+                pb_department_names,
+                department_names
+            )
+
             collapsed_playblast_path = temp_path / 'collapsed_playblast.usda'
             collapsed_content = collapse_latest_references(
                 latest_staged_path,
                 collapsed_playblast_path,
-                {}
+                {},
+                excluded_refs=pb_excluded_refs
             )
             store_text(collapsed_playblast_path, collapsed_content)
             relative_playblast_input = collapsed_playblast_path.relative_to(temp_path)

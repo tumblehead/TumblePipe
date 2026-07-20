@@ -393,12 +393,46 @@ A submission takes one of two paths, chosen by the `standalone` setting.
 **Direct render (`standalone=False`) is the default**; the stage task
 below runs only when it is set.
 
+### The department cut
+
+Both paths compose **the departments up to and including the one selected
+in the submission**, in pool order — picking `lighting` renders layout
+through lighting and leaves everything after it out. The Playblast section
+cuts the same way, and it is the same slice the Publish section has always
+used, so one department name means one cut of the pipeline across the whole
+dialog.
+
+The cut is by pipeline *position*, over the whole pool: a non-renderable
+upstream department (tracking, notes) still composes as it always did. A
+non-renderable department cannot be *selected*, though — there would be no
+layer to end on — and `batch_submit` refuses the submission rather than
+quietly rendering everything.
+
+Because a staged build contains every department that exported, the cut is
+subtractive on both paths, and each path has to apply it in two places or
+not at all:
+
+- direct render drops the excluded sublayer refs before flattening
+  (`pipe.usd.excluded_staged_refs`) — both the shot's own department
+  layers and the assets those departments introduced, whose provenance
+  comes from the staged `context.json`;
+- the stage task both truncates its department re-apply pass and tells
+  `import_shot` to exclude what is downstream of the cut
+  (`exclude_downstream_of`). Truncating only the re-apply pass would look
+  right while the staged stack silently kept composing the dropped
+  departments.
+
+Note the off-by-one against the workfile rule: a *workfile* excludes its
+own department (it authors that layer), but a render is *of* its
+department, so the selected one is always kept.
+
 ### Direct render (default): the static flatten
 
 `batch_submit` collapses the shot's latest staged build into a single
 `collapsed_stage_<variant>.usda` at submission time
 (`pipe.usd.collapse_latest_references`), and husk renders that. It walks
-the staged file's sublayers recursively, resolves every `entity:` URI to
+the staged file's sublayers recursively — minus the ones past the
+department cut above — resolves every `entity:` URI to
 an absolute filesystem path, and emits them as one flat sublayer stack —
 so the render needs no resolver at all. The instance defs described under
 *Nested assets* are re-synthesized into this file's **root** layer, with
@@ -442,9 +476,10 @@ composes, weakest to strongest:
    hours apart on different workers.)
 2. the root default prims (`config:/usd/root_default_prims.usda`,
    render settings and RenderVar prims),
-3. one import-layer per renderable shot department at its `current`
-   export, so a render picks up department publishes made since the
-   last shot build without a rebuild. A department with no export
+3. one import-layer per renderable shot department **up to the
+   department cut** at its `current` export, so a render picks up
+   department publishes made since the last shot build without a
+   rebuild. A department with no export
    under the render's variant re-applies its default-variant export —
    the same fallback the staged build uses — so this pass refreshes
    the layer the staged stack actually contains,
@@ -458,10 +493,13 @@ several of them would just render the strongest one for every layer.
 
 To preview what this path renders, drop a `th::render_debug` node and
 pick the shot and variant; its dive target contains the same graph the
-stage task exports. It previews the stage task specifically — a default
-(direct-render) submission renders the flattened stage above instead, so
-inspect that submission's `collapsed_stage_<variant>.usda` in the job's
-`data/` directory to see what husk actually got.
+stage task exports. Two caveats on "the same graph": it previews the
+stage task specifically — a default (direct-render) submission renders
+the flattened stage above instead — and it has no department parm, so it
+always previews the **full** department stack, not a cut one. To see what
+husk actually got for a given submission, inspect that job's
+`collapsed_stage_<variant>.usda` (direct) or `stage_<variant>.usd`
+(standalone) in its `data/` directory.
 
 ## Performance note
 

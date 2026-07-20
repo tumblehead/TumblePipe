@@ -77,7 +77,8 @@ def main(config):
             settings = dict(
                 first_frame = first_frame,
                 last_frame = last_frame,
-                render_settings_path = path_str(render_settings_path)
+                render_settings_path = path_str(render_settings_path),
+                render_department_name = render_department_name
             ),
             output_paths = {
                 variant_name: path_str(to_windows_path(stage_path))
