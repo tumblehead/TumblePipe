@@ -426,6 +426,14 @@ Note the off-by-one against the workfile rule: a *workfile* excludes its
 own department (it authors that layer), but a render is *of* its
 department, so the selected one is always kept.
 
+The cut is a slice of the *pool*, so it only ever applies to refs whose
+`dept` is a pool member. The staged build also sublayers the shot's root
+layer as `dept=root`, a pseudo-department belonging to no pool — it is
+outside the cut's domain, not past it, and always survives. Reading it as
+past the cut is what dropped `root_default_prims.usda` (render settings,
+RenderProduct, RenderVars, `render_camera`) from every v1.38.0
+submission.
+
 ### Direct render (default): the static flatten
 
 `batch_submit` collapses the shot's latest staged build into a single

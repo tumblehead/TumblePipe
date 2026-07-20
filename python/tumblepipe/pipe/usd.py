@@ -656,6 +656,10 @@ def excluded_staged_refs(
       no ``dept`` of their own — their provenance lives in the staged
       ``context.json`` ``inputs``, the same source ``import_shot`` uses.
 
+    A ref whose ``dept`` is not in ``department_order`` at all is left
+    alone: the cut slices the pool, so a name outside the pool is not
+    "past" it. That is what keeps the root layer (``dept='root'``).
+
     Only the shot's own staged file is filtered. Departments nested deeper
     (an asset's lookdev, say) come from the assets pool and are unrelated
     to the shot's cut, even where the two pools share a name.
@@ -667,10 +671,20 @@ def excluded_staged_refs(
     parsed = {ref: parse_entity_sublayer_uri(ref) for ref in refs}
 
     # The shot's own department layers past the cut
+    order = set(department_order)
     for ref, parsed_ref in parsed.items():
         if parsed_ref is None:
             continue
         if parsed_ref.department is None:
+            continue
+        # Outside the pool entirely, so outside the cut's domain. The
+        # staged build sublayers the shot's root layer as dept='root',
+        # one of config.department.RESERVED_NAMES — pseudo-departments
+        # that are never registered in a pool. It carries the render
+        # settings, RenderVars and camera, so cutting it left husk with a
+        # stage that had nothing to render into. Testing pool membership
+        # rather than the reserved list keeps every such name safe.
+        if parsed_ref.department not in order:
             continue
         if parsed_ref.department not in included:
             excluded.add(ref)
