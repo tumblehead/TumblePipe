@@ -36,7 +36,14 @@ def from_jpg(
     )))
 
     # Find missing frames
+    # frame_count is the number of *rendered* frames (step-aware) and is only
+    # used for the missing-frame check below. The gap-fill logic further down
+    # expands the JPGs into a contiguous 1-per-frame sequence spanning
+    # first_frame..last_frame, so the encoder must be told to emit the full
+    # contiguous span, not the stepped count (otherwise a step>1 render yields
+    # an mp4 truncated to the front 1/step_size of the range).
     frame_count = len(frame_range)
+    span_frame_count = frame_range.last_frame - frame_range.first_frame + 1
     available_frame_indices = {
         int(frame.name.split('.')[-2])
         for frame in input_frames
@@ -100,7 +107,7 @@ def from_jpg(
             '-pattern_type', 'sequence',
             '-start_number', str(frame_range.first_frame),
             '-i', path_str(local_path(temp_framestack_path)),
-            '-frames:v', str(frame_count),
+            '-frames:v', str(span_frame_count),
             '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
             *_H264_ENCODE,
             '-pix_fmt', 'yuv420p',
