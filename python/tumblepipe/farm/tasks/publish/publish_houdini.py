@@ -79,9 +79,26 @@ def _update():
         ns.list_by_node_type('import_rigs', 'Sop')
     ))
 
+    # A publish always composes against the newest upstream: every import is
+    # forced to its latest available version, overriding any per-node or
+    # per-row version pin the artist set while working. Artist pins are a
+    # working-context convenience (previewing an older dependency); they must
+    # not leak into a published department. Render determinism does not rely on
+    # these node pins — the render/stage builder (render_stage.py) rebuilds a
+    # fresh graph and never reads them. Without this, only import_layer was
+    # forced to latest while shot/assets/rigs honoured pins — an inconsistency
+    # that let a pinned rig/asset publish against a stale version.
+    def _force_rows_latest(node, count_parm):
+        # Multi-row import nodes (import_assets, import_rigs) carry a per-row
+        # version parm; force every row to 'latest' before execute.
+        count = node.parm(count_parm).eval()
+        for index in range(1, count + 1):
+            node.set_version_name(index, 'latest')
+
     # Import latest shot stages
     for import_shot_node in import_shot_nodes:
         if not import_shot_node.is_valid(): continue
+        import_shot_node.set_version_name('latest')
         import_shot_node.execute()
         print(f'Updated {import_shot_node.path()}')
 
@@ -94,10 +111,12 @@ def _update():
     # Import latest assets
     for import_assets_node in import_assets_nodes:
         if not import_assets_node.is_valid(): continue
+        _force_rows_latest(import_assets_node, 'asset_imports')
         import_assets_node.execute()
         print(f'Updated {import_assets_node.path()}')
 
-    # Import latest layers (unified)
+    # Import latest layers (unified). import_layer has no 'latest' sentinel;
+    # its 'current' resolves to the newest staged version.
     for import_node in import_layer_nodes:
         if not import_node.is_valid(): continue
         import_node.set_version_name('current')
@@ -107,6 +126,7 @@ def _update():
     # Import latest rigs
     for import_node in import_rigs_nodes:
         if not import_node.is_valid(): continue
+        _force_rows_latest(import_node, 'rig_imports')
         import_node.execute()
         print(f'Updated {import_node.path()}')
 

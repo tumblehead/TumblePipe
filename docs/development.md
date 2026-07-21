@@ -487,7 +487,7 @@ The `filecache` LOP tracks prim existence inherently, so the
 correct; the plain `usd_rop` export paths were not. `trackprimexistence`
 is therefore baked **on** in the `export_layer` and `export_asset` HDAs'
 internal `usd_rop` (their expanded `Contents.dir/Contents.mime` `.parm`
-line) and `set(1)` on the `usd_rop` in `farm/jobs/houdini/update`.
+line).
 
 Editing this on an HDA means editing the definition, not the driver: the
 internal ROP is a locked asset node, so `native.node('export').parm(...)`

@@ -40,7 +40,7 @@ def _build_animate_dive(animate_node, rig_imports: dict):
 
     # Import the rigs
     rigs_node = import_rigs.create(inner_animate_node, 'import_rigs')
-    rig_imports_list = [(uri, 'default', count) for uri, count in rig_imports.items()]
+    rig_imports_list = [(uri, 'default', 'latest', count) for uri, count in rig_imports.items()]
     rigs_node.set_rig_imports(rig_imports_list)
     rigs_node.execute()
 

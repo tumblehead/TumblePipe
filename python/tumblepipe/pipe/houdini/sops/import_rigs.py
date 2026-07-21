@@ -95,16 +95,17 @@ class ImportRigs(ns.Node):
         """Set variant name for this index."""
         self.parm(f'variant{index}').set(variant_name)
 
-    def get_rig_imports(self) -> list[tuple[Uri, str, int]]:
-        """Returns list of (asset_uri, variant, instances) for all rig imports."""
+    def get_rig_imports(self) -> list[tuple[Uri, str, str, int]]:
+        """Returns list of (asset_uri, variant, version, instances) for all rig imports."""
         rig_imports = []
         count = self.parm('rig_imports').eval()
         for index in range(1, count + 1):
             asset_uri = self.get_entity_uri(index)
             if asset_uri is None: continue
             variant = self.get_variant_name(index)
+            version = self.get_version_name(index)
             instances = self.get_instances(index)
-            rig_imports.append((asset_uri, variant, instances))
+            rig_imports.append((asset_uri, variant, version, instances))
         return rig_imports
 
     def set_entity_uri(self, index: int, asset_uri: Uri):
@@ -155,15 +156,16 @@ class ImportRigs(ns.Node):
                 version_name = actual_versions[-1]
         self.parm(f'version_label{index}').set(version_name)
 
-    def set_rig_imports(self, rig_imports: list[tuple[Uri, str, int]]):
-        """Set rig imports from list of (asset_uri, variant, instances) tuples."""
+    def set_rig_imports(self, rig_imports: list[tuple[Uri, str, str, int]]):
+        """Set rig imports from list of (asset_uri, variant, version, instances) tuples."""
         self.parm('rig_imports').set(0)
-        for asset_uri, variant, instances in rig_imports:
+        for asset_uri, variant, version, instances in rig_imports:
             if instances == 0: continue
             index = self.parm('rig_imports').eval() + 1
             self.parm('rig_imports').set(index)
             self.set_entity_uri(index, asset_uri)
             self.set_variant_name(index, variant)
+            self.set_version_name(index, version)
             self.set_instances(index, instances)
     
     def execute(self):
@@ -183,7 +185,10 @@ class ImportRigs(ns.Node):
         rig_imports = self.get_rig_imports()
 
         # Check if any rigs to import
-        active_imports = [(uri, var, inst) for uri, var, inst in rig_imports if inst > 0]
+        active_imports = [
+            (uri, var, ver, inst)
+            for uri, var, ver, inst in rig_imports if inst > 0
+        ]
         if not active_imports:
             ns.set_node_comment(context, "Bypassed: No rigs configured")
             context.bypass(True)
@@ -191,7 +196,7 @@ class ImportRigs(ns.Node):
 
         # Build asset nodes
         prev_node = None
-        for asset_uri, variant, instances in rig_imports:
+        for asset_uri, variant, version, instances in rig_imports:
             if instances == 0: continue
 
             # Create node name from URI segments (include variant for uniqueness)
@@ -203,7 +208,11 @@ class ImportRigs(ns.Node):
             rig_node.set_entity_uri(asset_uri)
             rig_node.parm('variant').set(variant)  # Set variant on import_rig node
             rig_node.set_instances(instances)
-            rig_node.latest()
+            # Honour the selected version; 'latest' auto-resolves on execute.
+            if version == 'latest':
+                rig_node.latest()
+            else:
+                rig_node.set_version_name(version)
             rig_node.execute()
 
             # Connect the rig
