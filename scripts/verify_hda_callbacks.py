@@ -18,7 +18,7 @@ callback is a string, so nothing resolves it until an artist clicks and gets
 
 That is exactly how th::cache (SOP *and* LOP) shipped its Entity button broken
 in 93e4dc1, which touched only the two DialogScripts. Nothing else catches it:
-CI's validate-hdas does not resolve callbacks, and a stale otls/<name>.hda can
+no lint or build gate resolves callbacks, and a stale otls/<name>.hda can
 hide a fix until compile-hdas runs.
 
 Both directions of the shim are checked:

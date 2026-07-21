@@ -48,6 +48,42 @@ PYTHONIOENCODING=utf-8 uv run minigun --test-dir . --time-budget 30
 `tests/README.md` covers writing new properties and the design of the
 project-fixture bootstrap (`_harness.py`).
 
+## Linting
+
+Python is linted with [ruff](https://docs.astral.sh/ruff/) under the
+`E9,F` selection — syntax errors plus the full Pyflakes set (undefined
+names, unused imports, f-strings without placeholders). That net is what
+catches a shipped-broken import or a stray `f''` before it reaches a
+release. Run it over the same trees the gate covers:
+
+```bash
+uvx ruff check python/ asset_browser_catalogs/ .ci/ python3.11libs/ \
+  python3.13libs/ viewer_states/ scripts/ tests/ tools/ --select E9,F
+```
+
+This runs automatically as a **pre-commit hook** (`.githooks/pre-commit`),
+which blocks a commit that fails the lint. `core.hooksPath` is a local git
+setting, so enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The same hook also runs `.ci/quality_gates/check_forbidden_files.py` over
+the **staged** `*.md` files, blocking a commit that adds an AI-generated
+report/summary (matched by content markers, not filename). It checks only
+staged files on purpose — an untracked scratch report in the working tree
+must not block an unrelated commit. Run with no arguments (as CI/preflight
+does) it scans the whole tree instead.
+
+The hook skips (with a warning) if `uv`/`ruff` isn't on `PATH` rather than
+blocking, and `git commit --no-verify` bypasses it for a single commit.
+The release *tag* pipeline no longer lints — it only builds and publishes
+(`.woodpecker/`) — so this hook, and a local run before tagging, are the
+gate. The binary-HDA check (`check_binary_hdas.py`) is deliberately *not*
+in the hook: it flags binary `otls/*.hda`, which are gitignored local
+build artifacts, so it only makes sense from a clean clone.
+
 ## Qt widget harnesses
 
 UI behaviour that pins a fixed bug lives in standalone harnesses under
@@ -239,8 +275,8 @@ backing function and both ends look finished while the button is dead: a
 callback is a *string*, so nothing resolves it until an artist clicks and gets
 `AttributeError: 'module' object has no attribute 'select'`. That is how
 `th::cache` shipped its Entity button broken on both the SOP and the LOP
-(93e4dc1 touched only the two DialogScripts). CI's `validate-hdas` does not
-resolve callbacks, so nothing else catches this.
+(93e4dc1 touched only the two DialogScripts). No lint or build gate resolves
+callbacks, so nothing else catches this — run this audit after editing one.
 
 It checks both directions of the shim:
 
@@ -488,8 +524,8 @@ Two rules keep these importable in the environments they run in:
 
 The farm modules cannot be run-imported outside the farm (Deadline,
 `tomli_w`), so gate changes with a compile + lint pass instead. Use the
-same selection CI enforces (`.woodpecker/ci.yml` runs it over every
-Python tree on tag):
+same selection the pre-commit hook enforces (see *Linting* below — the
+`E9,F` set over every Python tree):
 
 ```bash
 python -m compileall -q python/tumblepipe/farm/

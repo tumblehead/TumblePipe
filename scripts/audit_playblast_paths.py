@@ -111,7 +111,7 @@ def classify(root, seqs, variants, valid_depts):
     for entry in sorted(root.iterdir()):
         if entry.name != 'shots':
             findings.append(Finding(entry, 'unknown_root',
-                                    f'unexpected top-level entry (expected only shots/)'))
+                                    'unexpected top-level entry (expected only shots/)'))
             continue
         # ---- shots: children are sequences ----
         for seq_dir in sorted(entry.iterdir()):

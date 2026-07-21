@@ -33,7 +33,7 @@ Editing rules learned the hard way:
   is the one nobody edits. This is how `th::cache`'s Entity button
   shipped dead in **both** the SOP and the LOP (93e4dc1 touched only the
   two DialogScripts). Nothing static catches it: the callback is a
-  string, `validate-hdas` never resolves it, and the failure waits for a
+  string, no lint or build gate resolves it, and the failure waits for a
   click. Check with `hou.nodeType(cat, name).hdaModule()` — it needs no
   node instantiated — and `hasattr` every name your parms reference.
   Beware two directions of the same bug: the shim may be missing the
@@ -52,9 +52,9 @@ Editing rules learned the hard way:
   works for an instance with that exact name and location — every other
   instance's menu silently errors. Use the instance-relative form
   (`dive/layout_assets`).
-- CI's `validate-hdas` step does NOT parse channel expressions — a
-  syntactically broken `.chn` sails through the build. The only real
-  gate is loading a scene that contains the node in a live Houdini.
+- No build or lint gate parses channel expressions — a syntactically
+  broken `.chn` sails through. The only real gate is loading a scene
+  that contains the node in a live Houdini.
 - **`EditableNodes` must have no trailing newline.** The section is a
   bare list of node paths (`lopnet/import_asset`). A trailing `\n` makes
   Houdini fail to match the path, and the node is silently *not* editable
