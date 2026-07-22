@@ -1,5 +1,6 @@
 """Process dialog for executing publish and other workflow tasks"""
 
+import logging
 from typing import Callable
 
 from qtpy import QtWidgets
@@ -8,6 +9,8 @@ from qtpy.QtCore import Qt, Signal
 from .process_task import ProcessTask, ProcessTaskTreeModel, TaskStatus, TASK_ROLE, IS_ENTITY_ROLE, ENTITY_URI_ROLE
 from .process_executor import ProcessExecutor
 from .helpers import has_staged_export
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessDialog(QtWidgets.QDialog):
@@ -429,6 +432,13 @@ class ProcessDialog(QtWidgets.QDialog):
         # (cancel) - dependency skips and disabled tasks are marked SKIPPED.
         unrun = [t for t in tasks if t.enabled and t.status == TaskStatus.PENDING]
 
+        # Float this session's already-composed entity: layers onto whatever
+        # was just published, so an import node in the same scene shows the new
+        # version without a Houdini restart. Only a *local* publish writes a
+        # version into this process' filesystem view (farm submissions write
+        # nothing here), so this is gated on a version having actually landed.
+        self._refresh_session_after_local_publish(tasks)
+
         # Update status
         if failed:
             self._status_label.setText(
@@ -462,6 +472,44 @@ class ProcessDialog(QtWidgets.QDialog):
             'failed': [(t.id, t.error_message) for t in failed],
             'skipped': [t.id for t in skipped],
         })
+
+    def _refresh_session_after_local_publish(self, tasks: list) -> None:
+        """Re-resolve loaded entity: layers if a local publish wrote a version.
+
+        USD's Sdf layer registry hands back the originally-opened layer for an
+        identifier for the life of the process, so a version-less ``entity:``
+        arc an import node composed never re-resolves on its own - the "restart
+        Houdini to see my own publish" complaint. ``resolver.refresh_context()``
+        walks the loaded entity: layers and reloads the stale ones so every
+        composed stage floats to the newest version.
+
+        Gated on a version actually having been written locally: farm
+        submissions report no version (they write nothing into this process'
+        filesystem), and a run where every task was skipped/failed has nothing
+        to float. Best-effort - a refresh failure must never turn a completed
+        publish into an error, so it is logged and swallowed.
+        """
+        def _wrote_version(ts) -> bool:
+            for task in ts:
+                if task.status == TaskStatus.COMPLETED and task.exported_version:
+                    return True
+                if task.children and _wrote_version(task.children):
+                    return True
+            return False
+
+        if not _wrote_version(tasks):
+            return
+
+        try:
+            from tumblepipe import resolver
+            resolver.refresh_context()
+        except Exception:
+            logger.warning(
+                "Post-publish session refresh failed; new version(s) are on "
+                "disk but this scene's imports may still show the old version "
+                "until reopened or Updated.",
+                exc_info=True,
+            )
 
     def _explained_skips(self) -> list:
         """Skipped tasks that gave a reason, children included.

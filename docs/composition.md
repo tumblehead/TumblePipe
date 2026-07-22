@@ -387,6 +387,16 @@ prompt — so a lighter can pull a mid-session model/anim publish without
 reopening (or restarting) anything. **Reload** remains the heavier
 variant that also reverts the scene to its on-disk state.
 
+Finishing a **local publish** refreshes the same way, so the artist who
+just published sees it in their *own* scene without restarting: when the
+publish dialog (`ProcessDialog`) completes and at least one task wrote a
+new version locally, it runs `refresh_context()` once over the batch, so
+an import node in the same scene composing that entity floats to the new
+version. This is the publisher-side, same-session counterpart to
+**Update** — it cannot reach a *different* artist's open session (the
+layer registry is per-process; that stays the consumer's Update / on-open
+job). Farm submissions write nothing locally, so they trigger no refresh.
+
 ## Render staging
 
 A submission takes one of two paths, chosen by the `standalone` setting.
