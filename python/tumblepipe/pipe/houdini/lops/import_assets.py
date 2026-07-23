@@ -481,7 +481,16 @@ class ImportAssets(EntityNode):
                 _connect(asset_node.native(), merge_node)
                 continue
 
-            # Duplicate the asset (metadata in customData travels with the prim)
+            # Duplicate the asset (metadata in customData travels with the prim).
+            # Mark the copies instanceable only when the asset is NOT animatable.
+            # Instanceable copies share a single prototype and cannot carry
+            # per-instance overrides (USD forbids editing descendants beneath an
+            # instance), so an animatable character imported this way would lose
+            # its individual animation and read as default pose. This mirrors
+            # import_shot.py, which sets the same makeinstances flag from the same
+            # 'animatable' property with the same default — keep the two in step.
+            properties = api.config.get_properties(asset_uri)
+            animatable = properties.get('animatable', False) if properties else False
             duplicate_node = dive_node.createNode(
                 'duplicate',
                 f'{uri_name}_duplicate'
@@ -491,6 +500,7 @@ class ImportAssets(EntityNode):
             duplicate_node.parm('duplicatename').set(
                 '`@srcname``@copy`'
             )
+            duplicate_node.parm('makeinstances').set(int(not animatable))
             _connect(asset_node.native(), duplicate_node)
             _connect(duplicate_node, merge_node)
 

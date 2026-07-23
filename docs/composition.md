@@ -265,6 +265,37 @@ derivation cannot see it — which is exactly why it must not override.
 `scripts/verify_tracked_asset_counts.py` sweeps a project for staged
 counts that drifted from the department contexts.
 
+### Instanceable copies and animatable assets
+
+The Duplicate LOP that builds `{name}0..{name}N-1` marks the copies
+**instanceable** unless the asset is animatable. Instanceable copies
+share a single prototype, which is what makes a 30-haybale set cheap —
+but USD forbids overriding prims *beneath* an instance, so a character
+duplicated this way cannot carry per-copy animation and every instance
+reads as the default pose. The copies are therefore instanceable only
+when the asset is not time-dependent:
+
+```
+duplicate.parm('makeinstances').set(int(not animatable))
+```
+
+`animatable` comes from the entity's config properties
+(`api.config.get_properties`), defaulting to **False** (an unset asset
+is treated as static, hence instanceable). Both build sites read the
+same property with the same default — `import_shot` (GUI + farm stage
+graph) and `import_assets` (workfile import) — so a marked-animatable
+character composes its individual animation identically in either. Set
+`animatable: true` at the character schema level so every entity under
+it inherits it.
+
+Non-instanceable here means a plain *reference* to the base, not a
+flattened **Copy** (`reference_type = copy`). Both let per-copy
+animation compose in the live session, but only the reference survives
+export: a Copy severs the arc to the published asset, so its data — the
+animation included — lives below the layerbreak, is dropped on export,
+and re-imports as a default-pose reference. The instanceable toggle is
+the correct lever; Copy is a footgun.
+
 ## Dropped-metadata guard
 
 Because a consumer only sees a tracked asset through its `customData`,
