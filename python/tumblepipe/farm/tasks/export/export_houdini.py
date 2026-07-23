@@ -11,20 +11,11 @@ from tumblepipe.util.io import load_json
 from tumblepipe.pipe.houdini.render_stage import get_render_settings_script as _get_render_settings_script
 from tumblepipe.config.timeline import BlockRange, get_fps
 from tumblepipe.pipe.houdini import util
-from tumblepipe.apps.houdini import stitch_usd_directories
-
-
-def _calculate_chunks(first_frame: int, last_frame: int, batch_size: int) -> list[tuple[int, int]]:
-    """Split frame range into chunks of batch_size."""
-    if batch_size <= 0:
-        return [(first_frame, last_frame)]
-    chunks = []
-    current = first_frame
-    while current <= last_frame:
-        chunk_end = min(current + batch_size - 1, last_frame)
-        chunks.append((current, chunk_end))
-        current = chunk_end + 1
-    return chunks
+from tumblepipe.apps.houdini import (
+    stitch_usd_directories,
+    calculate_chunks,
+    flatten_sidecar_directories,
+)
 
 
 def _headline(title):
@@ -131,7 +122,7 @@ def main(
     if batch_size > 0:
         # Batched export: export chunks to separate directories then stitch
         import shutil
-        chunks = _calculate_chunks(render_range.first_frame, render_range.last_frame, batch_size)
+        chunks = calculate_chunks(render_range.first_frame, render_range.last_frame, batch_size)
         output_file_name = output_path.name  # e.g., "stage.usd"
         output_dir = output_path.parent
 
@@ -154,6 +145,11 @@ def main(
 
             if not chunk_main_path.exists():
                 return _error(f'Failed to export USD chunk: {chunk_main_path}')
+
+            # Flatten .usd.textures sidecars before stitching, matching the
+            # interactive exporter, so the stitch carries textures through to
+            # the output beside the main layer instead of dropping them.
+            flatten_sidecar_directories(chunk_dir)
 
             print(f'Exported chunk: {chunk_dir}')
             chunk_dirs.append(chunk_dir)

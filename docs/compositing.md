@@ -16,6 +16,27 @@ only ever selects complete versions, so a comp never picks up a
 half-finished render. The `denoise` department sits above `render`, so
 denoised output wins over raw when both exist.
 
+## Colour space
+
+Renders are ACEScg throughout — but two different attributes advertise that,
+and different tools trust different ones, so every EXR the pipeline publishes
+stamps **both** (`exr.ACESCG_ATTRIB_ARGS`):
+
+- `oiio:ColorSpace` — what OIIO-based tools read. Karma writes it (`lin_ap1`),
+  but oiiotool channel ops (`--ch`, `--chappend`) build a fresh image and
+  reset it to `Raw`, so the denoise/slapcomp chains would otherwise lose it.
+- `chromaticities` — the EXR-spec primaries, and the *only* thing RV and Nuke
+  read. Karma never writes it, and **its absence means Rec.709 by spec** — so
+  an unstamped ACEScg frame is displayed as Rec709 (correct pixels, wrong
+  look). We stamp the AP1 primaries + D60 white point.
+
+The stamp is applied at every publish boundary — `split_subimages` (raw
+render), `dwab_encode` (denoise), and slapcomp's composite writes — never in
+the render/COP nodes themselves, so frames Karma or COPs write directly (an
+interactive ROP, a `build_comp` preview) still lack `chromaticities` and read
+as Rec709 in RV. Set the input colour space manually there. When adding a new
+oiiotool publish step, splice `ACESCG_ATTRIB_ARGS` into its final write.
+
 ## The build_comp node
 
 `th::Cop/build_comp` is the COP (Copernicus) node that assembles a shot

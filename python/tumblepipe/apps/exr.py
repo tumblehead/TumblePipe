@@ -31,6 +31,20 @@ def _run(command, **kwargs):
 def _call(command, **kwargs):
     return _oiiotool().call(command[1:], **kwargs)
 
+# ACEScg stamp for every EXR the pipeline publishes. Two attributes, because
+# consumers disagree on which to trust: RV/Nuke key off the EXR-spec
+# `chromaticities` (absent means Rec.709 primaries BY SPEC, so an unstamped
+# ACEScg render displays as Rec709), while OIIO-based tools read
+# `oiio:ColorSpace`. husk stamps only the latter (`lin_ap1`), never
+# chromaticities, and oiiotool channel ops (--ch/--chappend) reset it to
+# "Raw" -- so the publish steps stamp both explicitly.
+# Values are ACEScg's AP1 primaries (R,G,B xy) + D60 white point.
+ACESCG_ATTRIB_ARGS = [
+    '--attrib:type=float[8]', 'chromaticities',
+    '0.713,0.293,0.165,0.830,0.128,0.044,0.32168,0.33767',
+    '--attrib', 'oiio:ColorSpace', 'ACEScg',
+]
+
 @dataclass(frozen=True)
 class ImageInfo:
     name: str
@@ -205,11 +219,14 @@ def split_subimages(input_path, output_path):
     with TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
-        # Split subimages
+        # Split subimages. `-a` applies the ACEScg stamp to every subimage
+        # while the file is still one multi-part image, so each split AOV
+        # carries it (the conditional rename below preserves attributes).
         temp_output_path = temp_path / '%04d.exr'
         _run([
             'oiiotool',
             path_str(local_path(input_path)),
+            '-a', *ACESCG_ATTRIB_ARGS,
             '-sisplit', '-o:all=1',
             path_str(local_path(temp_output_path))
         ])
@@ -330,9 +347,11 @@ def dwab_encode(input_path, output_path):
     # Check if input path is an EXR file
     if input_path.suffix.lower() != '.exr': return None
 
-    # DWAB compress
+    # DWAB compress. This is the publish step of the denoise chain, whose
+    # channel shuffles dropped the colorspace metadata -- re-stamp it here.
     return _run([
         'oiiotool', path_str(local_path(input_path)),
+        *ACESCG_ATTRIB_ARGS,
         '--compression', 'dwab:45',
         '-o', path_str(local_path(output_path))
     ])

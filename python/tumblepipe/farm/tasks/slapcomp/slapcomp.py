@@ -60,7 +60,7 @@ def _merge_rgba(
         path_str(local_path(alpha_path)),
         '--chappend',
         '--chnames', 'R,G,B,A',
-        '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
+        *exr.ACESCG_ATTRIB_ARGS,
         '-o', path_str(local_path(output_path))
     ]
     print('    Merging RGBA: beauty + alpha -> temp')
@@ -137,7 +137,7 @@ def _composite_frame(
                 # Save composited LPEs to temp file
                 rgb_source_path = temp_path / f'layer_{layer_index}_lpe_composite.exr'
                 oiiotool_cmd.extend([
-                    '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
+                    *exr.ACESCG_ATTRIB_ARGS,
                     '-o', path_str(local_path(rgb_source_path))
                 ])
 
@@ -169,7 +169,7 @@ def _composite_frame(
                     path_str(local_path(rgb_source_path)),
                     '--ch', '0,1,2,A=1.0',
                     '--chnames', 'R,G,B,A',
-                    '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
+                    *exr.ACESCG_ATTRIB_ARGS,
                     '-o', path_str(local_path(layer_rgba_path))
                 ]
                 result = exr._run(add_alpha_cmd, env=_get_ocio_env())
@@ -214,7 +214,7 @@ def _composite_frame(
             # Write final output with proper colorspace metadata
             output_frame_path.parent.mkdir(parents=True, exist_ok=True)
             oiiotool_cmd.extend([
-                '--attrib:type=string', 'oiio:ColorSpace', 'ACEScg',
+                *exr.ACESCG_ATTRIB_ARGS,
                 '-o', path_str(local_path(output_frame_path))
             ])
 

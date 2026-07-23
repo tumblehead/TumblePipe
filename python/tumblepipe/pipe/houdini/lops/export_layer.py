@@ -28,43 +28,11 @@ from tumblepipe.pipe.paths import (
 )
 from tumblepipe.pipe.usd import add_sublayer
 from tumblepipe.pipe.context import save_layer_context
-from tumblepipe.apps.houdini import stitch_usd_directories
-
-
-def _calculate_chunks(first_frame: int, last_frame: int, batch_size: int) -> list[tuple[int, int]]:
-    """Split frame range into chunks of batch_size."""
-    if batch_size <= 0:
-        return [(first_frame, last_frame)]
-    chunks = []
-    current = first_frame
-    while current <= last_frame:
-        chunk_end = min(current + batch_size - 1, last_frame)
-        chunks.append((current, chunk_end))
-        current = chunk_end + 1
-    return chunks
-
-
-def _flatten_sidecar_directories(export_path: Path) -> None:
-    """
-    Flatten Houdini's .usd.textures sidecar directories.
-
-    Houdini automatically creates {filename}.usd.textures/ directories for
-    COP-generated textures. This function moves the contents directly to the
-    export path and removes the empty sidecar directory.
-    """
-    for item in export_path.iterdir():
-        if item.is_dir() and item.name.endswith('.usd.textures'):
-            # Move all contents from sidecar dir to parent
-            for sidecar_item in item.iterdir():
-                target = export_path / sidecar_item.name
-                if target.exists():
-                    if target.is_dir():
-                        shutil.rmtree(target)
-                    else:
-                        target.unlink()
-                sidecar_item.rename(target)
-            # Remove empty sidecar directory
-            item.rmdir()
+from tumblepipe.apps.houdini import (
+    stitch_usd_directories,
+    calculate_chunks,
+    flatten_sidecar_directories,
+)
 
 
 class ExportLayerError(Exception):
@@ -707,7 +675,15 @@ class ExportLayer(EntityNode):
 
         self._check_variant_parm_listed(entity_uri)
 
-        frame_range, step = frame_range_result
+        # The render step is deliberately dropped: a published stage cache
+        # must carry every frame so downstream renders can sample any frame
+        # (including a later switch to 1s). Sub-sampling the export on the
+        # render step also broke batched export - integer chunk boundaries
+        # do not align to a step>1 grid, so the stitched samples came out
+        # off-grid whenever batch_size was not a multiple of step. Exporting
+        # on 1s (export_f3 below) matches the farm exporter, which has always
+        # discarded step (see the farm submit path and export_houdini).
+        frame_range, _step = frame_range_result
         render_range = frame_range.full_range()
         batch_size = self.get_batch_size()
         user_name = get_user_name()
@@ -866,11 +842,11 @@ class ExportLayer(EntityNode):
 
             # Export the stage
             layer_file_name = get_layer_file_name(entity_uri, variant_name, department_name, version_name)
-            self.parm('export_f3').set(step)
+            self.parm('export_f3').set(1)
 
             if batch_size > 0:
                 # Batched export: export chunks to separate directories then stitch
-                chunks = _calculate_chunks(render_range.first_frame, render_range.last_frame, batch_size)
+                chunks = calculate_chunks(render_range.first_frame, render_range.last_frame, batch_size)
 
                 # Create chunks directory
                 chunks_dir = temp_path / 'chunks'
@@ -909,7 +885,7 @@ class ExportLayer(EntityNode):
                         )
 
                     # Flatten any .usd.textures sidecar directories
-                    _flatten_sidecar_directories(chunk_dir)
+                    flatten_sidecar_directories(chunk_dir)
 
                     logger.info(f"Chunk {chunk_name} exported successfully")
 
@@ -962,7 +938,7 @@ class ExportLayer(EntityNode):
                     )
 
                 # Flatten any .usd.textures sidecar directories
-                _flatten_sidecar_directories(temp_path)
+                flatten_sidecar_directories(temp_path)
 
                 logger.info("Export to temp completed successfully")
 
