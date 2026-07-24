@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.39.1"
+version = "1.39.2"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -203,14 +203,22 @@ python = "3.11"
 # build a ~100 MB PySide6 venv before the window could appear. The plain-string
 # form below runs the prebuilt binary directly against the host with NO managed
 # venv (per hpm's script contract), so launch is instant with no download. The
-# `when.os` axis picks the one platform id present in each per-platform archive
-# (cwd is the package root, so the relative binary path and --template-dir
-# resolve there). No `python`/`requirements` fields: this is not a Python script.
+# `when.os` axis picks the one platform id present in each per-platform archive.
+#
+# The program path MUST go through $HPM_PACKAGE_ROOT (the desktop hook runner
+# always sets it to the package dir, and expands $VAR in the cmd string before
+# spawn). A bare relative program like `bin/.../tt_setup.exe` can't be spawned on
+# Windows: CreateProcess resolves a relative executable against the *caller's*
+# cwd (the desktop app's dir), not the child's working dir, so it fails with
+# ERROR_PATH_NOT_FOUND. An absolute path sidesteps that. Both the exe and the
+# template dir are quoted so a package root containing spaces or `@` (HPM's CAS
+# layout: ...\packages\tumblehead\tumblepipe@1.39.2) tokenizes as one arg. No
+# `python`/`requirements` fields: this is not a Python script.
 [scripts.tt_setup]
 cmd = [
-    { when = { os = "windows" }, set = "bin/windows-x86_64/tt_setup.exe --template-dir scripts/project_template" },
-    { when = { os = "linux" }, set = "bin/linux-x86_64/tt_setup --template-dir scripts/project_template" },
-    { when = { os = "macos" }, set = "bin/macos-aarch64/tt_setup --template-dir scripts/project_template" },
+    { when = { os = "windows" }, set = "\"$HPM_PACKAGE_ROOT/bin/windows-x86_64/tt_setup.exe\" --template-dir \"$HPM_PACKAGE_ROOT/scripts/project_template\"" },
+    { when = { os = "linux" }, set = "\"$HPM_PACKAGE_ROOT/bin/linux-x86_64/tt_setup\" --template-dir \"$HPM_PACKAGE_ROOT/scripts/project_template\"" },
+    { when = { os = "macos" }, set = "\"$HPM_PACKAGE_ROOT/bin/macos-aarch64/tt_setup\" --template-dir \"$HPM_PACKAGE_ROOT/scripts/project_template\"" },
 ]
 
 # migrate-config brings a project's _config layout forward to the current
