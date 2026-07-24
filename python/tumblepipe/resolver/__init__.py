@@ -1,6 +1,6 @@
 """Python facade over the tumbleResolver USD plugin.
 
-The resolution rules live in Rust (houdini/TumblePipe/resolver-src/); this
+The resolution rules live in Rust (houdini/TumblePipe/src/resolver/); this
 module provides the small surface the rest of the pipeline uses:
 
 - latest-mode toggle (via the TH_RESOLVER_LATEST_MODE env var that the

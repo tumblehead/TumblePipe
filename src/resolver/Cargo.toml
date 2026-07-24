@@ -1,0 +1,21 @@
+[package]
+name = "th_resolver_core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Resolution core for TumblePipe's entity:// USD asset resolver"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "th_resolver_core"
+crate-type = ["staticlib", "rlib"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[dev-dependencies]
+tempfile = "3"

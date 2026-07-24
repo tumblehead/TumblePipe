@@ -536,13 +536,15 @@ ruff check --select E9,F python/tumblepipe/farm/
 
 `hpm build` produces the install image: it runs the `[stage].prepack`
 scripts (`build-resolver` cmake-builds the tumbleResolver USD plugin into
-`resolver/houdini<major>/`; `compile-hdas` collapses the expanded
-`otls/<name>/` sources into binary `.hda` files) and stages the tree per
-`[stage].include`/`exclude`. Requirements: cmake, a Rust toolchain, and at
-least one Houdini install.
+`resolver/houdini<major>/`; `build-wizard` cargo-builds the tt_setup
+project-setup wizard into `bin/<platform>/`; `compile-hdas` collapses the
+expanded `otls/<name>/` sources into binary `.hda` files) and stages the
+tree per `[stage].include`/`exclude`. Requirements: cmake, a Rust
+toolchain, and at least one Houdini install. (The wizard is
+Houdini-independent — `build-wizard` needs only cargo, no HFS.)
 
 By default the resolver builds every major listed in
-`resolver-src/houdini_majors.toml`, which fails on a machine that doesn't
+`src/resolver/houdini_majors.toml`, which fails on a machine that doesn't
 have them all installed. Restrict the build to the majors you have with
 `HPM_HOUDINI_MAJORS` (bare space-separated majors, e.g. `22` or `21 22`):
 

@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.38.8"
+version = "1.39.1"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -14,7 +14,7 @@ keywords = ["houdini"]
 # compiled to `houdini_version < '22'` and silently disabled the entire
 # package on every 22.x build — that was the H22 "package not registering"
 # bug.) Bump the upper bound to "<24" only once the CI matrix actually
-# builds a houdini23 resolver — see resolver-src/houdini_majors.toml and the
+# builds a houdini23 resolver — see src/resolver/houdini_majors.toml and the
 # per-platform HPM_HOUDINI_MAJORS in .woodpecker/build-*.yml — otherwise users
 # on the new major install cleanly and then hit a runtime failure when USD's
 # plugin registry can't find a matching resolver/houdini<major>/ tree.
@@ -101,6 +101,8 @@ tomli-w = ">=1.0"
 # Compile the native/derived artifacts before staging:
 #   build-resolver — cmake-build the tumbleResolver USD plugin into
 #                    resolver/houdini<major>/
+#   build-wizard   — cargo-build the tt_setup project-setup wizard into
+#                    bin/<platform>/
 #   compile-hdas   — collapse expanded otls/<name>/ dirs into otls/<name>.hda
 # hpm has no native HDA collapse (verified on 0.18 — a no-prepack `hpm build`
 # leaves the expanded dir untouched), so this is the script that does it.
@@ -115,7 +117,7 @@ tomli-w = ">=1.0"
 # every file onto one path and pack fails with a duplicate-filename error. The
 # resolver ships as ordinary tree content instead (re-included for packing via
 # .hpmignore, since resolver/ is gitignored for git hygiene).
-prepack = ["build-resolver", "compile-hdas"]
+prepack = ["build-resolver", "build-wizard", "compile-hdas"]
 
 # Archive contents (allowlist — mirrors .ci/_tumblepipe_build.py
 # INCLUDE_PATTERNS, minus the mirror-only docs/ + .readthedocs.yaml). Without
@@ -135,8 +137,13 @@ include = [
     "desktop/TumblePipe.desk",
     "scripts/**",
     "resources/**",
+    # Prebuilt native artifacts only — NOT their sources. src/resolver/ and
+    # src/wizard/ are build-time inputs (the build-resolver / build-wizard
+    # prepack scripts run from the working tree), so the installed archive
+    # never needs them; end users get the built resolver/ tree and
+    # bin/<platform>/ binary. The sources live in the repo / github mirror.
     "resolver/**",
-    "resolver-src/**",
+    "bin/**",
 ]
 # Carve-outs within the included dirs.
 exclude = [
@@ -149,12 +156,27 @@ exclude = [
 # build-resolver ports the cmake loop + arch/symbol verification out of the
 # three .woodpecker/build-*.yml files into one script. A [scripts] `when`
 # only supports the `os` axis, so the per-Houdini-major loop lives inside the
-# script (driven by $HPM_HOUDINI_MAJORS, else resolver-src/houdini_majors.toml).
+# script (driven by $HPM_HOUDINI_MAJORS, else src/resolver/houdini_majors.toml).
 [scripts.build-resolver]
 cmd = [
     { when = { os = "windows" }, set = "python .ci/build_resolver.py --platform windows-x86_64" },
     { when = { os = "linux" }, set = "python .ci/build_resolver.py --platform linux-x86_64" },
     { when = { os = "macos" }, set = "python .ci/build_resolver.py --platform macos-aarch64" },
+]
+python = "3.11"
+
+# build-wizard compiles the tt_setup project-setup wizard (a Rust/egui GUI in
+# src/wizard/) into bin/<platform>/tt_setup[.exe]. Like build-resolver it's a
+# prepack step so `hpm build` (locally) and `hpm run build-wizard` (in CI)
+# produce the binary the archive ships. Far simpler than the resolver: plain
+# `cargo build --release` with no cmake/HDK, and Houdini-major-independent
+# (the wizard runs out of process). The per-platform `when.os` axis routes to
+# the one platform id each worker builds.
+[scripts.build-wizard]
+cmd = [
+    { when = { os = "windows" }, set = "python .ci/build_wizard.py --platform windows-x86_64" },
+    { when = { os = "linux" }, set = "python .ci/build_wizard.py --platform linux-x86_64" },
+    { when = { os = "macos" }, set = "python .ci/build_wizard.py --platform macos-aarch64" },
 ]
 python = "3.11"
 
@@ -170,19 +192,26 @@ cmd = [
 python = "3.11"
 
 # tt_setup runs when the user clicks Configure on the package card in
-# TumbleTrove. It launches a Qt6 wizard that either points at an existing
-# project or scaffolds a new one from scripts/project_template/, then
-# emits {"envVars": {"TH_PROJECT_PATH": ...}} on stdout.
+# TumbleTrove. It launches a native wizard (Rust/egui, built by build-wizard
+# above into bin/<platform>/) that either points at an existing project or
+# scaffolds a new one from scripts/project_template/, then emits
+# {"envVars": {"TH_PROJECT_PATH": ...}} on stdout.
 #
-# The table form opts the script into a uv-managed venv resolved on demand,
-# so we don't have to assume PySide6 (or even a `python` interpreter) exists
-# on the user's PATH. Python is pinned to the version Houdini 21 ships
-# (`python3.11libs/`); the wizard runs out-of-process so this is independent
-# of the interpreter inside any given Houdini.
+# This used to be the PySide6 Python wizard (scripts/tt_setup.py) run through a
+# uv-managed venv — the table form with `requirements = ["PySide6>=6.6"]`. That
+# meant the very first Configure click had to fetch a CPython interpreter and
+# build a ~100 MB PySide6 venv before the window could appear. The plain-string
+# form below runs the prebuilt binary directly against the host with NO managed
+# venv (per hpm's script contract), so launch is instant with no download. The
+# `when.os` axis picks the one platform id present in each per-platform archive
+# (cwd is the package root, so the relative binary path and --template-dir
+# resolve there). No `python`/`requirements` fields: this is not a Python script.
 [scripts.tt_setup]
-cmd = "python scripts/tt_setup.py"
-python = "3.11"
-requirements = ["PySide6>=6.6"]
+cmd = [
+    { when = { os = "windows" }, set = "bin/windows-x86_64/tt_setup.exe --template-dir scripts/project_template" },
+    { when = { os = "linux" }, set = "bin/linux-x86_64/tt_setup --template-dir scripts/project_template" },
+    { when = { os = "macos" }, set = "bin/macos-aarch64/tt_setup --template-dir scripts/project_template" },
+]
 
 # migrate-config brings a project's _config layout forward to the current
 # version (tumblepipe.migration). It targets $TH_PROJECT_PATH, so it is meant

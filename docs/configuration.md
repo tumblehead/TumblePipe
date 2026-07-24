@@ -34,7 +34,7 @@ leak into project files.
 
 TumblePipe ships a `tt_setup` hook that TumbleTrove Desktop runs when the
 user clicks **Configure** on the package card. The hook launches a small
-Qt6 wizard with two flows:
+native wizard with two flows:
 
 - **Use an existing project** — browse to a project root that already has a
   `_config/` directory. The wizard verifies the layout and persists
@@ -47,14 +47,22 @@ Qt6 wizard with two flows:
   (`assets/`, `shots/`, `groups/`, `kits/`, `export/`), and persists
   `TH_PROJECT_PATH`.
 
-The hook source is `scripts/tt_setup.py` and the bundled template lives
-under `scripts/project_template/`. That scaffold is not only a one-shot
-copy at creation: migration reads it back out of the installed package to
-bring an existing project's `templates/` forward (see below). The wizard runs under an
-hpm-managed `uv` venv (declared in `[scripts.tt_setup]` in `hpm.toml`)
-that pins Python 3.11 and PySide6, so the hook works regardless of what
-the user has on `PATH` — `tt_setup` runs out-of-process and can't reuse
-Houdini's bundled `qtpy`.
+The wizard is a self-contained native binary (Rust/egui, source in
+`src/wizard/`) built per platform into `bin/<platform>/tt_setup` by the
+`build-wizard` prepack step, and the bundled template lives under
+`scripts/project_template/`. That scaffold is not only a one-shot copy at
+creation: migration reads it back out of the installed package to bring an
+existing project's `templates/` forward (see below).
+
+`[scripts.tt_setup]` in `hpm.toml` invokes the prebuilt binary directly,
+so there is nothing to provision at run time — the wizard opens instantly.
+It replaces an earlier PySide6 wizard (`scripts/tt_setup.py`) that ran
+under an hpm-managed `uv` venv: the first Configure click had to download a
+CPython interpreter and build a ~100 MB PySide6 venv before the window
+could appear. The native binary carries its own GUI toolkit, so that
+first-run download is gone. The wizard runs out-of-process (it can't reuse
+Houdini's bundled Qt), emits `{"envVars": {"TH_PROJECT_PATH": …}}` on
+stdout for TumbleTrove to apply, and exits non-zero on cancel.
 
 ## The convention framework
 
@@ -308,9 +316,10 @@ commented above the rewrite, so the edit is reversible.
   unreadable multi-path value; the legacy setters themselves are retired
   separately (*Legacy OCIO retire*, above). Existing projects gain the file via
   the v4 config migration (`scripts/migrate_config.py`).
-- `scripts/` — TumbleTrove hooks (`tt_setup.py`, plus the bundled
-  `project_template/`) and any Houdini startup scripts that run when the
-  package loads.
+- `scripts/` — the bundled `project_template/`, the `migrate_config.py`
+  maintenance CLI, and any Houdini startup scripts that run when the
+  package loads. (The `tt_setup` wizard is a native binary built from
+  `src/wizard/` into `bin/<platform>/`.)
 - `python3.11libs/` — Python-version-specific startup hooks (`pythonrc.py`,
   `uiready.py`) executed by Houdini.
 

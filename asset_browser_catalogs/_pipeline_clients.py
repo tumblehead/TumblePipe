@@ -171,7 +171,7 @@ class ClientPool:
                 sys.path.insert(0, py_path)
 
             # Browsing must NOT mutate process env. The resolver
-            # (resolver-src/src/env.rs) and tumblepipe.api free-functions
+            # (src/resolver/src/env.rs) and tumblepipe.api free-functions
             # (get_project_path/get_pipeline_path/...) read TH_* env to
             # determine the *user-active* project — the one whose hip
             # file is open. That signal is owned by ProjectActivator;

@@ -1,0 +1,49 @@
+[package]
+name = "th_project_wizard"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "TumblePipe project-setup wizard (tt_setup) — native replacement for the PySide6 wizard"
+license = "Apache-2.0"
+publish = false
+
+# The GUI-free core (validation, template scaffold, config-DB patching) lives
+# in the library so it can be unit-tested for byte-for-byte JSON parity without
+# a window. main.rs is the thin egui shell on top.
+[lib]
+name = "th_project_wizard"
+path = "src/lib.rs"
+
+# One binary: `tt_setup`. hpm's [scripts.tt_setup] invokes the built binary
+# directly, so the produced executable name is what matters here. It ships as
+# bin/<platform>/tt_setup[.exe] in the package archive.
+[[bin]]
+name = "tt_setup"
+path = "src/main.rs"
+
+[dependencies]
+# eframe/egui: immediate-mode GUI, one self-contained binary, instant cold
+# start — the whole point of moving off the uv+PySide6 provisioning path.
+# glow (OpenGL) renderer keeps the binary smaller than the wgpu default.
+eframe = { version = "0.28", default-features = false, features = ["glow", "default_fonts"] }
+egui = "0.28"
+# Native OS folder picker (replaces Qt's QFileDialog.getExistingDirectory).
+rfd = "0.14"
+# serde_json drives the config-DB edits. Two features are load-bearing for
+# byte-for-byte parity with the Python wizard's json.dump output:
+#   preserve_order    — objects keep insertion order (default Map is a sorted
+#                       BTreeMap, which would reorder every human-edited key).
+#   arbitrary_precision — untouched numbers (0.0, 0.5, 1920, …) round-trip as
+#                       their original token instead of being reformatted by
+#                       the float printer.
+serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
+serde = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+# Mirror src/resolver: small, fast, panic=abort release binary.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

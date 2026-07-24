@@ -23,11 +23,13 @@ TumblePipe/
 ├── python3.13libs/              # Houdini 22 startup stubs (byte-identical to 3.11)
 ├── python_panels/
 │   └── icon_browser.pypanel     # Icon browser Python panel
-├── resolver/                    # Pre-built USD asset resolver (native)
-├── resolver-src/                # Source for the `entity://` USD resolver
+├── bin/                         # Pre-built tt_setup wizard binary (native, per-platform)
+├── resolver/                    # Pre-built USD asset resolver (native, per Houdini major)
+├── src/                         # Native (Rust/C++) sources — built, not shipped as source
+│   ├── resolver/                #   `entity://` USD resolver (Rust core + C++ ArResolver shim)
+│   └── wizard/                  #   tt_setup project-setup wizard (Rust/egui)
 ├── resources/                   # Icons, UI resources, templates
 ├── scripts/                     # TumbleTrove hooks, node event scripts, maintenance CLIs
-│   ├── tt_setup.py              #   project setup wizard (Qt6)
 │   ├── project_template/        #   new-project scaffolding (also migration's source of truth)
 │   ├── lop/                     #   per-node-type event scripts (Houdini scans these)
 │   └── fix_*.py / verify_*.py   #   project maintenance / audit CLIs
@@ -81,10 +83,10 @@ byte-identical: `pythonrc.py` runs on Houdini Python startup (puts
 the TumblePipe desktop). Everything with actual logic lives in the
 package so the two interpreters cannot drift.
 
-### `resolver-src/` and `resolver/`
+### `src/resolver/` and `resolver/`
 
 The `tumbleResolver` USD asset resolver, which implements `entity://` URIs.
-`resolver-src/` holds the Rust / C++ sources; `resolver/houdini<major>/`
+`src/resolver/` holds the Rust / C++ sources; `resolver/houdini<major>/`
 holds the built binaries that ship in HPM release archives. The platform
 slug is intentionally absent from this path: HPM produces a slim
 per-platform archive (one OS per release asset), so the install layout is

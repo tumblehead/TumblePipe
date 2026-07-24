@@ -1,0 +1,16 @@
+# Houdini major versions the CI matrix builds binaries for.
+# Add a new major by appending to `majors`, installing the matching
+# Houdini build on every worker used by .woodpecker/build-windows.yml,
+# build-linux.yml, and build-macos.yml, and raising the upper bound of
+# `[compat].houdini` in hpm.toml so the install gate matches what's actually
+# built (the bound is EXCLUSIVE: support through major N => "<(N+1)").
+#
+# macOS is currently an exception: SideFX ships H22 macOS as
+# arm64-only, and our macOS worker is an x86_64 iMac, so
+# .woodpecker/build-macos.yml is pinned to HPM_HOUDINI_MAJORS="21" until
+# there's an Apple Silicon worker. The per-platform HPM_HOUDINI_MAJORS
+# env in each build-<platform>.yml is the source of truth for what
+# actually gets built; this file mirrors the *intent* across the
+# matrix.
+
+majors = [21, 22]

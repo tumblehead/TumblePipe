@@ -122,6 +122,17 @@ class PipelineCatalog(Catalog):
             return frozenset({f"project:{launch_name}"})
         return frozenset()
 
+    def project_for_ref(self, asset_id: str) -> str | None:
+        """Project name an asset id belongs to (its first path segment),
+        or ``None`` when the id doesn't parse.
+
+        Lets the browser scope the Favourites view to the launch project
+        — favourites are stored under this one catalog id across every
+        project, so without this a star set in one project would surface
+        in another. Pure string split (no client build)."""
+        parts = self._resolver.split(asset_id)
+        return parts[0] if parts else None
+
     # ── Lifecycle ─────────────────────────────────────────
 
     def __init__(self, registry: PipelineProjectRegistry | None = None) -> None:

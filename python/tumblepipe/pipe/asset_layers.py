@@ -11,7 +11,7 @@ the whole bug this exists to expose (see ``designs/asset-layer-inspector.md``
 §2, §4.1):
 
 - ``latest`` — the resolver ignores every recorded pin at every level of the
-  cascade (``resolver-src/src/resolve.rs`` ``pick_version``) and takes the
+  cascade (``src/resolver/src/resolve.rs`` ``pick_version``) and takes the
   newest export on disk. Nothing can be "stale": newest *is* what loads.
 - ``current`` / a specific version — pins are honoured, so a newer export on
   disk is real staleness: it is sitting there and not composing.

@@ -42,11 +42,12 @@ ships a working example.
 - `otls/` — Houdini Digital Assets (HDAs), text-format for version control.
 - `python/tumblepipe/` — pipeline Python modules.
 - `python3.Xlibs/` — per-Python-version libraries and Houdini startup hooks.
-- `scripts/` — TumbleTrove `tt_setup` wizard and bundled project template.
+- `scripts/` — bundled project template and maintenance CLIs.
 - `python_panels/` — Python panels (icon browser).
 - `desktop/` — Houdini desktop layout.
 - `resources/`, `ocio/` — resource files and OpenColorIO configuration.
-- `resolver-src/` — source for the `entity://` USD asset resolver.
+- `src/resolver/` — source for the `entity://` USD asset resolver.
+- `src/wizard/` — source for the native `tt_setup` project-setup wizard (Rust/egui).
 - `docs/` — documentation source (hosted on Read the Docs).
 - `tests/` — property-based test harness (uv-managed, independent of hpm).
 - `hpm.toml` — HPM package manifest.
