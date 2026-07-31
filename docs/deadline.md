@@ -15,7 +15,11 @@ Two plugins can run them:
   [tumblehead/deadline-hpm-plugin](https://github.com/tumblehead/deadline-hpm-plugin).
   A job bundles an `hpm.toml` whose dependency is the task package at its exact
   version and whose `[scripts.task]` runs `python -m <module>` with
-  `package-env = true` (plus the task's own `requirements`, if any). The worker
+  `package-env = true` (plus the task's own `requirements`, if any). Its
+  `[runtime]` supplies `TH_PROJECT_PATH`, which TumblePipe's own manifest
+  declares as a *required* placeholder — hpm resolves that against the bundled
+  manifest, not the process env, so without it the install below fails with
+  `Required env var 'TH_PROJECT_PATH' … has no value`. The worker
   `hpm install`s it against its **own** HPM store (resolving the package + its
   `[python_dependencies]` + the script's extra `requirements`, and pinning the
   Houdini-mapped CPython into a package-env venv), then `hpm run task` executes

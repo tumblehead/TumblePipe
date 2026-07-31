@@ -21,6 +21,15 @@ typically set in a launcher script that then starts Houdini.
 `TH_CONFIG_PATH` defaults to `$TH_PROJECT_PATH/_config` and `TH_EXPORT_PATH`
 defaults to `$TH_PROJECT_PATH/export` when unset.
 
+`TH_PROJECT_PATH` is required in the enforced sense: the package manifest
+declares it as an hpm *required placeholder* (`required = true` with no value),
+so a project that never supplies it fails `hpm install` with `Required env var
+'TH_PROJECT_PATH' for package 'tumblepipe' has no value` instead of installing
+and then behaving as though every project path were rooted at the drive root.
+Supply it in the project's own `[runtime]` section — which is what the
+**Configure** wizard below writes for you, and what TumbleTrove Desktop prompts
+for in the project editor.
+
 `TH_USER` identifies who saved or published a version (it is what the Asset
 Browser's User column and farm job attribution show). The package manifest
 wires it to `$TT_USER_NAME` — the TumbleTrove account name the Desktop

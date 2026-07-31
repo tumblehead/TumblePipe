@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.39.2"
+version = "1.40.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -39,7 +39,24 @@ ASSET_BROWSER_CATALOG_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/as
 # Read-only network-catalog entries (recipes) shipped with the package —
 # scanned by tumbletrove's asset browser (> 0.9.1); older versions ignore it.
 ASSET_BROWSER_NETWORK_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/recipes" }
-TH_PROJECT_PATH = { method = "set", value = "" }
+# Required placeholder — deliberately NO `value`. hpm reads a valueless entry
+# with `required = true` as "the consuming project must supply this"; the old
+# `value = ""` was an ordinary *satisfied* entry, so prepare succeeded and
+# Houdini received an empty string. That is how the three keys below silently
+# collapsed to rootless paths (/_config, /export, /library) on a project that
+# never set it. Now an unset project fails prepare with `Required env var
+# 'TH_PROJECT_PATH' for package 'tumblepipe' has no value`, and TumbleTrove
+# Desktop surfaces it as an empty required field in the project editor — paired
+# with the tt_setup wizard's Configure… button ([scripts.tt_setup] below), which
+# emits exactly this key.
+#
+# Projects that already set it are unaffected: a project-level `set` override
+# suppresses this entry outright (hpm never reads the package value in that
+# branch) and carries the value in ~hpm-project-overrides.json, which Houdini
+# processes after every per-package file. Farm workers satisfy the placeholder
+# through the synthetic job manifest in tumblepipe.farm.deadline — the two must
+# stay in step, or every farm task fails at `hpm install` on a cache miss.
+TH_PROJECT_PATH = { method = "set", required = true }
 TH_CONFIG_PATH = { method = "set", value = "$TH_PROJECT_PATH/_config" }
 TH_EXPORT_PATH = { method = "set", value = "$TH_PROJECT_PATH/export" }
 # Pipeline user identity = the TumbleTrove account. $TT_USER_NAME passes
@@ -53,18 +70,20 @@ TH_USER = { method = "set", value = "$TT_USER_NAME" }
 # Root tumbletrove's asset-browser catalog downloads (Poly Haven, AmbientCG, …)
 # under the active project so library assets stay project-local:
 # <project>/library/<catalog>. Read by tumbletrove > 0.16.0 (resolve_download_dir).
-# With NO active project this collapses to a rootless "/library" — tumbletrove
-# detects that (_is_unresolved_project_base) and falls back to ~/Downloads/<catalog>,
-# so a project-less launch never writes to the drive root.
+# The rootless-"/library" case this used to describe is now unreachable via an
+# unset project: TH_PROJECT_PATH above is a required placeholder, so a project
+# that never supplies it fails `hpm install` rather than launching with an empty
+# value. tumbletrove's downstream guard (_is_unresolved_project_base → fall back
+# to ~/Downloads/<catalog>) is deliberately left in place as belt-and-braces —
+# retiring it is a separate call with its own blast radius.
 TT_DOWNLOADS_PATH = { method = "set", value = "$TH_PROJECT_PATH/library" }
 # Color config is owned by the project, not the package: it ships in the
 # config template (scripts/project_template/_config/ocio/) and lands at
-# <project>/_config/ocio/ per project. $TH_CONFIG_PATH is set above (line 43)
-# from $TH_PROJECT_PATH, and Houdini expands package vars top-to-bottom, so
-# this resolves at package-load time. The Desktop launcher always launches
-# with an active project, so $TH_PROJECT_PATH is a real path here (a
-# project-less launch would collapse this to /_config/... — not a supported
-# entry point). Keeping OCIO out of the package is also what stops it from
+# <project>/_config/ocio/ per project. $TH_CONFIG_PATH is set above from
+# $TH_PROJECT_PATH, and Houdini expands package vars top-to-bottom, so this
+# resolves at package-load time. $TH_PROJECT_PATH is always a real path here:
+# it is a required placeholder, so an install without one never completes.
+# Keeping OCIO out of the package is also what stops it from
 # fighting a legacy _pipeline OCIO source and getting pathsep-concatenated
 # into an unreadable multi-path value.
 OCIO = { method = "set", value = "$TH_CONFIG_PATH/ocio/tumblehead.ocio" }

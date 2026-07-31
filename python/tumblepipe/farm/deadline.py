@@ -13,7 +13,7 @@ from pathlib import Path
 
 import tomli_w
 
-from tumblepipe.api import to_windows_path
+from tumblepipe.api import default_client, path_str, to_windows_path
 from tumblepipe.apps.deadline import Job, hpm_package_spec
 
 # Captures the package-root prefix (…/.hpm/packages/<name>@<version>) of a
@@ -82,6 +82,29 @@ def _parse_requirements(requirements_path) -> list:
     return requirements
 
 
+def _project_runtime() -> dict:
+    """`[runtime]` for the job manifest, satisfying TumblePipe's required env vars.
+
+    TumblePipe's hpm.toml declares `TH_PROJECT_PATH` as a required placeholder
+    (`required = true`, no value), so every consuming project must supply it in
+    its own `[runtime]`. This synthetic manifest IS that project as far as the
+    worker's hpm is concerned, so without this the worker's `hpm install` fails
+    with `Required env var 'TH_PROJECT_PATH' for package 'tumblepipe' has no
+    value` before the task ever runs.
+
+    The task itself does not read the var from here — `tasks.env` gets it from
+    the Deadline job env — but hpm resolves the placeholder against the manifest
+    alone, not the process environment. Written in the submitter's Windows form,
+    matching how the job env carries the other pipeline paths.
+    """
+    return {
+        'TH_PROJECT_PATH': {
+            'method': 'set',
+            'value': path_str(to_windows_path(default_client().PROJECT_PATH)),
+        },
+    }
+
+
 def _script_module(relative_script: str) -> str:
     """Dotted module path for `python -m` from a package-relative script path.
 
@@ -141,6 +164,9 @@ def hpm_task_manifest(script_path, requirements_path=None) -> str:
       resolves only the package deps and the task ImportErrors on its own libs
       (the old uv-venv flow consumed requirements.txt; package-env does not unless
       it's threaded here).
+    - `[runtime]` supplies TumblePipe's required `TH_PROJECT_PATH` placeholder;
+      without it the worker's `hpm install` errors before the task runs. See
+      `_project_runtime`.
     """
     package_spec, relative_script = hpm_package_spec(script_path)
     bare_name, _, version = package_spec.partition('@')
@@ -162,6 +188,7 @@ def hpm_task_manifest(script_path, requirements_path=None) -> str:
         'compat': {'houdini': '>=21, <99'},
         'registries': _submitter_registries(),
         'dependencies': {full_name: version},
+        'runtime': _project_runtime(),
         'scripts': {
             'task': task_script,
         },
