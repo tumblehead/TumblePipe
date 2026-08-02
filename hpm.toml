@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.40.0"
+version = "1.40.1"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -91,9 +91,25 @@ OCIO = { method = "set", value = "$TH_CONFIG_PATH/ocio/tumblehead.ocio" }
 # tumbleResolver registration. Houdini applies these env edits during its
 # package-loading phase, *before* USD's Plug.Registry first-touches — that's
 # the only timing that works in-process (Plug.Registry is a one-shot
-# scanner; pythonrc.py runs too late). PATH / LD_LIBRARY_PATH /
-# DYLD_LIBRARY_PATH cover the OS-specific dynamic linker so it can load
-# the resolver shared library that plugInfo.json points at.
+# scanner; pythonrc.py runs too late).
+#
+# PXR_PLUGINPATH_NAME is the load-bearing one: USD reads it via getenv when
+# Plug.Registry initialises, so a value applied at package-load time is seen.
+#
+# The three library-path variables are NOT what lets the in-process dlopen
+# find the plugin's dependencies, despite how this comment used to read. On
+# Windows PATH genuinely works — LoadLibrary re-reads it at call time. On Linux
+# and macOS it cannot: glibc and dyld each evaluate LD_LIBRARY_PATH /
+# DYLD_LIBRARY_PATH once during process startup, and Houdini applies package
+# env edits long after that, so a later dlopen never consults them. Nothing
+# broke only because every library the resolver needs is a Houdini one already
+# loaded in the host process. The in-process case is now covered properly by
+# the -rpath '$ORIGIN' / '@loader_path' the resolver is linked with
+# (src/resolver/CMakeLists.txt), which needs no environment at all.
+#
+# They are kept because they are still meaningful for *child* processes —
+# husk, hython, a farm task spawned from a Houdini session inherit this
+# environment and read it at their own startup, where it behaves normally.
 #
 # Two layers of variable expansion:
 #   - $HPM_PACKAGE_ROOT is consumed by hpm at pack time and rewritten to

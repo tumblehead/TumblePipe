@@ -223,6 +223,37 @@ set_target_properties(tumbleResolver PROPERTIES
     OUTPUT_NAME "tumbleResolver"
 )
 
+# Resolve any sibling library from the plugin's own directory.
+#
+# The plugin loads today with no search path at all, because every one of its
+# NEEDED entries is a Houdini library already in the host's address space by
+# the time USD's Plug registry dlopens it. That stops being true the moment we
+# ship a library of our own next to it, and the failure would be a plugin that
+# silently never loads.
+#
+# `$ORIGIN` / `@loader_path` is the only mechanism that works here. The
+# hpm.toml `[runtime]` entries for LD_LIBRARY_PATH / DYLD_LIBRARY_PATH cannot
+# cover this case: Houdini applies package environment edits *after* process
+# start, and both glibc and dyld read those variables once during startup, so a
+# later dlopen never sees them. (The Windows PATH entry is genuinely different
+# — LoadLibrary re-reads PATH at call time — which is exactly why this gap
+# shows up on Linux and macOS only.)
+#
+# BUILD_WITH_INSTALL_RPATH makes the flag land in the binary the build tree
+# produces, since that file is what gets packed; there is no `cmake --install`
+# step in this pipeline.
+if(NOT WIN32)
+    if(APPLE)
+        set(_tt_rpath "@loader_path")
+    else()
+        set(_tt_rpath "$ORIGIN")
+    endif()
+    set_target_properties(tumbleResolver PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "${_tt_rpath}"
+    )
+endif()
+
 # Strip symbols in release to keep the plugin small. Skipped on macOS
 # because `strip` invalidates the ad-hoc code signature that the linker
 # attaches to arm64 binaries and dyld then refuses to load them. The
