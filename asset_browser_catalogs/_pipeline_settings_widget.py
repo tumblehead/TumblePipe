@@ -189,6 +189,24 @@ class PipelineSettingsWidget(QWidget):
         )
         outer.addWidget(self._auto_refresh_checkbox)
 
+        self._note_checkbox = QCheckBox("Ask for a version note on save")
+        self._note_checkbox.setToolTip(
+            "When saving a new workfile version from the asset browser, ask "
+            "what changed and store it with the version — it shows in the "
+            "browser's Note column.\n"
+            "  • On — prompt on every Save. The note is optional; Cancel "
+            "aborts the save without burning a version.\n"
+            "  • Off — save straight away with a blank note.\n"
+            "Saves you did not ask for never prompt either way: the "
+            "autosave-on-scene-change path and the crash-time emergency "
+            "save always go through silently."
+        )
+        self._note_checkbox.setChecked(
+            self._catalog._prefs.prompt_note_on_save
+        )
+        self._note_checkbox.toggled.connect(self._on_prompt_note_toggled)
+        outer.addWidget(self._note_checkbox)
+
         # ── Apply button (commits to disk + reinits clients) ──
         apply_row = QHBoxLayout()
         apply_row.setContentsMargins(0, 0, 0, 0)
@@ -238,6 +256,25 @@ class PipelineSettingsWidget(QWidget):
             QMessageBox.warning(
                 self, "Pipeline Settings",
                 "Failed to persist auto-import preference — see Houdini "
+                "console.",
+            )
+
+    def _on_prompt_note_toggled(self, checked: bool) -> None:
+        """Persist the version-note prompt pref immediately on toggle.
+
+        Same fire-and-forget pattern as the two toggles above: one boolean,
+        no validation, written on every click so the catalog's in-memory
+        pref (read at save time) and the on-disk JSON stay in sync without
+        the Apply button.
+        """
+        from ._pipeline_prefs import save_prefs
+        self._catalog._prefs.prompt_note_on_save = bool(checked)
+        try:
+            save_prefs(self._catalog._prefs)
+        except Exception:
+            QMessageBox.warning(
+                self, "Pipeline Settings",
+                "Failed to persist version-note preference — see Houdini "
                 "console.",
             )
 

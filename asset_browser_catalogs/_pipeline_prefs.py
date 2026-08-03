@@ -42,6 +42,7 @@ class PipelinePrefs:
 
     autosave_on_scene_change: bool = False
     auto_refresh_on_open: bool = True
+    prompt_note_on_save: bool = True
     prefs_version: int = _PREFS_VERSION
 
 
@@ -64,6 +65,13 @@ def load_prefs() -> PipelinePrefs:
                 data.get("autosave_on_scene_change", False)
             ),
             auto_refresh_on_open=auto_refresh,
+            # Defaults True and needs no _PREFS_VERSION bump: this is a
+            # NEW key, not a flipped default, so a file written before it
+            # existed simply misses it and gets the default. The version
+            # gate is only for defaults that changed value.
+            prompt_note_on_save=bool(
+                data.get("prompt_note_on_save", True)
+            ),
         )
     except Exception:
         log.exception("Failed to load pipeline_prefs.json — using defaults")

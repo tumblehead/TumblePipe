@@ -188,27 +188,58 @@ class WorkfileManager:
             # or clock-skewed shares.
             return None
 
+    def get_user_and_note_for_version(
+        self, asset_id: str, dept: str, version: str,
+    ) -> tuple[str, str]:
+        """Return ``(user, note)`` for a version — ONE sidecar read, no stat.
+
+        The card-build counterpart to :meth:`get_dept_row_meta`, and the
+        distinction is deliberate: deck rows need the workfile's mtime and
+        so must glob + stat it, but a *card* already has a newer-or-equal
+        mtime from the directory scan it just did. Routing the card path
+        through ``get_dept_row_meta`` for the sake of code reuse would add
+        a glob and a stat per card to every grid rebuild — the shape of the
+        stat-storm this module has already been through once. Both fields
+        live in one file, so reading them together costs nothing extra.
+        """
+        sidecar = self._read_version_sidecar(
+            self.dept_dir_for(asset_id, dept), version,
+        )
+        user = sidecar.get("user")
+        note = sidecar.get("note")
+        return (
+            (str(user) if user else ""),
+            (str(note) if note else ""),
+        )
+
     def get_dept_row_meta(
         self, asset_id: str, dept: str, version: str,
-    ) -> tuple[str, float]:
-        """Return ``(user, mtime_epoch)`` for one dept row.
+    ) -> tuple[str, float, str]:
+        """Return ``(user, mtime_epoch, note)`` for one dept row.
 
         One resolve, one glob, one stat, one sidecar read — the deck-item
-        builder wants the user and mtime together (the list view's
-        User/Edited columns) and would otherwise pay the dept-dir resolve
-        and the workfile glob twice over, once via ``get_user_for_version``
-        and again via ``get_mtime_for_version``. Over a share that is the
-        difference that shows.
+        builder wants the user, mtime and note together (the list view's
+        User/Edited/Note columns) and would otherwise pay the dept-dir
+        resolve and the workfile glob twice over, once via
+        ``get_user_for_version`` and again via ``get_mtime_for_version``.
+        Over a share that is the difference that shows.
+
+        The note rides along for free: it comes out of the same sidecar
+        read that already produced the user, so adding it costs no extra
+        I/O at all. That is also why there is no ``get_note_for_version``
+        — no caller wants a note on its own, and a lone getter would be a
+        third read of a file this already opens.
 
         Missing values are blank/zero rather than ``None``: these feed
-        ``DeckItem``, whose fields are typed ``str``/``float``.
+        ``DeckItem``, whose fields are typed ``str``/``float``/``str``.
         """
         dept_dir = self.dept_dir_for(asset_id, dept)
         if dept_dir is None or not version:
-            return "", 0.0
+            return "", 0.0, ""
 
         sidecar = self._read_version_sidecar(dept_dir, version)
         user = sidecar.get("user")
+        note = sidecar.get("note")
 
         path = None
         try:
@@ -223,7 +254,11 @@ class WorkfileManager:
             except OSError:
                 mtime = 0.0
 
-        return (str(user) if user else ""), mtime
+        return (
+            (str(user) if user else ""),
+            mtime,
+            (str(note) if note else ""),
+        )
 
     def get_latest_export_mtime(self, asset_id: str, dept: str):
         """Return the latest export folder's mtime for ``dept`` as a

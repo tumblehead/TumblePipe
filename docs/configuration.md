@@ -71,7 +71,10 @@ CPython interpreter and build a ~100 MB PySide6 venv before the window
 could appear. The native binary carries its own GUI toolkit, so that
 first-run download is gone. The wizard runs out-of-process (it can't reuse
 Houdini's bundled Qt), emits `{"envVars": {"TH_PROJECT_PATH": …}}` on
-stdout for TumbleTrove to apply, and exits non-zero on cancel.
+stdout for TumbleTrove to apply. Cancelling exits 0 with empty stdout — the
+contract's way of saying "no env var changes" — so declining is not reported
+to the user as a failed hook. See `src/wizard/README.md` for the full exit
+contract.
 
 ## The convention framework
 

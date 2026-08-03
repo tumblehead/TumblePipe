@@ -58,8 +58,7 @@ const STATUS_ERROR: egui::Color32 = egui::Color32::from_rgb(0xe0, 0x6c, 0x75);
 const STATUS_OK: egui::Color32 = egui::Color32::from_rgb(0x98, 0xc3, 0x79);
 
 /// What the wizard produces. `Cancelled` is the default so closing the window
-/// via the [x] (or Cancel) is treated as a cancel, matching the Python exit-1
-/// path.
+/// via the [x] (or Cancel) is treated as a cancel.
 #[derive(Clone, Default)]
 enum Outcome {
     #[default]
@@ -107,8 +106,19 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Outcome::Cancelled => {
+            // Declining is a choice, not a failure. TumbleTrove's hook
+            // contract treats "empty stdout + zero exit" as "no env var
+            // changes", which is exactly what a cancel means — whereas any
+            // non-zero exit is reported to the user as "Configure failed for
+            // tumblehead/tumblepipe", so exiting 1 here (inherited from the
+            // PySide wizard this replaced) turned every Cancel click into a
+            // red error toast. That matters more since TumbleTrove started
+            // running this wizard unprompted when TH_PROJECT_PATH is unfilled:
+            // the error arrives for a window the user never asked to open.
+            // The stderr line stays, so a decline is still traceable in the
+            // desktop log under [tt_setup:TumblePipe].
             eprintln!("tt_setup: cancelled by user.");
-            ExitCode::FAILURE
+            ExitCode::SUCCESS
         }
     }
 }

@@ -25,7 +25,17 @@ Two flows, identical in behaviour to the Python original:
   and `schemas.json` fps).
 
 On accept it prints `{"envVars":{"TH_PROJECT_PATH":"…"}}` to stdout (the
-contract TumbleTrove parses) and exits 0; on cancel it exits non-zero.
+contract TumbleTrove parses) and exits 0.
+
+On cancel it exits **0** with nothing on stdout, printing the decline to
+stderr. TumbleTrove reads "empty stdout + zero exit" as "no env var changes",
+which is what a decline means — whereas any non-zero exit is surfaced to the
+user as `Configure failed for tumblehead/tumblepipe`. It used to exit 1 here
+(inherited from the PySide wizard), which reported the user's own choice back
+to them as an error. That matters because TumbleTrove runs this wizard
+*unprompted* when `TH_PROJECT_PATH` has no value, so a decline can be a
+response to a window nobody asked to open. Failing to start the wizard at all
+is a genuine failure and still exits 2.
 
 ## Layout
 

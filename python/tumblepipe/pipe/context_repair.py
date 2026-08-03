@@ -313,6 +313,10 @@ def repair(
             hip_path = next(iter(workspace_path.glob(f"*_{version}.{ext}")), None)
             if hip_path is not None and hip_path.exists():
                 mtime = dt.datetime.fromtimestamp(hip_path.stat().st_mtime).isoformat()
+        # A synthesized entry is built from scratch, so it must name
+        # every key save_context writes or it silently drops back to an
+        # older shape. The note is blank because there is nobody to ask:
+        # the artist's note lived only in the entry we are replacing.
         _write_entry(version, dict(
             user="",
             timestamp=mtime or "",
@@ -320,6 +324,7 @@ def repair(
             to_version=version,
             houdini_version="unknown",
             extension=ext,
+            note="",
         ))
         report.actions.append(f"entry {version}: synthesized (from {predecessor})")
 

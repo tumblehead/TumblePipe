@@ -59,6 +59,7 @@ from _pipeline_types import (
     DEPT_API_SHORT_FALLBACK,
     DEPT_ICONS,
     DEPT_SHORT_NAMES,
+    DECK_NOTES_SUPPORTED,
     SESSION_HAS_SECTIONS,
     SHOT_DEPT_ICONS,
     DeptVersionStore,
@@ -3243,9 +3244,9 @@ class PipelineCatalog(Catalog):
                 covered,
                 key=lambda n: (order.get(n, len(order)), n),
             )
-            # Per-dept author, save time and licence for the list view's
-            # User/Edited columns and the session panel's rows (one stat
-            # + sidecar read per dept, deck rows populate lazily on
+            # Per-dept author, save time and note for the list view's
+            # User/Edited/Note columns and the session panel's rows (one
+            # stat + sidecar read per dept, deck rows populate lazily on
             # expand).
             attribution = self._containers._group_dept_attribution(
                 asset.id)
@@ -3254,8 +3255,8 @@ class PipelineCatalog(Catalog):
                 short = DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
                 latest = depts_dict.get(dept_name) or ""
                 if latest:
-                    user, mtime = attribution.get(
-                        dept_name, ("", 0.0),
+                    user, mtime, note = attribution.get(
+                        dept_name, ("", 0.0, ""),
                     )
                     cards.append(DeckItem(
                         key=dept_name,
@@ -3267,6 +3268,10 @@ class PipelineCatalog(Catalog):
                         dismiss_on_click=True,
                         user=user,
                         edited=mtime,
+                        # See the entity deck rows below: DeckItem is
+                        # frozen, so ``note`` only goes in when the
+                        # installed tumbletrove declares it.
+                        **({"note": note} if DECK_NOTES_SUPPORTED else {}),
                     ))
                 else:
                     cards.append(DeckItem(
@@ -3338,14 +3343,14 @@ class PipelineCatalog(Catalog):
                 status = (
                     "active" if dept_name == active_dept else "available"
                 )
-                # Per-dept attribution for the list view's User/Edited
-                # columns (deck_user/deck_edited): who last saved this
-                # dept's latest workfile and when. One resolve + glob +
-                # stat + sidecar read per dept — see get_dept_row_meta,
-                # which exists so this isn't two of each. Group-covered
-                # and missing depts stay blank: the member has no workfile
-                # of its own to attribute.
-                user, mtime = self._workfiles.get_dept_row_meta(
+                # Per-dept attribution for the list view's User/Edited/Note
+                # columns (deck_user/deck_edited/deck_note): who last saved
+                # this dept's latest workfile, when, and what they said
+                # changed. One resolve + glob + stat + sidecar read per
+                # dept — see get_dept_row_meta, which exists so this isn't
+                # three of each. Group-covered and missing depts stay blank:
+                # the member has no workfile of its own to attribute.
+                user, mtime, note = self._workfiles.get_dept_row_meta(
                     asset.id, dept_name, version,
                 )
                 tooltip = None
@@ -3366,6 +3371,10 @@ class PipelineCatalog(Catalog):
                     tooltip=tooltip,
                     user=user,
                     edited=mtime,
+                    # Passed only when the installed tumbletrove has the
+                    # field — DeckItem is frozen, so an unknown keyword is
+                    # a TypeError that would take the whole deck down.
+                    **({"note": note} if DECK_NOTES_SUPPORTED else {}),
                 ))
             else:
                 cards.append(DeckItem(
@@ -3397,10 +3406,25 @@ class PipelineCatalog(Catalog):
         ]
 
     def get_list_columns(self) -> list[ListColumn]:
-        # ``last_user`` + ``latest_update`` are filled per-card by
-        # ``_latest_update_and_user``. ``fmt="reltime"`` renders the epoch
-        # mtime as a compact "2h ago"; it needs tumbletrove >= 0.15 (older
-        # builds just show the raw number, still fine).
+        # ``last_user`` + ``latest_update`` + ``last_note`` are filled
+        # per-card by ``_latest_update_user_note``. ``fmt="reltime"`` renders
+        # the epoch mtime as a compact "2h ago"; it needs tumbletrove >= 0.15
+        # (older builds just show the raw number, still fine).
+        # ``deck_note``: the version note the artist typed at save time.
+        # Sits next to Version because that is what it annotates — reading
+        # "v0042 | fixed elbow topology" across is the whole point.
+        # Top-level rows show the newest dept's note, mirroring how
+        # User/Edited summarise that same version. Widest fixed column
+        # here: notes are sentences, and anything narrower elides them to
+        # uselessness. Dropped entirely on tumbletrove < 0.24, whose
+        # ListColumn has no deck_note to flag (the conditional guards the
+        # construction, not just the append — a frozen dataclass would
+        # TypeError on the unknown keyword).
+        note_columns = [
+            ListColumn(
+                key="last_note", label="Note", width=220, deck_note=True,
+            ),
+        ] if DECK_NOTES_SUPPORTED else []
         return [
             ListColumn(key="name", label="Name"),
             # ``deck_detail``: expanded dept deck rows put their detail
@@ -3409,6 +3433,7 @@ class PipelineCatalog(Catalog):
             # leave the cell empty — an entity has no single version.
             # Requires tumbletrove >= 0.11 (ListColumn.deck_detail).
             ListColumn(key="version", label="Version", width=90, deck_detail=True),
+            *note_columns,
             ListColumn(key="category", label="Category", width=100),
             ListColumn(key="dept_count", label="Depts", width=55, align="center"),
             # ``deck_user``/``deck_edited``: expanded dept deck rows
@@ -3587,7 +3612,7 @@ class PipelineCatalog(Catalog):
             for dept, (versions, _) in scanned.items()
             if versions
         }
-        latest_update, last_user = self._latest_update_and_user(
+        latest_update, last_user, last_note = self._latest_update_user_note(
             asset_id, scanned,
         )
 
@@ -3609,6 +3634,7 @@ class PipelineCatalog(Catalog):
                 "dept_count": len(depts),
                 "latest_update": latest_update,
                 "last_user": last_user,
+                "last_note": last_note,
             },
         )
 
@@ -3645,7 +3671,7 @@ class PipelineCatalog(Catalog):
             for dept, (versions, _) in scanned.items()
             if versions
         }
-        latest_update, last_user = self._latest_update_and_user(
+        latest_update, last_user, last_note = self._latest_update_user_note(
             asset_id, scanned,
         )
         tags = {
@@ -3669,6 +3695,7 @@ class PipelineCatalog(Catalog):
                 "dept_count": len(depts),
                 "latest_update": latest_update,
                 "last_user": last_user,
+                "last_note": last_note,
             },
             catalog_id=self.id,
         )
@@ -3783,7 +3810,7 @@ class PipelineCatalog(Catalog):
             for dept, (versions, _) in scanned.items()
             if versions
         }
-        latest_update, last_user = self._latest_update_and_user(
+        latest_update, last_user, last_note = self._latest_update_user_note(
             asset_id, scanned,
         )
 
@@ -3823,6 +3850,7 @@ class PipelineCatalog(Catalog):
                 "dept_count": len(depts),
                 "latest_update": latest_update,
                 "last_user": last_user,
+                "last_note": last_note,
             },
         )
 
@@ -4043,18 +4071,23 @@ class PipelineCatalog(Catalog):
                 cause=exc,
             ) from exc
 
-    def _latest_update_and_user(
+    def _latest_update_user_note(
         self, asset_id: str,
         scanned: dict[str, tuple[list[str], float]],
-    ) -> tuple[float, str]:
-        """``(newest_mtime_across_depts, last_author)`` for a scanned entity.
+    ) -> tuple[float, str, str]:
+        """``(newest_mtime_across_depts, last_author, last_note)``.
 
         ``scanned`` is the ``{dept: (versions, mtime)}`` map the card
-        build already gathered, so the mtime is free. The author costs
-        exactly ONE extra ``_context/{version}.json`` read — only for the
-        single newest dept, never one-per-dept — so a large list rebuild
-        stays cheap (see the per-card scan-cost notes on
-        ``_build_asset_card``). Any read failure degrades to ``""``.
+        build already gathered, so the mtime is free. The author and note
+        cost exactly ONE ``_context/{version}.json`` read *between them* —
+        only for the single newest dept, never one-per-dept — so a large
+        list rebuild stays cheap (see the per-card scan-cost notes on
+        ``_build_asset_card``). That is why this calls
+        ``get_user_and_note_for_version`` and not the otherwise-identical
+        ``get_dept_row_meta``: the latter also globs and stats the
+        workfile for an mtime we already have, which at one card per
+        entity is the difference between a read and a stat-storm. Any
+        read failure degrades to ``""``.
         """
         latest_update = 0.0
         best_dept = ""
@@ -4065,15 +4098,15 @@ class PipelineCatalog(Catalog):
                 best_dept = dept
                 best_versions = versions
         user = ""
+        note = ""
         if best_dept and best_versions:
             try:
-                found = self._workfiles.get_user_for_version(
+                user, note = self._workfiles.get_user_and_note_for_version(
                     asset_id, best_dept, best_versions[-1],
                 )
             except Exception:
-                found = None
-            user = found or ""
-        return latest_update, user
+                user, note = "", ""
+        return latest_update, user, note
 
     def _get_department_info(self, asset_id: str) -> dict[str, list[str]]:
         """Get {dept_name: [versions]} for an asset/shot (publish versions)."""

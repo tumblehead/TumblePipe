@@ -196,7 +196,7 @@ def _predecessor_version_name(workspace_path: Path, version_name: str) -> str:
     return api.naming.get_version_name(max(prior))
 
 
-def save_context(target_path: Path, prev_context, next_context, houdini_version: str = None, file_extension: str = None):
+def save_context(target_path: Path, prev_context, next_context, houdini_version: str = None, file_extension: str = None, note: str = ""):
     """Save version context metadata (_context/{version}.json).
 
     Args:
@@ -210,6 +210,12 @@ def save_context(target_path: Path, prev_context, next_context, houdini_version:
         houdini_version: Optional Houdini version string. If None, attempts to get from hou module.
         file_extension: Optional file extension (e.g., 'hip', 'hiplc', 'hipnc'). Used to avoid
             unreliable exists() calls on SMB/CIFS network storage when opening workfiles.
+        note: Optional free-text note the artist wrote for this version ("what
+            changed"). Always written, empty when not supplied — every reader
+            uses ``.get()``, so older sidecars without the key read as blank
+            and no migration is needed. Never inferred or auto-filled: a blank
+            note means the author said nothing, which is honest, whereas a
+            generated one would read as theirs.
     """
     if next_context is None or next_context.version_name is None:
         raise ValueError(
@@ -258,6 +264,7 @@ def save_context(target_path: Path, prev_context, next_context, houdini_version:
             to_version=next_version_name,
             houdini_version=houdini_version,
             extension=file_extension,
+            note=str(note or ""),
         ),
     )
 
@@ -267,6 +274,7 @@ def commit_next_workfile(
     department_name: str,
     prev_context: Context = None,
     nc_type: str = None,
+    note: str = "",
 ) -> Path:
     """Reserve, save the loaded hip into, and record the next workfile version.
 
@@ -288,7 +296,13 @@ def commit_next_workfile(
 
     ``prev_context`` records provenance; pass the loaded scene's context on an
     incremental save, or None (a fresh create / farm publish) to let
-    :func:`save_context` derive the predecessor from disk. Returns the saved path.
+    :func:`save_context` derive the predecessor from disk.
+
+    ``note`` is the artist's free-text "what changed" for this version, shown
+    in the asset browser's Note column. Collect it *before* calling this — the
+    version is reserved on the first line, so prompting from in here would hold
+    a reservation open for as long as a dialog sits on screen, and a cancel
+    would have to unwind a commit already in flight. Returns the saved path.
     """
     from tumblepipe.pipe.paths import (
         reserve_next_hip_file_path, release_reserved_version,
@@ -310,6 +324,7 @@ def commit_next_workfile(
     save_context(
         next_path.parent, prev_context, next_context,
         file_extension=next_path.suffix.lstrip("."),
+        note=note,
     )
     save_entity_context(next_path.parent, next_context)
     return next_path

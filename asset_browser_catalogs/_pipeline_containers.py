@@ -58,26 +58,28 @@ def _version_from_stem(stem: str) -> str:
     return ""
 
 
-def _hip_context_user(hip_path) -> str:
-    """User attribution for a workfile, from the ``_context/{version}.json``
+def _hip_context_user_note(hip_path) -> tuple[str, str]:
+    """``(user, note)`` for a workfile, from the ``_context/{version}.json``
     sidecar next to it (the same file the entity save flow writes and
-    ``WorkfileHelper.get_user_for_version`` reads for assets/shots —
-    here the dept dir comes straight from the hip path, so it also
-    works for group workfiles the entity resolver can't split).
-    Degrades to ``""`` on any miss/failure."""
+    ``WorkfileHelper.get_dept_row_meta`` reads for assets/shots — here the
+    dept dir comes straight from the hip path, so it also works for group
+    workfiles the entity resolver can't split). Both come out of one read
+    because they live in one file. Degrades to ``("", "")`` on any
+    miss/failure; the note is also blank for versions saved before notes
+    existed."""
     version = _version_from_stem(hip_path.stem)
     if not version:
-        return ""
+        return "", ""
     ctx_file = hip_path.parent / "_context" / f"{version}.json"
     try:
         if not ctx_file.exists():
-            return ""
+            return "", ""
         import json
         data = json.loads(ctx_file.read_text(encoding="utf-8"))
-        return str(data.get("user") or "")
+        return str(data.get("user") or ""), str(data.get("note") or "")
     except Exception:
-        log.debug("Failed to read user for %s", hip_path, exc_info=True)
-        return ""
+        log.debug("Failed to read context for %s", hip_path, exc_info=True)
+        return "", ""
 
 
 @dataclass(frozen=True)
@@ -453,13 +455,15 @@ class ContainerManager:
                         latest_hip = hip
                 metadata["departments"] = depts_dict
                 has_deck_items = True
-                # User/Edited list cells, mirroring what
-                # ``_latest_update_and_user`` does for asset/shot
+                # User/Edited/Note list cells, mirroring what
+                # ``_latest_update_user_note`` does for asset/shot
                 # cards: newest dept's mtime, plus ONE _context
                 # sidecar read for that dept only.
                 if latest_hip is not None:
                     metadata["latest_update"] = latest_update
-                    metadata["last_user"] = _hip_context_user(latest_hip)
+                    user, note = _hip_context_user_note(latest_hip)
+                    metadata["last_user"] = user
+                    metadata["last_note"] = note
         return Asset(
             id=collection.tag,
             name=collection.label,
@@ -699,15 +703,16 @@ class ContainerManager:
         return result
 
     def _group_dept_attribution(self, group_tag: str) -> dict:
-        """Return ``{dept: (user, mtime_epoch)}`` for a group's latest
+        """Return ``{dept: (user, mtime_epoch, note)}`` for a group's latest
         workfiles.
 
-        The mtime is the hip file's stat; the user comes from the
-        ``_context`` sidecar (see :func:`_hip_context_user`). These feed
-        the list view's User/Edited columns for a group's deck rows (the
-        entity-side equivalent is ``WorkfileManager.get_dept_row_meta``).
-        One sidecar read per covered dept — callers hit this on deck
-        expand, never during grid rebuilds.
+        The mtime is the hip file's stat; the user and note come from the
+        ``_context`` sidecar (see :func:`_hip_context_user_note`). These
+        feed the list view's User/Edited/Note columns for a group's deck
+        rows (the entity-side equivalent is
+        ``WorkfileManager.get_dept_row_meta``, which returns the same
+        triple). One sidecar read per covered dept — callers hit this on
+        deck expand, never during grid rebuilds.
         """
         result: dict = {}
         for dept_name, hip in self._group_dept_latest_hips(
@@ -716,7 +721,8 @@ class ContainerManager:
                 mtime = hip.stat().st_mtime
             except OSError:
                 continue
-            result[dept_name] = (_hip_context_user(hip), mtime)
+            user, note = _hip_context_user_note(hip)
+            result[dept_name] = (user, mtime, note)
         return result
 
     def _dept_groups_for_member(

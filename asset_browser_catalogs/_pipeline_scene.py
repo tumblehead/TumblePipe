@@ -435,7 +435,7 @@ class SceneManager:
             )
             return None
 
-    def save_current_scene(self, refresh_cb=None) -> None:
+    def save_current_scene(self, refresh_cb=None, prompt_note: bool = True) -> None:
         """Save the loaded scene as the next workfile version of its own context.
 
         The ``hou.hipFile.save`` runs on Houdini's main thread (like
@@ -445,8 +445,13 @@ class SceneManager:
         how a Save could drop the last few minutes of work while Houdini's own
         backup kept it. The old (QWidget) Project Browser saved on the GUI
         thread implicitly; this restores that.
+
+        ``prompt_note`` asks the artist for a version note first (subject to
+        the ``prompt_note_on_save`` pref). It is on for the explicit Save
+        action and off for saves the user did not directly ask for — see
+        :meth:`_prompt_version_note` for why the distinction matters.
         """
-        run_on_main_thread(lambda: self._save_scene(refresh_cb))
+        run_on_main_thread(lambda: self._save_scene(refresh_cb, prompt_note))
 
     def emergency_save_current_scene(self, refresh_cb=None) -> None:
         """Save the loaded scene **inline** on the calling thread.
@@ -464,15 +469,72 @@ class SceneManager:
         fail, but during a crash a maybe-save beats a guaranteed loss. This is
         a deliberate, explicitly-labeled escape hatch — never the default Save
         path — surfaced via :meth:`PipelineCatalog.get_quick_action_menu_items`.
-        """
-        self._save_scene(refresh_cb)
 
-    def _save_scene(self, refresh_cb=None) -> None:
+        Never prompts for a version note: the whole point of this path is that
+        Houdini's event loop is wedged behind the crash dialog, so putting
+        another modal in front of the save is exactly the wrong move. The
+        version lands with a blank note.
+        """
+        self._save_scene(refresh_cb, prompt_note=False)
+
+    def _prompt_version_note(self, prev_ctx) -> str | None:
+        """Ask for this save's version note. ``None`` means "cancel the save".
+
+        Returns the note (possibly empty — a blank note is a valid answer,
+        not a cancel) or ``None`` when the artist dismissed the dialog, in
+        which case the caller must not save at all. That distinction is the
+        reason this returns ``str | None`` rather than just a string.
+
+        Runs *before* the version is reserved, so a cancel costs nothing: no
+        number is burnt and no reservation stub is left behind for
+        ``context_repair`` to sweep up. The trade is that the dialog can name
+        the version it follows but not the one it will become — two artists
+        saving the same department at once would make any number shown here a
+        guess, and a wrong version in the prompt is worse than none.
+        """
+        if not self._catalog._prefs.prompt_note_on_save:
+            return ""
+
+        try:
+            # Imported inside the try, not above it: a missing/broken Qt is
+            # exactly the "no usable UI" case this degrades for, and an
+            # ImportError escaping here would land in _save_scene's outer
+            # handler and abandon the save entirely.
+            import hou
+            from PySide6.QtWidgets import QInputDialog
+
+            entity = "/".join(prev_ctx.entity_uri.segments[1:]) or str(
+                prev_ctx.entity_uri
+            )
+            after = prev_ctx.version_name or "v0000"
+            note, ok = QInputDialog.getMultiLineText(
+                hou.qt.mainWindow(),
+                "Save Version",
+                f"Note for the next {prev_ctx.department_name} version of "
+                f"{entity} (after {after}) — optional:",
+                "",
+            )
+        except Exception:
+            # No usable UI (headless, or Qt unavailable). Saving the artist's
+            # work matters more than annotating it, so fall through to a
+            # blank note rather than turning a failed dialog into a lost save.
+            log.exception("Version note prompt failed — saving without a note")
+            return ""
+
+        if not ok:
+            return None
+        return note.strip()
+
+    def _save_scene(self, refresh_cb=None, prompt_note: bool = False) -> None:
         """Write the next workfile version of the loaded scene's context.
 
         Runs synchronously on the calling thread. :meth:`save_current_scene`
         defers this to the main thread via ``run_on_main_thread``;
         :meth:`emergency_save_current_scene` calls it inline.
+
+        ``prompt_note`` defaults to False so a caller that forgets it saves
+        silently rather than blocking on an unexpected modal — the prompt is
+        opt-in, and the one caller that wants it says so.
         """
         try:
             import hou
@@ -491,6 +553,16 @@ class SceneManager:
                 )
                 return
 
+            # Ask for the note before touching anything: cancelling here
+            # must leave the session exactly as it was, which it only does
+            # while no version has been reserved and no project activated.
+            note = ""
+            if prompt_note:
+                note = self._prompt_version_note(prev_ctx)
+                if note is None:
+                    log.info("Save cancelled at the version-note prompt")
+                    return
+
             # Make sure the loaded scene's project is active before
             # we resolve the next path / save / write context json.
             scene_proj = self._catalog._project_for_hip_path(hip_path)
@@ -504,6 +576,7 @@ class SceneManager:
             next_path = commit_next_workfile(
                 prev_ctx.entity_uri, prev_ctx.department_name,
                 prev_context=prev_ctx, nc_type=session_nc_type(),
+                note=note,
             )
 
             log.info("Saved next version: %s", next_path)
@@ -685,7 +758,7 @@ class SceneManager:
         # Opt-in: version up silently, no prompt.
         if self._catalog._prefs.autosave_on_scene_change:
             try:
-                self.save_current_scene()
+                self.save_current_scene(prompt_note=False)
             except Exception:
                 log.exception("Autosave on scene change failed")
             return True
@@ -710,7 +783,14 @@ class SceneManager:
 
         if choice == 0:
             try:
-                self.save_current_scene()
+                # No note prompt on this path, deliberately. We have already
+                # told the caller "handled" by the time the save actually
+                # runs (it is queued onto the main thread), so it will load
+                # the next scene with suppress_save_prompt=True — a note
+                # dialog the artist then cancelled would silently discard
+                # the very changes they just asked to keep. Notes are worth
+                # having; they are not worth a data-loss path.
+                self.save_current_scene(prompt_note=False)
             except Exception:
                 log.exception("Save on scene change failed")
             return True

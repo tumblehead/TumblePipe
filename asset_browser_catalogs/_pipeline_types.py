@@ -63,6 +63,8 @@ class PipelineAssetMetadata(TypedDict, total=False):
 
     # Sort / display hints
     latest_update: float  # epoch seconds of newest dept version
+    last_user: str        # author of the newest dept version
+    last_note: str        # that version's save note ("" if none/older file)
     is_current_scene: bool  # pin + highlight (set per-render in get_assets)
 
     # Shot timeline (shots only)
@@ -379,6 +381,17 @@ def _type_supports(type_name: str, field_name: str) -> bool:
 #: return ``None`` — building a ``sections=`` SessionInfo against the old
 #: rows-based type is a ``TypeError`` on a frozen dataclass.
 SESSION_HAS_SECTIONS = _type_supports("SessionInfo", "sections")
+
+#: tumbletrove >= 0.24 (``DeckItem.note`` + ``ListColumn.deck_note``).
+#: Both halves are probed as one flag on purpose: they ship together, and
+#: honouring only one would give a Note column no row can ever fill, or
+#: notes on rows with nowhere to render. Below this the catalog declares
+#: no Note column and passes no ``note=`` — version notes still get
+#: written to disk, they just aren't shown until tumbletrove catches up.
+DECK_NOTES_SUPPORTED = (
+    _type_supports("DeckItem", "note")
+    and _type_supports("ListColumn", "deck_note")
+)
 
 
 # ── Department iconography ───────────────────────────────────────
