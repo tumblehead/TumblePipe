@@ -13,7 +13,7 @@ from tumblepipe.config.department import (
     list_departments,
     list_entity_departments,
 )
-from tumblepipe.config.variants import list_variants
+from tumblepipe.config.channels import list_channels
 import tumblepipe.pipe.houdini.nodes as ns
 import tumblepipe.pipe.houdini.util as util
 from tumblepipe.pipe.paths import (
@@ -143,15 +143,15 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
         shot_uri: The shot entity URI
 
     Returns:
-        List of asset dicts with keys: asset, instance, variant, instances, inputs
+        List of asset dicts with keys: asset, instance, channel, instances, inputs
         Inherited assets appear first, direct scene assets can override them.
     """
     from tumblepipe.pipe.paths import latest_export_path, get_current_scene_staged_file_path
-    from tumblepipe.config.variants import DEFAULT_VARIANT
+    from tumblepipe.config.channels import DEFAULT_CHANNEL
     from tumblepipe.config.scene import get_inherited_assets
 
     # Get root layer to find scene reference (same approach as graph.py Fix 2)
-    root_version_path = latest_export_path(shot_uri, DEFAULT_VARIANT, 'root')
+    root_version_path = latest_export_path(shot_uri, DEFAULT_CHANNEL, 'root')
     if root_version_path is None:
         return []
 
@@ -196,7 +196,7 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
             result.append({
                 'asset': entry.asset,
                 'instance': asset_uri.segments[-1],
-                'variant': entry.variant,
+                'variant': entry.channel,
                 'instances': entry.instances,
                 'inputs': []
             })
@@ -238,7 +238,7 @@ def _parse_entity_uri_info(uri_string: str) -> dict:
         uri_string: Entity URI string (e.g., entity:/shots/seq/shot?dept=animation&variant=default&version=v0006)
 
     Returns:
-        Dict with keys: path (entity URI string), type, department, variant
+        Dict with keys: path (entity URI string), type, department, channel
     """
     # Split base URI from query string
     if '?' in uri_string:
@@ -254,7 +254,7 @@ def _parse_entity_uri_info(uri_string: str) -> dict:
             params[k] = v
 
     dept = params.get('dept')
-    variant = params.get('variant', 'default')
+    channel = params.get('variant', 'default')
 
     # Determine type based on URI and department
     if '/assets/' in base_uri:
@@ -269,7 +269,7 @@ def _parse_entity_uri_info(uri_string: str) -> dict:
         'path': uri_string,  # Entity URI passed to Sublayer LOP
         'type': layer_type,
         'department': dept,
-        'variant': variant
+        'variant': channel
     }
 
 
@@ -283,7 +283,7 @@ def _parse_staged_sublayers(staged_file_path: Path) -> list[dict]:
     - path: absolute Path to the layer file OR entity URI string
     - type: 'shot_department' | 'asset' | 'root' | 'scene'
     - department: department name (for shot_department type)
-    - variant: variant name (if present in URI)
+    - channel: channel name (if present in URI)
     """
     sublayers = []
     staged_dir = staged_file_path.parent
@@ -308,7 +308,7 @@ def _parse_staged_sublayers(staged_file_path: Path) -> list[dict]:
             else:
                 # Shot department layer - extract dept name from path
                 # Pattern: ../../../{variant}/{dept}/v{version}/shots_{seq}_{shot}_{dept}_{version}.usd
-                # parts: [0]='..' [1]='..' [2]='..' [3]=variant [4]=dept [5]=version [6]=filename
+                # parts: [0]='..' [1]='..' [2]='..' [3]=channel [4]=dept [5]=version [6]=filename
                 parts = ref.split('/')
                 dept = parts[4] if len(parts) > 4 else None
                 sublayers.append({'path': abs_path, 'type': 'shot_department', 'department': dept})
@@ -455,19 +455,19 @@ class ImportShot(ns.Node):
         names = [d.name for d in self._shot_departments()]
         return ['from_context'] + names
 
-    def list_variant_names(self) -> list[str]:
-        """List available variant names for current shot."""
+    def list_channel_names(self) -> list[str]:
+        """List available channel names for current shot."""
         shot_uri = self.get_shot_uri()
         if shot_uri is None:
             return ['default']
-        variants = list_variants(shot_uri)
-        if not variants:
+        channels = list_channels(shot_uri)
+        if not channels:
             return ['default']
         # Ensure 'default' is always first
-        if 'default' in variants:
-            variants.remove('default')
-            variants.insert(0, 'default')
-        return variants
+        if 'default' in channels:
+            channels.remove('default')
+            channels.insert(0, 'default')
+        return channels
 
     def list_version_names(self) -> list[str]:
         """List available staged versions including 'latest' and 'current'."""
@@ -475,10 +475,10 @@ class ImportShot(ns.Node):
         if shot_uri is None:
             return ['latest', 'current']
 
-        variant_name = self.get_variant_name()
+        channel_name = self.get_channel_name()
 
-        # Get staged directory for this variant
-        staged_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_staged' / variant_name
+        # Get staged directory for this channel
+        staged_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_staged' / channel_name
         staged_path = api.storage.resolve(staged_uri)
 
         # Get versioned directories (v0001, v0002, etc.)
@@ -495,12 +495,12 @@ class ImportShot(ns.Node):
             return 'latest'  # Default to latest
         return version_name
 
-    def get_variant_name(self) -> str:
-        """Get selected variant name. Default is 'default'."""
-        variant_name = self.parm('variant').eval()
-        if len(variant_name) == 0:
+    def get_channel_name(self) -> str:
+        """Get selected channel name. Default is 'default'."""
+        channel_name = self.parm('variant').eval()
+        if len(channel_name) == 0:
             return 'default'
-        return variant_name
+        return channel_name
 
     def get_department_name(self) -> str | None:
         department_name = self.parm('department').eval()
@@ -606,8 +606,8 @@ class ImportShot(ns.Node):
         self.parm('department').set(department_name)
         self._update_labels()
 
-    def set_variant_name(self, variant_name: str):
-        self.parm('variant').set(variant_name)
+    def set_channel_name(self, channel_name: str):
+        self.parm('variant').set(channel_name)
         self._update_labels()
 
     def set_version_name(self, version_name: str):
@@ -648,8 +648,8 @@ class ImportShot(ns.Node):
             if shot_uri is not None:
                 # Both 'latest' and 'current' use highest versioned staged file
                 # ('latest' strips versions for dynamic resolution at import time)
-                variant_name = self.get_variant_name()
-                actual_file_path = current_staged_file_path(shot_uri, variant_name)
+                channel_name = self.get_channel_name()
+                actual_file_path = current_staged_file_path(shot_uri, channel_name)
                 if actual_file_path is not None:
                     resolved_version = actual_file_path.parent.name
                     self.parm('version_label').set(resolved_version)
@@ -813,18 +813,18 @@ class ImportShot(ns.Node):
             )
             return
 
-        # The asset's own variant, from its ref — not the node's variant parm,
+        # The asset's own channel, from its ref — not the node's channel parm,
         # which is the *shot's*. They are independent, and a department that
         # isn't composing is looked up under this one.
         asset_ref = parse_entity_sublayer_uri(ref)
-        asset_variant = asset_ref.variant if asset_ref is not None else 'default'
+        asset_channel = asset_ref.channel if asset_ref is not None else 'default'
 
         staged_path = Path(staged)
         report = build_asset_layer_report(
             asset_uri,
             staged_path,
             pinned,
-            variant=asset_variant,
+            channel=asset_channel,
             staged_version=staged_path.parent.name,
         )
 
@@ -854,23 +854,23 @@ class ImportShot(ns.Node):
             context.bypass(True)
             return
 
-        # Get staged file path based on version and variant selection
+        # Get staged file path based on version and channel selection
         version_name = self.get_version_name()
-        variant_name = self.get_variant_name()
+        channel_name = self.get_channel_name()
 
         if version_name == 'latest':
             # Enable resolver latest mode for full cascade semantics
             # All nested entity:/ URIs will resolve to their latest versions
             resolver.set_latest_mode(True)
-            staged_file_path = current_staged_file_path(shot_uri, variant_name)
+            staged_file_path = current_staged_file_path(shot_uri, channel_name)
         elif version_name == 'current':
             # Disable latest mode - use frozen versions from build
             resolver.set_latest_mode(False)
-            staged_file_path = current_staged_file_path(shot_uri, variant_name)
+            staged_file_path = current_staged_file_path(shot_uri, channel_name)
         else:
             # Disable latest mode - use specific version
             resolver.set_latest_mode(False)
-            staged_file_path = get_staged_file_path(shot_uri, version_name, variant_name)
+            staged_file_path = get_staged_file_path(shot_uri, version_name, channel_name)
 
         # Refresh resolver cache to ensure fresh resolution with the new mode
         resolver.refresh_context()
@@ -954,9 +954,9 @@ class ImportShot(ns.Node):
 
         # Filter out excluded layers - both department layers AND assets from excluded departments
         def should_include_layer(info):
-            # Skip _shared variant layers for single-variant entities
+            # Skip _shared channel layers for single-channel entities
             if info.get('variant') == '_shared':
-                if len(list_variants(shot_uri)) <= 1:
+                if len(list_channels(shot_uri)) <= 1:
                     return False
 
             if info['type'] == 'shot_department':

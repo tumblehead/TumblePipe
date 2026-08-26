@@ -39,15 +39,15 @@ from pathlib import Path
 
 
 def _latest_staged_context(asset_dir: Path) -> Path | None:
-    """The newest staged context.json for an asset, across all variants."""
+    """The newest staged context.json for an asset, across all channels."""
     staged = asset_dir / '_staged'
     if not staged.is_dir():
         return None
     candidates = []
-    for variant_dir in staged.iterdir():
-        if not variant_dir.is_dir():
+    for channel_dir in staged.iterdir():
+        if not channel_dir.is_dir():
             continue
-        for version_dir in variant_dir.iterdir():
+        for version_dir in channel_dir.iterdir():
             context_path = version_dir / 'context.json'
             if version_dir.is_dir() and context_path.is_file():
                 candidates.append((version_dir.name, context_path))

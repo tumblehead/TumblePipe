@@ -9,7 +9,7 @@ compare the CURRENT staged context.json's tracked-asset entries against
 what the newest-export-wins policy (TumblePipe >= 1.21.1) derives from
 the departments' current context.json files: per tracked asset, the most
 recently exported department layer that records it provides instances
-and variant. Staged contexts produced by older releases used max()
+and channel. Staged contexts produced by older releases used max()
 across layers, which pinned stale counts forever (the paleindia
 "six towers" bug) — this sweep finds any staged build still carrying
 such a count, so it can be re-staged (or its department re-exported)
@@ -17,7 +17,7 @@ before an import surfaces phantom instances.
 
 Flags per staged build:
 - COUNT    staged instances differ from the newest department context
-- VARIANT  staged variant differs from the newest department context
+- VARIANT  staged channel differs from the newest department context
 - STALE    staged tracks an asset no current department context records
 - MISSING  a current department context tracks an asset the staged
            context lacks (staged predates the department export)
@@ -57,18 +57,18 @@ def _latest_version_dir(path: Path) -> Path | None:
     return versions[-1] if versions else None
 
 
-def _staged_context(asset_root: Path, variant_name: str) -> dict | None:
-    version_dir = _latest_version_dir(asset_root / '_staged' / variant_name)
+def _staged_context(asset_root: Path, channel_name: str) -> dict | None:
+    version_dir = _latest_version_dir(asset_root / '_staged' / channel_name)
     if version_dir is None:
         return None
     return _load_json(version_dir / 'context.json')
 
 
-def _dept_outputs(asset_root: Path, variant_name: str, departments):
+def _dept_outputs(asset_root: Path, channel_name: str, departments):
     """Yield (department, timestamp, assets) from each department's
     current context.json output entry."""
     for department in departments:
-        version_dir = _latest_version_dir(asset_root / variant_name / department)
+        version_dir = _latest_version_dir(asset_root / channel_name / department)
         if version_dir is None:
             continue
         context_data = _load_json(version_dir / 'context.json')
@@ -84,12 +84,12 @@ def _dept_outputs(asset_root: Path, variant_name: str, departments):
             )
 
 
-def _expected_tracked(asset_root: Path, variant_name: str, departments, own_uri):
+def _expected_tracked(asset_root: Path, channel_name: str, departments, own_uri):
     """Newest-export-wins snapshot per tracked asset across departments."""
-    expected = {}  # uri -> (instances, variant)
+    expected = {}  # uri -> (instances, channel)
     stamps = {}
     for _department, stamp, assets in _dept_outputs(
-        asset_root, variant_name, departments
+        asset_root, channel_name, departments
     ):
         for entry in assets:
             uri = entry.get('asset')
@@ -106,19 +106,19 @@ def _expected_tracked(asset_root: Path, variant_name: str, departments, own_uri)
 
 
 def _iter_staged_asset_roots(export_root: Path):
-    """Yield (asset_root, variant_name) for every staged build found."""
+    """Yield (asset_root, channel_name) for every staged build found."""
     if not export_root.exists():
         return
     for staged_dir in export_root.rglob('_staged'):
         if not staged_dir.is_dir():
             continue
-        for variant_dir in staged_dir.iterdir():
-            if variant_dir.is_dir():
-                yield staged_dir.parent, variant_dir.name
+        for channel_dir in staged_dir.iterdir():
+            if channel_dir.is_dir():
+                yield staged_dir.parent, channel_dir.name
 
 
-def _check_staged_build(asset_root: Path, variant_name: str) -> list[str]:
-    staged = _staged_context(asset_root, variant_name)
+def _check_staged_build(asset_root: Path, channel_name: str) -> list[str]:
+    staged = _staged_context(asset_root, channel_name)
     if staged is None:
         return []
     own_uri = staged.get('uri', '')
@@ -135,22 +135,22 @@ def _check_staged_build(asset_root: Path, variant_name: str) -> list[str]:
     if not departments and not staged_assets:
         return []
 
-    expected = _expected_tracked(asset_root, variant_name, departments, own_uri)
+    expected = _expected_tracked(asset_root, channel_name, departments, own_uri)
 
     findings = []
-    label = f'{own_uri or asset_root} [{variant_name}] {staged.get("version", "?")}'
-    for uri, (instances, variant) in sorted(staged_assets.items()):
+    label = f'{own_uri or asset_root} [{channel_name}] {staged.get("version", "?")}'
+    for uri, (instances, channel) in sorted(staged_assets.items()):
         if uri not in expected:
             findings.append(f'STALE    {label}: tracks {uri} '
                             '(no current department context records it)')
             continue
-        expected_instances, expected_variant = expected[uri]
+        expected_instances, expected_channel = expected[uri]
         if instances != expected_instances:
             findings.append(f'COUNT    {label}: {uri} staged={instances} '
                             f'departments={expected_instances}')
-        if variant != expected_variant:
-            findings.append(f'VARIANT  {label}: {uri} staged={variant} '
-                            f'departments={expected_variant}')
+        if channel != expected_channel:
+            findings.append(f'VARIANT  {label}: {uri} staged={channel} '
+                            f'departments={expected_channel}')
     for uri in sorted(set(expected) - set(staged_assets)):
         findings.append(f'MISSING  {label}: departments track {uri} '
                         'but the staged context lacks it')
@@ -178,9 +178,9 @@ def main() -> int:
     findings = []
     checked = 0
     for scan_root in scan_roots:
-        for asset_root, variant_name in _iter_staged_asset_roots(scan_root):
+        for asset_root, channel_name in _iter_staged_asset_roots(scan_root):
             checked += 1
-            findings.extend(_check_staged_build(asset_root, variant_name))
+            findings.extend(_check_staged_build(asset_root, channel_name))
 
     for finding in findings:
         print(finding)

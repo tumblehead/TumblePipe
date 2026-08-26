@@ -53,7 +53,7 @@
             }
             parm {
                 name    "variant#"
-                label   "Variant"
+                label   "Channel"
                 type    string
                 nolabel
                 joinnext
@@ -64,11 +64,11 @@
                     [ "" ]
                     [ "index = int(kwargs['parm'].name()[len('variant'):])" ]
                     [ "node = import_rigs.ImportRigs(hou.pwd())" ]
-                    [ "variant_names = node.list_variant_names(index)" ]
-                    [ "variant_name = node.get_variant_name(index)" ]
-                    [ "if variant_name is None or variant_name not in variant_names:" ]
-                    [ "    node.set_variant_name(index, variant_names[0])" ]
-                    [ "return util.list_to_menu(variant_names)" ]
+                    [ "channel_names = node.list_channel_names(index)" ]
+                    [ "channel_name = node.get_channel_name(index)" ]
+                    [ "if channel_name is None or channel_name not in channel_names:" ]
+                    [ "    node.set_channel_name(index, channel_names[0])" ]
+                    [ "return util.list_to_menu(channel_names)" ]
                     language python
                 }
                 parmtag { "script_callback_language" "python" }

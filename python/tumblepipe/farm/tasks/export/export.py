@@ -41,7 +41,7 @@ def main(config):
     purpose = config['settings']['purpose']
     priority = config['settings']['priority']
     pool_name = config['settings']['pool_name']
-    variant_name = config['settings']['variant_name']
+    channel_name = config['settings']['variant_name']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     tile_count = config['settings']['tile_count']
@@ -107,7 +107,7 @@ def main(config):
                 purpose = purpose,
                 priority = priority,
                 pool_name = pool_name,
-                variant_name = variant_name,
+                variant_name = channel_name,
                 render_department_name = render_department_name,
                 render_settings_path = path_str(render_settings_path),
                 input_path = path_str(relative_stage_path),

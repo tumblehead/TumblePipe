@@ -70,8 +70,8 @@ def check_config_duplicates(data: dict) -> list[str]:
         lowered = Counter(key.lower() for key in children)
         for key, count in lowered.items():
             if count > 1:
-                variants = sorted(k for k in children if k.lower() == key)
-                findings.append(f"config: /{'/'.join(trail)} has case-duplicate keys {variants}")
+                channels = sorted(k for k in children if k.lower() == key)
+                findings.append(f"config: /{'/'.join(trail)} has case-duplicate keys {channels}")
         for key, child in children.items():
             walk(child, trail + [key])
 
@@ -187,10 +187,10 @@ def check_usd_roots(project: Path, data: dict) -> list[str]:
             asset_dir = project / 'export' / 'assets' / category / asset
             if not asset_dir.exists():
                 continue
-            for variant_dir in sorted(asset_dir.iterdir()):
-                if not variant_dir.is_dir() or variant_dir.name == '_staged':
+            for channel_dir in sorted(asset_dir.iterdir()):
+                if not channel_dir.is_dir() or channel_dir.name == '_staged':
                     continue
-                for dept_dir in sorted(variant_dir.iterdir()):
+                for dept_dir in sorted(channel_dir.iterdir()):
                     versions = sorted(v for v in dept_dir.glob('v*') if v.is_dir())
                     if not versions:
                         continue

@@ -16,7 +16,8 @@ from typing import Optional
 
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.variants import DEFAULT_VARIANT, get_entity_type
+from tumblepipe.config.channels import DEFAULT_CHANNEL
+from tumblepipe.config.entities import get_entity_type
 from tumblepipe.pipe.paths import latest_export_path
 
 
@@ -44,13 +45,13 @@ def entity_key(entity_uri: Uri, department_name: Optional[str]) -> str:
     return f'{entity_uri}{dept_suffix}'
 
 
-def get_latest_version(api, entity_uri: Uri, variant_name: str, department_name: Optional[str]) -> Optional[Path]:
+def get_latest_version(api, entity_uri: Uri, channel_name: str, department_name: Optional[str]) -> Optional[Path]:
     """
     Look up latest version path for entity.
 
     Uses latest_export_path() with Uri.
     """
-    return latest_export_path(entity_uri, variant_name, department_name)
+    return latest_export_path(entity_uri, channel_name, department_name)
 
 
 def entity_from_dict(data: dict) -> Optional[tuple[Uri, Optional[str]]]:
@@ -109,8 +110,8 @@ def scan(api) -> Graph:
 
     # Scan all entities
     for entity_uri, department_name in _iter_all_entities(api):
-        # Get latest version path (scan with default variant)
-        latest_path = get_latest_version(api, entity_uri, DEFAULT_VARIANT, department_name)
+        # Get latest version path (scan with default channel)
+        latest_path = get_latest_version(api, entity_uri, DEFAULT_CHANNEL, department_name)
         if latest_path is None:
             continue
 

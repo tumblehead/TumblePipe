@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from _pipeline_houdini import run_on_main_thread, session_nc_type
+from _pipeline_houdini import report_failure, run_on_main_thread, session_nc_type
 from _pipeline_types import latest_workfile, workfile_for_version
 import _pipeline_uris as uris
 
@@ -59,8 +59,8 @@ class WorkfileManager:
                 ["cmd", "/c", "start", "", str(target)],
                 creationflags=0x08000000,
             )
-        except Exception:
-            log.exception("Open Location failed for %s/%s", asset_id, dept)
+        except Exception as exc:
+            report_failure(f"Opening the location for {asset_id}/{dept}", exc)
 
     def open_latest_export(self, asset_id: str, dept: str) -> None:
         """Open the dept's latest export folder in the OS file browser."""
@@ -89,9 +89,9 @@ class WorkfileManager:
                 ["cmd", "/c", "start", "", str(path)],
                 creationflags=0x08000000,
             )
-        except Exception:
-            log.exception(
-                "View Latest Export failed for %s/%s", asset_id, dept,
+        except Exception as exc:
+            report_failure(
+                f"Opening the latest export for {asset_id}/{dept}", exc,
             )
 
     def dept_dir_for(self, asset_id: str, dept: str) -> Path | None:
@@ -533,8 +533,8 @@ class WorkfileManager:
                     self._catalog._scene.apply_scene_timeline(asset_id)
                     if self._catalog._prefs.auto_refresh_on_open:
                         self._catalog._scene.refresh_scene_imports()
-            except Exception:
-                log.exception("Failed to load %s", path_str)
+            except Exception as exc:
+                report_failure(f"Opening {path_str}", exc)
                 return
             if callable(refresh_cb):
                 try:
@@ -577,8 +577,8 @@ class WorkfileManager:
             from tumblepipe.pipe.paths import (
                 reserve_next_hip_file_path, Context,
             )
-        except Exception:
-            log.exception("Create: tumblehead imports failed")
+        except Exception as exc:
+            report_failure("Create workfile", exc)
             return
 
 
@@ -599,10 +599,9 @@ class WorkfileManager:
                     next_path = reserve_next_hip_file_path(
                         entity_uri, dept, nc_type=session_nc_type(),
                     )
-                except Exception:
-                    log.exception(
-                        "Create: reserving next version failed for %s/%s",
-                        asset_id, dept,
+                except Exception as exc:
+                    report_failure(
+                        f"Creating a workfile for {asset_id}/{dept}", exc,
                     )
                     return
                 if next_path is None:
@@ -680,11 +679,13 @@ class WorkfileManager:
                     self._catalog._scene.apply_scene_timeline(
                         asset_id, force_frame_range=True,
                     )
+                    timeline_applied = True
                 except Exception:
                     log.exception(
                         "Create: applying scene timeline failed for %s/%s",
                         asset_id, dept,
                     )
+                    timeline_applied = False
 
                 hou.hipFile.save(str(next_path))
 
@@ -695,11 +696,13 @@ class WorkfileManager:
                 msg = f"Created {Path(next_path).name}"
                 if not template_applied:
                     msg += " (no template)"
+                if not timeline_applied:
+                    msg += " (frame range/fps NOT applied — check the log)"
                 hou.ui.setStatusMessage(
                     msg, severity=hou.severityType.Message,
                 )
-            except Exception:
-                log.exception("Create failed for %s/%s", asset_id, dept)
+            except Exception as exc:
+                report_failure(f"Creating a workfile for {asset_id}/{dept}", exc)
                 return
 
             self._catalog.invalidate_cache()
@@ -763,10 +766,9 @@ class WorkfileManager:
                     next_path = reserve_next_hip_file_path(
                         entity_uri, dept, nc_type=session_nc_type(),
                     )
-                except Exception:
-                    log.exception(
-                        "New from Current: reserving next version failed for %s/%s",
-                        asset_id, dept,
+                except Exception as exc:
+                    report_failure(
+                        f"New from Current for {asset_id}/{dept}", exc,
                     )
                     return
                 if next_path is None:
@@ -805,10 +807,9 @@ class WorkfileManager:
                     f"Saved {Path(next_path).name}",
                     severity=hou.severityType.Message,
                 )
-            except Exception:
-                log.exception(
-                    "New from Current failed for %s/%s",
-                    asset_id, dept,
+            except Exception as exc:
+                report_failure(
+                    f"New from Current for {asset_id}/{dept}", exc,
                 )
                 return
 
@@ -895,8 +896,10 @@ class WorkfileManager:
                     creationflags=flags,
                 )
                 log.info("Launched hip via shell: %s", hip_path)
-        except Exception:
-            log.exception("Failed to open in new instance: %s/%s", asset_id, dept)
+        except Exception as exc:
+            report_failure(
+                f"Opening {asset_id}/{dept} in a new Houdini instance", exc,
+            )
 
     def open_workfile(self, asset_id: str, dept: str) -> None:
         """Open the latest workfile for a department.
@@ -970,8 +973,8 @@ class WorkfileManager:
                             self._catalog._scene.apply_scene_timeline(asset_id)
                             if self._catalog._prefs.auto_refresh_on_open:
                                 self._catalog._scene.refresh_scene_imports()
-                    except Exception:
-                        log.exception("Failed to load workfile %s", p)
+                    except Exception as exc:
+                        report_failure(f"Opening {p}", exc)
                         return
                     self._catalog._request_global_detail_refresh()
 
@@ -985,8 +988,8 @@ class WorkfileManager:
                 ["cmd", "/c", "start", "", str(target)],
                 creationflags=0x08000000,
             )
-        except Exception:
-            log.exception("Failed to open workfile for %s/%s", asset_id, dept)
+        except Exception as exc:
+            report_failure(f"Opening the workfile for {asset_id}/{dept}", exc)
 
     def open_group_workfile(self, asset_id: str, dept: str) -> None:
         """Open the latest workfile for a group's department.
@@ -1035,10 +1038,8 @@ class WorkfileManager:
                             self._catalog._scene.apply_scene_timeline(asset_id)
                             if self._catalog._prefs.auto_refresh_on_open:
                                 self._catalog._scene.refresh_scene_imports()
-                    except Exception:
-                        log.exception(
-                            "Failed to load group workfile %s", p,
-                        )
+                    except Exception as exc:
+                        report_failure(f"Opening the group workfile {p}", exc)
                         return
                     self._catalog._request_global_detail_refresh()
 
@@ -1062,9 +1063,9 @@ class WorkfileManager:
                 ["cmd", "/c", "start", "", str(target)],
                 creationflags=0x08000000,
             )
-        except Exception:
-            log.exception(
-                "Failed to open group workfile for %s/%s", asset_id, dept,
+        except Exception as exc:
+            report_failure(
+                f"Opening the group workfile for {asset_id}/{dept}", exc,
             )
 
     def open_group_dept_work_dir(self, asset_id: str, dept: str) -> None:
@@ -1101,9 +1102,9 @@ class WorkfileManager:
                 ["cmd", "/c", "start", "", str(target)],
                 creationflags=0x08000000,
             )
-        except Exception:
-            log.exception(
-                "Failed to open group work dir for %s/%s", asset_id, dept,
+        except Exception as exc:
+            report_failure(
+                f"Opening the group work directory for {asset_id}/{dept}", exc,
             )
 
     def new_group_from_template(
@@ -1137,8 +1138,8 @@ class WorkfileManager:
             from tumblepipe.pipe.paths import (
                 reserve_next_hip_file_path, Context,
             )
-        except Exception:
-            log.exception("New: Template (group): tumblepipe imports failed")
+        except Exception as exc:
+            report_failure("New group workfile from template", exc)
             return
 
         group_uri = uris.group(path)
@@ -1261,10 +1262,9 @@ class WorkfileManager:
                         refresh_cb()
                     except Exception:
                         log.exception("refresh_cb failed after group create")
-            except Exception:
-                log.exception(
-                    "New: Template (group): unexpected failure for %s/%s",
-                    asset_id, dept,
+            except Exception as exc:
+                report_failure(
+                    f"Creating a group workfile for {asset_id}/{dept}", exc,
                 )
 
         run_on_main_thread(_do_create)

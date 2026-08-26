@@ -17,7 +17,7 @@ def sort_aovs(
     Returns:
         Sorted list with:
         1. 'beauty' or 'c' (if present, case-insensitive)
-        2. 'beauty_*' or 'c_*' LPE variants
+        2. 'beauty_*' or 'c_*' LPE channels
         3. 'objid_*' and 'holdout_*' (mattes)
         4. All other AOVs
     """

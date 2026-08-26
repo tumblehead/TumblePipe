@@ -300,6 +300,64 @@ def _seed_ocio(config_dir: Path) -> None:
         logger.info('ocio: seeded %s', dst)
 
 
+# --------------------------------------------------------------------------- #
+# v5 — relabel the "variants" column as "Channels" in the browser database
+# --------------------------------------------------------------------------- #
+# The publish-tree fork used to be called a "variant", which collided with
+# USD's own variantSets — a different mechanism entirely, and the one artists
+# meant when they asked for asset look variation. The concept is now called a
+# **channel** everywhere it is shown. Only the label moves: the property key
+# stays `variants`, because that is what every project's database already
+# stores and what the published path/URI wire format spells.
+#
+# `db/config.json` is copied into a project at creation, so a live project
+# keeps whatever labels it was born with until this runs. A project without
+# that file simply has no column config to relabel.
+
+
+def _relabel_variants_as_channels(config_dir: Path) -> None:
+    path = config_dir / 'db' / 'config.json'
+    if not path.exists():
+        return  # no browser column config in this project — nothing to relabel
+
+    data = json.loads(path.read_text(encoding='utf-8'))
+
+    def rename(text: str) -> str:
+        return (text
+                .replace('Variants', 'Channels')
+                .replace('Variant', 'Channel')
+                .replace('variants', 'channels')
+                .replace('variant', 'channel'))
+
+    changed = False
+
+    def walk(node) -> None:
+        nonlocal changed
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        # Only the column/field spec that drives the `variants` property — a
+        # blanket text substitution would rewrite unrelated labels.
+        if node.get('key') == 'variants' or node.get('property_path') == 'variants':
+            for field in ('label', 'tooltip'):
+                value = node.get(field)
+                if isinstance(value, str) and rename(value) != value:
+                    node[field] = rename(value)
+                    changed = True
+        for value in node.values():
+            walk(value)
+
+    walk(data)
+    if not changed:
+        return  # already relabelled — idempotent
+
+    path.write_text(json.dumps(data, indent=4) + '\n', encoding='utf-8')
+    logger.info('db config: relabelled the variants column as Channels in %s', path)
+
+
 MIGRATIONS: list[Migration] = [
     Migration(
         version=1,
@@ -320,5 +378,10 @@ MIGRATIONS: list[Migration] = [
         version=4,
         description='seed the project-owned OCIO config into _config/ocio/',
         apply=_seed_ocio,
+    ),
+    Migration(
+        version=5,
+        description='relabel the browser "Variants" column as "Channels"',
+        apply=_relabel_variants_as_channels,
     ),
 ]

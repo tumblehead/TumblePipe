@@ -81,7 +81,7 @@ def _create_validation_task(
     entity_uri: Uri,
     department: str,
     export_nodes: list,
-    variant: str = 'default'
+    channel: str = 'default'
 ) -> ProcessTask:
     """Create a validation task for export nodes.
 
@@ -95,7 +95,7 @@ def _create_validation_task(
         entity_uri: The entity URI
         department: Department name
         export_nodes: List of export nodes to validate
-        variant: Variant name
+        channel: Channel name
 
     Returns:
         ProcessTask for validation
@@ -182,7 +182,7 @@ def _create_validation_task(
         description=f"Validate ({department})",
         execute_local=validate_local_fn,
         execute_farm=validate_farm_fn,
-        variant=variant,
+        channel=channel,
         status=TaskStatus.PENDING,
         # Default OFF for publishes until validator conventions and the
         # warning/error severity balance are settled — the current output
@@ -241,8 +241,8 @@ def _create_export_group_task(
 
     # Add export_layer children
     for export_node in export_nodes:
-        variant = export_node.get_variant_name()
-        export_path = latest_export_path(entity_uri, variant, department)
+        channel = export_node.get_channel_name()
+        export_path = latest_export_path(entity_uri, channel, department)
         version = _get_version_from_path(export_path)
         node_ref = export_node
 
@@ -251,8 +251,8 @@ def _create_export_group_task(
             uri=entity_uri,
             department=department,
             task_type='export',
-            variant=variant,
-            description=f"Export ({variant})" if variant else "Export",
+            channel=channel,
+            description=f"Export ({channel})" if channel else "Export",
             node_path=export_node.path(),
             parent_id=parent_id,
             current_version=version,
@@ -278,10 +278,10 @@ def _create_export_group_task(
     return parent
 
 
-def _get_build_version(entity_uri: Uri, variant_name: str = 'default') -> str | None:
+def _get_build_version(entity_uri: Uri, channel_name: str = 'default') -> str | None:
     """Get the current build version for an entity"""
     try:
-        build_path = current_staged_path(entity_uri, variant_name)
+        build_path = current_staged_path(entity_uri, channel_name)
         return _get_version_from_path(build_path)
     except Exception:
         return None
@@ -289,23 +289,23 @@ def _get_build_version(entity_uri: Uri, variant_name: str = 'default') -> str | 
 
 def _create_build_group_task(
     entity_uri: Uri,
-    variants: list[str],
+    channels: list[str],
     depends_on: list[str] | None = None,
     first_frame: int | None = None,
     last_frame: int | None = None
 ) -> ProcessTask:
     """
-    Create a parent build task that groups variant build tasks.
+    Create a parent build task that groups channel build tasks.
 
     Args:
         entity_uri: The entity URI
-        variants: List of variant names to build
+        channels: List of channel names to build
         depends_on: Optional list of task IDs this task depends on
         first_frame: Optional first frame override (from export node)
         last_frame: Optional last frame override (from export node)
 
     Returns:
-        A ProcessTask with children for each variant
+        A ProcessTask with children for each channel
     """
     parent_id = str(uuid.uuid4())
     children = []
@@ -314,20 +314,20 @@ def _create_build_group_task(
     if first_frame is None or last_frame is None:
         first_frame, last_frame = _get_frame_range_values(entity_uri)
 
-    # Add child task for each variant
-    for variant_name in variants:
-        version = _get_build_version(entity_uri, variant_name)
+    # Add child task for each channel
+    for channel_name in channels:
+        version = _get_build_version(entity_uri, channel_name)
         child = ProcessTask(
             id=str(uuid.uuid4()),
             uri=entity_uri,
             department='staged',
             task_type='build',
-            variant=variant_name,
-            description=f"Build USD ({variant_name})",
+            channel=channel_name,
+            description=f"Build USD ({channel_name})",
             parent_id=parent_id,
             current_version=version,
-            execute_local=lambda uri=entity_uri, v=variant_name, ff=first_frame, lf=last_frame: _execute_build_local(uri, v, ff, lf),
-            execute_farm=lambda uri=entity_uri, v=variant_name, ff=first_frame, lf=last_frame: _execute_build_farm(uri, v, ff, lf),
+            execute_local=lambda uri=entity_uri, v=channel_name, ff=first_frame, lf=last_frame: _execute_build_local(uri, v, ff, lf),
+            execute_farm=lambda uri=entity_uri, v=channel_name, ff=first_frame, lf=last_frame: _execute_build_farm(uri, v, ff, lf),
             first_frame=first_frame,
             last_frame=last_frame,
         )
@@ -348,7 +348,7 @@ def _create_build_group_task(
     return parent
 
 
-def _execute_build_local(entity_uri: Uri, variant_name: str = 'default', first_frame: int | None = None, last_frame: int | None = None):
+def _execute_build_local(entity_uri: Uri, channel_name: str = 'default', first_frame: int | None = None, last_frame: int | None = None):
     """Execute build locally using build task.
 
     Handles both shots and assets:
@@ -357,7 +357,7 @@ def _execute_build_local(entity_uri: Uri, variant_name: str = 'default', first_f
 
     Args:
         entity_uri: The entity URI
-        variant_name: The variant to build
+        channel_name: The channel to build
         first_frame: Optional first frame override (from export node)
         last_frame: Optional last frame override (from export node)
     """
@@ -369,7 +369,7 @@ def _execute_build_local(entity_uri: Uri, variant_name: str = 'default', first_f
     entity_type = get_entity_type(entity_uri)
 
     # Get the output file path for the build (includes .usda filename)
-    output_path = next_staged_file_path(entity_uri, variant_name)
+    output_path = next_staged_file_path(entity_uri, channel_name)
 
     # Use provided frame range if available, otherwise get from entity config
     if first_frame is not None and last_frame is not None:
@@ -383,7 +383,7 @@ def _execute_build_local(entity_uri: Uri, variant_name: str = 'default', first_f
     print('Build Task Debug Info')
     print('=' * 40)
     print(f'Entity URI: {entity_uri}')
-    print(f'Variant: {variant_name}')
+    print(f'Channel: {channel_name}')
     print(f'Entity type: {entity_type}')
     print(f'Output path: {output_path}')
     print(f'Frame range: {render_range}')
@@ -397,21 +397,21 @@ def _execute_build_local(entity_uri: Uri, variant_name: str = 'default', first_f
     # Assets: render_range is optional (animated assets have it, static don't)
 
     # Execute the build
-    result = build_task.main(entity_uri, output_path, render_range, variant_name)
+    result = build_task.main(entity_uri, output_path, render_range, channel_name)
     if result != 0:
         raise RuntimeError(f"Build failed with exit code {result}")
 
     return _get_version_from_path(output_path)
 
 
-def _execute_build_farm(entity_uri: Uri, variant_name: str = 'default', first_frame: int | None = None, last_frame: int | None = None):
+def _execute_build_farm(entity_uri: Uri, channel_name: str = 'default', first_frame: int | None = None, last_frame: int | None = None):
     """Submit build job to farm.
 
     Handles both shots and assets.
 
     Args:
         entity_uri: The entity URI
-        variant_name: The variant to build
+        channel_name: The channel to build
         first_frame: Optional first frame override (from export node)
         last_frame: Optional last frame override (from export node)
     """
@@ -420,7 +420,7 @@ def _execute_build_farm(entity_uri: Uri, variant_name: str = 'default', first_fr
     # Prepare config for farm submission
     config = {
         'entity_uri': str(entity_uri),
-        'variant_name': variant_name,
+        'variant_name': channel_name,
         'priority': 50,  # Default priority
         'pool_name': 'houdini'  # Default pool
     }

@@ -86,7 +86,7 @@
             }
             parm {
                 name    "variant#"
-                label   "Variant"
+                label   "Channel"
                 type    string
                 nolabel
                 joinnext
@@ -97,7 +97,7 @@
                     [ "" ]
                     [ "index = int(kwargs['parm'].name()[len('variant'):])" ]
                     [ "node = import_assets.ImportAssets(hou.pwd())" ]
-                    [ "return util.list_to_menu(node.list_variant_names(index))" ]
+                    [ "return util.list_to_menu(node.list_channel_names(index))" ]
                     language python
                 }
                 parmtag { "script_callback_language" "python" }

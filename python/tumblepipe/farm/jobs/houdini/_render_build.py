@@ -67,7 +67,7 @@ def build_partial_render_job(
     department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    variant_name = config['settings']['variant_name']
+    channel_name = config['settings']['variant_name']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     input_path = Path(config['settings']['input_path'])
@@ -95,7 +95,7 @@ def build_partial_render_job(
     receipt_path = get_next_frame_path(
         entity_uri,
         render_department_name,
-        variant_name,
+        channel_name,
         '####',
         'json',
         purpose
@@ -103,14 +103,14 @@ def build_partial_render_job(
     version_name = receipt_path.parent.name
     title = (
         'partial render '
-        f'{variant_name} '
+        f'{channel_name} '
         f'{version_name}'
     )
     output_paths = {
         aov_name: get_aov_frame_path(
             entity_uri,
             render_department_name,
-            variant_name,
+            channel_name,
             version_name,
             aov_name,
             '####',
@@ -144,7 +144,7 @@ def build_partial_render_job(
     store_json(context_path, dict(
         entity = str(entity_uri),
         department = department_name,
-        variant = variant_name,
+        variant = channel_name,
         render_department_name = render_department_name,
         version_name = version_name,
         first_frame = first_frame,
@@ -172,7 +172,7 @@ def build_full_render_job(
     department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    variant_name = config['settings']['variant_name']
+    channel_name = config['settings']['variant_name']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     input_path = Path(config['settings']['input_path'])
@@ -187,7 +187,7 @@ def build_full_render_job(
             output_frame_path = get_next_frame_path(
                 entity_uri,
                 render_department_name,
-                variant_name,
+                channel_name,
                 '####',
                 'json',
                 purpose
@@ -198,7 +198,7 @@ def build_full_render_job(
             output_frame_path = get_frame_path(
                 entity_uri,
                 render_department_name,
-                variant_name,
+                channel_name,
                 version_name,
                 '####',
                 'json',
@@ -218,14 +218,14 @@ def build_full_render_job(
     receipt_path, version_name = _receipt_path(version_name)
     title = (
         f'full render '
-        f'{variant_name} '
+        f'{channel_name} '
         f'{version_name}'
     )
     output_paths = {
         aov_name: path_str(get_aov_frame_path(
             entity_uri,
             render_department_name,
-            variant_name,
+            channel_name,
             version_name,
             aov_name,
             '####',
@@ -259,7 +259,7 @@ def build_full_render_job(
     store_json(context_path, dict(
         entity = str(entity_uri),
         department = department_name,
-        variant = variant_name,
+        variant = channel_name,
         render_department_name = render_department_name,
         version_name = version_name,
         first_frame = first_frame,
@@ -285,7 +285,7 @@ def build_partial_denoise_job(
     department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    variant_name = config['settings']['variant_name']
+    channel_name = config['settings']['variant_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
@@ -311,7 +311,7 @@ def build_partial_denoise_job(
     receipt_path = get_next_frame_path(
         entity_uri,
         'denoise',
-        variant_name,
+        channel_name,
         '####',
         'json',
         purpose
@@ -319,14 +319,14 @@ def build_partial_denoise_job(
     version_name = receipt_path.parent.name
     title = (
         f'partial denoise '
-        f'{variant_name} '
+        f'{channel_name} '
         f'{version_name}'
     )
     input_paths = {
         aov_name: get_aov_frame_path(
             entity_uri,
             render_department_name,
-            variant_name,
+            channel_name,
             render_version_name,
             aov_name,
             '####',
@@ -339,7 +339,7 @@ def build_partial_denoise_job(
         aov_name: get_aov_frame_path(
             entity_uri,
             'denoise',
-            variant_name,
+            channel_name,
             version_name,
             aov_name,
             '####',
@@ -376,7 +376,7 @@ def build_partial_denoise_job(
         entity = str(entity_uri),
         department = department_name,
         render_department_name = 'denoise',
-        variant = variant_name,
+        variant = channel_name,
         version_name = version_name,
         first_frame = first_frame,
         last_frame = last_frame,
@@ -401,7 +401,7 @@ def build_full_denoise_job(
     department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    variant_name = config['settings']['variant_name']
+    channel_name = config['settings']['variant_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
@@ -419,7 +419,7 @@ def build_full_denoise_job(
     receipt_path = get_next_frame_path(
         entity_uri,
         'denoise',
-        variant_name,
+        channel_name,
         '####',
         'json',
         purpose
@@ -427,14 +427,14 @@ def build_full_denoise_job(
     version_name = receipt_path.parent.name
     title = (
         f'full denoise '
-        f'{variant_name} '
+        f'{channel_name} '
         f'{version_name}'
     )
     input_paths = {
         aov_name: get_aov_frame_path(
             entity_uri,
             render_department_name,
-            variant_name,
+            channel_name,
             render_version_name,
             aov_name,
             '####',
@@ -447,7 +447,7 @@ def build_full_denoise_job(
         aov_name: get_aov_frame_path(
             entity_uri,
             'denoise',
-            variant_name,
+            channel_name,
             version_name,
             aov_name,
             '####',
@@ -484,7 +484,7 @@ def build_full_denoise_job(
         entity = str(entity_uri),
         department = department_name,
         render_department_name = 'denoise',
-        variant = variant_name,
+        variant = channel_name,
         version_name = version_name,
         first_frame = first_frame,
         last_frame = last_frame,
@@ -520,16 +520,16 @@ def build_slapcomp_job(
         'Render settings not found: '
         f'{render_settings_path}'
     )
-    variant_names = render_settings['variant_names']
+    channel_names = render_settings['variant_names']
     aov_names = render_settings['aov_names']
 
     # Paramaters
     input_paths = {
-        variant_name: {
+        channel_name: {
             aov_name: get_aov_frame_path(
                 entity_uri,
                 render_department_name,
-                variant_name,
+                channel_name,
                 version_name,
                 aov_name,
                 '####',
@@ -538,7 +538,7 @@ def build_slapcomp_job(
             )
             for aov_name in aov_names
         }
-        for variant_name in variant_names
+        for channel_name in channel_names
     }
     receipt_path = get_next_frame_path(
         entity_uri,
@@ -668,7 +668,7 @@ def build_partial_notify_job(
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    variant_name = config['settings']['variant_name']
+    channel_name = config['settings']['variant_name']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
@@ -696,7 +696,7 @@ def build_partial_notify_job(
     frame_path = get_aov_frame_path(
         entity_uri,
         render_department_name,
-        variant_name,
+        channel_name,
         version_name,
         'beauty',
         '####',

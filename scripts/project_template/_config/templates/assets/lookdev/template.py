@@ -1,7 +1,7 @@
 
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
-from tumblepipe.config.variants import list_variants
+from tumblepipe.config.channels import list_channels
 from tumblepipe.pipe.houdini.lops import (
     import_layer,
     export_layer
@@ -19,19 +19,24 @@ def _pin_entity(node, entity_uri: Uri):
     node.hdaModule()._apply_entity(node, str(entity_uri))
 
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
-    variant_names = list_variants(entity_uri)
+    channel_names = list_channels(entity_uri)
 
     # Import the model department (entity resolves from context)
     import_node = import_layer.create(scene_node, 'IMPORT_MODEL')
     import_node.set_department_name('model')
 
+    # NOTE: the HDA's `variants` multiparm authors a *native USD variantSet*
+    # on the asset prim, but it is seeded here from the entity's publish-
+    # channel list - one property, two meanings. Until assets get their own
+    # look list (designs/native-usd-variants.md), a channel and a USD variant
+    # name are the same string for an asset.
     # Create lookdev variant system via HDA (entity + prim path from context)
     lookdev_node = scene_node.createNode('th::create_asset_lookdev::1.0', 'LOOKDEV')
     lookdev_node.setInput(0, import_node.native())
 
     # Populate variants from config and sync internal nodes
-    lookdev_node.parm('variants').set(len(variant_names))
-    for i, name in enumerate(variant_names):
+    lookdev_node.parm('variants').set(len(channel_names))
+    for i, name in enumerate(channel_names):
         lookdev_node.parm(f'variant_name{i+1}').set(name)
     lookdev_node.hdaModule()._sync_variants(lookdev_node)
 
@@ -47,21 +52,26 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
 
     for member_uri in group.members:
         member_name = '_'.join(member_uri.segments[1:])
-        variant_names = list_variants(member_uri)
+        channel_names = list_channels(member_uri)
 
         # Import the model department
         import_node = import_layer.create(scene_node, f'IMPORT_MODEL_{member_name}')
         import_node.set_entity_uri(member_uri)
         import_node.set_department_name('model')
 
+        # NOTE: the HDA's `variants` multiparm authors a *native USD variantSet*
+        # on the asset prim, but it is seeded here from the entity's publish-
+        # channel list - one property, two meanings. Until assets get their own
+        # look list (designs/native-usd-variants.md), a channel and a USD variant
+        # name are the same string for an asset.
         # Create lookdev variant system via HDA
         lookdev_node = scene_node.createNode('th::create_asset_lookdev::1.0', f'LOOKDEV_{member_name}')
         lookdev_node.setInput(0, import_node.native())
         _pin_entity(lookdev_node, member_uri)
 
         # Populate variants from config and sync internal nodes
-        lookdev_node.parm('variants').set(len(variant_names))
-        for i, name in enumerate(variant_names):
+        lookdev_node.parm('variants').set(len(channel_names))
+        for i, name in enumerate(channel_names):
             lookdev_node.parm(f'variant_name{i+1}').set(name)
         lookdev_node.hdaModule()._sync_variants(lookdev_node)
 

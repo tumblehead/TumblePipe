@@ -65,7 +65,7 @@ def export_scene_version(scene_uri: Uri) -> Path:
     # 1. Direct assets FIRST (strongest in USD composition)
     for entry in scene.assets:
         asset_uri = Uri.parse_unsafe(entry.asset)
-        staged_uri = generate_staged_sublayer_uri(asset_uri, entry.variant)
+        staged_uri = generate_staged_sublayer_uri(asset_uri, entry.channel)
         layer_uris.append(staged_uri)
 
     # 2. Parent scene sublayers AFTER (weaker, inherited)
@@ -104,7 +104,7 @@ def export_scene_version(scene_uri: Uri) -> Path:
         'version': version_name,
         'parameters': {
             'assets': [
-                {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.variant}
+                {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.channel}
                 for entry in scene.assets
             ]
         }
@@ -164,13 +164,13 @@ def generate_root_version(shot_uri: Uri) -> Path:
     if root_defaults_path.exists():
         layer_refs.append(root_defaults_path)
 
-    # Get next version path for root (shot-level, not variant-specific)
+    # Get next version path for root (shot-level, not channel-specific)
     export_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_root'
     export_path = local_path(api.storage.resolve(export_uri))
     version_path = get_next_version_path(export_path)
     version_name = version_path.name
 
-    # Generate output path (no variant in filename for shot-level root)
+    # Generate output path (no channel in filename for shot-level root)
     layer_file_name = get_root_layer_file_name(shot_uri, version_name)
     output_path = version_path / layer_file_name
 

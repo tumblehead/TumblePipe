@@ -95,7 +95,7 @@ class ProcessDialog(QtWidgets.QDialog):
             # Set sensible default widths
             self._tree_view.setColumnWidth(0, 200)  # Task
             self._tree_view.setColumnWidth(1, 90)   # Department
-            self._tree_view.setColumnWidth(2, 70)   # Variant
+            self._tree_view.setColumnWidth(2, 70)   # Channel
             self._tree_view.setColumnWidth(3, 60)   # Version
             self._tree_view.setColumnWidth(4, 50)   # First
             self._tree_view.setColumnWidth(5, 50)   # Last
@@ -461,7 +461,7 @@ class ProcessDialog(QtWidgets.QDialog):
             self._status_label.setStyleSheet("color: green; font-weight: bold;")
 
             # A task that skipped itself wrote nothing. Say so - "All tasks
-            # completed" over a silently missing variant reads as success.
+            # completed" over a silently missing channel reads as success.
             explained_skips = self._explained_skips()
             if explained_skips:
                 self._show_skipped_warning(explained_skips)
@@ -678,15 +678,15 @@ class ProcessDialog(QtWidgets.QDialog):
         from tumblepipe.pipe.paths import latest_export_path, current_staged_path
 
         try:
-            # Get variant from task, default to 'default'
-            variant = task.variant if task.variant else 'default'
+            # Get channel from task, default to 'default'
+            channel = task.channel if task.channel else 'default'
 
             if task.task_type == 'export':
                 # Open export directory
-                location_path = latest_export_path(task.uri, variant, task.department)
+                location_path = latest_export_path(task.uri, channel, task.department)
             elif task.task_type == 'build':
                 # Open staged (build) directory
-                location_path = current_staged_path(task.uri, variant)
+                location_path = current_staged_path(task.uri, channel)
             else:
                 return
 
@@ -711,7 +711,7 @@ class ProcessDialog(QtWidgets.QDialog):
         try:
             export_file = get_latest_staged_file_path(
                 entity_uri,
-                variant_name='default'
+                channel_name='default'
             )
         except Exception as e:
             hou.ui.displayMessage(

@@ -148,7 +148,7 @@ sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
 sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
 sample_count	[ 0	locks=0 ]	(	2	)
 sample_includeframe	[ 0	locks=0 ]	(	"on"	)
-primpattern	[ 0	locks=0 ]	(	`chs(\"../effective_primpath\")`/geo	)
+primpattern	[ 0	locks=0 ]	(	`strcat(chs(\"../effective_primpath\"),chs(\"../pathprefix\"))`	)
 setpurpose	[ 0	locks=0 ]	(	"off"	)
 purpose	[ 0	locks=0 ]	(	default	)
 setproxy	[ 0	locks=0 ]	(	"off"	)
@@ -789,6 +789,27 @@ Content-Disposition: attachment; filename="hdaroot/import_model_variants.chn"
 Content-Type: text/plain
 
 {
+    channel enable_pathattr {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../enable_pathattr\") }
+    }
+    channel enable_pathprefix {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../enable_pathprefix\") }
+    }
+    channel enable_prefixabsolutepaths {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../enable_prefixabsolutepaths\") }
+    }
     channel packedhandling {
       lefttype = extend
       righttype = extend
@@ -804,6 +825,12 @@ Content-Type: text/plain
       flags = 0
       start = 41.666666666666664
       segment { length = 0 value = 1 1 expr = ch(\"../polygonsassubd\") }
+    }
+    channel prefixabsolutepaths {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../prefixabsolutepaths\") }
     }
   }
 
@@ -831,8 +858,8 @@ enable_group	[ 0	locks=0 ]	(	"off"	)
 group	[ 0	locks=0 ]	(	""	)
 enable_grouptype	[ 0	locks=0 ]	(	"off"	)
 grouptype	[ 0	locks=0 ]	(	primitive	)
-enable_pathprefix	[ 0	locks=0 ]	(	"on"	)
-pathprefix	[ 8	locks=0 ]	(	/geo	)
+enable_pathprefix	[ 0	locks=0 ]	(	[ enable_pathprefix	1 ] 	)
+pathprefix	[ 8	locks=0 ]	(	`chs(\"../pathprefix\")`	)
 enable_savepath	[ 0	locks=0 ]	(	"off"	)
 savepath	[ 8	locks=0 ]	(	variant	)
 separator_extraconfig	[ 0	locks=0 ]	(	)
@@ -853,10 +880,10 @@ enable_nurbssurfhandling	[ 0	locks=0 ]	(	"off"	)
 nurbssurfhandling	[ 0	locks=0 ]	(	meshes	)
 enable_kindschema	[ 0	locks=0 ]	(	"on"	)
 kindschema	[ 0	locks=0 ]	(	component	)
-enable_pathattr	[ 0	locks=0 ]	(	"on"	)
-pathattr	[ 0	locks=0 ]	(	name	)
-enable_prefixabsolutepaths	[ 0	locks=0 ]	(	"on"	)
-prefixabsolutepaths	[ 0	locks=0 ]	(	"on"	)
+enable_pathattr	[ 0	locks=0 ]	(	[ enable_pathattr	1 ] 	)
+pathattr	[ 0	locks=0 ]	(	`chs(\"../pathattr\")`	)
+enable_prefixabsolutepaths	[ 0	locks=0 ]	(	[ enable_prefixabsolutepaths	1 ] 	)
+prefixabsolutepaths	[ 0	locks=0 ]	(	[ prefixabsolutepaths	0 ] 	)
 enable_heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
 heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
 enable_usexformcommonapi	[ 0	locks=0 ]	(	"off"	)

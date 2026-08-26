@@ -47,8 +47,8 @@ class ImportRig(EntityNode):
         asset_uri = self.get_entity_uri()
         if asset_uri is None:
             return ['latest']
-        variant_name = self.get_variant_name()
-        export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / variant_name / 'rig'
+        channel_name = self.get_channel_name()
+        export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / channel_name / 'rig'
         asset_path = api.storage.resolve(export_uri)
         version_paths = list_version_paths(asset_path)
         version_names = [version_path.name for version_path in version_paths]
@@ -110,7 +110,7 @@ class ImportRig(EntityNode):
             ns.set_node_comment(context, "Bypassed: No asset selected")
             bypass_node.parm('input').set(0)
             return
-        variant_name = self.get_variant_name()
+        channel_name = self.get_channel_name()
         version_name = self.get_version_name()
         instances = self.get_instances()
 
@@ -127,8 +127,8 @@ class ImportRig(EntityNode):
         # Create filename from URI segments
         uri_name = '_'.join(asset_uri.segments[1:])
 
-        # Paths (includes variant)
-        export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / variant_name / 'rig' / version_name
+        # Paths (includes channel)
+        export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / channel_name / 'rig' / version_name
         version_path = api.storage.resolve(export_uri)
         file_path = version_path / f'{uri_name}_rig_{version_name}.bgeo.sc'
         if not file_path.exists():

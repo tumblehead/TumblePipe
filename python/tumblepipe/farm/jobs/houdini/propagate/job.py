@@ -17,7 +17,7 @@ from tumblepipe.api import (
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import list_departments
 from tumblepipe.config.groups import get_group
-from tumblepipe.config.variants import list_variants
+from tumblepipe.config.channels import list_channels
 from tumblepipe.pipe.paths import next_staged_file_path, latest_hip_file_path
 from tumblepipe.apps.deadline import Job
 from tumblepipe.pipe import graph
@@ -250,22 +250,22 @@ def build(
                 _add_job(job_name, publish_job, job_deps)
                 publish_job_names.append(job_name)
 
-    # Add build jobs for affected shots (all variants)
+    # Add build jobs for affected shots (all channels)
     build_job_names = []
     for shot_uri in affected_shots:
-        # Get all variants for this shot
-        shot_variants = list_variants(shot_uri)
-        for variant_name in shot_variants:
-            job_name = f'build_{shot_uri.display_name().replace("/", "_")}_{variant_name}'
+        # Get all channels for this shot
+        shot_channels = list_channels(shot_uri)
+        for channel_name in shot_channels:
+            job_name = f'build_{shot_uri.display_name().replace("/", "_")}_{channel_name}'
 
             # Build build job
             build_config = {
-                'title': f'build {shot_uri} {variant_name}',
+                'title': f'build {shot_uri} {channel_name}',
                 'priority': priority,
                 'pool_name': pool_name,
                 'entity_uri': str(shot_uri),
-                'variant_name': variant_name,
-                'output_path': path_str(next_staged_file_path(shot_uri, variant_name))
+                'variant_name': channel_name,
+                'output_path': path_str(next_staged_file_path(shot_uri, channel_name))
             }
             build_job_obj = build_task.build(build_config, paths, temp_path)
 

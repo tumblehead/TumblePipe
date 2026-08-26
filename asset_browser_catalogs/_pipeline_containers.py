@@ -543,7 +543,7 @@ class ContainerManager:
             (
                 str(e.asset),
                 int(getattr(e, "instances", 1) or 1),
-                str(getattr(e, "variant", "default") or "default"),
+                str(getattr(e, "channel", "default") or "default"),
             )
             for e in getattr(scene, "assets", ())
         ]

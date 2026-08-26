@@ -17,7 +17,7 @@ from tumblepipe.util.io import store_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.config.department import list_departments
-from tumblepipe.config.variants import list_variants
+from tumblepipe.config.channels import list_channels
 from tumblepipe.apps.deadline import Job
 from tumblepipe.pipe.paths import (
     get_frame_path,
@@ -429,12 +429,12 @@ def _build_slapcomp_job(
     )
 
     # Build input_paths from resolved AOVs in correct layer order
-    # Get variant names in order (background to foreground)
-    variant_names = list_variants(entity_uri)
+    # Get channel names in order (background to foreground)
+    channel_names = list_channels(entity_uri)
 
-    # Build ordered input_paths dict using variant order
+    # Build ordered input_paths dict using channel order
     input_paths = {}
-    for layer_name in variant_names:
+    for layer_name in channel_names:
         if layer_name not in latest_aovs:
             continue
         layer_aovs = latest_aovs[layer_name]

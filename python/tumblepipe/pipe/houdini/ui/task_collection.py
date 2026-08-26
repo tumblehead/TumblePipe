@@ -244,18 +244,18 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
             tasks.append(group_task)
             export_task_ids.append(group_task.id)
 
-        # Collect unique variants from export nodes for this entity
-        entity_variants_found = set()
+        # Collect unique channels from export nodes for this entity
+        entity_channels_found = set()
         for dept in depts:
             key = (uri_str, dept)
             for export_node in exports_by_entity_dept.get(key, []):
-                entity_variants_found.add(export_node.get_variant_name())
+                entity_channels_found.add(export_node.get_channel_name())
 
         # Add grouped build task (depends on all exports)
-        if entity_variants_found:
+        if entity_channels_found:
             build_group = _create_build_group_task(
                 entity_uri,
-                sorted(entity_variants_found),
+                sorted(entity_channels_found),
                 depends_on=export_task_ids
             )
             tasks.append(build_group)
@@ -375,13 +375,13 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
         tasks.append(group_task)
         export_task_ids.append(group_task.id)
 
-    # Collect unique variants from export nodes for build tasks
-    variants_found = set()
+    # Collect unique channels from export nodes for build tasks
+    channels_found = set()
     for export_node in shot_export_nodes:
-        variants_found.add(export_node.get_variant_name())
+        channels_found.add(export_node.get_channel_name())
 
     # Add grouped build task (depends on all exports)
-    if variants_found:
+    if channels_found:
         # Get frame range from first export node (exports share the same frame range setting)
         build_first, build_last = None, None
         if shot_export_nodes:
@@ -389,7 +389,7 @@ def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> lis
 
         build_group = _create_build_group_task(
             shot_uri,
-            sorted(variants_found),
+            sorted(channels_found),
             depends_on=export_task_ids,
             first_frame=build_first,
             last_frame=build_last
@@ -479,10 +479,10 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
     dept_order = {dept: i for i, dept in enumerate(departments)}
     sorted_depts = sorted(exports_by_dept.keys(), key=lambda d: dept_order.get(d, 999))
 
-    # Collect unique variants from export nodes for build tasks
-    variants_found = set()
+    # Collect unique channels from export nodes for build tasks
+    channels_found = set()
     for export_node in asset_export_nodes:
-        variants_found.add(export_node.get_variant_name())
+        channels_found.add(export_node.get_channel_name())
 
     # Track export task IDs for build dependency
     export_task_ids = []
@@ -517,10 +517,10 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
         export_task_ids.append(group_task.id)
 
     # Add grouped build task (depends on all exports)
-    if variants_found:
+    if channels_found:
         build_group = _create_build_group_task(
             asset_uri,
-            sorted(variants_found),
+            sorted(channels_found),
             depends_on=export_task_ids
         )
         tasks.append(build_group)
@@ -548,9 +548,9 @@ def _collect_rig_publish_tasks(context: Context) -> list[ProcessTask]:
 
     for export_node in rig_export_nodes:
         asset_uri = export_node.get_entity_uri()
-        variant = export_node.get_variant_name()
+        channel = export_node.get_channel_name()
 
-        export_path = latest_export_path(asset_uri, variant, 'rig')
+        export_path = latest_export_path(asset_uri, channel, 'rig')
         version = _get_version_from_path(export_path)
 
         node_ref = export_node
@@ -561,7 +561,7 @@ def _collect_rig_publish_tasks(context: Context) -> list[ProcessTask]:
             uri=asset_uri,
             department='rig',
             task_type='export',
-            variant=variant,
+            channel=channel,
             description=f"Export rig: {_uri_name(asset_uri)}",
             current_version=version,
             execute_local=lambda n=node_ref: n.execute(force_local=True),
@@ -643,13 +643,13 @@ def collect_tasks_for_export_node(
     # Enable clicked node's task
     clicked_uri = export_node.get_entity_uri()
     clicked_dept = export_node.get_department_name()
-    # LayerSplit exports shared content and has no variant; every other
-    # export wrapper implements get_variant_name.
-    clicked_variant = ('default' if isinstance(export_node, layer_split.LayerSplit)
-                       else export_node.get_variant_name())
+    # LayerSplit exports shared content and has no channel; every other
+    # export wrapper implements get_channel_name.
+    clicked_channel = ('default' if isinstance(export_node, layer_split.LayerSplit)
+                       else export_node.get_channel_name())
     clicked_node_path = export_node.path()
 
-    def _enable_matching_tasks(uri, dept, variant=None, node_path=None):
+    def _enable_matching_tasks(uri, dept, channel=None, node_path=None):
         """Enable tasks matching the given criteria, including children of grouped tasks.
 
         Only enables the parent group task if at least one child matches the node_path
@@ -678,7 +678,7 @@ def collect_tasks_for_export_node(
                     enabled_task_ids.add(task.id)
             # Enable build task for the same entity
             elif task.uri == uri and task.task_type == 'build':
-                if variant is None or task.variant == variant:
+                if channel is None or task.channel == channel:
                     enabled_task_ids.add(task.id)
             # Enable build_group task for the same entity (grouped build tasks)
             elif task.uri == uri and task.task_type == 'build_group':
@@ -686,25 +686,25 @@ def collect_tasks_for_export_node(
                     children_enabled = False
                     for child in task.children:
                         if child.task_type == 'build':
-                            if variant is None or child.variant == variant:
+                            if channel is None or child.channel == channel:
                                 enabled_task_ids.add(child.id)
                                 children_enabled = True
-                    # Only enable parent if at least one child matches the variant
+                    # Only enable parent if at least one child matches the channel
                     if children_enabled:
                         enabled_task_ids.add(task.id)
 
     if clicked_uri is not None:
-        _enable_matching_tasks(clicked_uri, clicked_dept, clicked_variant, clicked_node_path)
+        _enable_matching_tasks(clicked_uri, clicked_dept, clicked_channel, clicked_node_path)
 
     # Enable upstream dependency tasks (and their build tasks)
     upstream_nodes = find_upstream_export_nodes(export_node)
     for upstream_node in upstream_nodes:
         upstream_uri = upstream_node.get_entity_uri()
         upstream_dept = upstream_node.get_department_name()
-        upstream_variant = ('default' if isinstance(upstream_node, layer_split.LayerSplit)
-                            else upstream_node.get_variant_name())
+        upstream_channel = ('default' if isinstance(upstream_node, layer_split.LayerSplit)
+                            else upstream_node.get_channel_name())
         upstream_path = upstream_node.path()
-        _enable_matching_tasks(upstream_uri, upstream_dept, upstream_variant, upstream_path)
+        _enable_matching_tasks(upstream_uri, upstream_dept, upstream_channel, upstream_path)
 
     return all_tasks, enabled_task_ids
 

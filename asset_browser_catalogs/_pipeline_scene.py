@@ -19,7 +19,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from _pipeline_houdini import run_on_main_thread, session_nc_type
+from _pipeline_houdini import report_failure, run_on_main_thread, session_nc_type
 import _pipeline_uris as uris
 
 if TYPE_CHECKING:
@@ -33,6 +33,9 @@ class SceneManager:
 
     def __init__(self, catalog: "PipelineCatalog") -> None:
         self._catalog = catalog
+        # One full traceback per session for a failing context resolve — see
+        # get_loaded_scene_context.
+        self._ctx_resolve_logged = False
 
     def apply_scene_timeline(
         self, asset_id: str, *, force_frame_range: bool = False,
@@ -70,7 +73,7 @@ class SceneManager:
         if fps is not None:
             util.set_fps(fps)
 
-    def refresh_scene_imports(self) -> None:
+    def refresh_scene_imports(self) -> tuple[int, int]:
         """Re-execute every import node in the loaded scene so the latest
         published versions flow in.
 
@@ -93,6 +96,13 @@ class SceneManager:
         node (stale HDA, missing export, cross-project reference) must
         not abort the whole refresh. Node wrappers already no-op when
         ``is_valid()`` is false, matching the old behavior.
+
+        Returns ``(executed, failed)``. The failure count is the whole
+        reason this reports back: swallowing per-node errors is right (one
+        bad node must not abort the sweep) but *counting* them is what lets
+        an artist-initiated Update Imports avoid claiming success over a
+        scene where every node blew up. The open/reload callers ignore the
+        return — a refresh nobody asked for stays quiet.
         """
         try:
             import tumblepipe.pipe.houdini.nodes as ns
@@ -104,7 +114,7 @@ class SceneManager:
             from tumblepipe import resolver
         except Exception:
             log.exception("Auto-refresh: failed to import node wrappers")
-            return
+            return (0, 1)
 
         # (wrapper class, node type name, network context). Import nodes
         # only — create_model / build_comp are deliberately excluded (see
@@ -122,6 +132,7 @@ class SceneManager:
         # layer). Defer them so the whole batch costs one sweep at the
         # end instead of one per node.
         executed = 0
+        failed = 0
         with resolver.deferred_refresh():
             for wrapper_cls, type_name, context in node_specs:
                 try:
@@ -130,6 +141,7 @@ class SceneManager:
                     log.exception(
                         "Auto-refresh: listing %s nodes failed", type_name,
                     )
+                    failed += 1
                     continue
                 for native in nodes:
                     try:
@@ -142,9 +154,14 @@ class SceneManager:
                         log.exception(
                             "Auto-refresh: executing %s node failed", type_name,
                         )
+                        failed += 1
 
-        if executed:
-            log.info("Auto-refresh: re-executed %d import node(s)", executed)
+        if executed or failed:
+            log.info(
+                "Auto-refresh: re-executed %d import node(s), %d failed",
+                executed, failed,
+            )
+        return (executed, failed)
 
     def update_scene_imports(self, refresh_cb=None) -> None:
         """Re-execute the loaded scene's import nodes in place — no hip
@@ -174,13 +191,26 @@ class SceneManager:
                 if proj is not None:
                     self._catalog._activate_project(proj)
                 with util.update_mode(hou.updateMode.Manual):
-                    self.refresh_scene_imports()
-                hou.ui.setStatusMessage(
-                    "Imports updated to latest published versions.",
-                    severity=hou.severityType.Message,
-                )
-            except Exception:
-                log.exception("Update Imports failed")
+                    executed, failed = self.refresh_scene_imports()
+                if failed:
+                    # The sweep deliberately survives a bad node, which used
+                    # to mean "every import node failed" and "all good" showed
+                    # the artist the same cheerful status line.
+                    hou.ui.displayMessage(
+                        f"Update Imports: {failed} import node(s) failed to "
+                        f"update, {executed} succeeded. The scene may still "
+                        "reference older published versions — see the log for "
+                        "which nodes failed.",
+                        severity=hou.severityType.Warning,
+                    )
+                else:
+                    hou.ui.setStatusMessage(
+                        f"Imports updated to latest published versions "
+                        f"({executed} node(s)).",
+                        severity=hou.severityType.Message,
+                    )
+            except Exception as exc:
+                report_failure("Update Imports", exc)
             finally:
                 if callable(refresh_cb):
                     try:
@@ -210,6 +240,17 @@ class SceneManager:
                 ctx = self.context_from_hip_path(hip_path)
             return ctx
         except Exception:
+            # None here is indistinguishable from "this scene has no context",
+            # so a raising resolve would otherwise vanish without a trace.
+            # Full traceback once, then quiet: the detail panel and session
+            # panel call this on every repaint, and a broken scene would
+            # otherwise write one trace per frame into a shared project log.
+            if self._ctx_resolve_logged:
+                log.debug("Failed to resolve the loaded scene's context",
+                          exc_info=True)
+            else:
+                self._ctx_resolve_logged = True
+                log.exception("Failed to resolve the loaded scene's context")
             return None
 
     def reload_current_scene(self, refresh_cb=None) -> None:
@@ -231,8 +272,8 @@ class SceneManager:
         try:
             import hou
             hip = hou.hipFile.path()
-        except Exception:
-            log.exception("Reload Scene: failed to read current hip path")
+        except Exception as exc:
+            report_failure("Reload Scene", exc)
             _settle()
             return
         if not hip:
@@ -276,8 +317,8 @@ class SceneManager:
                         if self._catalog._prefs.auto_refresh_on_open:
                             self.refresh_scene_imports()
                 self._catalog._request_global_detail_refresh()
-            except Exception:
-                log.exception("Reload Scene failed")
+            except Exception as exc:
+                report_failure("Reload Scene", exc)
             finally:
                 _settle()
 
@@ -325,6 +366,10 @@ class SceneManager:
                 entities_only=entities_only,
             )
         except Exception:
+            # Debug, not exception: this runs per browsed row, so a broken
+            # scene would otherwise fill the log with one trace per repaint.
+            log.debug("Failed to resolve the loaded scene's asset id",
+                      exc_info=True)
             return None
 
     @staticmethod
@@ -392,6 +437,8 @@ class SceneManager:
                 return None
             return (scene_ctx.department_name, scene_ctx.version_name or "")
         except Exception:
+            log.debug("Failed to match the loaded scene against %s",
+                      asset_id, exc_info=True)
             return None
 
     def context_from_hip_path(self, hip_path: Path):
@@ -473,9 +520,11 @@ class SceneManager:
         Never prompts for a version note: the whole point of this path is that
         Houdini's event loop is wedged behind the crash dialog, so putting
         another modal in front of the save is exactly the wrong move. The
-        version lands with a blank note.
+        version lands with a blank note. For the same reason it opts out of
+        the error dialog on failure (``report_failures=False``) — a failed
+        emergency save is logged and reported to the status bar, never modal.
         """
-        self._save_scene(refresh_cb, prompt_note=False)
+        self._save_scene(refresh_cb, prompt_note=False, report_failures=False)
 
     def _prompt_version_note(self, prev_ctx) -> str | None:
         """Ask for this save's version note. ``None`` means "cancel the save".
@@ -525,7 +574,26 @@ class SceneManager:
             return None
         return note.strip()
 
-    def _save_scene(self, refresh_cb=None, prompt_note: bool = False) -> None:
+    @staticmethod
+    def _warn(message: str, as_dialog: bool) -> None:
+        """Tell the artist an action produced nothing.
+
+        ``as_dialog`` is the caller's "is anyone watching" answer: an action
+        the artist just clicked gets a dialog, because a status line that
+        scrolls past is indistinguishable from success. The crash-time
+        emergency save passes False - it must never put a modal in front of a
+        wedged event loop.
+        """
+        import hou
+        if as_dialog:
+            hou.ui.displayMessage(message, severity=hou.severityType.Warning)
+        else:
+            hou.ui.setStatusMessage(message, severity=hou.severityType.Warning)
+
+    def _save_scene(
+        self, refresh_cb=None, prompt_note: bool = False,
+        report_failures: bool = True,
+    ) -> None:
         """Write the next workfile version of the loaded scene's context.
 
         Runs synchronously on the calling thread. :meth:`save_current_scene`
@@ -547,9 +615,13 @@ class SceneManager:
             if prev_ctx is None:
                 prev_ctx = self.context_from_hip_path(hip_path)
             if prev_ctx is None:
-                hou.ui.setStatusMessage(
-                    "Save: current scene has no pipeline context.",
-                    severity=hou.severityType.Warning,
+                # A dialog, not a status line: a Save that saved nothing must
+                # not look like a Save that worked.
+                self._warn(
+                    "Save: the current scene has no pipeline context, so "
+                    "there is no version to save it as. Open or create the "
+                    "scene through the pipeline first.",
+                    report_failures,
                 )
                 return
 
@@ -600,8 +672,17 @@ class SceneManager:
                     )
             except Exception:
                 log.debug("card refresh after save failed", exc_info=True)
-        except Exception:
-            log.exception("Save failed")
+        except Exception as exc:
+            # The artist believes a Save landed. Staying quiet here is the
+            # most expensive silence in this file: the scene-swap paths go on
+            # to load the next scene with suppress_save_prompt=True, so a
+            # swallowed failure discards the very work the save was meant to
+            # keep. report_failures is off only for the crash-time emergency
+            # save, whose event loop cannot pump a modal.
+            if report_failures:
+                report_failure("Save", exc)
+            else:
+                log.exception("Save failed")
         finally:
             if callable(refresh_cb):
                 try:
@@ -629,8 +710,13 @@ class SceneManager:
 
             scene_ctx = self.get_loaded_scene_context()
             if scene_ctx is None:
-                hou.ui.setStatusMessage(
-                    "Publish: the loaded scene has no pipeline context.",
+                # A dialog, not a status line: this is the whole outcome of
+                # pressing Publish, and a status message that scrolls past is
+                # why "nothing happens" was the reported symptom.
+                hou.ui.displayMessage(
+                    "Publish: the loaded scene has no pipeline context, so "
+                    "there is nothing to publish. Save the scene through the "
+                    "pipeline first.",
                     severity=hou.severityType.Warning,
                 )
                 return
@@ -650,8 +736,8 @@ class SceneManager:
             # Drop caches so the next browse re-scans the freshly published
             # versions (refresh_cb below repaints the detail panel).
             self.refresh_asset(None, None)
-        except Exception:
-            log.exception("Publish failed")
+        except Exception as exc:
+            report_failure("Publish", exc)
         finally:
             # Always notify the browser so the spinner/detail can settle even if
             # publish bailed early or raised.
@@ -678,8 +764,10 @@ class SceneManager:
 
             scene_ctx = self.get_loaded_scene_context()
             if scene_ctx is None:
-                hou.ui.setStatusMessage(
-                    "Render: the loaded scene has no pipeline context.",
+                hou.ui.displayMessage(
+                    "Render: the loaded scene has no pipeline context, so "
+                    "there is nothing to submit. Open or save the scene "
+                    "through the pipeline first.",
                     severity=hou.severityType.Warning,
                 )
                 return
@@ -695,16 +783,21 @@ class SceneManager:
             segments = uri.segments
             context = segments[0] if segments else None
             if context not in ("shots", "assets"):
-                hou.ui.setStatusMessage(
-                    f"Render: unsupported entity context for {uri}.",
+                hou.ui.displayMessage(
+                    f"Render: unsupported entity context for {uri} — only "
+                    "shots and assets can be submitted.",
                     severity=hou.severityType.Warning,
                 )
                 return
             name = segments[-1]
             # Blocks on the modal dialog until the user submits/closes it.
-            self._catalog._open_submit_jobs_dialog([uri], [name], context)
-        except Exception:
-            log.exception("Render submit failed")
+            self._catalog._open_submit_jobs_dialog(
+                [uri], [name], context,
+                # The workfile the artist is in seeds the render department.
+                department=scene_ctx.department_name,
+            )
+        except Exception as exc:
+            report_failure("Render submit", exc)
         finally:
             if callable(refresh_cb):
                 try:
@@ -738,17 +831,32 @@ class SceneManager:
             ``True``  — handled here (saved a new version, discarded, or
                         the scene was already clean); the caller should
                         load with ``suppress_save_prompt=True``.
-            ``False`` — the current scene has no pipeline context to
-                        version up (untitled / off-pipeline); the caller
-                        should let Houdini's native prompt handle it
-                        rather than risk writing to an unknown location.
+            ``False`` — this cannot be handled here: the scene has no
+                        pipeline context to version up (untitled /
+                        off-pipeline), we could not determine whether it is
+                        dirty, or we could not put the prompt on screen. The
+                        caller should let Houdini's native prompt handle it
+                        rather than risk writing to an unknown location — or,
+                        worse, swapping over unsaved work while claiming to
+                        have dealt with it.
         """
         try:
             import hou
+        except Exception:
+            return True  # no host to swap scenes in; nothing to lose
+
+        try:
             if not hou.hipFile.hasUnsavedChanges():
                 return True
         except Exception:
-            return True
+            # "Handled" here would suppress Houdini's own save prompt on a
+            # scene we could not even ask about — the caller would swap over
+            # unsaved work. Defer to the native prompt instead, matching what
+            # the un-promptable branch below already does.
+            log.exception(
+                "Could not determine whether the scene has unsaved changes",
+            )
+            return False
 
         # Untitled / off-pipeline scenes have no version to bump — defer
         # to Houdini's native prompt rather than guessing a destination.

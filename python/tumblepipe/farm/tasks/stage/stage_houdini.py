@@ -33,24 +33,24 @@ def main(
     # Prepare scene
     scene_node = hou.node('/stage')
 
-    # Build and export one independent graph per variant. Chaining the
-    # variant graphs would compose every variant into a single stage, so
+    # Build and export one independent graph per channel. Chaining the
+    # channel graphs would compose every channel into a single stage, so
     # each render layer would get the last variant's opinions.
-    for variant_name, output_path in output_paths.items():
-        _headline(f'Variant {variant_name}')
+    for channel_name, output_path in output_paths.items():
+        _headline(f'Channel {channel_name}')
 
         prev_node = render_stage.build_render_stage_graph(
             scene_node,
             shot_uri,
-            variant_name,
+            channel_name,
             render_settings_path,
-            name_prefix = f'__{variant_name}_',
+            name_prefix = f'__{channel_name}_',
             render_department_name = render_department_name
         )
 
         # Setup export node
         export_node = scene_node.createNode(
-            'filecache', f'__{variant_name}_export'
+            'filecache', f'__{channel_name}_export'
         )
         export_node.parm('filemethod').set(1)
         export_node.parm('trange').set(1)
@@ -125,8 +125,8 @@ def _is_valid_config(config):
     def _valid_output_paths(output_paths):
         if not isinstance(output_paths, dict): return False
         if len(output_paths) == 0: return False
-        for variant_name, output_path in output_paths.items():
-            if not isinstance(variant_name, str): return False
+        for channel_name, output_path in output_paths.items():
+            if not isinstance(channel_name, str): return False
             if not isinstance(output_path, str): return False
         return True
 
@@ -171,8 +171,8 @@ def cli():
     )
     render_settings_path = Path(settings['render_settings_path'])
     output_paths = {
-        variant_name: Path(output_path)
-        for variant_name, output_path in config['output_paths'].items()
+        channel_name: Path(output_path)
+        for channel_name, output_path in config['output_paths'].items()
     }
     # Optional, not required by _is_valid_config: a job submitted before this
     # key existed is still in flight on the farm, and it means 'compose every

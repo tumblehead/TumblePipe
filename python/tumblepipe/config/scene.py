@@ -32,15 +32,15 @@ DEFAULT_VARIANT = 'default'
 
 @dataclass(frozen=True)
 class AssetEntry:
-    """An asset entry in a scene with instance count and variant."""
+    """An asset entry in a scene with instance count and channel."""
     asset: str  # URI string
     instances: int
-    variant: str = DEFAULT_VARIANT
+    channel: str = DEFAULT_VARIANT
 
 
 @dataclass(frozen=True)
 class Scene:
-    """A scene definition containing assets with instance counts and variants."""
+    """A scene definition containing assets with instance counts and channels."""
     uri: Uri
     assets: list[AssetEntry]  # List allows multiple entries per asset
 
@@ -125,7 +125,7 @@ def add_scene(path: str, assets: list[AssetEntry] | None = None) -> Uri:
 
     api.config.add_entity(scene_uri, dict(
         assets=[
-            {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.variant}
+            {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.channel}
             for entry in assets
         ]
     ))
@@ -162,7 +162,7 @@ def get_scene_by_uri(scene_uri: Uri) -> Scene | None:
         AssetEntry(
             asset=item['asset'],
             instances=item.get('instances', 1),
-            variant=item.get('variant', DEFAULT_VARIANT)
+            channel=item.get('variant', DEFAULT_VARIANT)
         )
         for item in raw_assets
         if isinstance(item, dict)
@@ -278,7 +278,7 @@ def list_scene_tree() -> list[SceneTreeNode]:
 
 def set_scene_assets(scene_uri: Uri, assets: list[AssetEntry]):
     """
-    Update a scene's assets with instance counts and variants.
+    Update a scene's assets with instance counts and channels.
 
     Args:
         scene_uri: The scene URI
@@ -291,7 +291,7 @@ def set_scene_assets(scene_uri: Uri, assets: list[AssetEntry]):
     if properties is None:
         raise ValueError('Scene does not exist')
     properties['assets'] = [
-        {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.variant}
+        {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.channel}
         for entry in assets
     ]
     api.config.set_properties(scene_uri, properties)

@@ -14,7 +14,7 @@ from tumblepipe.api import (
 )
 from tumblepipe.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblepipe.config.department import list_departments
-from tumblepipe.config.variants import list_variants
+from tumblepipe.config.channels import list_channels
 from tumblepipe.config.farm import list_pools
 from tumblepipe.util.io import store_json
 from tumblepipe.util.uri import Uri
@@ -209,10 +209,10 @@ class BuildComp(ns.Node):
         )
         return ['from_context'] + [str(uri) for uri in uris]
 
-    def list_variant_names(self):
+    def list_channel_names(self):
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return []
-        return list_variants(shot_uri)
+        return list_channels(shot_uri)
 
     def list_render_department_names(self):
         # build_comp uses ALL render departments (no renderable filter)
@@ -234,20 +234,20 @@ class BuildComp(ns.Node):
         if shot_uri_raw not in shot_uris: return None  # Compare strings
         return Uri.parse_unsafe(shot_uri_raw)
     
-    def get_variant_name(self):
-        variant_names = self.list_variant_names()
-        if len(variant_names) == 0: return None
-        variant_name = self.parm('variant').eval()
-        if len(variant_name) == 0: return variant_names[0]
-        if variant_name == 'all': return 'all'
-        if variant_name not in variant_names: return None
-        return variant_name
+    def get_channel_name(self):
+        channel_names = self.list_channel_names()
+        if len(channel_names) == 0: return None
+        channel_name = self.parm('variant').eval()
+        if len(channel_name) == 0: return channel_names[0]
+        if channel_name == 'all': return 'all'
+        if channel_name not in channel_names: return None
+        return channel_name
 
-    def get_variant_names(self):
-        variant_name = self.get_variant_name()
-        if variant_name is None: return []
-        if variant_name != 'all': return [variant_name]
-        return self.list_variant_names()
+    def get_channel_names(self):
+        channel_name = self.get_channel_name()
+        if channel_name is None: return []
+        if channel_name != 'all': return [channel_name]
+        return self.list_channel_names()
     
     def get_render_department_name(self):
         department_names = self.list_render_department_names()
@@ -398,18 +398,18 @@ class BuildComp(ns.Node):
             aovs = dict()
             for render_department_name in reversed(render_department_names):
                 if render_department_name not in aov_context: continue
-                for variant_name, variant_aovs in aov_context[render_department_name].items():
-                    for aov in variant_aovs.values():
-                        if _contains(aovs, variant_name, aov.label): continue
-                        _set(aovs, aov, variant_name, aov.label)
+                for channel_name, channel_aovs in aov_context[render_department_name].items():
+                    for aov in channel_aovs.values():
+                        if _contains(aovs, channel_name, aov.label): continue
+                        _set(aovs, aov, channel_name, aov.label)
             return aovs
         
         def _types(aovs):
 
             # Get all aov names
             aov_names = set()
-            for variant_aovs in aovs.values():
-                for aov in variant_aovs.values():
+            for channel_aovs in aovs.values():
+                for aov in channel_aovs.values():
                     aov_names.add(aov.label)
 
             # Find LPE names
@@ -450,10 +450,10 @@ class BuildComp(ns.Node):
 
             # Resolve types
             types = dict()
-            for variant_name, variant_aovs in aovs.items():
-                for aov in variant_aovs.values():
-                    if _contains(types, variant_name, aov.label): continue
-                    _set(types, _aov_type(aov.label), variant_name, aov.label)
+            for channel_name, channel_aovs in aovs.items():
+                for aov in channel_aovs.values():
+                    if _contains(types, channel_name, aov.label): continue
+                    _set(types, _aov_type(aov.label), channel_name, aov.label)
             return types
 
         match source_name:
@@ -479,7 +479,7 @@ class BuildComp(ns.Node):
                 types = _types(aovs)
                 return aovs, types
     
-    def _build_lpe_aov(self, parent_node, variant_name, aov):
+    def _build_lpe_aov(self, parent_node, channel_name, aov):
 
         # Parameters
         render_range = aov.get_frame_range()
@@ -501,7 +501,7 @@ class BuildComp(ns.Node):
         assert aov_frame_path is not None, f'Could not find aov frame path for {aov.label}'
 
         # Create import node
-        aov_import_name = f'{variant_name}_{aov.label}'
+        aov_import_name = f'{channel_name}_{aov.label}'
         aov_import_node = _ensure_node(aov_subnet, 'file', aov_import_name)
         aov_import_node.parm('filename').set(path_str(aov_frame_path))
         aov_import_node.parm('videoframestart').deleteAllKeyframes()
@@ -529,7 +529,7 @@ class BuildComp(ns.Node):
         # Return aov subnet
         return aov_subnet
 
-    def _build_mask_aov(self, parent_node, variant_name, aov):
+    def _build_mask_aov(self, parent_node, channel_name, aov):
 
         # Parameters
         render_range = aov.get_frame_range()
@@ -555,7 +555,7 @@ class BuildComp(ns.Node):
         assert aov_frame_path is not None, f'Could not find aov frame path for {aov.label}'
 
         # Create import node
-        aov_import_name = f'{variant_name}_{aov.label}'
+        aov_import_name = f'{channel_name}_{aov.label}'
         aov_import_node = _ensure_node(aov_subnet, 'file', aov_import_name)
         aov_import_node.parm('filename').set(path_str(aov_frame_path))
         aov_import_node.parm('videoframestart').deleteAllKeyframes()
@@ -589,7 +589,7 @@ class BuildComp(ns.Node):
         # Return aov subnet
         return aov_subnet
 
-    def _build_util_aov(self, parent_node, variant_name, aov):
+    def _build_util_aov(self, parent_node, channel_name, aov):
 
         # Parameters
         render_range = aov.get_frame_range()
@@ -611,7 +611,7 @@ class BuildComp(ns.Node):
         assert aov_frame_path is not None, f'Could not find aov frame path for {aov.label}'
 
         # Create import node
-        aov_import_name = f'{variant_name}_{aov.label}'
+        aov_import_name = f'{channel_name}_{aov.label}'
         aov_import_node = _ensure_node(aov_subnet, 'file', aov_import_name)
         aov_import_node.parm('filename').set(path_str(aov_frame_path))
         aov_import_node.parm('videoframestart').deleteAllKeyframes()
@@ -639,7 +639,7 @@ class BuildComp(ns.Node):
         # Return aov subnet
         return aov_subnet
     
-    def _build_mono_aov(self, parent_node, variant_name, aov):
+    def _build_mono_aov(self, parent_node, channel_name, aov):
 
         # Parameters
         render_range = aov.get_frame_range()
@@ -661,7 +661,7 @@ class BuildComp(ns.Node):
         assert aov_frame_path is not None, f'Could not find aov frame path for {aov.label}'
 
         # Create import node
-        aov_import_name = f'{variant_name}_{aov.label}'
+        aov_import_name = f'{channel_name}_{aov.label}'
         aov_import_node = _ensure_node(aov_subnet, 'file', aov_import_name)
         aov_import_node.parm('filename').set(path_str(aov_frame_path))
         aov_import_node.parm('videoframestart').deleteAllKeyframes()
@@ -689,7 +689,7 @@ class BuildComp(ns.Node):
         # Return aov subnet
         return aov_subnet
     
-    def _update_grade_subnet(self, grade_subnet, variant_subnet, variant_name, lpe_names, aov_nodes):
+    def _update_grade_subnet(self, grade_subnet, channel_subnet, channel_name, lpe_names, aov_nodes):
 
         # Get or create grade subnet
         lpe_subnet_inputs = grade_subnet.node('inputs')
@@ -749,7 +749,7 @@ class BuildComp(ns.Node):
             # Create color correct node
             lpe_grade_node = _ensure_node(
                 grade_subnet, 'bright',
-                f'{variant_name}_{lpe_name}_grade'
+                f'{channel_name}_{lpe_name}_grade'
             )
             grade_nodes[lpe_name] = lpe_grade_node
             _connect(lpe_subnet_inputs, lpe_index, lpe_grade_node, 0)
@@ -781,7 +781,7 @@ class BuildComp(ns.Node):
                 prev_lpe_name, prev_output_node = layer_output_node
                 add_node = _ensure_node(
                     grade_subnet, 'blend',
-                    f'{variant_name}_{prev_lpe_name}_{lpe_name}_add'
+                    f'{channel_name}_{prev_lpe_name}_{lpe_name}_add'
                 )
                 add_node.parm('mode').set('add')
                 _connect(prev_output_node, 0, add_node, 0)
@@ -841,7 +841,7 @@ class BuildComp(ns.Node):
         source_name = self.get_source_name()
         resolution_name = self.get_proxy_resolution()
         scale = _scale(resolution_name)
-        variant_names = list_variants(shot_uri)
+        channel_names = list_channels(shot_uri)
 
         # Find the ordered list of render department names
         render_department_names = self.list_render_department_names()
@@ -867,8 +867,8 @@ class BuildComp(ns.Node):
             # Get aov context
             aov_import_node_name = aov_import_node.name()
             if not _is_valid_aov_node_name(aov_import_node_name): continue
-            variant_name, aov_name = aov_import_node_name.split('_', 1)
-            if variant_name not in variant_names: continue
+            channel_name, aov_name = aov_import_node_name.split('_', 1)
+            if channel_name not in channel_names: continue
 
             # Get the resample node
             aov_resample_node = _get_connected_output(aov_import_node, 0)
@@ -876,12 +876,12 @@ class BuildComp(ns.Node):
             if aov_resample_node.type().name() != 'resample': continue
 
             # Store aov import node
-            _set(aov_import_nodes, (aov_import_node, aov_resample_node), variant_name, aov_name)
+            _set(aov_import_nodes, (aov_import_node, aov_resample_node), channel_name, aov_name)
         
         # Update file node paths and resample scales
-        for variant_name, aov_nodes in aov_import_nodes.items():
+        for channel_name, aov_nodes in aov_import_nodes.items():
             for aov_name, (aov_import_node, aov_resample_node) in aov_nodes.items():
-                aov = _get(aov_context, variant_name, aov_name)
+                aov = _get(aov_context, channel_name, aov_name)
                 if aov is None: continue
                 aov_frame_path = aov.get_aov_frame_path('$F4')
                 if aov_frame_path is None: continue
@@ -889,58 +889,58 @@ class BuildComp(ns.Node):
                 aov_resample_node.parm('scale').set(scale)
 
         # Find new aovs that do not have a file node
-        for variant_name, aovs in aov_context.items():
+        for channel_name, aovs in aov_context.items():
             for aov in aovs.values():
-                if _contains(aov_import_nodes, variant_name, aov.label): continue
+                if _contains(aov_import_nodes, channel_name, aov.label): continue
 
                 # Check if aov is included in comp
                 if not _aov_included(aov.label): continue
 
                 # Create aov import node
-                variant_subnet = dive_node.node(variant_name)
-                if variant_subnet is None: continue
-                match _get(aov_types, variant_name, aov.label):
+                channel_subnet = dive_node.node(channel_name)
+                if channel_subnet is None: continue
+                match _get(aov_types, channel_name, aov.label):
                     case AOVType.LPE:
                         aov_subnet = self._build_lpe_aov(
-                            variant_subnet,
-                            variant_name,
+                            channel_subnet,
+                            channel_name,
                             aov
                         )
                     case AOVType.Mask:
                         aov_subnet = self._build_mask_aov(
-                            variant_subnet,
-                            variant_name,
+                            channel_subnet,
+                            channel_name,
                             aov
                         )
                     case AOVType.Util:
                         aov_subnet = self._build_util_aov(
-                            variant_subnet,
-                            variant_name,
+                            channel_subnet,
+                            channel_name,
                             aov
                         )
                     case AOVType.Mono:
                         aov_subnet = self._build_mono_aov(
-                            variant_subnet,
-                            variant_name,
+                            channel_subnet,
+                            channel_name,
                             aov
                         )
                     case _:
                         assert False, f'Unknown aov type for {aov.label}'
                 
                 # Store import node
-                if variant_name not in aov_import_nodes: aov_import_nodes[variant_name] = dict()
-                aov_import_nodes[variant_name][aov.label] = (aov_subnet.node('outputs'), aov_subnet.node('inputs'))
+                if channel_name not in aov_import_nodes: aov_import_nodes[channel_name] = dict()
+                aov_import_nodes[channel_name][aov.label] = (aov_subnet.node('outputs'), aov_subnet.node('inputs'))
 
         # Update grade subnets for render layers with new LPEs
-        for variant_name, aovs in aov_context.items():
-            variant_subnet = dive_node.node(variant_name)
-            if variant_subnet is None: continue
+        for channel_name, aovs in aov_context.items():
+            channel_subnet = dive_node.node(channel_name)
+            if channel_subnet is None: continue
             
-            grade_subnet = variant_subnet.node('grade')
+            grade_subnet = channel_subnet.node('grade')
             if grade_subnet is None: continue
             
             # Check if we have new LPEs for this render layer
-            layer_aov_types = _get(aov_types, variant_name)
+            layer_aov_types = _get(aov_types, channel_name)
             if layer_aov_types is None: continue
             
             # Collect all LPE names (including beauty and new LPEs)
@@ -958,7 +958,7 @@ class BuildComp(ns.Node):
                 if aov_type is None: continue
                 
                 # Find the aov subnet node
-                aov_subnet = variant_subnet.node(aov.label)
+                aov_subnet = channel_subnet.node(aov.label)
                 if aov_subnet is None: continue
                 
                 aov_nodes_by_type[aov_type][aov.label] = aov_subnet
@@ -969,8 +969,8 @@ class BuildComp(ns.Node):
                 # Update the grade subnet with current LPEs
                 self._update_grade_subnet(
                     grade_subnet, 
-                    variant_subnet,
-                    variant_name, 
+                    channel_subnet,
+                    channel_name, 
                     lpe_names, 
                     aov_nodes_by_type
                 )
@@ -985,7 +985,7 @@ class BuildComp(ns.Node):
         # Parameters
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return
-        variant_names = list_variants(shot_uri)
+        channel_names = list_channels(shot_uri)
         frame_range = get_frame_range(shot_uri)
 
         # Find the ordered list of render department names
@@ -1001,9 +1001,9 @@ class BuildComp(ns.Node):
         output_node = dive_node.node('output')
 
         # Update dive node outputs
-        dive_node.parm('outputs').set(len(variant_names) + 1)
-        for index, variant_name in enumerate(variant_names):
-            dive_node.parm(f'outputlabel{index + 2}').set(variant_name)
+        dive_node.parm('outputs').set(len(channel_names) + 1)
+        for index, channel_name in enumerate(channel_names):
+            dive_node.parm(f'outputlabel{index + 2}').set(channel_name)
             dive_node.parm(f'outputtype{index + 2}').set(4)
 
         # Get render data
@@ -1024,30 +1024,30 @@ class BuildComp(ns.Node):
 
         # Build render layer comps
         layer_nodes = dict()
-        for variant_name in variant_names:
+        for channel_name in channel_names:
 
             # Get render layer aovs
-            aovs = _get(aov_context, variant_name)
+            aovs = _get(aov_context, channel_name)
             if aovs is None: continue
 
             # All names
             aov_names = list(aovs.keys())
             assert 'beauty' in aov_names, (
                 'Missing beauty aov in '
-                f'{variant_name}'
+                f'{channel_name}'
             )
 
             # Prepare render layer subnet
-            variant_subnet = _ensure_node(dive_node, 'subnet', variant_name)
-            variant_subnet.parm('inputs').set(0)
-            variant_subnet.parm('outputs').set(1)
-            variant_subnet.parm('outputlabel1').set('rgba')
-            variant_subnet.parm('outputtype1').set(4)
-            variant_subnet_inputs = variant_subnet.node('inputs')
-            variant_subnet_outputs = variant_subnet.node('outputs')
-            variant_subnet.setColor(hou.Color((1, 0, 1)))
-            variant_subnet_inputs.setColor(hou.Color((1, 1, 1)))
-            variant_subnet_outputs.setColor(hou.Color((0, 0, 0)))
+            channel_subnet = _ensure_node(dive_node, 'subnet', channel_name)
+            channel_subnet.parm('inputs').set(0)
+            channel_subnet.parm('outputs').set(1)
+            channel_subnet.parm('outputlabel1').set('rgba')
+            channel_subnet.parm('outputtype1').set(4)
+            channel_subnet_inputs = channel_subnet.node('inputs')
+            channel_subnet_outputs = channel_subnet.node('outputs')
+            channel_subnet.setColor(hou.Color((1, 0, 1)))
+            channel_subnet_inputs.setColor(hou.Color((1, 1, 1)))
+            channel_subnet_outputs.setColor(hou.Color((0, 0, 0)))
 
             # Import layer aovs
             aov_nodes = {
@@ -1062,30 +1062,30 @@ class BuildComp(ns.Node):
                 if not _aov_included(aov.label): continue
 
                 # Build aov import node
-                aov_type = _get(aov_types, variant_name, aov.label)
+                aov_type = _get(aov_types, channel_name, aov.label)
                 match aov_type:
                     case AOVType.LPE:
                         aov_subnet = self._build_lpe_aov(
-                            variant_subnet,
-                            variant_name,
+                            channel_subnet,
+                            channel_name,
                             aov
                         )
                     case AOVType.Mask:
                         aov_subnet = self._build_mask_aov(
-                            variant_subnet,
-                            variant_name,
+                            channel_subnet,
+                            channel_name,
                             aov
                         )
                     case AOVType.Util:
                         aov_subnet = self._build_util_aov(
-                            variant_subnet,
-                            variant_name,
+                            channel_subnet,
+                            channel_name,
                             aov
                         )
                     case AOVType.Mono:
                         aov_subnet = self._build_mono_aov(
-                            variant_subnet,
-                            variant_name,
+                            channel_subnet,
+                            channel_name,
                             aov
                         )
                     case _:
@@ -1097,60 +1097,60 @@ class BuildComp(ns.Node):
             # Prepare grade subnet
             assert 'beauty' in aov_nodes[AOVType.LPE], (
                 'Missing beauty aov in '
-                f'{variant_name}'
+                f'{channel_name}'
             )
             
             # Include all LPE names including beauty
             lpe_names = list(aov_nodes[AOVType.LPE].keys())
-            grade_subnet = _ensure_node(variant_subnet, 'subnet', 'grade')
+            grade_subnet = _ensure_node(channel_subnet, 'subnet', 'grade')
             
             # Use the helper method to build/update the grade subnet
             self._update_grade_subnet(
                 grade_subnet,
-                variant_subnet,
-                variant_name,
+                channel_subnet,
+                channel_name,
                 lpe_names,
                 aov_nodes
             )
             
             # Create the render layer subnet output node
-            variant_alpha_node = aov_nodes[AOVType.Mono]['alpha']
-            _connect(variant_alpha_node, 0, grade_subnet, len(lpe_names))
-            _connect(grade_subnet, 0, variant_subnet_outputs, 0)
+            channel_alpha_node = aov_nodes[AOVType.Mono]['alpha']
+            _connect(channel_alpha_node, 0, grade_subnet, len(lpe_names))
+            _connect(grade_subnet, 0, channel_subnet_outputs, 0)
             
             # Layout render layer subnet nodes
-            variant_subnet.layoutChildren()
+            channel_subnet.layoutChildren()
             
             # Store layer output node
-            layer_nodes[variant_name] = (variant_subnet, aov_nodes)
+            layer_nodes[channel_name] = (channel_subnet, aov_nodes)
         
         # Merge render layer comps
         comp_output_node = None
-        for index, variant_name in enumerate(variant_names):
+        for index, channel_name in enumerate(channel_names):
 
             # Get render layer nodes
-            if variant_name not in layer_nodes: continue
-            layer_subnet, _ = layer_nodes[variant_name]
+            if channel_name not in layer_nodes: continue
+            layer_subnet, _ = layer_nodes[channel_name]
 
             # Connect render layer to output
             _connect(layer_subnet, 0, output_node, index + 1)
 
             # Merge render layers
             if comp_output_node is None:
-                comp_output_node = (variant_name, layer_subnet)
+                comp_output_node = (channel_name, layer_subnet)
             else:
 
                 # Merge render layers
-                prev_variant_name, prev_output_node = comp_output_node
+                prev_channel_name, prev_output_node = comp_output_node
                 over_node = _ensure_node(
                     dive_node,
                     'blend',
-                    f'{prev_variant_name}_{variant_name}_over'
+                    f'{prev_channel_name}_{channel_name}_over'
                 )
                 over_node.parm('mode').set('over')
                 _connect(prev_output_node, 0, over_node, 0)
                 _connect(layer_subnet, 0, over_node, 1)
-                comp_output_node = (variant_name, over_node)
+                comp_output_node = (channel_name, over_node)
         
         # Set output node
         if comp_output_node is not None:
@@ -1262,7 +1262,7 @@ class BuildComp(ns.Node):
                     shutil.copyfile(workfile_path, input_path)
 
                     # Get layer names for composite job
-                    layer_names = self.get_variant_names()
+                    layer_names = self.get_channel_names()
 
                     # Submit the job
                     composite_job.submit(dict(
@@ -1294,7 +1294,7 @@ class BuildComp(ns.Node):
         # Parameters
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return
-        variant_names = list_variants(shot_uri)
+        channel_names = list_channels(shot_uri)
         frame_range = get_frame_range(shot_uri)
         render_range = frame_range.full_range()
         
@@ -1308,25 +1308,25 @@ class BuildComp(ns.Node):
             temp_path = Path(temp_dir)
 
             # Render each render layer
-            for variant_index, variant_name in enumerate(variant_names):
+            for channel_index, channel_name in enumerate(channel_names):
 
                 # Paths
                 temp_frames_path = (
                     temp_path /
-                    variant_name /
-                    f'{variant_name}.$F4.exr'
+                    channel_name /
+                    f'{channel_name}.$F4.exr'
                 )
                 output_frames_path = get_next_frame_path(
                     shot_uri,
                     'composite',
-                    variant_name,
+                    channel_name,
                     '$F4'
                 )
 
                 # Render the frames
                 temp_frames_path.parent.mkdir(parents = True, exist_ok = True)
                 render_node.parm('copoutput').set(path_str(temp_frames_path))
-                render_node.parm('port1').set(variant_index + 1)
+                render_node.parm('port1').set(channel_index + 1)
                 render_node.parm('f1').set(render_range.first_frame)
                 render_node.parm('f2').set(render_range.last_frame)
                 render_node.parm('f3').set(render_range.step_size)
@@ -1344,7 +1344,7 @@ class BuildComp(ns.Node):
                 output_context_path = output_frames_path.parent / 'context.json'
                 store_json(output_context_path, dict(
                     uri = str(shot_uri),
-                    variant_name = variant_name,
+                    variant_name = channel_name,
                     first_frame = render_range.first_frame,
                     last_frame = render_range.last_frame,
                     step_size = render_range.step_size

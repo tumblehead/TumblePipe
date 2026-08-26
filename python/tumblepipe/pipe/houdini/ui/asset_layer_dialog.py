@@ -105,8 +105,8 @@ class AssetLayerDialog(QDialog):
                 note = f"{note} ({layer.latest})"
             item.setText(2, note)
 
-            if layer.variant != 'default':
-                item.setToolTip(0, f"variant: {layer.variant}")
+            if layer.channel != 'default':
+                item.setToolTip(0, f"channel: {layer.channel}")
 
             colour = _STATUS_COLOUR.get(layer.status)
             if colour is not None:

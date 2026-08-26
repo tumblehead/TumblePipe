@@ -48,7 +48,7 @@ from _pipeline_clients import ClientPool
 import _pipeline_containers as containers
 from _pipeline_containers import ContainerManager, GroupContainer
 from _pipeline_drops import DropRouter
-from _pipeline_houdini import ProjectActivator, run_on_main_thread
+from _pipeline_houdini import ProjectActivator, report_failure, run_on_main_thread
 from _pipeline_detail import DetailSectionBuilder
 from _pipeline_resolver import AssetResolver
 from _pipeline_scene import SceneManager
@@ -688,7 +688,7 @@ class PipelineCatalog(Catalog):
         project_name, second, third = parsed
 
         # Activate the asset's project so any tumblehead module-level
-        # calls (variants / frame range / fps / etc.) resolve against
+        # calls (channels / frame range / fps / etc.) resolve against
         # the right configuration.
         proj = self._registry.get(project_name)
         if proj is not None:
@@ -722,7 +722,7 @@ class PipelineCatalog(Catalog):
             tags.add("type:asset")
             tags.add(f"category:{second}")
             metadata["category"] = second
-            metadata["variants"] = self._get_variants(asset_id, "assets")
+            metadata["variants"] = self._get_channels(asset_id, "assets")
         else:
             tags.add("type:shot")
             tags.add(f"sequence:{second}")
@@ -763,24 +763,24 @@ class PipelineCatalog(Catalog):
         proj = self._resolver.project_for(asset_id)
         return proj.name if proj is not None else ""
 
-    def _get_variants(self, asset_id: str, kind: str) -> list[str]:
-        """Return variant names for an asset/shot.
+    def _get_channels(self, asset_id: str, kind: str) -> list[str]:
+        """Return publish channel names for an asset/shot.
 
         Returns ``[]`` for a malformed or unresolvable id. Raises
-        :class:`ConfigError` if the variants module fails to load or
+        :class:`ConfigError` if the channels module fails to load or
         the lookup itself raises — callers (typically :meth:`get_detail`)
         let it propagate so the consumer can render a detail-level error.
         """
-        from tumblepipe.config.variants import list_variants
+        from tumblepipe.config.channels import list_channels
         uri = self._resolver.uri_for(asset_id)
         if uri is None:
             return []
         try:
-            return list(list_variants(uri))
+            return list(list_channels(uri))
         except Exception as exc:
             raise ConfigError(
                 self.id,
-                f"variants lookup failed for {asset_id}: {exc}",
+                f"channels lookup failed for {asset_id}: {exc}",
                 cause=exc,
             ) from exc
 
@@ -1062,10 +1062,21 @@ class PipelineCatalog(Catalog):
             names.append(a.name or a.id.split("/")[-1])
         if not uris:
             return
-        self._open_submit_jobs_dialog(uris, names, context)
+        # The browser path has no "opened from" entity, but the loaded
+        # workfile's department is still the one the artist is working in,
+        # so it seeds the render department the same way the scene quick
+        # action does. None when no pipeline scene is open.
+        scene_ctx = self._scene.get_loaded_scene_context()
+        department = (
+            scene_ctx.department_name if scene_ctx is not None else None
+        )
+        self._open_submit_jobs_dialog(
+            uris, names, context, department=department,
+        )
 
     def _open_submit_jobs_dialog(
         self, uris: list, names: list[str], context: str,
+        department: str | None = None,
     ) -> None:
         """Open :class:`SubmitJobsDialog` for the given entities.
 
@@ -1100,20 +1111,14 @@ class PipelineCatalog(Catalog):
             SubmitJobsDialog = mod.SubmitJobsDialog
             import hou
             parent = hou.qt.mainWindow()
-            dlg = SubmitJobsDialog(uris, names, context, parent=parent)
+            dlg = SubmitJobsDialog(
+                uris, names, context, parent=parent, department=department,
+            )
             dlg.exec()
         except Exception as exc:
-            log.exception("Failed to open Submit Jobs dialog")
-            try:
-                from PySide6.QtWidgets import QMessageBox
-                import hou
-                QMessageBox.critical(
-                    hou.qt.mainWindow(),
-                    "Submit Jobs",
-                    f"Failed to open dialog:\n\n{type(exc).__name__}: {exc}",
-                )
-            except Exception:
-                pass
+            # Was a hand-rolled QMessageBox predating report_failure: same
+            # job, minus the log location, plus its own silent fallback.
+            report_failure("Opening the Submit Jobs dialog", exc)
 
     def _shot_has_direct_scene_ref(self, asset_id: str) -> bool:
         try:
@@ -1134,8 +1139,8 @@ class PipelineCatalog(Catalog):
             scene_mod.set_scene_ref(uri, None)
             self.invalidate_cache()
             self._request_global_detail_refresh()
-        except Exception:
-            log.exception("Clear scene_ref failed for %s", asset_id)
+        except Exception as exc:
+            report_failure(f"Clearing the scene reference for {asset_id}", exc)
 
     def get_deck_item_menu_items(self, asset: Asset, deck_item_key: str):
         """Right-click items for a dept deck item in the deck popup.
@@ -1361,6 +1366,10 @@ class PipelineCatalog(Catalog):
 
         x_offset = 0.0
         box_gap = 3.0
+        # A department whose workfile won't merge is skipped, not fatal - but
+        # the master scene then quietly ships without it, and "Master scene
+        # saved" reads as if everything landed. Collect and say so.
+        failed_depts: list[str] = []
 
         with hou.undos.group(f"Generate master: {third}"):
             for dept_name, hip_path in dept_paths:
@@ -1378,6 +1387,7 @@ class PipelineCatalog(Catalog):
                     pass
                 except Exception:
                     log.exception("Failed to merge %s", hip_path)
+                    failed_depts.append(dept_name)
                     continue
 
                 # Find newly merged nodes in each container
@@ -1430,23 +1440,26 @@ class PipelineCatalog(Catalog):
                 pane.homeToSelection()
                 break
 
-        hou.ui.setStatusMessage(
-            f"Master scene saved: {master_hip}",
-            severity=hou.severityType.Message,
-        )
+        if failed_depts:
+            hou.ui.displayMessage(
+                f"Master scene saved: {master_hip}\n\nBut these departments "
+                f"could not be merged and are missing from it: "
+                f"{', '.join(failed_depts)}. See the log for why.",
+                severity=hou.severityType.Warning,
+            )
+        else:
+            hou.ui.setStatusMessage(
+                f"Master scene saved: {master_hip}",
+                severity=hou.severityType.Message,
+            )
 
     def _edit_entity_departments(self, asset_id: str) -> None:
         """Choose which departments this shot or asset uses."""
-        import hou
         try:
             from _pipeline_departments import EntityDepartmentsDialog
             EntityDepartmentsDialog(self, asset_id).exec()
         except Exception as exc:
-            log.exception("Departments dialog failed for %s", asset_id)
-            hou.ui.displayMessage(
-                f"Could not edit departments for '{asset_id}': {exc}",
-                severity=hou.severityType.Warning,
-            )
+            report_failure(f"Editing the departments for {asset_id}", exc)
 
     def _edit_group_departments(self, asset_id: str) -> None:
         """Choose which departments a Multi covers for its members.
@@ -1500,11 +1513,7 @@ class PipelineCatalog(Catalog):
             # _toggle_group_dept_coverage). Adding one on close would
             # just re-do it.
         except Exception as exc:
-            log.exception("Multi departments dialog failed for %s", asset_id)
-            hou.ui.displayMessage(
-                f"Could not edit departments for '{asset_id}': {exc}",
-                severity=hou.severityType.Warning,
-            )
+            report_failure(f"Editing the departments for {asset_id}", exc)
 
     def _open_database_editor(self, asset_id: str) -> None:
         """Open the pipeline DatabaseWindow with the entity pre-selected.
@@ -1555,12 +1564,10 @@ class PipelineCatalog(Catalog):
             return
         try:
             self._write_description(asset_id, text)
-        except (ConfigError, OSError):
-            log.exception("Failed to write description for %s", asset_id)
-            hou.ui.setStatusMessage(
-                f"Failed to write description for {asset_id}",
-                severity=hou.severityType.Warning,
-            )
+        except (ConfigError, OSError) as exc:
+            # The artist typed a description and pressed OK; a status line
+            # that scrolls past would leave them believing it was stored.
+            report_failure(f"Saving the description for {asset_id}", exc)
             return
         hou.ui.setStatusMessage(
             f"Description updated for {asset_id}",
@@ -1588,8 +1595,8 @@ class PipelineCatalog(Catalog):
             )
             dlg.show()
             dlg.raise_()
-        except Exception:
-            log.exception("Manage todos failed for %s", asset.id)
+        except Exception as exc:
+            report_failure(f"Opening the todos dialog for {asset.id}", exc)
 
     def _stamp_todo_tags(self, items: list) -> None:
         """Rewrite each item's ``todo:*`` tags in place based on the
@@ -1661,7 +1668,7 @@ class PipelineCatalog(Catalog):
 
         Used by any mutation that must update a *specific* entity's
         card/list row — workfile create (``new_from_template`` /
-        ``new_from_current`` / group variant), Save, and container
+        ``new_from_current`` / group channel), Save, and container
         (Multi/Root) create/edit actions. The detail-panel-driven
         refresh path (``refresh_cb`` → ``detail_refresh_requested`` →
         ``_on_quick_action_done``) only covers the currently-displayed
@@ -2112,7 +2119,7 @@ class PipelineCatalog(Catalog):
 
         - ``save``: last mtime of the currently-loaded hip file.
         - ``publish``: mtime of the latest published version for the
-          current scene's (entity, dept, variant) tuple.
+          current scene's (entity, dept, channel) tuple.
 
         Returns ``None`` for actions we don't track (e.g. ``reload``) so
         the button falls back to its regular QToolTip.
@@ -2138,9 +2145,9 @@ class PipelineCatalog(Catalog):
                 return None
             try:
                 from tumblepipe.pipe.paths import latest_export_path
-                variant = getattr(scene_ctx, "variant_name", None) or "default"
+                channel = getattr(scene_ctx, "channel_name", None) or "default"
                 path = latest_export_path(
-                    scene_ctx.entity_uri, variant, scene_ctx.department_name,
+                    scene_ctx.entity_uri, channel, scene_ctx.department_name,
                 )
                 if path is None or not path.exists():
                     return format_age_html("Last published", None)
@@ -4175,6 +4182,15 @@ class PipelineCatalog(Catalog):
                 import hou
                 stage = hou.node("/stage")
                 if stage is None or entity_uri is None:
+                    # Both are silent no-ops that look exactly like a dead
+                    # menu entry, so say which one it was.
+                    hou.ui.displayMessage(
+                        f"Cannot import {asset_id}: "
+                        + ("this scene has no /stage network."
+                           if stage is None else
+                           "it has no entity URI to import."),
+                        severity=hou.severityType.Warning,
+                    )
                     return
                 from tumblepipe.pipe.houdini.lops import import_asset
                 node = import_asset.create(stage, name)
@@ -4183,8 +4199,8 @@ class PipelineCatalog(Catalog):
                 raw = node.native()
                 raw.setDisplayFlag(True)
                 raw.setSelected(True, clear_all_selected=True)
-            except Exception:
-                log.exception("Failed to import asset %s", asset_id)
+            except Exception as exc:
+                report_failure(f"Importing {asset_id}", exc)
 
         run_on_main_thread(_do_import)
 

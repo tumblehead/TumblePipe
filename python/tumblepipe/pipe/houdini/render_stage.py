@@ -2,7 +2,7 @@
 
 The farm's stage tasks (farm/tasks/stage, farm/tasks/cloud_stage) and the
 th::render_debug HDA all need the same composition: the shot's staged build
-for one variant, the current department exports layered on top, root default
+for one channel, the current department exports layered on top, root default
 prims, render-settings overrides and AOV pruning. These used to be drifting
 hand-copies of the same graph; this module is the single source, so the
 debug node composes what the farm renders by construction.
@@ -20,16 +20,16 @@ Composition semantics (deliberate, see the render/farm divergence notes):
   arbitrary one). An explicit ``render_department_name`` is a different
   thing and still honoured: the point is that composition follows what the
   submitter *asked for*, never what workfile happens to be open.
-- The variant is set explicitly; without it every variant used to compose
+- The channel is set explicitly; without it every channel used to compose
   on top of the *default* variant's staged stack.
 - One import_layer per renderable shot department re-applies the current
   exports (resolved to pinned filesystem paths at build time) on top of the
   staged stack, so a render picks up department publishes made since the
   last shot build.
 
-The graph is built for ONE variant. Callers that render several variants
-build one graph (and one export) per variant — chaining variant graphs
-composes every variant into a single stage, which renders the last variant
+The graph is built for ONE channel. Callers that render several channels
+build one graph (and one export) per channel — chaining channel graphs
+composes every channel into a single stage, which renders the last channel
 for all of them.
 """
 
@@ -46,7 +46,7 @@ from tumblepipe.config.department import (
     list_departments,
     department_names_up_to
 )
-from tumblepipe.config.variants import DEFAULT_VARIANT
+from tumblepipe.config.channels import DEFAULT_CHANNEL
 from tumblepipe.pipe.paths import latest_export_path
 from tumblepipe.pipe.houdini import util
 from tumblepipe.pipe.houdini.lops import (
@@ -119,15 +119,15 @@ def _get_aov_names(render_settings_path: Path) -> set | None:
 def build_render_stage_graph(
     scene_node,
     shot_uri: Uri,
-    variant_name: str,
+    channel_name: str,
     render_settings_path: Path | None = None,
     name_prefix: str = '__',
     render_department_name: str | None = None
     ):
-    """Build the render-stage graph for one variant; return the last node.
+    """Build the render-stage graph for one channel; return the last node.
 
     The chain is created inside ``scene_node`` with no input, so several
-    variants can be built side by side in the same network. When
+    channels can be built side by side in the same network. When
     ``render_settings_path`` is None the render-settings edit and AOV
     pruning stages are skipped (the debug node has no settings JSON).
 
@@ -157,7 +157,7 @@ def build_render_stage_graph(
     shot_node.set_shot_uri(shot_uri)
     shot_node.set_department_name('none')
     shot_node.set_exclude_downstream_of(render_department_name)
-    shot_node.set_variant_name(variant_name)
+    shot_node.set_channel_name(channel_name)
     shot_node.set_version_name('current')
     shot_node.set_include_procedurals(True)
     shot_node.execute()
@@ -175,43 +175,43 @@ def build_render_stage_graph(
         _connect(prev_node, sublayer_node)
         prev_node = sublayer_node
 
-    # Re-apply the current department exports for this variant on top of
+    # Re-apply the current department exports for this channel on top of
     # the staged stack.
-    variant_subnet = scene_node.createNode(
-        'subnet', f'{name_prefix}variant_{variant_name}'
+    channel_subnet = scene_node.createNode(
+        'subnet', f'{name_prefix}variant_{channel_name}'
     )
-    variant_subnet.node('output0').destroy()
-    variant_subnet_input = variant_subnet.indirectInputs()[0]
-    variant_subnet_output = variant_subnet.createNode('output', 'output')
+    channel_subnet.node('output0').destroy()
+    channel_subnet_input = channel_subnet.indirectInputs()[0]
+    channel_subnet_output = channel_subnet.createNode('output', 'output')
 
-    _connect(prev_node, variant_subnet)
-    subnet_prev_node = variant_subnet_input
+    _connect(prev_node, channel_subnet)
+    subnet_prev_node = channel_subnet_input
 
     for included_department_name in included_department_names:
-        # A department that never exported this variant composes its
-        # default-variant export instead — the same fallback the staged
+        # A department that never exported this channel composes its
+        # default-channel export instead — the same fallback the staged
         # build applies — so the re-apply pass refreshes the layer the
         # staged stack actually contains rather than bypassing.
-        layer_variant_name = variant_name
+        layer_channel_name = channel_name
         if latest_export_path(
-            shot_uri, variant_name, included_department_name
+            shot_uri, channel_name, included_department_name
         ) is None:
-            layer_variant_name = DEFAULT_VARIANT
+            layer_channel_name = DEFAULT_CHANNEL
         layer_node = import_layer.create(
-            variant_subnet,
+            channel_subnet,
             included_department_name
         )
         layer_node.set_entity_uri(shot_uri)
         layer_node.set_department_name(included_department_name)
-        layer_node.set_variant_name(layer_variant_name)
+        layer_node.set_channel_name(layer_channel_name)
         layer_node.set_version_name('current')
         layer_node.execute()
         _connect(subnet_prev_node, layer_node.native())
         subnet_prev_node = layer_node.native()
 
-    _connect(subnet_prev_node, variant_subnet_output)
-    variant_subnet.layoutChildren()
-    prev_node = variant_subnet
+    _connect(subnet_prev_node, channel_subnet_output)
+    channel_subnet.layoutChildren()
+    prev_node = channel_subnet
 
     if render_settings_path is not None:
 

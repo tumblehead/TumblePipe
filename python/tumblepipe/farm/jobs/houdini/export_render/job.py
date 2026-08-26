@@ -197,7 +197,7 @@ def submit(
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
-    variant_name = config['settings']['variant_name']
+    channel_name = config['settings']['variant_name']
 
     # Parameters
     project_name = get_project_name()
@@ -206,7 +206,7 @@ def submit(
         f'{project_name} '
         f'{purpose} '
         f'{entity_uri} '
-        f'{variant_name} '
+        f'{channel_name} '
         f'{user_name} '
         f'{timestamp}'
     )

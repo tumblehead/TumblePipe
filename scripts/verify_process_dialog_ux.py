@@ -19,7 +19,7 @@ than the one it superseded:
      version — validation, farm submission — keeps whatever was on disk)
 
 ...and that a task with nothing to do skips instead of failing (tumblepipe__rfe
-2026-07-20, the disconnected render-variant export node):
+2026-07-20, the disconnected render-channel export node):
 
   6. a child raising TaskSkipped is SKIPPED, its siblings still run, and the
      skip is surfaced in a warning — while a user-unchecked task stays quiet

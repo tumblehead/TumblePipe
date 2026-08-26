@@ -40,12 +40,12 @@ def list_outputs(data, **kwargs):
             result.append(context_output)
     return result
 
-def get_aov_names_from_context(context_data: dict, variant: str = None) -> list[str]:
+def get_aov_names_from_context(context_data: dict, channel: str = None) -> list[str]:
     """Extract AOV names from context.json outputs.
 
     Args:
         context_data: The loaded context.json dictionary
-        variant: Optional variant name to filter outputs
+        channel: Optional channel name to filter outputs
 
     Returns:
         List of AOV names, or empty list if not found
@@ -55,7 +55,7 @@ def get_aov_names_from_context(context_data: dict, variant: str = None) -> list[
 
     outputs = context_data.get('outputs', [])
     for output in outputs:
-        if variant is not None and output.get('variant') != variant:
+        if channel is not None and output.get('variant') != channel:
             continue
         params = output.get('parameters', {})
         aov_names = params.get('aov_names', [])
@@ -67,7 +67,7 @@ def get_aov_names_from_context(context_data: dict, variant: str = None) -> list[
 
 def aggregate_aov_names_from_inputs(
     context_data: dict,
-    variant: str = 'default'
+    channel: str = 'default'
 ) -> list[str]:
     """Aggregate AOV names from asset exports referenced in context.json.
 
@@ -76,7 +76,7 @@ def aggregate_aov_names_from_inputs(
 
     Args:
         context_data: The loaded context.json dictionary
-        variant: Variant name to use when looking up asset exports
+        channel: Channel name to use when looking up asset exports
 
     Returns:
         List of unique AOV names aggregated from all referenced assets
@@ -117,7 +117,7 @@ def aggregate_aov_names_from_inputs(
 
             # Check all departments for this asset's exports
             for department in asset_departments:
-                asset_export_path = latest_export_path(asset_uri, variant, department)
+                asset_export_path = latest_export_path(asset_uri, channel, department)
                 if asset_export_path is None:
                     continue
 
@@ -127,7 +127,7 @@ def aggregate_aov_names_from_inputs(
                 if asset_context is None:
                     continue
 
-                # Extract AOV names from the asset (no variant filter)
+                # Extract AOV names from the asset (no channel filter)
                 asset_aov_names = get_aov_names_from_context(asset_context)
                 aov_set.update(asset_aov_names)
 
@@ -365,7 +365,7 @@ def save_export_context(
     entity_uri: Uri,
     department_name: str,
     version_name: str,
-    variant_name: str = 'default'
+    channel_name: str = 'default'
 ):
     """Save simple export context metadata (context.json).
 
@@ -376,18 +376,18 @@ def save_export_context(
         entity_uri: Entity URI
         department_name: Department name
         version_name: Version name
-        variant_name: Variant name (default: 'default')
+        channel_name: Channel name (default: 'default')
     """
     logger.info(
         f"Saving export context: uri={entity_uri}, dept={department_name}, "
-        f"version={version_name}, variant={variant_name}"
+        f"version={version_name}, channel={channel_name}"
     )
 
     context_path = target_path / 'context.json'
     context_data = dict(
         uri=str(entity_uri),
         department=department_name,
-        variant=variant_name,
+        variant=channel_name,
         version=version_name,
         timestamp=dt.datetime.now().isoformat(),
         user=get_user_name()
@@ -402,7 +402,7 @@ def save_layer_context(
     version_name: str,
     timestamp: str,
     user_name: str,
-    variant_name: str = 'default',
+    channel_name: str = 'default',
     parameters: dict = None,
     inputs: list = None
 ):
@@ -417,14 +417,14 @@ def save_layer_context(
         version_name: Version name
         timestamp: Timestamp string (ISO format)
         user_name: User name
-        variant_name: Variant name (default: 'default')
+        channel_name: Channel name (default: 'default')
         parameters: Optional parameters dict
         inputs: Optional list of input references
     """
     input_count = len(inputs) if inputs else 0
     logger.info(
         f"Saving layer context: uri={entity_uri}, dept={department_name}, "
-        f"version={version_name}, variant={variant_name}, inputs={input_count}"
+        f"version={version_name}, channel={channel_name}, inputs={input_count}"
     )
 
     context_path = target_path / 'context.json'
@@ -433,7 +433,7 @@ def save_layer_context(
         outputs=[dict(
             uri=str(entity_uri),
             department=department_name,
-            variant=variant_name,
+            variant=channel_name,
             version=version_name,
             timestamp=timestamp,
             user=user_name,

@@ -21,7 +21,7 @@ from tumblepipe.farm import _common
 from tumblepipe.farm.tasks.env import get_hython_env, job_data_dir
 from tumblepipe.farm.tasks.publish import _spec
 from tumblepipe.config.department import is_renderable
-from tumblepipe.config.variants import get_entity_type as _get_entity_type
+from tumblepipe.config.entities import get_entity_type as _get_entity_type
 from tumblepipe.pipe.paths import (
     next_export_path
 )
@@ -44,7 +44,7 @@ def _get_asset_uri(entity_uri: Uri) -> Uri | None:
     return Uri.parse_unsafe(f'entity:/assets/{entity_uri.segments[1]}/{entity_uri.segments[2]}')
 
 
-def _trigger_asset_build(entity_uri: Uri, settings: dict, variant_name: str = 'default'):
+def _trigger_asset_build(entity_uri: Uri, settings: dict, channel_name: str = 'default'):
     """
     Trigger asset build job after successful renderable department publish.
 
@@ -54,7 +54,7 @@ def _trigger_asset_build(entity_uri: Uri, settings: dict, variant_name: str = 'd
     Args:
         entity_uri: The asset entity URI
         settings: Settings from config (priority/pool_name guaranteed by _spec)
-        variant_name: The variant to build (defaults to 'default')
+        channel_name: The channel to build (defaults to 'default')
     """
     from tumblepipe.farm.jobs.houdini.build import job as build_job
 
@@ -66,24 +66,24 @@ def _trigger_asset_build(entity_uri: Uri, settings: dict, variant_name: str = 'd
     # Submit asset build job
     build_config = {
         'entity_uri': str(asset_uri),
-        'variant_name': variant_name,
+        'variant_name': channel_name,
         'priority': settings['priority'],
         'pool_name': settings['pool_name']
     }
 
-    logging.info(f'Triggering asset build for: {asset_uri} variant: {variant_name}')
+    logging.info(f'Triggering asset build for: {asset_uri} channel: {channel_name}')
     result = build_job.submit(build_config)
     if result != 0:
         raise RuntimeError(f'Asset build job submission failed ({result}) for: {asset_uri}')
-    logging.info(f'Asset build job submitted successfully for: {asset_uri} variant: {variant_name}')
+    logging.info(f'Asset build job submitted successfully for: {asset_uri} channel: {channel_name}')
 
 
 def _next_export_path(entity):
-    # Convert entity JSON to Uri, variant, and department
+    # Convert entity JSON to Uri, channel, and department
     entity_uri = Uri.parse_unsafe(entity['uri'])
-    variant_name = entity.get('variant', 'default')
+    channel_name = entity.get('variant', 'default')
     department_name = entity['department']
-    return next_export_path(entity_uri, variant_name, department_name)
+    return next_export_path(entity_uri, channel_name, department_name)
 
 SCRIPT_PATH = Path(__file__).parent / 'publish_houdini.py'
 def main(config):
@@ -134,11 +134,11 @@ def main(config):
 
     # Auto-trigger asset build if this is a renderable asset department
     entity_type = _get_entity_type(entity_uri)
-    variant_name = config['entity'].get('variant', 'default')
+    channel_name = config['entity'].get('variant', 'default')
     if entity_type == 'asset' and is_renderable('assets', department_name):
         logging.info(f'Renderable asset department published: {department_name}')
         try:
-            _trigger_asset_build(entity_uri, config['settings'], variant_name)
+            _trigger_asset_build(entity_uri, config['settings'], channel_name)
         except Exception as e:
             return _error(f'Publish succeeded but asset build trigger failed: {e}')
 

@@ -48,7 +48,7 @@
         }
         parm {
             name    "variant"
-            label   "Variant"
+            label   "Channel"
             type    string
             default { "default" }
             menu {

@@ -53,12 +53,12 @@
                                 },
                                 {
                                     "key": "variants",
-                                    "label": "Variants",
+                                    "label": "Channels",
                                     "type": "multi_select",
                                     "property_path": "variants",
                                     "per_entity_choices": true,
                                     "width": 100,
-                                    "tooltip": "Variants to render"
+                                    "tooltip": "Publish channels to render"
                                 },
                                 {
                                     "key": "pool",

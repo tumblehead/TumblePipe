@@ -4,7 +4,7 @@ import hou
 
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.variants import list_variants
+from tumblepipe.config.channels import list_channels
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini import render_stage
 from tumblepipe.pipe.paths import (
@@ -32,10 +32,10 @@ class RenderDebug(ns.Node):
         )
         return ['from_context'] + [str(uri) for uri in uris]
 
-    def list_variant_names(self):
+    def list_channel_names(self):
         shot_uri = self.get_shot_uri()
         if shot_uri is None: return []
-        return list_variants(shot_uri)
+        return list_channels(shot_uri)
 
     def get_shot_uri(self) -> Uri | None:
         shot_uri_raw = self.parm('shot').eval()
@@ -51,23 +51,23 @@ class RenderDebug(ns.Node):
         if shot_uri_raw not in shot_uris: return None  # Compare strings
         return Uri.parse_unsafe(shot_uri_raw)
 
-    def get_variant_name(self):
-        variant_names = self.list_variant_names()
-        if len(variant_names) == 0: return None
-        variant_name = self.parm('variant').eval()
-        if len(variant_name) == 0: return variant_names[0]
-        if variant_name not in variant_names: return None
-        return variant_name
+    def get_channel_name(self):
+        channel_names = self.list_channel_names()
+        if len(channel_names) == 0: return None
+        channel_name = self.parm('variant').eval()
+        if len(channel_name) == 0: return channel_names[0]
+        if channel_name not in channel_names: return None
+        return channel_name
     
     def set_shot_uri(self, shot_uri: Uri):
         shot_uris = self.list_shot_uris()
         if str(shot_uri) not in shot_uris: return  # Compare strings
         self.parm('shot').set(str(shot_uri))
 
-    def set_variant_name(self, variant_name):
-        variant_names = self.list_variant_names()
-        if variant_name not in variant_names: return
-        self.parm('variant').set(variant_name)
+    def set_channel_name(self, channel_name):
+        channel_names = self.list_channel_names()
+        if channel_name not in channel_names: return
+        self.parm('variant').set(channel_name)
 
     def execute(self):
 
@@ -84,13 +84,13 @@ class RenderDebug(ns.Node):
             context.bypass(True)
             return
         context.bypass(False)
-        variant_name = self.get_variant_name() or 'default'
+        channel_name = self.get_channel_name() or 'default'
 
         # Build the same graph the farm's stage task exports for rendering
         last_node = render_stage.build_render_stage_graph(
             dive_node,
             shot_uri,
-            variant_name,
+            channel_name,
             name_prefix = ''
         )
 

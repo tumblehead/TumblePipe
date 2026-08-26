@@ -74,7 +74,7 @@ def _list_valid_hip_files(
     workspace_path: Path,
     base_pattern: str
     ) -> list[Path]:
-    """Glob all hip variants (.hip, .hiplc, .hipnc) matching ``base_pattern``,
+    """Glob all hip channels (.hip, .hiplc, .hipnc) matching ``base_pattern``,
     keeping only validly-versioned files, sorted ascending by version code."""
     all_hip_files = []
     for ext in HIP_EXTENSIONS:

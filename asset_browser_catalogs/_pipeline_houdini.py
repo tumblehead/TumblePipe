@@ -10,6 +10,8 @@ process:
   ``default_client`` singleton to a given project, with a fast path
   for the no-op case and a one-shot warning when the activated project
   diverges from Houdini's launch project.
+- :func:`report_failure` — put a failed *artist-initiated* action in
+  front of the artist instead of only in the log.
 
 Lives in its own module so the catalog file isn't carrying 70+ lines
 of env/singleton plumbing inline.
@@ -25,6 +27,53 @@ from typing import Callable
 from tumbletrove.asset_browser.core.projects import ProjectConfig
 
 log = logging.getLogger(__name__)
+
+
+def report_failure(action: str, exc: BaseException) -> None:
+    """Put a failed artist-initiated action in front of the artist.
+
+    An action handler runs behind a toolbar button or a menu entry with no
+    console in sight, so an exception that is logged and nothing more reads
+    as "the button does nothing" - which is exactly how a dead export window
+    got reported. Every failure still lands in the log (this logs it); the
+    dialog only guarantees it is *visible*, and names the log file so the
+    full trace can be found afterwards.
+
+    Only for actions the artist explicitly asked for. Background upkeep -
+    detail/card repaints, cache invalidation, refresh hooks - stays log-only:
+    an error dialog the artist cannot act on is noise, and one raised from a
+    repaint can fire repeatedly.
+
+    Safe to call from any thread. Quick actions reach here from the browser's
+    GUI thread as readily as from Houdini's main thread, and ``hou.ui`` off
+    the main thread is the same unsupported call the scene ops marshal to
+    avoid - so the dialog goes through :func:`run_on_main_thread` rather than
+    trusting each caller to know which thread it is on. The message is built
+    eagerly, before the hop, so it does not depend on ``exc`` outliving it.
+
+    Never raises: a reporter that throws would replace the failure it was
+    called to explain with a different one.
+    """
+    log.exception("%s failed", action)
+    try:
+        from tumblepipe.util.logging import get_log_paths
+        locations = "\n".join(f"  {path}" for path in get_log_paths())
+    except Exception:
+        locations = ""
+    detail = f"\n\nFull traceback:\n{locations}" if locations else ""
+    message = f"{action} failed: {type(exc).__name__}: {exc}{detail}"
+
+    def _show() -> None:
+        try:
+            import hou
+            hou.ui.displayMessage(message, severity=hou.severityType.Error)
+        except Exception:
+            log.exception("Failed to show the %s failure dialog", action)
+
+    try:
+        run_on_main_thread(_show)
+    except Exception:
+        log.exception("Failed to report the %s failure to the user", action)
 
 
 def run_on_main_thread(func: Callable, *args, **kwargs) -> None:

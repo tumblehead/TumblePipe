@@ -205,17 +205,18 @@ class DetailSectionBuilder:
         ``None`` when no identity is resolvable.
 
         Splits ``detail.id`` (``project/CHAR/Baby`` form) and appends
-        variants if present.
+        publish channels if present.
         """
         meta = detail.metadata or {}
         parts = (detail.id or "").split("/")
         parts = [p for p in parts if p]
         if not parts:
             return None
-        variants = meta.get("variants") or []
-        if "type:asset" in detail.tags and variants:
-            return parts + ["/".join(variants)] if len(variants) > 1 \
-                else parts + [str(variants[0])]
+        # "variants" is the frozen metadata key for what the UI calls channels.
+        channels = meta.get("variants") or []
+        if "type:asset" in detail.tags and channels:
+            return parts + ["/".join(channels)] if len(channels) > 1 \
+                else parts + [str(channels[0])]
         return parts
 
     def copy_to_clipboard(self, text: str) -> None:
@@ -479,9 +480,9 @@ class DetailSectionBuilder:
             rows.append(("Project", str(meta["project"])))
         if meta.get("category"):
             rows.append(("Category", str(meta["category"])))
-        variants = meta.get("variants") or []
-        if variants:
-            rows.append(("Variants", ", ".join(variants)))
+        channels = meta.get("variants") or []
+        if channels:
+            rows.append(("Channels", ", ".join(channels)))
         if detail.versions:
             latest = detail.versions[-1]
             rows.append(("Latest", getattr(latest, "version", "") or ""))

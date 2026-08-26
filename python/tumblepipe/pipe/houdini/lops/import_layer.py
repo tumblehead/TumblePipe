@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 from tumblepipe.api import path_str, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
-from tumblepipe.config.variants import list_variants
+from tumblepipe.config.channels import list_channels
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.util import uri_to_prim_path
@@ -140,13 +140,13 @@ class ImportLayer(EntityNode):
         entity_uri = self.get_entity_uri()
         if entity_uri is None:
             return ['current']
-        variant_name = self.get_variant_name()
+        channel_name = self.get_channel_name()
         department_name = self.get_department_name()
         if department_name is None:
             return ['current']
 
-        # Get export path with variant
-        export_uri = get_export_uri(entity_uri, variant_name, department_name)
+        # Get export path with channel
+        export_uri = get_export_uri(entity_uri, channel_name, department_name)
         export_path = api.storage.resolve(export_uri)
         version_paths = list(filter(
             _valid_version_path,
@@ -189,9 +189,9 @@ class ImportLayer(EntityNode):
             return None
         return version_name
 
-    def set_variant_name(self, variant_name: str):
-        """Set variant name."""
-        self.parm('variant').set(variant_name)
+    def set_channel_name(self, channel_name: str):
+        """Set channel name."""
+        self.parm('variant').set(channel_name)
         self._update_labels()
 
     def set_version_name(self, version_name: str):
@@ -229,7 +229,7 @@ class ImportLayer(EntityNode):
         """Unified import method for both assets and shots."""
         native = self.native()
         entity_uri = self.get_entity_uri()
-        variant_name = self.get_variant_name()
+        channel_name = self.get_channel_name()
         department_name = self.get_department_name()
         version_name = self.get_version_name()
 
@@ -262,7 +262,7 @@ class ImportLayer(EntityNode):
         # version and filepath. Clear it here, symmetrically with _bypass().
         native.bypass(False)
 
-        logger.info(f"Importing layer: uri={entity_uri}, dept={department_name}, variant={variant_name}, version={version_name}")
+        logger.info(f"Importing layer: uri={entity_uri}, dept={department_name}, channel={channel_name}, version={version_name}")
 
         from tumblepipe import resolver as _resolver
 
@@ -271,10 +271,10 @@ class ImportLayer(EntityNode):
         # + chs() pipeline cleanly. Nested entity:// URIs inside the loaded
         # layer continue to be resolved at USD load time.
 
-        # Shared layer (index 1) - only if entity has multiple variants.
+        # Shared layer (index 1) - only if entity has multiple channels.
         shared_resolved = ''
         shared_exists = False
-        if len(list_variants(entity_uri)) > 1:
+        if len(list_channels(entity_uri)) > 1:
             shared_path = latest_shared_export_path(entity_uri, department_name)
             if shared_path is not None:
                 shared_version = shared_path.name
@@ -288,12 +288,12 @@ class ImportLayer(EntityNode):
         self.parm('import_filepath1').set(shared_resolved)
         self.parm('import_enable1').set(1 if shared_exists else 0)
 
-        # Variant layer (index 2)
-        variant_uri = f"{entity_uri}?dept={department_name}&variant={variant_name}&version={version_name}"
-        resolved_variant = _resolver.try_resolve_entity_uri(variant_uri)
-        variant_exists = bool(resolved_variant) and Path(resolved_variant).exists()
-        self.parm('import_filepath2').set(resolved_variant if variant_exists else '')
-        self.parm('import_enable2').set(1 if variant_exists else 0)
+        # Channel layer (index 2)
+        channel_uri = f"{entity_uri}?dept={department_name}&variant={channel_name}&version={version_name}"
+        resolved_channel = _resolver.try_resolve_entity_uri(channel_uri)
+        channel_exists = bool(resolved_channel) and Path(resolved_channel).exists()
+        self.parm('import_filepath2').set(resolved_channel if channel_exists else '')
+        self.parm('import_enable2').set(1 if channel_exists else 0)
 
         # The paths above are resolved in Python, but nested entity:// URIs
         # inside the loaded layers resolve at USD compose time — and an
@@ -302,17 +302,17 @@ class ImportLayer(EntityNode):
         # references (batched to one notice inside deferred_refresh()).
         _resolver.refresh_context()
 
-        if not variant_exists:
-            logger.warning(f"Variant layer file not found: {variant_uri}")
+        if not channel_exists:
+            logger.warning(f"Channel layer file not found: {channel_uri}")
 
         # Resolve version_path for context.json lookup below
-        export_uri = get_export_uri(entity_uri, variant_name, department_name) / version_name
+        export_uri = get_export_uri(entity_uri, channel_name, department_name) / version_name
         version_path = api.storage.resolve(export_uri)
 
         # Enable bypass if either layer exists
-        self.parm('bypass_input').set(1 if (shared_exists or variant_exists) else 0)
+        self.parm('bypass_input').set(1 if (shared_exists or channel_exists) else 0)
 
-        if not shared_exists and not variant_exists:
+        if not shared_exists and not channel_exists:
             logger.warning(f"No layer files found for import: uri={entity_uri}, dept={department_name}, version={version_name}")
 
         # Update version label
@@ -391,7 +391,7 @@ class ImportLayer(EntityNode):
             return import_asset._inline_metadata_script(entity_uri)
         return import_asset._metadata_script(
             entity_uri,
-            variant_name=self.get_variant_name(),
+            channel_name=self.get_channel_name(),
             shot_uri=shot_uri,
             shot_department=shot_department
         )
@@ -400,12 +400,12 @@ class ImportLayer(EntityNode):
         entity_uri = self.get_entity_uri()
         if entity_uri is None:
             return
-        variant_name = self.get_variant_name()
+        channel_name = self.get_channel_name()
         department_name = self.get_department_name()
         if department_name is None:
             return
 
-        export_path = latest_export_path(entity_uri, variant_name, department_name)
+        export_path = latest_export_path(entity_uri, channel_name, department_name)
         if export_path is None:
             return
         if not export_path.exists():

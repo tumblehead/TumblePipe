@@ -9,7 +9,7 @@ from tumblepipe.util.uri import Uri
 def get_entity_type(entity_uri: Uri) -> str | None:
     """Get entity type from URI ('asset', 'shot', or 'group').
 
-    Unlike ``config.variants.get_entity_type``, this also classifies
+    Unlike ``config.entities.get_entity_type``, this also classifies
     ``groups:`` URIs and tolerates ``None`` input.
     """
     if entity_uri is None: return None
@@ -31,7 +31,7 @@ def has_staged_export(entity_uri: Uri) -> bool:
     if entity_uri is None:
         return False
     try:
-        export_file = get_latest_staged_file_path(entity_uri, variant_name='default')
+        export_file = get_latest_staged_file_path(entity_uri, channel_name='default')
         return export_file is not None and export_file.exists()
     except Exception:
         return False

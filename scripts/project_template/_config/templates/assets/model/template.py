@@ -1,7 +1,7 @@
 
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
-from tumblepipe.config.variants import list_variants
+from tumblepipe.config.channels import list_channels
 from tumblepipe.pipe.houdini.lops import export_layer
 
 def _pin_entity(node, entity_uri: Uri):
@@ -16,18 +16,23 @@ def _pin_entity(node, entity_uri: Uri):
     node.hdaModule()._apply_entity(node, str(entity_uri))
 
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
-    variant_names = list_variants(entity_uri)
+    channel_names = list_channels(entity_uri)
 
     # Create asset prim via HDA (entity + prim path resolve from context)
     asset_node = scene_node.createNode('th::create_asset::1.0', 'ASSET')
 
+    # NOTE: the HDA's `variants` multiparm authors a *native USD variantSet*
+    # on the asset prim, but it is seeded here from the entity's publish-
+    # channel list - one property, two meanings. Until assets get their own
+    # look list (designs/native-usd-variants.md), a channel and a USD variant
+    # name are the same string for an asset.
     # Create model variant system via HDA (entity resolves from context)
     model_node = scene_node.createNode('th::create_asset_model::1.0', 'MODEL')
     model_node.setInput(0, asset_node)
 
     # Populate variants from config and sync internal nodes
-    model_node.parm('variants').set(len(variant_names))
-    for i, name in enumerate(variant_names):
+    model_node.parm('variants').set(len(channel_names))
+    for i, name in enumerate(channel_names):
         model_node.parm(f'variant_name{i+1}').set(name)
     model_node.hdaModule()._sync_variants(model_node)
 
@@ -47,20 +52,25 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
 
     for member_uri in group.members:
         member_name = '_'.join(member_uri.segments[1:])
-        variant_names = list_variants(member_uri)
+        channel_names = list_channels(member_uri)
 
         # Create asset prim via HDA
         asset_node = scene_node.createNode('th::create_asset::1.0', f'ASSET_{member_name}')
         _pin_entity(asset_node, member_uri)
 
+        # NOTE: the HDA's `variants` multiparm authors a *native USD variantSet*
+        # on the asset prim, but it is seeded here from the entity's publish-
+        # channel list - one property, two meanings. Until assets get their own
+        # look list (designs/native-usd-variants.md), a channel and a USD variant
+        # name are the same string for an asset.
         # Create model variant system via HDA
         model_node = scene_node.createNode('th::create_asset_model::1.0', f'MODEL_{member_name}')
         model_node.setInput(0, asset_node)
         _pin_entity(model_node, member_uri)
 
         # Populate variants from config and sync internal nodes
-        model_node.parm('variants').set(len(variant_names))
-        for i, name in enumerate(variant_names):
+        model_node.parm('variants').set(len(channel_names))
+        for i, name in enumerate(channel_names):
             model_node.parm(f'variant_name{i+1}').set(name)
         model_node.hdaModule()._sync_variants(model_node)
 

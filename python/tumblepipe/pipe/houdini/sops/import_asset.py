@@ -8,7 +8,7 @@ from tumblepipe.pipe.houdini.lops import import_asset as lop_import_asset
 class ImportAsset(ns.Node):
     """SOP-side wrapper around th::Sop/import_asset::1.0.
 
-    The SOP's Selection/Settings parms (entity, variant, version,
+    The SOP's Selection/Settings parms (entity, channel, version,
     departments, include_layerbreak) channel-feed the embedded LOP
     import_asset at ``lopnet/import_asset``; a display-flagged lopimport
     pulls the composed geometry back out. Everything non-trivial —

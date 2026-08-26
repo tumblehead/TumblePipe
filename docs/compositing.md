@@ -10,6 +10,9 @@ Farm renders write versioned frame stacks under
 render:/render/<shot>/<render department>/<variant>/v####/<aov>/
 ```
 
+(`<variant>` is the **channel** segment — `variant` is the frozen wire
+spelling of it on disk and in URIs; see `docs/composition.md`.)
+
 with a `context.json` sidecar recording the frame range. A version is
 *complete* when every frame in that range exists on disk; comp tooling
 only ever selects complete versions, so a comp never picks up a
@@ -45,18 +48,18 @@ it resolves the shot from the workfile's `context.json` sidecar.
 
 **Update** builds (or refreshes) the network:
 
-- one subnet per shot variant, containing a typed `file` COP per AOV —
+- one subnet per shot channel, containing a typed `file` COP per AOV —
   LPE passes (`beauty`, `beauty_*`), masks (`objid_*`), mono passes
   (`alpha`, `holdout_*`), and utility passes (`depth`, `normal`,
   `albedo`, …),
-- each import pinned to the **latest complete version** of that variant's
+- each import pinned to the **latest complete version** of that channel's
   AOV, searching render departments up to the node's selected department,
-- a grade subnet per variant with the LPE passes re-summed to a graded
+- a grade subnet per channel with the LPE passes re-summed to a graded
   beauty,
-- variants over-merged back-to-front in shot variant order.
+- channels over-merged back-to-front in shot channel order.
 
-The imports resolve against the shot's `variants` property (every shot
-has at least `default`). Re-pressing **Update** re-resolves to newer
+The imports resolve against the shot's `variants` property — the frozen
+storage key for its channels (every shot has at least `default`). Re-pressing **Update** re-resolves to newer
 versions; `build_comp` is deliberately excluded from the Asset Browser's
 import refresh on workfile open, so a comp never silently retargets —
 the artist decides when to take new renders.
@@ -84,10 +87,10 @@ geometry, so composing it would be a large bill for nothing.
 family, which chains on Deadline:
 
 1. *stage* — package the workfile,
-2. *partial/full composite* — render the node's COP graph per variant on
+2. *partial/full composite* — render the node's COP graph per channel on
    the farm, writing versioned frames under
    `render:/render/<shot>/composite/<variant>/v####/`,
-3. per-variant *MP4* conversion, plus *edit* and *slapcomp* aggregation,
+3. per-channel *MP4* conversion, plus *edit* and *slapcomp* aggregation,
 4. *slapcomp MP4* and a Discord *notify* with the result.
 
 MP4s are written both as a versioned playblast and as the shot's rolling

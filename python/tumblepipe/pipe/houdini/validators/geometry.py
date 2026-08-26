@@ -44,9 +44,9 @@ def validate_rest_geometry(root) -> ValidationResult:
                     "Mesh missing rest positions (primvars:rest or primvars:Pref)",
                     mesh_path,
                     suggestion=(
-                        "Author a 'rest' primvar on the meshes. In create_asset_model "
-                        "make sure the Rest LOP isn't bypassed; in SOPs, capture "
-                        "rest positions with a Rest SOP before USD export."
+                        "Author a 'rest' primvar on the meshes: capture rest "
+                        "positions with a Rest SOP in the variant network "
+                        "feeding create_asset_model, before the USD import."
                     ),
                 )
 

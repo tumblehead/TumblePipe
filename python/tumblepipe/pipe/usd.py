@@ -1037,7 +1037,7 @@ def collect_layer_composition_paths(layer_path: Union[Path, str]) -> list:
 
 def generate_entity_sublayer_uri(
     entity_uri: Uri,
-    variant_name: str,
+    channel_name: str,
     department_name: str,
     version_name: str | None = None
 ) -> str:
@@ -1049,7 +1049,7 @@ def generate_entity_sublayer_uri(
 
     Args:
         entity_uri: Entity URI (e.g., entity:/assets/SET/Arena)
-        variant_name: Variant name (default, _shared, etc.)
+        channel_name: Channel name (default, _shared, etc.)
         department_name: Department name (lookdev, model, etc.)
         version_name: Optional specific version (None = latest)
 
@@ -1063,7 +1063,7 @@ def generate_entity_sublayer_uri(
         >>> generate_entity_sublayer_uri(uri, '_shared', 'lookdev', 'v0013')
         'entity:/assets/SET/Arena?dept=lookdev&variant=_shared&version=v0013'
     """
-    uri_str = f"{entity_uri}?dept={department_name}&variant={variant_name}"
+    uri_str = f"{entity_uri}?dept={department_name}&variant={channel_name}"
     if version_name:
         uri_str += f"&version={version_name}"
     return uri_str
@@ -1103,7 +1103,7 @@ def generate_scene_sublayer_uri(
 
 def generate_staged_sublayer_uri(
     entity_uri: Uri,
-    variant_name: str,
+    channel_name: str,
     version_name: str | None = None
 ) -> str:
     """
@@ -1114,7 +1114,7 @@ def generate_staged_sublayer_uri(
 
     Args:
         entity_uri: Entity URI (e.g., entity:/assets/SET/Arena)
-        variant_name: Variant name (default, _shared, etc.)
+        channel_name: Channel name (default, _shared, etc.)
         version_name: Optional specific version (None = latest)
 
     Returns:
@@ -1127,7 +1127,7 @@ def generate_staged_sublayer_uri(
         >>> generate_staged_sublayer_uri(uri, 'default', 'v0013')
         'entity:/assets/SET/Arena?variant=default&version=v0013'
     """
-    uri_str = f"{entity_uri}?variant={variant_name}"
+    uri_str = f"{entity_uri}?variant={channel_name}"
     if version_name:
         uri_str += f"&version={version_name}"
     return uri_str
@@ -1162,7 +1162,7 @@ class SublayerRef:
     uri: str                    # the ref verbatim, query and all
     base: str                   # the ref with the query stripped
     department: str | None
-    variant: str
+    channel: str
     version: str | None
 
 
@@ -1174,13 +1174,13 @@ def parse_entity_sublayer_uri(uri_string: str) -> SublayerRef | None:
     problem, not this function's.
 
     A ref with no query at all is still a valid entity ref (version-less,
-    variant-less); it parses with ``variant='default'`` to match what the
+    channel-less); it parses with ``channel='default'`` to match what the
     resolver assumes.
 
     Example:
         >>> ref = parse_entity_sublayer_uri(
         ...     'entity:/assets/SET/Arena?dept=lookdev&variant=_shared&version=v0013')
-        >>> ref.department, ref.variant, ref.version
+        >>> ref.department, ref.channel, ref.version
         ('lookdev', '_shared', 'v0013')
     """
     if not uri_string.startswith('entity:/'):
@@ -1199,7 +1199,7 @@ def parse_entity_sublayer_uri(uri_string: str) -> SublayerRef | None:
         uri=uri_string,
         base=base,
         department=params.get('dept'),
-        variant=params.get('variant', 'default'),
+        channel=params.get('variant', 'default'),
         version=params.get('version'),
     )
 

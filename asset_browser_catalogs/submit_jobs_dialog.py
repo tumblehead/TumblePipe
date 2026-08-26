@@ -16,6 +16,9 @@ to multi-select first. Groups appear as a second root whose leaves mirror
 the same entities. The form is then a shared override applied to every
 checked entity; per-entity overrides remain out of scope (the retired
 Project Browser's ``JobSubmissionDialog`` had a per-entity grid for that).
+A field that offers a *choice* therefore spans the batch: the Render
+channel menu lists the union of the checked entities' channels, and
+submits exactly what is checked.
 
 Submission is synchronous and per-entity — each call to
 ``tumblepipe.farm.jobs.houdini.batch_submit.submit_entity_batch`` runs on the
@@ -30,11 +33,13 @@ import logging
 from dataclasses import dataclass, field
 from typing import Sequence
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
-    QSpinBox, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QSpinBox, QStyledItemDelegate, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
 from tumbletrove.asset_browser.core.theme import (
@@ -47,6 +52,12 @@ log = logging.getLogger(__name__)
 # Item-data role carrying a leaf's entity URI string. Branch items have no
 # value here, which is what ``_is_leaf`` keys off.
 _URI_ROLE = Qt.UserRole
+
+# Every entity has this channel implicitly, whether or not its properties
+# list it (mirrors ``tumblepipe.config.channels.DEFAULT_CHANNEL``, which is
+# not imported here: that module pulls in ``tumblepipe.api`` at import time
+# and this file keeps every pipeline import inside a function).
+_DEFAULT_CHANNEL = 'default'
 
 
 @dataclass
@@ -102,6 +113,14 @@ QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{
     border-color: {ACCENT};
 }}
 QComboBox::drop-down {{ border: none; width: 16px; }}
+QComboBox QAbstractItemView {{
+    background-color: {BG_DARK};
+    color: {TEXT_PRIMARY};
+    border: 1px solid {BORDER};
+    selection-background-color: {BG_DARKEST};
+    selection-color: {TEXT_PRIMARY};
+    outline: none;
+}}
 QCheckBox {{
     color: {TEXT_PRIMARY};
     font-family: "{FONT_FAMILY}";
@@ -139,20 +158,52 @@ QTreeWidget::item:selected {{ background-color: {BG_DARKEST}; }}
 
 # ── Helpers ───────────────────────────────────────────────
 
-def _safe_get_properties(entity_uri):
-    """Return ``api.config.get_properties(entity_uri)`` or ``{}`` on failure.
+def _properties_for(entity_uris: Sequence) -> list[dict]:
+    """Resolved properties for each URI, read in one coherency scope.
+
+    Bare ``get_properties`` re-stamps the config files per call, and this
+    runs over the whole checked batch (which is every entity in the project
+    after an "All"), so the reads are batched — same contract as the entity
+    sweep. Empty list on failure.
 
     Importing ``tumblepipe.api`` here is a passive lookup: the catalog has
     already activated the project before showing the dialog.
     """
+    uris = list(entity_uris)
     try:
         from tumblepipe.api import default_client
-        client = default_client()
-        props = client.config.get_properties(entity_uri)
-        return props or {}
+        config = default_client().config
+        with config.coherent():
+            return [config.get_properties(uri) or {} for uri in uris]
     except Exception:
-        log.exception("Failed to read properties for %s", entity_uri)
-        return {}
+        log.exception("Failed to read properties for %d entities", len(uris))
+        return []
+
+
+def _safe_get_properties(entity_uri) -> dict:
+    """One entity's resolved properties, or ``{}`` on failure."""
+    properties = _properties_for([entity_uri])
+    return properties[0] if properties else {}
+
+
+def _channel_names(properties: dict) -> list[str]:
+    """Publish channel names held by ``properties``, ``default`` first.
+
+    ``variants`` is the frozen property key for what the UI calls a
+    channel. Mirrors ``tumblepipe.config.channels.list_channels`` off an already
+    resolved properties dict, so the dialog doesn't pay a second read per
+    entity. A string value is tolerated the way the old free-text seeding
+    did.
+    """
+    raw = properties.get('variants') or []
+    if isinstance(raw, str):
+        raw = [raw]
+    names = [_DEFAULT_CHANNEL]
+    for value in raw:
+        name = str(value).strip()
+        if name and name not in names:
+            names.append(name)
+    return names
 
 
 def _list_dept_names(context: str, *, only_publishable: bool, only_renderable: bool) -> list[str]:
@@ -184,6 +235,19 @@ def _nested(d: dict, dotted: str, default=None):
             return default
         cur = cur[part]
     return cur
+
+
+def _first_listed(names: Sequence[str], *candidates) -> str | None:
+    """Return the first candidate that actually appears in ``names``.
+
+    Seeds a department combo from a preference order without a candidate
+    that is missing from the list (a non-renderable department, a stale
+    entity property) silently shadowing the next one.
+    """
+    for candidate in candidates:
+        if candidate and candidate in names:
+            return candidate
+    return None
 
 
 def _list_selectable_entities(context: str) -> list[object]:
@@ -239,6 +303,118 @@ def _list_groups(context: str) -> list[tuple[str, list[object]]]:
         return []
 
 
+# ── Widgets ───────────────────────────────────────────────
+
+class _CheckableComboBox(QComboBox):
+    """A combo box whose popup is a checkable list — pick several by mouse.
+
+    Qt ships no multi-select combo, so this is the usual composition: a
+    checkable item model behind a read-only line edit that shows the
+    summary, plus an event filter that toggles the item under the cursor
+    and keeps the popup open (a plain combo would close it and move the
+    current index instead).
+    """
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        empty_text: str = "(none)",
+        hint: str = "",
+    ) -> None:
+        super().__init__(parent)
+        self._empty_text = empty_text
+        # Tooltips are rewritten on every check, so a caller's setToolTip
+        # would not survive; the standing explanation comes in here instead.
+        self._hint = hint
+        self.setModel(QStandardItemModel(self))
+        # Editable only to get a line edit to write the summary into; it is
+        # read-only, and nothing the user does can insert an item.
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.NoInsert)
+        self.lineEdit().setReadOnly(True)
+        # Without an explicit delegate the check indicators stop being drawn
+        # once a stylesheet is in play (the dialog's own).
+        self.setItemDelegate(QStyledItemDelegate(self))
+        self.view().viewport().installEventFilter(self)
+        self.lineEdit().installEventFilter(self)
+        self.model().dataChanged.connect(self._refresh_text)
+        self.currentIndexChanged.connect(self._refresh_text)
+        self._refresh_text()
+
+    # ── API ───────────────────────────────────────────────
+
+    def set_options(self, names: Sequence[str], checked: Sequence[str]) -> None:
+        """Replace the menu with ``names``, checking those in ``checked``."""
+        wanted = set(checked)
+        model = self.model()
+        model.clear()
+        for name in names:
+            item = QStandardItem(name)
+            item.setFlags(
+                Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable
+            )
+            item.setCheckState(Qt.Checked if name in wanted else Qt.Unchecked)
+            model.appendRow(item)
+        self._refresh_text()
+
+    def options(self) -> list[str]:
+        model = self.model()
+        return [model.item(i).text() for i in range(model.rowCount())]
+
+    def checked_items(self) -> list[str]:
+        """Checked names, in menu order."""
+        model = self.model()
+        return [
+            model.item(i).text()
+            for i in range(model.rowCount())
+            if model.item(i).checkState() == Qt.Checked
+        ]
+
+    def set_checked(self, checked: Sequence[str]) -> None:
+        """Check exactly ``checked``, leaving the menu itself alone."""
+        wanted = set(checked)
+        model = self.model()
+        for i in range(model.rowCount()):
+            item = model.item(i)
+            item.setCheckState(
+                Qt.Checked if item.text() in wanted else Qt.Unchecked
+            )
+
+    # ── Internals ─────────────────────────────────────────
+
+    def eventFilter(self, obj, event):
+        kind = event.type()
+        if obj is self.view().viewport() and kind == QEvent.MouseButtonRelease:
+            index = self.view().indexAt(event.position().toPoint())
+            item = self.model().itemFromIndex(index) if index.isValid() else None
+            if item is not None and item.isCheckable():
+                item.setCheckState(
+                    Qt.Unchecked
+                    if item.checkState() == Qt.Checked else Qt.Checked
+                )
+            # Swallowed either way: a release would otherwise activate the
+            # row and close the popup, and checking several channels in one
+            # trip is the point.
+            return True
+        if obj is self.lineEdit() and kind == QEvent.MouseButtonPress:
+            # The line edit is the widget most of this looks like, so a
+            # click there opens the menu instead of doing nothing.
+            self.showPopup()
+            return True
+        return super().eventFilter(obj, event)
+
+    def _refresh_text(self, *_args) -> None:
+        names = self.checked_items()
+        text = ", ".join(names) if names else self._empty_text
+        self.lineEdit().setText(text)
+        self.lineEdit().setCursorPosition(0)
+        # The summary elides in a narrow form; the tooltip spells it out.
+        lines = names or [self._empty_text]
+        if self._hint:
+            lines = [self._hint, ""] + lines
+        self.setToolTip("\n".join(lines))
+
+
 # ── Dialog ────────────────────────────────────────────────
 
 class SubmitJobsDialog(QDialog):
@@ -251,6 +427,13 @@ class SubmitJobsDialog(QDialog):
         entity_names: Display names parallel to ``entity_uris``.
         context: ``'shots'`` or ``'assets'`` — drives department filtering.
         parent: Parent widget. Pass ``hou.qt.mainWindow()`` from Houdini.
+        department: Department the dialog was opened *from* — the loaded
+            workfile's department when the dialog comes from a scene quick
+            action. Seeds the Render (and Playblast) department combos, so
+            submitting from a lighting workfile defaults to lighting instead
+            of whichever department config happens to list first. ``None``
+            (the asset-browser path, which has no "opened from") falls back
+            to the entity's ``submission.*.department`` property.
     """
 
     def __init__(
@@ -259,6 +442,7 @@ class SubmitJobsDialog(QDialog):
         entity_names: Sequence[str],
         context: str,
         parent: QWidget | None = None,
+        department: str | None = None,
     ) -> None:
         super().__init__(parent)
         if not entity_uris:
@@ -268,6 +452,8 @@ class SubmitJobsDialog(QDialog):
         self._entity_uris = list(entity_uris)
         self._entity_names = list(entity_names)
         self._context = context
+        # Department the dialog was opened from (a loaded workfile), or None.
+        self._open_department = department or None
 
         # Every entity leaf in the tree, keyed by URI string. One URI can own
         # several items (once under the context root, once per group that
@@ -647,10 +833,32 @@ class SubmitJobsDialog(QDialog):
         )
         form.addRow("Department:", self._rnd_dept)
 
-        # Variants — comma-separated list
-        self._rnd_variants = QLineEdit()
-        self._rnd_variants.setPlaceholderText("default")
-        form.addRow("Variants (csv):", self._rnd_variants)
+        # Channels — a checkable menu of the channels the checked entities
+        # actually define. It replaced a free-text csv field: with a handful
+        # of render layers per shot, rendering two of six meant deleting
+        # four names by hand.
+        self._rnd_channels = _CheckableComboBox(
+            empty_text="(none — check at least one)",
+            hint="Channels to render — one render per checked channel.",
+        )
+        # All / None, as on the entity tree: rendering two of six channels
+        # is None followed by two clicks, not four unchecks.
+        all_channels = QPushButton("All")
+        all_channels.setToolTip("Check every channel")
+        all_channels.clicked.connect(
+            lambda: self._rnd_channels.set_checked(self._rnd_channels.options())
+        )
+        no_channels = QPushButton("None")
+        no_channels.setToolTip("Uncheck every channel")
+        no_channels.clicked.connect(lambda: self._rnd_channels.set_checked([]))
+        channel_row = QHBoxLayout()
+        channel_row.setSpacing(6)
+        channel_row.addWidget(self._rnd_channels, 1)
+        channel_row.addWidget(all_channels)
+        channel_row.addWidget(no_channels)
+        channel_wrap = QWidget()
+        channel_wrap.setLayout(channel_row)
+        form.addRow("Channels:", channel_wrap)
 
         # Range mode — Full range submits the full_render chain (all
         # frames + slapcomp/mp4); First / Middle / Last submits the
@@ -753,7 +961,7 @@ class SubmitJobsDialog(QDialog):
         ``playblast/<shot>/<dept>/`` and daily the mp4 lands under); the input
         is always the shot's staged 'default' stage, and the frame range is
         derived per-shot from config at submit time, so there is no frame or
-        variant field here. Starts unchecked — it's an opt-in extra alongside
+        channel field here. Starts unchecked — it's an opt-in extra alongside
         render.
         """
         box = QGroupBox("Playblast")
@@ -811,6 +1019,10 @@ class SubmitJobsDialog(QDialog):
             return  # nothing checked — leave the form as it stands
         primary = str(self._entity_uris[0])
         if primary == self._seeded_uri:
+            # The entity-derived fields stay as they are, but the channel
+            # menu spans the whole batch rather than just the primary — an
+            # entity checked in brings its own channels with it.
+            self._refresh_channel_options(reseed=False)
             return
         self._seeded_uri = primary
         self._defaults = _safe_get_properties(self._entity_uris[0])
@@ -822,9 +1034,11 @@ class SubmitJobsDialog(QDialog):
         self._pub_dept.clear()
         self._pub_dept.addItems(pub_depts)
         # Seed: prefer entity property `submission.publish.department` if present.
-        seed = _nested(d, 'submission.publish.department')
-        if seed and seed in pub_depts:
-            self._pub_dept.setCurrentText(seed)
+        pub_seed = _first_listed(
+            pub_depts, _nested(d, 'submission.publish.department'),
+        )
+        if pub_seed:
+            self._pub_dept.setCurrentText(pub_seed)
 
         self._pub_pool.setText(str(_nested(d, 'farm.default_pool', '') or ''))
         self._pub_priority.setValue(int(_nested(d, 'farm.priority', 50)))
@@ -834,16 +1048,20 @@ class SubmitJobsDialog(QDialog):
         )
         self._rnd_dept.clear()
         self._rnd_dept.addItems(rnd_depts)
-        seed = _nested(d, 'submission.render.department')
-        if seed and seed in rnd_depts:
-            self._rnd_dept.setCurrentText(seed)
+        # The department the dialog was opened from wins over the entity
+        # property: submitting from a workfile almost always means "render
+        # what I am looking at". It is skipped when it is not renderable
+        # (or the dialog came from the browser, where there is no such
+        # department), so the property default still applies there.
+        rnd_seed = _first_listed(
+            rnd_depts,
+            self._open_department,
+            _nested(d, 'submission.render.department'),
+        )
+        if rnd_seed:
+            self._rnd_dept.setCurrentText(rnd_seed)
 
-        variants_default = _nested(d, 'variants') or ['default']
-        if isinstance(variants_default, list):
-            variants_text = ", ".join(str(v) for v in variants_default)
-        else:
-            variants_text = str(variants_default)
-        self._rnd_variants.setText(variants_text)
+        self._refresh_channel_options(reseed=True)
 
         self._rnd_first.setValue(int(_nested(d, 'frame_start', 1001)))
         self._rnd_last.setValue(int(_nested(d, 'frame_end', 1100)))
@@ -869,12 +1087,48 @@ class SubmitJobsDialog(QDialog):
         if self._playblast_box is not None:
             self._pb_dept.clear()
             self._pb_dept.addItems(rnd_depts)
-            if seed and seed in rnd_depts:
-                self._pb_dept.setCurrentText(seed)
+            # Same cut as the render, so the same seed.
+            if rnd_seed:
+                self._pb_dept.setCurrentText(rnd_seed)
             self._pb_width.setValue(int(_nested(d, 'playblast.res_x', 1280)))
             self._pb_height.setValue(int(_nested(d, 'playblast.res_y', 720)))
             self._pb_pool.setText(str(_nested(d, 'farm.default_pool', '') or ''))
             self._pb_priority.setValue(int(_nested(d, 'farm.priority', 50)))
+
+    def _refresh_channel_options(self, *, reseed: bool) -> None:
+        """Repopulate the channel menu from the checked entities.
+
+        The menu lists the *union* over the batch, because the form is one
+        shared override: a channel only the second checked shot defines
+        still has to be selectable, which is what typing into the old csv
+        field allowed.
+
+        ``reseed`` (a new primary entity) checks the primary's own channel
+        list, matching what the csv field used to open pre-filled with.
+        Otherwise the selection is carried over by name — a channel that
+        arrives with an entity checked *into* the batch starts unchecked,
+        so widening the batch never quietly widens the render.
+        """
+        names = self._channel_union()
+        if not reseed and names == self._rnd_channels.options():
+            return  # nothing new in the batch — leave the picks alone
+        if reseed:
+            checked = _nested(self._defaults, 'variants') or [_DEFAULT_CHANNEL]
+            if isinstance(checked, str):
+                checked = [checked]
+            checked = [str(v).strip() for v in checked]
+        else:
+            checked = self._rnd_channels.checked_items()
+        self._rnd_channels.set_options(names, checked)
+
+    def _channel_union(self) -> list[str]:
+        """Every channel defined across the checked entities, default first."""
+        names = [_DEFAULT_CHANNEL]
+        for properties in _properties_for(self._entity_uris):
+            for name in _channel_names(properties):
+                if name not in names:
+                    names.append(name)
+        return names
 
     # ── Submit ────────────────────────────────────────────
 
@@ -897,6 +1151,17 @@ class SubmitJobsDialog(QDialog):
             QMessageBox.warning(
                 self, "Submit Jobs",
                 "Enable at least one of Publish, Render or Playblast before "
+                "submitting.",
+            )
+            return
+
+        channels = self._rnd_channels.checked_items()
+        if render and not channels:
+            # The csv field fell back to 'default' when it was emptied,
+            # which rendered something nobody asked for. Refuse instead.
+            QMessageBox.warning(
+                self, "Submit Jobs",
+                "Check at least one channel in the Render section before "
                 "submitting.",
             )
             return
@@ -932,10 +1197,6 @@ class SubmitJobsDialog(QDialog):
             settings['pub_pool'] = self._pub_pool.text().strip() or 'general'
             settings['pub_priority'] = self._pub_priority.value()
         if render:
-            variants = [
-                v.strip() for v in self._rnd_variants.text().split(',')
-                if v.strip()
-            ] or ['default']
             settings.update({
                 'render_department': self._rnd_dept.currentText(),
                 'render_mode': (
@@ -944,7 +1205,7 @@ class SubmitJobsDialog(QDialog):
                 ),
                 'render_pool': self._rnd_pool.text().strip() or 'general',
                 'render_priority': self._rnd_priority.value(),
-                'variants': variants,
+                'variants': channels,
                 'first_frame': self._rnd_first.value(),
                 'last_frame': self._rnd_last.value(),
                 'pre_roll': self._rnd_pre.value(),

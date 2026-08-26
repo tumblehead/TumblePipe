@@ -16,6 +16,9 @@ reporting a bug, include:
 - Operating system.
 - A minimal reproduction — a small .hip file or a short script — if
   possible.
+- The pipeline log covering the failure, if the report is "it did nothing":
+  `$TH_PROJECT_PATH/export/other/logs/$TH_USER.log` (see *Where the logs
+  are*). Error dialogs name the file they wrote to.
 
 ## Running the test harness
 
@@ -112,7 +115,7 @@ A task callback that finds it has **nothing to do** raises
 reason and carries on — crucially, a skipped *child* does not abort its
 siblings, whereas any other exception fails the whole group. The canonical
 case is an export node left disconnected in the network: its stage is `None`,
-so there is nothing to publish, and the other render variants in the same
+so there is nothing to publish, and the other render channels in the same
 department must still export.
 
 Two rules:
@@ -122,7 +125,7 @@ Two rules:
   reaching for it to quieten a real problem buries it.
 - Every skip carries a reason, and reasons are surfaced: after an otherwise
   clean run the dialog warns with the list of skipped steps. Without that,
-  "All tasks completed" over a silently missing variant reads as success.
+  "All tasks completed" over a silently missing channel reads as success.
   (Tasks the artist unchecked are SKIPPED too, but carry no reason and stay
   out of the warning.)
 
@@ -142,6 +145,81 @@ other call sites still dereference it unguarded (`lookdev_studio`,
 `render_stage`, the two `playblast` nodes). They are not part of this fix;
 each needs its own decision about whether a missing stage is a skip or an
 error.
+
+## Reporting a failed action to the artist
+
+The sibling rule to *Skipping a task instead of failing it*, one layer out: an
+action the artist **explicitly asked for** must never fail invisibly. An
+action handler runs behind a toolbar button or a menu entry with no console in
+sight, so `except Exception: log.exception(...)` and nothing more reads to the
+artist as *"the button does nothing"* — which is how a dead export window got
+reported rather than a stack trace.
+
+Route those failures through `report_failure(action, exc)` in
+`asset_browser_catalogs/_pipeline_houdini.py`. It logs the traceback, then
+shows an error dialog naming the exception and the log file it landed in:
+
+```python
+try:
+    ...
+except Exception as exc:
+    report_failure(f"Opening the workfile for {asset_id}/{dept}", exc)
+    return
+```
+
+It logs for you — don't `log.exception` first as well — and it never raises: a
+reporter that throws would replace the failure it was called to explain.
+
+**It marshals to Houdini's main thread itself** (via `run_on_main_thread`).
+Quick actions reach it from the browser's GUI thread as readily as from the
+main thread, and `hou.ui` off the main thread is the same unsupported call
+that `SceneManager`'s scene ops marshal to avoid. Callers do not have to know
+which thread they are on.
+
+Three rules:
+
+- **Log-only is correct for background upkeep** — detail/card repaints, cache
+  invalidation, refresh hooks. An error dialog the artist cannot act on is
+  noise, and one raised from a repaint can fire every frame. Where a readonly
+  helper on a repaint path swallows for real (`get_loaded_scene_context`), log
+  the full traceback **once** per session behind a latch and drop to `debug`
+  after; a shared project log must not take one trace per frame.
+- **A status line is not a report.** `hou.ui.setStatusMessage` scrolls past,
+  so for the *whole outcome* of a click — "Save: no pipeline context",
+  "Publish: nothing to publish" — use `displayMessage`. A Save that saved
+  nothing must not look like a Save that worked. Status messages stay for
+  *success* notices.
+- **A partial result is not a success.** The same trap as an unsurfaced skip:
+  `refresh_scene_imports` deliberately survives a bad node, so `update_scene_imports`
+  returns `(executed, failed)` and warns on a non-zero failure count rather
+  than announcing "Imports updated" over a scene where every node blew up.
+  Likewise a master scene naming the departments that would not merge, and a
+  created workfile saying so when its frame range never landed.
+
+The one deliberate opt-out is the crash-time emergency save
+(`_save_scene(..., report_failures=False)`): its whole premise is that
+Houdini's event loop is wedged behind the crash-report dialog, so putting a
+modal in front of it is exactly the wrong move. It logs and takes the status
+bar instead.
+
+### Where the logs are
+
+`tumblepipe.util.logging` installs a rotating file handler on `import
+tumblepipe`, so the traceback behind any of these dialogs is on disk:
+
+```
+$TH_PROJECT_PATH/export/other/logs/$TH_USER.log   # project-wide
+<workspace>/_logs/$TH_USER.log                    # per-workspace
+```
+
+`get_log_paths()` returns the live handler paths — that is what the dialog
+prints, rather than a recomputed guess. Two traps when triaging from them:
+
+- The project handler is only attached when `TH_PROJECT_PATH` **exists**. A
+  project that trips the required-placeholder contract gets no handler at
+  all, so an empty log is not evidence that nothing failed.
+- The filename is `$TH_USER` (never the OS username — these land in shared
+  project storage). Identity-less writers share one `pipeline.log`.
 
 ## Resolver harness
 
@@ -188,7 +266,21 @@ run it under a project hython whose project has at least two shots and
 one asset (e.g. TumbleTrove Desktop's run_hython with dev overrides). Qt runs
 offscreen; no project data is written and nothing is submitted. It also pins
 the shots-only **Playblast** section (present for shots, absent for assets,
-department list = renderable shot departments, opt-in default).
+department list = renderable shot departments, opt-in default), and the
+department seeding: the department the dialog was opened *from* wins for
+both Render and Playblast, and one that is not renderable is ignored rather
+than left shadowing the entity-property default.
+
+It also pins the Render **Channels** menu, which replaced a free-text csv
+field: the menu offers the channels the checked entities actually define
+(the union over the batch, `default` first), opens with the primary
+entity's own list checked, and keeps the artist's picks when the batch
+grows — a channel arriving with an entity checked *into* the batch starts
+unchecked, so widening the batch never widens the render behind their
+back. Submitting with nothing checked is refused rather than quietly
+falling back to `default`. The menu reads properties for every checked
+entity, so those reads sit inside a `config.coherent()` scope and the
+harness counts stats there too.
 
 `scripts/verify_playblast_job.py` pins the farm playblast job family:
 the task/job config validators, and that the versioned playblast + rolling
@@ -286,6 +378,30 @@ It checks both directions of the shim:
    the module it delegates to. This is the near-miss class (`get_asset_uri` vs
    `get_entity_uri`): the wrapper gets renamed and the shim keeps calling the
    old name.
+
+A **menu** script skips the shim: it constructs the wrapper itself and calls
+it, so it needs its own check.
+
+3. **Dangling menu call** — a menu block does
+
+   ```python
+   node = import_shot.ImportShot(hou.pwd())
+   items = node.list_channel_names()
+   ```
+
+   and nothing resolves `list_channel_names` until an artist opens the menu
+   and gets an empty list. Rename a wrapper method and every DialogScript
+   saying the old name goes quietly stale — the variant → channel rename
+   touched nine of them, plus two menu blocks buried in
+   `Contents.dir/.OPdummydefs`, which grep reports as *binary* files and a
+   plain search therefore misses.
+
+   The class behind the wrapper is resolved through the *defining module's own
+   imports*, never by bare name: `Cache` and `ImportAsset` each exist in both a
+   LOP and a SOP module, and `EntityNode`'s base is written `ns.Node` while
+   `Node` is defined twice in the package. When a class or a base cannot be
+   resolved from the sources alone the lookup gives up rather than guess —
+   a wrong guess would report a working menu as broken.
 
 It reads the `otls/` sections and the wrappers as text, so it needs no Houdini
 and no project:
@@ -426,6 +542,35 @@ name by design, so *every* tagged AOV disappears at once.
 It builds its stage in memory and touches no project data, but it drives real
 nodes, so it needs Houdini with `otls/` on `HOUDINI_OTLSCAN_PATH` and `python/`
 on `PYTHONPATH` (e.g. TumbleTrove Desktop's `run_hython`).
+
+## Renaming across the wire boundary
+
+`channel` (the publish-tree fork, once called a *variant*) is the worked
+example, but the rule is general: this tree serializes a lot of its own
+identifiers, so a rename that looks purely internal can change data.
+
+`docs/composition.md` lists the frozen `variant` tokens. Two traps are worth
+knowing before any similar sweep:
+
+- **A `dict(...)` keyword *is* a dict key.** `pipe/context.py` writes
+  `context.json` as `dict(…, variant=…)`, and every farm job config is built
+  as `dict(variant_name=…)`. Rename the identifier and you have silently
+  renamed an on-disk sidecar field and a submit↔worker JSON key that the
+  reader still looks up by its old string. The same goes for anything
+  reached reflectively — `getattr(ctx, "variant_name")`, and
+  `pipe/houdini/rebuild.py`, which drives the wrappers from a table of
+  getter/setter **name strings**.
+- **Check the new name is not already taken.** `channel_name` and `channels`
+  were long-standing kwargs for Discord notify channels and for OIIO image
+  channels (`farm/tasks/notify`, `farm/jobs/houdini/{playblast,composite}`,
+  `apps/exr.py`). A blanket rename in either direction silently rewrites them.
+
+Rename identifiers with a `tokenize` pass that edits only `NAME` tokens —
+never `STRING` tokens — so quoted keys survive by construction; a regex over
+the source cannot tell the two apart. Then diff the serialized surface against
+the previous commit: every `dict()` keyword, dict-literal key, subscript key
+and `.get()`/`.setdefault()`/`.pop()` key should be unchanged. `ruff` with
+`F821` over the whole tree is the backstop for the identifiers themselves.
 
 ## Editing an HDA definition
 

@@ -103,9 +103,11 @@ imports them by name:
 
 Render / AOV configuration lives in the schema and entity data
 (`schemas.json`, `entity.json` under the `render` sub-object), not in a
-Python module. A shot's render layers are its `variants` property — the
-same variant list the rest of the pipeline uses (there is no separate
-`render_layers` property; that name is retired).
+Python module. A shot's render layers are its **channels**, stored in the
+`variants` property — the same channel list the rest of the pipeline uses.
+(`variants` is the frozen storage key; the concept is called a channel
+everywhere it is shown. There is no separate `render_layers` property;
+that name is retired.)
 
 ### Departments
 
@@ -258,6 +260,14 @@ the two it does depends on how load-bearing the file is:
   *package* from shipping a second copy of its own; retiring the drive-side
   legacy `_pipeline` setters that also define `OCIO` is a separate sweep — see
   the *Legacy OCIO retire* section below.)
+
+- **The `variants` column is relabelled `Channels` (v5).** The publish-tree
+  fork is called a **channel** now — "variant" is reserved for USD's own
+  `variantSet` (see *Channels* in `composition.md`). Only the label and its
+  tooltip move: the property key stays `variants`, because that is what every
+  project's database already stores and what the published path and URI wire
+  format spell. Data-neutral, and it leaves a project that has renamed the
+  column itself alone.
 
 **Un-migrated projects degrade, they don't crash.** `list_departments`
 reads each department's `independent`/`publishable`/`renderable` via schema

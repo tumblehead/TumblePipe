@@ -18,7 +18,7 @@ NODE_CONFIGS = {
     'import_layer': (import_layer.ImportLayer, [
         ('get_entity_uri', 'set_entity_uri'),
         ('get_department_name', 'set_department_name'),
-        ('get_variant_name', 'set_variant_name'),
+        ('get_channel_name', 'set_channel_name'),
         ('get_version_name', 'set_version_name'),
         ('get_include_layerbreak', 'set_include_layerbreak'),
         ('get_import_mode', 'set_import_mode'),
@@ -36,11 +36,11 @@ NODE_CONFIGS = {
     'export_layer': (export_layer.ExportLayer, [
         ('get_entity_uri', 'set_entity_uri'),
         ('get_department_name', 'set_department_name'),
-        ('get_variant_name', 'set_variant_name'),
+        ('get_channel_name', 'set_channel_name'),
     ]),
     'import_asset': (import_asset.ImportAsset, [
         ('get_entity_uri', 'set_entity_uri'),
-        ('get_variant_name', 'set_variant_name'),
+        ('get_channel_name', 'set_channel_name'),
         ('get_exclude_department_names', 'set_exclude_department_names'),
         ('get_include_layerbreak', 'set_include_layerbreak'),
         ('get_import_mode', 'set_import_mode'),
@@ -52,7 +52,7 @@ NODE_CONFIGS = {
     ]),
     'export_rig': (export_rig.ExportRig, [
         ('get_entity_uri', 'set_entity_uri'),
-        ('get_variant_name', 'set_variant_name'),
+        ('get_channel_name', 'set_channel_name'),
     ]),
 }
 
@@ -86,7 +86,7 @@ def capture_wrapper_values(wrapper, type_name):
     # NODE_CONFIGS declares the wrapper's interface — a missing getter is
     # config/wrapper drift and a raising getter is a real bug. Silently
     # skipping either rebuilt nodes with quietly lost state (version pins,
-    # variant selections).
+    # channel selections).
     for getter_name, _ in getter_setter_pairs:
         values[getter_name] = getattr(wrapper, getter_name)()
 

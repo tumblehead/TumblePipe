@@ -65,11 +65,11 @@ class ExportRig(EntityNode):
     def get_department_name(self) -> str:
         return 'rig'
 
-    def set_variant_name(self, variant_name: str):
-        variant_names = self.list_variant_names()
-        if variant_name not in variant_names:
+    def set_channel_name(self, channel_name: str):
+        channel_names = self.list_channel_names()
+        if channel_name not in channel_names:
             return
-        self.parm('variant').set(variant_name)
+        self.parm('variant').set(channel_name)
 
     def execute(self, force_local: bool = False):
         """
@@ -94,8 +94,8 @@ class ExportRig(EntityNode):
 
         # Parameters
         entity_uri = self.get_entity_uri()
-        variant_name = self.get_variant_name()
-        export_path = get_rig_export_path(entity_uri, variant_name)
+        channel_name = self.get_channel_name()
+        export_path = get_rig_export_path(entity_uri, channel_name)
         version_path = get_next_version_path(export_path)
         version_name = version_path.name
         timestamp = dt.datetime.now().isoformat()

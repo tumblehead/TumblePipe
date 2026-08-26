@@ -87,9 +87,9 @@ class DepartmentLayer:
     composed: Optional[str]
     #: The newest export on disk, or None when it has never exported.
     latest: Optional[str]
-    #: The variant the composed ref names — not always ``default``; a
+    #: The channel the composed ref names — not always ``default``; a
     #: ``_shared`` layer resolves against a different export tree entirely.
-    variant: str
+    channel: str
     #: True when there is a workfile to open. Exports and workfiles are
     #: independent: a department with no export can still have plenty of
     #: work in progress, and a non-renderable one (a rig) has a workfile
@@ -134,7 +134,7 @@ def build_asset_layer_report(
     asset_uri: Uri,
     staged_file_path: Path,
     pinned: bool,
-    variant: str = 'default',
+    channel: str = 'default',
     staged_version: Optional[str] = None,
 ) -> AssetLayerReport:
     """Describe the department layers composing ``staged_file_path``.
@@ -145,9 +145,9 @@ def build_asset_layer_report(
     a build nobody is looking at.
 
     ``pinned`` is the asking node's mode: False when it floats to latest.
-    ``variant`` is the asset variant the asking node composed, used to look
+    ``variant`` is the asset channel the asking node composed, used to look
     up departments that are *not* in the build (the ones that are name their
-    own variant in the ref).
+    own channel in the ref).
 
     Departments are listed in **pool order**, honouring the asset's own
     assignment, because pool order is pipeline order and is load-bearing
@@ -188,12 +188,12 @@ def build_asset_layer_report(
     departments: list[DepartmentLayer] = []
     for name in roster:
         ref = by_department.get(name)
-        # A composed ref names its own variant (a _shared layer resolves
+        # A composed ref names its own channel (a _shared layer resolves
         # against a different export tree). One that isn't composing doesn't,
-        # so fall back to the variant the asset itself composed under.
-        layer_variant = ref.variant if ref is not None else variant
+        # so fall back to the channel the asset itself composed under.
+        layer_channel = ref.channel if ref is not None else channel
 
-        latest_path = latest_export_path(asset_uri, layer_variant, name)
+        latest_path = latest_export_path(asset_uri, layer_channel, name)
         latest = latest_path.name if latest_path is not None else None
 
         if ref is None:
@@ -209,7 +209,7 @@ def build_asset_layer_report(
                 status=status,
                 composed=None,
                 latest=latest,
-                variant=layer_variant,
+                channel=layer_channel,
                 has_workfile=_has_workfile(asset_uri, name),
             ))
             continue
@@ -232,7 +232,7 @@ def build_asset_layer_report(
             status=LayerStatus.STALE if stale else LayerStatus.COMPOSED,
             composed=composed,
             latest=latest,
-            variant=layer_variant,
+            channel=layer_channel,
             has_workfile=_has_workfile(asset_uri, name),
         ))
 

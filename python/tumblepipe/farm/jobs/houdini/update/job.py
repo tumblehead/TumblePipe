@@ -126,12 +126,12 @@ def build(
     for uri in api.config.list_entities(Uri.parse_unsafe('entity:/shots/*/*')):
         prev_job_name = None
         down_stream_changed = False
-        # Use 'default' variant for batch update jobs
-        variant_name = 'default'
+        # Use 'default' channel for batch update jobs
+        channel_name = 'default'
         first_job_in_shot = True
         for dept_name in department_names:
             if not _publish.is_submissable(uri, dept_name): continue
-            out_of_date = _publish.is_out_of_date(uri, variant_name, dept_name)
+            out_of_date = _publish.is_out_of_date(uri, channel_name, dept_name)
             if not down_stream_changed and not out_of_date: continue
             # Create job name from URI path segments
             uri_name = '_'.join(uri.segments[1:])

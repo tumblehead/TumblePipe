@@ -13,7 +13,7 @@ from tumblepipe.api import get_user_name, path_str, local_path, api
 from tumblepipe.util.errors import TaskSkipped
 from tumblepipe.util.progress import report_progress
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.variants import list_variants
+from tumblepipe.config.channels import list_channels
 from tumblepipe.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblepipe.config.farm import list_pools
 from tumblepipe.pipe.houdini import util
@@ -627,23 +627,26 @@ class ExportLayer(EntityNode):
             case _:
                 assert False, f'Unknown export type: {export_type}'
 
-    def _check_variant_parm_listed(self, entity_uri):
-        """Refuse to export when the variant parm names an unlisted variant.
+    def _check_channel_parm_listed(self, entity_uri):
+        """Refuse to export when the Channel parm names an unlisted channel.
 
-        get_variant_name() silently falls back to 'default' for unknown
+        get_channel_name() silently falls back to 'default' for unknown
         names, which is harmless on imports but on an export would quietly
-        publish under the wrong variant path (the casing/typo trap).
+        publish under the wrong channel path (the casing/typo trap).
         An empty parm legitimately means 'default'.
+
+        The parm is still internally named ``variant`` - that spelling is
+        frozen into every saved scene; only its label says Channel.
         """
-        raw_variant = self.parm('variant').eval().strip()
-        variant_names = self.list_variant_names()
-        if raw_variant and raw_variant not in variant_names:
-            listed = ', '.join(variant_names)
+        raw_channel = self.parm('variant').eval().strip()
+        channel_names = self.list_channel_names()
+        if raw_channel and raw_channel not in channel_names:
+            listed = ', '.join(channel_names)
             raise ExportLayerError(
-                f"Export aborted: variant '{raw_variant}' is not a variant "
+                f"Export aborted: channel '{raw_channel}' is not a channel "
                 f"of {entity_uri} (listed: {listed}), so the export would "
-                "silently publish under 'default'. Fix the node's variant "
-                "parm, or register the variant on the entity."
+                "silently publish under 'default'. Fix the node's Channel "
+                "parm, or register the channel on the entity."
             )
 
     def _export_local(self):
@@ -652,13 +655,13 @@ class ExportLayer(EntityNode):
 
         # Get parameters
         entity_uri = self.get_entity_uri()
-        variant_name = self.get_variant_name()
+        channel_name = self.get_channel_name()
         department_name = self.get_department_name()
         frame_range_result = self.get_frame_range()
 
         logger.info(
             f"Starting local export: uri={entity_uri}, dept={department_name}, "
-            f"variant={variant_name}"
+            f"channel={channel_name}"
         )
 
         if entity_uri is None:
@@ -673,7 +676,7 @@ class ExportLayer(EntityNode):
                 "'From settings' and enter the range manually."
             )
 
-        self._check_variant_parm_listed(entity_uri)
+        self._check_channel_parm_listed(entity_uri)
 
         # The render step is deliberately dropped: a published stage cache
         # must carry every frame so downstream renders can sample any frame
@@ -691,7 +694,7 @@ class ExportLayer(EntityNode):
         fps = get_fps()
 
         # Determine version path
-        version_path = next_export_path(entity_uri, variant_name, department_name)
+        version_path = next_export_path(entity_uri, channel_name, department_name)
         version_name = version_path.name
 
         # Prepare for stage scrape
@@ -701,7 +704,7 @@ class ExportLayer(EntityNode):
             # nothing to publish, so skip this one and let the other exports
             # in the group run - it used to crash on None.GetPseudoRoot().
             raise TaskSkipped(
-                f"Nothing exported for variant '{variant_name}': the node "
+                f"Nothing exported for channel '{channel_name}': the node "
                 f"{self.path()} has no stage input connected."
             )
         root = stage.GetPseudoRoot()
@@ -841,7 +844,7 @@ class ExportLayer(EntityNode):
                 ))
 
             # Export the stage
-            layer_file_name = get_layer_file_name(entity_uri, variant_name, department_name, version_name)
+            layer_file_name = get_layer_file_name(entity_uri, channel_name, department_name, version_name)
             self.parm('export_f3').set(1)
 
             if batch_size > 0:
@@ -980,7 +983,7 @@ class ExportLayer(EntityNode):
                 version_name=version_name,
                 timestamp=timestamp.isoformat(),
                 user_name=user_name,
-                variant_name=variant_name,
+                channel_name=channel_name,
                 parameters=dict(assets=parameter_assets, aov_names=aov_names),
                 inputs=list(map(json.loads, asset_inputs))
             )
@@ -1008,10 +1011,10 @@ class ExportLayer(EntityNode):
 
             logger.info("Files copied to output path successfully")
 
-        # Add shared layer as sublayer only if entity has multiple variants
+        # Add shared layer as sublayer only if entity has multiple channels
         from tumblepipe.pipe.paths import latest_shared_export_path
 
-        if len(list_variants(entity_uri)) > 1:
+        if len(list_channels(entity_uri)) > 1:
             shared_version_path = latest_shared_export_path(entity_uri, department_name)
             if shared_version_path is not None:
                 exported_layer_path = version_path / layer_file_name
@@ -1040,7 +1043,7 @@ class ExportLayer(EntityNode):
 
     def _export_farm(self):
         entity_uri = self.get_entity_uri()
-        variant_name = self.get_variant_name()
+        channel_name = self.get_channel_name()
         department_name = self.get_department_name()
         frame_range_result = self.get_frame_range()
 
@@ -1056,7 +1059,7 @@ class ExportLayer(EntityNode):
                 "'From settings' and enter the range manually."
             )
 
-        self._check_variant_parm_listed(entity_uri)
+        self._check_channel_parm_listed(entity_uri)
 
         frame_range, _step = frame_range_result
 
@@ -1080,7 +1083,7 @@ class ExportLayer(EntityNode):
             'entity': {
                 'uri': str(entity_uri),
                 'department': department_name,
-                'variant': variant_name
+                'variant': channel_name
             },
             'settings': {
                 'priority': priority,
@@ -1130,13 +1133,13 @@ class ExportLayer(EntityNode):
         if entity_uri is None:
             hou.ui.displayMessage("No entity selected.", severity=hou.severityType.Warning)
             return
-        variant_name = self.get_variant_name()
+        channel_name = self.get_channel_name()
         department_name = self.get_department_name()
         if department_name is None:
             hou.ui.displayMessage("No department selected.", severity=hou.severityType.Warning)
             return
 
-        export_path = latest_export_path(entity_uri, variant_name, department_name)
+        export_path = latest_export_path(entity_uri, channel_name, department_name)
         if export_path is None:
             hou.ui.displayMessage(f"No exports found for {department_name}.", severity=hou.severityType.Warning)
             return

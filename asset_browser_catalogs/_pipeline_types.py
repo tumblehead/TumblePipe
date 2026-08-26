@@ -33,7 +33,7 @@ class PipelineAssetMetadata(TypedDict, total=False):
       or ``sequence`` (shots), and ``project``.
     - ``get_detail`` adds ``department_versions``, plus ``frame_start``,
       ``frame_end``, ``frame_total``, ``fps`` for shots, and
-      ``variants`` for assets.
+      ``variants`` (the publish channels) for assets.
     - ``get_assets`` overlays ``is_current_scene`` for the asset whose
       hip file is open in Houdini.
 
@@ -73,7 +73,8 @@ class PipelineAssetMetadata(TypedDict, total=False):
     frame_total: int
     fps: int
 
-    # Variants (assets only)
+    # Publish channels (assets only). The key stays "variants": it is the
+    # frozen browser-wire spelling of what the UI now calls a channel.
     variants: list[str]
 
 

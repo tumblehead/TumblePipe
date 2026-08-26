@@ -7,7 +7,7 @@ it through ``batch_submit`` exactly like render and publish:
   the batch with a playblast task (+ a Discord notify carrying the mp4).
 - ``submit(config, paths=None)`` / ``cli()`` — standalone submission.
 
-Unlike render there are no variants/render-layers and no chunked frame DAG: a
+Unlike render there are no channels/render-layers and no chunked frame DAG: a
 playblast is one monolithic task (the mp4 encode needs every frame) plus one
 notify. The job-level config is the ``{entity, settings}`` shape the dialog
 builds; ``build`` translates it into the flat, worker-facing task config that

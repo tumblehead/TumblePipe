@@ -35,7 +35,7 @@ def main(config):
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    variant_names = config['settings']['variant_names']
+    channel_names = config['settings']['variant_names']
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     tile_count = config['settings']['tile_count']
@@ -53,18 +53,18 @@ def main(config):
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
         temp_path = Path(temp_dir)
 
-        # Create one output stage per variant. A single stage composing
-        # every variant would render the last variant's opinions for all
-        # of them (husk has no variant selection).
+        # Create one output stage per channel. A single stage composing
+        # every channel would render the last variant's opinions for all
+        # of them (husk has no channel selection).
         export_path = temp_path / 'export'
         relative_export_path = export_path.relative_to(temp_path)
         stage_paths = {
-            variant_name: export_path / f'stage_{variant_name}.usd'
-            for variant_name in variant_names
+            channel_name: export_path / f'stage_{channel_name}.usd'
+            for channel_name in channel_names
         }
         relative_stage_paths = {
-            variant_name: stage_path.relative_to(temp_path)
-            for variant_name, stage_path in stage_paths.items()
+            channel_name: stage_path.relative_to(temp_path)
+            for channel_name, stage_path in stage_paths.items()
         }
 
         # Store stage config
@@ -81,8 +81,8 @@ def main(config):
                 render_department_name = render_department_name
             ),
             output_paths = {
-                variant_name: path_str(to_windows_path(stage_path))
-                for variant_name, stage_path in stage_paths.items()
+                channel_name: path_str(to_windows_path(stage_path))
+                for channel_name, stage_path in stage_paths.items()
             }
         ))
 
@@ -100,7 +100,7 @@ def main(config):
             return _error(f'Hython export failed with return code: {result}')
 
         # Check if temp stages were generated
-        for variant_name, stage_path in stage_paths.items():
+        for channel_name, stage_path in stage_paths.items():
             if not stage_path.exists():
                 return _error(f'Stage not exported: {stage_path}')
 
@@ -116,12 +116,12 @@ def main(config):
                 user_name = user_name,
                 purpose = purpose,
                 pool_name = pool_name,
-                variant_names = variant_names,
+                variant_names = channel_names,
                 render_department_name = render_department_name,
                 render_settings_path = path_str(render_settings_path),
                 input_paths = {
-                    variant_name: path_str(relative_stage_path)
-                    for variant_name, relative_stage_path in relative_stage_paths.items()
+                    channel_name: path_str(relative_stage_path)
+                    for channel_name, relative_stage_path in relative_stage_paths.items()
                 },
                 tile_count = tile_count,
                 first_frame = first_frame,

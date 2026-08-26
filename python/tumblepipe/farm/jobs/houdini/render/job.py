@@ -81,7 +81,7 @@ def _is_valid_config(config):
         if not isinstance(settings['variant_names'], list): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
-        # Accept either input_paths (per-variant dict) or input_path (legacy single path)
+        # Accept either input_paths (per-channel dict) or input_path (legacy single path)
         if 'input_paths' not in settings and 'input_path' not in settings: return False
         if 'input_paths' in settings and not isinstance(settings['input_paths'], dict): return False
         if not _check_int(settings, 'tile_count'): return False
@@ -247,7 +247,7 @@ def _build_layer_mp4_job(
     purpose = config['settings']['purpose']
     priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
-    variant_name = config['settings']['variant_name']
+    channel_name = config['settings']['variant_name']
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
@@ -256,24 +256,24 @@ def _build_layer_mp4_job(
     playblast_path = get_layer_playblast_path(
         entity_uri,
         render_department_name,
-        variant_name,
+        channel_name,
         render_version_name,
         purpose
     )
     daily_path = get_layer_daily_path(
-        entity_uri, render_department_name, variant_name, purpose
+        entity_uri, render_department_name, channel_name, purpose
     )
     title = (
         f'mp4 layer '
         f'{render_department_name} '
-        f'{variant_name} '
+        f'{channel_name} '
         f'{render_version_name}'
     )
     # Input is the beauty AOV from the render layer
     input_path = get_aov_frame_path(
         entity_uri,
         render_department_name,
-        variant_name,
+        channel_name,
         render_version_name,
         'beauty',
         '####',
@@ -375,7 +375,7 @@ def build(
         depends_on = []
 
     # Config
-    variant_names = config['settings']['variant_names']
+    channel_names = config['settings']['variant_names']
     render_department_name = config['settings']['render_department_name']
 
     # Helper to add job
@@ -392,13 +392,13 @@ def build(
 
     # PARTIAL RENDER: Create jobs for each layer
     if 'partial_render' in config['tasks']:
-        for layer_name in variant_names:
+        for layer_name in channel_names:
 
             # Create layer-specific config
             layer_config = config.copy()
             layer_config['settings'] = config['settings'].copy()
             layer_config['settings']['variant_name'] = layer_name
-            # Set variant-specific input path from input_paths dict (or fall back to legacy input_path)
+            # Set channel-specific input path from input_paths dict (or fall back to legacy input_path)
             if 'input_paths' in config['settings']:
                 layer_config['settings']['input_path'] = config['settings']['input_paths'][layer_name]
 
@@ -443,12 +443,12 @@ def build(
         # Clear terminal jobs - full render jobs will be the new terminals
         terminal_jobs = []
 
-        for layer_name in variant_names:
+        for layer_name in channel_names:
             # Create layer-specific config
             layer_config = config.copy()
             layer_config['settings'] = config['settings'].copy()
             layer_config['settings']['variant_name'] = layer_name
-            # Set variant-specific input path from input_paths dict (or fall back to legacy input_path)
+            # Set channel-specific input path from input_paths dict (or fall back to legacy input_path)
             if 'input_paths' in config['settings']:
                 layer_config['settings']['input_path'] = config['settings']['input_paths'][layer_name]
 
@@ -504,7 +504,7 @@ def build(
         # CROSS-LAYER JOBS: Create once, depend on all layer jobs
         if config['tasks']['full_render']['denoise']:
             # Collect all denoise job names
-            all_denoise_jobs = [f'full_denoise_{ln}' for ln in variant_names]
+            all_denoise_jobs = [f'full_denoise_{ln}' for ln in channel_names]
 
             # Edit job depends on all denoise jobs (only if copy_to_edit is enabled)
             if config['settings'].get('copy_to_edit', False):
@@ -513,7 +513,7 @@ def build(
 
             # Slapcomp depends on all denoise jobs
             # Use version from first layer (all should have same version number)
-            first_layer = variant_names[0]
+            first_layer = channel_names[0]
             slapcomp_result = _build_slapcomp_job(
                 config,
                 temp_path,
@@ -541,7 +541,7 @@ def build(
             _add_job('slapcomp_notify', slapcomp_notify_job_obj, ['slapcomp_mp4'])
         else:
             # Collect all render job names
-            all_render_jobs = [f'full_render_{ln}' for ln in variant_names]
+            all_render_jobs = [f'full_render_{ln}' for ln in channel_names]
 
             # Edit job depends on all render jobs (only if copy_to_edit is enabled)
             if config['settings'].get('copy_to_edit', False):
@@ -549,7 +549,7 @@ def build(
                 _add_job('edit', edit_job_obj, all_render_jobs)
 
             # Slapcomp depends on all render jobs
-            first_layer = variant_names[0]
+            first_layer = channel_names[0]
             slapcomp_result = _build_slapcomp_job(
                 config,
                 temp_path,
@@ -599,12 +599,12 @@ def submit(
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
-    variant_names = config['settings']['variant_names']
+    channel_names = config['settings']['variant_names']
 
     # Parameters
     project_name = get_project_name()
     timestamp = dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
-    layers_text = f"[{', '.join(variant_names)}]"
+    layers_text = f"[{', '.join(channel_names)}]"
     batch_title = (
         f'{project_name} '
         f'{purpose} '

@@ -100,6 +100,25 @@ def setup_logging(
         root_logger.addHandler(_workspace_handler)
 
 
+def get_log_paths() -> list[Path]:
+    """Every file this session is logging to, project handler first.
+
+    For telling an artist where a failure's traceback landed: an error dialog
+    that only says "check the log" is barely better than silence. Derived from
+    the live handlers rather than recomputed from the environment, so it names
+    the file actually being written - including the workspace log, whose path
+    moves as the loaded scene changes.
+    """
+    paths: list[Path] = []
+    for handler in (_project_handler, _workspace_handler):
+        if handler is None:
+            continue
+        filename = getattr(handler, 'baseFilename', None)
+        if filename:
+            paths.append(Path(filename))
+    return paths
+
+
 def set_workspace(workspace_path: Optional[Path]) -> None:
     """Update workspace-specific log location."""
     global _workspace_handler

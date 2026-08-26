@@ -29,6 +29,20 @@ Both directions of the shim are checked:
    module it delegates to. This is the near-miss class (get_asset_uri vs
    get_entity_uri): the wrapper renames, the shim keeps calling the old name.
 
+A menu script skips the shim entirely — it constructs the wrapper itself and
+calls it — so it needs its own check:
+
+3. Dangling menu call — a menu block does
+
+       node = import_shot.ImportShot(hou.pwd())
+       items = node.list_channel_names()
+
+   and nothing resolves `list_channel_names` until an artist opens the menu
+   and gets an empty list or a traceback in the console. Rename the wrapper
+   method and every DialogScript saying the old name goes quietly stale. The
+   variant -> channel rename touched nine of these plus two menu blocks buried
+   in `Contents.dir/.OPdummydefs`, which grep reports as binary files.
+
 Runs headlessly against the repo sources: it reads the expanded otls/ sections
 and the Python wrappers as text, so it needs no Houdini. Reading rather than
 importing is also what keeps it honest — importing a PythonModule outside a
@@ -37,6 +51,7 @@ KNOWN_GAPS: lop_th.image_plane_painter imports nodegraphutils, which touches
 hou.ui at import time), and those failures look exactly like a missing name.
 """
 
+import ast
 import re
 import sys
 from pathlib import Path
@@ -72,6 +87,10 @@ _IMPORT_AS = re.compile(r'^import\s+([\w.]+)\s+as\s+(\w+)', re.M)
 _FROM_IMPORT = re.compile(r'^from\s+([\w.]+)\s+import\s+([\w,\s]+)$', re.M)
 # a forwarder body's delegation: `th_cache.select()`
 _DELEGATE = re.compile(r'\b(\w+)\.(\w+)\s*\(')
+# one line of an HDA menu/callback script: `[ "node = x.Y(hou.pwd())" ]`
+_SCRIPT_LINE = re.compile(r'^\s*\[\s*"(.*)"\s*\]\s*$', re.M)
+# `node = import_shot.ImportShot(hou.pwd())`
+_WRAP = re.compile(r'\b(\w+)\s*=\s*(\w+)\.(\w+)\s*\(')
 
 
 def _sections():
@@ -109,6 +128,136 @@ def _aliases(pymod_text: str) -> dict[str, Path]:
             if path is not None:
                 out[name] = path
     return out
+
+
+def _classes_in(path: Path) -> dict[str, tuple[set[str], list[str]]]:
+    """Classes defined in one module: name -> (its own members, base names)."""
+    try:
+        tree = ast.parse(_read(path))
+    except SyntaxError:
+        return {}
+    out = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        members = {
+            child.name for child in node.body
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        members |= {
+            target.id for child in node.body
+            if isinstance(child, ast.Assign)
+            for target in child.targets if isinstance(target, ast.Name)
+        }
+        # Keep the base's written form: `ns.Node` has to resolve through the
+        # defining module's own imports, because the bare name `Node` is
+        # ambiguous across the package (pipe/graph.py and pipe/houdini/nodes.py).
+        bases = [ast.unparse(b) for b in node.bases]
+        out[node.name] = (members, [b for b in bases if b and b != 'object'])
+    return out
+
+
+def _class_index() -> dict[str, list[Path]]:
+    """Bare class name -> every module defining it.
+
+    Deliberately a list: `Cache` and `ImportAsset` each exist in a LOP and a
+    SOP module (and `Cache` again in util/), so a name alone does not identify
+    a class. A base that resolves ambiguously makes the whole lookup give up
+    rather than guess - a wrong guess here reports a working menu as broken.
+    """
+    index = {}
+    for path in sorted(PACKAGE.rglob('*.py')):
+        for name in _classes_in(path):
+            index.setdefault(name, []).append(path)
+    return index
+
+
+def _resolve_methods(path: Path, name: str, index, _seen=None) -> set[str] | None:
+    """Members of `name` as defined in `path`, plus inherited ones.
+
+    None means "cannot tell" - the class or one of its bases is not resolvable
+    from the sources alone, so the caller must not report a missing method.
+    """
+    _seen = _seen or set()
+    key = (path, name)
+    if key in _seen:
+        return set()
+    _seen.add(key)
+
+    classes = _classes_in(path)
+    if name not in classes:
+        candidates = index.get(name, [])
+        if len(candidates) != 1:
+            return None            # unknown, or ambiguous across modules
+        return _resolve_methods(candidates[0], name, index, _seen)
+
+    members, bases = classes[name]
+    out = set(members)
+    module_aliases = _aliases(_read(path))
+    for base in bases:
+        head, _, tail = base.rpartition('.')
+        if head:
+            # `ns.Node`: the alias names the module the base lives in.
+            base_path = module_aliases.get(head.split('.')[0])
+            if base_path is None:
+                return None
+            inherited = _resolve_methods(base_path, tail, index, _seen)
+        elif base in classes:
+            inherited = _resolve_methods(path, base, index, _seen)
+        elif base in module_aliases:
+            inherited = _resolve_methods(module_aliases[base], base, index, _seen)
+        else:
+            candidates = index.get(base, [])
+            if len(candidates) != 1:
+                return None        # base outside the package, or ambiguous
+            inherited = _resolve_methods(candidates[0], base, index, _seen)
+        if inherited is None:
+            return None
+        out |= inherited
+    return out
+
+
+def _script_sections():
+    """(hda_name, path) for every section that can hold a menu script."""
+    for pattern in ('*/*/DialogScript', '*/*/Contents.dir/.OPdummydefs'):
+        for path in sorted(OTLS.glob(pattern)):
+            hda = next(p for p in path.parents if p.parent == OTLS)
+            yield hda.name, path
+
+
+def check_menu_wrappers_resolve() -> list[str]:
+    """Every wrapper method a menu script calls exists on the wrapper class."""
+    index = _class_index()
+    failures = []
+    for hda, path in _script_sections():
+        if hda in KNOWN_GAPS:
+            continue
+        text = _read(path)
+        script = '\n'.join(_SCRIPT_LINE.findall(text))
+        if 'tumblepipe' not in script:
+            continue  # no wrapper reachable from here (or a pre-rename module)
+        aliases = _aliases(script)
+        wrapped = {
+            var: (aliases[alias], cls)
+            for var, alias, cls in _WRAP.findall(script)
+            if alias in aliases
+        }
+        if not wrapped:
+            continue
+        for var, attr in _DELEGATE.findall(script):
+            target = wrapped.get(var)
+            if target is None:
+                continue
+            module, cls = target
+            methods = _resolve_methods(module, cls, index)
+            if methods is None or attr in methods:
+                continue
+            failures.append(
+                f'{hda}: menu script calls {var}.{attr}() on {cls}, '
+                f'which does not define it '
+                f'({path.relative_to(REPO_ROOT).as_posix()})'
+            )
+    return failures
 
 
 def check_callbacks_resolve() -> list[str]:
@@ -169,6 +318,7 @@ def report_known_gaps() -> None:
 CHECKS = (
     ('every DialogScript callback resolves in its PythonModule', check_callbacks_resolve),
     ('every PythonModule forwarder reaches a real function', check_forwarders_resolve),
+    ('every menu script reaches a real wrapper method', check_menu_wrappers_resolve),
 )
 
 

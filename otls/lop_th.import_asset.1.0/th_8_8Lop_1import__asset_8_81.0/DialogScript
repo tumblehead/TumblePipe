@@ -97,7 +97,7 @@
         }
         parm {
             name    "variant"
-            label   "Variant"
+            label   "Channel"
             type    string
             default { "default" }
             menu {
@@ -105,7 +105,7 @@
                 [ "from tumblepipe.pipe.houdini import util" ]
                 [ "" ]
                 [ "node = import_asset.ImportAsset(hou.pwd())" ]
-                [ "items = node.list_variant_names()" ]
+                [ "items = node.list_channel_names()" ]
                 [ "return util.list_to_menu(items)" ]
                 language python
             }

@@ -71,7 +71,7 @@ class ImportLopCamera(EntityNode):
     def execute(self):
         """Import button — drive the embedded import_shot.
 
-        Its entity/variant/department/version are channel references to this
+        Its entity/channel/department/version are channel references to this
         node's parms, so there is nothing to copy down; it just has to run.
         """
         from tumblepipe.pipe.houdini.lops import import_shot

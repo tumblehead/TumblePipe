@@ -91,12 +91,12 @@ def submit(
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
-    variant_names = config['settings']['variant_names']
+    channel_names = config['settings']['variant_names']
 
     # Parameters
     project_name = get_project_name()
     timestamp = dt.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
-    layers_text = f"[{', '.join(variant_names)}]"
+    layers_text = f"[{', '.join(channel_names)}]"
     batch_title = (
         f'{project_name} '
         f'{purpose} '

@@ -27,7 +27,7 @@ def _connect(node1, node2):
 def main(
     shot_uri: Uri,
     render_range: BlockRange,
-    variant_name: str,
+    channel_name: str,
     render_settings_path: Path,
     output_path: Path,
     render_department_name: str | None = None
@@ -37,11 +37,11 @@ def main(
     # Prepare scene
     scene_node = hou.node('/stage')
 
-    # Build the shared render-stage graph for this variant
+    # Build the shared render-stage graph for this channel
     prev_node = render_stage.build_render_stage_graph(
         scene_node,
         shot_uri,
-        variant_name,
+        channel_name,
         render_settings_path,
         render_department_name = render_department_name
     )
@@ -144,7 +144,7 @@ def cli():
         config['first_frame'],
         config['last_frame']
     )
-    variant_name = config['variant_name']
+    channel_name = config['variant_name']
     render_settings_path = Path(config['render_settings_path'])
     output_path = Path(config['output_path'])
     # Optional, not required by _is_valid_config: a job submitted before this
@@ -156,7 +156,7 @@ def cli():
     return main(
         entity_uri,
         render_range,
-        variant_name,
+        channel_name,
         render_settings_path,
         output_path,
         render_department_name

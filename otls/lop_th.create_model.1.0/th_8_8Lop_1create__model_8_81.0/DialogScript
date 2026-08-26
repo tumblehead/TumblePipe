@@ -608,7 +608,7 @@
                     name    "prefixabsolutepaths"
                     label   "Prefix Absolute Paths"
                     type    toggle
-                    default { "on" }
+                    default { "off" }
                     disablewhen "{ enable_prefixabsolutepaths == 0 }"
                     parmtag { "autoscope" "0000000000000000" }
                     parmtag { "script_callback_language" "python" }

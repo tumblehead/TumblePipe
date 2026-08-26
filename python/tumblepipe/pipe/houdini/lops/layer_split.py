@@ -195,7 +195,7 @@ class LayerSplit(EntityNode):
             self.parm('export_execute').pressButton()
 
             # Save context file to temp
-            save_export_context(temp_path, entity_uri, department_name, version_name, variant_name='_shared')
+            save_export_context(temp_path, entity_uri, department_name, version_name, channel_name='_shared')
 
             # Copy all files from temp to export path
             report_progress(f"copying {version_name} to server")

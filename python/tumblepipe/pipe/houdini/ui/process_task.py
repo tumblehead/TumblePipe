@@ -38,7 +38,7 @@ class ProcessTask:
     execute_farm: Callable[[], None] | None = None  # Function to execute on farm
     current_version: str | None = None              # Current export version (if known)
     exported_version: str | None = None             # Version this run wrote (set on completion)
-    variant: str | None = None                      # Variant name (for build tasks)
+    channel: str | None = None                      # Publish channel name (for build tasks)
     first_frame: int | None = None                  # First frame (with roll)
     last_frame: int | None = None                   # Last frame (with roll)
     # Hierarchy support for grouped tasks
@@ -54,14 +54,14 @@ class ProcessTaskTreeModel(QStandardItemModel):
     # Column indices
     COLUMN_TASK = 0
     COLUMN_DEPARTMENT = 1
-    COLUMN_VARIANT = 2
+    COLUMN_CHANNEL = 2
     COLUMN_VERSION = 3
     COLUMN_FIRST_FRAME = 4
     COLUMN_LAST_FRAME = 5
     COLUMN_STATUS = 6
 
     # Column headers
-    HEADERS = ['Task', 'Department', 'Variant', 'Version', 'First', 'Last', 'Status']
+    HEADERS = ['Task', 'Department', 'Channel', 'Version', 'First', 'Last', 'Status']
 
     # Status display mapping
     STATUS_DISPLAY = {
@@ -182,9 +182,9 @@ class ProcessTaskTreeModel(QStandardItemModel):
         dept_item = QStandardItem(task.department)
         dept_item.setEditable(False)
 
-        # Variant column
-        variant_item = QStandardItem(task.variant or '-')
-        variant_item.setEditable(False)
+        # Channel column
+        channel_item = QStandardItem(task.channel or '-')
+        channel_item.setEditable(False)
 
         # Version column
         version_item = QStandardItem(task.current_version or '-')
@@ -203,7 +203,7 @@ class ProcessTaskTreeModel(QStandardItemModel):
         status_item.setEditable(False)
         status_item.setForeground(QBrush(QColor(self.STATUS_COLORS.get(task.status, '#919191'))))
 
-        return [task_item, dept_item, variant_item, version_item, first_frame_item, last_frame_item, status_item]
+        return [task_item, dept_item, channel_item, version_item, first_frame_item, last_frame_item, status_item]
 
     def _on_item_changed(self, item: QStandardItem):
         """Handle checkbox changes with parent/child sync (supports 3 levels)"""

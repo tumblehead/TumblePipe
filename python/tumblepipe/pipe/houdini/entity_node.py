@@ -1,7 +1,7 @@
 """Shared base class for the th:: HDA node wrappers.
 
 The LOP/SOP wrapper classes under lops/ and sops/ bind a pipeline entity
-(asset/shot), department, variant and version to a Houdini node through a
+(asset/shot), department, channel and version to a Houdini node through a
 common set of parms ('entity', 'department', 'variant', 'version', ...).
 EntityNode hoists only the methods whose bodies were textually identical
 across the adopting wrappers (or identical after parameterizing via the
@@ -31,7 +31,8 @@ from tumblepipe.config.department import (
     list_departments,
     list_entity_departments,
 )
-from tumblepipe.config.variants import get_entity_type, list_variants
+from tumblepipe.config.channels import list_channels
+from tumblepipe.config.entities import get_entity_type
 from tumblepipe.pipe.paths import get_workfile_context
 import tumblepipe.pipe.houdini.nodes as ns
 
@@ -161,26 +162,26 @@ class EntityNode(ns.Node):
             if department_name in department_names
         ]))
 
-    # Variants
+    # Channels
 
-    def list_variant_names(self) -> list[str]:
-        """List available variant names for current entity."""
+    def list_channel_names(self) -> list[str]:
+        """List available channel names for current entity."""
         entity_uri = self.get_entity_uri()
         if entity_uri is None:
             return ['default']
-        return list_variants(entity_uri)
+        return list_channels(entity_uri)
 
-    def get_variant_name(self) -> str:
-        """Get selected variant name, defaults to 'default'."""
-        variant_names = self.list_variant_names()
-        variant_name = self.parm('variant').eval()
-        if not variant_name or variant_name not in variant_names:
+    def get_channel_name(self) -> str:
+        """Get selected channel name, defaults to 'default'."""
+        channel_names = self.list_channel_names()
+        channel_name = self.parm('variant').eval()
+        if not channel_name or channel_name not in channel_names:
             return 'default'
-        return variant_name
+        return channel_name
 
-    def set_variant_name(self, variant_name: str):
-        """Set variant name."""
-        self.parm('variant').set(variant_name)
+    def set_channel_name(self, channel_name: str):
+        """Set channel name."""
+        self.parm('variant').set(channel_name)
 
     # Versions
 

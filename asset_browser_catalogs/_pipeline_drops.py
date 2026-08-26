@@ -559,7 +559,7 @@ class DropRouter:
         try:
             old = import_asset.ImportAsset(target)
             old_uri = old.get_entity_uri()
-            old_variant = old.get_variant_name()
+            old_channel = old.get_channel_name()
             old_version = old.get_version_name()
             old_excl = old.get_exclude_department_names()
             old_layerbreak = old.get_include_layerbreak()
@@ -613,7 +613,7 @@ class DropRouter:
             )
 
         plural.add_asset_entry(
-            old_uri, variant=old_variant, version=old_version, instances=1,
+            old_uri, channel=old_channel, version=old_version, instances=1,
         )
         plural.add_asset_entry(new_uri)
 

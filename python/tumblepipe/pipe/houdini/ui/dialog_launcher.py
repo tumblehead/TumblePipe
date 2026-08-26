@@ -1,10 +1,17 @@
 """Node → ProcessDialog entry point.
 
-Called (deferred) from an export / split / rig node's ``execute()`` to open the
-ProcessDialog for the node's workfile context. Kept in its own tiny module so
-the node modules can reach it without importing the Qt dialog / task-collection
-subsystem at load time (they cook headlessly on the farm), and so
-``process_executor`` no longer imports ``process_dialog`` — the two used to cycle.
+Called from an export / split / rig node's ``execute()`` to open the
+ProcessDialog for the node's workfile context. The call is *direct*, on the
+button-callback thread — an exception here surfaces in Houdini's own callback
+error dialog rather than vanishing. (The docstring used to say "deferred";
+nothing has deferred it since the node modules stopped importing the dialog at
+load time, and "it must be failing silently somewhere" is a bad thing to
+believe about a path that actually reports.)
+
+Kept in its own tiny module so the node modules can reach it without importing
+the Qt dialog / task-collection subsystem at load time (they cook headlessly on
+the farm), and so ``process_executor`` no longer imports ``process_dialog`` —
+the two used to cycle.
 """
 
 from pathlib import Path

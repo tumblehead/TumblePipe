@@ -7,7 +7,7 @@ import hou
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
-from tumblepipe.config.variants import list_variants
+from tumblepipe.config.channels import list_channels
 from tumblepipe.util import result
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
@@ -23,7 +23,7 @@ def _staged_context_assets(staged_file_path: Path) -> list[dict]:
     """Tracked sub-assets recorded next to a staged file.
 
     The staged build's context.json lists every asset tracked in the
-    department layers it composed ({asset, instances, variant, inputs}).
+    department layers it composed ({asset, instances, channel, inputs}).
     Old staged builds without a sidecar yield an empty list.
     """
     context_data = load_json(staged_file_path.parent / 'context.json')
@@ -86,7 +86,7 @@ def _subasset_script_lines(
             continue
         base_name = sub_uri.segments[-1]
         instances = asset_info.get('instances', 1)
-        variant = asset_info.get('variant', 'default')
+        channel = asset_info.get('variant', 'default')
         inputs = list(asset_info.get('inputs', []))
         if shot_uri is not None and shot_department is not None:
             shot_entry = {
@@ -137,7 +137,7 @@ def _subasset_script_lines(
                     '    util.set_metadata(base, {',
                     f"        'uri': '{asset_uri_raw}',",
                     f"        'instance': '{base_name}',",
-                    f"        'variant': '{variant}',",
+                    f"        'variant': '{channel}',",
                     f"        'inputs': {inputs!r}",
                     '    })',
                 ]
@@ -174,7 +174,7 @@ def _subasset_script_lines(
                         '    util.set_metadata(inst, {',
                         f"        'uri': '{asset_uri_raw}',",
                         f"        'instance': '{instance_name}',",
-                        f"        'variant': '{variant}',",
+                        f"        'variant': '{channel}',",
                         f"        'inputs': {inputs!r}",
                         '    })',
                     ]
@@ -183,7 +183,7 @@ def _subasset_script_lines(
 
 def _metadata_script(
     asset_uri: Uri,
-    variant_name: str = 'default',
+    channel_name: str = 'default',
     shot_uri: Uri | None = None,
     shot_department: str | None = None,
     subassets: list[dict] | None = None
@@ -193,9 +193,9 @@ def _metadata_script(
 
     If shot_uri and shot_department are provided, adds a shot department
     entry to the inputs array to track which department introduced this asset.
-    The variant is recorded so the export scrape can carry it into the
+    The channel is recorded so the export scrape can carry it into the
     layer's context.json — staged builds re-reference each tracked asset's
-    staged file by that variant.
+    staged file by that channel.
     """
     prim_path = uri_to_prim_path(asset_uri)
     entity_name = asset_uri.segments[-1]
@@ -220,7 +220,7 @@ if prim.IsValid():
     metadata = {{
         'uri': '{str(asset_uri)}',
         'instance': '{entity_name}',
-        'variant': '{variant_name}',
+        'variant': '{channel_name}',
         'inputs': {inputs_str}
     }}
     util.set_metadata(prim, metadata)
@@ -368,13 +368,13 @@ class ImportAsset(EntityNode):
         if asset_uri is None:
             return ['latest', 'current']
 
-        # Get staged directory for the selected variant
+        # Get staged directory for the selected channel
         # (_staged/<variant>/v####, mirroring import_shot)
         staged_uri = (
             Uri.parse_unsafe('export:/') /
             asset_uri.segments /
             '_staged' /
-            self.get_variant_name()
+            self.get_channel_name()
         )
         staged_path = api.storage.resolve(staged_uri)
 
@@ -385,19 +385,19 @@ class ImportAsset(EntityNode):
         # Add special options at the beginning
         return ['latest', 'current'] + version_names
 
-    def list_variant_names(self) -> list[str]:
-        """List available variant names for current entity."""
+    def list_channel_names(self) -> list[str]:
+        """List available channel names for current entity."""
         asset_uri = self.get_entity_uri()
         if asset_uri is None:
             return ['default']
-        variants = list_variants(asset_uri)
-        if not variants:
+        channels = list_channels(asset_uri)
+        if not channels:
             return ['default']
         # Ensure 'default' is always first
-        if 'default' in variants:
-            variants.remove('default')
-            variants.insert(0, 'default')
-        return variants
+        if 'default' in channels:
+            channels.remove('default')
+            channels.insert(0, 'default')
+        return channels
 
     def list_entity_uris(self) -> list[str]:
         return ['from_context'] + [str(uri) for uri in self.list_asset_uris()]
@@ -434,8 +434,8 @@ class ImportAsset(EntityNode):
             native.bypass(True)
             return result.Value(None)
 
-        # Get variant and staged file path based on version selection
-        variant_name = self.get_variant_name()
+        # Get channel and staged file path based on version selection
+        channel_name = self.get_channel_name()
         version_name = self.get_version_name()
 
         from tumblepipe import resolver
@@ -446,11 +446,11 @@ class ImportAsset(EntityNode):
         # the version, freezing both this top-level resolve and nested ones.
         if version_name == 'latest':
             resolver.set_latest_mode(True)
-            staged_uri = f"{asset_uri}?variant={variant_name}"
+            staged_uri = f"{asset_uri}?variant={channel_name}"
         else:
             resolver.set_latest_mode(False)
             if version_name == 'current':
-                current_path = current_staged_path(asset_uri, variant_name)
+                current_path = current_staged_path(asset_uri, channel_name)
                 if current_path is None:
                     self.parm('import_filepath1').set('')
                     ns.set_node_comment(native, "Bypassed: No staged file found")
@@ -459,7 +459,7 @@ class ImportAsset(EntityNode):
                 pinned_version = current_path.name
             else:
                 pinned_version = version_name
-            staged_uri = f"{asset_uri}?variant={variant_name}&version={pinned_version}"
+            staged_uri = f"{asset_uri}?variant={channel_name}&version={pinned_version}"
 
         # Invalidate cached nested resolutions so the new mode takes effect
         resolver.refresh_context()
@@ -559,7 +559,7 @@ class ImportAsset(EntityNode):
             script = _inline_metadata_script(asset_uri, subassets)
         else:
             script = _metadata_script(
-                asset_uri, variant_name, shot_uri, shot_department, subassets
+                asset_uri, channel_name, shot_uri, shot_department, subassets
             )
         self.parm('metadata_python').set(script)
 

@@ -6,7 +6,7 @@ from tumblepipe.util import result
 from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.sops import import_rig
-from tumblepipe.config.variants import list_variants
+from tumblepipe.config.channels import list_channels
 from tumblepipe.pipe.paths import list_version_paths
 
 def _clear_scene(dive_node, output_node):
@@ -76,36 +76,36 @@ class ImportRigs(ns.Node):
     def get_instances(self, index: int) -> int:
         return self.parm(f'instances{index}').eval()
 
-    def list_variant_names(self, index: int) -> list[str]:
-        """List available variant names for the asset at this index."""
+    def list_channel_names(self, index: int) -> list[str]:
+        """List available channel names for the asset at this index."""
         asset_uri = self.get_entity_uri(index)
         if asset_uri is None:
             return ['default']
-        return list_variants(asset_uri)
+        return list_channels(asset_uri)
 
-    def get_variant_name(self, index: int) -> str:
-        """Get selected variant name for this index, defaults to 'default'."""
-        variant_names = self.list_variant_names(index)
-        variant_name = self.parm(f'variant{index}').eval()
-        if not variant_name or variant_name not in variant_names:
+    def get_channel_name(self, index: int) -> str:
+        """Get selected channel name for this index, defaults to 'default'."""
+        channel_names = self.list_channel_names(index)
+        channel_name = self.parm(f'variant{index}').eval()
+        if not channel_name or channel_name not in channel_names:
             return 'default'
-        return variant_name
+        return channel_name
 
-    def set_variant_name(self, index: int, variant_name: str):
-        """Set variant name for this index."""
-        self.parm(f'variant{index}').set(variant_name)
+    def set_channel_name(self, index: int, channel_name: str):
+        """Set channel name for this index."""
+        self.parm(f'variant{index}').set(channel_name)
 
     def get_rig_imports(self) -> list[tuple[Uri, str, str, int]]:
-        """Returns list of (asset_uri, variant, version, instances) for all rig imports."""
+        """Returns list of (asset_uri, channel, version, instances) for all rig imports."""
         rig_imports = []
         count = self.parm('rig_imports').eval()
         for index in range(1, count + 1):
             asset_uri = self.get_entity_uri(index)
             if asset_uri is None: continue
-            variant = self.get_variant_name(index)
+            channel = self.get_channel_name(index)
             version = self.get_version_name(index)
             instances = self.get_instances(index)
-            rig_imports.append((asset_uri, variant, version, instances))
+            rig_imports.append((asset_uri, channel, version, instances))
         return rig_imports
 
     def set_entity_uri(self, index: int, asset_uri: Uri):
@@ -121,8 +121,8 @@ class ImportRigs(ns.Node):
         asset_uri = self.get_entity_uri(index)
         if asset_uri is None:
             return ['latest']
-        variant_name = self.get_variant_name(index)
-        export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / variant_name / 'rig'
+        channel_name = self.get_channel_name(index)
+        export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / channel_name / 'rig'
         asset_path = api.storage.resolve(export_uri)
         version_paths = list_version_paths(asset_path)
         version_names = [vp.name for vp in version_paths]
@@ -157,14 +157,14 @@ class ImportRigs(ns.Node):
         self.parm(f'version_label{index}').set(version_name)
 
     def set_rig_imports(self, rig_imports: list[tuple[Uri, str, str, int]]):
-        """Set rig imports from list of (asset_uri, variant, version, instances) tuples."""
+        """Set rig imports from list of (asset_uri, channel, version, instances) tuples."""
         self.parm('rig_imports').set(0)
-        for asset_uri, variant, version, instances in rig_imports:
+        for asset_uri, channel, version, instances in rig_imports:
             if instances == 0: continue
             index = self.parm('rig_imports').eval() + 1
             self.parm('rig_imports').set(index)
             self.set_entity_uri(index, asset_uri)
-            self.set_variant_name(index, variant)
+            self.set_channel_name(index, channel)
             self.set_version_name(index, version)
             self.set_instances(index, instances)
     
@@ -196,17 +196,17 @@ class ImportRigs(ns.Node):
 
         # Build asset nodes
         prev_node = None
-        for asset_uri, variant, version, instances in rig_imports:
+        for asset_uri, channel, version, instances in rig_imports:
             if instances == 0: continue
 
-            # Create node name from URI segments (include variant for uniqueness)
+            # Create node name from URI segments (include channel for uniqueness)
             uri_name = '_'.join(asset_uri.segments[1:])
-            node_name = f'{uri_name}_{variant}_import' if variant != 'default' else f'{uri_name}_import'
+            node_name = f'{uri_name}_{channel}_import' if channel != 'default' else f'{uri_name}_import'
 
             # Import the rig
             rig_node = import_rig.create(dive_node, node_name)
             rig_node.set_entity_uri(asset_uri)
-            rig_node.parm('variant').set(variant)  # Set variant on import_rig node
+            rig_node.parm('variant').set(channel)  # Set channel on import_rig node
             rig_node.set_instances(instances)
             # Honour the selected version; 'latest' auto-resolves on execute.
             if version == 'latest':

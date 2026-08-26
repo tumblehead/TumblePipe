@@ -106,7 +106,7 @@ def _build_render_overrides(settings: dict) -> dict:
     return overrides
 
 
-def _get_aov_names(entity_uri: Uri, department: str, variants: list[str]) -> list[str]:
+def _get_aov_names(entity_uri: Uri, department: str, channels: list[str]) -> list[str]:
     """Get AOV names from layer exports, including AOVs from referenced assets.
 
     Checks all shot departments for AOVs (since AOVs can be defined in any department),
@@ -115,7 +115,7 @@ def _get_aov_names(entity_uri: Uri, department: str, variants: list[str]) -> lis
     Args:
         entity_uri: The entity URI for the shot/asset
         department: The render department name (unused, kept for API compatibility)
-        variants: List of variant names to check
+        channels: List of channel names to check
 
     Returns:
         List of unique AOV names from shot + all referenced assets, or empty list if not found
@@ -127,9 +127,9 @@ def _get_aov_names(entity_uri: Uri, department: str, variants: list[str]) -> lis
     all_departments = [d.name for d in list_departments(entity_context)]
 
     # Try to get from layer exports - check ALL departments
-    for variant in variants:
+    for channel in channels:
         for dept in all_departments:
-            export_path = latest_export_path(entity_uri, variant, dept)
+            export_path = latest_export_path(entity_uri, channel, dept)
             if export_path is None:
                 continue
 
@@ -139,11 +139,11 @@ def _get_aov_names(entity_uri: Uri, department: str, variants: list[str]) -> lis
                 continue
 
             # Get shot's own AOV names
-            shot_aov_names = get_aov_names_from_context(context_data, variant)
+            shot_aov_names = get_aov_names_from_context(context_data, channel)
             aov_set.update(shot_aov_names)
 
             # Aggregate AOV names from asset inputs
-            asset_aov_names = aggregate_aov_names_from_inputs(context_data, variant)
+            asset_aov_names = aggregate_aov_names_from_inputs(context_data, channel)
             aov_set.update(asset_aov_names)
 
     # If we found any AOVs, return them
@@ -171,7 +171,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                 - publish: bool - whether to submit publish jobs
                 - render: bool - whether to submit render jobs
                 - Publish section: pub_department, pub_pool, pub_priority
-                - Render section: render_department, variants, render_pool,
+                - Render section: render_department, channels, render_pool,
                                   render_priority, tile_count, pre_roll,
                                   first_frame, last_frame, post_roll,
                                   batch_size, denoise, render_mode
@@ -201,7 +201,7 @@ def submit_entity_batch(config: dict) -> list[str]:
 
     # Render settings
     render_department = settings.get('render_department')
-    variants = settings.get('variants', ['default'])
+    channels = settings.get('variants', ['default'])
     render_pool = settings.get('render_pool', 'general')
     render_priority = settings.get('render_priority', 50)
     tile_count = settings.get('tile_count', 4)
@@ -357,14 +357,14 @@ def submit_entity_batch(config: dict) -> list[str]:
             pub_dept_names = department_names_up_to(department_names, pub_department)
 
             prev_job_name = None
-            # Use 'default' variant for batch publish jobs
-            variant_name = 'default'
+            # Use 'default' channel for batch publish jobs
+            channel_name = 'default'
             for dept_name in pub_dept_names:
                 if not _publish.is_submissable(entity_uri, dept_name):
                     continue
 
                 # Check if out of date (or if downstream changed)
-                if prev_job_name is None and not _publish.is_out_of_date(entity_uri, variant_name, dept_name):
+                if prev_job_name is None and not _publish.is_out_of_date(entity_uri, channel_name, dept_name):
                     continue
 
                 job_name = f'publish_{dept_name}'
@@ -380,14 +380,14 @@ def submit_entity_batch(config: dict) -> list[str]:
 
         # Add stage + render jobs
         if do_render:
-            if not variants:
-                variants = ['default']
+            if not channels:
+                channels = ['default']
 
             # Build render overrides from settings (maps column keys to USD paths)
             render_overrides = _build_render_overrides(settings)
 
             # Get AOV names from layer exports or root layer context
-            aov_names = _get_aov_names(entity_uri, render_department, variants)
+            aov_names = _get_aov_names(entity_uri, render_department, channels)
 
             if not standalone:
                 # === DIRECT RENDER MODE (standalone=False) ===
@@ -396,19 +396,19 @@ def submit_entity_batch(config: dict) -> list[str]:
                 # Create render_settings.json (no overrides - baked into collapsed_stage.usda)
                 render_settings_path = temp_path / 'render_settings.json'
                 store_json(render_settings_path, dict(
-                    variant_names=variants,
+                    variant_names=channels,
                     aov_names=aov_names
                 ))
                 relative_render_settings_path = render_settings_path.relative_to(temp_path)
 
-                # Create collapsed USD for each variant with resolved version references and render overrides
+                # Create collapsed USD for each channel with resolved version references and render overrides
                 input_paths = {}
-                for variant_name in variants:
-                    latest_staged_path = get_latest_staged_file_path(entity_uri, variant_name)
+                for channel_name in channels:
+                    latest_staged_path = get_latest_staged_file_path(entity_uri, channel_name)
                     if latest_staged_path is None or not latest_staged_path.exists():
                         raise BatchSubmitError(
-                            f"No staged file found for {entity_uri} variant '{variant_name}'. "
-                            f"Expected staged files at: export:/{'/'.join(entity_uri.segments)}/_staged/{variant_name}/. "
+                            f"No staged file found for {entity_uri} channel '{channel_name}'. "
+                            f"Expected staged files at: export:/{'/'.join(entity_uri.segments)}/_staged/{channel_name}/. "
                             "Publish the entity first to create staged files."
                         )
 
@@ -421,8 +421,8 @@ def submit_entity_batch(config: dict) -> list[str]:
                         department_names
                     )
 
-                    # Create collapsed USD for this variant
-                    collapsed_stage_path = temp_path / f'collapsed_stage_{variant_name}.usda'
+                    # Create collapsed USD for this channel
+                    collapsed_stage_path = temp_path / f'collapsed_stage_{channel_name}.usda'
                     collapsed_content = collapse_latest_references(
                         latest_staged_path,
                         collapsed_stage_path,
@@ -431,14 +431,14 @@ def submit_entity_batch(config: dict) -> list[str]:
                     )
                     store_text(collapsed_stage_path, collapsed_content)
                     relative_collapsed_path = collapsed_stage_path.relative_to(temp_path)
-                    input_paths[variant_name] = path_str(relative_collapsed_path)
+                    input_paths[channel_name] = path_str(relative_collapsed_path)
 
                     # Add to paths for bundling
                     paths[collapsed_stage_path] = relative_collapsed_path
 
                 # Build render config for render job module
                 # - render_settings_path: absolute (loaded locally during job building)
-                # - input_paths: per-variant relative paths (resolves in job data dir on farm)
+                # - input_paths: per-channel relative paths (resolves in job data dir on farm)
                 render_config = dict(
                     entity=dict(
                         uri=str(entity_uri),
@@ -448,10 +448,10 @@ def submit_entity_batch(config: dict) -> list[str]:
                         user_name=user_name,
                         purpose='render',
                         pool_name=render_pool,
-                        variant_names=variants,
+                        variant_names=channels,
                         render_department_name=render_department,
                         render_settings_path=path_str(render_settings_path),
-                        input_paths=input_paths,  # Per-variant relative paths for farm (resolves in job data dir)
+                        input_paths=input_paths,  # Per-channel relative paths for farm (resolves in job data dir)
                         tile_count=tile_count,
                         first_frame=first_frame,
                         last_frame=last_frame,
@@ -492,7 +492,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                 # Create render_settings.json (with overrides for dynamic application by stage task)
                 render_settings_path = temp_path / 'render_settings.json'
                 store_json(render_settings_path, dict(
-                    variant_names=variants,
+                    variant_names=channels,
                     aov_names=aov_names,
                     overrides=render_overrides
                 ))
@@ -507,7 +507,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         user_name=user_name,
                         purpose='render',
                         pool_name=render_pool,
-                        variant_names=variants,
+                        variant_names=channels,
                         render_department_name=render_department,
                         render_settings_path=path_str(relative_render_settings_path),
                         tile_count=tile_count,
@@ -542,7 +542,7 @@ def submit_entity_batch(config: dict) -> list[str]:
             latest_staged_path = get_latest_staged_file_path(entity_uri, 'default')
             if latest_staged_path is None or not latest_staged_path.exists():
                 raise BatchSubmitError(
-                    f"No staged file found for {entity_uri} variant 'default'. "
+                    f"No staged file found for {entity_uri} channel 'default'. "
                     "Publish the shot first to create staged files."
                 )
 

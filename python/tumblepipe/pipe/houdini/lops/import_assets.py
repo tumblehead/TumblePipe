@@ -9,7 +9,7 @@ from tumblepipe.config.department import (
     list_departments,
     list_entity_departments,
 )
-from tumblepipe.config.variants import list_variants
+from tumblepipe.config.channels import list_channels
 from tumblepipe.pipe.paths import list_version_paths, get_workfile_context
 from tumblepipe.pipe.houdini.util import uri_to_prim_path
 from tumblepipe.util import result
@@ -96,7 +96,7 @@ def _assets_metadata_script(
     to track which department introduced these assets.
 
     Args:
-        asset_imports: List of (asset_uri, variant, version, instances) tuples
+        asset_imports: List of (asset_uri, channel, version, instances) tuples
         shot_uri: Optional shot entity URI for provenance tracking
         shot_department: Optional shot department name for provenance tracking
 
@@ -119,7 +119,7 @@ def _assets_metadata_script(
         '',
     ]
 
-    for asset_uri, variant, version, instances in asset_imports:
+    for asset_uri, channel, version, instances in asset_imports:
         if instances == 0:
             continue
 
@@ -136,7 +136,7 @@ def _assets_metadata_script(
             '    util.set_metadata(prim, {',
             f"        'uri': '{str(asset_uri)}',",
             f"        'instance': '{base_name}',",
-            f"        'variant': '{variant}',",
+            f"        'variant': '{channel}',",
             f"        'inputs': {inputs_str}",
             '    })',
             '',
@@ -254,7 +254,7 @@ class ImportAssets(EntityNode):
         """Resolve the entity for a row, read-only.
 
         Falls back to the first available asset WITHOUT writing the parm:
-        this is called from the variant/version menu scripts, and a parm
+        this is called from the channel/version menu scripts, and a parm
         write during menu evaluation dirties the node mid-draw (and can
         re-trigger evaluation). The fallback is materialized on the parm
         only by explicit actions (select/add_asset_entry/execute).
@@ -269,30 +269,30 @@ class ImportAssets(EntityNode):
     def get_instances(self, index):
         return self.parm(f'instances{index}').eval()
 
-    def list_variant_names(self, index: int) -> list[str]:
-        """List available variant names for the asset at this index."""
+    def list_channel_names(self, index: int) -> list[str]:
+        """List available channel names for the asset at this index."""
         asset_uri = self.get_entity_uri(index)
         if asset_uri is None:
             return ['default']
-        variants = list_variants(asset_uri)
-        if not variants:
+        channels = list_channels(asset_uri)
+        if not channels:
             return ['default']
-        if 'default' in variants:
-            variants.remove('default')
-            variants.insert(0, 'default')
-        return variants
+        if 'default' in channels:
+            channels.remove('default')
+            channels.insert(0, 'default')
+        return channels
 
-    def get_variant_name(self, index: int) -> str:
-        """Get selected variant name for this index, defaults to 'default'."""
-        variant_names = self.list_variant_names(index)
-        variant_name = self.parm(f'variant{index}').eval()
-        if not variant_name or variant_name not in variant_names:
+    def get_channel_name(self, index: int) -> str:
+        """Get selected channel name for this index, defaults to 'default'."""
+        channel_names = self.list_channel_names(index)
+        channel_name = self.parm(f'variant{index}').eval()
+        if not channel_name or channel_name not in channel_names:
             return 'default'
-        return variant_name
+        return channel_name
 
-    def set_variant_name(self, index: int, variant_name: str):
-        """Set variant name for this index."""
-        self.parm(f'variant{index}').set(variant_name)
+    def set_channel_name(self, index: int, channel_name: str):
+        """Set channel name for this index."""
+        self.parm(f'variant{index}').set(channel_name)
 
     def list_version_names(self, index: int) -> list[str]:
         """List available staged versions for asset at this index."""
@@ -300,13 +300,13 @@ class ImportAssets(EntityNode):
         if asset_uri is None:
             return ['latest', 'current']
 
-        # Staged directory for the row's variant
+        # Staged directory for the row's channel
         # (_staged/<variant>/v####, mirroring import_shot)
         staged_uri = (
             Uri.parse_unsafe('export:/') /
             asset_uri.segments /
             '_staged' /
-            self.get_variant_name(index)
+            self.get_channel_name(index)
         )
         staged_path = api.storage.resolve(staged_uri)
 
@@ -327,7 +327,7 @@ class ImportAssets(EntityNode):
         self.parm(f'version{index}').set(version_name)
 
     def get_asset_imports(self) -> list[tuple[Uri, str, str, int]]:
-        """Returns list of (asset_uri, variant, version, instances) for all asset imports.
+        """Returns list of (asset_uri, channel, version, instances) for all asset imports.
 
         Materializes each row's resolved URI back onto its entity parm —
         this runs from execute() (an explicit action), and the saved scene
@@ -342,10 +342,10 @@ class ImportAssets(EntityNode):
             if asset_uri is None: continue
             if self.parm(f'entity{index}').eval() != str(asset_uri):
                 self.parm(f'entity{index}').set(str(asset_uri))
-            variant = self.get_variant_name(index)
+            channel = self.get_channel_name(index)
             version = self.get_version_name(index)
             instances = self.get_instances(index)
-            asset_imports.append((asset_uri, variant, version, instances))
+            asset_imports.append((asset_uri, channel, version, instances))
         return asset_imports
 
     def set_entity_uri(self, index, asset_uri: Uri):
@@ -356,7 +356,7 @@ class ImportAssets(EntityNode):
     def add_asset_entry(
         self,
         asset_uri: Uri,
-        variant: str = 'default',
+        channel: str = 'default',
         version: str = 'latest',
         instances: int = 1,
     ) -> int:
@@ -373,7 +373,7 @@ class ImportAssets(EntityNode):
         new_index = count + 1
         self.parm('asset_imports').set(new_index)
         self.parm(f'entity{new_index}').set(str(asset_uri))
-        self.parm(f'variant{new_index}').set(variant)
+        self.parm(f'variant{new_index}').set(channel)
         self.parm(f'version{new_index}').set(version)
         self.parm(f'instances{new_index}').set(instances)
         return new_index
@@ -449,13 +449,13 @@ class ImportAssets(EntityNode):
         # Build asset nodes
         script_args = []
         all_prim_paths = []
-        for asset_uri, variant, version, instances in asset_imports:
+        for asset_uri, channel, version, instances in asset_imports:
             if instances == 0: continue
             asset_prim_path = uri_to_prim_path(asset_uri)
 
-            # Create node name from URI segments (include variant for uniqueness)
+            # Create node name from URI segments (include channel for uniqueness)
             uri_name = '_'.join(asset_uri.segments[1:])
-            node_name = f'{uri_name}_{variant}_import' if variant != 'default' else f'{uri_name}_import'
+            node_name = f'{uri_name}_{channel}_import' if channel != 'default' else f'{uri_name}_import'
 
             # Import the asset
             asset_node = import_asset.create(
@@ -463,7 +463,7 @@ class ImportAssets(EntityNode):
                 node_name
             )
             asset_node.set_entity_uri(asset_uri)
-            asset_node.set_variant_name(variant)
+            asset_node.set_channel_name(channel)
             asset_node.parm('version').set(version)
             asset_node.set_exclude_department_names(
                 exclude_department_names

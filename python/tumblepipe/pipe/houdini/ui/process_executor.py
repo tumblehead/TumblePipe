@@ -270,7 +270,7 @@ class ProcessExecutor(QObject):
         """Execute a grouped task by running its enabled children.
 
         Handles deduplication for layer_split nodes to avoid executing
-        the same node multiple times when shared across variants.
+        the same node multiple times when shared across channels.
         """
         if not parent_task.children:
             return
@@ -313,7 +313,7 @@ class ProcessExecutor(QObject):
                 if isinstance(e, TaskSkipped):
                     # This child had nothing to export (e.g. a disconnected
                     # node). Its siblings are unaffected, so don't re-raise -
-                    # one dead variant must not abort the whole department.
+                    # one dead channel must not abort the whole department.
                     child.status = TaskStatus.SKIPPED
                     child.error_message = str(e)
                     self.task_skipped.emit(child.id, str(e))

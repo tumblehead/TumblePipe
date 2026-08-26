@@ -29,10 +29,10 @@ def is_submissable(entity_uri: Uri, department_name: str) -> bool:
     return hip_path.exists()
 
 
-def is_out_of_date(entity_uri: Uri, variant_name: str, department_name: str) -> bool:
+def is_out_of_date(entity_uri: Uri, channel_name: str, department_name: str) -> bool:
     """Check if the latest export is older than the latest hip file."""
     hip_path = latest_hip_file_path(entity_uri, department_name)
-    export_path = latest_export_path(entity_uri, variant_name, department_name)
+    export_path = latest_export_path(entity_uri, channel_name, department_name)
     if export_path is None:
         return True
     if not export_path.exists():

@@ -23,3 +23,25 @@ def is_terminal_entity(config, uri: Uri) -> bool:
     if schema_uri is None:
         return False
     return len(config.get_child_schemas(schema_uri)) == 0
+
+
+def get_entity_type(entity_uri: Uri) -> str | None:
+    """Get entity type from URI ('asset' or 'shot').
+
+    Args:
+        entity_uri: The entity URI
+
+    Returns:
+        'asset' for asset entities, 'shot' for shot entities, None otherwise
+    """
+    if entity_uri.purpose != 'entity':
+        return None
+    if len(entity_uri.segments) < 1:
+        return None
+
+    context = entity_uri.segments[0]
+    if context == 'assets':
+        return 'asset'
+    if context == 'shots':
+        return 'shot'
+    return None

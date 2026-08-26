@@ -9,12 +9,12 @@ Current convention (see tumblepipe.pipe.paths.render.get_*playblast_path):
 
   seq/shot  -> from the project's entity.json (the authority)
   dept      -> a renderable shot department or a render department
-  layer     -> one of the shot's variants, or 'default'/'slapcomp'
+  layer     -> one of the shot's channels, or 'default'/'slapcomp'
   version   -> a file named vNNNN.mp4 (v + exactly 4 digits)
 
 Everything else is off-convention. The dominant legacy form is the old
 version-as-directory layout (<...>/vNNNN/render.mp4) from a previous pipeline,
-plus old per-variant trees keyed on the variant instead of the department.
+plus old per-channel trees keyed on the channel instead of the department.
 
 Dry-run by default. Deletion is opt-in and per-category.
 
@@ -42,18 +42,18 @@ def load_config(config_dir):
 
     shots_node = entity['children']['shots']['children']
     seqs = {}
-    variants = {}  # (seq, shot) -> set(variant names)
+    channels = {}  # (seq, shot) -> set(channel names)
     for seq, sd in shots_node.items():
         shot_names = list(sd.get('children', {}).keys())
         seqs[seq] = set(shot_names)
         for shot, shd in sd['children'].items():
             vs = set(shd.get('properties', {}).get('variants', []))
-            variants[(seq, shot)] = vs
+            channels[(seq, shot)] = vs
 
     valid_depts = set(depts['children']['shots']['children'].keys())
     valid_depts |= set(depts['children']['render']['children'].keys())
 
-    return seqs, variants, valid_depts
+    return seqs, channels, valid_depts
 
 
 def dir_stats(path):
@@ -93,7 +93,7 @@ class Finding:
         self.files, self.bytes = dir_stats(path)
 
 
-def classify(root, seqs, variants, valid_depts):
+def classify(root, seqs, channels, valid_depts):
     """Return (findings, ok_count). Each finding is a removal unit: the
     shallowest off-convention path that contains no on-convention siblings."""
     root = Path(root)
@@ -127,7 +127,7 @@ def classify(root, seqs, variants, valid_depts):
                                             f'{seq}/{shot_dir.name!r} is not a shot in entity.json'))
                     continue
                 shot = shot_dir.name
-                layers = variants.get((seq, shot), set()) | {'default', 'slapcomp'}
+                layers = channels.get((seq, shot), set()) | {'default', 'slapcomp'}
                 _classify_shot(shot_dir, valid_depts, layers, findings, ok, child_kind)
     return findings, ok[0]
 
@@ -209,8 +209,8 @@ def main():
         print(f'ERROR: playblast root not found: {root}', file=sys.stderr)
         return 2
 
-    seqs, variants, valid_depts = load_config(args.config_dir)
-    findings, ok = classify(root, seqs, variants, valid_depts)
+    seqs, channels, valid_depts = load_config(args.config_dir)
+    findings, ok = classify(root, seqs, channels, valid_depts)
 
     # Group by category
     by_cat = {}

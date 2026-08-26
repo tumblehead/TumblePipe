@@ -2,6 +2,30 @@
 
 How exported layers become the files that downstream workfiles import.
 
+## Channels, and why they are not USD variants
+
+A **channel** is the pipeline's publish-tree fork: the path segment an
+entity's departments publish under, and the axis a shot renders along
+(bg/fg splits, character passes). Every entity has an implicit `default`
+channel and may define more; a department with no export under a channel
+falls back to its `default` export.
+
+This used to be called a *variant*, which collided head-on with USD's own
+`variantSet` — an unrelated mechanism, authored on a prim by Solaris' Add
+Variant / Set Variant and by our `th::create_asset_model` /
+`th::create_asset_lookdev` HDAs. In the UI, "variant" now means exactly the
+USD thing; the publish-tree fork is a channel.
+
+The rename is vocabulary only. `variant` stays the **frozen wire token**
+everywhere data already spells it — the `?variant=` URI query parameter and
+the `_shared` sentinel, the path segment and the
+`{entity}_{variant}_{dept}_{ver}.usd` filename, HDA parm *internal* names
+(only their labels changed), the farm's `variant_name` / `variant_names`
+job keys, and the `variants` entity property in the config database.
+Published staged files embed those URIs and the resolver parses them, so
+renaming them would orphan every shipped file. Read `<variant>` in a path
+below as "the channel segment".
+
 ## Department exports and staged files
 
 Every publish writes a versioned layer under
@@ -10,7 +34,8 @@ Every publish writes a versioned layer under
 pipeline asset present on the exported stage (scraped from the
 `customData` metadata that import nodes author on asset root prims).
 
-The *staged* file (`_staged/<variant>/v####/<Entity>_v####.usda`) is what
+The *staged* file (`_staged/<variant>/v####/<Entity>_v####.usda`, one per
+channel) is what
 imports actually load. For an asset it sublayers, strongest first:
 
 1. the asset's own **renderable** department layers in pipeline order
@@ -18,7 +43,7 @@ imports actually load. For an asset it sublayers, strongest first:
 2. the staged file of every asset tracked in those department layers —
    the *nested assets* of a set-style asset — weaker than the asset's
    own layers, so its placement overrides win. Tracked refs carry the
-   sub-asset's variant and are pinned to its staged version at build
+   sub-asset's channel and are pinned to its staged version at build
    time, so a pinned build stays frozen; `latest`-mode imports strip
    or ignore the pin, so floating still cascades. A tracked asset
    already reachable through another tracked asset's staged file gets
@@ -48,7 +73,7 @@ assigned or not. So scoping an entity in the browser can never change what
 renders.
 
 When department layers disagree about a tracked asset (instance count,
-variant, inputs), the **most recently exported** layer that records it
+channel, inputs), the **most recently exported** layer that records it
 wins, as one consistent snapshot. It is never a `max()` across layers:
 a stale department — lookdev exported before a model rework halved the
 copies — would pin the old count forever, because any workfile that
@@ -62,16 +87,45 @@ counts and inputs too; scene assets carry the instance counts from
 their scene context, with shot-flow entries taking precedence when an
 asset appears in both.
 
-A variant staged build only *overrides* the departments that actually
-exported under that variant: a department with no export under the
-build's variant falls back to its default-variant export, and the
-staged file's sublayer URI names the variant the layer really resolved
-from. A render variant that prunes a shot down to its characters
+A channel's staged build only *overrides* the departments that actually
+exported under that channel: a department with no export under the
+build's channel falls back to its default-channel export, and the
+staged file's sublayer URI names the channel the layer really resolved
+from. A render channel that prunes a shot down to its characters
 therefore still composes the default animation, lights, and camera —
-without the fallback the variant's staged stage held only the
-variant-exporting department plus root, and the farm rendered an empty
+without the fallback the channel's staged stage held only the
+channel-exporting department plus root, and the farm rendered an empty
 (black) scene that the live session, which composes the full node
 graph rather than the staged file, never showed.
+
+## Where model geometry lands under the asset
+
+`th::create_asset_model` turns each USD variant's SOP output into USD through an
+internal SOP Import, then grafts the result under the asset prim. The prim
+path of every piece is
+`<asset prim>` + **Import Path Prefix** + the value of the first **Path
+Attributes** entry that exists on the geometry — so a mesh reaching the node
+with `s@path = "body/lid"` publishes to `/prop/crate/geo/body/lid`.
+
+All three controls live under *Geometry Handling* on the node:
+
+- **Import Path Prefix** (`/geo`) is the scope the geometry is imported
+  into. The Configure Primitive that types that scope as a `UsdGeomScope`
+  follows this parm, so changing it moves both together.
+- **Path Attributes** (`path,name`) is the search order. It used to be
+  `name` alone, which silently discarded any hierarchy an artist had
+  authored in `s@path` and published everything flat under `geo`.
+- **Prefix Absolute Paths** (off) decides what happens to an attribute
+  value that already starts with `/`. Off means the value is taken as
+  written; on means the prefix is prepended anyway. Alembic sets `name` to
+  the full ABC object path, whose top object is usually the asset itself,
+  so with this on a crate published to `/prop/crate/geo/crate/crate_geo` —
+  the asset name twice.
+
+`th::create_model` holds the same contract: it leaves Path Attributes at the
+SOP Import default, which is also `path,name`, and defaults Prefix Absolute
+Paths off for the same reason. The two model nodes are meant to agree — if
+you change one, change the other.
 
 ## Layer save paths and export portability
 
@@ -418,6 +472,12 @@ prompt — so a lighter can pull a mid-session model/anim publish without
 reopening (or restarting) anything. **Reload** remains the heavier
 variant that also reverts the scene to its on-disk state.
 
+A single failing import node does not abort the sweep (one stale HDA must
+not strand every other node on an old version), but Update reports how many
+nodes failed rather than announcing success over them — a scene that still
+references older publishes says so. The on-open and reload refreshes stay
+quiet: nobody asked them to run.
+
 Finishing a **local publish** refreshes the same way, so the artist who
 just published sees it in their *own* scene without restarting: when the
 publish dialog (`ProcessDialog`) completes and at least one task wrote a
@@ -442,6 +502,14 @@ through lighting and leaves everything after it out. The Playblast section
 cuts the same way, and it is the same slice the Publish section has always
 used, so one department name means one cut of the pipeline across the whole
 dialog.
+
+The Render (and Playblast) department **defaults to the department the
+dialog was opened from** — the loaded workfile's own department, whether
+the dialog came from the scene quick action or the asset browser — so
+submitting from a lighting workfile renders through lighting without
+touching the field. When that department is not renderable, or no pipeline
+scene is open, the entity's `submission.render.department` property seeds
+it as before. Publish keeps its own property-only default.
 
 The cut is by pipeline *position*, over the whole pool: a non-renderable
 upstream department (tracking, notes) still composes as it always did. A
@@ -510,13 +578,14 @@ Two things to know about it:
 ### Stage task (`standalone=True`)
 
 This path does not compose the staged file directly. The stage task
-builds a dedicated LOP graph per render layer (variant) and exports it
-to a `stage_<variant>.usd` that husk then renders. The graph — built by
+builds a dedicated LOP graph per channel and exports it
+to a `stage_<variant>.usd` (the filename keeps the wire token) that husk
+then renders. The graph — built by
 `tumblepipe.pipe.houdini.render_stage.build_render_stage_graph`, and
 identically by the `th::render_debug` HDA for in-session inspection —
 composes, weakest to strongest:
 
-1. the shot's staged build for that variant, **pinned**: the inner
+1. the shot's staged build for that channel, **pinned**: the inner
    import shot runs at `version='current'`, which keeps the frozen
    `version=` parameter on every sublayer URI. (The interactive
    `latest` mode strips versions, and the resolver floats a
@@ -529,19 +598,19 @@ composes, weakest to strongest:
    department cut** at its `current` export, so a render picks up
    department publishes made since the last shot build without a
    rebuild. A department with no export
-   under the render's variant re-applies its default-variant export —
+   under the render's channel re-applies its default-channel export —
    the same fallback the staged build uses — so this pass refreshes
    the layer the staged stack actually contains,
 4. the render-settings overrides from the submission's
    `render_settings.json`, then pruning of AOVs not selected for the
    render.
 
-Each variant gets its **own** graph and export — variants are
+Each channel gets its **own** graph and export — channels are
 alternative opinions on the same prims, so a single stage composing
 several of them would just render the strongest one for every layer.
 
 To preview what this path renders, drop a `th::render_debug` node and
-pick the shot and variant; its dive target contains the same graph the
+pick the shot and channel; its dive target contains the same graph the
 stage task exports. Two caveats on "the same graph": it previews the
 stage task specifically — a default (direct-render) submission renders
 the flattened stage above instead — and it has no department parm, so it

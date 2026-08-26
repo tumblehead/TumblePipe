@@ -21,7 +21,7 @@ under ``backup/`` first (suppress with ``--no-backup``).
 
 Locked-HDA internals are skipped on purpose: the 2026-07-07 audit found
 every shipped HDA stores the toggle off, and instance-level edits inside
-locked assets don't belong to the workfile anyway. Non-``.hip`` variants
+locked assets don't belong to the workfile anyway. Non-``.hip`` channels
 (``.hiplc``/``.hipnc``) are skipped with a warning — loading one downgrades
 the hython session's license and would poison later commercial saves; run
 those separately if any turn up.

@@ -11,7 +11,7 @@ from typing import Optional
 
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.variants import DEFAULT_VARIANT
+from tumblepipe.config.channels import DEFAULT_CHANNEL
 from tumblepipe.config.department import list_departments
 from tumblepipe.pipe.paths import (
     latest_export_path,
@@ -57,7 +57,7 @@ def get_source_department(inputs: list[dict], department_order: list[str]) -> st
 def _load_shot_layer(
     shot_uri: Uri,
     department_name: str,
-    variant_name: str
+    channel_name: str
 ) -> Optional[tuple[Path, str, list[tuple[Uri, int, list]]]]:
     """
     Load the latest export of one shot department.
@@ -66,7 +66,7 @@ def _load_shot_layer(
     or None. The timestamp is the layer's export time ('' for very old
     exports without one) — ISO strings compare lexicographically.
     """
-    latest_version_path = latest_export_path(shot_uri, variant_name, department_name)
+    latest_version_path = latest_export_path(shot_uri, channel_name, department_name)
     if latest_version_path is None:
         return None
 
@@ -114,7 +114,7 @@ def _resolve_source_department(
 def _latest_shot_layer_paths(
     shot_uri: Uri,
     shot_departments: list[str],
-    variant_name: str,
+    channel_name: str,
     all_shot_departments: list[str]
 ) -> tuple[dict, dict, dict, dict]:
     """
@@ -128,25 +128,25 @@ def _latest_shot_layer_paths(
     )
     """
     # First pass: load each department's latest layer and its asset entries.
-    # A department that has never exported under the requested variant falls
-    # back to its default-variant export: a render variant only overrides the
+    # A department that has never exported under the requested channel falls
+    # back to its default-channel export: a render channel only overrides the
     # departments that actually exported it, everything else composes as
-    # default. Without this, a variant staged build sublayered ONLY the
-    # variant-exporting department + root — no animation, no lights, no
+    # default. Without this, a channel staged build sublayered ONLY the
+    # channel-exporting department + root — no animation, no lights, no
     # camera — and the farm rendered black while the live GUI session (which
     # composes the full graph, not the staged file) looked fine.
     dept_layers = {}  # {dept: (version_path, timestamp, [(asset_uri, instances, inputs), ...])}
-    dept_variants = {}  # {dept: variant the layer was actually resolved from}
+    dept_channels = {}  # {dept: channel the layer was actually resolved from}
     for department_name in shot_departments:
-        layer_variant = variant_name
-        layer = _load_shot_layer(shot_uri, department_name, layer_variant)
-        if layer is None and variant_name != DEFAULT_VARIANT:
-            layer_variant = DEFAULT_VARIANT
-            layer = _load_shot_layer(shot_uri, department_name, layer_variant)
+        layer_channel = channel_name
+        layer = _load_shot_layer(shot_uri, department_name, layer_channel)
+        if layer is None and channel_name != DEFAULT_CHANNEL:
+            layer_channel = DEFAULT_CHANNEL
+            layer = _load_shot_layer(shot_uri, department_name, layer_channel)
         if layer is None:
             continue
         dept_layers[department_name] = layer
-        dept_variants[department_name] = layer_variant
+        dept_channels[department_name] = layer_channel
 
     # Determine which assets exist in each source department (for validation)
     source_dept_assets = {
@@ -185,20 +185,20 @@ def _latest_shot_layer_paths(
 
         layer_data[department_name] = version_path
 
-    return layer_data, shot_assets, asset_inputs, dept_variants
+    return layer_data, shot_assets, asset_inputs, dept_channels
 
 
 def _latest_asset_layer_paths(
     assets: dict,
     asset_departments: list[str],
-    asset_variants: dict
+    asset_channels: dict
 ) -> dict:
     """Find latest asset layer paths: {dept: {asset_uri: version_path}}."""
     layer_data = dict()
     for asset_uri in assets.keys():
-        asset_variant = asset_variants.get(asset_uri, DEFAULT_VARIANT)
+        asset_channel = asset_channels.get(asset_uri, DEFAULT_CHANNEL)
         for department_name in asset_departments:
-            latest_version_path = latest_export_path(asset_uri, asset_variant, department_name)
+            latest_version_path = latest_export_path(asset_uri, asset_channel, department_name)
             if latest_version_path is None:
                 continue
             layer_data.setdefault(department_name, dict())[asset_uri] = latest_version_path
@@ -218,7 +218,7 @@ def _get_root_scene_uri(root_version_path: Path) -> Optional[Uri]:
 
 def _iter_scene_assets(scene_uri: Uri):
     """
-    Yield (asset_uri, variant_name, instances) for every asset composed
+    Yield (asset_uri, channel_name, instances) for every asset composed
     by a scene.
 
     Direct scene assets come first so they take precedence over assets
@@ -232,13 +232,13 @@ def _iter_scene_assets(scene_uri: Uri):
                 asset_uri = Uri.parse_unsafe(asset_datum['asset'])
                 yield (
                     asset_uri,
-                    asset_datum.get('variant', DEFAULT_VARIANT),
+                    asset_datum.get('variant', DEFAULT_CHANNEL),
                     asset_datum.get('instances', 1)
                 )
 
     from tumblepipe.config.scene import get_inherited_assets
     for entry, _parent_uri in get_inherited_assets(scene_uri):
-        yield Uri.parse_unsafe(entry.asset), entry.variant, entry.instances
+        yield Uri.parse_unsafe(entry.asset), entry.channel, entry.instances
 
 
 def resolve_shot_build(
@@ -247,8 +247,8 @@ def resolve_shot_build(
     shot_uri: Uri,
     shot_departments: list[str],
     asset_departments: list[str],
-    shot_variant: str = DEFAULT_VARIANT,
-    asset_variants: Optional[dict] = None
+    shot_channel: str = DEFAULT_CHANNEL,
+    asset_channels: Optional[dict] = None
 ) -> dict:
     """
     Resolve all versions needed to build a shot.
@@ -261,34 +261,34 @@ def resolve_shot_build(
         shot_uri: Shot URI to build
         shot_departments: List of shot department names
         asset_departments: List of asset department names
-        shot_variant: Variant name for shot layers (default: 'default')
-        asset_variants: Optional dict mapping asset_uri to variant_name for per-asset variants
+        shot_variant: Channel name for shot layers (default: 'default')
+        asset_variants: Optional dict mapping asset_uri to channel_name for per-asset channels
 
     Returns: {
         'assets': {asset_uri: instances},
         'shot_layers': {dept: version_path},
-        'shot_layer_variants': {dept: variant_name},
+        'shot_layer_variants': {dept: channel_name},
         'asset_layers': {dept: {asset_uri: version_path}},
         'shot_variant': str,
-        'asset_variants': {asset_uri: variant_name}
+        'asset_variants': {asset_uri: channel_name}
     }
     """
     if not graph.scanned:
         raise ValueError("Graph not scanned")
 
-    if asset_variants is None:
-        asset_variants = {}
+    if asset_channels is None:
+        asset_channels = {}
 
     # Get department order for determining source
     all_shot_departments = [d.name for d in list_departments('shots')]
 
     # Find latest paths
-    shot_layer_paths, assets, asset_inputs, shot_layer_variants = (
+    shot_layer_paths, assets, asset_inputs, shot_layer_channels = (
         _latest_shot_layer_paths(
-            shot_uri, shot_departments, shot_variant, all_shot_departments
+            shot_uri, shot_departments, shot_channel, all_shot_departments
         )
     )
-    asset_layer_paths = _latest_asset_layer_paths(assets, asset_departments, asset_variants)
+    asset_layer_paths = _latest_asset_layer_paths(assets, asset_departments, asset_channels)
 
     # Find root department layer (shot-level, stored at _root/)
     root_layer = None
@@ -310,28 +310,28 @@ def resolve_shot_build(
     if root_version_path is not None:
         scene_uri = _get_root_scene_uri(root_version_path)
     if scene_uri is not None:
-        for asset_uri, variant, instances in _iter_scene_assets(scene_uri):
+        for asset_uri, channel, instances in _iter_scene_assets(scene_uri):
             scene_asset_uris.add(asset_uri)
             # Shot-flow entries win over the scene's count (setdefault):
             # a department that re-imported the asset is the fresher
             # authority, matching the pre-count behaviour.
             assets.setdefault(asset_uri, instances)
-            asset_variants.setdefault(asset_uri, variant)
+            asset_channels.setdefault(asset_uri, channel)
 
     # Done
     return dict(
         assets=assets,
         asset_inputs=asset_inputs,  # Track inputs per asset for staged output
         shot_layers=shot_layer_paths,
-        # Variant each department layer actually resolved from (a department
-        # without exports under the requested variant falls back to default) —
-        # the staged file's sublayer URIs must name the variant that owns the
+        # Channel each department layer actually resolved from (a department
+        # without exports under the requested channel falls back to default) —
+        # the staged file's sublayer URIs must name the channel that owns the
         # version, or the resolver points at a path that does not exist.
-        shot_layer_variants=shot_layer_variants,
+        shot_layer_variants=shot_layer_channels,
         asset_layers=asset_layer_paths,
         root_layer=root_layer,  # Root department layer (shot-level, stored at _root/)
-        shot_variant=shot_variant,
-        asset_variants=asset_variants,
+        shot_variant=shot_channel,
+        asset_variants=asset_channels,
         scene_asset_uris=scene_asset_uris  # Track which assets are from scene (vs. shot-flow)
     )
 
@@ -341,7 +341,7 @@ def resolve_asset_build(
     api,
     asset_uri: Uri,
     asset_departments: list[str],
-    variant_name: str = DEFAULT_VARIANT
+    channel_name: str = DEFAULT_CHANNEL
 ) -> dict:
     """
     Resolve all versions needed to build a staged asset.
@@ -355,24 +355,24 @@ def resolve_asset_build(
         asset_uri: Asset URI to build (e.g., entity:/assets/CHAR/Steen)
         asset_departments: List of department names in priority order
                           (stronger layers first, e.g., ['lookdev', 'model'])
-        variant_name: Variant name to use (default: 'default')
+        channel_name: Channel name to use (default: 'default')
 
     Returns: {
         'asset_uri': asset_uri,
-        'variant': variant_name,
+        'variant': channel_name,
         'department_layers': {dept_name: version_path},
         'assets': {tracked_asset_uri: instances},
         'asset_inputs': {tracked_asset_uri: inputs},
-        'asset_variants': {tracked_asset_uri: variant_name}
+        'asset_variants': {tracked_asset_uri: channel_name}
     }
     """
     if not graph.scanned:
         raise ValueError("Graph not scanned")
 
-    # Find latest version for each department (with variant support)
+    # Find latest version for each department (with channel support)
     department_layers = {}
     for department_name in asset_departments:
-        latest_version_path = latest_export_path(asset_uri, variant_name, department_name)
+        latest_version_path = latest_export_path(asset_uri, channel_name, department_name)
         if latest_version_path is None:
             continue
         department_layers[department_name] = latest_version_path
@@ -385,7 +385,7 @@ def resolve_asset_build(
     # _latest_shot_layer_paths scrape.
     #
     # Per tracked asset, the MOST RECENTLY EXPORTED layer that records it
-    # wins (instances, variant, inputs as one consistent snapshot) — never
+    # wins (instances, channel, inputs as one consistent snapshot) — never
     # a max() across layers. A stale department (e.g. lookdev exported
     # before a model rework halved the copies) would otherwise pin the old
     # instance count forever: max() can only go up, and any workfile that
@@ -394,7 +394,7 @@ def resolve_asset_build(
     # loop that survives every re-stage (the paleindia six-towers bug).
     assets = {}
     asset_inputs = {}
-    asset_variants = {}
+    asset_channels = {}
     asset_stamps = {}
     for department_name, version_path in department_layers.items():
         context_data = load_json(version_path / 'context.json')
@@ -419,15 +419,15 @@ def resolve_asset_build(
             asset_stamps[tracked_uri] = stamp
             assets[tracked_uri] = asset_datum.get('instances', 1)
             asset_inputs[tracked_uri] = asset_datum.get('inputs', [])
-            asset_variants[tracked_uri] = asset_datum.get(
-                'variant', DEFAULT_VARIANT
+            asset_channels[tracked_uri] = asset_datum.get(
+                'variant', DEFAULT_CHANNEL
             )
 
     return dict(
         asset_uri=asset_uri,
-        variant=variant_name,
+        variant=channel_name,
         department_layers=department_layers,
         assets=assets,
         asset_inputs=asset_inputs,
-        asset_variants=asset_variants
+        asset_variants=asset_channels
     )

@@ -104,7 +104,7 @@ def check_a_primpath(report):
             model.parm("use_entity").set(0)
         if model.parm("primpath") is not None:
             model.parm("primpath").set(PRIM_PATH)
-        # Best-effort variant sync (faithful to the template); non-fatal.
+        # Best-effort channel sync (faithful to the template); non-fatal.
         try:
             if model.parm("variants") is not None:
                 model.parm("variants").set(1)
@@ -287,7 +287,7 @@ def check_c_export(report):
             export_node.execute(force_local=True)
 
             version_path = latest_export_path(
-                entity, export_node.get_variant_name(), export_node.get_department_name()
+                entity, export_node.get_channel_name(), export_node.get_department_name()
             )
             if version_path is None or not Path(version_path).exists():
                 report.record("C. end-to-end export", "FAIL", "no version folder produced")

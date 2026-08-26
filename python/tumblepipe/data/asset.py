@@ -5,7 +5,7 @@ class Asset:
     name: str
     category: str
     version: str
-    variants: list[str] = field(default_factory=list)  # Custom variants (default is implicit)
+    channels: list[str] = field(default_factory=list)  # Custom channels (default is implicit)
 
     @staticmethod
     def to_json(asset):
@@ -14,8 +14,8 @@ class Asset:
             'category': asset.category,
             'version': asset.version
         }
-        if asset.variants:
-            result['variants'] = asset.variants
+        if asset.channels:
+            result['variants'] = asset.channels
         return result
 
     @staticmethod
@@ -24,7 +24,7 @@ class Asset:
             name = data['name'],
             category = data['category'],
             version = data['version'],
-            variants = data.get('variants', [])
+            channels = data.get('variants', [])
         )
 
     def __hash__(self):
@@ -32,5 +32,5 @@ class Asset:
             'name', self.name,
             'category', self.category,
             'version', self.version,
-            'variants', tuple(self.variants)
+            'variants', tuple(self.channels)
         ))

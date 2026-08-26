@@ -25,6 +25,12 @@ Checks:
 10. A multi-entity open starts with all of them checked.
 11. The Playblast section is present for shots and absent for assets, and
     its department list is the renderable shot departments.
+12. The department the dialog was opened *from* seeds the Render and
+    Playblast department combos; one that is not renderable is ignored.
+13. The Render channel menu offers the entities' configured channels
+    (union over the batch, ``default`` first), opens with the primary's
+    own list checked, keeps picks when the batch grows, and reads the
+    batch's properties inside one coherency scope.
 
 Qt runs on the offscreen platform; no project data is written and nothing
 is submitted to the farm.
@@ -274,6 +280,9 @@ def main() -> int:
     )
 
     # 11. Playblast section is shots-only, with the renderable-department list.
+    rnd_depts = mod._list_dept_names(
+        "shots", only_publishable=False, only_renderable=True,
+    )
     check(
         "playblast section present in a shots dialog",
         dlg._playblast_box is not None,
@@ -286,9 +295,6 @@ def main() -> int:
         pb_depts = [
             dlg._pb_dept.itemText(i) for i in range(dlg._pb_dept.count())
         ]
-        rnd_depts = mod._list_dept_names(
-            "shots", only_publishable=False, only_renderable=True,
-        )
         check(
             "playblast department list == renderable shot departments",
             pb_depts == rnd_depts,
@@ -297,6 +303,124 @@ def main() -> int:
         check(
             "playblast section starts unchecked (opt-in)",
             dlg._playblast_box.isChecked() is False,
+        )
+
+    # 12. The opened-from department seeds the Render (and Playblast)
+    #     department; a department that is not renderable is ignored.
+    if rnd_depts:
+        opened_from = rnd_depts[-1]
+        dlg4 = mod.SubmitJobsDialog(
+            [shot], [shot.segments[-1]], "shots", department=opened_from,
+        )
+        check(
+            "opened-from department seeds the render department",
+            dlg4._rnd_dept.currentText() == opened_from,
+            f"{dlg4._rnd_dept.currentText()!r} != {opened_from!r}",
+        )
+        if dlg4._playblast_box is not None:
+            check(
+                "opened-from department seeds the playblast department",
+                dlg4._pb_dept.currentText() == opened_from,
+                f"{dlg4._pb_dept.currentText()!r} != {opened_from!r}",
+            )
+        dlg5 = mod.SubmitJobsDialog(
+            [shot], [shot.segments[-1]], "shots",
+            department="not_a_department",
+        )
+        check(
+            "an unrenderable opened-from department is ignored",
+            dlg5._rnd_dept.currentText() in rnd_depts,
+            f"{dlg5._rnd_dept.currentText()!r} not in {rnd_depts}",
+        )
+
+    # 13. Channel menu. It replaced a free-text csv field, so what it
+    #     offers has to come from config rather than from the artist's
+    #     typing: the union over the checked batch, default first.
+    from tumblepipe.config.channels import DEFAULT_CHANNEL
+    multi = next(
+        (u for u in shots
+         if len((config.get_properties(u) or {}).get("variants") or []) > 1),
+        None,
+    )
+    if multi is None:
+        print("SKIP: no shot with more than one channel — menu not exercised")
+    else:
+        dlg6 = mod.SubmitJobsDialog([multi], [multi.segments[-1]], "shots")
+        combo = dlg6._rnd_channels
+        own = list((config.get_properties(multi) or {}).get("variants") or [])
+        expected = [DEFAULT_CHANNEL] + [v for v in own if v != DEFAULT_CHANNEL]
+        check(
+            "channel menu lists the entity's channels, default first",
+            combo.options() == expected,
+            f"{combo.options()} != {expected}",
+        )
+        check(
+            "channel menu opens with the entity's own list checked",
+            combo.checked_items() == [v for v in expected if v in own],
+            f"{combo.checked_items()} vs {own}",
+        )
+
+        # Narrowing the pick is the whole point of the menu — drive it
+        # the way a click in the popup does, through the item's check state.
+        combo.model().item(0).setCheckState(Qt.Checked)
+        for row in range(1, combo.model().rowCount()):
+            combo.model().item(row).setCheckState(Qt.Unchecked)
+        check(
+            "unchecking narrows what will be submitted",
+            combo.checked_items() == [DEFAULT_CHANNEL],
+            f"{combo.checked_items()}",
+        )
+        check(
+            "the closed combo summarises the pick",
+            combo.lineEdit().text() == DEFAULT_CHANNEL,
+            f"{combo.lineEdit().text()!r}",
+        )
+
+        # A second entity joins its channels to the menu without joining
+        # them to the selection — growing the batch must not grow the
+        # render behind the artist's back.
+        second = next((u for u in shots if str(u) != str(multi)), None)
+        if second is not None:
+            leaf_of(dlg6, second).setCheckState(0, Qt.Checked)
+            union = set(combo.options())
+            second_own = set(
+                (config.get_properties(second) or {}).get("variants") or []
+            )
+            check(
+                "a checked-in entity's channels join the menu",
+                second_own <= union,
+                f"{sorted(second_own - union)} missing from {sorted(union)}",
+            )
+            check(
+                "but not the selection",
+                combo.checked_items() == [DEFAULT_CHANNEL],
+                f"{combo.checked_items()}",
+            )
+
+        # All / None on the channel row.
+        combo.set_checked([])
+        check("None clears every channel", combo.checked_items() == [])
+        combo.set_checked(combo.options())
+        check(
+            "All checks every channel",
+            combo.checked_items() == combo.options(),
+            f"{combo.checked_items()} != {combo.options()}",
+        )
+
+        # Same coherent-read contract as the entity sweep: the menu reads
+        # properties for every checked entity, so an "All" must not stat
+        # the config file once per entity.
+        os.stat = counting_stat
+        counted["n"] = 0
+        try:
+            mod._properties_for(shots)
+        finally:
+            os.stat = real_stat
+        check(
+            "the channel read is coherent (stats don't scale with the batch)",
+            counted["n"] <= 4,
+            f"{counted['n']} config stats for {len(shots)} shots — "
+            "is the coherent() scope still there?",
         )
 
     print("ALL PASS" if all(results) else "FAILURES")

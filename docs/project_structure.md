@@ -57,7 +57,7 @@ with `from tumblepipe import ...`. Subpackages:
 - `util/` — dependency-free primitives (`Uri`, io, logging, progress
   breadcrumbs, the single `hou`-availability gate).
 - `config/` — the JSON config store and typed accessors (entities,
-  departments, variants, timeline, farm, renderer, scene).
+  departments, channels, timeline, farm, renderer, scene).
 - `pipe/` — pipeline core: `paths/` (all filesystem addressing),
   `graph.py` (dependency graph), `build.py` (shot/asset build
   resolution), `context.py`, `usd.py`, `scene_build.py`, and
@@ -119,7 +119,10 @@ companion modules:
 - `_pipeline_catalog.py` — the `PipelineCatalog` class itself, which
   composes everything below.
 - `_pipeline_houdini.py` — Houdini main-thread bridge + project-
-  activation (TH_* env / `default_client` reset).
+  activation (TH_* env / `default_client` reset), plus `report_failure`,
+  the shared "an action the artist asked for must not fail invisibly"
+  reporter (see *Reporting a failed action to the artist* in the
+  development guide).
 - `_pipeline_clients.py` — per-project tumblepipe `Client` lifecycle.
 - `_pipeline_resolver.py` — asset-id → `(ref, project, client, uri,
   root)` resolution.

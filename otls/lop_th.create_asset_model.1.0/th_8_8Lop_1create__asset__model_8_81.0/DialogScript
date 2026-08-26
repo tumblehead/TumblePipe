@@ -113,6 +113,60 @@
                 parmtag { "autoscope" "0000000000000000" }
                 parmtag { "script_callback_language" "python" }
             }
+            parm {
+                name    "enable_pathprefix"
+                label   "Enable Import Path Prefix"
+                type    toggle
+                nolabel
+                joinnext
+                default { "on" }
+                parmtag { "autoscope" "0000000000000000" }
+            }
+            parm {
+                name    "pathprefix"
+                label   "Import Path Prefix"
+                type    string
+                default { "/geo" }
+                disablewhen "{ enable_pathprefix == 0 }"
+                parmtag { "autoscope" "0000000000000000" }
+            }
+            parm {
+                name    "enable_pathattr"
+                label   "Enable Path Attributes"
+                type    toggle
+                nolabel
+                joinnext
+                default { "on" }
+                parmtag { "autoscope" "0000000000000000" }
+            }
+            parm {
+                name    "pathattr"
+                label   "Path Attributes"
+                type    string
+                default { "path,name" }
+                disablewhen "{ enable_pathattr == 0 }"
+                menutoggle {
+                    [ "opmenu -l -a import_model_variants pathattr" ]
+                }
+                parmtag { "autoscope" "0000000000000000" }
+            }
+            parm {
+                name    "enable_prefixabsolutepaths"
+                label   "Enable Prefix Absolute Paths"
+                type    toggle
+                nolabel
+                joinnext
+                default { "on" }
+                parmtag { "autoscope" "0000000000000000" }
+            }
+            parm {
+                name    "prefixabsolutepaths"
+                label   "Prefix Absolute Paths"
+                type    toggle
+                default { "off" }
+                disablewhen "{ enable_prefixabsolutepaths == 0 }"
+                parmtag { "autoscope" "0000000000000000" }
+            }
         }
 
     }

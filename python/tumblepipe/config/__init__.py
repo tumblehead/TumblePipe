@@ -139,13 +139,26 @@ from tumblepipe.config.procedurals import (
     list_procedural_names
 )
 
+from tumblepipe.config.channels import (
+    DEFAULT_CHANNEL,
+    list_channels,
+    add_channel,
+    remove_channel,
+    has_channel
+)
+
+from tumblepipe.config.entities import (
+    get_entity_type
+)
+
+# Deprecated "variant" spelling of the channel API - kept so out-of-tree
+# callers keep working. See tumblepipe.config.channels for why it renamed.
 from tumblepipe.config.variants import (
     DEFAULT_VARIANT,
     list_variants,
     add_variant,
     remove_variant,
-    has_variant,
-    get_entity_type
+    has_variant
 )
 
 from tumblepipe.config.discord import (
@@ -234,13 +247,19 @@ __all__ = [
     'find_group',
     # Procedurals
     'list_procedural_names',
-    # Variants
+    # Channels (formerly "variants")
+    'DEFAULT_CHANNEL',
+    'list_channels',
+    'add_channel',
+    'remove_channel',
+    'has_channel',
+    'get_entity_type',
+    # Deprecated channel aliases
     'DEFAULT_VARIANT',
     'list_variants',
     'add_variant',
     'remove_variant',
     'has_variant',
-    'get_entity_type',
     # Discord
     'get_discord_token',
     'get_user_discord_id',
