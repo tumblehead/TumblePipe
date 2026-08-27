@@ -1,0 +1,26 @@
+[package]
+name = "th_project_core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Shared core for the TumblePipe hook apps: validation, template scaffold, config-DB edits, _config migrations"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "th_project_core"
+path = "src/lib.rs"
+
+[dependencies]
+# serde_json drives the config-DB edits. Two features are load-bearing for
+# byte-for-byte parity with the Python wizard's json.dump output:
+#   preserve_order    — objects keep insertion order (default Map is a sorted
+#                       BTreeMap, which would reorder every human-edited key).
+#   arbitrary_precision — untouched numbers (0.0, 0.5, 1920, …) round-trip as
+#                       their original token instead of being reformatted by
+#                       the float printer.
+serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
+serde = "1"
+
+[dev-dependencies]
+tempfile = "3"

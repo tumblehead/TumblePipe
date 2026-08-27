@@ -42,6 +42,17 @@ should pick it up. The two can coexist during migration; a job chooses via
 
 Each worker needs the same environment as an artist workstation:
 
+- **Local scratch disk space.** Tasks stage their real payload through `temp:/`
+  before publishing it — `render` writes its Karma tiles there ahead of the
+  stitch, `denoise` and `mp4` their intermediates — and `temp:/` resolves to
+  machine-local scratch (`<OS temp>/th_temp/<project>`), not the project drive.
+  A worker whose system drive is small will feel that. `TH_TEMP` moves the
+  root, and it has to be set in the **worker's own** environment: the job env
+  built at submit deliberately does not carry it, so each worker decides its
+  own scratch location. Nothing under `temp:/` is meant to survive the task, so
+  the space is transient — but a task killed mid-run leaves its staging
+  directory behind.
+
 - **Houdini** — a build of the **same major** the job was submitted from. Under
   HPM the task runs in native Windows python and drives Houdini's bundled tools
   directly — `husk.exe`, the Windows USD resolver, `iconvert`, `idenoise` for

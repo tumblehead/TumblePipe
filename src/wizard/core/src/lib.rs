@@ -3,14 +3,20 @@
 //! so the byte-for-byte JSON parity with the old Python wizard can be pinned
 //! by unit tests without spinning up a window.
 
+pub mod migration;
+
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::{json, Value};
 
 /// Standard top-level project directories, created after the template copy.
-/// Mirrors `TOP_LEVEL_DIRS` in the old scripts/tt_setup.py.
-pub const TOP_LEVEL_DIRS: [&str; 5] = ["assets", "shots", "groups", "kits", "export"];
+///
+/// `kits` used to be here, inherited from the very first commit. Nothing ever
+/// resolved a `kits:` URI — its only mention was a comment in the legacy
+/// Project Browser, retired in f310d35 — so every project created since has
+/// carried an empty directory for a concept that never shipped.
+pub const TOP_LEVEL_DIRS: [&str; 4] = ["assets", "shots", "groups", "export"];
 
 // ---------- validation ------------------------------------------------------
 

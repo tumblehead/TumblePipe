@@ -17,9 +17,30 @@ typically set in a launcher script that then starts Houdini.
 | `TH_CONFIG_PATH`   | Path to the studio config directory (see below). | no       |
 | `TH_EXPORT_PATH`   | Path where the pipeline writes exports.          | no       |
 | `TH_USER`          | The pipeline user identity (see below).          | no       |
+| `TH_TEMP`          | Root for machine-local scratch (see below).      | no       |
 
 `TH_CONFIG_PATH` defaults to `$TH_PROJECT_PATH/_config` and `TH_EXPORT_PATH`
 defaults to `$TH_PROJECT_PATH/export` when unset.
+
+`TH_TEMP` overrides where `temp:/` resolves. Scratch is machine-local by
+default — `<OS temp>/th_temp/<project>` — because everything that publishes
+stages there and copies the finished result to its final home: an export
+writes the whole version payload into a temp directory and then copies it into
+`export/`, and a farm render writes its tiles there before the stitch. Putting
+that on the shared project drive turns one write into two over the network.
+Nothing under `temp:/` outlives the operation that wrote it.
+
+`TH_TEMP` is read from the process environment of whatever is running, so it is
+per-machine: set it where the OS temp sits on a small system drive. It is
+deliberately **not** part of the environment a submission builds for its farm
+jobs (`farm.tasks.env.get_base_env`), so a worker resolves scratch against its
+own environment rather than inheriting the artist's — see
+[Farm worker prerequisites](deadline.md#farm-worker-prerequisites). It is also
+the one variable here the package manifest does not declare: `[runtime]` edits
+are applied on top of the process environment, so a machine that sets `TH_TEMP`
+is honoured without one, and declaring it with an empty value would make it
+look *supplied* (the trap `TH_PROJECT_PATH` fell into). An empty value falls
+back to the OS temp anyway.
 
 `TH_PROJECT_PATH` is required in the enforced sense: the package manifest
 declares it as an hpm *required placeholder* (`required = true` with no value),
@@ -53,7 +74,7 @@ native wizard with two flows:
   `<parent>/<name>/` — the convention modules, the JSON databases, *and*
   the `templates/` department scaffolding — customises the JSON databases
   (farm pool default, fps), creates the standard top-level subdirs
-  (`assets/`, `shots/`, `groups/`, `kits/`, `export/`), and persists
+  (`assets/`, `shots/`, `groups/`, `export/`), and persists
   `TH_PROJECT_PATH`.
 
 The wizard is a self-contained native binary (Rust/egui, source in
@@ -228,8 +249,22 @@ scripts with the project's environment) needs no argument. A project is thus
 migrated by whoever opens it with a newer pipeline, not by a central batch.
 Every migration is idempotent — re-running is always safe — and `--dry-run`
 shows exactly what would change. New projects created by the wizard already
-ship at the current version. The migrations themselves are registered in
-`tumblepipe.migration`.
+ship at the current version.
+
+You no longer have to remember to run it: the `tt_prepare` package hook runs
+on every project launch, notices when a project is behind and offers to bring
+it forward. The command above stays as the deliberate route — a bulk sweep,
+or a project you want migrated without launching it.
+
+The migrations themselves live in the `th_project_core` crate and execute from
+the prebuilt `tt_prepare` binary. `scripts/migrate_config.py` is a shim that
+picks the right `bin/<platform>/` build and runs it, so the launch hook and
+the Scripts-panel button can never disagree about what a migration does.
+
+Whichever route runs it, a migration is refused **as a whole** when any
+pending step cannot complete — a project that cannot be fully migrated is
+left exactly as it was, rather than stamped part-way at the last step that
+happened to succeed.
 
 A migration never replaces a file without preserving the original. Which of
 the two it does depends on how load-bearing the file is:
@@ -268,6 +303,66 @@ the two it does depends on how load-bearing the file is:
   project's database already stores and what the published path and URI wire
   format spell. Data-neutral, and it leaves a project that has renamed the
   column itself alone.
+
+- **The retired `kits` entries leave `storage_convention.py` (v6).** `kits`
+  was in the scaffold from the first commit and nothing ever resolved a
+  `kits:` URI, so every project has carried a dead path and an empty
+  directory. This removes exactly those two lines and leaves every other one
+  byte for byte — it does **not** refresh the file from the package, because
+  a project's convention legitimately differs (several carry their own
+  `_primary_path`), and replacing it would silently repoint where a show's
+  assets and exports resolve. The empty `kits/` directory is left alone;
+  delete it at your leisure.
+
+- **The convention modules are pointed at the renamed package (v7).** The
+  package was renamed `tumblehead` → `tumblepipe`, and the packaged scaffold
+  was corrected in 0bef314 (2026-05-26) — but a project's
+  `naming_convention.py` and `storage_convention.py` are copied at creation
+  and then frozen, so every project made before that date still imports a
+  package that no longer exists. This is not a cosmetic staleness:
+  `Client.__init__` *executes* all three convention modules at construction,
+  so those projects raise `ModuleNotFoundError` and cannot be opened at all.
+  Only the module prefix on import statements moves — a path or comment
+  mentioning tumblehead is left alone — so per-project customisation
+  survives.
+
+- **`temp:/` leaves the project drive (v8).** The scaffold anchored scratch to
+  `<project>_temp`, a sibling of the project. Every export stages its whole
+  version payload there and copies it into `export/`, and every farm render
+  writes its tiles there before the stitch — so on a shared drive that is two
+  network writes for data that nothing keeps. It also left an empty
+  `<project>_temp` beside the project for good: the callers create the root
+  eagerly and only the inner `TemporaryDirectory` cleans itself up, so a
+  session that dies mid-export strands its staging directory there too. The
+  step rewrites exactly the `self.temp_path` line to call
+  `tumblepipe.storage.default_temp_path()` and adds the import it needs,
+  leaving every other path where the project put it. A project that already
+  keeps scratch somewhere other than the project drive is left alone.
+
+### Migrating at launch
+
+You do not have to remember to run the command above. The `tt_prepare` package
+hook runs on **every project launch**: it reads `_config/version.json`, and
+when the project is already current it does nothing visible at all. When the
+project is behind, it opens a small window listing the steps it would run and
+waits for an answer.
+
+**Not now** is a first-class answer — the launch carries on and the project is
+left exactly as it was. Nothing is written unless you choose to migrate, and
+anything replaced is backed up alongside as `.bak` first.
+
+Two cases where the window deliberately never appears:
+
+- **A launch nobody is watching** — a farm worker, CI, or a Linux session with
+  no display. There is no timeout on a package hook, so a dialog nobody can
+  answer would hang the launch forever. It logs what it found and returns.
+- **A project it cannot fully migrate** — the run is refused as a whole and
+  the window says which step is blocked and why, rather than migrating
+  part-way. A project that cannot take every pending step is left untouched.
+
+Because `_config` lives on a shared drive and every artist's launch runs this,
+the migration itself is taken under a lock, so two people launching at once
+cannot both rewrite the same files.
 
 **Un-migrated projects degrade, they don't crash.** `list_departments`
 reads each department's `independent`/`publishable`/`renderable` via schema

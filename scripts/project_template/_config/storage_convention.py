@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from tumblepipe.storage import StorageConvention
+from tumblepipe.storage import StorageConvention, default_temp_path
 from tumblepipe.util.uri import Uri
 from tumblepipe.api import (
     get_config_path,
@@ -19,12 +19,11 @@ class ProjectStorageConvention(StorageConvention):
         self.assets_path = self.project_path / 'assets'
         self.shots_path = self.project_path / 'shots'
         self.groups_path = self.project_path / 'groups'
-        self.kits_path = self.project_path / 'kits'
         self.export_path = self.project_path / 'export'
         self.cache_path = self.project_path.parent / f'{project_name}_cache'
         self.render_path = self.project_path.parent / f'{project_name}_render'
         self.turntable_path = self.project_path.parent / f'{project_name}_turntable'
-        self.temp_path = self.project_path.parent / f'{project_name}_temp'
+        self.temp_path = default_temp_path()
         self.proxy_path = self.project_path.parent / f'{project_name}_proxy'
         self.preset_path = self.config_path / 'presets'
         self.edit_path = self.project_path / 'edit'
@@ -43,7 +42,6 @@ class ProjectStorageConvention(StorageConvention):
             case 'assets': return self.assets_path / Path(*parts) if parts else self.assets_path
             case 'shots': return self.shots_path / Path(*parts) if parts else self.shots_path
             case 'groups': return self.groups_path / Path(*parts) if parts else self.groups_path
-            case 'kits': return self.kits_path / Path(*parts) if parts else self.kits_path
             case 'export': return self.export_path / Path(*parts) if parts else self.export_path
             case 'cache': return self.cache_path / Path(*parts) if parts else self.cache_path
             case 'render': return self.render_path / Path(*parts) if parts else self.render_path

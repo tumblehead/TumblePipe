@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.42.0"
+version = "1.43.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -256,8 +256,34 @@ cmd = [
     { when = { os = "macos" }, set = "\"$HPM_PACKAGE_ROOT/bin/macos-aarch64/tt_setup\" --template-dir \"$HPM_PACKAGE_ROOT/scripts/project_template\"" },
 ]
 
+# tt_prepare runs on EVERY launch_project — the only TumbleTrove hook that
+# reliably fires after a package upgrade (tt_install is per-project, not
+# per-version, and does not re-fire; tt_setup is driven by unfilled required
+# vars or the Configure button). It brings a project's _config forward, asking
+# first, so a studio that upgrades no longer has to notice the Scripts-panel
+# button below to pick up a migration.
+#
+# Absolute, quoted $HPM_PACKAGE_ROOT path for the same reason tt_setup uses one:
+# CreateProcess resolves a bare relative program against the *caller's* cwd (the
+# desktop app's dir), not the child's, so a relative path fails on Windows with
+# ERROR_PATH_NOT_FOUND — the `os error 3` that burned v1.39.2. Quoted so a
+# package root containing spaces or `@` (HPM's CAS layout) stays one arg.
+#
+# Deliberately NO label/description: a label is what puts a script in the
+# desktop's per-project Scripts panel as a user-clickable button, and this is a
+# hook, not a button.
+[scripts.tt_prepare]
+cmd = [
+    { when = { os = "windows" }, set = "\"$HPM_PACKAGE_ROOT/bin/windows-x86_64/tt_prepare.exe\" --template-dir \"$HPM_PACKAGE_ROOT/scripts/project_template\"" },
+    { when = { os = "linux" }, set = "\"$HPM_PACKAGE_ROOT/bin/linux-x86_64/tt_prepare\" --template-dir \"$HPM_PACKAGE_ROOT/scripts/project_template\"" },
+    { when = { os = "macos" }, set = "\"$HPM_PACKAGE_ROOT/bin/macos-aarch64/tt_prepare\" --template-dir \"$HPM_PACKAGE_ROOT/scripts/project_template\"" },
+]
+
 # migrate-config brings a project's _config layout forward to the current
-# version (tumblepipe.migration). It targets $TH_PROJECT_PATH, so it is meant
+# version. It is a thin shim over the same prebuilt tt_prepare binary the
+# tt_prepare hook above uses (the migrations themselves live in the
+# th_project_core crate), so the button and the hook cannot disagree about
+# what a migration does. It targets $TH_PROJECT_PATH, so it is meant
 # to be run from the desktop launcher's per-project Scripts panel: a user
 # adopting a new pipeline version clicks Run to update their own project. It
 # writes a config_convention.py.bak first and is idempotent. The migration

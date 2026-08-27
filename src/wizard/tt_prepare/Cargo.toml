@@ -1,0 +1,26 @@
+[package]
+name = "tt_prepare"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "TumblePipe launch-time _config migrator (the tt_prepare package hook)"
+license = "Apache-2.0"
+publish = false
+
+# One binary: `tt_prepare`. hpm's [scripts.tt_prepare] invokes the built binary
+# directly, so the produced executable name is what matters here. It ships as
+# bin/<platform>/tt_prepare[.exe] in the package archive, beside tt_setup.
+[[bin]]
+name = "tt_prepare"
+path = "src/main.rs"
+
+[dependencies]
+th_project_core = { path = "../core" }
+# The migration UI. Same stack as tt_setup so the two apps look alike, but the
+# window is only ever created when a project actually has something pending —
+# the common launch reads one small file and exits before egui is touched.
+eframe = { version = "0.28", default-features = false, features = ["glow", "default_fonts"] }
+egui = "0.28"
+
+[dev-dependencies]
+tempfile = "3"

@@ -657,7 +657,6 @@ class WorkfileManager:
                                 Path(template_path), module_name,
                             )
                             template.create(stage, entity_uri, dept)
-                            stage.layoutChildren()
                             template_applied = True
                     except Exception:
                         log.exception(
@@ -1220,7 +1219,6 @@ class WorkfileManager:
                                 Path(template_path), module_name,
                             )
                             template.create(stage, group_uri, dept)
-                            stage.layoutChildren()
                             hou.hipFile.save(str(next_path))
                     except Exception:
                         log.exception(

@@ -681,11 +681,11 @@ ruff check --select E9,F python/tumblepipe/farm/
 
 `hpm build` produces the install image: it runs the `[stage].prepack`
 scripts (`build-resolver` cmake-builds the tumbleResolver USD plugin into
-`resolver/houdini<major>/`; `build-wizard` cargo-builds the tt_setup
-project-setup wizard into `bin/<platform>/`; `compile-hdas` collapses the
+`resolver/houdini<major>/`; `build-wizard` cargo-builds both hook apps
+(`tt_setup` and `tt_prepare`) into `bin/<platform>/`; `compile-hdas` collapses the
 expanded `otls/<name>/` sources into binary `.hda` files) and stages the
 tree per `[stage].include`/`exclude`. Requirements: cmake, a Rust
-toolchain, and at least one Houdini install. (The wizard is
+toolchain, and at least one Houdini install. (The hook apps are
 Houdini-independent — `build-wizard` needs only cargo, no HFS.)
 
 By default the resolver builds every major listed in

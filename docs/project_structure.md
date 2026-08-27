@@ -23,11 +23,11 @@ TumblePipe/
 ├── python3.13libs/              # Houdini 22 startup stubs (byte-identical to 3.11)
 ├── python_panels/
 │   └── icon_browser.pypanel     # Icon browser Python panel
-├── bin/                         # Pre-built tt_setup wizard binary (native, per-platform)
+├── bin/                         # Pre-built hook apps (tt_setup, tt_prepare; per-platform)
 ├── resolver/                    # Pre-built USD asset resolver (native, per Houdini major)
 ├── src/                         # Native (Rust/C++) sources — built, not shipped as source
 │   ├── resolver/                #   `entity://` USD resolver (Rust core + C++ ArResolver shim)
-│   └── wizard/                  #   tt_setup project-setup wizard (Rust/egui)
+│   └── wizard/                  #   hook apps: core + tt_setup + tt_prepare (Rust/egui)
 ├── resources/                   # Icons, UI resources, templates
 ├── scripts/                     # TumbleTrove hooks, node event scripts, maintenance CLIs
 │   ├── project_template/        #   new-project scaffolding (also migration's source of truth)
@@ -50,10 +50,11 @@ packaging.
 The pipeline's Python package. This is on Houdini's Python path; import
 with `from tumblepipe import ...`. Subpackages:
 
-- `api.py`, `startup.py`, `naming.py`, `migration.py`, `storage.py` —
-  package root: the lazy `api` client, Houdini-startup registrations
-  (radial menus/actions), naming/storage convention bases, config
-  migration.
+- `api.py`, `startup.py`, `naming.py`, `storage.py` — package root: the
+  lazy `api` client, Houdini-startup registrations (radial
+  menus/actions), and the naming/storage convention bases. The `_config`
+  migrations are *not* here: they live in the `th_project_core` Rust
+  crate and run from the `tt_prepare` binary.
 - `util/` — dependency-free primitives (`Uri`, io, logging, progress
   breadcrumbs, the single `hou`-availability gate).
 - `config/` — the JSON config store and typed accessors (entities,

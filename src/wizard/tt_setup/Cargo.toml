@@ -1,0 +1,26 @@
+[package]
+name = "tt_setup"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "TumblePipe project-setup wizard (the tt_setup package hook)"
+license = "Apache-2.0"
+publish = false
+
+# One binary: `tt_setup`. hpm's [scripts.tt_setup] invokes the built binary
+# directly, so the produced executable name is what matters here. It ships as
+# bin/<platform>/tt_setup[.exe] in the package archive.
+[[bin]]
+name = "tt_setup"
+path = "src/main.rs"
+
+[dependencies]
+th_project_core = { path = "../core" }
+# eframe/egui: immediate-mode GUI, one self-contained binary, instant cold
+# start — the whole point of moving off the uv+PySide6 provisioning path.
+# glow (OpenGL) renderer keeps the binary smaller than the wgpu default.
+eframe = { version = "0.28", default-features = false, features = ["glow", "default_fonts"] }
+egui = "0.28"
+# Native OS folder picker (replaces Qt's QFileDialog.getExistingDirectory).
+rfd = "0.14"
+serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }

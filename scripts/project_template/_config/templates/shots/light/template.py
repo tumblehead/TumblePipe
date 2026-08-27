@@ -1,63 +1,95 @@
+import hou
+
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
-from tumblepipe.pipe.houdini.lops import (
-    import_shot,
-    lpe_tags,
-    export_layer
-)
+from tumblepipe.pipe.houdini.lops import import_shot, export_layer
 
-def _create_entity(scene_node, entity_uri: Uri, department_name: str):
+# --- /stage layout -------------------------------------------------------
+# Explicit positions: this department owns its layout, so nothing here calls
+# layoutChildren(). Group workfiles repeat the arrangement per member,
+# shifted along x by COLUMN_STRIDE.
+IMPORT_POS = hou.Vector2(0.0, 0.63)
+ENVIRONMENT_LIGHT_POS = hou.Vector2(0.02, -0.89)
+KEY_LIGHT_POS = hou.Vector2(0.02, -2.53)
+LIGHT_LINKER_POS = hou.Vector2(0.0, -4.01)
+EXPORT_POS = hou.Vector2(0.0, -5.5)
+COLUMN_STRIDE = 4.0
 
-    # Create the import node
-    import_node = import_shot.create(scene_node, 'import_shot')
-    prev_node = import_node.native()
+KEY_LIGHT_TYPE = 'UsdLuxRectLight'
 
-    # Create the LPE tags node
-    lpe_tags_node = lpe_tags.create(scene_node, 'lpe_tags')
-    lpe_tags_node.setInput(0, prev_node)
-    prev_node = lpe_tags_node.native()
+def _hide_descriptive_name(node):
+    """Department convention: node names read on their own, no suffix."""
+    node.setGenericFlag(hou.nodeFlag.DisplayDescriptiveName, False)
 
-    # Create a distant light to get started
-    light_node = scene_node.createNode('distantlight', 'key_light')
-    light_node.setInput(0, prev_node)
-    prev_node = light_node
+def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
+           offset: hou.Vector2 = hou.Vector2(0.0, 0.0), pin: bool = False):
+    """Build one shot's import -> lights -> linker -> export column."""
+    # Create the import node (shot resolves from context)
+    import_node = import_shot.create(scene_node, f'import_shot{suffix}')
+    if pin:
+        import_node.set_shot_uri(entity_uri)
+        import_node.set_department_name(department_name)
+
+    import_native = import_node.native()
+    import_native.setPosition(IMPORT_POS + offset)
+    _hide_descriptive_name(import_native)
+    prev_node = import_native
+
+    # Dome light for ambient/environment fill
+    environment_light_node = scene_node.createNode(
+        'domelight::3.0', f'environment_light{suffix}'
+    )
+    environment_light_node.setInput(0, prev_node)
+    environment_light_node.setPosition(ENVIRONMENT_LIGHT_POS + offset)
+    _hide_descriptive_name(environment_light_node)
+    prev_node = environment_light_node
+
+    # Rect key light to get started
+    key_light_node = scene_node.createNode('light::2.0', f'key_light{suffix}')
+    key_light_node.parm('lighttype').set(KEY_LIGHT_TYPE)
+    key_light_node.setInput(0, prev_node)
+    key_light_node.setPosition(KEY_LIGHT_POS + offset)
+    _hide_descriptive_name(key_light_node)
+    prev_node = key_light_node
+
+    # Light linker for per-light include/exclude sets
+    light_linker_node = scene_node.createNode(
+        'lightlinker', f'light_linker{suffix}'
+    )
+    light_linker_node.setInput(0, prev_node)
+    light_linker_node.setPosition(LIGHT_LINKER_POS + offset)
+    _hide_descriptive_name(light_linker_node)
+    prev_node = light_linker_node
 
     # Create the export node
-    export_node = export_layer.create(scene_node, 'export_shot')
+    export_node = export_layer.create(scene_node, f'export_shot{suffix}')
     export_node.setInput(0, prev_node)
+    if pin:
+        export_node.set_entity_uri(entity_uri)
+        export_node.set_department_name(department_name)
 
-    scene_node.layoutChildren()
+    export_native = export_node.native()
+    export_native.setPosition(EXPORT_POS + offset)
+    _hide_descriptive_name(export_native)
+    export_native.setDisplayFlag(True)
+
+    return export_node
+
+def _create_entity(scene_node, entity_uri: Uri, department_name: str):
+    _build(scene_node, entity_uri, department_name)
 
 def _create_group(scene_node, group_uri: Uri, department_name: str):
     group = get_group(group_uri)
     if group is None: return
 
-    for member_uri in group.members:
+    for i, member_uri in enumerate(group.members):
         member_name = '_'.join(member_uri.segments[1:])
-
-        # Create the import node
-        import_node = import_shot.create(scene_node, f'import_shot_{member_name}')
-        import_node.set_shot_uri(member_uri)
-        import_node.set_department_name(department_name)
-        prev_node = import_node.native()
-
-        # Create the LPE tags node
-        lpe_tags_node = lpe_tags.create(scene_node, f'lpe_tags_{member_name}')
-        lpe_tags_node.setInput(0, prev_node)
-        prev_node = lpe_tags_node.native()
-
-        # Create a distant light to get started
-        light_node = scene_node.createNode('distantlight', f'key_light_{member_name}')
-        light_node.setInput(0, prev_node)
-        prev_node = light_node
-
-        # Create the export node
-        export_node = export_layer.create(scene_node, f'export_shot_{member_name}')
-        export_node.setInput(0, prev_node)
-        export_node.set_entity_uri(member_uri)
-        export_node.set_department_name(department_name)
-
-    scene_node.layoutChildren()
+        _build(
+            scene_node, member_uri, department_name,
+            suffix=f'_{member_name}',
+            offset=hou.Vector2(i * COLUMN_STRIDE, 0.0),
+            pin=True,
+        )
 
 def create(scene_node, entity_uri: Uri, department_name: str):
     if entity_uri.purpose == 'entity': return _create_entity(scene_node, entity_uri, department_name)

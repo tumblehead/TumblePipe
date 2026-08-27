@@ -48,7 +48,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 
-use th_project_wizard::{
+use th_project_core::{
     expanduser, home_dir, is_valid_project_name, looks_like_project, scaffold_project,
 };
 

@@ -48,4 +48,16 @@
         parmtag { "autoscope" "0000000000000000" }
         parmtag { "takecontrol" "always" }
     }
+    parm {
+        name    "Type"
+        label   "type"
+        type    ordinal
+        default { "0" }
+        menu usetokenvalue {
+            "0" "wireframe"
+            "1" "lit"
+            "2" "unlit"
+        }
+        parmtag { "script_callback_language" "python" }
+    }
 }

@@ -6,6 +6,8 @@ def _create_entity(scene_node, department_name: str):
     cop_node = scene_node.createNode('copnet', 'composite_shot')
     build_comp.create(cop_node, 'composite_shot')
 
+    scene_node.layoutChildren()
+
 def _create_group(scene_node, group_uri: Uri, department_name: str):
     group = get_group(group_uri)
     if group is None: return

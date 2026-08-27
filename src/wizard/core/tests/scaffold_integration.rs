@@ -9,8 +9,10 @@
 use std::path::{Path, PathBuf};
 
 fn template_dir() -> PathBuf {
-    // src/wizard/ -> src/ -> repo root -> scripts/project_template
+    // core/ -> src/wizard/ -> src/ -> repo root -> scripts/project_template
     Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
         .parent()
         .unwrap()
         .parent()
@@ -31,11 +33,11 @@ fn scaffolds_the_real_template() {
     let tmp = tempfile::tempdir().unwrap();
     let target = tmp.path().join("testfilm");
 
-    th_project_wizard::scaffold_project(&template, &target, "testfilm", 48)
+    th_project_core::scaffold_project(&template, &target, "testfilm", 48)
         .expect("scaffold should succeed on the real template");
 
     // Top-level dirs created.
-    for sub in th_project_wizard::TOP_LEVEL_DIRS {
+    for sub in th_project_core::TOP_LEVEL_DIRS {
         assert!(target.join(sub).is_dir(), "missing top-level dir {sub}");
     }
 
