@@ -34,10 +34,13 @@ def _get_root_farm() -> dict:
 
 
 def _write_root_farm(farm: dict) -> None:
-    props = api.config.get_properties(ENTITY_ROOT_URI) or {}
-    props = dict(props)
-    props['farm'] = farm
-    api.config.set_properties(ENTITY_ROOT_URI, props)
+    # Pin only the 'farm' sub-object onto the entity root's own properties.
+    # The root is what every entity inherits from, so writing its resolved
+    # dict back would pin the entire schema there permanently.
+    own = api.config.get_own_properties(ENTITY_ROOT_URI) or {}
+    own = dict(own)
+    own['farm'] = farm
+    api.config.set_own_properties(ENTITY_ROOT_URI, own)
 
 
 def list_pools() -> list[Pool]:

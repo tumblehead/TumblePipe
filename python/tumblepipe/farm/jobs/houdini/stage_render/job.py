@@ -17,6 +17,7 @@ import tumblepipe.farm.tasks.notify.task as notify_task
 
 # The config schema lives with the stage task family (farm/tasks/stage/_spec.py)
 from tumblepipe.farm.tasks.stage._spec import is_valid_config as _is_valid_config
+from tumblepipe.config.channels import read_channel_name_list
 
 
 def build(
@@ -91,7 +92,9 @@ def submit(
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
-    channel_names = config['settings']['variant_names']
+    channel_names = read_channel_name_list(
+        config['settings'], where='stage_render job settings'
+    )
 
     # Parameters
     project_name = get_project_name()

@@ -15,6 +15,7 @@ from tumblepipe.util.io import (
     load_json,
     store_json
 )
+from tumblepipe.config.channels import read_channel_names
 from tumblepipe.config.timeline import BlockRange, get_fps
 from tumblepipe.util.uri import Uri
 from tumblepipe.pipe.houdini import util
@@ -81,10 +82,19 @@ def main(
     render_node.parm('execute').pressButton()
     # HACK: Make sure the graph is cooked
 
-    # Get channel names
+    # Get channel names.
+    #
+    # Reads CHANNEL_PROPERTY rather than the literal 'variants' so the key has
+    # exactly one definition. It deliberately does NOT go through
+    # channels.list_channels(): that prepends the implicit 'default', which
+    # would shift every subsequent index by one and so change which output port
+    # `port1` selects below. Whether this list *should* include 'default' is a
+    # real open question -- list_channels() is the pipeline's answer everywhere
+    # else -- but resolving it changes render output, so it is deliberately not
+    # bundled into a rename. See the port1 index use ~10 lines down.
     entity_uri = Uri.parse_unsafe(entity_json['uri'])
     properties = api.config.get_properties(entity_uri)
-    channel_names = properties.get('variants', [])
+    channel_names = read_channel_names(properties, where=f'entity {entity_uri}')
 
     # Open a temporary directory
     root_temp_path = to_windows_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))

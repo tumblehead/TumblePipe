@@ -13,28 +13,52 @@ seeded with the entities it was opened for. Any number of entities can be
 checked, so a single-entity open (the Render quick action on the loaded
 scene) can still fan out to a whole batch without going back to the browser
 to multi-select first. Groups appear as a second root whose leaves mirror
-the same entities. The form is then a shared override applied to every
-checked entity; per-entity overrides remain out of scope (the retired
-Project Browser's ``JobSubmissionDialog`` had a per-entity grid for that).
-A field that offers a *choice* therefore spans the batch: the Render
-channel menu lists the union of the checked entities' channels, and
-submits exactly what is checked.
+the same entities.
 
-Submission is synchronous and per-entity — each call to
-``tumblepipe.farm.jobs.houdini.batch_submit.submit_entity_batch`` runs on the
-caller's thread, and the dialog reports a single success/failure summary at the
-end. For a richer per-task progress UI, use the ProcessDialog flow in
-``tumblepipe.pipe.houdini.ui.process_dialog``.
+The form is **not** a shared override. Each field is tri-state: left alone
+it is *unpinned* and every entity follows its own configured value; touching
+it *pins* it as a batch-wide choice. Unpinned fields render dimmed, with
+``⟨per entity⟩`` standing in when the checked entities disagree — the
+dimmed-default / bold-override grammar the retired Project Browser's
+per-entity grid used, moved from cells to fields. The resolution order
+(exception > pinned form > entity property > default) lives in
+``submit_jobs_resolve``, which is pure and covered by
+``tests/test_submit_jobs_resolve.py``.
+
+That matters most for the frame range: the form used to seed from the first
+checked entity and send those numbers for the whole batch, so submitting six
+shots rendered all six at the first shot's length. With one entity checked
+nothing can disagree, so the Render quick action's form is unchanged.
+
+A field that offers a *choice* still spans the batch: the Render channel
+menu lists the union of the checked entities' channels and submits exactly
+what is checked. A channel a given entity does not define still reaches
+``submit_entity_batch`` and still fails there — that visible failure is the
+contract, and the pre-flight warnings surface it before the loop fires
+rather than turning it into a silent skip.
+
+Submission goes through ``tumblepipe.pipe.houdini.ui.process_dialog`` — one
+farm-only ``ProcessTask`` per checked entity, each calling
+``tumblepipe.farm.jobs.houdini.batch_submit.submit_entity_batch`` with its own
+resolved settings. That buys a per-entity progress tree, a working Cancel and
+a per-task error report, and it is safe on the GUI thread because
+``ProcessExecutor`` has no worker thread: it sequences with
+``QTimer.singleShot`` on the main thread, so the event loop keeps turning
+between entities. A synchronous loop with one summary box at the end remains
+as the fallback for when that UI is not importable (outside Houdini, or an
+install missing hpm.toml's ``[python_dependencies]``).
 """
 
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass, field
-from typing import Sequence
+from pathlib import Path
+from typing import Any, Sequence
 
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QStandardItem, QStandardItemModel
+from PySide6.QtGui import QColor, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
     QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
@@ -47,17 +71,38 @@ from tumbletrove.asset_browser.core.theme import (
     TEXT_PRIMARY, TEXT_SECONDARY,
 )
 
+# The catalog dir is not a package: tumbletrove loads pipeline.py by file
+# path, and this dialog is loaded the same way. pipeline.py already puts
+# this directory on sys.path for the underscore-prefixed modules, but the
+# verify harness loads this file directly, so do it here too rather than
+# depend on load order. Mirrors _pipeline_catalog's `from _pipeline_prefs
+# import ...`.
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+import submit_jobs_resolve as resolve  # noqa: E402
+
 log = logging.getLogger(__name__)
+
+# Shown by an unpinned widget whose checked entities disagree. The angle
+# brackets keep it from reading as a department or pool literally named
+# "per entity".
+PER_ENTITY_TEXT = "⟨per entity⟩"
+
+# Pre-flight warning text. Not from the asset-browser theme: those tokens
+# are background/foreground roles, and this needs to read as a caution
+# against BG_DARK without being an error.
+WARNING_COLOUR = "#d8a657"
 
 # Item-data role carrying a leaf's entity URI string. Branch items have no
 # value here, which is what ``_is_leaf`` keys off.
 _URI_ROLE = Qt.UserRole
 
 # Every entity has this channel implicitly, whether or not its properties
-# list it (mirrors ``tumblepipe.config.channels.DEFAULT_CHANNEL``, which is
-# not imported here: that module pulls in ``tumblepipe.api`` at import time
-# and this file keeps every pipeline import inside a function).
-_DEFAULT_CHANNEL = 'default'
+# list it. Owned by submit_jobs_resolve so the pure resolution policy and
+# the widget that drives it can't drift apart.
+_DEFAULT_CHANNEL = resolve.DEFAULT_CHANNEL
 
 
 @dataclass
@@ -153,6 +198,16 @@ QTreeWidget {{
 }}
 QTreeWidget::item {{ padding: 2px 0; }}
 QTreeWidget::item:selected {{ background-color: {BG_DARKEST}; }}
+/* The pre-flight table alternates rows; without an explicit colour Qt
+   picks a light default that reads as white-on-white against this theme. */
+QTreeWidget {{ alternate-background-color: {BG_DARKEST}; }}
+QHeaderView::section {{
+    background-color: {BG_DARKEST};
+    color: {TEXT_SECONDARY};
+    border: none;
+    border-bottom: 1px solid {BORDER};
+    padding: 3px 6px;
+}}
 """
 
 
@@ -180,32 +235,6 @@ def _properties_for(entity_uris: Sequence) -> list[dict]:
         return []
 
 
-def _safe_get_properties(entity_uri) -> dict:
-    """One entity's resolved properties, or ``{}`` on failure."""
-    properties = _properties_for([entity_uri])
-    return properties[0] if properties else {}
-
-
-def _channel_names(properties: dict) -> list[str]:
-    """Publish channel names held by ``properties``, ``default`` first.
-
-    ``variants`` is the frozen property key for what the UI calls a
-    channel. Mirrors ``tumblepipe.config.channels.list_channels`` off an already
-    resolved properties dict, so the dialog doesn't pay a second read per
-    entity. A string value is tolerated the way the old free-text seeding
-    did.
-    """
-    raw = properties.get('variants') or []
-    if isinstance(raw, str):
-        raw = [raw]
-    names = [_DEFAULT_CHANNEL]
-    for value in raw:
-        name = str(value).strip()
-        if name and name not in names:
-            names.append(name)
-    return names
-
-
 def _list_dept_names(context: str, *, only_publishable: bool, only_renderable: bool) -> list[str]:
     """Return department names for ``context`` ('shots' or 'assets').
 
@@ -226,28 +255,6 @@ def _list_dept_names(context: str, *, only_publishable: bool, only_renderable: b
     except Exception:
         log.exception("Failed to list departments for context=%s", context)
         return []
-
-
-def _nested(d: dict, dotted: str, default=None):
-    cur = d
-    for part in dotted.split('.'):
-        if not isinstance(cur, dict) or part not in cur:
-            return default
-        cur = cur[part]
-    return cur
-
-
-def _first_listed(names: Sequence[str], *candidates) -> str | None:
-    """Return the first candidate that actually appears in ``names``.
-
-    Seeds a department combo from a preference order without a candidate
-    that is missing from the list (a non-renderable department, a stale
-    entity property) silently shadowing the next one.
-    """
-    for candidate in candidates:
-        if candidate and candidate in names:
-            return candidate
-    return None
 
 
 def _list_selectable_entities(context: str) -> list[object]:
@@ -415,6 +422,116 @@ class _CheckableComboBox(QComboBox):
         self.setToolTip("\n".join(lines))
 
 
+# ── Tri-state form fields ────────────────────────────
+
+class _PinnedField:
+    """A form widget that can defer to each checked entity's own value.
+
+    Three states, and the middle one is the reason this class exists:
+
+    * **pinned** — the artist set it, so it applies to the whole batch and
+      is drawn normally.
+    * **unpinned, agreed** — every checked entity resolves to the same
+      value, so the widget shows it, dimmed. Informative, but still the
+      entity's value: check in a shot that disagrees and it turns into…
+    * **unpinned, mixed** — the widget shows ``⟨per entity⟩`` and the
+      submit sends no value for it at all, so each entity keeps its own.
+
+    Pinning happens on *user* interaction only. Where Qt offers a
+    user-only signal (``textEdited``, ``activated``, ``clicked``) that is
+    what's connected; ``QSpinBox`` has none, so its ``valueChanged`` is
+    gated on the dialog's ``_seeding`` flag.
+
+    The unset representation is per widget type and deliberately native:
+    a spin box parks on its ``minimum``, which is one step below the field's
+    real lower bound and carries ``specialValueText``; a check box on
+    ``PartiallyChecked`` (tri-state); a combo on a placeholder row; a line
+    edit on empty-with-placeholder. Three of those are also a way *back* to
+    unpinned without the revert button — which stays for the spin boxes,
+    because spinning down past the field's minimum is not an affordance.
+    """
+
+    def __init__(self, key: str, widget: QWidget, kind: str) -> None:
+        self.key = key
+        self.widget = widget
+        self.kind = kind  # 'spin' | 'check' | 'combo' | 'line'
+        self.pinned = False
+
+    # ── state ──────────────────────────────────────
+
+    def pin(self) -> None:
+        """Mark as an explicit batch-wide choice (a user edit happened)."""
+        if not self.pinned:
+            self.pinned = True
+            self._restyle()
+
+    def seed(self, value: Any) -> None:
+        """Show ``value`` as the unpinned per-entity default.
+
+        ``MIXED`` (the entities disagree) and ``REQUIRED`` (none of them
+        configures it) both render as the unset representation — in both
+        cases there is no single number to show, and in both cases the
+        submit must not invent one.
+        """
+        self.pinned = False
+        unset = value is resolve.MIXED or value is resolve.REQUIRED
+        self._write(None if unset else value)
+        self._restyle()
+
+    def unpin(self, value: Any) -> None:
+        """Revert to the per-entity default (the ↺ button)."""
+        self.seed(value)
+
+    def value(self) -> Any:
+        """The widget's value, or ``MIXED`` when it sits on unset."""
+        w = self.widget
+        if self.kind == 'spin':
+            # The minimum IS the sentinel (see _spin), so no separate state.
+            raw = w.value()
+            return resolve.MIXED if raw == w.minimum() else raw
+        if self.kind == 'check':
+            state = w.checkState()
+            if state == Qt.PartiallyChecked:
+                return resolve.MIXED
+            return state == Qt.Checked
+        if self.kind == 'combo':
+            if w.currentIndex() <= 0:
+                return resolve.MIXED
+            return w.currentText()
+        text = w.text().strip()
+        return text or resolve.MIXED
+
+    # ── widget plumbing ────────────────────────────
+
+    def _write(self, value: Any) -> None:
+        w = self.widget
+        if self.kind == 'spin':
+            w.setValue(w.minimum() if value is None else int(value))
+        elif self.kind == 'check':
+            if value is None:
+                w.setCheckState(Qt.PartiallyChecked)
+            else:
+                w.setCheckState(Qt.Checked if value else Qt.Unchecked)
+        elif self.kind == 'combo':
+            if value is None:
+                w.setCurrentIndex(0)
+            else:
+                index = w.findText(str(value))
+                # A department the entity names but this context does not
+                # offer would otherwise silently select the placeholder's
+                # neighbour; park on the placeholder instead.
+                w.setCurrentIndex(index if index > 0 else 0)
+        else:
+            w.setText('' if value is None else str(value))
+
+    def _restyle(self) -> None:
+        """Dim while unpinned — 'this follows the entity, not you'."""
+        font = self.widget.font()
+        font.setItalic(not self.pinned)
+        self.widget.setFont(font)
+        colour = TEXT_PRIMARY if self.pinned else TEXT_SECONDARY
+        self.widget.setStyleSheet(f"color: {colour};")
+
 # ── Dialog ────────────────────────────────────────────────
 
 class SubmitJobsDialog(QDialog):
@@ -461,11 +578,18 @@ class SubmitJobsDialog(QDialog):
         self._leaves: dict[str, _EntityLeaf] = {}
         # Guards the itemChanged handler against the writes it makes itself.
         self._syncing = False
-        # URI the form was last seeded from; reseeding is skipped when the
-        # primary entity hasn't actually changed.
-        self._seeded_uri: str | None = None
-        # Defaults from the primary (first checked) entity's properties.
-        self._defaults = _safe_get_properties(self._entity_uris[0])
+        # Guards the spin boxes' valueChanged against programmatic seeding
+        # (Qt gives QSpinBox no user-only edit signal).
+        self._seeding = False
+        # Every tri-state form field, keyed by its settings key.
+        self._fields: dict[str, _PinnedField] = {}
+        # Resolved properties for the checked batch, refreshed on every
+        # selection change inside one coherency scope.
+        self._properties: list[dict] = []
+        # Context-derived defaults the pure resolver can't look up itself
+        # (the first publishable / renderable department). Filled once the
+        # department combos are populated.
+        self._fallbacks: dict = {}
 
         self.setWindowTitle("Submit Jobs")
         self.setMinimumWidth(520)
@@ -488,9 +612,15 @@ class SubmitJobsDialog(QDialog):
         root.addWidget(self._build_entity_tree())
 
         self._publish_box = self._build_publish_section()
+        self._publish_box.toggled.connect(
+            lambda *_a: self._refresh_preflight()
+        )
         root.addWidget(self._publish_box)
 
         self._render_box = self._build_render_section()
+        self._render_box.toggled.connect(
+            lambda *_a: self._refresh_preflight()
+        )
         root.addWidget(self._render_box)
 
         # Playblast is a shots-only GL preview; the section is absent entirely
@@ -498,9 +628,18 @@ class SubmitJobsDialog(QDialog):
         self._playblast_box = None
         if self._context == "shots":
             self._playblast_box = self._build_playblast_section()
+            self._playblast_box.toggled.connect(
+                lambda *_a: self._refresh_preflight()
+            )
             root.addWidget(self._playblast_box)
 
-        self._apply_entity_defaults()
+        # Pre-flight sits below the job sections: it reports on them, so it
+        # reads top-to-bottom as "who, what, then what that actually means".
+        self._preflight_box = self._build_preflight()
+        root.addWidget(self._preflight_box)
+
+        self._apply_open_department()
+        self._reseed_form(initial=True)
 
         # Submit / Cancel row.
         buttons = QDialogButtonBox(
@@ -513,6 +652,113 @@ class SubmitJobsDialog(QDialog):
         buttons.accepted.connect(self._on_submit)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+
+    # ── Tri-state field factories ────────────────────────
+
+    def _register(self, key: str, widget: QWidget, kind: str) -> QWidget:
+        """Wrap ``widget`` as a tri-state field and wire its pin signal.
+
+        A batch field (one with no per-entity source, e.g. Range mode) is
+        not registered: it has no unpinned state, so it is read straight off
+        its widget at submit time.
+        """
+        entry = _PinnedField(key, widget, kind)
+        self._fields[key] = entry
+        # Look the signal up by name: a dict of the four bound signals would
+        # evaluate every branch, and only one of them exists on any given
+        # widget class.
+        signal_name = {
+            'spin': 'valueChanged', 'check': 'clicked',
+            'combo': 'activated', 'line': 'textEdited',
+        }[kind]
+        getattr(widget, signal_name).connect(
+            lambda *_a: self._refresh_preflight()
+        )
+        if kind == 'spin':
+            # No user-only signal exists; the dialog's _seeding flag is
+            # what separates a user edit from a reseed.
+            widget.valueChanged.connect(
+                lambda *_a, e=entry: None if self._seeding else e.pin()
+            )
+        elif kind == 'check':
+            widget.clicked.connect(lambda *_a, e=entry: e.pin())
+        elif kind == 'combo':
+            # activated fires only on user interaction, unlike
+            # currentIndexChanged. Index 0 is the placeholder, so picking it
+            # is an explicit "go back to per entity".
+            widget.activated.connect(
+                lambda index, e=entry: e.pin() if index > 0
+                else e.seed(resolve.MIXED)
+            )
+        else:
+            widget.textEdited.connect(lambda *_a, e=entry: e.pin())
+        return widget
+
+    def _spin(self, key: str, low: int, high: int) -> QSpinBox:
+        """An integer field that can park on ``⟨per entity⟩``.
+
+        The range is widened by exactly one step below ``low`` and that step
+        carries ``specialValueText`` — Qt's own idiom for "no value". One
+        step, not a far-away sentinel: the minimum is reachable by spinning,
+        so anything further would let a bounded field (pre-roll, tiles) be
+        typed below its real lower bound.
+        """
+        box = QSpinBox()
+        box.setRange(low - 1, high)
+        box.setSpecialValueText(PER_ENTITY_TEXT)
+        box.setToolTip(
+            "Leave on ⟨per entity⟩ to let each checked entity use its "
+            "own configured value."
+        )
+        self._register(key, box, 'spin')
+        return box
+
+    def _check(self, key: str, label: str) -> QCheckBox:
+        box = QCheckBox(label)
+        box.setTristate(True)
+        box.setToolTip(
+            "Partially checked = each entity keeps its own configured value."
+        )
+        self._register(key, box, 'check')
+        return box
+
+    def _combo(self, key: str, names: Sequence[str]) -> QComboBox:
+        """A department combo with a leading per-entity placeholder."""
+        box = QComboBox()
+        box.addItem(PER_ENTITY_TEXT)
+        box.addItems(list(names))
+        self._register(key, box, 'combo')
+        return box
+
+    def _line(self, key: str, placeholder: str) -> QLineEdit:
+        edit = QLineEdit()
+        edit.setPlaceholderText(f"{PER_ENTITY_TEXT} — e.g. {placeholder}")
+        self._register(key, edit, 'line')
+        return edit
+
+    def _revert(self, *keys: str) -> QPushButton:
+        """A ↺ that returns its fields to the per-entity default.
+
+        One per *row* rather than per widget: a frame row is two spin boxes
+        only meaningful together, and a button apiece would double the
+        form's visual weight for a control most submits never touch.
+        """
+        button = QPushButton("↺")
+        button.setFixedWidth(24)
+        button.setToolTip("Use each entity's own configured value")
+        button.clicked.connect(lambda: self._unpin(keys))
+        return button
+
+    def _unpin(self, keys: Sequence[str]) -> None:
+        seeded = self._seed_values()
+        self._seeding = True
+        try:
+            for key in keys:
+                entry = self._fields.get(key)
+                if entry is not None:
+                    entry.unpin(seeded.get(key, resolve.MIXED))
+        finally:
+            self._seeding = False
 
     # ── UI construction ───────────────────────────────────
 
@@ -782,12 +1028,17 @@ class SubmitJobsDialog(QDialog):
         ]
 
     def _on_selection_changed(self) -> None:
-        """Re-target the submission at whatever is checked now."""
+        """Re-target the submission at whatever is checked now.
+
+        Reseeding only touches *unpinned* fields, so growing the batch
+        re-derives the per-entity defaults without discarding anything the
+        artist deliberately set for the whole batch.
+        """
         checked = self._checked_entities()
         self._entity_uris = [uri for uri, _ in checked]
         self._entity_names = [name for _, name in checked]
         self._header.setText(self._build_header_text())
-        self._apply_entity_defaults()
+        self._reseed_form()
 
     def _build_publish_section(self) -> QGroupBox:
         box = QGroupBox("Publish")
@@ -797,22 +1048,49 @@ class SubmitJobsDialog(QDialog):
         form.setContentsMargins(10, 14, 10, 10)
         form.setSpacing(6)
 
-        self._pub_dept = QComboBox()
+        pub_depts = _list_dept_names(
+            self._context, only_publishable=True, only_renderable=False,
+        )
+        # The department lists are context-scoped and the context is fixed
+        # for the dialog's life, so they are built once here rather than
+        # refilled on every selection change.
+        self._fallbacks['pub_department'] = pub_depts[0] if pub_depts else None
+        self._pub_dept = self._combo('pub_department', pub_depts)
         self._pub_dept.setToolTip(
             "Publishes every department up to and including this one, in "
             "pipeline order."
         )
         form.addRow("Department:", self._pub_dept)
 
-        self._pub_pool = QLineEdit()
-        self._pub_pool.setPlaceholderText("general")
+        self._pub_pool = self._line('pub_pool', 'general')
         form.addRow("Pool:", self._pub_pool)
 
-        self._pub_priority = QSpinBox()
-        self._pub_priority.setRange(0, 100)
-        form.addRow("Priority:", self._pub_priority)
+        self._pub_priority = self._spin('pub_priority', 0, 100)
+        form.addRow("Priority:", self._row(
+            self._pub_priority, revert=('pub_priority',),
+        ))
 
         return box
+
+    def _row(self, *widgets, revert: Sequence[str] = ()) -> QWidget:
+        """Pack widgets onto one form row, with an optional ↺ at the end.
+
+        A plain string becomes an inline label, so a row can read
+        ``Pri: [ ] Tiles: [ ] Batch: [ ] ↺`` instead of three form rows.
+        """
+        layout = QHBoxLayout()
+        layout.setSpacing(6)
+        layout.setContentsMargins(0, 0, 0, 0)
+        for widget in widgets:
+            layout.addWidget(
+                QLabel(widget) if isinstance(widget, str) else widget
+            )
+        if revert:
+            layout.addStretch(1)
+            layout.addWidget(self._revert(*revert))
+        wrap = QWidget()
+        wrap.setLayout(layout)
+        return wrap
 
     def _build_render_section(self) -> QGroupBox:
         box = QGroupBox("Render")
@@ -824,8 +1102,16 @@ class SubmitJobsDialog(QDialog):
         form.setContentsMargins(10, 14, 10, 10)
         form.setSpacing(6)
 
-        # Department
-        self._rnd_dept = QComboBox()
+        rnd_depts = _list_dept_names(
+            self._context, only_publishable=False, only_renderable=True,
+        )
+        self._renderable_departments = rnd_depts
+        self._fallbacks['render_department'] = (
+            rnd_depts[0] if rnd_depts else None
+        )
+        self._fallbacks['pb_department'] = self._fallbacks['render_department']
+
+        self._rnd_dept = self._combo('render_department', rnd_depts)
         self._rnd_dept.setToolTip(
             "Renders every department up to and including this one, in "
             "pipeline order — departments after it are left out of the "
@@ -834,123 +1120,89 @@ class SubmitJobsDialog(QDialog):
         form.addRow("Department:", self._rnd_dept)
 
         # Channels — a checkable menu of the channels the checked entities
-        # actually define. It replaced a free-text csv field: with a handful
-        # of render layers per shot, rendering two of six meant deleting
-        # four names by hand.
+        # actually define. A batch field by contract: the menu spans the
+        # batch and submits exactly what is checked, so a channel a given
+        # entity lacks still fails visibly on the farm rather than being
+        # quietly dropped. The pre-flight table warns about it up front.
         self._rnd_channels = _CheckableComboBox(
             empty_text="(none — check at least one)",
             hint="Channels to render — one render per checked channel.",
         )
-        # All / None, as on the entity tree: rendering two of six channels
-        # is None followed by two clicks, not four unchecks.
         all_channels = QPushButton("All")
         all_channels.setToolTip("Check every channel")
         all_channels.clicked.connect(
-            lambda: self._rnd_channels.set_checked(self._rnd_channels.options())
+            lambda: self._rnd_channels.set_checked(
+                self._rnd_channels.options()
+            )
         )
         no_channels = QPushButton("None")
         no_channels.setToolTip("Uncheck every channel")
         no_channels.clicked.connect(lambda: self._rnd_channels.set_checked([]))
-        channel_row = QHBoxLayout()
-        channel_row.setSpacing(6)
-        channel_row.addWidget(self._rnd_channels, 1)
-        channel_row.addWidget(all_channels)
-        channel_row.addWidget(no_channels)
-        channel_wrap = QWidget()
-        channel_wrap.setLayout(channel_row)
-        form.addRow("Channels:", channel_wrap)
+        self._rnd_channels.model().dataChanged.connect(
+            lambda *_a: self._refresh_preflight()
+        )
+        form.addRow("Channels:", self._row(
+            self._rnd_channels, all_channels, no_channels,
+        ))
 
-        # Range mode — Full range submits the full_render chain (all
-        # frames + slapcomp/mp4); First / Middle / Last submits the
-        # partial_render chain (3 check frames + notify) for a quick look
-        # before committing the farm to the whole range.
+        # Range mode — a batch field: a choice about the submission, not a
+        # property of the entity, so it has no per-entity state. Full range
+        # submits the full_render chain (all frames + slapcomp/mp4); First /
+        # Middle / Last submits partial_render (3 check frames + notify) for
+        # a look before committing the farm to the whole range.
         self._rnd_mode = QComboBox()
         self._rnd_mode.addItems(["Full range", "First / Middle / Last"])
         form.addRow("Range:", self._rnd_mode)
 
-        # Frame range row: first / last
-        self._rnd_first = QSpinBox()
-        self._rnd_first.setRange(-1_000_000, 1_000_000)
-        self._rnd_last = QSpinBox()
-        self._rnd_last.setRange(-1_000_000, 1_000_000)
-        frame_row = QHBoxLayout()
-        frame_row.setSpacing(6)
-        frame_row.addWidget(self._rnd_first)
-        frame_row.addWidget(QLabel("→"))
-        frame_row.addWidget(self._rnd_last)
-        frame_wrap = QWidget()
-        frame_wrap.setLayout(frame_row)
-        form.addRow("Frames:", frame_wrap)
+        self._rnd_first = self._spin('first_frame', -1_000_000, 1_000_000)
+        self._rnd_last = self._spin('last_frame', -1_000_000, 1_000_000)
+        form.addRow("Frames:", self._row(
+            self._rnd_first, "→", self._rnd_last,
+            revert=('first_frame', 'last_frame'),
+        ))
 
-        # Pre/Post roll
-        self._rnd_pre = QSpinBox()
-        self._rnd_pre.setRange(0, 1000)
-        self._rnd_post = QSpinBox()
-        self._rnd_post.setRange(0, 1000)
-        roll_row = QHBoxLayout()
-        roll_row.setSpacing(6)
-        roll_row.addWidget(self._rnd_pre)
-        roll_row.addWidget(QLabel("/"))
-        roll_row.addWidget(self._rnd_post)
-        roll_wrap = QWidget()
-        roll_wrap.setLayout(roll_row)
-        form.addRow("Pre / Post roll:", roll_wrap)
+        self._rnd_pre = self._spin('pre_roll', 0, 1000)
+        self._rnd_post = self._spin('post_roll', 0, 1000)
+        form.addRow("Pre / Post roll:", self._row(
+            self._rnd_pre, "/", self._rnd_post,
+            revert=('pre_roll', 'post_roll'),
+        ))
 
-        # Pool / Priority / Tile / Batch — pack on two rows
-        self._rnd_pool = QLineEdit()
-        self._rnd_pool.setPlaceholderText("general")
+        self._rnd_pool = self._line('render_pool', 'general')
         form.addRow("Pool:", self._rnd_pool)
 
-        self._rnd_priority = QSpinBox()
-        self._rnd_priority.setRange(0, 100)
-        self._rnd_tile = QSpinBox()
-        self._rnd_tile.setRange(1, 64)
-        self._rnd_batch = QSpinBox()
-        self._rnd_batch.setRange(1, 1000)
-        ppb_row = QHBoxLayout()
-        ppb_row.setSpacing(6)
-        ppb_row.addWidget(QLabel("Pri:"))
-        ppb_row.addWidget(self._rnd_priority)
-        ppb_row.addWidget(QLabel("Tiles:"))
-        ppb_row.addWidget(self._rnd_tile)
-        ppb_row.addWidget(QLabel("Batch:"))
-        ppb_row.addWidget(self._rnd_batch)
-        ppb_wrap = QWidget()
-        ppb_wrap.setLayout(ppb_row)
-        form.addRow("", ppb_wrap)
+        self._rnd_priority = self._spin('render_priority', 0, 100)
+        self._rnd_tile = self._spin('tile_count', 1, 64)
+        self._rnd_batch = self._spin('batch_size', 1, 1000)
+        form.addRow("", self._row(
+            "Pri:", self._rnd_priority, "Tiles:", self._rnd_tile,
+            "Batch:", self._rnd_batch,
+            revert=('render_priority', 'tile_count', 'batch_size'),
+        ))
 
-        # Samples
-        self._rnd_samples = QSpinBox()
-        self._rnd_samples.setRange(1, 4096)
-        form.addRow("Samples:", self._rnd_samples)
+        self._rnd_samples = self._spin('samples', 1, 4096)
+        form.addRow("Samples:", self._row(
+            self._rnd_samples, revert=('samples',),
+        ))
 
-        # Boolean checkboxes
-        self._rnd_denoise = QCheckBox("Denoise")
-        self._rnd_mblur = QCheckBox("Motion blur")
-        self._rnd_dof = QCheckBox("DOF")
+        # Tri-state: PartiallyChecked means "each entity keeps its own",
+        # and is also the way back after clicking one by accident.
+        self._rnd_denoise = self._check('denoise', "Denoise")
+        self._rnd_mblur = self._check('mblur', "Motion blur")
+        self._rnd_dof = self._check('dof', "DOF")
+        form.addRow("", self._row(
+            self._rnd_denoise, self._rnd_mblur, self._rnd_dof,
+            revert=('denoise', 'mblur', 'dof'),
+        ))
+
+        # Batch fields: plain two-state checkboxes, no per-entity source.
         self._rnd_standalone = QCheckBox("Standalone")
         self._rnd_standalone.setChecked(False)
         self._rnd_copy_edit = QCheckBox("Copy to edit")
         self._rnd_copy_edit.setChecked(False)
-
-        flags_row1 = QHBoxLayout()
-        flags_row1.setSpacing(12)
-        flags_row1.addWidget(self._rnd_denoise)
-        flags_row1.addWidget(self._rnd_mblur)
-        flags_row1.addWidget(self._rnd_dof)
-        flags_row1.addStretch(1)
-        flags_wrap1 = QWidget()
-        flags_wrap1.setLayout(flags_row1)
-        form.addRow("", flags_wrap1)
-
-        flags_row2 = QHBoxLayout()
-        flags_row2.setSpacing(12)
-        flags_row2.addWidget(self._rnd_standalone)
-        flags_row2.addWidget(self._rnd_copy_edit)
-        flags_row2.addStretch(1)
-        flags_wrap2 = QWidget()
-        flags_wrap2.setLayout(flags_row2)
-        form.addRow("", flags_wrap2)
+        form.addRow("", self._row(
+            self._rnd_standalone, self._rnd_copy_edit,
+        ))
 
         return box
 
@@ -958,11 +1210,11 @@ class SubmitJobsDialog(QDialog):
         """A GL (Storm) preview on the farm — shots only.
 
         The department is just the output label (which
-        ``playblast/<shot>/<dept>/`` and daily the mp4 lands under); the input
-        is always the shot's staged 'default' stage, and the frame range is
-        derived per-shot from config at submit time, so there is no frame or
-        channel field here. Starts unchecked — it's an opt-in extra alongside
-        render.
+        ``playblast/<shot>/<dept>/`` and daily the mp4 lands under); the
+        input is always the shot's staged 'default' stage, and the frame
+        range is derived per-shot from config at submit time — the pattern
+        the render half now follows too — so there is no frame or channel
+        field here. Starts unchecked: an opt-in extra alongside render.
         """
         box = QGroupBox("Playblast")
         box.setCheckable(True)
@@ -971,164 +1223,302 @@ class SubmitJobsDialog(QDialog):
         form.setContentsMargins(10, 14, 10, 10)
         form.setSpacing(6)
 
-        self._pb_dept = QComboBox()
+        self._pb_dept = self._combo(
+            'pb_department', self._renderable_departments,
+        )
         self._pb_dept.setToolTip(
             "Playblasts every department up to and including this one, in "
             "pipeline order — the same cut the render uses."
         )
         form.addRow("Department:", self._pb_dept)
 
-        self._pb_width = QSpinBox()
-        self._pb_width.setRange(16, 8192)
-        self._pb_height = QSpinBox()
-        self._pb_height.setRange(16, 8192)
-        res_row = QHBoxLayout()
-        res_row.setSpacing(6)
-        res_row.addWidget(self._pb_width)
-        res_row.addWidget(QLabel("×"))
-        res_row.addWidget(self._pb_height)
-        res_wrap = QWidget()
-        res_wrap.setLayout(res_row)
-        form.addRow("Resolution:", res_wrap)
+        self._pb_width = self._spin('pb_res_x', 16, 8192)
+        self._pb_height = self._spin('pb_res_y', 16, 8192)
+        form.addRow("Resolution:", self._row(
+            self._pb_width, "×", self._pb_height,
+            revert=('pb_res_x', 'pb_res_y'),
+        ))
 
-        self._pb_pool = QLineEdit()
-        self._pb_pool.setPlaceholderText("general")
+        self._pb_pool = self._line('pb_pool', 'general')
         form.addRow("Pool:", self._pb_pool)
 
-        self._pb_priority = QSpinBox()
-        self._pb_priority.setRange(0, 100)
-        form.addRow("Priority:", self._pb_priority)
+        self._pb_priority = self._spin('pb_priority', 0, 100)
+        form.addRow("Priority:", self._row(
+            self._pb_priority, revert=('pb_priority',),
+        ))
 
         return box
 
-    def _apply_entity_defaults(self) -> None:
-        """Seed the form from the *primary* entity — the first checked one.
+    # ── Seeding ───────────────────────────────────────────
 
-        Entity-derived fields (departments, frames, farm settings, render
-        toggles) are re-seeded, deliberately overwriting user edits, since
-        defaults follow the entity. Pure submission choices (range mode,
-        Standalone, Copy to edit, section checkboxes) are left alone.
+    def _apply_open_department(self) -> None:
+        """Pin the department the dialog was opened from.
 
-        Reseeding is keyed on the primary URI, so checking *more* entities
-        into the batch doesn't clobber a form you've already tuned — only a
-        change of primary does. With several entities checked, the form is a
-        shared override applied to all of them; the per-entity override grid
-        the retired Project Browser had is not (yet) back.
+        Submitting from a lighting workfile almost always means "render what
+        I am looking at", for every shot in the batch — an explicit intent,
+        so it pins rather than merely seeding. Skipped when the department
+        is not renderable, or when the dialog came from the browser (which
+        has no opened-from department); those combos then resolve per entity
+        from ``submission.render.department``.
         """
-        if not self._entity_uris:
-            return  # nothing checked — leave the form as it stands
-        primary = str(self._entity_uris[0])
-        if primary == self._seeded_uri:
-            # The entity-derived fields stay as they are, but the channel
-            # menu spans the whole batch rather than just the primary — an
-            # entity checked in brings its own channels with it.
-            self._refresh_channel_options(reseed=False)
+        name = self._open_department
+        if not name or name not in self._renderable_departments:
             return
-        self._seeded_uri = primary
-        self._defaults = _safe_get_properties(self._entity_uris[0])
-        d = self._defaults
+        for key in ('render_department', 'pb_department'):
+            entry = self._fields.get(key)
+            if entry is None:
+                continue
+            index = entry.widget.findText(name)
+            if index > 0:
+                entry.widget.setCurrentIndex(index)
+                entry.pin()
 
-        pub_depts = _list_dept_names(
-            self._context, only_publishable=True, only_renderable=False,
-        )
-        self._pub_dept.clear()
-        self._pub_dept.addItems(pub_depts)
-        # Seed: prefer entity property `submission.publish.department` if present.
-        pub_seed = _first_listed(
-            pub_depts, _nested(d, 'submission.publish.department'),
-        )
-        if pub_seed:
-            self._pub_dept.setCurrentText(pub_seed)
+    def _properties_aligned(self) -> list[dict]:
+        """Resolved properties, guaranteed parallel to ``_entity_uris``.
 
-        self._pub_pool.setText(str(_nested(d, 'farm.default_pool', '') or ''))
-        self._pub_priority.setValue(int(_nested(d, 'farm.priority', 50)))
+        ``_properties_for`` returns ``[]`` on a config failure, and a short
+        list would silently drop the tail of the batch out of a zip — so pad
+        rather than truncate.
+        """
+        properties = list(self._properties)
+        if len(properties) != len(self._entity_uris):
+            return [{} for _ in self._entity_uris]
+        return properties
 
-        rnd_depts = _list_dept_names(
-            self._context, only_publishable=False, only_renderable=True,
+    def _seed_values(self) -> dict:
+        """Per-field agreement across the checked batch (or ``MIXED``)."""
+        return resolve.seed_form(
+            self._properties_aligned(),
+            sections=resolve.SECTIONS,
+            fallbacks=self._fallbacks,
         )
-        self._rnd_dept.clear()
-        self._rnd_dept.addItems(rnd_depts)
-        # The department the dialog was opened from wins over the entity
-        # property: submitting from a workfile almost always means "render
-        # what I am looking at". It is skipped when it is not renderable
-        # (or the dialog came from the browser, where there is no such
-        # department), so the property default still applies there.
-        rnd_seed = _first_listed(
-            rnd_depts,
-            self._open_department,
-            _nested(d, 'submission.render.department'),
-        )
-        if rnd_seed:
-            self._rnd_dept.setCurrentText(rnd_seed)
 
-        self._refresh_channel_options(reseed=True)
+    def _reseed_form(self, *, initial: bool = False) -> None:
+        """Re-derive every *unpinned* field from the checked entities.
 
-        self._rnd_first.setValue(int(_nested(d, 'frame_start', 1001)))
-        self._rnd_last.setValue(int(_nested(d, 'frame_end', 1100)))
-        self._rnd_pre.setValue(int(_nested(d, 'roll_start', 0)))
-        self._rnd_post.setValue(int(_nested(d, 'roll_end', 0)))
-        self._rnd_pool.setText(str(_nested(d, 'farm.default_pool', '') or ''))
-        self._rnd_priority.setValue(int(_nested(d, 'farm.priority', 50)))
-        self._rnd_tile.setValue(int(_nested(d, 'farm.tile_count', 4)))
-        self._rnd_batch.setValue(int(_nested(d, 'farm.batch_size', 10)))
-        self._rnd_samples.setValue(
-            int(_nested(d, 'render.pathtracedsamples', 64)),
-        )
-        self._rnd_denoise.setChecked(
-            bool(_nested(d, 'render.enabledenoising', True)),
-        )
-        self._rnd_mblur.setChecked(
-            bool(_nested(d, 'render.enablemblur', True)),
-        )
-        self._rnd_dof.setChecked(bool(_nested(d, 'render.enabledof', True)))
+        Pinned fields are the artist's explicit batch-wide choice and
+        survive a change of selection untouched. This replaces the old
+        "reseed only when the primary entity changes" rule: there is no
+        primary any more, and growing the batch can no longer clobber a
+        tuned form because it only ever re-derives what the artist did not
+        set.
+        """
+        self._properties = _properties_for(self._entity_uris)
+        seeded = self._seed_values()
+        self._seeding = True
+        try:
+            for key, entry in self._fields.items():
+                if not entry.pinned:
+                    entry.seed(seeded.get(key, resolve.MIXED))
+        finally:
+            self._seeding = False
+        self._refresh_channel_options(initial=initial)
+        self._refresh_preflight()
 
-        # Playblast (shots only) — department is the renderable-department
-        # output label; resolution defaults to the HDA's 720p.
-        if self._playblast_box is not None:
-            self._pb_dept.clear()
-            self._pb_dept.addItems(rnd_depts)
-            # Same cut as the render, so the same seed.
-            if rnd_seed:
-                self._pb_dept.setCurrentText(rnd_seed)
-            self._pb_width.setValue(int(_nested(d, 'playblast.res_x', 1280)))
-            self._pb_height.setValue(int(_nested(d, 'playblast.res_y', 720)))
-            self._pb_pool.setText(str(_nested(d, 'farm.default_pool', '') or ''))
-            self._pb_priority.setValue(int(_nested(d, 'farm.priority', 50)))
-
-    def _refresh_channel_options(self, *, reseed: bool) -> None:
+    def _refresh_channel_options(self, *, initial: bool = False) -> None:
         """Repopulate the channel menu from the checked entities.
 
-        The menu lists the *union* over the batch, because the form is one
-        shared override: a channel only the second checked shot defines
-        still has to be selectable, which is what typing into the old csv
-        field allowed.
+        The menu lists the *union* over the batch, because a channel only
+        the second checked shot defines still has to be selectable — which
+        is what typing into the old csv field allowed.
 
-        ``reseed`` (a new primary entity) checks the primary's own channel
-        list, matching what the csv field used to open pre-filled with.
-        Otherwise the selection is carried over by name — a channel that
-        arrives with an entity checked *into* the batch starts unchecked,
-        so widening the batch never quietly widens the render.
+        On the first build the *intersection* starts checked — the channels
+        every opened entity actually defines. For one entity that is its own
+        list, exactly what the csv field pre-filled; for a batch it is the
+        largest set that renders on all of them. Seeding the union instead
+        would check every channel any shot defines and warn on all of them
+        (paleindia shots carry 6-13 channels and barely overlap).
+
+        After that, picks carry over by name, so a channel arriving with an
+        entity checked *into* the batch starts unchecked: widening the batch
+        must never widen the render.
         """
-        names = self._channel_union()
-        if not reseed and names == self._rnd_channels.options():
-            return  # nothing new in the batch — leave the picks alone
-        if reseed:
-            checked = _nested(self._defaults, 'variants') or [_DEFAULT_CHANNEL]
-            if isinstance(checked, str):
-                checked = [checked]
-            checked = [str(v).strip() for v in checked]
+        properties = self._properties_aligned()
+        names = resolve.channel_union(properties)
+        if initial:
+            checked = resolve.channel_intersection(properties)
         else:
+            if names == self._rnd_channels.options():
+                return  # nothing new in the batch — leave the picks alone
             checked = self._rnd_channels.checked_items()
         self._rnd_channels.set_options(names, checked)
 
-    def _channel_union(self) -> list[str]:
-        """Every channel defined across the checked entities, default first."""
-        names = [_DEFAULT_CHANNEL]
-        for properties in _properties_for(self._entity_uris):
-            for name in _channel_names(properties):
-                if name not in names:
-                    names.append(name)
-        return names
+    # ── Pre-flight ────────────────────────────────────────
+
+    def _build_preflight(self) -> QGroupBox:
+        """A table of what each checked entity will actually be submitted with.
+
+        The form is no longer one shared override, so "what am I about to
+        send?" stopped being answerable by reading the form. This answers it:
+        one row per checked entity, one column per setting the batch does
+        *not* agree on, plus whatever warnings that entity would hit.
+
+        Every warning here used to surface only as a ``BatchSubmitError`` in
+        the summary box — after the loop had already submitted every entity
+        ahead of it.
+        """
+        box = QGroupBox("Pre-flight")
+        box.setCheckable(True)
+        # Collapsed by default: a homogeneous batch has nothing to say, and
+        # a single-entity submit is the common case.
+        box.setChecked(False)
+        column = QVBoxLayout(box)
+        column.setContentsMargins(10, 14, 10, 10)
+        column.setSpacing(6)
+
+        self._preflight = QTreeWidget()
+        self._preflight.setRootIsDecorated(False)
+        self._preflight.setAlternatingRowColors(True)
+        self._preflight.setMinimumHeight(120)
+        self._preflight.setMaximumHeight(220)
+        column.addWidget(self._preflight)
+
+        self._preflight_note = QLabel()
+        self._preflight_note.setWordWrap(True)
+        self._preflight_note.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        column.addWidget(self._preflight_note)
+
+        box.toggled.connect(lambda *_a: self._refresh_preflight())
+        return box
+
+    def _refresh_preflight(self) -> None:
+        """Rebuild the pre-flight rows from the current form and selection.
+
+        Cheap enough to run on every keystroke: the batch's properties are
+        already resolved and cached, so this is pure dict work — no config
+        reads, and therefore none of the stat-storm risk that the entity
+        sweep had to be scoped against.
+        """
+        table = getattr(self, "_preflight", None)
+        if table is None:
+            return  # called during construction, before the table exists
+        table.clear()
+        if not self._preflight_box.isChecked():
+            self._preflight_note.setText("")
+            return
+
+        rows = self._resolved_batch()
+        sections = self._active_sections()
+        columns = resolve.varying_fields(
+            self._properties_aligned(),
+            sections=sections,
+            pinned=self._pinned_keys(),
+            fallbacks=self._fallbacks,
+        )
+        table.setColumnCount(2 + len(columns))
+        table.setHeaderLabels(
+            [self._context[:-1].capitalize()]
+            + [column.label for column in columns]
+            + ["Warnings"]
+        )
+
+        warned = 0
+        for name, settings, warnings in rows:
+            cells = [name]
+            for column in columns:
+                value = settings.get(column.key)
+                if isinstance(value, list):
+                    value = ", ".join(str(v) for v in value)
+                cells.append("—" if value is None else str(value))
+            cells.append("; ".join(warnings))
+            item = QTreeWidgetItem(table, cells)
+            if warnings:
+                warned += 1
+                item.setForeground(len(cells) - 1, QColor(WARNING_COLOUR))
+        for index in range(table.columnCount()):
+            table.resizeColumnToContents(index)
+
+        if not rows:
+            note = f"Nothing checked — check at least one {self._context[:-1]}."
+        elif not columns:
+            note = (
+                f"All {len(rows)} agree on every setting shown here."
+                if len(rows) > 1 else ""
+            )
+        else:
+            varying = ", ".join(c.label.lower() for c in columns)
+            note = f"Varies across the batch: {varying}."
+        if warned:
+            note += (
+                f" {warned} of {len(rows)} would be submitted with a warning."
+            )
+        self._preflight_note.setText(note.strip())
+
+    # ── Resolution ────────────────────────────────────────
+
+    def _active_sections(self) -> list[str]:
+        """The enabled job sections, in submission order."""
+        boxes = (
+            ('publish', self._publish_box),
+            ('render', self._render_box),
+            ('playblast', self._playblast_box),
+        )
+        return [
+            name for name, box in boxes
+            if box is not None and box.isChecked()
+        ]
+
+    def _form_values(self) -> dict:
+        """Every current form value, keyed by settings key.
+
+        Tri-state fields report ``MIXED`` when they sit on their unset
+        representation; the resolver reads that as "fall through to the
+        entity". The batch fields are read straight off their widgets —
+        they have no per-entity source to fall through to.
+        """
+        values = {key: entry.value() for key, entry in self._fields.items()}
+        values.update({
+            'variants': self._rnd_channels.checked_items(),
+            'render_mode': (
+                'first_middle_last'
+                if self._rnd_mode.currentIndex() == 1 else 'full'
+            ),
+            'standalone': self._rnd_standalone.isChecked(),
+            'copy_to_edit': self._rnd_copy_edit.isChecked(),
+        })
+        return values
+
+    def _pinned_keys(self) -> list[str]:
+        """Fields the artist explicitly set — these apply to the whole batch."""
+        return [key for key, entry in self._fields.items() if entry.pinned]
+
+    def _resolved_batch(self) -> list[tuple[str, dict, list[str]]]:
+        """``(name, settings, warnings)`` for every checked entity.
+
+        The single source of truth for both the pre-flight table and the
+        submit loop, so what the table shows is by construction what gets
+        submitted.
+        """
+        sections = self._active_sections()
+        form = self._form_values()
+        pinned = self._pinned_keys()
+        rows: list[tuple[str, dict, list[str]]] = []
+        # strict: _properties_aligned() guarantees the pairing, and a
+        # silent truncation here would drop the tail of the batch out of
+        # the pre-flight AND the submit — the bug class that alignment
+        # helper exists to prevent, so fail loudly if it ever regresses.
+        for name, properties in zip(
+            self._entity_names, self._properties_aligned(), strict=True,
+        ):
+            settings = resolve.resolve_settings(
+                properties,
+                sections=sections,
+                form=form,
+                pinned=pinned,
+                fallbacks=self._fallbacks,
+            )
+            # An empty assignment means "inherit the whole pool", so there is
+            # nothing to warn about. Read off the properties dict we already
+            # hold rather than calling get_entity_departments, which would be
+            # one more config read per entity for the same value.
+            assigned = list(properties.get('departments') or []) or None
+            rows.append((
+                name, settings,
+                resolve.entity_warnings(
+                    properties, settings, departments=assigned,
+                ),
+            ))
+        return rows
 
     # ── Submit ────────────────────────────────────────────
 
@@ -1141,13 +1531,8 @@ class SubmitJobsDialog(QDialog):
             )
             return
 
-        publish = self._publish_box.isChecked()
-        render = self._render_box.isChecked()
-        playblast = (
-            self._playblast_box.isChecked()
-            if self._playblast_box is not None else False
-        )
-        if not publish and not render and not playblast:
+        sections = self._active_sections()
+        if not sections:
             QMessageBox.warning(
                 self, "Submit Jobs",
                 "Enable at least one of Publish, Render or Playblast before "
@@ -1155,10 +1540,9 @@ class SubmitJobsDialog(QDialog):
             )
             return
 
-        channels = self._rnd_channels.checked_items()
-        if render and not channels:
-            # The csv field fell back to 'default' when it was emptied,
-            # which rendered something nobody asked for. Refuse instead.
+        if 'render' in sections and not self._rnd_channels.checked_items():
+            # The csv field this replaced fell back to 'default' when it was
+            # emptied, which rendered something nobody asked for.
             QMessageBox.warning(
                 self, "Submit Jobs",
                 "Check at least one channel in the Render section before "
@@ -1166,67 +1550,154 @@ class SubmitJobsDialog(QDialog):
             )
             return
 
-        kinds = [
-            kind for kind, on in (
-                ('publish', publish), ('render', render),
-                ('playblast', playblast),
-            ) if on
-        ]
+        rows = self._resolved_batch()
 
         # A wide fan-out is expensive and easy to trigger by mis-clicking a
-        # branch, so make the user own it.
-        if len(self._entity_uris) > 1:
+        # branch, so make the user own it. The warning count is the part
+        # worth reading: it is the difference between a batch that renders
+        # and one that half-fails an hour from now.
+        if len(rows) > 1 or any(warnings for _n, _s, warnings in rows):
+            pinned = len(self._pinned_keys())
+            lines = [
+                f"Submit {' + '.join(sections)} jobs for "
+                f"{len(rows)} {self._context}?",
+                "",
+                f"{pinned} setting{'' if pinned == 1 else 's'} pinned to the "
+                f"whole batch; the rest follow each entity's own config.",
+            ]
+            warned = [
+                f"  • {name}: {'; '.join(warnings)}"
+                for name, _s, warnings in rows if warnings
+            ]
+            if warned:
+                lines += ["", f"{len(warned)} with warnings:"] + warned[:10]
+                if len(warned) > 10:
+                    lines.append(f"  … and {len(warned) - 10} more")
             confirm = QMessageBox.question(
-                self, "Submit Jobs",
-                f"Submit {' + '.join(kinds)} "
-                f"jobs for {len(self._entity_uris)} {self._context}?\n\n"
-                "The same settings are applied to every one of them.",
+                self, "Submit Jobs", "\n".join(lines),
                 QMessageBox.Ok | QMessageBox.Cancel,
                 QMessageBox.Cancel,
             )
             if confirm != QMessageBox.Ok:
                 return
 
-        # Build the shared settings dict once — it's the same for every entity
-        # in the slim flow. Per-entity overrides are out of scope.
-        settings: dict = {
-            'publish': publish, 'render': render, 'playblast': playblast,
-        }
-        if publish:
-            settings['pub_department'] = self._pub_dept.currentText()
-            settings['pub_pool'] = self._pub_pool.text().strip() or 'general'
-            settings['pub_priority'] = self._pub_priority.value()
-        if render:
-            settings.update({
-                'render_department': self._rnd_dept.currentText(),
-                'render_mode': (
-                    'first_middle_last'
-                    if self._rnd_mode.currentIndex() == 1 else 'full'
-                ),
-                'render_pool': self._rnd_pool.text().strip() or 'general',
-                'render_priority': self._rnd_priority.value(),
-                'variants': channels,
-                'first_frame': self._rnd_first.value(),
-                'last_frame': self._rnd_last.value(),
-                'pre_roll': self._rnd_pre.value(),
-                'post_roll': self._rnd_post.value(),
-                'tile_count': self._rnd_tile.value(),
-                'batch_size': self._rnd_batch.value(),
-                'denoise': self._rnd_denoise.isChecked(),
-                'mblur': self._rnd_mblur.isChecked(),
-                'dof': self._rnd_dof.isChecked(),
-                'standalone': self._rnd_standalone.isChecked(),
-                'copy_to_edit': self._rnd_copy_edit.isChecked(),
-                'samples': self._rnd_samples.value(),
-            })
-        if playblast:
-            settings.update({
-                'pb_department': self._pb_dept.currentText(),
-                'pb_pool': self._pb_pool.text().strip() or 'general',
-                'pb_priority': self._pb_priority.value(),
-                'pb_res': [self._pb_width.value(), self._pb_height.value()],
-            })
+        # ProcessDialog gives the batch a per-entity progress tree, a
+        # working Cancel and its own error report. The inline loop is the
+        # fallback for when the pipeline UI isn't importable.
+        if not self._submit_via_process_dialog(rows):
+            self._submit_inline(rows)
 
+    def _submit_tasks(self, rows: Sequence[tuple]) -> list:
+        """One ``ProcessTask`` per checked entity, or ``[]`` if unavailable.
+
+        ``ProcessDialog`` and its executor survived the Project Browser's
+        retirement (they moved up to ``pipe/houdini/ui/``) and are what the
+        export/publish flows use, so this is reuse rather than a rebuild —
+        the retired ``JobSubmissionDialog`` submitted exactly this way.
+
+        Safe on the GUI thread: ``ProcessExecutor`` has no worker thread. It
+        sequences tasks with ``QTimer.singleShot(0, ...)`` on the main
+        thread, so the event loop keeps turning between entities (progress
+        paints, Cancel responds) without any of the affinity hazards that
+        come with moving pipeline work off it.
+
+        Returns an empty list when the pipeline import fails, which is the
+        signal to fall back to the inline loop.
+        """
+        try:
+            from tumblepipe.pipe.houdini.ui.process_task import ProcessTask
+            from tumblepipe.farm.jobs.houdini.batch_submit import (
+                submit_entity_batch,
+            )
+        except Exception:
+            log.exception("ProcessTask/batch_submit unavailable")
+            return []
+
+        import uuid
+
+        tasks = []
+        for uri, (name, settings, warnings) in zip(
+            self._entity_uris, rows, strict=True,
+        ):
+            kinds = [k for k in resolve.SECTIONS if settings.get(k)]
+            departments = [
+                settings[key] for key in
+                ('pub_department', 'render_department', 'pb_department')
+                if settings.get(key)
+            ]
+            # dict.fromkeys, not set(): the order is the pipeline's, and a
+            # summary that reshuffles it reads as a different cut.
+            label = ', '.join(dict.fromkeys(departments)) or 'N/A'
+            description = f"{'+'.join(kinds)} [{label}]"
+            if warnings:
+                description += f"  ⚠ {'; '.join(warnings)}"
+            config = {
+                'entity': {
+                    'uri': str(uri), 'name': name, 'context': self._context,
+                },
+                'settings': settings,
+            }
+            tasks.append(ProcessTask(
+                id=str(uuid.uuid4()),
+                uri=uri,
+                department=label,
+                task_type='farm_submit',
+                description=description,
+                # Farm-only: no local execution for a farm submission, which
+                # is also what pins ProcessDialog to its farm mode.
+                execute_local=None,
+                execute_farm=lambda c=config: submit_entity_batch(c),
+                first_frame=settings.get('first_frame'),
+                last_frame=settings.get('last_frame'),
+            ))
+        return tasks
+
+    def _submit_via_process_dialog(self, rows: Sequence[tuple]) -> bool:
+        """Run the batch through ProcessDialog. False if it isn't available.
+
+        Worth the indirection for anything past one entity: the inline loop
+        blocks the GUI for the whole batch with no progress and no way out,
+        and reports which entity failed only once every entity has been
+        tried.
+        """
+        tasks = self._submit_tasks(rows)
+        if not tasks:
+            return False
+        try:
+            from tumblepipe.pipe.houdini.ui.process_dialog import ProcessDialog
+        except Exception:
+            log.exception("ProcessDialog unavailable — falling back inline")
+            return False
+
+        dialog = ProcessDialog(
+            title="Submit to Farm",
+            tasks=tasks,
+            # None disables the local/farm mode filtering: every task here is
+            # farm-only, so there is nothing to filter by department.
+            current_department=None,
+            parent=self,
+        )
+        dialog.process_completed.connect(self._on_submission_completed)
+        dialog.exec()
+        return True
+
+    def _on_submission_completed(self, results: dict) -> None:
+        """Close on a clean run; stay open so a failure can be retried.
+
+        ProcessDialog reports the per-task errors itself, so this deliberately
+        adds no second summary box on top of it.
+        """
+        if results.get('failed') or results.get('skipped'):
+            return
+        if results.get('completed'):
+            self.accept()
+
+    def _submit_inline(self, rows: Sequence[tuple]) -> None:
+        """Blocking per-entity loop with a single summary at the end.
+
+        The fallback for when ``ProcessDialog`` can't be imported (outside
+        Houdini, or a partial install). Identical submission, worse feedback.
+        """
         try:
             from tumblepipe.farm.jobs.houdini.batch_submit import (
                 submit_entity_batch,
@@ -1240,12 +1711,12 @@ class SubmitJobsDialog(QDialog):
 
         successes: list[tuple[str, list[str]]] = []
         failures: list[tuple[str, str]] = []
-        for uri, name in zip(self._entity_uris, self._entity_names):
+        for uri, (name, settings, _warnings) in zip(
+            self._entity_uris, rows, strict=True,
+        ):
             config = {
                 'entity': {
-                    'uri': str(uri),
-                    'name': name,
-                    'context': self._context,
+                    'uri': str(uri), 'name': name, 'context': self._context,
                 },
                 'settings': settings,
             }
@@ -1256,14 +1727,15 @@ class SubmitJobsDialog(QDialog):
                 log.exception("submit_entity_batch failed for %s", uri)
                 failures.append((name, str(exc)))
 
-        # Summary
         lines: list[str] = []
         if successes:
             lines.append(
                 f"Submitted {len(successes)}/{len(self._entity_uris)} entities."
             )
             for name, ids in successes:
-                lines.append(f"  • {name}: {', '.join(ids) if ids else '(no ids)'}")
+                lines.append(
+                    f"  • {name}: {', '.join(ids) if ids else '(no ids)'}"
+                )
         if failures:
             lines.append("")
             lines.append(f"{len(failures)} failed:")

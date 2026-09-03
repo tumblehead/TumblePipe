@@ -60,7 +60,7 @@ def _parse_requirements(requirements_path) -> list:
     under the HPM `package-env` flow they're merged into the package env as the
     script's "extra requirements" (see `hpm_task_manifest`). Strips blank lines,
     full-line `#` comments, and trailing ` # …` inline comments. An all-comments
-    file (e.g. resolve_notify's) yields `[]`, so no `requirements` is emitted.
+    file yields `[]`, so no `requirements` is emitted.
     """
     if requirements_path is None:
         return []

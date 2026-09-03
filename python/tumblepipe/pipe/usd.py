@@ -12,8 +12,24 @@ import logging
 from typing import Union
 
 from tumblepipe.api import path_str
+from tumblepipe.config.channels import read_channel
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
+
+
+class RenderSettingsError(RuntimeError):
+    """The stage's one UsdRender.Settings prim could not be identified."""
+
+
+class LayerCollectionError(RuntimeError):
+    """A layer the staged build records could not be collected.
+
+    Raised rather than dropping the layer, because a department that goes
+    missing from a collapsed stage does not look like a failure downstream:
+    husk renders the remaining layers into a complete, plausible image with
+    that department's contribution simply absent. An unlit shot reaches
+    dailies before anyone reads the warning it left in a submission log.
+    """
 
 # Candidate placement ops in USD XformCommonAPI application order. The
 # pivot's inverse is appended last when the pivot itself is present.
@@ -327,13 +343,127 @@ def _collect_instance_info_from_context(layer_path: str) -> dict[str, list[str]]
     return instances_by_asset
 
 
-def _generate_render_overrides_section(overrides: dict) -> str:
+def find_render_settings_prim_path(stage) -> str:
+    """The prim path of *stage*'s one UsdRender.Settings prim.
+
+    husk decides what to render by looking at the stage, so this asks the
+    stage the same question instead of assuming an answer. Assuming one is
+    what broke: the pipeline hardcoded ``/Render/rendersettings`` while 6 of
+    13 live projects declare
+    ``renderSettingsPrimPath = "/scene/Render/rendersettings"`` in their
+    ``root_default_prims.usda``, so on those projects every submit-dialog
+    render override composed onto a prim that does not exist and was
+    discarded without a word.
+
+    Reading ``renderSettingsPrimPath`` back off the composed stack would be
+    wrong in a quieter way, which is why this does not: Houdini's USD export
+    stamps that metadatum into department export layers (45 of 66 live layers
+    carry one), and those layers are *stronger* than root_default_prims.usda —
+    so the composed value is whatever the topmost exported department happened
+    to bake in, not what the project declares. A project declaration, if one
+    is ever needed to break a tie, has to be read from the project config
+    directly. None is needed here, because a tie is a raise.
+
+    Zero or many is always a raise, never a guess: with no Settings prim there
+    is nothing to override, and with several there is no way to know which one
+    husk will land on.
+
+    The traversal uses ``Usd.PrimRange.Stage(stage, PrimAllPrimsPredicate)``
+    rather than ``stage.Traverse()``: the default predicate skips *inactive*
+    prims, and a deactivated RenderSettings that husk would still be handed
+    must show up here as something to reconcile, not vanish into a "no
+    settings" answer.
+
+    The predicate does NOT substitute for loading, which is a separate axis:
+    an unloaded payload's contents are not composed onto the stage at all, so
+    no predicate can reach them. Callers that open the stage themselves must
+    open it ``LoadAll``. When nothing is found and the stage does have
+    unloaded payloads, the error says so — "there is no settings prim" and "I
+    could not see one" are different problems with different fixes.
+    """
+    from pxr import Usd, UsdRender
+
+    found = [
+        prim.GetPath().pathString
+        for prim in Usd.PrimRange.Stage(stage, Usd.PrimAllPrimsPredicate)
+        if prim.IsA(UsdRender.Settings)
+    ]
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        unloaded = sorted(
+            path.pathString for path in set(stage.FindLoadable())
+            - set(stage.GetLoadSet())
+        )
+        detail = (
+            ' The stage has unloaded payloads, which no traversal can see '
+            f'into, so the settings may be inside one: {", ".join(unloaded)}. '
+            'Open the stage LoadAll.'
+            if unloaded else
+            " Check that the project's config:/usd/root_default_prims.usda "
+            'is sublayered into the build.'
+        )
+        raise RenderSettingsError(
+            'the stage carries no UsdRender.Settings prim, so there is '
+            'nothing for the render overrides to apply to.' + detail
+        )
+    raise RenderSettingsError(
+        'the stage carries more than one UsdRender.Settings prim, so which '
+        'one husk renders is not knowable from here: '
+        f'{", ".join(sorted(found))}. Leave exactly one on the stage.'
+    )
+
+
+def _render_overrides_prim_path(staged_file_path: Path) -> str:
+    """Where the render overrides must be authored for *staged_file_path*.
+
+    Composes the staged build and asks it, rather than assuming a path — see
+    :func:`find_render_settings_prim_path`. Every failure raises: an override
+    the artist set in the submit dialog that lands nowhere is the exact
+    silent-wrong-result this call exists to prevent, so it must not be
+    recoverable into a default path.
+    """
+    try:
+        from pxr import Usd
+    except ImportError as error:
+        raise RenderSettingsError(
+            'USD (pxr) is unavailable, so the render-settings prim path '
+            'cannot be resolved and the overrides would be authored at a '
+            f'guessed path: {staged_file_path}'
+        ) from error
+
+    try:
+        # LoadAll explicitly, not by default: an unloaded payload's contents
+        # are not composed onto the stage, so the settings prim could sit in
+        # one and be invisible to any traversal.
+        stage = Usd.Stage.Open(str(staged_file_path), Usd.Stage.LoadAll)
+    except Exception as error:
+        raise RenderSettingsError(
+            f'could not compose {staged_file_path} to locate its render '
+            f'settings: {error}'
+        ) from error
+    if stage is None:
+        raise RenderSettingsError(
+            f'could not compose {staged_file_path} to locate its render '
+            'settings'
+        )
+    return find_render_settings_prim_path(stage)
+
+
+def _generate_render_overrides_section(
+    overrides: dict,
+    settings_prim_path: str,
+) -> str:
     """
     Generate USDA text for render setting overrides.
 
     Args:
         overrides: Dict mapping Karma attribute names to values
                    e.g. {'karma:global:pathtracedsamples': 128}
+        settings_prim_path: Absolute prim path of the stage's RenderSettings,
+                   from find_render_settings_prim_path. One nested `over` per
+                   path component — an `over` chain that does not match the
+                   real prim composes onto nothing and drops every override.
 
     Returns:
         USDA text defining render settings overrides, or empty string if no overrides
@@ -341,24 +471,31 @@ def _generate_render_overrides_section(overrides: dict) -> str:
     if not overrides:
         return ''
 
-    lines = []
-    lines.append('')
-    lines.append('over "Render"')
-    lines.append('{')
-    lines.append('    over "rendersettings"')
-    lines.append('    {')
+    names = [name for name in settings_prim_path.split('/') if name]
+    if not names:
+        raise RenderSettingsError(
+            f'render settings prim path is not a usable prim path: '
+            f'{settings_prim_path!r}'
+        )
 
+    lines = ['']
+    for depth, name in enumerate(names):
+        indent = '    ' * depth
+        lines.append(f'{indent}over "{name}"')
+        lines.append(indent + '{')
+
+    body_indent = '    ' * len(names)
     for attr_name, value in overrides.items():
         if isinstance(value, bool):
             val_str = 'true' if value else 'false'
-            lines.append(f'        bool {attr_name} = {val_str}')
+            lines.append(f'{body_indent}bool {attr_name} = {val_str}')
         elif isinstance(value, int):
-            lines.append(f'        int {attr_name} = {value}')
+            lines.append(f'{body_indent}int {attr_name} = {value}')
         elif isinstance(value, float):
-            lines.append(f'        float {attr_name} = {value}')
+            lines.append(f'{body_indent}float {attr_name} = {value}')
 
-    lines.append('    }')
-    lines.append('}')
+    for depth in reversed(range(len(names))):
+        lines.append('    ' * depth + '}')
 
     return '\n'.join(lines)
 
@@ -465,11 +602,49 @@ def _generate_instance_prim_definitions(
     return '\n'.join(lines)
 
 
+def _missing_layer_message(
+    ref: str,
+    resolved_path: str | None,
+    referrer: str | None,
+) -> str:
+    """Why a recorded layer could not be collected, and what to do about it.
+
+    ``resolved_path`` is None when the ref did not resolve at all; a path when
+    it resolved to something that is not on disk. The two have the same cause
+    in practice — a failed export leaves a version directory with no layer in
+    it, and ``latest`` then lands on that empty version until the next good
+    export — so they get one message.
+    """
+    lines = [
+        "the staged build records a layer that is not on disk",
+        f"  reference:     {ref}",
+    ]
+    if resolved_path is not None:
+        lines.append(f"  resolves to:   {resolved_path}")
+    else:
+        lines.append("  resolves to:   nothing (the URI does not resolve)")
+    if referrer is not None:
+        lines.append(f"  referenced by: {referrer}")
+    lines.extend([
+        "",
+        "Most likely a failed export left a version directory with no layer "
+        "file in it, which 'latest' then resolves to until the next good "
+        "export. Re-export that department, or remove the empty version, "
+        "then submit again.",
+        "",
+        "Collapsing without the layer would submit a render missing that "
+        "department entirely: a complete-looking image with its "
+        "contribution absent.",
+    ])
+    return "\n".join(lines)
+
+
 def _collect_leaf_layers_and_instances(
     layer_path: str,
     visited: set = None,
     instances_by_asset: dict = None,
-    excluded_refs: set = None
+    excluded_refs: set = None,
+    referrer: str = None
 ) -> tuple[list[str], dict[str, list[str]]]:
     """
     Recursively collect all leaf USD layers and instance info from a sublayer hierarchy.
@@ -484,16 +659,29 @@ def _collect_leaf_layers_and_instances(
         excluded_refs: Refs to skip at *this* level only (not propagated into
                        the recursion) — a partial-department render drops the
                        shot's own layers past the cut, never an asset's
+        referrer: The layer that sublayered this one, for error messages;
+                  None at the top of the traversal
 
     Returns:
         Tuple of (leaf_layers, instances_by_asset) where:
         - leaf_layers: List of filesystem paths to leaf USD layers
         - instances_by_asset: Dict mapping asset prim path to list of instance names
+
+    Raises:
+        LayerCollectionError: If a recorded ref does not resolve, or resolves
+                              to a file that is not on disk. Both used to
+                              return an empty list, which collapsed the stage
+                              without that department.
     """
     if visited is None:
         visited = set()
     if instances_by_asset is None:
         instances_by_asset = defaultdict(list)
+
+    # The ref as the staged file wrote it, kept for error messages: once
+    # resolved, layer_path is a filesystem path and no longer says which
+    # department or version the build actually asked for.
+    original_ref = layer_path
 
     # Resolve entity URI to filesystem path if needed
     if layer_path.startswith('entity:'):
@@ -506,6 +694,13 @@ def _collect_leaf_layers_and_instances(
             # Raises ResolveError if unresolvable — silently returning an
             # empty layer list here produced incomplete scene builds.
             resolved_path = resolver.resolve_entity_uri(layer_path)
+        except resolver.ResolveError as error:
+            # Translated rather than propagated: a bare "entity URI did not
+            # resolve" says nothing about which build referenced it or what
+            # the artist should do about it.
+            raise LayerCollectionError(
+                _missing_layer_message(original_ref, None, referrer)
+            ) from error
         finally:
             resolver.set_latest_mode(previous_mode)
 
@@ -522,8 +717,9 @@ def _collect_leaf_layers_and_instances(
     # Check if file exists
     path = Path(layer_path)
     if not path.exists():
-        logging.warning(f"Layer file does not exist: {layer_path}")
-        return ([], instances_by_asset)
+        raise LayerCollectionError(
+            _missing_layer_message(original_ref, layer_path, referrer)
+        )
 
     # Collect instance info from context.json alongside this layer
     layer_instances = _collect_instance_info_from_context(layer_path)
@@ -559,31 +755,12 @@ def _collect_leaf_layers_and_instances(
         # Handle relative paths (not entity URIs)
         if not ref.startswith('entity:') and not Path(ref).is_absolute():
             ref = os.path.normpath(str(path.parent / ref)).replace('\\', '/')
-        sub_layers, _ = _collect_leaf_layers_and_instances(ref, visited, instances_by_asset)
+        sub_layers, _ = _collect_leaf_layers_and_instances(
+            ref, visited, instances_by_asset, referrer=layer_path
+        )
         leaf_layers.extend(sub_layers)
 
     return (leaf_layers, instances_by_asset)
-
-
-def _collect_leaf_layers(
-    layer_path: str,
-    visited: set = None
-) -> list[str]:
-    """
-    Recursively collect all leaf USD layers from a sublayer hierarchy.
-
-    Traverses _staged files and entity URIs, resolving to filesystem paths,
-    and returns only the actual USD layer files (not intermediate _staged files).
-
-    Args:
-        layer_path: Filesystem path or entity URI to start from
-        visited: Set of already-visited paths to prevent cycles
-
-    Returns:
-        List of filesystem paths to leaf USD layers
-    """
-    leaf_layers, _ = _collect_leaf_layers_and_instances(layer_path, visited)
-    return leaf_layers
 
 
 def _composed_placement_orders(
@@ -754,6 +931,10 @@ def collapse_latest_references(
 
     Raises:
         ValueError: If staged file doesn't exist or has invalid format
+        LayerCollectionError: If a layer the build records is missing from
+                              disk, or the collapse yields no layers at all
+        RenderSettingsError: If render_overrides are given and the stage's
+                             RenderSettings prim cannot be identified
     """
     if not staged_file_path.exists():
         raise ValueError(f"Staged file does not exist: {staged_file_path}")
@@ -772,7 +953,14 @@ def collapse_latest_references(
     )
 
     if not leaf_layers:
-        logging.warning(f"No leaf layers found in {staged_file_path}")
+        # Nothing to render. The shot's root layer (dept='root') sits outside
+        # the department pool and so survives every cut, which means an empty
+        # result is a broken staged build rather than an aggressive cut.
+        raise LayerCollectionError(
+            f"staged build collapsed to no layers at all: {staged_file_path}\n"
+            f"There is nothing to render. Check that the shot's root layer is "
+            f"sublayered into the staged build."
+        )
 
     # Generate USDA with absolute filesystem paths (no entity URIs)
     usda_content = generate_usda_content(
@@ -797,9 +985,14 @@ def collapse_latest_references(
     if instance_prims:
         usda_content = usda_content + '\n' + instance_prims
 
-    # Generate render settings overrides
+    # Generate render settings overrides. The prim path comes from the
+    # composed stage, never a constant: the project decides where its
+    # RenderSettings lives, and an `over` chain aimed at the wrong path drops
+    # every override in silence.
     if render_overrides:
-        overrides_section = _generate_render_overrides_section(render_overrides)
+        overrides_section = _generate_render_overrides_section(
+            render_overrides, _render_overrides_prim_path(staged_file_path)
+        )
         if overrides_section:
             usda_content = usda_content + '\n' + overrides_section
 
@@ -1199,7 +1392,7 @@ def parse_entity_sublayer_uri(uri_string: str) -> SublayerRef | None:
         uri=uri_string,
         base=base,
         department=params.get('dept'),
-        channel=params.get('variant', 'default'),
+        channel=read_channel(params, where=f'sublayer ref {uri_string!r}'),
         version=params.get('version'),
     )
 

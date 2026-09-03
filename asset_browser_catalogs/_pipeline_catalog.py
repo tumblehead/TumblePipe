@@ -2827,6 +2827,32 @@ class PipelineCatalog(Catalog):
 
     # ── Entity Edit / Delete ─────────────────────────────
 
+    def _frame_seed(self, props: dict, key: str, asset_id: str) -> int:
+        """Seed a frame field from the entity's resolved view.
+
+        `edit_entity` decides what the artist changed by comparing the
+        submitted value against this same resolved view, so whatever is
+        seeded here comes back as a real pin the moment someone presses OK.
+        A guessed seed would therefore write a frame range nobody chose onto
+        the entity — and it would do it silently, because the guess and the
+        artist's "I didn't touch that field" look identical downstream.
+        A missing or non-integer frame value stops the dialog instead.
+        """
+        if key not in props:
+            raise ConfigError(
+                self.id,
+                f"{asset_id}: nothing in the inheritance chain sets {key}, "
+                f"so there is no frame range to edit",
+            )
+        value = props[key]
+        # bool is a subclass of int; a checkbox value is not a frame number.
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ConfigError(
+                self.id,
+                f"{asset_id}: {key} is {value!r}, which is not a frame number",
+            )
+        return value
+
     def get_edit_fields(self, asset_id: str) -> list[CreationField]:
         parts = self._resolver.split(asset_id)
         if parts is None:
@@ -2866,12 +2892,12 @@ class PipelineCatalog(Catalog):
                 CreationField(
                     key="frame_start", label="Frame Start",
                     field_type="int",
-                    initial=int(props.get("frame_start", 1001) or 1001),
+                    initial=self._frame_seed(props, "frame_start", asset_id),
                 ),
                 CreationField(
                     key="frame_end", label="Frame End",
                     field_type="int",
-                    initial=int(props.get("frame_end", 1100) or 1100),
+                    initial=self._frame_seed(props, "frame_end", asset_id),
                 ),
             ]
         return [
@@ -2901,21 +2927,42 @@ class PipelineCatalog(Catalog):
             return False
         project_name = parts[0]
         client = self._clients.get(project_name)
-        writable = {}
+        submitted = {}
         if "frame_start" in fields:
             try:
-                writable["frame_start"] = int(fields["frame_start"])
+                submitted["frame_start"] = int(fields["frame_start"])
             except (TypeError, ValueError):
                 pass
         if "frame_end" in fields:
             try:
-                writable["frame_end"] = int(fields["frame_end"])
+                submitted["frame_end"] = int(fields["frame_end"])
             except (TypeError, ValueError):
                 pass
-        if not writable:
+        if not submitted:
             return False
         try:
-            client.config.set_properties(uri, writable)
+            # The dialog always resubmits every field it showed, and
+            # `get_edit_fields` seeds those fields from the RESOLVED view — so a
+            # field the artist never touched arrives holding an *inherited*
+            # value. Since own properties are now stored verbatim, writing it
+            # back would pin it: the entity would stop following its parent for
+            # a value nobody chose, and a later re-time of the sequence would
+            # silently skip this shot. Write only what actually changed.
+            resolved = client.config.get_properties(uri) or {}
+            writable = {
+                key: value
+                for key, value in submitted.items()
+                if key not in resolved or resolved[key] != value
+            }
+            if not writable:
+                return True
+            # Merge into the entity's OWN overrides. Writing `writable` alone
+            # replaced the node's whole property dict, so editing a shot's
+            # frame range in the browser also wiped its name, scene ref,
+            # channels and department assignment.
+            own = client.config.get_own_properties(uri) or {}
+            own.update(writable)
+            client.config.set_own_properties(uri, own)
         except Exception as exc:
             raise ConfigError(
                 self.id,

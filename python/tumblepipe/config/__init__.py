@@ -39,11 +39,21 @@ class ConfigConvention:
         """
         raise NotImplementedError()
 
-    def set_properties(self, uri: Uri, properties: dict):
-        """Set properties at uri (stored sparsely against inherited defaults).
+    def set_own_properties(self, uri: Uri, properties: dict):
+        """Replace the entity's own (override) properties with ``properties``.
 
-        The entity's schema is resolved from its position
-        (get_entity_schema_uri), so no schema needs to be passed or stored.
+        The dict handed in IS the override set, stored verbatim: a key present
+        is pinned on this entity even when its value equals what the entity
+        would otherwise inherit, and a key absent is cleared.
+
+        Pair it with :meth:`get_own_properties`, never with
+        :meth:`get_properties` -- the latter returns the RESOLVED dict, so
+        writing that back would pin the whole inherited chain onto the entity
+        and detach it from its parents.
+
+        This used to store the sparse diff against the inherited chain, which
+        could not distinguish a deliberate pin that agreed with its parent
+        from a value that merely rode along, and so dropped the pin.
         """
         raise NotImplementedError()
 

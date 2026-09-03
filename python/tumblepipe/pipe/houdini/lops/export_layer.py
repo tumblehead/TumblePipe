@@ -13,7 +13,7 @@ from tumblepipe.api import get_user_name, path_str, local_path, api
 from tumblepipe.util.errors import TaskSkipped
 from tumblepipe.util.progress import report_progress
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.channels import list_channels
+from tumblepipe.config.channels import list_channels, read_channel
 from tumblepipe.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblepipe.config.farm import list_pools
 from tumblepipe.pipe.houdini import util
@@ -738,7 +738,7 @@ class ExportLayer(EntityNode):
             assets_by_uri[asset_uri_str].append({
                 'prim_path': prim_path,
                 'instance': asset_metadata['instance'],
-                'variant': asset_metadata.get('variant', 'default'),
+                'variant': read_channel(asset_metadata, where=f'prim {prim_path}'),
                 'inputs': asset_metadata.get('inputs', [])
             })
             asset_inputs.update(set(map(json.dumps, asset_metadata['inputs'])))
@@ -1237,11 +1237,22 @@ def validate():
     )
 
     if result.passed:
-        hou.ui.displayMessage(
-            "Validation passed - no issues found.",
-            severity=hou.severityType.Message,
-            title="Validation Passed"
-        )
+        # A warning does not fail validation, but saying "no issues found"
+        # while holding a non-empty issue list is a lie — and the most common
+        # warning is "No stage available for validation", i.e. validation could
+        # not run at all.
+        if result.warnings:
+            hou.ui.displayMessage(
+                result.format_message(),
+                severity=hou.severityType.Warning,
+                title="Validation Passed With Warnings"
+            )
+        else:
+            hou.ui.displayMessage(
+                "Validation passed - no issues found.",
+                severity=hou.severityType.Message,
+                title="Validation Passed"
+            )
         return
 
     from tumblepipe.pipe.houdini.ui.validation_dialog import (

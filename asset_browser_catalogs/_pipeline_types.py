@@ -73,8 +73,10 @@ class PipelineAssetMetadata(TypedDict, total=False):
     frame_total: int
     fps: int
 
-    # Publish channels (assets only). The key stays "variants": it is the
-    # frozen browser-wire spelling of what the UI now calls a channel.
+    # Publish channels (assets only). The key written stays "variants";
+    # readers take "channels" as well (submit_jobs_resolve.read_channel_list).
+    # tumbletrove never names this key -- metadata is opaque payload to it, so
+    # the spelling is entirely TumblePipe's to change.
     variants: list[str]
 
 

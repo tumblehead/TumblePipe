@@ -20,6 +20,7 @@ from tumblepipe.farm import _common
 from tumblepipe.farm.jobs.houdini.render import job as render_job
 from tumblepipe.farm.tasks.env import get_hython_env, print_env
 from tumblepipe.farm.tasks.stage import _spec
+from tumblepipe.config.channels import read_channel_name_list
 
 _error = _common.error
 
@@ -35,7 +36,9 @@ def main(config):
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    channel_names = config['settings']['variant_names']
+    channel_names = read_channel_name_list(
+        config['settings'], where='stage task settings'
+    )
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     tile_count = config['settings']['tile_count']

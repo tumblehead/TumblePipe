@@ -2,8 +2,8 @@
 
 The pipeline's publish-tree fork is now called a **channel** — "variant" is
 reserved for USD's own ``variantSet``, which is a different mechanism (see the
-:mod:`~tumblepipe.config.channels` docstring for why, and for the list of
-places where ``variant`` remains the frozen wire token).
+:mod:`~tumblepipe.config.channels` docstring for why, for what writers still
+emit as ``variant``, and for how that is being moved without a flag day).
 
 This module stays so that already-published packages and any out-of-tree
 caller importing ``tumblepipe.config.variants`` keep working. New code should

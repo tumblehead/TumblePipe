@@ -27,7 +27,9 @@ from tumblepipe.config.entities import is_terminal_entity
 
 SCENES_URI = Uri.parse_unsafe('scenes:/')
 
-DEFAULT_VARIANT = 'default'
+# Mirrors channels.DEFAULT_CHANNEL. Kept as a local constant rather than
+# imported so scene.py's import graph stays independent of channels.py.
+DEFAULT_CHANNEL = 'default'
 
 
 @dataclass(frozen=True)
@@ -35,7 +37,7 @@ class AssetEntry:
     """An asset entry in a scene with instance count and channel."""
     asset: str  # URI string
     instances: int
-    channel: str = DEFAULT_VARIANT
+    channel: str = DEFAULT_CHANNEL
 
 
 @dataclass(frozen=True)
@@ -152,6 +154,12 @@ def get_scene_by_uri(scene_uri: Uri) -> Scene | None:
     Returns:
         Scene object or None if not found
     """
+    # Function-local so the module-level import graph stays independent of
+    # channels.py, as the DEFAULT_CHANNEL comment above describes. The guard
+    # has to be the shared one: a second implementation of "is this data
+    # newer than me" is a second thing to get wrong.
+    from tumblepipe.config.channels import read_channel
+
     properties = api.config.get_properties(scene_uri)
     if properties is None:
         return None
@@ -162,7 +170,7 @@ def get_scene_by_uri(scene_uri: Uri) -> Scene | None:
         AssetEntry(
             asset=item['asset'],
             instances=item.get('instances', 1),
-            channel=item.get('variant', DEFAULT_VARIANT)
+            channel=read_channel(item, where=f'scene assets of {scene_uri}')
         )
         for item in raw_assets
         if isinstance(item, dict)
@@ -287,14 +295,14 @@ def set_scene_assets(scene_uri: Uri, assets: list[AssetEntry]):
     Raises:
         ValueError: If scene does not exist
     """
-    properties = api.config.get_properties(scene_uri)
-    if properties is None:
+    own = api.config.get_own_properties(scene_uri)
+    if own is None:
         raise ValueError('Scene does not exist')
-    properties['assets'] = [
+    own['assets'] = [
         {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.channel}
         for entry in assets
     ]
-    api.config.set_properties(scene_uri, properties)
+    api.config.set_own_properties(scene_uri, own)
 
 
 def get_inherited_assets(scene_uri: Uri) -> list[tuple[AssetEntry, Uri]]:
@@ -421,14 +429,16 @@ def set_scene_ref(entity_uri: Uri, scene_uri: Uri | None):
         entity_uri: The entity URI (e.g., entity:/shots/010/010)
         scene_uri: Scene URI to reference, or None to clear
     """
-    properties = api.config.get_properties(entity_uri)
-    if properties is None:
-        properties = {}
+    # Read the entity's OWN overrides: clearing must remove this entity's ref
+    # and re-expose whatever it inherits, not pin the inherited one locally.
+    own = api.config.get_own_properties(entity_uri)
+    if own is None:
+        own = {}
     if scene_uri is None:
-        properties.pop('scene', None)
+        own.pop('scene', None)
     else:
-        properties['scene'] = str(scene_uri)
-    api.config.set_properties(entity_uri, properties)
+        own['scene'] = str(scene_uri)
+    api.config.set_own_properties(entity_uri, own)
 
 
 def get_inherited_scene_ref(entity_uri: Uri) -> tuple[Uri | None, Uri | None]:

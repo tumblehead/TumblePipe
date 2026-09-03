@@ -66,13 +66,26 @@ def get_render_settings_script(render_settings_path: Path) -> str:
     """Python-node script that applies the render settings JSON's overrides.
 
     Re-reads the JSON at cook time and applies its ``overrides`` onto the
-    ``/Render/rendersettings`` prim.
+    stage's UsdRender.Settings prim — found by asking the stage, never by
+    assuming a path. The script used to target ``/Render/rendersettings``,
+    which does not exist on the projects that declare
+    ``renderSettingsPrimPath = "/scene/Render/rendersettings"``: there the
+    prim lookup failed, the function returned, and every override the artist
+    set in the submit dialog was dropped without a word. The same constant is
+    fixed in ``usd.py``'s collapse path; the two farm modes have to agree or
+    they diverge again.
+
+    Not finding the settings is now a raise, which errors the LOP and fails
+    the stage task. A render that silently used the project defaults instead
+    of the submitted samples looks exactly like a correct render.
     """
     _render_settings_path = path_str(render_settings_path)
     return (
         'from pathlib import Path\n'
         'import json\n'
         'import hou\n'
+        '\n'
+        'from tumblepipe.pipe.usd import find_render_settings_prim_path\n'
         '\n'
         'def _load_json(path):\n'
         '    if not path.exists(): return None\n'
@@ -84,22 +97,21 @@ def get_render_settings_script(render_settings_path: Path) -> str:
         '    # Get context\n'
         '    node = hou.pwd()\n'
         '    stage = node.editableStage()\n'
-        '    root = stage.GetPseudoRoot()\n'
         '    \n'
         '    # Load render settings\n'
         f'    render_settings_path = Path("{_render_settings_path}")\n'
         '    render_settings_data = _load_json(render_settings_path)\n'
         '    if render_settings_data is None: return\n'
-        '    if "overrides" not in render_settings_data: return\n'
+        '    overrides = render_settings_data.get("overrides") or {}\n'
+        '    if not overrides: return\n'
         '    \n'
-        '    # Get render settings prim\n'
-        '    render_settings_prim = root.GetPrimAtPath(\n'
-        '        "/Render/rendersettings"\n'
-        '    )\n'
-        '    if not render_settings_prim.IsValid(): return\n'
+        '    # Ask the stage where its render settings are. Raises when there\n'
+        '    # is not exactly one, rather than rendering project defaults\n'
+        '    # under the artist\'s submitted values.\n'
+        '    settings_path = find_render_settings_prim_path(stage)\n'
+        '    render_settings_prim = stage.GetPrimAtPath(settings_path)\n'
         '    \n'
         '    # Edit the render settings\n'
-        '    overrides = render_settings_data["overrides"]\n'
         '    for property, value in overrides.items():\n'
         '        attribute = render_settings_prim.GetAttribute(property)\n'
         '        if not attribute.IsValid(): continue\n'

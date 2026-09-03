@@ -50,6 +50,7 @@ import tumblepipe.farm.tasks.denoise.task as denoise_job
 import tumblepipe.farm.tasks.slapcomp.task as slapcomp_job
 import tumblepipe.farm.tasks.mp4.task as mp4_job
 import tumblepipe.farm.tasks.notify.task as notify_job
+from tumblepipe.config.channels import read_channel_name, read_channel_name_list
 
 def build_partial_render_job(
     config: dict,
@@ -67,7 +68,9 @@ def build_partial_render_job(
     department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    channel_name = config['settings']['variant_name']
+    channel_name = read_channel_name(
+        config['settings'], where='render build settings'
+    )
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     input_path = Path(config['settings']['input_path'])
@@ -172,7 +175,9 @@ def build_full_render_job(
     department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    channel_name = config['settings']['variant_name']
+    channel_name = read_channel_name(
+        config['settings'], where='render build settings'
+    )
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     input_path = Path(config['settings']['input_path'])
@@ -285,7 +290,9 @@ def build_partial_denoise_job(
     department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    channel_name = config['settings']['variant_name']
+    channel_name = read_channel_name(
+        config['settings'], where='render build settings'
+    )
     render_settings_path = Path(config['settings']['render_settings_path'])
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
@@ -401,7 +408,9 @@ def build_full_denoise_job(
     department_name = config['entity']['department']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    channel_name = config['settings']['variant_name']
+    channel_name = read_channel_name(
+        config['settings'], where='render build settings'
+    )
     render_settings_path = Path(config['settings']['render_settings_path'])
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
@@ -520,7 +529,9 @@ def build_slapcomp_job(
         'Render settings not found: '
         f'{render_settings_path}'
     )
-    channel_names = render_settings['variant_names']
+    channel_names = read_channel_name_list(
+        render_settings, where='render_settings.json'
+    )
     aov_names = render_settings['aov_names']
 
     # Paramaters
@@ -668,7 +679,9 @@ def build_partial_notify_job(
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
     pool_name = config['settings']['pool_name']
-    channel_name = config['settings']['variant_name']
+    channel_name = read_channel_name(
+        config['settings'], where='render build settings'
+    )
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']

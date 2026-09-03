@@ -60,8 +60,13 @@ def add_member(group_uri: Uri, member_uri: Uri):
     member_uri_raw = str(member_uri)
     if member_uri_raw in members: raise ValueError('Already a member of group')
     members.append(member_uri_raw)
-    properties['members'] = members
-    api.config.set_properties(group_uri, properties)
+    # Pin just this key onto the entity's OWN overrides. The resolved value
+    # computed above is the right basis (a member layers on top of what is
+    # inherited), but writing the whole resolved dict back would pin every
+    # inherited key here and detach the entity from its parents.
+    own = api.config.get_own_properties(group_uri) or {}
+    own['members'] = members
+    api.config.set_own_properties(group_uri, own)
 
 def remove_member(group_uri: Uri, member_uri: Uri):
     context = group_uri.segments[0]
@@ -74,8 +79,13 @@ def remove_member(group_uri: Uri, member_uri: Uri):
     member_uri_raw = str(member_uri)
     if member_uri_raw not in members: raise ValueError('Not a member of group')
     members.pop(members.index(member_uri_raw))
-    properties['members'] = members
-    api.config.set_properties(group_uri, properties)
+    # Pin just this key onto the entity's OWN overrides. The resolved value
+    # computed above is the right basis (a member layers on top of what is
+    # inherited), but writing the whole resolved dict back would pin every
+    # inherited key here and detach the entity from its parents.
+    own = api.config.get_own_properties(group_uri) or {}
+    own['members'] = members
+    api.config.set_own_properties(group_uri, own)
 
 def add_department(group_uri: Uri, department: str):
     properties = api.config.get_properties(group_uri)
@@ -83,8 +93,13 @@ def add_department(group_uri: Uri, department: str):
     departments = properties['departments']
     if department in departments: raise ValueError('Already a department of group')
     departments.append(department)
-    properties['departments'] = departments
-    api.config.set_properties(group_uri, properties)
+    # Pin just this key onto the entity's OWN overrides. The resolved value
+    # computed above is the right basis (a department layers on top of what is
+    # inherited), but writing the whole resolved dict back would pin every
+    # inherited key here and detach the entity from its parents.
+    own = api.config.get_own_properties(group_uri) or {}
+    own['departments'] = departments
+    api.config.set_own_properties(group_uri, own)
 
 def remove_department(group_uri: Uri, department: str):
     properties = api.config.get_properties(group_uri)
@@ -92,8 +107,13 @@ def remove_department(group_uri: Uri, department: str):
     departments = properties['departments']
     if department not in departments: raise ValueError('Not a department of group')
     departments.pop(departments.index(department))
-    properties['departments'] = departments
-    api.config.set_properties(group_uri, properties)
+    # Pin just this key onto the entity's OWN overrides. The resolved value
+    # computed above is the right basis (a department layers on top of what is
+    # inherited), but writing the whole resolved dict back would pin every
+    # inherited key here and detach the entity from its parents.
+    own = api.config.get_own_properties(group_uri) or {}
+    own['departments'] = departments
+    api.config.set_own_properties(group_uri, own)
 
 def get_group(group_uri: Uri) -> Group | None:
     properties = api.config.get_properties(group_uri)

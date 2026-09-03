@@ -79,10 +79,16 @@ def _remove(data, path):
 def _insert(data: dict, datum: dict, path: list[str]):
     """Insert ``datum`` at ``path``, creating intermediate nodes as needed.
 
-    Properties are stored sparsely - only overrides, not defaults. Defaults
-    are resolved from schemas at query time, and the schema itself is resolved
-    from the entity's position (get_entity_schema_uri), so nothing about it is
-    stored per-node.
+    A node stores only the properties a caller explicitly pinned on it —
+    never a value merely inherited from a schema default or an ancestor.
+    Defaults are resolved from schemas at query time, and the schema itself is
+    resolved from the entity's position (get_entity_schema_uri), so nothing
+    about it is stored per-node.
+
+    "Only overrides" is now the CALLER's statement of intent, taken verbatim
+    (see set_own_properties). It used to be computed here as a diff against
+    the inherited chain, which silently dropped a pin whose value happened to
+    equal what the entity would have inherited anyway.
     """
     for step in path:
         if 'children' not in data:
@@ -161,34 +167,14 @@ def _list_uri_deep(data, root_path: Uri, filter_path: list[str] | None = None) -
     return _filter_none(current, base_path)
 
 
-def _deep_diff(base: dict, new: dict) -> dict:
-    """Return only the fields in 'new' that differ from 'base'.
-
-    For nested dicts, recurse and only include changed sub-fields.
-    Returns empty dict if all values match.
-    """
-    result = {}
-    for key, value in new.items():
-        if key not in base:
-            # New field not in base - include it
-            result[key] = value
-        elif isinstance(value, dict) and isinstance(base[key], dict):
-            # Both are dicts - recurse
-            diff = _deep_diff(base[key], value)
-            if diff:  # Only include if there are differences
-                result[key] = diff
-        elif value != base[key]:
-            # Value differs - include it
-            result[key] = value
-    return result
-
-
 class JsonConfigStore(ConfigConvention):
     """A ``ConfigConvention`` backed by ``_config/db/<purpose>.json`` files.
 
     Each ``<purpose>.json`` holds one entity/schema tree (``entity``,
-    ``schemas``, ``departments``, ``config`` ...). Properties are stored
-    sparsely against schema defaults resolved at query time.
+    ``schemas``, ``departments``, ``config`` ...). A node stores exactly the
+    properties a caller pinned on it via ``set_own_properties``; schema
+    defaults and ancestor values are merged in at query time by
+    ``get_properties``.
 
     The in-memory copy of each purpose is kept coherent with disk: every
     public read re-stamps the file (at most once per coherent-read scope)
@@ -466,53 +452,41 @@ class JsonConfigStore(ConfigConvention):
             data = children[step]
         return copy.deepcopy(data.get('properties', {}))
 
-    def _get_inherited_properties(self, uri: Uri) -> dict:
-        """Get inherited properties (schema defaults + parent chain) without this entity's own props."""
-        # Start with schema defaults
-        if uri.purpose != 'schemas':
-            schema = self.get_entity_schema(uri)
-            if schema is not None:
-                result = {name: copy.deepcopy(field.default) for name, field in schema.fields.items()}
-            else:
-                result = {}
-        else:
-            result = {}
+    def set_own_properties(self, uri: Uri, properties: dict):
+        """Store ``properties`` as this entity's own overrides, verbatim.
 
-        data = self._load(uri.purpose)
-        if data is None:
-            return result
+        What the caller hands in *is* the override set: a key present is
+        pinned on this entity even when its value equals what the entity
+        would otherwise inherit, and a key absent is cleared.
 
-        # For a URI with no segments, the root entity IS the target — its
-        # own properties must not appear in "inherited", or set_properties'
-        # sparse diff will silently drop fields that happen to equal what's
-        # already stored. Only merge root properties when we have at least
-        # one segment to descend into.
-        if not uri.segments:
-            return result
+        Nothing is diffed against the inherited chain any more. A diff cannot
+        tell a deliberate pin that happens to agree with its parent today
+        from a value that merely rode along inside a resolved dict, and
+        guessing dropped exactly the pins artists set: a shot pinned to
+        frame_end 1080 while its sequence also said 1080 stored nothing, then
+        silently followed the sequence when the sequence moved.
 
-        # Merge root properties (these are inherited by all children).
-        result = _deep_merge(result, copy.deepcopy(data.get('properties', {})))
+        Callers therefore pass their OWN properties, not a resolved dict --
+        read with ``get_own_properties``, not ``get_properties``.
 
-        # Walk down the path, merging parent properties (stop before the final segment).
-        for step in uri.segments[:-1]:
-            if step not in data.get('children', {}):
-                break
-            data = data['children'][step]
-            child_props = data.get('properties', {})
-            result = _deep_merge(result, child_props)
-
-        return result
-
-    def set_properties(self, uri: Uri, properties: dict):
+        That is necessary but not sufficient, because the VALUES matter too.
+        A caller that correctly reads its own dict and merges into it still
+        de-inherits if what it merges came from the resolved view: a form
+        seeded from ``get_properties`` and resubmitted whole hands back
+        inherited values the artist never touched, and verbatim storage turns
+        every one of them into a pin. The catalog's shot Edit dialog did
+        exactly that, silently de-inheriting 20 shots across five live
+        projects (fixed in 23fc007). Write only the keys whose value actually
+        changed.
+        """
         with self._coherent():
-            # Calculate inherited properties and store only the difference
-            inherited = self._get_inherited_properties(uri)
-            sparse_properties = _deep_diff(inherited, properties)
-
             data = self._load(uri.purpose)
             if data is None:
                 data = dict(children=dict())
-            _insert(data, sparse_properties, uri.segments)
+            # deepcopy so the caller cannot mutate the cached tree through
+            # the dict it handed in. The old diff-based path got this for
+            # free, because building the diff produced a fresh dict.
+            _insert(data, copy.deepcopy(properties), uri.segments)
             self.write_root(uri.purpose, data)
 
     def list_entity_uris(self, filter: Uri | None = None, closure: bool = False) -> list[Uri]:

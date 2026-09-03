@@ -41,7 +41,14 @@ def is_str(datum) -> bool:
     return isinstance(datum, str)
 
 def is_int(datum) -> bool:
-    return isinstance(datum, int)
+    # bool is an int subclass, so a plain isinstance() accepts True/False
+    # wherever a frame number, priority, tile count or batch size is expected —
+    # and int(True) is 1, so the worker would render frame 1 rather than
+    # rejecting the config. These validators are the last check before a farm
+    # worker acts on a JSON config, so the bool must be refused here even
+    # though the submit dialog already refuses it upstream
+    # (asset_browser_catalogs/submit_jobs_resolve.py _as_int, same reasoning).
+    return isinstance(datum, int) and not isinstance(datum, bool)
 
 def is_bool(datum) -> bool:
     return isinstance(datum, bool)

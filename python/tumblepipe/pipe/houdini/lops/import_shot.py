@@ -13,7 +13,7 @@ from tumblepipe.config.department import (
     list_departments,
     list_entity_departments,
 )
-from tumblepipe.config.channels import list_channels
+from tumblepipe.config.channels import list_channels, read_channel
 import tumblepipe.pipe.houdini.nodes as ns
 import tumblepipe.pipe.houdini.util as util
 from tumblepipe.pipe.paths import (
@@ -209,7 +209,7 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
         new_entry = {
             'asset': asset_uri_str,
             'instance': asset_uri.segments[-1],
-            'variant': asset_data.get('variant', 'default'),
+            'variant': read_channel(asset_data, where=f'scene asset {asset_uri_str}'),
             'instances': asset_data.get('instances', 1),
             'inputs': []
         }
@@ -254,7 +254,7 @@ def _parse_entity_uri_info(uri_string: str) -> dict:
             params[k] = v
 
     dept = params.get('dept')
-    channel = params.get('variant', 'default')
+    channel = read_channel(params, where=f'sublayer ref {base_uri!r}')
 
     # Determine type based on URI and department
     if '/assets/' in base_uri:

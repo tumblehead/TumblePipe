@@ -14,6 +14,7 @@ from tumblepipe.farm.jobs.houdini import _common
 
 import tumblepipe.farm.tasks.export.task as export_task
 import tumblepipe.farm.tasks.notify.task as notify_task
+from tumblepipe.config.channels import read_channel_name
 
 """
 config = {
@@ -197,7 +198,9 @@ def submit(
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
-    channel_name = config['settings']['variant_name']
+    channel_name = read_channel_name(
+        config['settings'], where='export_render job settings'
+    )
 
     # Parameters
     project_name = get_project_name()

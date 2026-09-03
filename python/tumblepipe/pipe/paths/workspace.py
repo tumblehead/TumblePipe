@@ -326,7 +326,10 @@ def release_reserved_version(hip_file_path: Path) -> None:
     ignored. Only call this when the hip save itself failed: once a hip is
     persisted it is a real version and must not be deleted for a mere
     bookkeeping failure. Orphaned claims that slip through are also cleaned up
-    by ``verify_context_chain``.
+    by ``verify_context_chain`` — but only once they have aged past
+    ``context_repair.RESERVATION_GRACE``, since until then the claim is
+    indistinguishable from a save still in flight and removing it would let a
+    second saver take this same version number.
     """
     version_name = hip_file_path.stem.rsplit('_', 1)[-1]
     claim_path = hip_file_path.parent / '_context' / f'{version_name}.json'

@@ -12,7 +12,6 @@ from tumblepipe.config.department import (
 from tumblepipe.config.channels import list_channels
 from tumblepipe.pipe.paths import list_version_paths, get_workfile_context
 from tumblepipe.pipe.houdini.util import uri_to_prim_path
-from tumblepipe.util import result
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.lops import import_asset
@@ -440,7 +439,7 @@ class ImportAssets(EntityNode):
             ns.set_node_comment(context, "Bypassed: No assets configured")
             self.parm('set_metadata_python').set('')  # Clear metadata script
             context.bypass(True)
-            return result.Value(None)
+            return
 
         # Build the merge node
         merge_node = dive_node.createNode('merge', 'merge')
@@ -583,9 +582,6 @@ class ImportAssets(EntityNode):
                 shot_department
             )
         self.parm('set_metadata_python').set(metadata_script)
-
-        # Done
-        return result.Value(None)
 
 def create(scene, name):
     return ns.create_node(scene, name, ImportAssets, 'import_assets')

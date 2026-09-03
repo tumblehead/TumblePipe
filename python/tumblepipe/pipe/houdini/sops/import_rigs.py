@@ -2,7 +2,6 @@ import hou
 
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
-from tumblepipe.util import result
 from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.sops import import_rig
@@ -192,7 +191,7 @@ class ImportRigs(ns.Node):
         if not active_imports:
             ns.set_node_comment(context, "Bypassed: No rigs configured")
             context.bypass(True)
-            return result.Value(None)
+            return
 
         # Build asset nodes
         prev_node = None
@@ -230,9 +229,6 @@ class ImportRigs(ns.Node):
         # Set success comment
         rig_count = len(active_imports)
         ns.set_node_comment(context, f"Imported: {rig_count} rig{'s' if rig_count != 1 else ''}")
-
-        # Done
-        return result.Value(None)
 
 def create(scene, name):
     return ns.create_node(scene, name, ImportRigs, 'import_rigs', 'Sop')

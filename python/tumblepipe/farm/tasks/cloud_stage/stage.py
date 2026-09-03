@@ -21,6 +21,7 @@ from tumblepipe.farm import _common
 from tumblepipe.farm.jobs.houdini.cloud_render import job as render_job
 from tumblepipe.farm.tasks.cloud_stage import _spec
 from tumblepipe.farm.tasks.env import get_hython_env, print_env
+from tumblepipe.config.channels import read_channel_name
 
 _error = _common.error
 
@@ -43,7 +44,9 @@ def main(config):
     purpose = config['settings']['purpose']
     priority = config['settings']['priority']
     pool_name = config['settings']['pool_name']
-    channel_name = config['settings']['variant_name']
+    channel_name = read_channel_name(
+        config['settings'], where='cloud_stage task settings'
+    )
     render_department_name = config['settings']['render_department_name']
     render_settings_path = Path(config['settings']['render_settings_path'])
     tile_count = config['settings']['tile_count']

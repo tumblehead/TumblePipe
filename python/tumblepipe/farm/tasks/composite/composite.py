@@ -140,6 +140,7 @@ config = {
     'receipt_path': 'path/to/receipt.####.json',
     'input_path': 'path/to/input.hip',
     'node_path': 'path/to/node',
+    'step_size': 1,
     'layer_names': ['main', 'mirror'],
     'output_paths': {
         'main': 'path/to/main.####.exr',
@@ -169,6 +170,10 @@ def _is_valid_config(config):
     if not isinstance(config['layer_names'], list): return False
     if 'output_paths' not in config: return False
     if not _is_valid_layer(config['output_paths']): return False
+    if 'step_size' not in config: return False
+    if not isinstance(config['step_size'], int): return False
+    if isinstance(config['step_size'], bool): return False
+    if config['step_size'] <= 0: return False
     return True
 
 def cli():
@@ -192,7 +197,11 @@ def cli():
     last_frame = args.last_frame
     if first_frame > last_frame:
         return _error('Invalid render range')
-    render_range = BlockRange(first_frame, last_frame)
+    # The step comes from the config, the bounds from Deadline's per-chunk
+    # argv. Dropping the step here made receipt_paths enumerate every
+    # in-between frame, so a stepped comp rendered and published a gapped
+    # step-1 sequence that never read as complete.
+    render_range = BlockRange(first_frame, last_frame, config['step_size'])
 
     # Get the receipt path
     receipt_path = _fix_frame_pattern(Path(config['receipt_path']), '*')

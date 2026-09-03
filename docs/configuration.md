@@ -126,7 +126,8 @@ Render / AOV configuration lives in the schema and entity data
 (`schemas.json`, `entity.json` under the `render` sub-object), not in a
 Python module. A shot's render layers are its **channels**, stored in the
 `variants` property — the same channel list the rest of the pipeline uses.
-(`variants` is the frozen storage key; the concept is called a channel
+(`variants` is the key writers emit, and readers take `channels` too; the
+concept is called a channel
 everywhere it is shown. There is no separate `render_layers` property;
 that name is retired.)
 

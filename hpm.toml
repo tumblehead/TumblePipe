@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.43.0"
+version = "1.44.2"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -125,8 +125,6 @@ DYLD_LIBRARY_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/ho
 
 [python_dependencies]
 qtpy = ">=2.4.0"
-watchdog = ">=6.0.0"
-pymongo = ">=4.13.0"
 dictdiffer = ">=0.9.0"
 # Writes the farm-job hpm.toml manifest (tumblepipe.farm.deadline); tomllib's
 # stdlib-recommended write companion.
@@ -156,7 +154,7 @@ prepack = ["build-resolver", "build-wizard", "compile-hdas"]
 
 # Archive contents (allowlist — mirrors .ci/_tumblepipe_build.py
 # INCLUDE_PATTERNS, minus the mirror-only docs/ + .readthedocs.yaml). Without
-# this, tracked-but-non-package files (keymaps, *.pref.nosave, toolbar/,
+# this, tracked-but-non-package files (keymaps, *.pref.nosave,
 # viewer_states/, tests/, …) would ship as common content.
 include = [
     "README.md",

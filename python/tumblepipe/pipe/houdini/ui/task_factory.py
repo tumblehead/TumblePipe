@@ -6,6 +6,7 @@ local and farm execution closures), plus the small helpers shared with
 ValidationSession state.
 """
 
+import logging
 import uuid
 
 from tumblepipe.util.uri import Uri
@@ -15,6 +16,8 @@ from tumblepipe.pipe.paths import latest_export_path, current_staged_path
 from .process_task import ProcessTask, TaskStatus
 from .process_executor import ValidationSession, _validation_session
 from .helpers import get_entity_type
+
+logger = logging.getLogger(__name__)
 
 
 def _get_version_from_path(export_path) -> str | None:
@@ -126,8 +129,21 @@ def _create_validation_task(
             )
             combined_result.merge(result)
 
-        # No validation failures - continue normally
+        # No validation failures - continue normally.
+        #
+        # Warnings deliberately do not block an export, but they must not
+        # vanish either: this is the farm/process-dialog export path, so there
+        # is no dialog to carry them and they were previously dropped on the
+        # floor. Log them so they land in the session log the artist and the
+        # farm worker both keep.
         if combined_result.passed:
+            if combined_result.warnings:
+                logger.warning(
+                    "Export validation passed with %d warning(s) for %s/%s:\n%s",
+                    len(combined_result.warnings),
+                    entity_context, department,
+                    combined_result.format_message(),
+                )
             return
 
         # Check if user already made a remembered choice

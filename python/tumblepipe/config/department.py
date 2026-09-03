@@ -101,7 +101,7 @@ def add_department(
     department_uri = DEPARTMENTS_URI / context / name
     properties = api.config.get_properties(department_uri)
     if properties is not None: raise ValueError('Department already exists')
-    api.config.set_properties(department_uri, dict(
+    api.config.set_own_properties(department_uri, dict(
         independent = independent,
         publishable = publishable,
         renderable = renderable,
@@ -140,24 +140,30 @@ def remove_department(context: str, name: str):
 
 def set_independent(context: str, name: str, independent: bool):
     department_uri = DEPARTMENTS_URI / context / name
-    properties = api.config.get_properties(department_uri)
-    if properties is None: return
-    properties['independent'] = independent
-    api.config.set_properties(department_uri, properties)
+    # Pin only this flag: reading the resolved dict and writing it back
+    # would pin every schema default onto the department node.
+    if api.config.get_properties(department_uri) is None: return
+    own = api.config.get_own_properties(department_uri) or {}
+    own['independent'] = independent
+    api.config.set_own_properties(department_uri, own)
 
 def set_publishable(context: str, name: str, publishable: bool):
     department_uri = DEPARTMENTS_URI / context / name
-    properties = api.config.get_properties(department_uri)
-    if properties is None: return
-    properties['publishable'] = publishable
-    api.config.set_properties(department_uri, properties)
+    # Pin only this flag: reading the resolved dict and writing it back
+    # would pin every schema default onto the department node.
+    if api.config.get_properties(department_uri) is None: return
+    own = api.config.get_own_properties(department_uri) or {}
+    own['publishable'] = publishable
+    api.config.set_own_properties(department_uri, own)
 
 def set_renderable(context: str, name: str, renderable: bool):
     department_uri = DEPARTMENTS_URI / context / name
-    properties = api.config.get_properties(department_uri)
-    if properties is None: return
-    properties['renderable'] = renderable
-    api.config.set_properties(department_uri, properties)
+    # Pin only this flag: reading the resolved dict and writing it back
+    # would pin every schema default onto the department node.
+    if api.config.get_properties(department_uri) is None: return
+    own = api.config.get_own_properties(department_uri) or {}
+    own['renderable'] = renderable
+    api.config.set_own_properties(department_uri, own)
 
 def is_renderable(context: str, name: str) -> bool:
     """Check if a department is renderable."""
@@ -170,10 +176,12 @@ def is_renderable(context: str, name: str) -> bool:
 def set_generated(context: str, name: str, generated: bool):
     """Set whether a department is generated (Python-only, not Houdini-exportable)."""
     department_uri = DEPARTMENTS_URI / context / name
-    properties = api.config.get_properties(department_uri)
-    if properties is None: return
-    properties['generated'] = generated
-    api.config.set_properties(department_uri, properties)
+    # Pin only this flag: reading the resolved dict and writing it back
+    # would pin every schema default onto the department node.
+    if api.config.get_properties(department_uri) is None: return
+    own = api.config.get_own_properties(department_uri) or {}
+    own['generated'] = generated
+    api.config.set_own_properties(department_uri, own)
 
 def is_generated(context: str, name: str) -> bool:
     """Check if a department is generated (Python-only, not Houdini-exportable)."""
@@ -186,10 +194,12 @@ def is_generated(context: str, name: str) -> bool:
 def set_enabled(context: str, name: str, enabled: bool):
     """Set whether a department is enabled (active) or disabled (retired)."""
     department_uri = DEPARTMENTS_URI / context / name
-    properties = api.config.get_properties(department_uri)
-    if properties is None: return
-    properties['enabled'] = enabled
-    api.config.set_properties(department_uri, properties)
+    # Pin only this flag: reading the resolved dict and writing it back
+    # would pin every schema default onto the department node.
+    if api.config.get_properties(department_uri) is None: return
+    own = api.config.get_own_properties(department_uri) or {}
+    own['enabled'] = enabled
+    api.config.set_own_properties(department_uri, own)
 
 def is_enabled(context: str, name: str) -> bool:
     """Check if a department is enabled."""
@@ -202,10 +212,12 @@ def is_enabled(context: str, name: str) -> bool:
 def set_short(context: str, name: str, short: str | None):
     """Set or clear the optional abbreviated label for a department."""
     department_uri = DEPARTMENTS_URI / context / name
-    properties = api.config.get_properties(department_uri)
-    if properties is None: return
-    properties['short'] = short
-    api.config.set_properties(department_uri, properties)
+    # Pin only this flag: reading the resolved dict and writing it back
+    # would pin every schema default onto the department node.
+    if api.config.get_properties(department_uri) is None: return
+    own = api.config.get_own_properties(department_uri) or {}
+    own['short'] = short
+    api.config.set_own_properties(department_uri, own)
 
 def get_short(context: str, name: str) -> str | None:
     """Return the optional abbreviated label, or ``None`` if unset."""
@@ -349,8 +361,10 @@ def set_entity_departments(entity_uri: Uri, names: list[str]):
         raise ValueError(
             f'Not departments of the {context} pool: {", ".join(unknown)}'
         )
-    properties['departments'] = [name for name in pool if name in set(names)]
-    api.config.set_properties(entity_uri, properties)
+    # Pin only the assignment; the resolved dict carries the whole schema.
+    own = api.config.get_own_properties(entity_uri) or {}
+    own['departments'] = [name for name in pool if name in set(names)]
+    api.config.set_own_properties(entity_uri, own)
 
 
 def assign_department(entity_uri: Uri, name: str):

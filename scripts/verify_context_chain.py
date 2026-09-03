@@ -11,6 +11,12 @@ away from the hip files on disk ("unhinge" it). This tool reports the drift and,
 with ``--repair``, heals it conservatively (rebuilding only what is broken and
 backing up ``_context``/``context.json`` first).
 
+Safe to run while artists are working: a ``_context`` reservation claim younger
+than ``context_repair.RESERVATION_GRACE`` is a save still in flight, and repair
+reports it without touching it. That claim is the lock that stops two savers
+taking the same version number, so removing a live one would silently lose one
+artist's file.
+
 Needs the pipeline environment configured (TH_CONFIG_PATH etc.) so ``api.naming``
 can parse version names — run it from a pipeline shell, same as any other task.
 """

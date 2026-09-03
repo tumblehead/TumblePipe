@@ -349,11 +349,22 @@ def validate():
     )
 
     if result.passed:
-        hou.ui.displayMessage(
-            "Validation passed - no issues found.",
-            severity=hou.severityType.Message,
-            title="Validation Passed"
-        )
+        # A warning does not fail validation, but saying "no issues found"
+        # while holding a non-empty issue list is a lie — and the most common
+        # warning is "No stage available for validation", i.e. validation could
+        # not run at all.
+        if result.warnings:
+            hou.ui.displayMessage(
+                result.format_message(),
+                severity=hou.severityType.Warning,
+                title="Validation Passed With Warnings"
+            )
+        else:
+            hou.ui.displayMessage(
+                "Validation passed - no issues found.",
+                severity=hou.severityType.Message,
+                title="Validation Passed"
+            )
         return
 
     from tumblepipe.pipe.houdini.ui.validation_dialog import (

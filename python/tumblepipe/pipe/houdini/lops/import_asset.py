@@ -7,8 +7,7 @@ import hou
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
-from tumblepipe.config.channels import list_channels
-from tumblepipe.util import result
+from tumblepipe.config.channels import list_channels, read_channel
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.util import uri_to_prim_path
@@ -86,7 +85,7 @@ def _subasset_script_lines(
             continue
         base_name = sub_uri.segments[-1]
         instances = asset_info.get('instances', 1)
-        channel = asset_info.get('variant', 'default')
+        channel = read_channel(asset_info, where=f'asset row {asset_uri_raw}')
         inputs = list(asset_info.get('inputs', []))
         if shot_uri is not None and shot_department is not None:
             shot_entry = {
@@ -432,7 +431,7 @@ class ImportAsset(EntityNode):
             self.parm('import_filepath1').set('')
             ns.set_node_comment(native, "Bypassed: No asset selected")
             native.bypass(True)
-            return result.Value(None)
+            return
 
         # Get channel and staged file path based on version selection
         channel_name = self.get_channel_name()
@@ -455,7 +454,7 @@ class ImportAsset(EntityNode):
                     self.parm('import_filepath1').set('')
                     ns.set_node_comment(native, "Bypassed: No staged file found")
                     native.bypass(True)
-                    return result.Value(None)
+                    return
                 pinned_version = current_path.name
             else:
                 pinned_version = version_name
@@ -475,7 +474,7 @@ class ImportAsset(EntityNode):
             self.parm('import_filepath1').set('')
             ns.set_node_comment(native, "Bypassed: No staged file found")
             native.bypass(True)
-            return result.Value(None)
+            return
 
         # Apply department exclusion by loading the staged file's
         # per-department sublayers individually — the staged layer itself
@@ -525,7 +524,7 @@ class ImportAsset(EntityNode):
             import_node.parm('num_files').set(0)
             ns.set_node_comment(native, "Bypassed: All departments excluded")
             native.bypass(True)
-            return result.Value(None)
+            return
 
         # filepath1 channels to the HDA-level parm; extra slots are set
         # directly on the (editable) internal sublayer node.
@@ -565,8 +564,6 @@ class ImportAsset(EntityNode):
 
         # Set success comment with import metadata
         ns.set_node_comment(native, f"Imported: {resolved_version}")
-
-        return result.Value(None)
 
 def create(scene, name):
     return ns.create_node(scene, name, ImportAsset, 'import_asset', force_valid_node_name=True)

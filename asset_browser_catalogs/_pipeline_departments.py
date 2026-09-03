@@ -460,9 +460,11 @@ class DepartmentPoolDialog(QDialog):
 class EntityDepartmentsDialog(QDialog):
     """Choose which departments one shot or asset uses.
 
-    An entity with everything ticked stores no assignment at all — it simply
-    inherits the pool, so a department added to the pool later reaches it
-    automatically. Unticking is a scoping decision and nothing more: the
+    An entity with everything ticked stores an EMPTY assignment, which means
+    the same thing: it inherits the pool, so a department added to the pool
+    later reaches it automatically. (Before 7454025 the empty list was diffed
+    away and genuinely nothing was stored; it is now written verbatim and read
+    back as the falsy "inherit the pool" sentinel.) Unticking is a scoping decision and nothing more: the
     workfiles and exports of an unticked department stay on disk and keep
     composing into the staged build, and the browser goes on showing them,
     flagged. Nothing here can change a render.
@@ -562,8 +564,9 @@ class EntityDepartmentsDialog(QDialog):
             return
 
         from tumblepipe.config.department import set_entity_departments
-        # Everything ticked == inherit the pool: store nothing, so the entity
-        # picks up departments added to the pool later.
+        # Everything ticked == inherit the pool. Stored as an empty list,
+        # which resolves as "inherit", so the entity picks up departments
+        # added to the pool later.
         names = [] if set(selected) == set(self._pool) else selected
         try:
             self._catalog._activate_project(self._project)

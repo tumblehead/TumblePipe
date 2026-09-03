@@ -98,15 +98,16 @@ def set_renderer_setting(setting_name: str, values: dict[str, Any]):
         setting_name: Name of the setting (e.g., 'tile_count', 'batch_size')
         values: Dict with keys like 'default', 'min', 'max'
     """
-    properties = api.config.get_properties(SETTINGS_URI)
-    if properties is None:
-        properties = {}
+    # Pin exactly the sub-values handed in, on top of whatever this node
+    # already pins. Reading the RESOLVED dict here would drag every schema
+    # default for every other setting onto the node as an override.
+    own = api.config.get_own_properties(SETTINGS_URI) or {}
 
-    if setting_name not in properties:
-        properties[setting_name] = {}
+    if setting_name not in own:
+        own[setting_name] = {}
 
-    properties[setting_name].update(values)
-    api.config.set_properties(SETTINGS_URI, properties)
+    own[setting_name].update(values)
+    api.config.set_own_properties(SETTINGS_URI, own)
 
 
 def get_entity_render_settings(entity_uri: Uri) -> dict:

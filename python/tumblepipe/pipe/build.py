@@ -11,7 +11,7 @@ from typing import Optional
 
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.channels import DEFAULT_CHANNEL
+from tumblepipe.config.channels import DEFAULT_CHANNEL, read_channel
 from tumblepipe.config.department import list_departments
 from tumblepipe.pipe.paths import (
     latest_export_path,
@@ -232,7 +232,7 @@ def _iter_scene_assets(scene_uri: Uri):
                 asset_uri = Uri.parse_unsafe(asset_datum['asset'])
                 yield (
                     asset_uri,
-                    asset_datum.get('variant', DEFAULT_CHANNEL),
+                    read_channel(asset_datum, where=f'{scene_path.parent} context.json'),
                     asset_datum.get('instances', 1)
                 )
 
@@ -261,16 +261,16 @@ def resolve_shot_build(
         shot_uri: Shot URI to build
         shot_departments: List of shot department names
         asset_departments: List of asset department names
-        shot_variant: Channel name for shot layers (default: 'default')
-        asset_variants: Optional dict mapping asset_uri to channel_name for per-asset channels
+        shot_channel: Channel name for shot layers (default: 'default')
+        asset_channels: Optional dict mapping asset_uri to channel_name for per-asset channels
 
     Returns: {
         'assets': {asset_uri: instances},
         'shot_layers': {dept: version_path},
-        'shot_layer_variants': {dept: channel_name},
+        'shot_layer_channels': {dept: channel_name},
         'asset_layers': {dept: {asset_uri: version_path}},
-        'shot_variant': str,
-        'asset_variants': {asset_uri: channel_name}
+        'shot_channel': str,
+        'asset_channels': {asset_uri: channel_name}
     }
     """
     if not graph.scanned:
@@ -327,11 +327,11 @@ def resolve_shot_build(
         # without exports under the requested channel falls back to default) —
         # the staged file's sublayer URIs must name the channel that owns the
         # version, or the resolver points at a path that does not exist.
-        shot_layer_variants=shot_layer_channels,
+        shot_layer_channels=shot_layer_channels,
         asset_layers=asset_layer_paths,
         root_layer=root_layer,  # Root department layer (shot-level, stored at _root/)
-        shot_variant=shot_channel,
-        asset_variants=asset_channels,
+        shot_channel=shot_channel,
+        asset_channels=asset_channels,
         scene_asset_uris=scene_asset_uris  # Track which assets are from scene (vs. shot-flow)
     )
 
@@ -363,7 +363,7 @@ def resolve_asset_build(
         'department_layers': {dept_name: version_path},
         'assets': {tracked_asset_uri: instances},
         'asset_inputs': {tracked_asset_uri: inputs},
-        'asset_variants': {tracked_asset_uri: channel_name}
+        'asset_channels': {tracked_asset_uri: channel_name}
     }
     """
     if not graph.scanned:
@@ -419,8 +419,8 @@ def resolve_asset_build(
             asset_stamps[tracked_uri] = stamp
             assets[tracked_uri] = asset_datum.get('instances', 1)
             asset_inputs[tracked_uri] = asset_datum.get('inputs', [])
-            asset_channels[tracked_uri] = asset_datum.get(
-                'variant', DEFAULT_CHANNEL
+            asset_channels[tracked_uri] = read_channel(
+                asset_datum, where=f'staged context.json of {asset_uri}'
             )
 
     return dict(
@@ -429,5 +429,5 @@ def resolve_asset_build(
         department_layers=department_layers,
         assets=assets,
         asset_inputs=asset_inputs,
-        asset_variants=asset_channels
+        asset_channels=asset_channels
     )

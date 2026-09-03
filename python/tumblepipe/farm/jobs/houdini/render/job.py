@@ -24,6 +24,11 @@ from tumblepipe.farm.jobs.houdini import _common, _render_build
 import tumblepipe.farm.tasks.render.task as render_job
 import tumblepipe.farm.tasks.mp4.task as mp4_job
 import tumblepipe.farm.tasks.edit.task as edit_task
+from tumblepipe.config.channels import (
+    has_channel_names_key,
+    read_channel_name,
+    read_channel_name_list,
+)
 
 """
 config = {
@@ -77,8 +82,11 @@ def _is_valid_config(config):
         if not _check_str(settings, 'user_name'): return False
         if not _check_str(settings, 'purpose'): return False
         if not _check_str(settings, 'pool_name'): return False
-        if 'variant_names' not in settings: return False
-        if not isinstance(settings['variant_names'], list): return False
+        if not has_channel_names_key(settings): return False
+        if not isinstance(
+            read_channel_name_list(settings, where='render job settings'),
+            list,
+        ): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
         # Accept either input_paths (per-channel dict) or input_path (legacy single path)
@@ -247,7 +255,9 @@ def _build_layer_mp4_job(
     purpose = config['settings']['purpose']
     priority = config['tasks']['full_render']['priority']
     pool_name = config['settings']['pool_name']
-    channel_name = config['settings']['variant_name']
+    channel_name = read_channel_name(
+        config['settings'], where='render job settings'
+    )
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
@@ -375,7 +385,9 @@ def build(
         depends_on = []
 
     # Config
-    channel_names = config['settings']['variant_names']
+    channel_names = read_channel_name_list(
+        config['settings'], where='render job settings'
+    )
     render_department_name = config['settings']['render_department_name']
 
     # Helper to add job
@@ -599,7 +611,9 @@ def submit(
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
     user_name = config['settings']['user_name']
     purpose = config['settings']['purpose']
-    channel_names = config['settings']['variant_names']
+    channel_names = read_channel_name_list(
+        config['settings'], where='render job settings'
+    )
 
     # Parameters
     project_name = get_project_name()

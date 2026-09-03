@@ -9,11 +9,12 @@ concurrent saves, a crash mid-commit, or the historical ``v0000`` re-anchor.
 :func:`diagnose` reports the drift; :func:`repair` heals it. Repair is
 deliberately *conservative*: it fixes structurally-broken links (a link that
 points forward, dangles, or re-anchors to ``v0000`` mid-history), fills in
-missing entries, resets a stale pointer, and clears orphaned reservation stubs
+missing entries, resets a stale pointer, and clears *aged* reservation stubs
 — but it never rewrites a lineage entry whose ``from_version`` is a valid prior
 version, because provenance can legitimately be non-consecutive (an artist may
-save from an older version). It backs the ``_context`` dir and ``context.json``
-up before writing.
+save from an older version), and it never removes a reservation claim young
+enough to belong to a save still in flight (see :data:`RESERVATION_GRACE`). It
+backs the ``_context`` dir and ``context.json`` up before writing.
 
 Both functions take a plain workspace directory ``Path`` (the department folder
 that holds the hips, ``_context/`` and ``context.json``), so they need no
@@ -35,6 +36,23 @@ from tumblepipe.util.io import load_json, store_json
 logger = logging.getLogger(__name__)
 
 HIP_EXTENSIONS = ("hip", "hiplc", "hipnc")
+
+# How long a reservation claim is presumed to belong to a save still in flight.
+#
+# ``_context/vNNNN.json`` is not bookkeeping about the reservation — it *is* the
+# reservation. ``reserve_next_hip_file_path`` allocates a version by creating
+# that file with ``O_CREAT | O_EXCL`` and bumps to the next number when the
+# create fails, so for the whole window between "version claimed" and "hip
+# written" the claim file is the only thing standing between two savers and the
+# same ``vNNNN``. Deleting a live claim therefore hands one artist's version
+# number to another, and the second save silently overwrites the first.
+#
+# Age is the only evidence we have that a claim is dead rather than in progress,
+# so repair waits this long before reclaiming one. Thirty minutes is far beyond
+# any real hip save (a heavy shot scene is single-digit minutes) yet short enough
+# that a genuinely burned number comes back within the session that burned it.
+# A stale claim costs nothing while it waits: the reserver skips over it.
+RESERVATION_GRACE = dt.timedelta(minutes=30)
 
 
 # --------------------------------------------------------------------------- #
@@ -76,6 +94,43 @@ def _sorted_versions(names) -> list[str]:
     return sorted(names, key=api.naming.get_version_code)
 
 
+def _split_reservation_claims(
+    context_dir: Path,
+    versions: list[str],
+    grace: dt.timedelta,
+    now: dt.datetime,
+) -> tuple[list[str], list[str]]:
+    """Partition claim versions into ``(aged_out, in_flight)`` by claim mtime.
+
+    Both unprovable cases land on the in-flight side deliberately, because
+    deletion is the destructive direction: a claim we cannot ``stat`` might
+    still be held, and an mtime in the future (clock skew across the SMB share
+    the pipeline runs on) is not evidence of age.
+    """
+    aged_out: list[str] = []
+    in_flight: list[str] = []
+    for version in versions:
+        claim_path = context_dir / f"{version}.json"
+        try:
+            claimed_at = dt.datetime.fromtimestamp(claim_path.stat().st_mtime)
+        except OSError as error:
+            logger.warning(
+                f"cannot stat reservation claim {claim_path} ({error}); treating "
+                f"it as in-flight and leaving it alone"
+            )
+            in_flight.append(version)
+            continue
+        if now - claimed_at < grace:
+            in_flight.append(version)
+        else:
+            aged_out.append(version)
+    return aged_out, in_flight
+
+
+def _grace_label(grace: dt.timedelta) -> str:
+    return f"{grace.total_seconds() / 60:g}m"
+
+
 # --------------------------------------------------------------------------- #
 # Diagnosis
 # --------------------------------------------------------------------------- #
@@ -87,7 +142,8 @@ class Diagnosis:
     pointer_ok: bool                              # pointer == latest hip
     missing_entries: list[str]                    # hip with no finalized entry
     orphan_entries: list[str]                     # finalized entry, no hip
-    reserved_stubs: list[str]                     # orphaned reservation claims
+    reserved_stubs: list[str]                     # aged-out reservation claims
+    inflight_reservations: list[str]              # claims young enough to be live
     broken_links: list[tuple[str, str]]           # (version, reason)
     null_extension: list[str]                     # entry lacks extension hint
     empty_timestamp: list[str]                    # entry has empty timestamp
@@ -98,6 +154,8 @@ class Diagnosis:
 
     @property
     def is_healthy(self) -> bool:
+        # inflight_reservations is deliberately absent: a save in progress on
+        # this workspace is the mechanism working, not drift to be repaired.
         return not (
             self.missing_entries
             or self.orphan_entries
@@ -109,8 +167,16 @@ class Diagnosis:
         )
 
     def summary(self) -> str:
+        in_flight = (
+            f"; {len(self.inflight_reservations)} in-flight reservation(s): "
+            f"{', '.join(self.inflight_reservations)}"
+            if self.inflight_reservations else ""
+        )
         if self.is_healthy:
-            return f"ok    {self.workspace_path} ({len(self.hip_versions)} versions)"
+            return (
+                f"ok    {self.workspace_path} "
+                f"({len(self.hip_versions)} versions){in_flight}"
+            )
         lines = [f"FAIL  {self.workspace_path}"]
         if not self.pointer_ok:
             lines.append(
@@ -124,6 +190,11 @@ class Diagnosis:
             lines.append(f"        _context entries with no hip: {', '.join(self.orphan_entries)}")
         if self.reserved_stubs:
             lines.append(f"        orphaned reservation stubs: {', '.join(self.reserved_stubs)}")
+        if self.inflight_reservations:
+            lines.append(
+                f"        in-flight reservations (NOT drift, not repaired): "
+                f"{', '.join(self.inflight_reservations)}"
+            )
         if self.null_extension:
             lines.append(f"        entries missing extension: {', '.join(self.null_extension)}")
         if self.empty_timestamp:
@@ -131,8 +202,16 @@ class Diagnosis:
         return "\n".join(lines)
 
 
-def diagnose(workspace_path: Path) -> Diagnosis:
-    """Inspect a department workspace and report every context-data drift."""
+def diagnose(
+    workspace_path: Path,
+    *,
+    reservation_grace: dt.timedelta = RESERVATION_GRACE,
+) -> Diagnosis:
+    """Inspect a department workspace and report every context-data drift.
+
+    ``reservation_grace`` is how young a reservation claim may be before it is
+    reported as in-flight rather than orphaned; see :data:`RESERVATION_GRACE`.
+    """
     workspace_path = Path(workspace_path)
     hip_map = _hip_versions(workspace_path)
     hip_versions = _sorted_versions(hip_map)
@@ -140,12 +219,18 @@ def diagnose(workspace_path: Path) -> Diagnosis:
 
     entries = _context_entries(workspace_path)
     finalized = {v: e for v, e in entries.items() if not _is_reserved_stub(e)}
-    reserved_stubs = _sorted_versions(
+    claims = _sorted_versions(
         v for v, e in entries.items() if _is_reserved_stub(e)
     )
     # A reservation stub whose hip actually landed is not orphaned — it just
     # never got finalized; treat it as a missing entry instead.
-    reserved_stubs = [v for v in reserved_stubs if v not in hip_set]
+    claims = [v for v in claims if v not in hip_set]
+    # Of the rest, only the aged-out ones are dead. A young claim belongs to a
+    # save that has not written its hip yet, and removing it would let a second
+    # saver take the same version number and overwrite the first.
+    reserved_stubs, inflight_reservations = _split_reservation_claims(
+        workspace_path / "_context", claims, reservation_grace, dt.datetime.now(),
+    )
 
     missing_entries = [v for v in hip_versions if v not in finalized]
     orphan_entries = _sorted_versions(v for v in finalized if v not in hip_set)
@@ -206,6 +291,7 @@ def diagnose(workspace_path: Path) -> Diagnosis:
         missing_entries=missing_entries,
         orphan_entries=orphan_entries,
         reserved_stubs=reserved_stubs,
+        inflight_reservations=inflight_reservations,
         broken_links=broken_links,
         null_extension=null_extension,
         empty_timestamp=empty_timestamp,
@@ -254,6 +340,7 @@ def repair(
     prune_orphans: bool = False,
     backup: bool = True,
     dry_run: bool = False,
+    reservation_grace: dt.timedelta = RESERVATION_GRACE,
 ) -> RepairReport:
     """Heal the context data of a department workspace.
 
@@ -264,14 +351,16 @@ def repair(
     - synthesizes a ``_context`` entry for a hip that has none;
     - fills a missing ``extension``/``timestamp`` from the hip file;
     - resets ``context.json`` ``version`` to the latest hip;
-    - deletes orphaned reservation stubs;
+    - deletes reservation stubs that have aged past ``reservation_grace``,
+      while leaving younger ones — the live claims of saves still in flight —
+      strictly alone;
     - with ``prune_orphans``, removes finalized entries that have no hip.
 
     Returns a :class:`RepairReport`; with ``dry_run`` nothing is written but the
     report lists what *would* change.
     """
     workspace_path = Path(workspace_path)
-    diag = diagnose(workspace_path)
+    diag = diagnose(workspace_path, reservation_grace=reservation_grace)
     report = RepairReport(workspace_path=workspace_path, backup_path=None, dry_run=dry_run)
 
     if diag.is_healthy:
@@ -349,7 +438,10 @@ def repair(
             _write_entry(version, entry)
             report.actions.append(f"entry {version}: filled extension/timestamp")
 
-    # 4. Orphaned reservation stubs -> delete (a burned, never-saved number).
+    # 4. Reservation stubs. An aged-out claim is a burned, never-saved number
+    #    and is safe to reclaim. A young one is the live mutual-exclusion lock
+    #    of a save in flight — deleting it would let a second saver take the
+    #    same version and overwrite the first — so it is only reported.
     for version in diag.reserved_stubs:
         if not dry_run:
             try:
@@ -357,6 +449,12 @@ def repair(
             except OSError:
                 pass
         report.actions.append(f"stub {version}: removed orphaned reservation")
+
+    for version in diag.inflight_reservations:
+        report.actions.append(
+            f"stub {version}: KEPT (in-flight reservation, claimed under "
+            f"{_grace_label(reservation_grace)} ago)"
+        )
 
     # 5. Orphaned finalized entries (no hip) -> keep by default; optionally prune.
     for version in diag.orphan_entries:

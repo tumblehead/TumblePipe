@@ -31,6 +31,25 @@ Checks:
     (union over the batch, ``default`` first), opens with the primary's
     own list checked, keeps picks when the batch grows, and reads the
     batch's properties inside one coherency scope.
+14. Tri-state fields: a single entity shows its own value, unpinned and
+    italic; two entities that disagree park the field on ⟨per entity⟩.
+15. **The regression**: each checked entity resolves to its OWN frame
+    range. The form used to seed from the first checked entity and send
+    those numbers for the whole batch.
+16. Pinning applies one value to every entity, renders upright, leaves
+    its neighbours alone, and ↺ hands the field back to the entities.
+17. Reseeding on a selection change never clobbers a pinned field, and
+    always re-derives the unpinned ones.
+18. The pre-flight table lists one row per checked entity, columns for
+    what varies, and drops a column once it is pinned.
+19. An undefined channel is still submitted (visible failure is the
+    contract) but every affected entity is warned about it up front.
+20. An entity with no frame range omits the frame keys rather than
+    letting batch_submit guess 1001-1100.
+21. The ProcessDialog submission path: one farm-only task per entity, each
+    carrying and submitting its OWN settings (a lambda closing over the
+    loop variable would submit the last entity's N times), and an executor
+    that sequences on the main thread rather than a worker.
 
 Qt runs on the offscreen platform; no project data is written and nothing
 is submitted to the farm.
@@ -39,6 +58,7 @@ is submitted to the farm.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import os
 import sys
 from pathlib import Path
@@ -67,6 +87,9 @@ def main() -> int:
     QApplication.instance() or QApplication([])
 
     mod = _load_dialog_module()
+    # The dialog puts the catalog dir on sys.path at import time, so the
+    # pure resolver is importable by name from here too.
+    import submit_jobs_resolve as resolve
 
     from tumblepipe.api import default_client
     from tumblepipe.config.entities import is_terminal_entity
@@ -269,12 +292,15 @@ def main() -> int:
     expected_depts = mod._list_dept_names(
         "assets", only_publishable=False, only_renderable=True,
     )
+    # Index 0 is the ⟨per entity⟩ placeholder, which is also the way back
+    # to "let each entity use its own department".
     actual_depts = [
-        dlg3._rnd_dept.itemText(i) for i in range(dlg3._rnd_dept.count())
+        dlg3._rnd_dept.itemText(i) for i in range(1, dlg3._rnd_dept.count())
     ]
     check(
         "asset-context tree + department list",
         actual_depts == expected_depts
+        and dlg3._rnd_dept.itemText(0) == mod.PER_ENTITY_TEXT
         and [str(u) for u in dlg3._entity_uris] == [str(asset)],
         f"{actual_depts} != {expected_depts}",
     )
@@ -293,7 +319,7 @@ def main() -> int:
     )
     if dlg._playblast_box is not None:
         pb_depts = [
-            dlg._pb_dept.itemText(i) for i in range(dlg._pb_dept.count())
+            dlg._pb_dept.itemText(i) for i in range(1, dlg._pb_dept.count())
         ]
         check(
             "playblast department list == renderable shot departments",
@@ -422,6 +448,351 @@ def main() -> int:
             f"{counted['n']} config stats for {len(shots)} shots — "
             "is the coherent() scope still there?",
         )
+
+
+    # ── 14. Tri-state fields: unpinned follows the entity ──
+    #
+    # The regression this whole section exists for: the form used to seed
+    # from the first checked entity and send those numbers for the whole
+    # batch, so submitting six shots rendered all six at shot #1's length.
+    two = sorted(shots, key=str)[:2]
+    ranges = {}
+    for uri in two:
+        properties = mod._properties_for([uri])[0]
+        ranges[str(uri)] = (
+            properties.get('frame_start'), properties.get('frame_end'),
+        )
+    # Which frame field actually disagrees decides what the MIXED display
+    # can be asserted on: two shots often share a start and differ only in
+    # length, which is exactly the case the old shared form got wrong.
+    starts = {v[0] for v in ranges.values()}
+    ends = {v[1] for v in ranges.values()}
+    mixed_key = (
+        'first_frame' if len(starts) > 1
+        else 'last_frame' if len(ends) > 1 else None
+    )
+    differ = mixed_key is not None
+
+    dlg7 = mod.SubmitJobsDialog(
+        [two[0]], [two[0].segments[-1]], "shots",
+    )
+    first_entry = dlg7._fields['first_frame']
+    check(
+        "a single-entity open leaves every field unpinned",
+        not any(e.pinned for k, e in dlg7._fields.items()
+                if k not in ('render_department', 'pb_department')),
+        f"pinned: {[k for k, e in dlg7._fields.items() if e.pinned]}",
+    )
+    check(
+        "a single entity shows its own frame range, not a placeholder",
+        first_entry.value() == ranges[str(two[0])][0],
+        f"{first_entry.value()} != {ranges[str(two[0])][0]}",
+    )
+    check(
+        "an unpinned field renders italic (it follows the entity)",
+        first_entry.widget.font().italic(),
+    )
+    # The unset sentinel is the spin box's minimum, one step below the
+    # field's real lower bound — not a far-away constant, which would let a
+    # bounded field be typed below its bound.
+    pre_roll = dlg7._fields['pre_roll'].widget
+    check(
+        "the unset sentinel is exactly one step below the real minimum",
+        pre_roll.minimum() == -1 and pre_roll.maximum() == 1000,
+        f"range {pre_roll.minimum()}..{pre_roll.maximum()}",
+    )
+    check(
+        "the sentinel displays as the placeholder, not as its number",
+        pre_roll.specialValueText() == mod.PER_ENTITY_TEXT,
+    )
+
+    # Check the second shot in: if the two disagree, the field must stop
+    # showing either one's number.
+    leaf_of(dlg7, two[1]).setCheckState(0, Qt.Checked)
+    if differ:
+        mixed_entry = dlg7._fields[mixed_key]
+        check(
+            f"two entities that disagree park {mixed_key} on ⟨per entity⟩",
+            mixed_entry.value() is resolve.MIXED,
+            f"{mixed_entry.value()!r} (ranges: {ranges})",
+        )
+        check(
+            "the spin box actually displays the placeholder text",
+            mixed_entry.widget.text() == mod.PER_ENTITY_TEXT,
+            f"{mixed_entry.widget.text()!r}",
+        )
+        # The field they *agree* on keeps showing the shared value: only
+        # a genuine disagreement is worth hiding behind a placeholder.
+        agreed_key = (
+            'last_frame' if mixed_key == 'first_frame' else 'first_frame'
+        )
+        if len({v[0 if agreed_key == 'first_frame' else 1]
+                for v in ranges.values()}) == 1:
+            check(
+                f"the agreed field ({agreed_key}) still shows its value",
+                dlg7._fields[agreed_key].value() is not resolve.MIXED,
+                f"{dlg7._fields[agreed_key].value()!r}",
+            )
+    else:
+        print("SKIP: the first two shots share a frame range — "
+              "MIXED display not exercised")
+
+    # ── 15. The fix: each entity resolves to its OWN frame range ──
+    rows = dlg7._resolved_batch()
+    check(
+        "the batch resolves one settings dict per checked entity",
+        len(rows) == 2,
+        f"{len(rows)} rows",
+    )
+    resolved_ranges = {
+        name: (settings.get('first_frame'), settings.get('last_frame'))
+        for name, settings, _w in rows
+    }
+    expected_ranges = {
+        uri.segments[-1]: ranges[str(uri)] for uri in two
+    }
+    check(
+        "each entity is submitted with its own frame range",
+        resolved_ranges == expected_ranges,
+        f"{resolved_ranges} != {expected_ranges}",
+    )
+
+    # ── 16. Pinning applies one value to the whole batch ──
+    first_entry.widget.setValue(1234)
+    first_entry.pin()  # setValue is programmatic; a real edit pins itself
+    pinned_rows = dlg7._resolved_batch()
+    check(
+        "a pinned field applies to every entity in the batch",
+        all(s.get('first_frame') == 1234 for _n, s, _w in pinned_rows),
+        f"{[s.get('first_frame') for _n, s, _w in pinned_rows]}",
+    )
+    check(
+        "a pinned field renders upright (it is the artist's choice)",
+        not first_entry.widget.font().italic(),
+    )
+    check(
+        "pinning first_frame leaves last_frame following the entity",
+        not dlg7._fields['last_frame'].pinned,
+    )
+
+    # ↺ hands the field back to the entities.
+    dlg7._unpin(('first_frame',))
+    reverted = {
+        name: settings.get('first_frame')
+        for name, settings, _w in dlg7._resolved_batch()
+    }
+    check(
+        "↺ reverts a pinned field to each entity's own value",
+        not first_entry.pinned
+        and reverted == {k: v[0] for k, v in expected_ranges.items()},
+        f"{reverted}",
+    )
+
+    # ── 17. Reseeding never clobbers a pinned field ──
+    dlg7._fields['render_priority'].widget.setValue(77)
+    dlg7._fields['render_priority'].pin()
+    dlg7._set_all_checked(True)
+    check(
+        "growing the batch leaves a pinned field alone",
+        dlg7._fields['render_priority'].value() == 77,
+        f"{dlg7._fields['render_priority'].value()}",
+    )
+    check(
+        "growing the batch re-derives the unpinned fields",
+        not dlg7._fields['first_frame'].pinned,
+    )
+
+    # ── 18. Pre-flight table ──
+    dlg7._set_all_checked(False)
+    for uri in two:
+        leaf_of(dlg7, uri).setCheckState(0, Qt.Checked)
+    dlg7._preflight_box.setChecked(True)
+    dlg7._refresh_preflight()
+    table = dlg7._preflight
+    check(
+        "pre-flight shows one row per checked entity",
+        table.topLevelItemCount() == 2,
+        f"{table.topLevelItemCount()} rows",
+    )
+    headers = [
+        table.headerItem().text(i) for i in range(table.columnCount())
+    ]
+    check(
+        "pre-flight is bracketed by the entity name and a warnings column",
+        headers[0] == "Shot" and headers[-1] == "Warnings",
+        f"{headers}",
+    )
+    if differ:
+        check(
+            "a field the batch disagrees on becomes a pre-flight column",
+            "First" in headers or "Last" in headers,
+            f"{headers}",
+        )
+        shown = {
+            table.topLevelItem(i).text(0) for i in range(2)
+        }
+        check(
+            "pre-flight names the entities it will submit",
+            shown == {u.segments[-1] for u in two},
+            f"{shown}",
+        )
+
+    # A pinned field is the same for everyone, so it stops being a column.
+    dlg7._fields['first_frame'].widget.setValue(1010)
+    dlg7._fields['first_frame'].pin()
+    dlg7._refresh_preflight()
+    headers = [
+        table.headerItem().text(i) for i in range(table.columnCount())
+    ]
+    check(
+        "a pinned field is not a pre-flight column (it cannot vary)",
+        "First" not in headers,
+        f"{headers}",
+    )
+    dlg7._unpin(('first_frame',))
+
+    # ── 19. Pre-flight warnings fire before the submit loop ──
+    combo7 = dlg7._rnd_channels
+    invented = "no_such_channel_zzz"
+    if invented not in combo7.options():
+        # Force a channel none of the entities define, the way a union pick
+        # across a heterogeneous batch does.
+        combo7.set_options(list(combo7.options()) + [invented], [invented])
+        rows = dlg7._resolved_batch()
+        check(
+            "an undefined channel is still submitted (visible failure wins)",
+            all(s.get('variants') == [invented] for _n, s, _w in rows),
+            f"{[s.get('variants') for _n, s, _w in rows]}",
+        )
+        check(
+            "…but every affected entity is warned about it up front",
+            all(any('not defined here' in w for w in warnings)
+                for _n, _s, warnings in rows),
+            f"{[w for _n, _s, w in rows]}",
+        )
+        combo7.set_options(combo7.options()[:-1], [DEFAULT_CHANNEL])
+
+    # ── 20. A frame-less entity omits the keys rather than guessing ──
+    empty_rows = [
+        (name, settings) for name, settings, _w in [
+            (
+                "synthetic",
+                resolve.resolve_settings(
+                    {}, sections=('render',),
+                    form=dlg7._form_values(),
+                    pinned=dlg7._pinned_keys(),
+                    fallbacks=dlg7._fallbacks,
+                ),
+                [],
+            )
+        ]
+    ]
+    check(
+        "an entity with no frame range omits first_frame/last_frame",
+        'first_frame' not in empty_rows[0][1]
+        and 'last_frame' not in empty_rows[0][1],
+        f"{sorted(empty_rows[0][1])}",
+    )
+
+
+    # ── 21. ProcessDialog submission path ──
+    #
+    # Needs hpm.toml's [python_dependencies] (qtpy, tomli_w) on the path —
+    # Houdini's bundled interpreter alone has neither, and the dialog then
+    # correctly falls back to the inline loop. Skipped rather than failed so
+    # this harness still runs in a bare environment.
+    dlg8 = mod.SubmitJobsDialog(
+        two, [u.segments[-1] for u in two], "shots",
+    )
+    proc_rows = dlg8._resolved_batch()
+    tasks = dlg8._submit_tasks(proc_rows)
+    if not tasks:
+        print(
+            "SKIP: qtpy/tomli_w not importable — ProcessDialog path not "
+            "exercised (the dialog falls back to the inline loop)"
+        )
+    else:
+        check(
+            "one ProcessTask per checked entity",
+            len(tasks) == len(two),
+            f"{len(tasks)} tasks for {len(two)} entities",
+        )
+        check(
+            "tasks are farm-only, which pins ProcessDialog to farm mode",
+            all(t.execute_local is None and t.execute_farm is not None
+                for t in tasks),
+        )
+        check(
+            "each task carries its own resolved frame range",
+            [(t.first_frame, t.last_frame) for t in tasks]
+            == [(s.get('first_frame'), s.get('last_frame'))
+                for _n, s, _w in proc_rows],
+            f"{[(t.first_frame, t.last_frame) for t in tasks]}",
+        )
+        check(
+            "each task is addressed to its own entity",
+            [str(t.uri) for t in tasks] == [str(u) for u in two],
+        )
+
+        # The late-binding trap: a lambda closing over the loop variable
+        # would submit the LAST entity's settings N times. Every task must
+        # carry its own.
+        import tumblepipe.farm.jobs.houdini.batch_submit as bs
+        captured = []
+        real_submit = bs.submit_entity_batch
+        bs.submit_entity_batch = lambda config: (
+            captured.append(config) or ["job"]
+        )
+        try:
+            for task in dlg8._submit_tasks(proc_rows):
+                task.execute_farm()
+        finally:
+            bs.submit_entity_batch = real_submit
+        submitted = {
+            c['entity']['name']:
+                (c['settings'].get('first_frame'),
+                 c['settings'].get('last_frame'))
+            for c in captured
+        }
+        expected_submitted = {
+            name: (s.get('first_frame'), s.get('last_frame'))
+            for name, s, _w in proc_rows
+        }
+        check(
+            "each task submits exactly once",
+            len(captured) == len(two),
+            f"{len(captured)}",
+        )
+        check(
+            "each task submits ITS OWN settings, not a shared dict",
+            submitted == expected_submitted,
+            f"{submitted} != {expected_submitted}",
+        )
+
+        try:
+            from tumblepipe.pipe.houdini.ui.process_dialog import (
+                ProcessDialog,
+            )
+            from tumblepipe.pipe.houdini.ui.process_executor import (
+                ProcessExecutor,
+            )
+            pd = ProcessDialog(
+                title="Submit to Farm", tasks=tasks,
+                current_department=None, parent=None,
+            )
+            check("ProcessDialog constructs with farm-only tasks", pd is not None)
+            # The whole reason this reuse is safe on the GUI thread: the
+            # executor sequences with QTimer.singleShot on the main thread,
+            # so there is no worker thread and none of the Qt affinity
+            # hazards that come with moving pipeline work off it.
+            src = inspect.getsource(ProcessExecutor.execute)
+            check(
+                "the executor sequences on the main thread (no worker thread)",
+                "singleShot" in src and "Thread" not in src,
+                src.strip(),
+            )
+        except ImportError as exc:
+            print(f"SKIP: ProcessDialog not importable ({exc})")
 
     print("ALL PASS" if all(results) else "FAILURES")
     return 0 if all(results) else 1

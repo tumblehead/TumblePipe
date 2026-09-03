@@ -293,6 +293,10 @@ def _is_valid_config(config):
     if not isinstance(config['receipt_path'], str): return False
     if 'output_paths' not in config: return False
     if not isinstance(config['output_paths'], dict): return False
+    # An empty dict passed: the loop below iterates zero times, so {} was
+    # "valid". The worker then rendered, wrote receipts containing {}, and
+    # exited 0 having published no image at all.
+    if len(config['output_paths']) == 0: return False
     for key, value in config['output_paths'].items():
         if not isinstance(key, str): return False
         if not isinstance(value, str): return False

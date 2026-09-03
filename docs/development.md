@@ -45,8 +45,11 @@ minigun's execution-plan table prints `∞`, and the console lands on
 cp1252. It says nothing about whether the suite passes. Force UTF-8:
 
 ```bash
-PYTHONIOENCODING=utf-8 uv run minigun --test-dir . --time-budget 30
+PYTHONUTF8=1 uv run minigun --test-dir . --time-budget 30
 ```
+
+(`PYTHONUTF8=1`, matching `tests/README.md` and the hooks — the two pages
+used to disagree, one saying `PYTHONIOENCODING=utf-8`.)
 
 `tests/README.md` covers writing new properties and the design of the
 project-fixture bootstrap (`_harness.py`).
@@ -65,12 +68,25 @@ uvx ruff check python/ asset_browser_catalogs/ .ci/ python3.11libs/ \
 ```
 
 This runs automatically as a **pre-commit hook** (`.githooks/pre-commit`),
-which blocks a commit that fails the lint. `core.hooksPath` is a local git
-setting, so enable it once per clone:
+which blocks a commit that fails the lint. Arm the hooks once per clone:
 
 ```bash
-git config core.hooksPath .githooks
+sh .githooks/install
 ```
+
+`core.hooksPath` is local, uncommitted git config, so a fresh clone is
+**unarmed** — git forbids a repository arming its own hooks, precisely so
+that cloning cannot execute a repo's code. There is no way around that which
+is not also a way for a hostile repo to run code on clone; in particular do
+not reach for a global `init.templateDir` dispatcher, which would arm
+`.githooks/` in every future clone including third-party ones. What the repo
+can do is make the unarmed state loud rather than silent:
+
+```bash
+sh .githooks/install --check
+```
+
+exits non-zero and says so when this clone has no hooks.
 
 The same hook also runs `.ci/quality_gates/check_forbidden_files.py` over
 the **staged** `*.md` files, blocking a commit that adds an AI-generated
@@ -79,13 +95,47 @@ staged files on purpose — an untracked scratch report in the working tree
 must not block an unrelated commit. Run with no arguments (as CI/preflight
 does) it scans the whole tree instead.
 
-The hook skips (with a warning) if `uv`/`ruff` isn't on `PATH` rather than
-blocking, and `git commit --no-verify` bypasses it for a single commit.
-The release *tag* pipeline no longer lints — it only builds and publishes
-(`.woodpecker/`) — so this hook, and a local run before tagging, are the
-gate. The binary-HDA check (`check_binary_hdas.py`) is deliberately *not*
-in the hook: it flags binary `otls/*.hda`, which are gitignored local
-build artifacts, so it only makes sense from a clean clone.
+The hook **blocks** if `uv`/`ruff` isn't on `PATH`, rather than skipping. A
+gate that silently passes when it cannot run is worse than no gate: it
+prints the same shape as a real run, so an unlinted commit looks identical
+to a linted one. `git commit --no-verify` bypasses it for a single commit.
+
+## The test gate
+
+A **pre-push hook** (`.githooks/pre-push`) runs the minigun property suite
+plus the binary-HDA check, and blocks the push on failure. Push is the
+boundary because it is the last moment before work leaves the machine, and
+the suite is time-budgeted (~30s) rather than growing with the test count —
+too slow per commit, cheap enough per push. `git push --no-verify` bypasses.
+
+Note it also fires on branch deletions and `--dry-run`, so
+`git push origin --delete <branch>` pays the full run. That is deliberate:
+every condition added here is another way for the gate to quietly not run.
+
+## Preflight
+
+The release *tag* pipeline only builds and publishes (`.woodpecker/`) — it
+does not lint and does not test. So one command runs everything, and it is
+what to run before tagging:
+
+```bash
+uv run --no-project python .ci/preflight.py
+```
+
+Stages: `lint` (ruff E9,F), `hdas`, `reports`, `tests`, `harness`.
+`--list` prints them, `--only <stage>` runs one.
+
+`harness` runs only the two `scripts/verify_*.py` harnesses that work with
+no arguments (`verify_entity_from_context`, `verify_hda_callbacks`). The
+other 15 need Houdini, a Qt display, or a live `<project_path>` — including
+`verify_entity_casing` and `verify_tracked_asset_counts`, which look
+headless from their imports but argparse-require a project. Preflight says
+how many it skipped rather than implying full coverage.
+
+`check_binary_hdas.py` asks `git ls-files`, not the filesystem: `hpm build`
+collapses every expanded HDA into a gitignored binary `otls/*.hda` beside
+it, so a filesystem scan reported 64 violations on a clean checkout. The
+question it means to ask is whether a binary HDA was *committed*.
 
 ## Qt widget harnesses
 
@@ -255,9 +305,8 @@ appear) and starting with the opened entities checked. Checking more
 entities fans the submission out to all of them; branch checks cascade
 and roll up to a partial state; an entity that also appears under a
 group is submitted once, not once per group; the filter narrows the
-view without touching check state; and reseeding is keyed on the
-primary (first checked) entity, so growing the batch doesn't clobber a
-tuned form. It also pins the coherent-read contract: the sweep vets
+view without touching check state; and reseeding only re-derives
+*unpinned* fields, so growing the batch doesn't clobber a tuned form. It also pins the coherent-read contract: the sweep vets
 every URI with `is_terminal_entity` (one read each), so it runs inside
 a `config.coherent()` scope and the harness counts config stats to
 catch a regression back into the stat-storm bug class (see the config
@@ -270,6 +319,32 @@ department list = renderable shot departments, opt-in default), and the
 department seeding: the department the dialog was opened *from* wins for
 both Render and Playblast, and one that is not renderable is ignored rather
 than left shadowing the entity-property default.
+
+It pins the **tri-state form** and the per-entity resolution behind it (the
+policy itself is pure, and lives in `asset_browser_catalogs/
+submit_jobs_resolve.py` with property tests in
+`tests/test_submit_jobs_resolve.py`). A field left alone is *unpinned*,
+renders italic, and lets every checked entity resolve its own configured
+value; touching it *pins* it as a batch-wide choice. Where the entities
+disagree the widget parks on its native unset state — a spin box on
+`specialValueText` one step below its real minimum, a check box on
+`PartiallyChecked`, a combo on a placeholder row, a line edit on empty —
+and no value for it is sent at all. The harness pins the regression this
+exists for: submitting six shots used to render all six at the *first*
+shot's frame range, because the form seeded from one entity and sent one
+shared `settings` dict for the batch.
+
+It pins the **Pre-flight** table (one row per checked entity, a column for
+each setting the batch does not agree on, per-entity warnings) and that the
+table and the submit loop both come from one `_resolved_batch()`, so what
+the table shows is by construction what gets sent. And it pins the
+**ProcessDialog** submission path: one farm-only task per entity, each
+carrying and submitting its own settings, on an executor that sequences with
+`QTimer.singleShot` on the main thread rather than a worker. That section
+skips rather than fails when hpm.toml's `[python_dependencies]` (qtpy,
+tomli_w) aren't importable, which is the case under a bare Houdini
+interpreter — put an hpm venv's `Lib/site-packages` on `PYTHONPATH` to
+exercise it.
 
 It also pins the Render **Channels** menu, which replaced a free-text csv
 field: the menu offers the channels the checked entities actually define
@@ -457,6 +532,33 @@ reverse), and leftover reservation stubs. `--repair` fixes only what is broken
 — it never rewrites a valid, possibly non-consecutive `from_version` — and
 backs `_context`/`context.json` up first. `--dry-run` reports what it would do.
 
+**Reservation stubs are only reclaimed once they age.** A `_context/vNNNN.json`
+claim is not bookkeeping *about* a reservation, it *is* the reservation:
+`reserve_next_hip_file_path` allocates a version by creating that file
+`O_CREAT | O_EXCL` and bumps to the next number when the create fails, so
+between "version claimed" and "hip written" the claim is the only thing
+keeping two savers off the same `vNNNN`. Deleting a live one therefore hands
+one artist's version number to another, and the second save overwrites the
+first — which the backup does not protect against, since it covers `_context`
+and `context.json`, not the clobbered hip.
+
+Age is the only evidence available that a claim is dead rather than in
+progress, so a claim younger than `context_repair.RESERVATION_GRACE`
+(30 minutes) is reported as an in-flight reservation and left strictly alone.
+That also means an in-flight claim is **not** counted as drift: a workspace
+whose only anomaly is a save in progress diagnoses healthy, so a sweep does
+not report the artists who are working as failures. A stale claim costs
+nothing while it waits out the grace — the reserver skips over it and takes
+the next number — so there is no flag to shorten it.
+
+Both unprovable cases are kept rather than deleted, because deletion is the
+destructive direction: a claim that cannot be `stat`'d, and one whose mtime is
+in the future (clock skew across the SMB share). Neither is silent — both log
+and appear in the repair report.
+
+The practical consequence: **`--repair` is safe to run while artists are
+working.**
+
 Unlike the audits above it parses version names via `api.naming`, so it needs
 the pipeline environment configured (`TH_CONFIG_PATH` etc.):
 
@@ -564,6 +666,32 @@ knowing before any similar sweep:
   were long-standing kwargs for Discord notify channels and for OIIO image
   channels (`farm/tasks/notify`, `farm/jobs/houdini/{playblast,composite}`,
   `apps/exr.py`). A blanket rename in either direction silently rewrites them.
+- **The data and the reader ship separately, and that is a release-ordering
+  problem, not a code one.** Project data lives on the shared drive; every
+  reader ships per-machine in the hpm package. Rename a stored key and every
+  artist who has not updated is reading a layout their package predates. No
+  amount of care inside the sweep addresses this.
+
+  The answer is a **tolerant reader**, not a synchronised cutover. Teach every
+  reader to accept the old and the new spelling first; only then let writers
+  emit the new one; migrate old data whenever convenient; drop the old
+  spelling much later, or never. Each step is independently shippable, and a
+  half-finished migration is a non-event because mixed data reads fine.
+
+  The one hard constraint is that writers must not flip until every reader
+  accepts both — a reader that predates the new spelling drops the key and
+  silently resolves the default. If the update cannot be coordinated, have
+  writers emit *both* keys for one release: old readers take the one they
+  know and ignore the other, so no machine has to be updated first.
+
+  `config.channels` and `src/resolver/src/uri.rs` are the worked example,
+  applied at all five boundaries the key crosses (URI query, config DB
+  property, stored record, farm job JSON, browser metadata). Enumerate the
+  boundaries first: leaving one out is not a smaller change, it is a hole that
+  only opens when the writers flip.
+  Accept both, treat an absent key as the existing default, and raise only
+  when both spellings are present and *disagree* — that is unresolvable, and
+  every other case has a right answer.
 
 Rename identifiers with a `tokenize` pass that edits only `NAME` tokens —
 never `STRING` tokens — so quoted keys survive by construction; a regex over

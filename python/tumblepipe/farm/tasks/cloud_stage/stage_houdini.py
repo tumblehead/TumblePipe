@@ -12,6 +12,7 @@ from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.pipe.houdini import render_stage
 from tumblepipe.pipe.houdini.lops import archive
+from tumblepipe.config.channels import read_channel_name
 
 def _headline(title):
     print(f' {title} '.center(80, '='))
@@ -144,7 +145,7 @@ def cli():
         config['first_frame'],
         config['last_frame']
     )
-    channel_name = config['variant_name']
+    channel_name = read_channel_name(config, where='cloud_stage config')
     render_settings_path = Path(config['render_settings_path'])
     output_path = Path(config['output_path'])
     # Optional, not required by _is_valid_config: a job submitted before this

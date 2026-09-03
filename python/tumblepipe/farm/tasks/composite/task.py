@@ -125,6 +125,10 @@ def build(config, paths, staging_path):
         entity = config['entity'],
         first_frame = config['first_frame'],
         last_frame = config['last_frame'],
+        # The step reached the Deadline task (task.step_size below) but never
+        # the worker, so the worker rebuilt a step-1 range and composited every
+        # in-between frame.
+        step_size = config['step_size'],
         frames = config['frames'],
         receipt_path = config['receipt_path'],
         input_path = config['input_path'],

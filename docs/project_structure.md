@@ -67,12 +67,15 @@ with `from tumblepipe import ...`. Subpackages:
   LOP graph builder shared by the farm stage tasks and the
   `th::render_debug` HDA — and task/process UI).
 - `apps/` — external-tool launchers (Deadline, hython, ffmpeg/EXR
-  tools, DaVinci Resolve).
+  tools).
 - `farm/` — Deadline job/task builders (`jobs/` submit-side DAGs,
   `tasks/` per-task build + worker scripts).
 - `config_editor/` — the Qt config-database editor application
-  (launched from the shelf or the asset browser).
-- `tools/`, `ui/` — shelf-tool helpers and the reusable Qt widget kit.
+  (launched from the asset browser's right-click menu).
+- `tools/` — network-editor helpers for the HDAs and the startup
+  context menus. Named for the shelf tools that used to call them; the
+  `toolbar/*.shelf` files were never in the package allowlist, so those
+  helpers shipped unreachable and went when the shelves did.
 
 ### `python3.11libs/` and `python3.13libs/`
 

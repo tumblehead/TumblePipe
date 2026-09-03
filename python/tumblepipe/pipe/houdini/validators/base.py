@@ -45,6 +45,20 @@ class ValidationResult:
             ValidationIssue(message, prim_path, ValidationSeverity.WARNING, suggestion)
         )
 
+    @property
+    def warnings(self) -> list[ValidationIssue]:
+        """Issues that did not fail validation but must still be reported.
+
+        ``passed`` deliberately stays True for a warning — a warning should not
+        block an export. But that made every warning invisible: callers branched
+        on ``passed`` alone and reported "Validation passed - no issues found"
+        while holding a non-empty issue list. Warnings outnumber errors across
+        the validators (25 add_warning sites to 21 add_error), and seven of them
+        are "No stage available for validation" — so the case where validation
+        could not run at all was reported to the artist as a clean pass.
+        """
+        return [i for i in self.issues if i.severity == ValidationSeverity.WARNING]
+
     def merge(self, other: 'ValidationResult'):
         self.issues.extend(other.issues)
         if not other.passed:
@@ -150,13 +164,25 @@ class StageValidatorRegistry:
         result = ValidationResult()
         names = validators if validators else list(self._validators.keys())
         for name in names:
-            if name in self._validators:
-                validator = self._validators[name]
-                # Check if validator accepts context parameter
-                sig = inspect.signature(validator)
-                if 'context' in sig.parameters:
-                    validator_result = validator(root, context=context)
-                else:
-                    validator_result = validator(root)
-                result.merge(validator_result)
+            if name not in self._validators:
+                # An unrunnable validator must not read as a pass. Skipping
+                # silently meant a typo in a project's validators.py — or a
+                # validator that failed to register — disabled that check and
+                # still reported "Validation passed", which is the one outcome
+                # a validation step must never produce.
+                result.add_error(
+                    f"Unknown validator '{name}' - it is not registered, so it did not run",
+                    suggestion=(
+                        f"Registered validators are {sorted(self._validators)}."
+                    ),
+                )
+                continue
+            validator = self._validators[name]
+            # Check if validator accepts context parameter
+            sig = inspect.signature(validator)
+            if 'context' in sig.parameters:
+                validator_result = validator(root, context=context)
+            else:
+                validator_result = validator(root)
+            result.merge(validator_result)
         return result

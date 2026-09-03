@@ -22,6 +22,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from submit_jobs_resolve import read_channel_list
+
 if TYPE_CHECKING:
     from _pipeline_catalog import PipelineCatalog
     from tumbletrove.asset_browser.api.types import DetailContext
@@ -212,8 +214,11 @@ class DetailSectionBuilder:
         parts = [p for p in parts if p]
         if not parts:
             return None
-        # "variants" is the frozen metadata key for what the UI calls channels.
-        channels = meta.get("variants") or []
+        # Either spelling: "variants" is what the catalog writes today,
+        # "channels" is where it is going. Reading only one produced a
+        # SHORTER BREADCRUMB with no error on the other -- the quiet form of
+        # showing the wrong channel.
+        channels = read_channel_list(meta, "asset browser metadata")
         if "type:asset" in detail.tags and channels:
             return parts + ["/".join(channels)] if len(channels) > 1 \
                 else parts + [str(channels[0])]
@@ -480,7 +485,7 @@ class DetailSectionBuilder:
             rows.append(("Project", str(meta["project"])))
         if meta.get("category"):
             rows.append(("Category", str(meta["category"])))
-        channels = meta.get("variants") or []
+        channels = read_channel_list(meta, "asset browser metadata")
         if channels:
             rows.append(("Channels", ", ".join(channels)))
         if detail.versions:

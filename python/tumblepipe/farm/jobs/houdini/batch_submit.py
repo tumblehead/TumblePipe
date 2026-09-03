@@ -18,6 +18,7 @@ from tumblepipe.api import (
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import store_json, load_json, store_text
 from tumblepipe.pipe.context import get_aov_names_from_context, aggregate_aov_names_from_inputs
+from tumblepipe.config.channels import read_channel_names
 from tumblepipe.config.department import list_departments, department_names_up_to
 from tumblepipe.apps.deadline import (
     Deadline,
@@ -27,8 +28,12 @@ from tumblepipe.pipe.paths import (
     latest_export_path,
     get_latest_staged_file_path,
 )
-from tumblepipe.pipe.usd import collapse_latest_references, excluded_staged_refs
-from tumblepipe.config.timeline import get_fps, get_frame_range
+from tumblepipe.pipe.usd import (
+    LayerCollectionError,
+    collapse_latest_references,
+    excluded_staged_refs,
+)
+from tumblepipe.config.timeline import FrameRange, get_fps, get_frame_range
 import tumblepipe.farm.tasks.stage.task as stage_task
 import tumblepipe.farm.jobs.houdini.render.job as render_job
 import tumblepipe.farm.jobs.houdini.playblast.job as playblast_job
@@ -177,7 +182,14 @@ def submit_entity_batch(config: dict) -> list[str]:
                                   batch_size, denoise, render_mode
                                   ('full' renders the whole range;
                                   'first_middle_last' renders 3 check
-                                  frames via the partial_render chain)
+                                  frames via the partial_render chain).
+                                  first_frame/last_frame are REQUIRED when
+                                  render is on and have no default — the
+                                  caller resolves them per entity.
+                                  pre_roll/post_roll default to 0 and EXTEND
+                                  the rendered range (first_frame - pre_roll
+                                  .. last_frame + post_roll), matching what
+                                  the dialog shows.
 
     Returns:
         List of submitted job IDs
@@ -201,12 +213,26 @@ def submit_entity_batch(config: dict) -> list[str]:
 
     # Render settings
     render_department = settings.get('render_department')
-    channels = settings.get('variants', ['default'])
+    channels = read_channel_names(settings, where='submit settings') or ['default']
     render_pool = settings.get('render_pool', 'general')
     render_priority = settings.get('render_priority', 50)
     tile_count = settings.get('tile_count', 4)
-    first_frame = settings.get('first_frame', 1001)
-    last_frame = settings.get('last_frame', 1100)
+    # No fallback: the submitter resolves the frame range per entity (see
+    # asset_browser_catalogs/submit_jobs_resolve.py), and omits the keys
+    # when the entity has none. Defaulting to 1001-1100 here is how a
+    # multi-shot batch used to render every shot at a wrong length, and how
+    # an entity with no configured range rendered a plausible-looking
+    # sequence instead of failing. Playblast has always asked config per
+    # shot a few lines down; this is render catching up.
+    first_frame = settings.get('first_frame')
+    last_frame = settings.get('last_frame')
+    # The render handles. Unlike first_frame/last_frame above, these DO take a
+    # default: the dialog declares default=0 for both (the FIELDS table in
+    # asset_browser_catalogs/submit_jobs_resolve.py, sourced from the entity's
+    # roll_start / roll_end), and 0 is the identity - no handles - rather than
+    # a guessed range.
+    pre_roll = settings.get('pre_roll', 0)
+    post_roll = settings.get('post_roll', 0)
     batch_size = settings.get('batch_size', 10)
     denoise = settings.get('denoise', True)
     copy_to_edit = settings.get('copy_to_edit', False)
@@ -228,6 +254,32 @@ def submit_entity_batch(config: dict) -> list[str]:
 
     if not do_publish and not do_render and not do_playblast:
         return []
+
+    if do_render and (first_frame is None or last_frame is None):
+        raise BatchSubmitError(
+            f"No frame range for {entity_uri}: submit 'first_frame' and "
+            f"'last_frame', or configure a frame range on the entity"
+        )
+
+    # Extend the render range by the handles. The submitter resolves pre_roll /
+    # post_roll per entity and ships them, but nothing here ever read them, so
+    # farm renders silently came out at the play range while the dialog showed
+    # handles as applied. Routed through FrameRange rather than plain
+    # arithmetic so the roll validation applies (a start_roll that would take
+    # the first frame to <= 0 raises rather than producing a bad range), and so
+    # this matches the playblast branch below, which already resolves its range
+    # through FrameRange.full_range().
+    if do_render:
+        try:
+            render_frame_range = FrameRange(
+                first_frame, last_frame, pre_roll, post_roll
+            ).full_range()
+        except ValueError as e:
+            raise BatchSubmitError(
+                f"Invalid frame range for {entity_uri}: {e}"
+            )
+        first_frame = render_frame_range.first_frame
+        last_frame = render_frame_range.last_frame
 
     # Playblast is a shots-only preview (mirrors the shot playblast HDAs). The
     # dialog only offers the section for the shots context, but guard here too.
@@ -421,14 +473,25 @@ def submit_entity_batch(config: dict) -> list[str]:
                         department_names
                     )
 
-                    # Create collapsed USD for this channel
+                    # Create collapsed USD for this channel. A layer the
+                    # build records but that is missing from disk fails the
+                    # submission: collapsing around it would queue a render of
+                    # a stage with that department silently absent. Translated
+                    # to BatchSubmitError so one bad shot fails alone instead
+                    # of taking the rest of the batch down with it.
                     collapsed_stage_path = temp_path / f'collapsed_stage_{channel_name}.usda'
-                    collapsed_content = collapse_latest_references(
-                        latest_staged_path,
-                        collapsed_stage_path,
-                        render_overrides,
-                        excluded_refs=excluded_refs
-                    )
+                    try:
+                        collapsed_content = collapse_latest_references(
+                            latest_staged_path,
+                            collapsed_stage_path,
+                            render_overrides,
+                            excluded_refs=excluded_refs
+                        )
+                    except LayerCollectionError as e:
+                        raise BatchSubmitError(
+                            f"Cannot collapse the staged stage for {entity_uri} "
+                            f"channel '{channel_name}': {e}"
+                        ) from e
                     store_text(collapsed_stage_path, collapsed_content)
                     relative_collapsed_path = collapsed_stage_path.relative_to(temp_path)
                     input_paths[channel_name] = path_str(relative_collapsed_path)
@@ -557,12 +620,18 @@ def submit_entity_batch(config: dict) -> list[str]:
             )
 
             collapsed_playblast_path = temp_path / 'collapsed_playblast.usda'
-            collapsed_content = collapse_latest_references(
-                latest_staged_path,
-                collapsed_playblast_path,
-                {},
-                excluded_refs=pb_excluded_refs
-            )
+            try:
+                collapsed_content = collapse_latest_references(
+                    latest_staged_path,
+                    collapsed_playblast_path,
+                    {},
+                    excluded_refs=pb_excluded_refs
+                )
+            except LayerCollectionError as e:
+                raise BatchSubmitError(
+                    f"Cannot collapse the staged stage for the {entity_uri} "
+                    f"playblast: {e}"
+                ) from e
             store_text(collapsed_playblast_path, collapsed_content)
             relative_playblast_input = collapsed_playblast_path.relative_to(temp_path)
             paths[collapsed_playblast_path] = relative_playblast_input

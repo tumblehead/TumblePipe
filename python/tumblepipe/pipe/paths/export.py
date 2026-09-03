@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 ###############################################################################
 # Export Paths
 ###############################################################################
-# Unified path structure: export:/{entity}/{variant}/{dept}/{version}/
+# Unified path structure: export:/{entity}/{channel}/{dept}/{version}/
 # All exports include a channel, with "default" as the standard channel name.
 ###############################################################################
 
@@ -27,7 +27,7 @@ def get_export_path(
     ) -> Path:
     """Get export path for entity/channel/department/version.
 
-    Path structure: export:/{entity}/{variant}/{dept}/{version}/
+    Path structure: export:/{entity}/{channel}/{dept}/{version}/
     """
     export_uri = (
         Uri.parse_unsafe('export:/') /
@@ -103,7 +103,7 @@ def get_layer_file_name(
     ) -> str:
     """Get layer filename for a department export.
 
-    Filename format: {entity}_{variant}_{dept}_{version}.usd
+    Filename format: {entity}_{channel}_{dept}_{version}.usd
 
     Must match the resolver's department-flavor rule (resolve.rs:62-66).
     For the root department, use ``get_root_layer_file_name`` instead — the

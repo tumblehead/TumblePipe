@@ -10,8 +10,9 @@ Farm renders write versioned frame stacks under
 render:/render/<shot>/<render department>/<variant>/v####/<aov>/
 ```
 
-(`<variant>` is the **channel** segment — `variant` is the frozen wire
-spelling of it on disk and in URIs; see `docs/composition.md`.)
+(`<variant>` is the **channel** segment. That slot holds the channel
+*value*, not the literal word, so there is nothing in the path to rename; see
+`docs/composition.md` for the spellings that are moving and how.)
 
 with a `context.json` sidecar recording the frame range. A version is
 *complete* when every frame in that range exists on disk; comp tooling
@@ -122,7 +123,11 @@ so their versions interleave:
   render reads — then encodes an MP4 and writes the versioned playblast
   **and** the daily, exactly like the render/composite MP4s above. The
   frame range (rolls included) and fps come from the shot config per
-  shot; resolution (720p default) and pool/priority come from the dialog.
+  shot. So do resolution (720p default) and pool/priority, unless you
+  change them in the dialog: those fields are tri-state, and an untouched
+  one lets every checked shot use its own configured value rather than
+  imposing one shot's on the batch. A field you do set renders upright
+  instead of italic and applies to everything checked; `↺` hands it back.
   The **department** comes from the dialog too, and cuts the composed
   stack the same way a render's does — up to and including the one picked,
   see [Composition → The department cut](composition.md#the-department-cut).

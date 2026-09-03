@@ -16,15 +16,62 @@ Variant / Set Variant and by our `th::create_asset_model` /
 `th::create_asset_lookdev` HDAs. In the UI, "variant" now means exactly the
 USD thing; the publish-tree fork is a channel.
 
-The rename is vocabulary only. `variant` stays the **frozen wire token**
-everywhere data already spells it — the `?variant=` URI query parameter and
-the `_shared` sentinel, the path segment and the
-`{entity}_{variant}_{dept}_{ver}.usd` filename, HDA parm *internal* names
-(only their labels changed), the farm's `variant_name` / `variant_names`
-job keys, and the `variants` entity property in the config database.
-Published staged files embed those URIs and the resolver parses them, so
-renaming them would orphan every shipped file. Read `<variant>` in a path
-below as "the channel segment".
+The rename changed vocabulary only. `variant` is still what every writer
+**emits** — the `?variant=` URI query parameter and the `_shared` sentinel,
+the path segment and the `{entity}_{variant}_{dept}_{ver}.usd` filename, HDA
+parm *internal* names (only their labels changed), the farm's `variant_name`
+/ `variant_names` job keys, the `variants` entity property, and the asset
+browser's `metadata["variants"]`. Published staged files embed those URIs
+and the resolver parses them, so flipping a writer without the sequencing
+below would orphan shipped data. Read `<variant>` in a path as "the channel
+segment" — that slot holds the channel *value*, not the literal word, so
+there is nothing there to rename.
+
+Frozen is not the same as forever — the intent is still to eliminate
+`variant`. What makes that awkward is that the data sits on the shared
+project drive while every reader ships per-machine in the hpm package, so the
+two update on their own schedules and will always pass each other somewhere.
+
+So the readers accept **both** spellings rather than insisting on one, at
+every boundary the key crosses:
+
+| Boundary | Reader |
+|---|---|
+| `entity:` URI query key | `src/resolver/src/uri.rs` |
+| config DB property | `channels.read_channel_names` |
+| stored record (`context.json`, scene assets) | `channels.read_channel` |
+| farm job JSON | `channels.read_channel_name` / `_name_list` |
+| browser metadata + submission settings | `submit_jobs_resolve.read_channel_list` |
+
+A project halfway through a migration reads correctly; so does an artist a
+release behind.
+
+An **absent** key is not ambiguity — it is the ordinary encoding of "the
+default channel", and stays silent. Carrying **both** spellings is
+legitimate; carrying both with *different* values raises, because picking one
+would be a guess with a wrong render behind it. The resolver still refuses a
+query key it does not recognise at all, which is what catches `?varaint=`.
+
+That tolerance is what turns the changeover from one synchronised flag day
+into four independent steps:
+
+1. **readers accept both** — where we are; nothing on disk changes;
+2. **writers emit `channel`** — only once every machine has step 1, or an
+   out-of-date reader drops the key and silently resolves `default`;
+3. **a migration rewrites old data**, whenever convenient — interruptible
+   and restartable, because mixed data reads fine either way;
+4. **drop `variant`**, much later.
+
+Step 2 carries the only real ordering constraint. Step 3 may never need doing
+at all: departments re-export constantly, so the new spelling spreads on its
+own, and old exports keep working for as long as step 4 is deferred.
+
+Two spellings that should NOT move: the HDA parm *internal* names are baked
+into every saved `.hip` and Houdini looks parms up by name, so tolerance
+cannot help there — renaming them would need dual parms and a scene-load
+migration, for no artist-visible gain since their labels already read
+"Channel". And the `<variant>` path segment holds the channel *value*, not
+the literal word, so there is nothing there to rename.
 
 ## Department exports and staged files
 
@@ -555,13 +602,26 @@ so the render needs no resolver at all. The instance defs described under
 *Nested assets* are re-synthesized into this file's **root** layer, with
 each order read off the staged stage composed at submission time.
 
-Two things to know about it:
+Three things to know about it:
 
 - The flat stack preserves the nested staged files' relative strength, so
   the sublayers alone compose exactly what `import_shot` shows. Anything
   the flatten *authors on top* is therefore the only thing that can make
   the farm disagree with the session — which is what makes the root-layer
   strength above load-bearing rather than incidental.
+- **A layer the build records but that is missing from disk fails the
+  submission** (`LayerCollectionError`, surfaced as a `BatchSubmitError` for
+  that entity so the rest of a batch still submits). It used to log a warning
+  and collapse without it, which is not a failure anyone sees downstream:
+  husk composes the remaining layers into a complete, plausible image with
+  that department's contribution simply absent — an unlit shot that reaches
+  dailies before anyone reads the submission log. A ref that does not resolve
+  at all fails the same way and with the same message. The trigger in the
+  wild is a *failed export* leaving a version directory with no layer in it,
+  which `latest` then lands on until the next good export. Refs dropped by the
+  department cut are exempt: they are skipped before they are ever resolved or
+  `stat`'d, so a partial-department render does not trip over the layers it
+  exists to drop.
 - It resolves every entity URI in **latest mode**, so it does *not* honour
   the `version=` pins the staged build froze into its sublayer URIs. For
   shot departments that lands close to the stage task's intent (point 3
@@ -602,8 +662,9 @@ composes, weakest to strongest:
    the same fallback the staged build uses — so this pass refreshes
    the layer the staged stack actually contains,
 4. the render-settings overrides from the submission's
-   `render_settings.json`, then pruning of AOVs not selected for the
-   render.
+   `render_settings.json` — applied to the prim found as described under
+   *Where the render settings live* below, not to a fixed path — then
+   pruning of AOVs not selected for the render.
 
 Each channel gets its **own** graph and export — channels are
 alternative opinions on the same prims, so a single stage composing
@@ -618,6 +679,57 @@ always previews the **full** department stack, not a cut one. To see what
 husk actually got for a given submission, inspect that job's
 `collapsed_stage_<variant>.usda` (direct) or `stage_<variant>.usd`
 (standalone) in its `data/` directory.
+
+### Where the render settings live
+
+Both paths above apply the submit dialog's render overrides, and both have to
+find the same prim to apply them to. **That prim path is project-owned, not a
+constant.** The current project template's
+`_config/usd/root_default_prims.usda` declares
+
+```
+renderSettingsPrimPath = "/scene/Render/rendersettings"
+```
+
+and 6 of 13 live projects have it there, while the rest keep the older
+root-level `/Render/rendersettings`. Both paths used to hardcode the latter,
+so on the `/scene` projects the direct render's `over` chain composed onto a
+prim that does not exist and the stage task's lookup found nothing — every
+value the artist set in the dialog was discarded, and the render came back at
+project defaults, which is indistinguishable from a correct render.
+
+So neither path assumes: `pipe.usd.find_render_settings_prim_path(stage)`
+collects every `UsdRender.Settings` prim on the composed stage, uses it when
+there is exactly one, and **raises on zero or many**. That is the question
+husk itself answers. The two call sites — the flatten's override section and
+the stage task's cook-time script — are deliberately fixed together, because
+one path silently disagreeing with the other about where the settings live is
+how they diverged in the first place.
+
+Two traps if you touch this:
+
+- **Do not read `renderSettingsPrimPath` back off the composed stack.** It is
+  the obvious fix and it is wrong: Houdini's USD export *stamps* that
+  metadatum into department export layers, and those are stronger than
+  `root_default_prims.usda` — so the composed value is whatever the topmost
+  exported department happened to bake in, not what the project declares. If
+  a declaration is ever needed to break a tie, read it from
+  `config:/usd/root_default_prims.usda` directly. Nothing needs one today,
+  because a tie is a raise.
+- **The traversal predicate and payload loading are separate axes.** The walk
+  uses `Usd.PrimRange.Stage(stage, Usd.PrimAllPrimsPredicate)` rather than
+  `stage.Traverse()`, because the default predicate drops *inactive* prims and
+  a deactivated RenderSettings must surface as something to reconcile. But no
+  predicate reaches inside an **unloaded payload** — its contents are not
+  composed onto the stage at all — so a caller that opens the stage itself
+  must open it `LoadAll`. When nothing is found, the error names the unloaded
+  payloads, because "there is no settings prim" and "I could not see one" have
+  different fixes.
+
+Still hardcoded and *not* covered by this: the render-settings and camera
+validators (`pipe/houdini/validators/`), and the `asset_thumbnail`,
+`lookdev_studio` and `lpe_tags` HDAs. The validators will mis-report on the
+projects that use the `/scene` path.
 
 ## Performance note
 
