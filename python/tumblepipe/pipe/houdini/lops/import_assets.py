@@ -625,15 +625,21 @@ def select(index: int):
 
 
 def output_modified_prims(raw_node) -> str:
-    """Return the imported asset prim paths, space-separated."""
+    """Return the imported asset prim paths, space-separated.
+
+    Resolve each row through the wrapper rather than parsing its raw parm: a
+    row whose entity has not been materialized yet holds an empty parm and
+    was skipped here, even though it resolves to a real asset.
+    """
+    wrapper = ImportAssets(raw_node)
     count = raw_node.parm('asset_imports').eval()
     paths = []
     for i in range(1, count + 1):
-        entity = raw_node.parm(f'entity{i}').eval()
-        if not entity:
+        entity_uri = wrapper.get_entity_uri(i)
+        if entity_uri is None:
             continue
         try:
-            paths.append(uri_to_prim_path(Uri.parse_unsafe(entity)))
+            paths.append(uri_to_prim_path(entity_uri))
         except ValueError:
             pass
     return ' '.join(paths)

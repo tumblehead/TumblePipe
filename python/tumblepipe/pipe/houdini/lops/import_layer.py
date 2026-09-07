@@ -312,11 +312,36 @@ class ImportLayer(EntityNode):
         # Enable bypass if either layer exists
         self.parm('bypass_input').set(1 if (shared_exists or channel_exists) else 0)
 
-        if not shared_exists and not channel_exists:
-            logger.warning(f"No layer files found for import: uri={entity_uri}, dept={department_name}, version={version_name}")
-
         # Update version label
         self.parm('version_label').set(version_name)
+
+        if not shared_exists and not channel_exists:
+            # Nothing resolved. Say so on the node.
+            #
+            # This used to fall through to the success comment below and
+            # report "Imported: <version>" over an empty stage, with no error
+            # and no warning badge -- which is exactly the "the usd is picked
+            # up, but it loads in empty" artists report. The usual cause is
+            # Department left on 'from_context': in a lookdev workfile that
+            # resolves to `lookdev`, the department you are standing in, which
+            # has nothing published yet when you are building the look file.
+            logger.warning(
+                f"No layer files found for import: uri={entity_uri}, "
+                f"dept={department_name}, version={version_name}"
+            )
+            self.parm('metadata_python').set('')
+            lines = [
+                "NOTHING IMPORTED",
+                f"no '{department_name}' export of {version_name} for {entity_uri}",
+            ]
+            if self.parm('department').eval() == 'from_context':
+                lines.append(
+                    f"Department is 'from_context', which resolves to this "
+                    f"workfile's own department ({department_name}). Pick the "
+                    f"upstream department you meant to import."
+                )
+            ns.set_node_comment(native, "\n".join(lines))
+            return
 
         # Generate metadata update script from context.json. Build the script
         # from scratch each run: if the new import has no context.json (or no
@@ -469,11 +494,16 @@ def select():
 
 
 def output_modified_prims(raw_node) -> str:
-    """Return the prim path this HDA wrote, for the output's modifiedprims."""
-    entity = raw_node.parm('entity').eval()
-    if not entity:
+    """Return the prim path this HDA wrote, for the output's modifiedprims.
+
+    Resolve through the wrapper: the parm's default is the 'from_context'
+    sentinel, which is not a URI, so parsing it raw reported no modified
+    prims for a node in its default state.
+    """
+    entity_uri = ImportLayer(raw_node).get_entity_uri()
+    if entity_uri is None:
         return ''
     try:
-        return uri_to_prim_path(Uri.parse_unsafe(entity))
+        return uri_to_prim_path(entity_uri)
     except ValueError:
         return ''

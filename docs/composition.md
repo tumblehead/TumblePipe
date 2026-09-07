@@ -154,7 +154,7 @@ path of every piece is
 Attributes** entry that exists on the geometry — so a mesh reaching the node
 with `s@path = "body/lid"` publishes to `/prop/crate/geo/body/lid`.
 
-All three controls live under *Geometry Handling* on the node:
+Two controls live under *Geometry Handling* on the node:
 
 - **Import Path Prefix** (`/geo`) is the scope the geometry is imported
   into. The Configure Primitive that types that scope as a `UsdGeomScope`
@@ -162,17 +162,83 @@ All three controls live under *Geometry Handling* on the node:
 - **Path Attributes** (`path,name`) is the search order. It used to be
   `name` alone, which silently discarded any hierarchy an artist had
   authored in `s@path` and published everything flat under `geo`.
-- **Prefix Absolute Paths** (off) decides what happens to an attribute
-  value that already starts with `/`. Off means the value is taken as
-  written; on means the prefix is prepended anyway. Alembic sets `name` to
-  the full ABC object path, whose top object is usually the asset itself,
-  so with this on a crate published to `/prop/crate/geo/crate/crate_geo` —
-  the asset name twice.
 
-`th::create_model` holds the same contract: it leaves Path Attributes at the
-SOP Import default, which is also `path,name`, and defaults Prefix Absolute
-Paths off for the same reason. The two model nodes are meant to agree — if
-you change one, change the other.
+### The path attribute is normalised first
+
+`path` and `name` are SOP-space object paths, not stage paths, but SOP Import
+reads a leading `/` as *stage*-absolute. An absolute value therefore lands the
+geometry outside the geo scope — and the scope, left with nothing under it, is
+never created at all, so the asset publishes without a `geo` prim and the
+structure validator rejects it.
+
+Two ordinary things produce an absolute value:
+
+- **Alembic** writes `path` with a leading slash. It preserves whatever
+  hierarchy the modeller authored and does *not* invent a root object:
+  `hull/body` comes back as `/hull/body`.
+- A **USD → SOP round trip** — `lopimport`/`usdimport` of a published asset,
+  the everyday "pull the model back in and keep working" loop — hands back the
+  asset's *full* prim path, geo scope included
+  (`/prop/crate/geo/hull/body`). Re-publishing that would repeat the whole
+  path under itself.
+
+So both model HDAs normalise ahead of their SOP Import, in a
+`NORMALIZE_PATHS` wrangle: fall back `name` → `path`, drop the asset's own
+prim path when the value is already rooted there (that prefix is
+re-anchoring, not authored hierarchy), and make whatever is left relative.
+A value that is nothing but the asset's own path collapses to empty and SOP
+Import names the prim. `name` is cleared once the path is settled, so the
+Path Attributes fallback cannot resurrect an un-normalised value behind the
+wrangle's back.
+
+Hierarchy the modeller actually authored is preserved — **including a group
+named after the asset**. `s@path = "crate/body"` on asset `crate` publishes to
+`/prop/crate/geo/crate/body`. That repeats the name, but it is the artist's
+own hierarchy; string-matching it away cannot tell it apart from a genuine
+sub-part that happens to share the asset's name.
+
+In `create_asset_model` the wrangle lives at HDA top level rather than inside
+`variant_sopnet`, because `variant_sopnet` is an editable node — its contents
+are saved per-instance in the `.hip`, so a fix placed there would never reach
+existing artist scenes.
+
+`th::create_model` holds the same contract and normalises the same way. The
+two model nodes are meant to agree — if you change one, change the other.
+`scripts/verify_model_path_normalisation.py` pins both, across every shape
+that used to escape.
+
+## Where lookdev materials land under the asset
+
+`th::create_asset_lookdev` is the mirror of the model node: its
+`material_library` authors into `<asset prim>/mtl`, and the Configure
+Primitive types that scope, exactly as `/geo` is typed on the model side.
+The layer it publishes is an **over-layer** — it defines nothing of its own
+and composes over the model.
+
+That last point matters when you inspect a published lookdev layer. Opening
+it alone and traversing shows only `/_METADATA`, because every prim in it is
+an `over` and the materials live inside its `lookdev` variant set. That is
+correct, not a hollow publish. To read it, sublayer it over the model
+publish and traverse the composed stage.
+
+Two things used to empty this department, either of them on its own:
+
+- `matpathprefix` read `primpath`, the direct-mode fallback, which is empty
+  whenever the node runs in entity mode — the default. Materials were
+  authored at a stage-root `/mtl` and then dropped wholesale by
+  `add_lookdev_variants`, whose `variantprimpath` only captures prims under
+  the asset. It reads `effective_primpath` now, like every other consumer.
+- The variant's output node inside `lookdev_subnet` shipped with no input,
+  so the material library sat there wired from the subnet input and going
+  nowhere. `_sync_variants` now wires a newly created first output to it.
+
+The general trap behind the first one: **an entity-aware `th::` HDA has both
+a raw `entity`/`primpath` parm and a resolved `effective_primpath`, and the
+raw parm holds the `from_context` sentinel — not a URI — by default.** Read
+the resolved value. The same mistake emptied `output_modified_prims()` on
+all four import/export LOPs, which on `th::import_asset` fed the internal
+transform's `primpattern`, so an artist's placement of an imported asset
+silently applied to nothing.
 
 ## Layer save paths and export portability
 
@@ -197,9 +263,22 @@ templates pin it off explicitly; if an export still aborts with an
 "outside the export folder" error, disable *Enable Layer Save Path* on
 the named node and re-export.
 
-Deliberate *relative sibling* save paths are fine and used by the asset
-HDAs themselves (`payload.usd`, `geo.usdc`, `lookdev.usdc`) — they stay
-inside the version folder and travel with it.
+Deliberate save paths are used by the asset HDAs themselves — but a *bare*
+relative path is not the sibling path it looks like. `th::asset_payload`
+saved to `payload.usd`, which USD resolves against the **process working
+directory** — wherever Houdini was launched from, not `$HIP` and not the
+export folder. That was one file shared by every asset, every project and
+every session, so each publish clobbered the last: publish two assets and
+the first one's published layer composed the second's geometry, or nothing
+at all when their categories differed. The dangling-path guard cannot catch
+that, because the file *does* exist — it just holds someone else's asset.
+
+The payload sidecar is now anchored to `$HIP` and keyed on the asset prim
+path (`payload_prop_crate.usd`), so two assets can never collide, and
+`_localize_external_sidecars` copies it into the version folder at export
+so the published arc is a bare sibling filename that travels with the
+layer. `scripts/verify_asset_payload_sidecar.py` pins this, including the
+publish-A-then-B-then-re-read-A sequence that produced the empty asset.
 
 One deliberate exemption: **versioned caches** written by `th::cache`
 publish *by reference* instead of being copied into the version folder —

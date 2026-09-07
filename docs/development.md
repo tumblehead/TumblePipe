@@ -127,7 +127,7 @@ Stages: `lint` (ruff E9,F), `hdas`, `reports`, `tests`, `harness`.
 
 `harness` runs only the two `scripts/verify_*.py` harnesses that work with
 no arguments (`verify_entity_from_context`, `verify_hda_callbacks`). The
-other 15 need Houdini, a Qt display, or a live `<project_path>` — including
+other 17 need Houdini, a Qt display, or a live `<project_path>` — including
 `verify_entity_casing` and `verify_tracked_asset_counts`, which look
 headless from their imports but argparse-require a project. Preflight says
 how many it skipped rather than implying full coverage.
@@ -605,9 +605,11 @@ uv run --no-project python scripts/generate_changelog.py
 uv run --no-project python scripts/generate_changelog.py --check  # stale?
 ```
 
-The section layout lives in `.ci/_changelog.py`, shared with
+The section *layout* lives in `.ci/_changelog.py`, shared with
 `.ci/release_tumblepipe.py` so the file and the notes posted to the
-github release / TumbleTrove version page can't drift. Commits are
+github release / TumbleTrove version page can't drift in shape. Their
+*ranges* deliberately differ — see **What a release's notes cover**
+below. Commits are
 bucketed by prefix (`feat` → Features, `fix` → Fixes, …); a `!` marks a
 breaking change (`refactor!: …`) and leads the release; `ci`, `build`
 and the `release` version-bump commit are excluded. Anything that
@@ -620,6 +622,34 @@ can only be rendered once its tag exists. Regenerate and commit
 **after** `git tag`, not before — that commit then rides along in the
 next release. This is why `--check` is not a CI gate: it would
 false-fail on the commit immediately after every tag.
+
+### Superseded commits
+
+A subject records what a commit *intended*; occasionally the release
+overtakes it. `SUPERSEDED` in `.ci/_changelog.py` maps a sha to what
+replaced it, and those commits are rendered by nobody — the file, the
+github release and the version page all drop them together.
+
+It is a hand-maintained list on purpose. Deriving notes from subjects is
+the design, so every entry is a claim that the history and the shipped
+code disagree, and that deserves a reviewer rather than a heuristic. The
+two entries today are `7198fb7` and `484980c`, which announced refusals
+that `6d87c59` inverted into tolerance before v1.44.0 shipped.
+
+### What a release's notes cover
+
+`CHANGELOG.md` renders one section per **tag**. The notes published to
+the github release and the TumbleTrove version page range from the last
+**released** version instead — the highest still-active version the
+registry holds — because the registry is what users actually have.
+
+The two agree whenever every tag publishes, and diverge exactly when one
+does not. A tag whose pipeline fails never reaches anyone, so ranging
+from it would silently drop everything that release was carrying:
+v1.44.0 and v1.44.1 both died on the windows builder, and v1.44.2's
+notes were published listing a single docs commit while shipping seven
+breaking changes. `_notes_base_tag` refuses rather than guesses if the
+registry's last released version has no matching ancestor tag here.
 
 ## LPE tag harness
 

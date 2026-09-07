@@ -1,8 +1,9 @@
 {
-	"values":["22.0.310"
+	"values":["22.0.368"
 	],
 	"indexes":{
 		"hdaroot/output0.userdata":0,
+		"hdaroot/lookdev_variant_subnet/VARIANT1_OUT.userdata":0,
 		"hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library.userdata":0,
 		"hdaroot/setvariant.userdata":0,
 		"hdaroot/fetch_variant.userdata":0,
@@ -10,6 +11,7 @@
 		"hdaroot/lookdev_variant_subnet.userdata":0,
 		"hdaroot/CONFIG_GEO_SCOPE_PRIM.userdata":0,
 		"hdaroot/configurelayer.userdata":0,
+		"hdaroot/lookdev_variant_subnet/lookdev_subnet/OUT_default.userdata":0,
 		"hdaroot/foreach_end1.userdata":0,
 		"hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library/default_mtl/inputs.userdata":0,
 		"hdaroot/add_lookdev_variants.userdata":0,

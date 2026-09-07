@@ -2,6 +2,18 @@ MIME-Version: 1.0
 Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="node_type"
 Content-Type: text/plain
 
@@ -19,12 +31,11 @@ Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
 comment ""
-position -1.53276 -2.74114
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+position 0 0
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
-0 "output1"
 }
 inputsNamed3
 {
@@ -36,7 +47,7 @@ stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
@@ -60,7 +71,7 @@ Content-Disposition: attachment; filename="hdaroot.inp"
 Content-Type: text/plain
 
 1
-0 0.8085040111758709 31.474159448186732 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+0 0.808504 31.0382 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/CONFIG_GEO_SCOPE_PRIM.init"
@@ -74,7 +85,7 @@ Content-Disposition: attachment; filename="hdaroot/CONFIG_GEO_SCOPE_PRIM.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 19.8296
+position 2.7853 25.0895
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
 outputsNamed3
@@ -242,7 +253,7 @@ Content-Disposition: attachment; filename="hdaroot/output0.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 15.187
+position 2.7853 21.701
 connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -303,7 +314,7 @@ Content-Type: text/plain
 objflags objflags =  origin off
 pretransform UT_DMatrix4 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1
 comment ""
-position 9.45945 24.2382
+position 9.8453 21.701
 connectornextid 0
 flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on selectable on
 outputsNamed3
@@ -463,8 +474,8 @@ Content-Type: text/plain
 	height := 0.7000000059604652;
 	minimized := 1;
 	width := 7.799999929964543;
-	x_position := -123.71694997390907;
-	y_position := 75.80247031728922;
+	x_position := -126.78174997390907;
+	y_position := 76.69667031728922;
 }
 {
   create -1
@@ -478,16 +489,141 @@ Content-Disposition: attachment; filename="hdaroot/variant_sopnet/create_variant
 Content-Type: text/plain
 
 4
-0 -123.51694997092883 76.002470320269452 2 0 __netbox1 "FROMOUTPUT"
-1 -121.31694999626082 76.002470320269452 2 0 __netbox1 "FROMOUTPUT"
-2 -119.11695002159279 76.002470320269452 2 0 __netbox1 "FROMOUTPUT"
-3 -116.91695004692475 76.002470320269452 2 0 __netbox1 "FROMOUTPUT"
+0 -126.58174997092884 76.89667032026945 2 0 __netbox1 "FROMOUTPUT"
+1 -124.38174999626082 76.89667032026945 2 0 __netbox1 "FROMOUTPUT"
+2 -122.18175002159279 76.89667032026945 2 0 __netbox1 "FROMOUTPUT"
+3 -119.98175004692476 76.89667032026945 2 0 __netbox1 "FROMOUTPUT"
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/variant_sopnet/create_variants/OUT_default.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/variant_sopnet/create_variants/OUT_default.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position -123.717 75.8025
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/variant_sopnet/create_variants/OUT_default.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/variant_sopnet/create_variants/OUT_default.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/variant_sopnet/create_variants.net"
 Content-Type: text/plain
 
 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/variant_sopnet/OUT_default.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/variant_sopnet/OUT_default.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 16.0233 2.89324
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	create_variants 0 1 "input1"
+}
+inputs
+{
+0 	create_variants 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/variant_sopnet/OUT_default.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+copyinput	[ 0	locks=0 ]	(	"on"	)
+cacheinput	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/variant_sopnet/OUT_default.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/variant_sopnet.order"
+Content-Type: text/plain
+
+2
+create_variants
+OUT_default
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/variant_sopnet.net"
@@ -507,7 +643,7 @@ Content-Disposition: attachment; filename="hdaroot/foreach_end1.def"
 Content-Type: text/plain
 
 comment ""
-position 0.810104 21.4702
+position 2.7853 26.219
 connectornextid 4
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -611,7 +747,7 @@ Content-Disposition: attachment; filename="hdaroot/foreach_begin.def"
 Content-Type: text/plain
 
 comment ""
-position 2.43682 25.4275
+position 3.6325 28.6286
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on debug off
 outputsNamed3
@@ -670,7 +806,7 @@ Content-Disposition: attachment; filename="hdaroot/setvariant.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 18.3446
+position 2.7853 23.96
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -759,7 +895,7 @@ Content-Disposition: attachment; filename="hdaroot/import_model_variants.def"
 Content-Type: text/plain
 
 comment ""
-position 4.74474 24.2605
+position 5.8917 28.1768
 connectornextid 0
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -840,7 +976,7 @@ Content-Type: text/plain
 
 {
 version 0.8
-soppath	[ 0	locks=0 ]	(	../variant_sopnet/OUT_`@VARIANTNAME`	)
+soppath	[ 0	locks=0 ]	(	../normalize_sopnet/OUT	)
 asreference	[ 0	locks=0 ]	(	"off"	)
 copycontents	[ 0	locks=0 ]	(	"off"	)
 ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
@@ -880,9 +1016,9 @@ enable_nurbssurfhandling	[ 0	locks=0 ]	(	"off"	)
 nurbssurfhandling	[ 0	locks=0 ]	(	meshes	)
 enable_kindschema	[ 0	locks=0 ]	(	"on"	)
 kindschema	[ 0	locks=0 ]	(	component	)
-enable_pathattr	[ 0	locks=0 ]	(	[ enable_pathattr	1 ] 	)
+enable_pathattr	[ 0	locks=0 ]	(	[ enable_pathattr	0 ] 	)
 pathattr	[ 0	locks=0 ]	(	`chs(\"../pathattr\")`	)
-enable_prefixabsolutepaths	[ 0	locks=0 ]	(	[ enable_prefixabsolutepaths	1 ] 	)
+enable_prefixabsolutepaths	[ 0	locks=0 ]	(	[ enable_prefixabsolutepaths	0 ] 	)
 prefixabsolutepaths	[ 0	locks=0 ]	(	[ prefixabsolutepaths	0 ] 	)
 enable_heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
 heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
@@ -958,7 +1094,7 @@ Content-Disposition: attachment; filename="hdaroot/add_model_variants2.def"
 Content-Type: text/plain
 
 comment ""
-position 2.43397 22.8794
+position 4.7621 27.1979
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
 outputsNamed3
@@ -1067,7 +1203,7 @@ Content-Disposition: attachment; filename="hdaroot/configurelayer.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 16.8781
+position 2.7853 22.8305
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on descriptivename off debug off
 outputsNamed3
@@ -1538,7 +1674,7 @@ Content-Disposition: attachment; filename="hdaroot/INPUT.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 27.2916
+position 0.808504 27.6497
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -1596,7 +1732,7 @@ Content-Disposition: attachment; filename="hdaroot/INIT_ASSET_PRIMITIVE.def"
 Content-Type: text/plain
 
 comment ""
-position 0.808504 30.1325
+position 0.808504 29.9087
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -1816,10 +1952,593 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet.init"
+Content-Type: text/plain
+
+type = sopnet
+matchesdef = 0
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet.def"
+Content-Type: text/plain
+
+objflags objflags =  origin off
+pretransform UT_DMatrix4 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1
+comment ""
+position 9.8453 22.8305
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on selectable on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+use_dcolor	[ 0	locks=0 ]	(	"off"	)
+dcolor	[ 0	locks=0 ]	(	1	1	1	)
+picking	[ 0	locks=0 ]	(	"on"	)
+pickscript	[ 0	locks=0 ]	(	""	)
+caching	[ 0	locks=0 ]	(	"on"	)
+vport_shadeopen	[ 0	locks=0 ]	(	"off"	)
+vport_displayassubdiv	[ 0	locks=0 ]	(	"off"	)
+shop_materialpath	[ 0	locks=0 ]	(	""	)
+shop_materialopts	[ 0	locks=0 ]	(	0	)
+tdisplay	[ 0	locks=0 ]	(	"off"	)
+display	[ 0	locks=0 ]	(	1	)
+xOrd	[ 0	locks=0 ]	(	"srt"	)
+rOrd	[ 0	locks=0 ]	(	"xyz"	)
+t	[ 0	locks=0 ]	(	0	0	0	)
+r	[ 0	locks=0 ]	(	0	0	0	)
+s	[ 0	locks=0 ]	(	1	1	1	)
+p	[ 0	locks=0 ]	(	0	0	0	)
+pr	[ 0	locks=0 ]	(	0	0	0	)
+scale	[ 0	locks=0 ]	(	1	)
+pre_xform	[ 0	locks=0 ]	(	0	)
+keeppos	[ 0	locks=0 ]	(	"off"	)
+childcomp	[ 0	locks=0 ]	(	"off"	)
+constraints_on	[ 0	locks=0 ]	(	"off"	)
+constraints_path	[ 0	locks=0 ]	(	""	)
+lookatpath	[ 0	locks=0 ]	(	""	)
+lookupobjpath	[ 0	locks=0 ]	(	""	)
+lookup	[ 0	locks=0 ]	(	on	)
+pathobjpath	[ 0	locks=0 ]	(	""	)
+roll	[ 0	locks=0 ]	(	0	)
+pos	[ 0	locks=0 ]	(	0	)
+uparmtype	[ 0	locks=0 ]	(	"arc"	)
+pathorient	[ 0	locks=0 ]	(	1	)
+up	[ 0	locks=0 ]	(	0	1	0	)
+bank	[ 0	locks=0 ]	(	0	)
+showlopstage	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/FETCH_VARIANT.init"
+Content-Type: text/plain
+
+type = object_merge
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/FETCH_VARIANT.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0 -5.55112e-17
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/FETCH_VARIANT.chn"
+Content-Type: text/plain
+
+{
+    channel objpath1 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "\"../../variant_sopnet/OUT_\" + @VARIANTNAME" }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/FETCH_VARIANT.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+numobj	[ 0	locks=0 ]	(	1	)
+_separator	[ 0	locks=0 ]	(	)
+xformtype	[ 0	locks=0 ]	(	"object"	)
+xformpath	[ 0	locks=0 ]	(	""	)
+invertxform	[ 0	locks=0 ]	(	"off"	)
+createptgroups	[ 0	locks=0 ]	(	"off"	)
+ptgroupprefix	[ 0	locks=0 ]	(	_ptgrp_	)
+createprimgroups	[ 0	locks=0 ]	(	"off"	)
+primgroupprefix	[ 0	locks=0 ]	(	_primgrp_	)
+verbosegroups	[ 0	locks=0 ]	(	"off"	)
+suffixfirstgroup	[ 0	locks=0 ]	(	"on"	)
+createptstring	[ 0	locks=0 ]	(	"off"	)
+createprimstring	[ 0	locks=0 ]	(	"off"	)
+pathattrib	[ 0	locks=0 ]	(	objname	)
+pack	[ 0	locks=0 ]	(	"off"	)
+pivot	[ 0	locks=0 ]	(	"centroid"	)
+viewportlod	[ 0	locks=0 ]	(	"full"	)
+addpath	[ 0	locks=0 ]	(	"on"	)
+enable1	[ 0	locks=0 ]	(	"on"	)
+objpath1	[ 0	locks=0 ]	(	[ objpath1	"" ] 	)
+group1	[ 0	locks=0 ]	(	""	)
+expand1	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/FETCH_VARIANT.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/NORMALIZE_PATHS.init"
+Content-Type: text/plain
+
+type = attribwrangle
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/NORMALIZE_PATHS.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0 -1.1295
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	FETCH_VARIANT 0 1 "input1"
+}
+inputs
+{
+0 	FETCH_VARIANT 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/NORMALIZE_PATHS.spareparmdef"
+Content-Type: text/plain
+
+    group {
+        name    "folder1"
+        label   "Code"
+
+        parm {
+            name    "group"
+            baseparm
+            label   "Group"
+            export  none
+            bindselector uvselect "Modify Attribs"
+                "Select the geometry to affect and press Enter to complete."
+                0 1 0xffffffff 0 grouptype 0
+        }
+        parm {
+            name    "grouptype"
+            baseparm
+            label   "Group Type"
+            export  none
+        }
+        parm {
+            name    "class"
+            baseparm
+            label   "Run Over"
+            export  none
+        }
+        parm {
+            name    "vex_numcount"
+            baseparm
+            label   "Number Count"
+            export  none
+        }
+        parm {
+            name    "vex_threadjobsize"
+            baseparm
+            label   "Thread Job Size"
+            export  none
+        }
+        parm {
+            name    "snippet"
+            baseparm
+            label   "VEXpression"
+            export  all
+        }
+        parm {
+            name    "exportlist"
+            baseparm
+            label   "Attributes to Create"
+            export  none
+        }
+        parm {
+            name    "vex_strict"
+            baseparm
+            label   "Enforce Prototypes"
+            export  none
+        }
+        parm {
+            name    "vex_strictvariables"
+            baseparm
+            label   "Standard Variable Names Only"
+            export  none
+        }
+    }
+
+    group {
+        name    "folder1_1"
+        label   "Bindings"
+
+        parm {
+            name    "autobind"
+            baseparm
+            label   "Autobind by Name"
+            export  none
+        }
+        multiparm {
+            name    "bindings"
+            label    "Number of Bindings"
+            baseparm
+            default 0
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "multistartoffset" "1" }
+
+            parm {
+                name    "bindname#"
+                baseparm
+                label   "Attribute Name"
+                export  none
+            }
+            parm {
+                name    "bindparm#"
+                baseparm
+                label   "VEX Parameter"
+                export  none
+            }
+        }
+
+        parm {
+            name    "groupautobind"
+            baseparm
+            label   "Autobind Groups by Name"
+            export  none
+        }
+        multiparm {
+            name    "groupbindings"
+            label    "Group Bindings"
+            baseparm
+            default 0
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "multistartoffset" "1" }
+
+            parm {
+                name    "bindgroupname#"
+                baseparm
+                label   "Group Name"
+                export  none
+            }
+            parm {
+                name    "bindgroupparm#"
+                baseparm
+                label   "VEX Parameter"
+                export  none
+            }
+        }
+
+        parm {
+            name    "vex_cwdpath"
+            baseparm
+            label   "Evaluation Node Path"
+            export  none
+        }
+        parm {
+            name    "vex_outputmask"
+            baseparm
+            label   "Export Parameters"
+            export  none
+        }
+        parm {
+            name    "vex_updatenmls"
+            baseparm
+            label   "Update Normals If Displaced"
+            export  none
+        }
+        parm {
+            name    "vex_matchattrib"
+            baseparm
+            label   "Attribute to Match"
+            export  none
+        }
+        parm {
+            name    "vex_inplace"
+            baseparm
+            label   "Compute Results In Place"
+            export  none
+        }
+        parm {
+            name    "vex_selectiongroup"
+            baseparm
+            label   "Output Selection Group"
+            export  none
+        }
+        parm {
+            name    "vex_precision"
+            baseparm
+            label   "VEX Precision"
+            export  none
+        }
+    }
+
+    parm {
+        name    "asset_primpath"
+        label   "Asset Primpath"
+        type    string
+        default { "" }
+        help    "The asset's own prim path; a value already rooted here is re-anchoring."
+    }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/NORMALIZE_PATHS.chn"
+Content-Type: text/plain
+
+{
+    channel asset_primpath {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../effective_primpath\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/NORMALIZE_PATHS.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+folder0	[ 0	locks=0 ]	(	0	0	)
+group	[ 0	locks=0 ]	(	""	)
+grouptype	[ 0	locks=0 ]	(	"guess"	)
+class	[ 0	locks=0 ]	(	"primitive"	)
+vex_numcount	[ 0	locks=0 ]	(	10	)
+vex_threadjobsize	[ 0	locks=0 ]	(	1024	)
+snippet	[ 0	locks=0 ]	(	"// Normalise the authored import path so model geometry always publishes
+// under <asset>/geo.
+//
+// `path`/`name` are SOP-space object paths, not stage paths, and two common
+// sources make them absolute:
+//   - Alembic writes `path` with a leading '/'.
+//   - A USD -> SOP round trip (lopimport/usdimport of a published asset)
+//     hands back the asset's FULL prim path, geo scope included.
+// SOP Import reads a leading '/' as stage-absolute, so either one walks the
+// geometry out of the geo scope -- and the scope, left with nothing under
+// it, is never created at all.
+//
+// So: fall back name -> path, drop the asset's own prim path when the value
+// is already rooted there (that prefix is re-anchoring, not authored
+// hierarchy), and make whatever is left relative. A value that is nothing
+// but the asset's own path collapses to empty, and SOP Import names it.
+//
+// Keep in sync with th::create_model.
+string raw = s@path;
+if (raw == \"\") raw = s@name;
+if (raw == \"\") return;  // unnamed: let SOP Import generate a name under geo
+
+string parts[] = split(raw, \"/\");
+string root[]  = split(chs(\"asset_primpath\"), \"/\");
+
+int n = len(root);
+if (n > 0 && len(parts) >= n) {
+    int rooted = 1;
+    for (int i = 0; i < n; i++) {
+        if (parts[i] != root[i]) { rooted = 0; break; }
+    }
+    if (rooted) {
+        for (int i = 0; i < n; i++) removeindex(parts, 0);
+        if (len(parts) > 1 && parts[0] == \"geo\") removeindex(parts, 0);
+    }
+}
+
+s@path = join(parts, \"/\");
+
+// SOP Import falls back to `name` when `path` is empty, which would
+// resurrect the un-normalised value (and, for a path that was nothing but
+// the asset itself, re-append the asset name). This wrangle is the single
+// authority on placement, so retire `name` here.
+s@name = \"\";
+"	)
+exportlist	[ 0	locks=0 ]	(	*	)
+vex_strict	[ 0	locks=0 ]	(	"off"	)
+vex_strictvariables	[ 0	locks=0 ]	(	"on"	)
+autobind	[ 0	locks=0 ]	(	"on"	)
+bindings	[ 0	locks=0 ]	(	0	)
+groupautobind	[ 0	locks=0 ]	(	"on"	)
+groupbindings	[ 0	locks=0 ]	(	0	)
+vex_cwdpath	[ 0	locks=0 ]	(	.	)
+vex_outputmask	[ 0	locks=0 ]	(	*	)
+vex_updatenmls	[ 0	locks=0 ]	(	"off"	)
+vex_matchattrib	[ 0	locks=0 ]	(	id	)
+vex_inplace	[ 0	locks=0 ]	(	"off"	)
+vex_selectiongroup	[ 0	locks=0 ]	(	""	)
+vex_precision	[ 0	locks=0 ]	(	auto	)
+folder1	[ 0	locks=0 ]	(	0	0	)
+asset_primpath	[ 0	locks=0 ]	(	[ asset_primpath	"" ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/NORMALIZE_PATHS.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/OUT.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/OUT.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0 -2.259
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	NORMALIZE_PATHS 1 1 "input1"
+}
+inputs
+{
+0 	NORMALIZE_PATHS 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/OUT.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+copyinput	[ 0	locks=0 ]	(	"on"	)
+cacheinput	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet/OUT.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet.order"
+Content-Type: text/plain
+
+3
+FETCH_VARIANT
+NORMALIZE_PATHS
+OUT
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/normalize_sopnet.net"
+Content-Type: text/plain
+
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.order"
 Content-Type: text/plain
 
-12
+13
 CONFIG_GEO_SCOPE_PRIM
 output0
 variant_sopnet
@@ -1832,6 +2551,7 @@ configurelayer
 INPUT
 INIT_ASSET_PRIMITIVE
 CONFIG_ASSET_PRIMITIVE
+normalize_sopnet
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.net"

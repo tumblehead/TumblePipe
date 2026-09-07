@@ -1,19 +1,24 @@
 {
-	"values":["22.0.310"
+	"values":["22.0.368"
 	],
 	"indexes":{
-		"hdaroot/INIT_ASSET_PRIMITIVE.userdata":0,
-		"hdaroot/CONFIG_GEO_SCOPE_PRIM.userdata":0,
-		"hdaroot/INPUT.userdata":0,
-		"hdaroot/setvariant.userdata":0,
-		"hdaroot/add_model_variants2.userdata":0,
-		"hdaroot/foreach_begin.userdata":0,
+		"hdaroot/normalize_sopnet/OUT.userdata":0,
 		"hdaroot/output0.userdata":0,
-		"hdaroot/foreach_end1.userdata":0,
-		"hdaroot/configurelayer.userdata":0,
-		"hdaroot/import_model_variants.userdata":0,
+		"hdaroot/variant_sopnet.userdata":0,
+		"hdaroot/setvariant.userdata":0,
+		"hdaroot/variant_sopnet/create_variants/OUT_default.userdata":0,
 		"hdaroot/variant_sopnet/create_variants.userdata":0,
+		"hdaroot/CONFIG_GEO_SCOPE_PRIM.userdata":0,
+		"hdaroot/configurelayer.userdata":0,
+		"hdaroot/foreach_end1.userdata":0,
+		"hdaroot/normalize_sopnet.userdata":0,
 		"hdaroot/CONFIG_ASSET_PRIMITIVE.userdata":0,
-		"hdaroot/variant_sopnet.userdata":0
+		"hdaroot/import_model_variants.userdata":0,
+		"hdaroot/normalize_sopnet/FETCH_VARIANT.userdata":0,
+		"hdaroot/add_model_variants2.userdata":0,
+		"hdaroot/INIT_ASSET_PRIMITIVE.userdata":0,
+		"hdaroot/variant_sopnet/OUT_default.userdata":0,
+		"hdaroot/foreach_begin.userdata":0,
+		"hdaroot/INPUT.userdata":0
 	}
 }

@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.44.2"
+version = "1.45.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -35,7 +35,12 @@ platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 
 [runtime]
 TH_PIPELINE_PATH = { method = "set", value = "$HPM_PACKAGE_ROOT" }
-ASSET_BROWSER_CATALOG_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/asset_browser_catalogs" }
+# No ASSET_BROWSER_CATALOG_PATH: the pipeline catalog is *declared* to
+# TumbleTrove from scripts/python/pythonrc.py, not found by globbing a
+# directory for a module exporting create_catalog(). Declaring it means a
+# renamed factory fails loudly instead of the catalog quietly not appearing,
+# and its settings page is filed under TumblePipe rather than under whichever
+# package hosts the browser. Needs TumbleTrove >= 0.26.0.
 # Read-only network-catalog entries (recipes) shipped with the package —
 # scanned by tumbletrove's asset browser (> 0.9.1); older versions ignore it.
 ASSET_BROWSER_NETWORK_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/recipes" }
@@ -160,7 +165,6 @@ include = [
     "README.md",
     "LICENSE",
     "hpm.toml",
-    "asset_browser_catalogs/**",
     "radial_menus/**",
     "recipes/**",
     "otls/**",

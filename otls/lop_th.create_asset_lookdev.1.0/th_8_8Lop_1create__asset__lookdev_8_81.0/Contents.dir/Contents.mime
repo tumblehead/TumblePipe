@@ -31,25 +31,23 @@ Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
 comment ""
-position -9.21997 -2.54372
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+position 0 0
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
 }
 inputsNamed3
 {
-0 	create_asset_model1 0 1 "input1"
 }
 inputs
 {
-0 	create_asset_model1 0 1
 }
 stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
@@ -222,8 +220,8 @@ Content-Type: text/plain
 	height := 1.7471698172812182;
 	minimized := 1;
 	width := 7.9245283078472575;
-	x_position := -13.555202756813417;
-	y_position := 14.835955347192865;
+	x_position := -15.249602756813417;
+	y_position := 15.730155347192865;
 }
 {
   create -1
@@ -237,10 +235,10 @@ Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookde
 Content-Type: text/plain
 
 4
-0 -12.805202745637546 13.465952452830187 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
-1 -12.787571759834698 15.742840257007686 2 0 __netbox1 "FROMOUTPUT"
-2 -10.587571785166672 15.742840257007686 2 0 __netbox1 "FROMOUTPUT"
-3 -8.3875718104986472 15.742840257007686 2 0 __netbox1 "FROMOUTPUT"
+0 -14.499602745637546 14.360152452830187 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 -14.481971759834698 16.637040257007683 2 0 __netbox1 "FROMOUTPUT"
+2 -12.281971785166672 16.637040257007683 2 0 __netbox1 "FROMOUTPUT"
+3 -10.081971810498647 16.637040257007683 2 0 __netbox1 "FROMOUTPUT"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library.init"
@@ -254,7 +252,7 @@ Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookde
 Content-Type: text/plain
 
 comment ""
-position -12.8052 12.0421
+position -14.4996 12.9363
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -408,6 +406,22 @@ Content-Type: text/plain
 
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library.chn"
+Content-Type: text/plain
+
+{
+    channel matpathprefix {
+      lefttype = extend
+      righttype = extend
+      defaultString = chs(\"../../../primpath\")+\"/mtl/\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "strcat(chs(\"../../../effective_primpath\"), \"/mtl/\")" }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/material_library.parm"
 Content-Type: text/plain
 
@@ -417,7 +431,7 @@ genpreviewshaders	[ 0	locks=0 ]	(	"on"	)
 allowparmanim	[ 0	locks=0 ]	(	"off"	)
 referencerendervars	[ 0	locks=0 ]	(	"on"	)
 parentprimtype	[ 0	locks=0 ]	(	UsdGeomScope	)
-matpathprefix	[ 0	locks=0 ]	(	`chs(\"../../../primpath\")`/mtl/	)
+matpathprefix	[ 0	locks=0 ]	(	[ matpathprefix	/materials/ ] 	)
 geometrygroup	[ 0	locks=0 ]	(	)
 fillgroup	[ 0	locks=0 ]	(	0	)
 matnet	[ 0	locks=0 ]	(	.	)
@@ -1937,11 +1951,71 @@ Content-Type: text/plain
 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/OUT_default.init"
+Content-Type: text/plain
+
+type = output
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/OUT_default.def"
+Content-Type: text/plain
+
+comment ""
+position -12.8052 12.0421
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	material_library 1 1 "input1"
+}
+inputs
+{
+0 	material_library 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/OUT_default.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputidx	[ 0	locks=0 ]	(	0	)
+modifiedprims	[ 0	locks=0 ]	(	"`lopinputprims(\".\", 0)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet/OUT_default.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet.order"
 Content-Type: text/plain
 
-1
+2
 material_library
+OUT_default
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/lookdev_subnet.net"
@@ -1950,11 +2024,69 @@ Content-Type: text/plain
 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/VARIANT1_OUT.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/VARIANT1_OUT.def"
+Content-Type: text/plain
+
+comment ""
+position 0 0
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	lookdev_subnet 1 1 "input1"
+}
+inputs
+{
+0 	lookdev_subnet 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/VARIANT1_OUT.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/VARIANT1_OUT.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.order"
 Content-Type: text/plain
 
-1
+2
 lookdev_subnet
+VARIANT1_OUT
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.net"

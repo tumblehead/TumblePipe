@@ -19,26 +19,23 @@ Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
 comment ""
-position 10.8242 27.1831
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+position 0 0
+connectornextid 0
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
-1 "output1"
 }
 inputsNamed3
 {
-0 	create_asset_lookdev 1 1 "input1"
 }
 inputs
 {
-0 	create_asset_lookdev 0 1
 }
 stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
@@ -140,6 +137,24 @@ Content-Type: text/plain
       start = 41.666666666666664
       segment { length = 0 value = 24 24 expr = $FPS }
     }
+    channel savepath {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"payload.usd\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "strcat(strcat(\"$HIP/payload\", strreplace(lopinputprim(\".\", 0), \"/\", \"_\")), \".usd\")" }
+    }
+    channel defaultprim {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "lopinputprim(\".\", 0)" }
+    }
   }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -149,9 +164,9 @@ Content-Type: text/plain
 {
 version 0.8
 setsavepath	[ 0	locks=0 ]	(	"on"	)
-savepath	[ 0	locks=0 ]	(	payload.usd	)
-setdefaultprim	[ 0	locks=0 ]	(	"off"	)
-defaultprim	[ 0	locks=0 ]	(	""	)
+savepath	[ 0	locks=0 ]	(	[ savepath	$HIP/usd/$OS.usd ] 	)
+setdefaultprim	[ 0	locks=0 ]	(	"on"	)
+defaultprim	[ 0	locks=0 ]	(	[ defaultprim	"" ] 	)
 setcomment	[ 0	locks=0 ]	(	"off"	)
 comment	[ 0	locks=0 ]	(	""	)
 setstarttime	[ 0	locks=0 ]	(	"off"	)

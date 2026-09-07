@@ -2,6 +2,18 @@ MIME-Version: 1.0
 Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="node_type"
 Content-Type: text/plain
 
@@ -19,9 +31,9 @@ Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
 comment ""
-position -21.9959 8.1356
+position 0 0
 connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on debug off
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault off exposed on debug off
 outputsNamed3
 {
 }
@@ -354,7 +366,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position -0.936281 3.85698
+position -0.936281 4.98648
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -753,11 +765,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	create 0 1 "input1"
+0 	NORMALIZE_PATHS 1 1 "input1"
 }
 inputs
 {
-0 	create 0 1
+0 	NORMALIZE_PATHS 0 1
 }
 stat
 {
@@ -793,12 +805,334 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/NORMALIZE_PATHS.init"
+Content-Type: text/plain
+
+type = attribwrangle
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/NORMALIZE_PATHS.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position -0.936281 3.85698
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	create 0 1 "input1"
+}
+inputs
+{
+0 	create 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/NORMALIZE_PATHS.spareparmdef"
+Content-Type: text/plain
+
+    group {
+        name    "folder1"
+        label   "Code"
+
+        parm {
+            name    "group"
+            baseparm
+            label   "Group"
+            export  none
+            bindselector uvselect "Modify Attribs"
+                "Select the geometry to affect and press Enter to complete."
+                0 1 0xffffffff 0 grouptype 0
+        }
+        parm {
+            name    "grouptype"
+            baseparm
+            label   "Group Type"
+            export  none
+        }
+        parm {
+            name    "class"
+            baseparm
+            label   "Run Over"
+            export  none
+        }
+        parm {
+            name    "vex_numcount"
+            baseparm
+            label   "Number Count"
+            export  none
+        }
+        parm {
+            name    "vex_threadjobsize"
+            baseparm
+            label   "Thread Job Size"
+            export  none
+        }
+        parm {
+            name    "snippet"
+            baseparm
+            label   "VEXpression"
+            export  all
+        }
+        parm {
+            name    "exportlist"
+            baseparm
+            label   "Attributes to Create"
+            export  none
+        }
+        parm {
+            name    "vex_strict"
+            baseparm
+            label   "Enforce Prototypes"
+            export  none
+        }
+        parm {
+            name    "vex_strictvariables"
+            baseparm
+            label   "Standard Variable Names Only"
+            export  none
+        }
+    }
+
+    group {
+        name    "folder1_1"
+        label   "Bindings"
+
+        parm {
+            name    "autobind"
+            baseparm
+            label   "Autobind by Name"
+            export  none
+        }
+        multiparm {
+            name    "bindings"
+            label    "Number of Bindings"
+            baseparm
+            default 0
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "multistartoffset" "1" }
+
+            parm {
+                name    "bindname#"
+                baseparm
+                label   "Attribute Name"
+                export  none
+            }
+            parm {
+                name    "bindparm#"
+                baseparm
+                label   "VEX Parameter"
+                export  none
+            }
+        }
+
+        parm {
+            name    "groupautobind"
+            baseparm
+            label   "Autobind Groups by Name"
+            export  none
+        }
+        multiparm {
+            name    "groupbindings"
+            label    "Group Bindings"
+            baseparm
+            default 0
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "multistartoffset" "1" }
+
+            parm {
+                name    "bindgroupname#"
+                baseparm
+                label   "Group Name"
+                export  none
+            }
+            parm {
+                name    "bindgroupparm#"
+                baseparm
+                label   "VEX Parameter"
+                export  none
+            }
+        }
+
+        parm {
+            name    "vex_cwdpath"
+            baseparm
+            label   "Evaluation Node Path"
+            export  none
+        }
+        parm {
+            name    "vex_outputmask"
+            baseparm
+            label   "Export Parameters"
+            export  none
+        }
+        parm {
+            name    "vex_updatenmls"
+            baseparm
+            label   "Update Normals If Displaced"
+            export  none
+        }
+        parm {
+            name    "vex_matchattrib"
+            baseparm
+            label   "Attribute to Match"
+            export  none
+        }
+        parm {
+            name    "vex_inplace"
+            baseparm
+            label   "Compute Results In Place"
+            export  none
+        }
+        parm {
+            name    "vex_selectiongroup"
+            baseparm
+            label   "Output Selection Group"
+            export  none
+        }
+        parm {
+            name    "vex_precision"
+            baseparm
+            label   "VEX Precision"
+            export  none
+        }
+    }
+
+    parm {
+        name    "asset_primpath"
+        label   "Asset Primpath"
+        type    string
+        default { "" }
+        help    "The model's own prim path; a value already rooted here is re-anchoring."
+    }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/NORMALIZE_PATHS.chn"
+Content-Type: text/plain
+
+{
+    channel asset_primpath {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../primpath\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/NORMALIZE_PATHS.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+folder0	[ 0	locks=0 ]	(	0	0	)
+group	[ 0	locks=0 ]	(	""	)
+grouptype	[ 0	locks=0 ]	(	"guess"	)
+class	[ 0	locks=0 ]	(	"primitive"	)
+vex_numcount	[ 0	locks=0 ]	(	10	)
+vex_threadjobsize	[ 0	locks=0 ]	(	1024	)
+snippet	[ 0	locks=0 ]	(	"// Normalise the authored import path so model geometry always publishes
+// under the node's geo prefix.
+//
+// `path`/`name` are SOP-space object paths, not stage paths, and two common
+// sources make them absolute:
+//   - Alembic writes `path` with a leading '/'.
+//   - A USD -> SOP round trip (lopimport/usdimport of a published asset)
+//     hands back the asset's FULL prim path, geo scope included.
+// SOP Import reads a leading '/' as stage-absolute, so either one walks the
+// geometry out of the geo scope -- and the scope, left with nothing under
+// it, is never created at all.
+//
+// So: fall back name -> path, drop the asset's own prim path when the value
+// is already rooted there (that prefix is re-anchoring, not authored
+// hierarchy), and make whatever is left relative. A value that is nothing
+// but the asset's own path collapses to empty, and SOP Import names it.
+//
+// Keep in sync with th::create_asset_model.
+string raw = s@path;
+if (raw == \"\") raw = s@name;
+if (raw == \"\") return;  // unnamed: let SOP Import generate a name under geo
+
+string parts[] = split(raw, \"/\");
+string root[]  = split(chs(\"asset_primpath\"), \"/\");
+
+int n = len(root);
+if (n > 0 && len(parts) >= n) {
+    int rooted = 1;
+    for (int i = 0; i < n; i++) {
+        if (parts[i] != root[i]) { rooted = 0; break; }
+    }
+    if (rooted) {
+        for (int i = 0; i < n; i++) removeindex(parts, 0);
+        if (len(parts) > 1 && parts[0] == \"geo\") removeindex(parts, 0);
+    }
+}
+
+s@path = join(parts, \"/\");
+
+// SOP Import falls back to `name` when `path` is empty, which would
+// resurrect the un-normalised value (and, for a path that was nothing but
+// the asset itself, re-append the asset name). This wrangle is the single
+// authority on placement, so retire `name` here.
+s@name = \"\";
+"	)
+exportlist	[ 0	locks=0 ]	(	*	)
+vex_strict	[ 0	locks=0 ]	(	"off"	)
+vex_strictvariables	[ 0	locks=0 ]	(	"on"	)
+autobind	[ 0	locks=0 ]	(	"on"	)
+bindings	[ 0	locks=0 ]	(	0	)
+groupautobind	[ 0	locks=0 ]	(	"on"	)
+groupbindings	[ 0	locks=0 ]	(	0	)
+vex_cwdpath	[ 0	locks=0 ]	(	.	)
+vex_outputmask	[ 0	locks=0 ]	(	*	)
+vex_updatenmls	[ 0	locks=0 ]	(	"off"	)
+vex_matchattrib	[ 0	locks=0 ]	(	id	)
+vex_inplace	[ 0	locks=0 ]	(	"off"	)
+vex_selectiongroup	[ 0	locks=0 ]	(	""	)
+vex_precision	[ 0	locks=0 ]	(	auto	)
+folder1	[ 0	locks=0 ]	(	0	0	)
+asset_primpath	[ 0	locks=0 ]	(	[ asset_primpath	"" ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/sopnet/NORMALIZE_PATHS.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/sopnet.order"
 Content-Type: text/plain
 
-2
+3
 create
 OUT_default
+NORMALIZE_PATHS
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/sopnet.net"
@@ -1366,7 +1700,7 @@ Content-Type: text/plain
 version 0.8
 soppath	[ 0	locks=0 ]	(	../sopnet/OUT_default	)
 asreference	[ 0	locks=0 ]	(	[ asreference	0 ] 	)
-copycontents	[ 0	locks=0 ]	(	[ copycontents	0 ] 	)
+copycontents	[ 0	locks=0 ]	(	[ copycontents	1 ] 	)
 ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
 adjustxformsforinput	[ 0	locks=0 ]	(	[ adjustxformsforinput	1 ] 	)
 bindmaterials	[ 0	locks=0 ]	(	[ bindmaterials	nobind ] 	)
@@ -1384,8 +1718,8 @@ enable_grouptype	[ 0	locks=0 ]	(	[ enable_grouptype	0 ] 	)
 grouptype	[ 0	locks=0 ]	(	[ grouptype	primitive ] 	)
 enable_pathprefix	[ 0	locks=0 ]	(	[ enable_pathprefix	1 ] 	)
 pathprefix	[ 8	locks=0 ]	(	[ pathprefix	/$OS ] 	)
-enable_savepath	[ 0	locks=0 ]	(	[ enable_savepath	0 ] 	)
-savepath	[ 0	locks=0 ]	(	[ savepath	"" ] 	)
+enable_savepath	[ 0	locks=0 ]	(	[ enable_savepath	1 ] 	)
+savepath	[ 0	locks=0 ]	(	[ savepath	$HIP/usd/$OS.usd ] 	)
 separator_extraconfig	[ 0	locks=0 ]	(	)
 primitivedefinitiongroup	[ 0	locks=0 ]	(	1	)
 enable_packedusdhandling	[ 0	locks=0 ]	(	[ enable_packedusdhandling	0 ] 	)
@@ -1410,6 +1744,8 @@ enable_prefixabsolutepaths	[ 0	locks=0 ]	(	[ enable_prefixabsolutepaths	0 ] 	)
 prefixabsolutepaths	[ 0	locks=0 ]	(	[ prefixabsolutepaths	0 ] 	)
 enable_heightfieldconvert	[ 0	locks=0 ]	(	[ enable_heightfieldconvert	0 ] 	)
 heightfieldconvert	[ 0	locks=0 ]	(	[ heightfieldconvert	0 ] 	)
+enable_usexformcommonapi	[ 0	locks=0 ]	(	"off"	)
+usexformcommonapi	[ 0	locks=0 ]	(	"on"	)
 geometryhandlinggroup	[ 0	locks=0 ]	(	0	)
 enable_polygonsassubd	[ 0	locks=0 ]	(	[ enable_polygonsassubd	0 ] 	)
 polygonsassubd	[ 0	locks=0 ]	(	[ polygonsassubd	0 ] 	)
@@ -1451,6 +1787,8 @@ enable_subsetgroups	[ 0	locks=0 ]	(	[ enable_subsetgroups	0 ] 	)
 subsetgroups	[ 0	locks=0 ]	(	[ subsetgroups	"" ] 	)
 enable_customattribs	[ 0	locks=0 ]	(	[ enable_customattribs	0 ] 	)
 customattribs	[ 0	locks=0 ]	(	[ customattribs	"" ] 	)
+enable_captureweighthandling	[ 0	locks=0 ]	(	"off"	)
+captureweighthandling	[ 0	locks=0 ]	(	usdskel	)
 enable_translateuvtost	[ 0	locks=0 ]	(	[ enable_translateuvtost	0 ] 	)
 translateuvtost	[ 0	locks=0 ]	(	[ translateuvtost	1 ] 	)
 }
@@ -1683,6 +2021,7 @@ primpattern	[ 0	locks=0 ]	(	`loplastmodifiedprims('../sopimport')`	)
 xformdescription	[ 0	locks=0 ]	(	$OS	)
 xforminworldspace	[ 0	locks=0 ]	(	"on"	)
 setabsolutexform	[ 0	locks=0 ]	(	"off"	)
+usexformcommonapi	[ 0	locks=0 ]	(	"off"	)
 xOrd	[ 0	locks=0 ]	(	[ xOrd	0 ] 	)
 rOrd	[ 0	locks=0 ]	(	[ rOrd	0 ] 	)
 t	[ 0	locks=0 ]	(	[ tx	0 ] 	[ ty	0 ] 	[ tz	0 ] 	)

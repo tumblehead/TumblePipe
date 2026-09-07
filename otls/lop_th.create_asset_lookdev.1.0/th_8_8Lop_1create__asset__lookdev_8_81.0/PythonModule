@@ -57,6 +57,14 @@ def _sync_variants(node):
         else:
             out_node = lookdev_subnet.createNode("output", f"VARIANT{variant_idx}_OUTPUT")
             out_node.parm("outputidx").set(i)
+            # A freshly created output has no input, so the variant it feeds
+            # resolves empty and the department publishes nothing. Wire the
+            # first variant to the shipped material library -- the subnet's
+            # default content -- so a new lookdev node works out of the box.
+            if i == 0:
+                material_library = lookdev_subnet.node("material_library")
+                if material_library is not None:
+                    out_node.setInput(0, material_library)
             out_node.moveToGoodPosition()
 
         # Ensure outputidx is correct

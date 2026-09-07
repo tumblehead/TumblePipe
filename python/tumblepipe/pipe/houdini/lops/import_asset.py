@@ -609,11 +609,18 @@ def select():
 
 
 def output_modified_prims(raw_node) -> str:
-    """Return the prim path this HDA wrote, for the output's modifiedprims."""
-    entity = raw_node.parm('entity').eval()
-    if not entity:
+    """Return the prim path this HDA wrote, for the output's modifiedprims.
+
+    Resolve through the wrapper rather than parsing the raw parm: the parm's
+    default is the 'from_context' sentinel, which is not a URI, so parsing it
+    returned '' for a node in its default state. Here that also emptied the
+    internal transform's primpattern -- so the artist's placement of the
+    imported asset silently applied to nothing.
+    """
+    entity_uri = ImportAsset(raw_node).get_entity_uri()
+    if entity_uri is None:
         return ''
     try:
-        return uri_to_prim_path(Uri.parse_unsafe(entity))
+        return uri_to_prim_path(entity_uri)
     except ValueError:
         return ''

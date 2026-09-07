@@ -17,5 +17,6 @@
 	"hdaroot/IN_stage.def":1565394948,
 	"hdaroot/initialize_parent_prim.def":1751273834,
 	"hdaroot/loftpayloadinfo1.def":1706734013,
-	"hdaroot.def":1765369287
+	"hdaroot/sopnet/NORMALIZE_PATHS.def":1788510283,
+	"hdaroot.def":1788510282
 }

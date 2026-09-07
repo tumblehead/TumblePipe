@@ -1,0 +1,449 @@
+"""Pipeline catalog settings widget — multi-project management.
+
+Lives in its own module so the import cost (PySide6 widgets) is paid
+only when the user opens the gear-icon settings dialog.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtWidgets import (
+    QCheckBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+    QVBoxLayout, QWidget,
+)
+
+from tumbletrove.asset_browser.core.projects import ProjectConfig
+from tumbletrove.asset_browser.core.theme import (
+    BORDER, BUTTON_GHOST_STYLE, BUTTON_PRIMARY_STYLE, FONT_FAMILY, FONT_SMALL,
+    TEXT_DIM, scaled,
+)
+
+
+class PipelineSettingsWidget(QWidget):
+    """Project list + edit form + Apply for the Pipeline catalog."""
+
+    def __init__(self, catalog, parent=None) -> None:
+        super().__init__(parent)
+        self._catalog = catalog
+        # Working copy of the registry — committed on Apply.
+        self._working: list[ProjectConfig] = [
+            ProjectConfig(
+                name=p.name,
+                project_path=p.project_path,
+                pipeline_path="",
+                config_path=p.config_path,
+            )
+            for p in catalog._registry.all()
+        ]
+        self._current_index: int | None = None
+        self._build_ui()
+        if self._working:
+            self._list.setCurrentRow(0)
+
+    # ── UI construction ───────────────────────────────
+
+    def _build_ui(self) -> None:
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(scaled(6))
+
+        hint = QLabel(
+            "Registered Tumblehead projects. Add as many as you like — "
+            "the asset browser merges all of them into one grid."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet(
+            f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; '
+            f"color: {TEXT_DIM}; border: none; background: transparent;"
+        )
+        outer.addWidget(hint)
+
+        # ── Project list + add/remove buttons row ──
+        list_row = QHBoxLayout()
+        list_row.setContentsMargins(0, 0, 0, 0)
+        list_row.setSpacing(scaled(6))
+
+        self._list = QListWidget(self)
+        self._list.setStyleSheet(
+            f"QListWidget {{ background-color: transparent; "
+            f"border: 1px solid {BORDER}; "
+            f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; }} '
+            f"QListWidget::item {{ padding: 4px 8px; }} "
+            f"QListWidget::item:selected {{ background-color: rgba(255,255,255,16); }}"
+        )
+        self._list.setMinimumHeight(scaled(120))
+        self._list.currentRowChanged.connect(self._on_row_changed)
+        list_row.addWidget(self._list, stretch=1)
+
+        btn_col = QVBoxLayout()
+        btn_col.setContentsMargins(0, 0, 0, 0)
+        btn_col.setSpacing(scaled(4))
+
+        self._add_btn = QPushButton("Add")
+        self._add_btn.setStyleSheet(BUTTON_GHOST_STYLE)
+        self._add_btn.clicked.connect(self._on_add)
+        btn_col.addWidget(self._add_btn)
+
+        self._remove_btn = QPushButton("Remove")
+        self._remove_btn.setStyleSheet(BUTTON_GHOST_STYLE)
+        self._remove_btn.clicked.connect(self._on_remove)
+        btn_col.addWidget(self._remove_btn)
+
+        btn_col.addStretch()
+        list_row.addLayout(btn_col)
+        outer.addLayout(list_row)
+
+        # ── Edit form for the selected project ──
+        self._form_holder = QWidget(self)
+        form = QFormLayout(self._form_holder)
+        form.setContentsMargins(0, scaled(4), 0, scaled(4))
+
+        self._name_edit = QLineEdit()
+        self._name_edit.setPlaceholderText("e.g. RND or growth")
+        self._name_edit.editingFinished.connect(self._sync_from_form)
+        form.addRow("Name", self._name_edit)
+
+        # Project path with browse button
+        proj_row = QHBoxLayout()
+        proj_row.setContentsMargins(0, 0, 0, 0)
+        proj_row.setSpacing(scaled(4))
+        self._project_edit = QLineEdit()
+        self._project_edit.setPlaceholderText("P:/RND")
+        self._project_edit.editingFinished.connect(self._sync_from_form)
+        proj_row.addWidget(self._project_edit, stretch=1)
+        browse_btn = QPushButton("Browse…")
+        browse_btn.setStyleSheet(BUTTON_GHOST_STYLE)
+        browse_btn.clicked.connect(self._on_browse)
+        proj_row.addWidget(browse_btn)
+        form.addRow("Project Path", proj_row)
+
+        self._config_edit = QLineEdit()
+        self._config_edit.setPlaceholderText("(optional)")
+        self._config_edit.editingFinished.connect(self._sync_from_form)
+        form.addRow("Config Path", self._config_edit)
+
+        # The department pool is per-project, so it hangs off the selected
+        # project rather than the (global) behaviour toggles below.
+        self._departments_btn = QPushButton("Departments…")
+        self._departments_btn.setStyleSheet(BUTTON_GHOST_STYLE)
+        self._departments_btn.setToolTip(
+            "Add, retire, reorder and flag this project's departments. "
+            "Order is the pipeline order."
+        )
+        self._departments_btn.clicked.connect(self._on_departments)
+        form.addRow("Departments", self._departments_btn)
+
+        outer.addWidget(self._form_holder)
+
+        # ── Behavior toggles (separator + section) ──
+        sep = QFrame(self)
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet(f"color: {BORDER}; background-color: {BORDER};")
+        outer.addWidget(sep)
+
+        behavior_label = QLabel("Behavior")
+        behavior_label.setStyleSheet(
+            f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; '
+            f"color: {TEXT_DIM}; border: none; background: transparent;"
+        )
+        outer.addWidget(behavior_label)
+
+        self._autosave_checkbox = QCheckBox(
+            "Autosave (version up) on scene change"
+        )
+        self._autosave_checkbox.setToolTip(
+            "When opening a different workfile from the asset browser and "
+            "the current scene has unsaved changes:\n"
+            "  • On — version-up-save it silently, no prompt.\n"
+            "  • Off — ask first; choosing Save still writes a NEW version "
+            "(it never overwrites the current workfile in place).\n"
+            "The current scene must have a pipeline context (an entity URI "
+            "/ department / version); off-pipeline hips fall back to "
+            "Houdini's native prompt."
+        )
+        self._autosave_checkbox.setChecked(
+            self._catalog._prefs.autosave_on_scene_change
+        )
+        self._autosave_checkbox.toggled.connect(self._on_autosave_toggled)
+        outer.addWidget(self._autosave_checkbox)
+
+        self._auto_refresh_checkbox = QCheckBox(
+            "Auto-import latest on workfile open"
+        )
+        self._auto_refresh_checkbox.setToolTip(
+            "After opening a workfile from the asset browser, re-execute "
+            "every import node in the scene (import_asset, import_assets, "
+            "import_shot, import_layer, import_rigs) so their 'latest' "
+            "references pull in the newest published versions. Runs in "
+            "manual update mode and does not re-cook create_model / "
+            "build_comp, so it re-resolves references without cooking the "
+            "whole workgraph."
+        )
+        self._auto_refresh_checkbox.setChecked(
+            self._catalog._prefs.auto_refresh_on_open
+        )
+        self._auto_refresh_checkbox.toggled.connect(
+            self._on_auto_refresh_toggled
+        )
+        outer.addWidget(self._auto_refresh_checkbox)
+
+        self._note_checkbox = QCheckBox("Ask for a version note on save")
+        self._note_checkbox.setToolTip(
+            "When saving a new workfile version from the asset browser, ask "
+            "what changed and store it with the version — it shows in the "
+            "browser's Note column.\n"
+            "  • On — prompt on every Save. The note is optional; Cancel "
+            "aborts the save without burning a version.\n"
+            "  • Off — save straight away with a blank note.\n"
+            "Saves you did not ask for never prompt either way: the "
+            "autosave-on-scene-change path and the crash-time emergency "
+            "save always go through silently."
+        )
+        self._note_checkbox.setChecked(
+            self._catalog._prefs.prompt_note_on_save
+        )
+        self._note_checkbox.toggled.connect(self._on_prompt_note_toggled)
+        outer.addWidget(self._note_checkbox)
+
+        # ── Apply button (commits to disk + reinits clients) ──
+        apply_row = QHBoxLayout()
+        apply_row.setContentsMargins(0, 0, 0, 0)
+        apply_row.addStretch()
+        self._apply_btn = QPushButton("Apply Project Changes")
+        self._apply_btn.setStyleSheet(BUTTON_PRIMARY_STYLE)
+        self._apply_btn.clicked.connect(self._on_apply)
+        apply_row.addWidget(self._apply_btn)
+        outer.addLayout(apply_row)
+
+        self._refresh_list()
+
+    def _on_autosave_toggled(self, checked: bool) -> None:
+        """Persist the autosave-on-scene-change pref immediately on toggle.
+
+        Independent of the "Apply Project Changes" button — the toggle is
+        a single boolean, no validation required, and saving on every
+        click keeps the in-memory catalog state and the on-disk JSON in
+        sync without needing the user to remember to apply.
+        """
+        from .prefs import save_prefs
+        self._catalog._prefs.autosave_on_scene_change = bool(checked)
+        try:
+            save_prefs(self._catalog._prefs)
+        except Exception:
+            # Don't roll back the checkbox — the in-memory pref is what
+            # the catalog reads at scene-swap time, and a failed disk
+            # write will surface as an inconsistency on next launch.
+            QMessageBox.warning(
+                self, "Pipeline Settings",
+                "Failed to persist autosave preference — see Houdini console.",
+            )
+
+    def _on_auto_refresh_toggled(self, checked: bool) -> None:
+        """Persist the auto-import-on-open pref immediately on toggle.
+
+        Same fire-and-forget pattern as :meth:`_on_autosave_toggled`: a
+        lone boolean, no validation, saved on every click so the catalog's
+        in-memory pref (read at workfile-open time) and the on-disk JSON
+        stay in sync without the Apply button.
+        """
+        from .prefs import save_prefs
+        self._catalog._prefs.auto_refresh_on_open = bool(checked)
+        try:
+            save_prefs(self._catalog._prefs)
+        except Exception:
+            QMessageBox.warning(
+                self, "Pipeline Settings",
+                "Failed to persist auto-import preference — see Houdini "
+                "console.",
+            )
+
+    def _on_prompt_note_toggled(self, checked: bool) -> None:
+        """Persist the version-note prompt pref immediately on toggle.
+
+        Same fire-and-forget pattern as the two toggles above: one boolean,
+        no validation, written on every click so the catalog's in-memory
+        pref (read at save time) and the on-disk JSON stay in sync without
+        the Apply button.
+        """
+        from .prefs import save_prefs
+        self._catalog._prefs.prompt_note_on_save = bool(checked)
+        try:
+            save_prefs(self._catalog._prefs)
+        except Exception:
+            QMessageBox.warning(
+                self, "Pipeline Settings",
+                "Failed to persist version-note preference — see Houdini "
+                "console.",
+            )
+
+    # ── Helpers ───────────────────────────────────────
+
+    def _refresh_list(self) -> None:
+        self._list.blockSignals(True)
+        self._list.clear()
+        for proj in self._working:
+            label = (
+                f"{proj.name}    —    {proj.project_path}"
+                if proj.project_path else proj.name
+            )
+            QListWidgetItem(label, self._list)
+        self._list.blockSignals(False)
+        self._update_form_enabled()
+
+    def _update_form_enabled(self) -> None:
+        has_sel = self._current_index is not None
+        for w in (
+            self._name_edit, self._project_edit, self._config_edit,
+            self._departments_btn,
+        ):
+            w.setEnabled(has_sel)
+        self._remove_btn.setEnabled(has_sel)
+
+    def _on_row_changed(self, row: int) -> None:
+        if row < 0 or row >= len(self._working):
+            self._current_index = None
+            self._name_edit.setText("")
+            self._project_edit.setText("")
+            self._config_edit.setText("")
+            self._update_form_enabled()
+            return
+        self._current_index = row
+        proj = self._working[row]
+        self._name_edit.setText(proj.name)
+        self._project_edit.setText(proj.project_path)
+        self._config_edit.setText(proj.config_path)
+        self._update_form_enabled()
+
+    def _sync_from_form(self) -> None:
+        """Push the form fields back into the working copy."""
+        if self._current_index is None:
+            return
+        proj = self._working[self._current_index]
+        new_name = self._name_edit.text().strip() or proj.name
+        proj_new = ProjectConfig(
+            name=new_name,
+            project_path=self._project_edit.text().strip(),
+            pipeline_path="",
+            config_path=self._config_edit.text().strip(),
+        )
+        self._working[self._current_index] = proj_new
+        self._refresh_list()
+        self._list.blockSignals(True)
+        self._list.setCurrentRow(self._current_index)
+        self._list.blockSignals(False)
+
+    # ── Button handlers ───────────────────────────────
+
+    def _on_add(self) -> None:
+        # Append a fresh empty entry, select it, and let the user fill
+        # the form.
+        i = 1
+        base = "new_project"
+        existing = {p.name for p in self._working}
+        name = base
+        while name in existing:
+            i += 1
+            name = f"{base}_{i}"
+        self._working.append(ProjectConfig(
+            name=name, project_path="",
+            pipeline_path="", config_path="",
+        ))
+        # pipeline_path is intentionally always "" — TH_PIPELINE_PATH is
+        # set globally by hpm and is not a per-project concern.
+        self._refresh_list()
+        self._list.setCurrentRow(len(self._working) - 1)
+
+    def _on_remove(self) -> None:
+        if self._current_index is None:
+            return
+        del self._working[self._current_index]
+        if self._working:
+            self._current_index = min(
+                self._current_index, len(self._working) - 1,
+            )
+        else:
+            self._current_index = None
+        self._refresh_list()
+        if self._working:
+            self._list.setCurrentRow(self._current_index or 0)
+        else:
+            self._on_row_changed(-1)
+
+    def _on_departments(self) -> None:
+        """Open the department pool editor for the selected project.
+
+        It edits the project's live config, so it works against the registered
+        project — not the unsaved working copy. A project that was just added
+        here has to be applied first.
+        """
+        if self._current_index is None:
+            return
+        working = self._working[self._current_index]
+        project = self._catalog._registry.get(working.name)
+        if project is None:
+            QMessageBox.information(
+                self, "Departments",
+                "Apply this project first — the department pool lives in its "
+                "config, which is only read once the project is registered.",
+            )
+            return
+        from .departments import DepartmentPoolDialog
+        DepartmentPoolDialog(self._catalog, project, parent=self).exec()
+
+    def _on_browse(self) -> None:
+        if self._current_index is None:
+            return
+        start = self._project_edit.text().strip() or str(Path.home())
+        path = QFileDialog.getExistingDirectory(
+            self, "Select Project Folder", start,
+        )
+        if not path:
+            return
+        path = path.replace("\\", "/")
+        self._project_edit.setText(path)
+        # Auto-suggest sibling _config path if the user left it blank.
+        proj_root = Path(path)
+        if not self._config_edit.text().strip():
+            cfg_in_proj = proj_root / "_config"
+            if cfg_in_proj.exists():
+                self._config_edit.setText(str(cfg_in_proj).replace("\\", "/"))
+        # If the user hasn't typed a name yet, default to the leaf folder.
+        if not self._name_edit.text().strip():
+            self._name_edit.setText(proj_root.name)
+        self._sync_from_form()
+
+    def _on_apply(self) -> None:
+        # Validate every working entry has at minimum a name + project path.
+        bad: list[str] = []
+        seen_names: set[str] = set()
+        for proj in self._working:
+            if not proj.name:
+                bad.append("(unnamed entry)")
+                continue
+            if proj.name in seen_names:
+                bad.append(f"duplicate name: {proj.name}")
+            seen_names.add(proj.name)
+            if not proj.project_path:
+                bad.append(f"{proj.name}: missing Project Path")
+        if bad:
+            QMessageBox.warning(
+                self, "Project Settings",
+                "Fix these issues before applying:\n  - "
+                + "\n  - ".join(bad),
+            )
+            return
+        try:
+            self._catalog._apply_project_changes(self._working)
+        except Exception:
+            QMessageBox.critical(
+                self, "Project Settings",
+                "Failed to apply project changes — see Houdini console.",
+            )
+            raise
+        QMessageBox.information(
+            self, "Project Settings",
+            f"Saved {len(self._working)} project(s). "
+            "The asset browser grid will repopulate on the next browse.",
+        )

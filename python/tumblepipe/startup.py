@@ -483,3 +483,56 @@ def _write_menu_spec(menu_dir: Path, *, name: str, label: str,
     }
     target = menu_dir / f"{name}.json"
     target.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+
+
+# ── TumbleTrove package registration ──────────────────────────────────────────
+
+
+def _make_pipeline_catalog():
+    """Build the pipeline catalog, or ``None`` when nothing is configured.
+
+    The factory TumbleTrove calls when the asset-browser panel first opens —
+    not at Houdini startup, so registry construction and client setup stay off
+    the launch path.
+
+    Imported here rather than at module scope so the catalog's dependencies
+    stay off the Houdini launch path.
+    """
+    from tumblepipe.asset_browser.factory import create_catalog
+    return create_catalog()
+
+
+def register_package():
+    """Register TumblePipe with TumbleTrove: identity, docs, and the catalog.
+
+    A no-op when TumbleTrove is not installed — TumblePipe is usable without
+    it, the asset browser simply isn't. Order does not matter: TumbleTrove's
+    menu is declared in XML and reads the package registry each time it opens,
+    and the browser follows the registry for the life of the session, so this
+    is picked up whether it runs before or after either of them.
+    """
+    try:
+        from tumbletrove import package
+    except Exception:
+        return
+
+    package.register(
+        "TumblePipe",
+        version=_own_version(),
+        description="Tumblehead's USD production pipeline.",
+        website="https://tumbletrove.com",
+        docs="https://tumbletrove.com/docs/tumblepipe",
+        icon="lucide:database",
+        catalogs=[package.catalog("pipeline", _make_pipeline_catalog)],
+    )
+
+
+def _own_version() -> str:
+    """Our version from the shipped hpm.toml, or empty if unreadable."""
+    try:
+        import tomllib
+        manifest = Path(__file__).resolve().parents[2] / "hpm.toml"
+        with manifest.open("rb") as fh:
+            return str(tomllib.load(fh)["package"].get("version", ""))
+    except Exception:
+        return ""

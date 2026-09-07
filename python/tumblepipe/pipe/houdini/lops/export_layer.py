@@ -1270,11 +1270,16 @@ def validate():
 
 
 def output_modified_prims(raw_node) -> str:
-    """Return the prim path this HDA wrote, for the output's modifiedprims."""
-    entity = raw_node.parm('entity').eval()
-    if not entity:
+    """Return the prim path this HDA wrote, for the output's modifiedprims.
+
+    Resolve through the wrapper: the parm's default is the 'from_context'
+    sentinel, which is not a URI, so parsing it raw reported no modified
+    prims for a node in its default state.
+    """
+    entity_uri = ExportLayer(raw_node).get_entity_uri()
+    if entity_uri is None:
         return ''
     try:
-        return util.uri_to_prim_path(Uri.parse_unsafe(entity))
+        return util.uri_to_prim_path(entity_uri)
     except ValueError:
         return ''
