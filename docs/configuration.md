@@ -203,6 +203,50 @@ the submission dialog is a direct instruction about what to render.
 order, which entities are scoped, assignments naming a department the pool no
 longer has, and work that its entity is not scoped to.
 
+### Multis (multishot workfiles)
+
+A **Multi** is one workfile whose node graph covers several shots (or
+several assets) at once — the multishot workflow. Instead of an artist
+opening ten lighting hips for ten shots of the same sequence, the ten shots
+join a Multi, and for the departments the Multi *covers* every member's
+workfile is the Multi's hip.
+
+In the configuration a Multi is a **group**: `groups:/shots/<name>` or
+`groups:/assets/<name>` in `db/groups.json`, carrying a `members` list of
+entity URIs and a `departments` list. A Multi is locked to one context —
+shots and assets never mix — and its workfiles live under
+`<project>/groups/<context>/<name>/<department>/`.
+
+What coverage means, mechanically:
+
+- Opening a member's workfile for a covered department resolves to the
+  Multi's hip (`pipe/paths/workspace.py` redirects the workspace to
+  `groups:/`); the member's deck row shows the Multi's name instead of a
+  version. Departments the Multi does not cover keep the member's own
+  workfiles.
+- The department template's `_create_group` branch scaffolds the Multi's
+  first workfile with one pinned entity graph per member, laid out in
+  columns — a Multi holds several entities, so `from_context` cannot stand
+  in for any one of them.
+- Export and publish from the Multi's hip collect the export nodes per
+  member and publish each member's layer under its own entity; the Multi
+  itself composes nothing (it is not a Root).
+
+In the asset browser, Multis sit in a **Multis** subheader at the top of
+the Assets and Shots sections of each project. **New Multi…** creates one
+(name + context); drag cards onto the Multi's sidebar leaf or use
+**Add selected assets to Multi** to add members, and the leaf or the Multi
+card's right-click menu offers **Remove selected assets**, **Edit Multi…**,
+**Delete Multi** and **Open location**. The card's **Departments…** is the
+coverage editor described under *Per-entity assignment*.
+
+Every one of those operations except creation is routed by TumbleTrove
+through the catalog's `owns_collection` hook, and silently does nothing
+when no catalog claims the id — which is exactly what happened until the
+catalog overrode that hook: an artist could create a Multi and then never
+delete, edit, or populate it. `tests/test_catalog_multis.py` pins that
+contract against the shipped SDK.
+
 ### Department templates
 
 `_config/templates/<context>/<department>/template.py` builds the node graph

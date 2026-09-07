@@ -8,15 +8,13 @@ TumblePipe/
 ├── hpm.toml                     # HPM package manifest
 ├── README.md                    # Short project overview
 ├── LICENSE                      # MIT License
-├── asset_browser_catalogs/      # TumbleTrove asset_browser catalog
-│   ├── pipeline.py              #   factory entry point (discovered)
-│   └── _pipeline_*.py           #   catalog implementation + helpers
 ├── radial_menus/                # Radial menus (shipped JSON + startup-generated)
 ├── recipes/                     # Shipped asset-browser recipes (read-only)
 ├── desktop/
 │   └── TumblePipe.desk          # Houdini desktop layout
 ├── otls/                        # Houdini Digital Assets (text format)
 ├── python/tumblepipe/           # Core pipeline Python modules
+│   └── asset_browser/           #   TumbleTrove asset-browser catalog (declared at startup)
 ├── python3.11libs/              # Houdini 21 startup stubs
 │   ├── pythonrc.py
 │   └── uiready.py
@@ -107,57 +105,64 @@ lands at `<project>/_config/ocio/tumblehead.ocio`; the package sets the `OCIO`
 environment variable to `$TH_CONFIG_PATH/ocio/tumblehead.ocio` at startup.
 Existing projects gain the file via the v4 config migration.
 
-### `asset_browser_catalogs/`
+### `python/tumblepipe/asset_browser/`
 
 A TumbleTrove `asset_browser` *catalog* — the integration that surfaces
-pipeline assets and shots in the asset-browser pypanel. `hpm.toml`
-prepends this directory to `ASSET_BROWSER_CATALOG_PATH`, and
-TumbleTrove's catalog registry loads `pipeline.py` from it via
-`importlib.util.spec_from_file_location`. That loader globs top-level
-`*.py` files only and skips underscore-prefixed names, so the catalog
-itself is one `pipeline.py` (a small factory: `create_catalog()` plus
-the `sys.path` tweak that lets the companions import each other
-absolutely) and the implementation is split across `_pipeline_*.py`
-companion modules:
+pipeline assets, shots, Multis and Roots in the asset-browser pypanel.
+It is an ordinary subpackage: `tumblepipe.startup.register_package`
+**declares** `factory.create_catalog` to TumbleTrove at startup (needs
+TumbleTrove >= 0.26.0), so a renamed factory is an ImportError at launch
+rather than a catalog that quietly stops appearing. (It used to be a
+top-level `asset_browser_catalogs/` directory that TumbleTrove globbed
+for a `pipeline.py`; the `_pipeline_` prefixes and the `sys.path` tweak
+that shape forced are gone with it.) Nothing is imported eagerly — the
+catalog is built when the panel first opens, because importing it pulls
+Qt and the pipeline clients onto the launch path.
 
-- `_pipeline_catalog.py` — the `PipelineCatalog` class itself, which
-  composes everything below.
-- `_pipeline_houdini.py` — Houdini main-thread bridge + project-
-  activation (TH_* env / `default_client` reset), plus `report_failure`,
-  the shared "an action the artist asked for must not fail invisibly"
-  reporter (see *Reporting a failed action to the artist* in the
-  development guide).
-- `_pipeline_clients.py` — per-project tumblepipe `Client` lifecycle.
-- `_pipeline_resolver.py` — asset-id → `(ref, project, client, uri,
-  root)` resolution.
-- `_pipeline_containers.py` — `GroupContainer` / `SceneContainer`
-  typed sum replacing the Multi-vs-Root `kind` branching, plus the
+- `factory.py` — `create_catalog()`: project registry + env bootstrap.
+- `catalog.py` — the `PipelineCatalog` class itself, which composes
+  everything below. It must override every collection hook the base
+  `Catalog` declares — tumbletrove routes each Multi / Root operation
+  through `owns_collection` and silently drops the call when no catalog
+  claims the id (`tests/test_catalog_multis.py` pins this).
+- `houdini.py` — Houdini main-thread bridge + project activation
+  (TH_* env / `default_client` reset), plus `report_failure`, the shared
+  "an action the artist asked for must not fail invisibly" reporter (see
+  *Reporting a failed action to the artist* in the development guide).
+- `clients.py` — per-project tumblepipe `Client` lifecycle.
+- `resolver.py` — asset-id → `(ref, project, client, uri, root)`
+  resolution.
+- `containers.py` — `GroupContainer` / `SceneContainer` typed sum
+  replacing the Multi-vs-Root `kind` branching, plus the
   `ContainerManager` that owns all container behaviour: collection
   discovery, member/dept coverage, member add/remove, and the Root
-  context-menu actions (open location, rebuild assigned shots,
-  export USD).
-- `_pipeline_uris.py` — typed factories for tumblepipe URIs.
-- `_pipeline_drops.py` — the LOP / SOP / sublayer drop router.
-- `_pipeline_workfiles.py` — workfile open / create lifecycle plus the
-  per-row reads (user / mtime / licence) behind a department row.
-- `_pipeline_scene.py` — scene-state lifecycle: save / publish /
-  reload / save-before-swap (prompt or silent version-up) and the
-  readonly hip-context helpers, including which browser id addresses
-  the open .hip.
-- `_pipeline_detail.py` — Qt widget construction for every section
-  in the right-hand detail panel. Note the detail panel is only
-  reachable at the unscoped **All** scope: in the Pipeline scope the
-  right pane is tumbletrove's *session* panel, which tracks the open
-  .hip rather than the selection (`get_session`). The Info / Tasks /
-  Departments sections still build for All, and a Multi's coverage
-  editor is hosted from the card menu.
-- `_pipeline_thumbnails.py` — sidecar thumbnail read / write / refresh.
-- `_pipeline_widgets.py` — detail-panel custom QLabel / QComboBox.
-- `_pipeline_types.py` — value-types and module-level constants.
-- `_pipeline_prefs.py`, `_pipeline_settings_widget.py` — persisted
-  preferences plus the gear-icon settings UI.
-
-None of the `_pipeline_*` files are loaded by TumbleTrove directly.
+  context-menu actions (open location, rebuild assigned shots, export
+  USD).
+- `uris.py` — typed factories for tumblepipe URIs.
+- `drops.py` — the LOP / SOP / sublayer drop router.
+- `workfiles.py` — workfile open / create lifecycle plus the per-row
+  reads (user / mtime / licence) behind a department row.
+- `scene.py` — scene-state lifecycle: save / publish / reload /
+  save-before-swap (prompt or silent version-up) and the readonly
+  hip-context helpers, including which browser id addresses the open
+  .hip.
+- `detail.py` — Qt widget construction for every section in the
+  right-hand detail panel. Note the detail panel is only reachable at
+  the unscoped **All** scope: in the Pipeline scope the right pane is
+  tumbletrove's *session* panel, which tracks the open .hip rather than
+  the selection (`get_session`). The Info / Tasks / Departments sections
+  still build for All, and a Multi's coverage editor is hosted from the
+  card menu.
+- `departments.py` — the entity Departments… dialog (per-entity pool
+  scoping).
+- `submit_jobs_dialog.py`, `submit_jobs_resolve.py` — the Submit Jobs
+  dialog and the pure per-entity settings resolver behind it.
+- `thumbnails.py` — sidecar thumbnail read / write / refresh.
+- `widgets.py` — detail-panel custom QLabel / QComboBox.
+- `types.py` — value-types and module-level constants.
+- `prefs.py`, `settings_widget.py` — persisted preferences plus the
+  gear-icon settings UI.
+- `icons/` — the catalog's own SVG icons.
 
 ### `radial_menus/`
 

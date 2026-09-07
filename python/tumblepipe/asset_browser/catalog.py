@@ -3042,6 +3042,24 @@ class PipelineCatalog(Catalog):
 
     # ── Group / Scene lifecycle ──────────────────────────
 
+    def owns_collection(self, collection_id: str) -> bool:
+        """True for a Multi / Root collection id in a registered project.
+
+        tumbletrove routes every container operation the sidebar leaf
+        and the container card offer — Delete, Edit, add / remove
+        members, drag-drop onto the collection, Open location and the
+        Root actions — through this hook, and hands the call to the
+        first catalog that answers True. The base default is False, so
+        without this override the host found no owner and returned
+        before its confirm dialog: a Multi could be created (creation
+        is routed by catalog id, not by ownership) and then nothing
+        else could ever be done to it, with no message and no log.
+        """
+        ref = containers.parse(collection_id)
+        if ref is None:
+            return False
+        return self._registry.get(ref.project_name) is not None
+
     def delete_collection(self, collection_id: str) -> bool:
         ref = containers.parse(collection_id)
         if ref is None:

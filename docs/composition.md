@@ -326,10 +326,12 @@ default, `--apply` disables and resaves with a backup copy.
 
 ## Two ways to build multi-asset environments
 
-- **Scenes and groups** (config-driven): a scene lists member assets in
-  the project configuration; the scene's staged file sublayers each
-  member's staged file, and shots pick the scene up through their root
-  department. Placement lives in the scene.
+- **Roots** (config-driven scenes): a Root lists member assets in the
+  project configuration; the Root's staged file sublayers each member's
+  staged file, and shots pick the Root up through their root department.
+  Placement lives in the Root. (A *Multi* is not the same thing: it
+  groups entities into one shared **workfile** and adds nothing to
+  composition — see [Configuration → Multis](configuration.md#multis-multishot-workfiles).)
 - **Nested assets** (workfile-driven): import assets directly into
   another asset's workfile (e.g. dressing a `SET` with towers and
   props). The export tracks the imported assets through their prim

@@ -67,17 +67,17 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 def _load_dialog_module():
-    """Load the catalog dialog by file path, mirroring the catalog's own
-    spec_from_file_location loading (the catalog dir is not a package)."""
-    dlg_path = REPO / "asset_browser_catalogs" / "submit_jobs_dialog.py"
-    spec = importlib.util.spec_from_file_location(
-        "verify_submit_jobs_dialog_mod", dlg_path,
-    )
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    """Import the catalog's dialog as the package module it is.
+
+    It used to be loaded by file path out of ``asset_browser_catalogs/``,
+    which was not a package; the catalog now lives in
+    ``python/tumblepipe/asset_browser/`` and the dialog imports its
+    siblings relatively, so a path load would fail on the first
+    ``from . import``."""
+    python_dir = str(REPO / "python")
+    if python_dir not in sys.path:
+        sys.path.insert(0, python_dir)
+    return importlib.import_module("tumblepipe.asset_browser.submit_jobs_dialog")
 
 
 def main() -> int:

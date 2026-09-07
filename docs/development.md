@@ -54,6 +54,22 @@ used to disagree, one saying `PYTHONIOENCODING=utf-8`.)
 `tests/README.md` covers writing new properties and the design of the
 project-fixture bootstrap (`_harness.py`).
 
+The asset-browser catalog tests (`test_catalog*.py`) run the catalog
+against the **shipped TumbleTrove SDK**, not a stub: `tests/_catalog.py`
+puts the `python/` dir of the newest `tumbletrove` package hpm has
+fetched (`~/.hpm/fetch/tumbletrove-tumbletrove-<version>/python`, or
+`TUMBLETROVE_PYTHON`) on `sys.path`. The SDK's `asset_browser.api`,
+`core.projects` and `common` layers are pure Python, so the catalog
+imports against the same base `Catalog`, `Collection`, `Asset` and
+project registry the browser uses — the only way a property can see the
+*host contract*. The lesson behind it: tumbletrove routes every operation
+on a Multi or Root through `Catalog.owns_collection` (since TumbleTrove
+0.9.0), and the catalog never overrode it, so an artist could create a
+Multi and then do nothing else with it. The old stub's base `Catalog` was `pass`, which made
+the missing override invisible to every property. Launch a project from
+TumbleTrove Desktop once so the SDK is fetched; `test_catalog_multis.py`
+refuses to run on the stub.
+
 ## Linting
 
 Python is linted with [ruff](https://docs.astral.sh/ruff/) under the
@@ -63,8 +79,8 @@ catches a shipped-broken import or a stray `f''` before it reaches a
 release. Run it over the same trees the gate covers:
 
 ```bash
-uvx ruff check python/ asset_browser_catalogs/ .ci/ python3.11libs/ \
-  python3.13libs/ viewer_states/ scripts/ tests/ tools/ --select E9,F
+uvx ruff check python/ .ci/ python3.11libs/ python3.13libs/ \
+  viewer_states/ scripts/ tests/ tools/ --select E9,F
 ```
 
 This runs automatically as a **pre-commit hook** (`.githooks/pre-commit`),
@@ -206,7 +222,7 @@ artist as *"the button does nothing"* — which is how a dead export window got
 reported rather than a stack trace.
 
 Route those failures through `report_failure(action, exc)` in
-`asset_browser_catalogs/_pipeline_houdini.py`. It logs the traceback, then
+`python/tumblepipe/asset_browser/houdini.py`. It logs the traceback, then
 shows an error dialog naming the exception and the log file it landed in:
 
 ```python
@@ -321,8 +337,8 @@ both Render and Playblast, and one that is not renderable is ignored rather
 than left shadowing the entity-property default.
 
 It pins the **tri-state form** and the per-entity resolution behind it (the
-policy itself is pure, and lives in `asset_browser_catalogs/
-submit_jobs_resolve.py` with property tests in
+policy itself is pure, and lives in
+`python/tumblepipe/asset_browser/submit_jobs_resolve.py` with property tests in
 `tests/test_submit_jobs_resolve.py`). A field left alone is *unpinned*,
 renders italic, and lets every checked entity resolve its own configured
 value; touching it *pins* it as a batch-wide choice. Where the entities
