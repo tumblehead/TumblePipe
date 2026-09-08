@@ -43,4 +43,4 @@ def update_material_paths():
         if entry_material_name in material_lut:
             entry.set(material_lut[entry_material_name])
         else:
-            print(f"[update_material_paths] Warning: '{current_name}' not found in stage materials")
+            print(f"[update_material_paths] Warning: '{entry_material_name}' not found in stage materials")

@@ -94,19 +94,33 @@ def run_on_main_thread(func: Callable, *args, **kwargs) -> None:
 def session_nc_type() -> str | None:
     """The license-driven workfile extension type for this Houdini session.
 
-    ``'nc'`` for Apprentice/ApprenticeHD (.hipnc), ``'lc'`` for Indie (.hiplc),
-    ``None`` for commercial (.hip). Pass to ``next_hip_file_path`` so the saved
-    file matches Ctrl+S — hardcoding ``None`` makes Houdini rewrite the extension
-    on a non-commercial license, landing the file where the pipeline didn't
-    record it.
+    ``'nc'`` for Apprentice/ApprenticeHD/Education (.hipnc), ``'lc'`` for Indie
+    (.hiplc), ``None`` for commercial (.hip). Pass to ``next_hip_file_path`` so
+    the saved file matches Ctrl+S — hardcoding ``None`` makes Houdini rewrite the
+    extension on a non-commercial license, landing the file where the pipeline
+    didn't record it.
+
+    Education is ``.hipnc`` by observation (a Houdini Education session saves a
+    requested ``.hip`` as ``.hipnc``), even though SideFX's own Python helper
+    (``houpythonportion.sceneFileExtension``) files it under ``.hip`` in 22.0 —
+    so this is not delegated to that helper. This is only a *prediction*
+    either way; :func:`tumblepipe.pipe.context.save_hip_file` records whatever
+    Houdini actually wrote, so a category missed here degrades to a log
+    warning rather than a sidecar that points at a file that does not exist.
     """
     try:
         import hou
         category = hou.licenseCategory()
-        if category in (
+        nc_categories = [
             hou.licenseCategoryType.Apprentice,
             hou.licenseCategoryType.ApprenticeHD,
-        ):
+        ]
+        # Older builds may lack the member; guard so a missing enum value
+        # never turns every license into "commercial".
+        education = getattr(hou.licenseCategoryType, "Education", None)
+        if education is not None:
+            nc_categories.append(education)
+        if category in nc_categories:
             return "nc"
         if category == hou.licenseCategoryType.Indie:
             return "lc"

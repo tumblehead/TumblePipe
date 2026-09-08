@@ -211,6 +211,11 @@ Buttons:
   reports pass, warnings, or a list of failures.
 - **Open Location** opens the latest export folder.
 
+The node embeds a USD ROP whose frame range, output path and Save to Disk
+the pipeline drives during an export. Those parms are hidden (from the release after 1.46.0);
+they used to show as an **export** folder whose Save to Disk fired the raw
+ROP outside the pipeline.
+
 What a local export writes: `export/<entity>/<channel>/<department>/v####/`
 with a `<entity>_<channel>_<department>_v####.usd` and a `context.json`
 recording every tracked asset on the stage —

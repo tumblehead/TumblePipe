@@ -133,6 +133,28 @@ class AssetResolver:
         except Exception:
             return None
 
+    def uri_for_ready(self, asset_id: str) -> "Uri | None":
+        """:meth:`uri_for` with the project's Client guaranteed READY first.
+
+        ``uri_for`` guesses the *shot* shape while the project's categories
+        are unknown, which is right for painting a sidebar before background
+        init finishes and wrong for anything that then resolves a workspace
+        from the URI: a New: Current or Open Latest clicked during a slow
+        (SMB) client warm-up would reserve, save or look for the workfile
+        under ``shots/<cat>/<asset>/``. Paths that read or write on disk must
+        use this. It blocks on Client construction, so it belongs on the
+        worker thread the file-system handlers already run on, never on the
+        GUI thread. ``None`` when the id is malformed or the Client cannot be
+        built (the error is the pool's to surface).
+        """
+        parts = self.split(asset_id)
+        if parts is None:
+            return None
+        client, _err = self._clients.try_get(parts[0])
+        if client is None:
+            return None
+        return self.uri_for(asset_id)
+
     def client_for(self, asset_id: str):
         """Best-effort client lookup — ``None`` on parse failure or
         Client init failure (errors are silently swallowed; use

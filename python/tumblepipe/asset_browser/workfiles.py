@@ -71,7 +71,7 @@ class WorkfileManager:
         proj = self._catalog._resolver.project_for(asset_id)
         if proj is not None:
             self._catalog._activate_project(proj)
-        uri = self._catalog._resolver.uri_for(asset_id)
+        uri = self._catalog._resolver.uri_for_ready(asset_id)
         if uri is None:
             return
         try:
@@ -265,7 +265,7 @@ class WorkfileManager:
         datetime, or ``None`` if no export exists."""
         if not asset_id:
             return None
-        uri = self._catalog._resolver.uri_for(asset_id)
+        uri = self._catalog._resolver.uri_for_ready(asset_id)
         if uri is None:
             return None
         try:
@@ -292,7 +292,7 @@ class WorkfileManager:
         """
         if not asset_id:
             return None
-        uri = self._catalog._resolver.uri_for(asset_id)
+        uri = self._catalog._resolver.uri_for_ready(asset_id)
         if uri is None:
             return None
         try:
@@ -349,7 +349,7 @@ class WorkfileManager:
         """
         if not asset_id:
             return "", 0.0, ""
-        uri = self._catalog._resolver.uri_for(asset_id)
+        uri = self._catalog._resolver.uri_for_ready(asset_id)
         if uri is None:
             return "", 0.0, ""
         try:
@@ -569,7 +569,7 @@ class WorkfileManager:
         client = self._catalog._resolver.client_for(asset_id)
         if client is None:
             return
-        entity_uri = self._catalog._resolver.uri_for(asset_id)
+        entity_uri = self._catalog._resolver.uri_for_ready(asset_id)
         if entity_uri is None:
             return
 
@@ -587,7 +587,7 @@ class WorkfileManager:
                 import hou
                 from tumblepipe.pipe.paths import get_workfile_context
                 from tumblepipe.pipe.context import (
-                    save_context, save_entity_context,
+                    save_context, save_entity_context, save_hip_file,
                 )
 
                 # Re-activate inside the deferred tick so no background
@@ -627,7 +627,9 @@ class WorkfileManager:
                 next_path.parent.mkdir(parents=True, exist_ok=True)
 
                 hou.hipFile.clear(suppress_save_prompt=True)
-                hou.hipFile.save(str(next_path))
+                # Houdini may rewrite the extension (Education/Apprentice
+                # save .hip as .hipnc); record the path it actually wrote.
+                next_path = save_hip_file(next_path)
 
                 new_ctx = get_workfile_context(next_path) or Context(
                     entity_uri=entity_uri,
@@ -742,7 +744,7 @@ class WorkfileManager:
         if proj is None:
             return
         self._catalog._activate_project(proj)
-        entity_uri = self._catalog._resolver.uri_for(asset_id)
+        entity_uri = self._catalog._resolver.uri_for_ready(asset_id)
         if entity_uri is None:
             return
 
@@ -754,7 +756,7 @@ class WorkfileManager:
                     reserve_next_hip_file_path, get_workfile_context, Context,
                 )
                 from tumblepipe.pipe.context import (
-                    save_context, save_entity_context,
+                    save_context, save_entity_context, save_hip_file,
                 )
 
                 # Re-activate inside the deferred tick so no background
@@ -788,7 +790,9 @@ class WorkfileManager:
                     prev_ctx = None
 
                 next_path.parent.mkdir(parents=True, exist_ok=True)
-                hou.hipFile.save(str(next_path))
+                # Houdini may rewrite the extension (Education/Apprentice
+                # save .hip as .hipnc); record the path it actually wrote.
+                next_path = save_hip_file(next_path)
 
                 new_ctx = get_workfile_context(next_path) or Context(
                     entity_uri=entity_uri,
@@ -932,7 +936,7 @@ class WorkfileManager:
             try:
                 self._catalog._activate_project(proj)
                 from tumblepipe.pipe import paths as paths_mod
-                entity_uri = self._catalog._resolver.uri_for(asset_id)
+                entity_uri = self._catalog._resolver.uri_for_ready(asset_id)
                 if entity_uri is not None:
                     resolved = paths_mod.latest_hip_file_path_with_context(
                         entity_uri, dept,
@@ -1157,7 +1161,7 @@ class WorkfileManager:
                 import hou
                 from tumblepipe.pipe.paths import get_workfile_context
                 from tumblepipe.pipe.context import (
-                    save_context, save_entity_context,
+                    save_context, save_entity_context, save_hip_file,
                 )
 
                 self._catalog._activate_project(target_proj)
@@ -1194,7 +1198,9 @@ class WorkfileManager:
                 next_path.parent.mkdir(parents=True, exist_ok=True)
 
                 hou.hipFile.clear(suppress_save_prompt=True)
-                hou.hipFile.save(str(next_path))
+                # Houdini may rewrite the extension (Education/Apprentice
+                # save .hip as .hipnc); record the path it actually wrote.
+                next_path = save_hip_file(next_path)
 
                 new_ctx = get_workfile_context(next_path) or Context(
                     entity_uri=group_uri,

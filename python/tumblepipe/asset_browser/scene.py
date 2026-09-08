@@ -413,7 +413,7 @@ class SceneManager:
         to ``asset_id``'s project + entity, else ``None``."""
         if not asset_id:
             return None
-        target_uri = self._catalog._resolver.uri_for(asset_id)
+        target_uri = self._catalog._resolver.uri_for_ready(asset_id)
         if target_uri is None:
             return None
         target_proj = self._catalog._resolver.project_for(asset_id)

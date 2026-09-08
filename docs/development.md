@@ -147,7 +147,15 @@ what to run before tagging:
 uv run --no-project python .ci/preflight.py
 ```
 
-Stages: `lint` (ruff E9,F), `hdas`, `reports`, `tests`, `harness`.
+Stages: `lint` (ruff E9,F), `hdas`, `hdapy`, `reports`, `tests`, `harness`.
+
+`hdapy` runs `.ci/quality_gates/check_hda_python.py`: the `PythonModule` and
+event-script sections of every expanded HDA under `otls/` are extensionless,
+so the tree-wide ruff run never sees them, and Houdini only evaluates them
+when the button is pressed. The gate streams each one to ruff as a `.py`
+(E9, F821, F823, with `hou` and `kwargs` as builtins), which is how a
+`NameError` on an error branch of `th::material_assigner` would have been
+caught before an artist hit it.
 `--list` prints them, `--only <stage>` runs one.
 
 `harness` runs only the two `scripts/verify_*.py` harnesses that work with
@@ -286,6 +294,12 @@ tumblepipe`, so the traceback behind any of these dialogs is on disk:
 $TH_PROJECT_PATH/export/other/logs/$TH_USER.log   # project-wide
 <workspace>/_logs/$TH_USER.log                    # per-workspace
 ```
+
+Warnings and errors are also echoed to the process console, which the
+Desktop launcher captures into its per-project Houdini log
+(`~/.tumbletrove/logs/houdini/houdini-<project id>.log`) — the file an
+artist can find without the share. INFO stays file-only; `TH_DEV=1` or
+`setup_logging(console=True)` echoes everything.
 
 `get_log_paths()` returns the live handler paths — that is what the dialog
 prints, rather than a recomputed guess. Two traps when triaging from them:
@@ -553,7 +567,10 @@ drift them apart — an "unhinged" shot.
 The hip files are ground truth (their names encode the true version order), so
 the tool diagnoses drift against them: a stale pointer, a `v0000` re-anchor
 sitting above a real predecessor, a hip with no `_context` entry (or the
-reverse), and leftover reservation stubs. `--repair` fixes only what is broken
+reverse), leftover reservation stubs, and an entry whose `extension` hint is
+missing or names a channel the hip is not in (a `.hipnc` recorded as `hip`,
+which older versions wrote on a licence that rewrites the extension on save).
+`--repair` fixes only what is broken
 — it never rewrites a valid, possibly non-consecutive `from_version` — and
 backs `_context`/`context.json` up first. `--dry-run` reports what it would do.
 

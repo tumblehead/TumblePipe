@@ -58,12 +58,24 @@ ASSET_MODEL_CASES = [
     ("unnamed", "// nothing authored", f"{ASSET_PRIMPATH}/geo/mesh_0"),
 ]
 
+# th::create_model roots geometry under its Import Path Prefix (+ /geo). The
+# normaliser must strip THAT prefix from a round-tripped path -- not the
+# Load-As-Reference prim path (/$OS), which it anchored on until 2026-09-08
+# and which never matched, so a round trip through a published asset doubled
+# the prefix: /PROP/crate/geo/PROP/crate/geo/hull/body.
+MODEL_PREFIX = "/PROP/crate"
 MODEL_CASES = [
-    ("relative", 's@path = "hull/body";', "/geo/hull/body"),
-    ("roundtrip, full path", 's@path = "/{name}/geo/hull/body";', "/geo/hull/body"),
-    ("absolute, foreign root", 's@path = "/foo/body";', "/geo/foo/body"),
-    ("name only, absolute", 's@name = "/hull/body";', "/geo/hull/body"),
-    ("unnamed", "// nothing authored", "/geo/mesh_0"),
+    ("relative", 's@path = "hull/body";', f"{MODEL_PREFIX}/geo/hull/body"),
+    ("roundtrip, full path", f's@path = "{MODEL_PREFIX}/geo/hull/body";',
+     f"{MODEL_PREFIX}/geo/hull/body"),
+    ("roundtrip, no geo", f's@path = "{MODEL_PREFIX}/hull/body";',
+     f"{MODEL_PREFIX}/geo/hull/body"),
+    # The reference prim path is NOT the anchor: a path rooted at the node's
+    # own name is authored hierarchy and must survive.
+    ("node-named group", 's@path = "/{name}/body";', f"{MODEL_PREFIX}/geo/{{name}}/body"),
+    ("absolute, foreign root", 's@path = "/foo/body";', f"{MODEL_PREFIX}/geo/foo/body"),
+    ("name only, absolute", 's@name = "/hull/body";', f"{MODEL_PREFIX}/geo/hull/body"),
+    ("unnamed", "// nothing authored", f"{MODEL_PREFIX}/geo/mesh_0"),
 ]
 
 
@@ -109,8 +121,10 @@ def check_create_model(stage_ctx, failures):
     print("th::create_model")
     for label, snippet, expected in MODEL_CASES:
         node = stage_ctx.createNode("th::create_model::1.0")
-        # primpath defaults to /$OS, so the strip target is the node's own name.
+        node.parm("enable_pathprefix").set(1)
+        node.parm("pathprefix").set(MODEL_PREFIX)
         snippet = snippet.format(name=node.name())
+        expected = expected.format(name=node.name())
 
         create = node.node("sopnet/create")
         outputs = [n for n in create.children() if n.type().name() == "output"]

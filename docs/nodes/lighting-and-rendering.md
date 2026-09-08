@@ -291,7 +291,7 @@ its [`PythonModule`](../../otls/lop_th.image_plane_painter.1.1/th_8_8Lop_1image_
 
 Gotchas:
 
-- A **new** PSD is copied from `W:\_pipeline\pipeline\krita\blank_template.psd`
+- A **new** PSD is copied from the package's `resources/krita/blank_template.psd`
   — a hardcoded legacy path. Without it Edit Image reports *Failed to create
   PSD file*. Image Resolution is read but not applied to the template.
 - The node needs the GUI (it drives the network editor and the editor

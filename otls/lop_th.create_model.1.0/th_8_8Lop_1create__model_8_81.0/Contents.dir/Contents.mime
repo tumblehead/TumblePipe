@@ -1020,7 +1020,7 @@ Content-Type: text/plain
         label   "Asset Primpath"
         type    string
         default { "" }
-        help    "The model's own prim path; a value already rooted here is re-anchoring."
+        help    "The Import Path Prefix the SOP Import roots geometry under; a value already rooted here is re-anchoring, not authored hierarchy. Ignored when the prefix is disabled."
     }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -1035,7 +1035,7 @@ Content-Type: text/plain
       flags = 0
       segment { options = {	 autoslope  ai ao }
 
-	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../primpath\") }
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../pathprefix\") }
     }
   }
 
@@ -1076,7 +1076,9 @@ if (raw == \"\") return;  // unnamed: let SOP Import generate a name under geo
 string parts[] = split(raw, \"/\");
 string root[]  = split(chs(\"asset_primpath\"), \"/\");
 
-int n = len(root);
+// Import Path Prefix off: the SOP Import roots nothing, so there is no
+// re-anchoring prefix to strip.
+int n = ch(\"../../enable_pathprefix\") ? len(root) : 0;
 if (n > 0 && len(parts) >= n) {
     int rooted = 1;
     for (int i = 0; i < n; i++) {

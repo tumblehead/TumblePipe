@@ -145,7 +145,7 @@ class Diagnosis:
     reserved_stubs: list[str]                     # aged-out reservation claims
     inflight_reservations: list[str]              # claims young enough to be live
     broken_links: list[tuple[str, str]]           # (version, reason)
-    null_extension: list[str]                     # entry lacks extension hint
+    null_extension: list[str]                     # extension hint missing or names the wrong channel
     empty_timestamp: list[str]                    # entry has empty timestamp
 
     @property
@@ -196,7 +196,10 @@ class Diagnosis:
                 f"{', '.join(self.inflight_reservations)}"
             )
         if self.null_extension:
-            lines.append(f"        entries missing extension: {', '.join(self.null_extension)}")
+            lines.append(
+                f"        entries with a missing or stale extension: "
+                f"{', '.join(self.null_extension)}"
+            )
         if self.empty_timestamp:
             lines.append(f"        entries with empty timestamp: {', '.join(self.empty_timestamp)}")
         return "\n".join(lines)
@@ -270,9 +273,12 @@ def diagnose(
                     (version, f"from_version {from_version} does not exist")
                 )
 
-        # Quality issues only matter for an entry whose hip exists.
+        # Quality issues only matter for an entry whose hip exists. A hint
+        # naming a channel the hip is not in (``hip`` recorded for a
+        # ``.hipnc`` on disk — the pre-save_hip_file Education bug) is as
+        # bad as none: get_hip_file_path used to trust it outright.
         if version in hip_set:
-            if not entry.get("extension"):
+            if entry.get("extension") != hip_map[version]:
                 null_extension.append(version)
             if not entry.get("timestamp"):
                 empty_timestamp.append(version)
@@ -424,7 +430,7 @@ def repair(
         entry = dict(entries.get(version, {}))
         ext = hip_map.get(version)
         changed = False
-        if not entry.get("extension") and ext is not None:
+        if ext is not None and entry.get("extension") != ext:
             entry["extension"] = ext
             changed = True
         if not entry.get("timestamp") and ext is not None:

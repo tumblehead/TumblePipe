@@ -123,7 +123,6 @@
         type    color
         size    3
         default { "0" "0" "0" }
-        hidewhen "{ shape <= 6 }"
         range   { 0 10 }
         parmtag { "autoscope" "0000000000000000" }
         parmtag { "sidefx::shader_parmname" "value" }
@@ -133,7 +132,6 @@
         label   "Emission Strength"
         type    float
         default { "1" }
-        hidewhen "{ shape <= 6 }"
         range   { 0 10 }
         parmtag { "autoscope" "0000000000000000" }
         parmtag { "script_callback_language" "python" }

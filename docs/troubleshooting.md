@@ -78,9 +78,15 @@ did not.
   when it finishes — a disconnected export node, for instance, is skipped
   rather than failing the other channels.
 
-If the button truly does nothing and no dialog appears, you are on a
-TumblePipe older than **1.42.0**, which introduced the failure dialogs;
-check the version under **TumbleTrove ▸ About TumbleTrove...** and update.
+If the button truly does nothing and no dialog appears, check two things.
+First, which button: up to 1.46.0 `th::export_layer` also showed the inner
+USD ROP's own **export** folder, whose **Save to Disk** button sits a few
+lines from the real **Export**. Save to Disk fires the raw ROP at whatever
+output path the last pipeline export left behind (or none), so it writes a
+stale temp file or errors on the node badge, and no dialog opens. That folder
+is hidden in later releases; on 1.46.0 or older, use **Export**. Second, the
+version: a TumblePipe older than **1.42.0** predates the failure dialogs;
+check it under **TumbleTrove ▸ About TumbleTrove...** and update.
 
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 

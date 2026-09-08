@@ -269,6 +269,42 @@ def save_context(target_path: Path, prev_context, next_context, houdini_version:
     )
 
 
+def save_hip_file(next_path: Path) -> Path:
+    """``hou.hipFile.save`` into ``next_path`` and return where the hip landed.
+
+    Houdini does not honour a requested extension the session's license is not
+    allowed to write: an Education or Apprentice session asked to save
+    ``foo.hip`` silently writes ``foo.hipnc`` instead. Every workfile commit
+    must therefore record the extension from the file Houdini *reports having
+    saved*, not from the path it was asked for — a sidecar built from the
+    request points ``get_hip_file_path`` at a ``.hip`` that never existed, and
+    the version can never be reopened from the browser (Rates, TumblePipe
+    1.44.2 on Houdini Education).
+
+    The predicted path (``session_nc_type``) is still worth getting right —
+    it names the file the artist sees — but this is the safety net for the
+    license categories the prediction does not know about. A rewrite is
+    logged at warning level so the mismatch is visible, not silently absorbed.
+    """
+    next_path = Path(next_path)
+    hou.hipFile.save(str(next_path))
+    # Tolerate a hipFile without ``path`` (test fakes, exotic hosts): the
+    # requested path is then the best knowledge we have.
+    path_of = getattr(hou.hipFile, "path", None)
+    saved = Path(path_of() or "") if path_of is not None else next_path
+    if not str(saved) or saved.stem != next_path.stem:
+        # Not a plain extension rewrite of our request (empty, or somewhere
+        # else entirely) — do not second-guess the caller's path.
+        return next_path
+    if saved.suffix != next_path.suffix:
+        logger.warning(
+            f"Houdini saved {next_path.name} as {saved.name} (license-driven "
+            f"extension rewrite); recording the extension actually on disk"
+        )
+        return next_path.with_suffix(saved.suffix)
+    return next_path
+
+
 def commit_next_workfile(
     entity_uri: Uri,
     department_name: str,
@@ -283,7 +319,8 @@ def commit_next_workfile(
 
     1. atomically reserve the next version (:func:`reserve_next_hip_file_path`),
        so two concurrent saves never pick the same number;
-    2. ``hou.hipFile.save`` the loaded scene into it;
+    2. ``hou.hipFile.save`` the loaded scene into it (:func:`save_hip_file`,
+       so the recorded extension is the one Houdini actually wrote);
     3. write the ``_context`` lineage entry, then the ``context.json`` pointer
        **last** — so a crash always leaves the pointer at or below a
        fully-committed version, never ahead of a missing one.
@@ -311,7 +348,7 @@ def commit_next_workfile(
     next_path = reserve_next_hip_file_path(entity_uri, department_name, nc_type=nc_type)
     version_name = next_path.stem.rsplit("_", 1)[-1]
     try:
-        hou.hipFile.save(str(next_path))
+        next_path = save_hip_file(next_path)
     except BaseException:
         release_reserved_version(next_path)
         raise

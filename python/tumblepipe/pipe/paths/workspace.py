@@ -107,19 +107,28 @@ def get_hip_file_path(
     # This avoids unreliable exists() calls on SMB/CIFS network storage
     version_context_path = workspace_path / "_context" / f"{version_name}.json"
     version_data = load_json(version_context_path)
+    stored_path = None
     if version_data is not None:
         stored_extension = version_data.get('extension')
         if stored_extension is not None:
-            return workspace_path / f'{base_name}.{stored_extension}'
+            stored_path = workspace_path / f'{base_name}.{stored_extension}'
+            if stored_path.exists():
+                return stored_path
 
-    # Priority 2: Search for file by extension (fallback for older workfiles)
+    # Priority 2: Search for file by extension. Covers older workfiles with no
+    # extension hint AND a hint that is wrong — sidecars written before
+    # ``save_hip_file`` recorded the *requested* extension, so an Education
+    # session's ``.hipnc`` was filed as ``hip``. Only a sibling that is
+    # actually there overrides the hint; a network stat that misses every
+    # channel falls through to the stored path (exists() is distrusted on
+    # SMB/CIFS, but a false negative here costs nothing beyond the old answer).
     for ext in HIP_EXTENSIONS:
         hip_file_path = workspace_path / f'{base_name}.{ext}'
         if hip_file_path.exists():
             return hip_file_path
 
-    # Fallback: return .hip path (caller handles non-existence)
-    return workspace_path / f'{base_name}.hip'
+    # Fallback: the stored path if any, else .hip (caller handles non-existence)
+    return stored_path or workspace_path / f'{base_name}.hip'
 
 def latest_hip_file_path(
     entity_uri: Uri,

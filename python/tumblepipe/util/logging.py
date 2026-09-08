@@ -14,6 +14,7 @@ LOG_DIR_NAME = "_logs"
 _initialized = False
 _project_handler: Optional[logging.Handler] = None
 _workspace_handler: Optional[logging.Handler] = None
+_console_handler: Optional[logging.Handler] = None
 
 
 def _get_log_filename() -> str:
@@ -64,9 +65,10 @@ def setup_logging(
     Args:
         workspace_path: Optional workspace for workspace-specific logs
         level: Logging level (default: INFO)
-        console: If True, also log to console (default: False)
+        console: If True, log everything to the console too (default: False).
+            Warnings and above reach the console regardless.
     """
-    global _initialized, _project_handler, _workspace_handler
+    global _initialized, _project_handler, _workspace_handler, _console_handler
 
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
@@ -82,12 +84,21 @@ def setup_logging(
             _project_handler = _create_file_handler(project_log_path, level)
             root_logger.addHandler(_project_handler)
 
-        # Console handler only if requested or in dev mode
-        if console or os.environ.get('TH_DEV', '0') == '1':
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(level)
-            console_handler.setFormatter(logging.Formatter(DEFAULT_FORMAT))
-            root_logger.addHandler(console_handler)
+        # Console handler: everything when requested or in dev mode, and
+        # warnings upward always. The process console is what the Desktop
+        # launcher captures into its per-project Houdini log, which is the
+        # file an artist can find and send in - a pipeline warning that
+        # exists only in export/other/logs on the share is invisible to
+        # them. INFO stays file-only so the console is not flooded.
+        console_level = (
+            level if console or os.environ.get('TH_DEV', '0') == '1'
+            else max(level, logging.WARNING)
+        )
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(console_level)
+        console_handler.setFormatter(logging.Formatter(DEFAULT_FORMAT))
+        root_logger.addHandler(console_handler)
+        _console_handler = console_handler
 
         _initialized = True
 

@@ -52,10 +52,13 @@ and healed by the [context chain audit](../development.md#context-chain-audit).
 ## Licence and file extension
 
 The extension follows the Houdini licence the session runs on: `.hip`
-(commercial), `.hiplc` (Indie), `.hipnc` (Apprentice). The browser picks the
-extension from the running session so the file it records is the file
-Houdini actually writes. The extension is also stored in the version's
-sidecar, which is how a later open finds the file without probing the share.
+(commercial), `.hiplc` (Indie), `.hipnc` (Apprentice and Education). The
+browser picks the extension from the running session, and after every save
+it records the extension Houdini actually wrote, so a licence that rewrites
+the extension on save still ends up with a sidecar that names the real file.
+The extension is stored in the version's sidecar, which is how a later open
+finds the file without probing the share; if the sidecar names a channel
+that is not there but a sibling extension is, the sibling wins.
 
 ## What the sidecars are for
 

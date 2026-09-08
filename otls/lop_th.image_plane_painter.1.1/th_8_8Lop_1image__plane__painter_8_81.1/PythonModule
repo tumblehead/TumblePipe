@@ -6,7 +6,18 @@ import shutil
 import nodegraphutils
 import hou
 
-psd_template = r"W:\_pipeline\pipeline\krita\blank_template.psd"
+def _psd_template() -> str:
+    """The blank Krita PSD shipped with the package (resources/krita/).
+
+    Resolved from TH_PIPELINE_PATH (= the installed package root, set by
+    hpm.toml) rather than the retired W:/_pipeline share, so a fresh
+    workstation with no legacy mount can still paint an image plane.
+    """
+    root = os.environ.get("TH_PIPELINE_PATH")
+    if not root:
+        import tumblepipe
+        root = str(Path(tumblepipe.__file__).resolve().parents[2])
+    return str(Path(root) / "resources" / "krita" / "blank_template.psd")
 
 def open_location():
     image_path = hou.expandString(hou.evalParm("image_save_path"))
@@ -38,7 +49,7 @@ def create_krita_file(destination: str):
         width = int(resolution[0])
         height = int(resolution[1])
 
-        copied_file = shutil.copy(psd_template, destination)
+        copied_file = shutil.copy(_psd_template(), destination)
         
         return True
     except Exception as e:

@@ -42,6 +42,7 @@
                 name    "export_f"
                 label   "Start/End/Inc"
                 type    float
+                invisible
                 size    3
                 default { "1001" "1001" "1" }
                 range   { 0 10 }
@@ -52,6 +53,7 @@
                 name    "export_lopoutput"
                 label   "Output File"
                 type    file
+                invisible
                 default { "" }
                 menureplace {
                     [ "opmenu -l -a export lopoutput" ]
@@ -63,6 +65,7 @@
                 name    "export_execute"
                 label   "Save to Disk"
                 type    button
+                invisible
                 default { "0" }
                 parmtag { "autoscope" "0000000000000000" }
                 parmtag { "takecontrol" "always" }
