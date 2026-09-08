@@ -516,22 +516,32 @@ def register_package():
     except Exception:
         return
 
+    # ``docs`` is the shipped ``docs/`` folder (Markdown, rendered offline by
+    # TumbleTrove >= 0.27.0 under **TumbleTrove ▸ Documentation**; an older
+    # TumbleTrove opens the folder itself instead of rendering it). The
+    # online build of the same pages stays reachable as an extra entry.
     package.register(
         "TumblePipe",
         version=_own_version(),
         description="Tumblehead's USD production pipeline.",
         website="https://tumbletrove.com",
-        docs="https://tumbletrove.com/docs/tumblepipe",
+        docs=_package_root() / "docs",
+        extra_docs=[("Online documentation", "https://tumblepipe.readthedocs.io")],
         icon="lucide:database",
         catalogs=[package.catalog("pipeline", _make_pipeline_catalog)],
     )
+
+
+def _package_root() -> Path:
+    """The package root (the directory holding ``hpm.toml``)."""
+    return Path(__file__).resolve().parents[2]
 
 
 def _own_version() -> str:
     """Our version from the shipped hpm.toml, or empty if unreadable."""
     try:
         import tomllib
-        manifest = Path(__file__).resolve().parents[2] / "hpm.toml"
+        manifest = _package_root() / "hpm.toml"
         with manifest.open("rb") as fh:
             return str(tomllib.load(fh)["package"].get("version", ""))
     except Exception:

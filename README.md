@@ -5,8 +5,10 @@ for the [*Turbulence*](https://www.sidefx.com/tech-demos/turbulence/) short
 film at [Tumblehead](https://tumblehead.com).
 
 **Full documentation:** [tumblepipe.readthedocs.io](https://tumblepipe.readthedocs.io) —
-installation, configuration, the convention framework, render farm setup,
-and project structure reference.
+getting started, the Asset Browser, the pipeline nodes, configuration, the
+render farm, and troubleshooting. The same pages ship inside the package and
+open offline from **TumbleTrove ▸ Documentation ▸ TumblePipe** in Houdini
+(TumbleTrove 0.27.0 or newer).
 
 ## Install
 
@@ -48,7 +50,7 @@ ships a working example.
 - `resources/`, `ocio/` — resource files and OpenColorIO configuration.
 - `src/resolver/` — source for the `entity://` USD asset resolver.
 - `src/wizard/` — source for the native `tt_setup` project-setup wizard (Rust/egui).
-- `docs/` — documentation source (hosted on Read the Docs).
+- `docs/` — the documentation, as Markdown. Ships in the package and renders offline under **TumbleTrove ▸ Documentation** (TumbleTrove 0.27.0+); also hosted on Read the Docs.
 - `tests/` — property-based test harness (uv-managed, independent of hpm).
 - `hpm.toml` — HPM package manifest.
 

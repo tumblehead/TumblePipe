@@ -300,12 +300,23 @@ class ContainerManager:
                 for g in ctx_groups:
                     name = g.uri.segments[-1] if g.uri.segments else str(g.uri)
                     member_count = len(g.members)
+                    group_id = f"group:{proj.name}:{ctx}/{name}"
+                    # The leaf lands on the Multi ITSELF — its card, with
+                    # a department row per covered department, in list
+                    # view like a shot — not on its members. A leaf whose
+                    # tag was the bare member filter made a Multi read
+                    # as a category of shots. Members are one
+                    # double-click away (the card's drill tag).
                     result[ctx].append(Collection(
-                        id=f"group:{proj.name}:{ctx}/{name}",
+                        id=group_id,
                         label=name,
                         count=member_count,
-                        tag=f"group:{proj.name}:{ctx}/{name}",
+                        tag=(
+                            f"project:{proj.name}+type:group"
+                            f"+multi_context:{ctx}+{group_id}"
+                        ),
                         kind="group",
+                        default_view="list",
                     ))
         except Exception:
             log.debug("Failed to list groups for %s", proj.name, exc_info=True)
@@ -331,6 +342,8 @@ class ContainerManager:
         """
         project_tag = f"project:{proj.name}"
         leaves = self._list_group_leaves_by_context(proj)
+        # default_view="list": a Multi is an entity with department rows,
+        # and those browse as list rows for the same reason shots do.
         asset_sub = Collection(
             id=f"{proj.name}:multis_section:assets",
             label="Multis",
@@ -338,6 +351,7 @@ class ContainerManager:
             tag=f"{project_tag}+type:group+multi_context:assets",
             count=len(leaves["assets"]),
             children=tuple(leaves["assets"]),
+            default_view="list",
         )
         shot_sub = Collection(
             id=f"{proj.name}:multis_section:shots",
@@ -346,6 +360,7 @@ class ContainerManager:
             tag=f"{project_tag}+type:group+multi_context:shots",
             count=len(leaves["shots"]),
             children=tuple(leaves["shots"]),
+            default_view="list",
         )
         return asset_sub, shot_sub
 
@@ -394,26 +409,34 @@ class ContainerManager:
         self, collection: "Collection", project_name: str, kind: str,
     ) -> Asset:
         """Wrap a Group/Scene Collection in an Asset so the grid can
-        render it as a card. The ``deck_drill_tag`` field signals to
-        the browser's card-click handler that the card represents a
-        container — clicking it should drill into its members rather
-        than open a detail panel.
+        render it as a card. The ``deck_drill_tag`` field tells the
+        browser the card represents a container: a **double-click**
+        drills into its members (a single click selects it like any
+        other card, and the deck expands its department rows).
 
         For groups, the asset also advertises ``has_deck_items=True``
         and a ``departments`` map (``{dept: latest_version}``, the same
         card shape shots/assets use) so the deck popup can render one
-        deck item per dept (mirroring the shot/asset open-workfile UX).
+        deck item per covered dept (mirroring the shot/asset
+        open-workfile UX). A Multi is an entity with department rows
+        first and a container of members second.
         """
         metadata: dict = {}
         dirty = False
         ctx = ""
         has_deck_items = False
+        # The container's identity is the collection ID (``group:P:ctx/name``
+        # / ``scene:P:name``). Its sidebar ``tag`` is what clicking the leaf
+        # filters by, and for a Multi that is now a compound tag that lands
+        # on the card rather than the bare id — so nothing here may parse
+        # the tag as an id.
+        container_id = collection.id
         if kind == "scene":
             # Surface a dirty flag so the renderer can paint an
             # "unsaved" indicator on Roots whose JSON has drifted
             # from the latest exported USD.
             try:
-                dirty = self._root_is_dirty(collection.tag)
+                dirty = self._root_is_dirty(container_id)
             except Exception:
                 dirty = False
         if kind == "group":
@@ -423,15 +446,15 @@ class ContainerManager:
             # context comes from the second URI segment, i.e. the
             # ``ctx`` in ``group:PROJECT:ctx/name``.
             try:
-                _, _, group_path = collection.tag.split(":", 2)
+                _, _, group_path = container_id.split(":", 2)
                 ctx = group_path.split("/", 1)[0] if "/" in group_path else ""
             except ValueError:
                 ctx = ""
             covered = self._group_departments_from_tag(
-                collection.tag, project_name,
+                container_id, project_name,
             )
             if covered:
-                hips = self._group_dept_latest_hips(collection.tag)
+                hips = self._group_dept_latest_hips(container_id)
                 # Same shape as shot/asset metadata: {dept: latest_version
                 # or ""}. Dept-name iteration order (for deck item render)
                 # comes from get_deck_items, which sorts by the project's
@@ -465,17 +488,19 @@ class ContainerManager:
                     metadata["last_user"] = user
                     metadata["last_note"] = note
         return Asset(
-            id=collection.tag,
+            id=container_id,
             name=collection.label,
             thumbnail_url="",
             tags=frozenset({
                 f"type:{kind}",
                 f"project:{project_name}",
                 "source:pipeline",
-                collection.tag,
+                container_id,
             }),
             kind=kind,
-            deck_drill_tag=collection.tag,
+            # Double-click drills into the members: the bare id is the
+            # member filter tag.
+            deck_drill_tag=container_id,
             member_count=collection.count,
             dirty=dirty,
             context=ctx,
@@ -787,6 +812,14 @@ class ContainerManager:
                     a for a in items
                     if a.context in multi_ctx_tags
                 ]
+            # A sidebar Multi leaf names its own Multi (``group:...``
+            # alongside ``type:group``): show that one card, so the leaf
+            # lands on the Multi rather than the whole Multis grid. The
+            # bare ``group:`` tag without ``type:group`` is the member
+            # filter and never reaches this branch.
+            wanted = {t for t in tags if t.startswith("group:")}
+            if wanted:
+                items = [a for a in items if a.id in wanted]
 
         if query:
             q = query.lower()
@@ -1361,6 +1394,70 @@ class ContainerManager:
                 log.exception("remove_member failed")
                 skipped += 1
         return (removed, skipped)
+
+    # ── Root edit: the asset list ─────────────────────────
+
+    @staticmethod
+    def _scene_asset_label(uri_or_str) -> str:
+        """``entity:/assets/CAT/NAME`` → ``CAT/NAME``, the label the edit
+        dialog shows and hands back."""
+        text = str(uri_or_str)
+        return text.replace("entity:/assets/", "", 1)
+
+    def scene_edit_fields(self, ref: SceneContainer) -> list:
+        """The Root's edit dialog: one multi-select of the project's
+        assets, ticked where the Root already holds them."""
+        from tumbletrove.asset_browser.api.types import CreationField
+        from tumblepipe.config import scene as scn_mod
+        scene = scn_mod.get_scene_by_uri(ref.uri)
+        if scene is None:
+            return []
+        choices = tuple(
+            self._scene_asset_label(u) for u in scn_mod.list_available_assets()
+        )
+        current = tuple(
+            dict.fromkeys(self._scene_asset_label(e.asset) for e in scene.assets)
+        )
+        return [
+            CreationField(
+                key="assets",
+                label="Assets",
+                field_type="multi_select",
+                choices=choices,
+                initial=current,
+                required=False,
+            ),
+        ]
+
+    def edit_scene_assets(self, ref: SceneContainer, labels) -> bool:
+        """Apply the edit dialog's ticked asset labels to the Root.
+
+        Entries the Root already holds keep their instance count and
+        channel; a newly ticked asset joins with one instance on the
+        default channel; an unticked one leaves. Returns True when the
+        list changed.
+        """
+        from tumblepipe.config import scene as scn_mod
+        scene = scn_mod.get_scene_by_uri(ref.uri)
+        if scene is None:
+            raise ValueError(f"Root {ref.path!r} does not exist")
+        wanted = list(dict.fromkeys(str(x) for x in labels))
+        kept = [
+            e for e in scene.assets
+            if self._scene_asset_label(e.asset) in wanted
+        ]
+        held = {self._scene_asset_label(e.asset) for e in scene.assets}
+        added = [
+            scn_mod.AssetEntry(asset=f"entity:/assets/{label}", instances=1)
+            for label in wanted if label not in held
+        ]
+        new_assets = kept + added
+        if [(e.asset, e.instances, e.channel) for e in new_assets] == [
+            (e.asset, e.instances, e.channel) for e in scene.assets
+        ]:
+            return False
+        scn_mod.set_scene_assets(ref.uri, new_assets)
+        return True
 
     def _remove_assets_from_scene(
         self, ref: SceneContainer, asset_ids: list[str],

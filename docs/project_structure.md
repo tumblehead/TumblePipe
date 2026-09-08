@@ -31,7 +31,7 @@ TumblePipe/
 │   ├── project_template/        #   new-project scaffolding (also migration's source of truth)
 │   ├── lop/                     #   per-node-type event scripts (Houdini scans these)
 │   └── fix_*.py / verify_*.py   #   project maintenance / audit CLIs
-└── docs/                        # This documentation (Sphinx)
+└── docs/                        # This documentation (Markdown; rendered offline by TumbleTrove, and by Sphinx on Read the Docs)
 ```
 
 ## Key directories

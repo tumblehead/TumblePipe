@@ -41,7 +41,7 @@ from tumbletrove.asset_browser.core.projects import ProjectConfig, PipelineProje
 # Sibling modules import relatively: this is an ordinary package.
 from .clients import ClientPool
 from . import containers as containers
-from .containers import ContainerManager, GroupContainer
+from .containers import ContainerManager, GroupContainer, SceneContainer
 from .drops import DropRouter
 from .houdini import ProjectActivator, report_failure, run_on_main_thread
 from .detail import DetailSectionBuilder
@@ -2786,9 +2786,23 @@ class PipelineCatalog(Catalog):
                         f"Multi '{name}' already exists in {context}."
                     )
                     return None
-                grp_mod.add_group(context, name, [], [])
+                # A Multi covers its context's whole department pool from
+                # birth. Coverage is what gives the Multi card its
+                # department rows and what redirects a member's rows to
+                # the Multi's workfile; a Multi that covers nothing has
+                # no rows, opens nothing, and reads as a folder of shots.
+                # Trim it afterwards through Edit Multi… when a Multi is
+                # meant for fewer departments.
+                from tumblepipe.config.department import list_departments
+                pool = [
+                    d.name for d in list_departments(
+                        context, include_generated=False,
+                    )
+                ]
+                grp_mod.add_group(context, name, [], pool)
                 hou.ui.setStatusMessage(
-                    f"Created Multi: {name} ({context})",
+                    f"Created Multi: {name} ({context}, covers "
+                    f"{len(pool)} departments)",
                     severity=hou.severityType.Message,
                 )
             except Exception:
@@ -2849,6 +2863,12 @@ class PipelineCatalog(Catalog):
         return value
 
     def get_edit_fields(self, asset_id: str) -> list[CreationField]:
+        # A Multi / Root card's detail panel offers Edit… like an entity's,
+        # and the host asks here with the card's id — a container id. It
+        # used to fall through the entity resolver to [] and the host
+        # returned without a word. Route it to the collection editor.
+        if containers.parse(asset_id) is not None:
+            return self.get_collection_edit_fields(asset_id)
         parts = self._resolver.split(asset_id)
         if parts is None:
             return []
@@ -2914,6 +2934,10 @@ class PipelineCatalog(Catalog):
         ]
 
     def edit_entity(self, asset_id, fields):
+        # The other half of the detail-panel Edit route on a container
+        # card — see get_edit_fields.
+        if containers.parse(asset_id) is not None:
+            return self.edit_collection(asset_id, fields)
         uri = self._resolver.uri_for(asset_id)
         if uri is None:
             return False
@@ -2968,6 +2992,14 @@ class PipelineCatalog(Catalog):
         return True
 
     def delete_entity(self, asset_id):
+        # A Multi / Root card's detail panel offers the same Delete action
+        # an entity's does, and the host answers it with delete_entity on
+        # the card's id — a container id, which no entity resolver can
+        # split. Returning False there is the silent kind of failure the
+        # host does nothing with, so route the container to its own
+        # delete instead of pretending the id was malformed.
+        if containers.parse(asset_id) is not None:
+            return self.delete_collection(asset_id)
         uri = self._resolver.uri_for(asset_id)
         if uri is None:
             return False
@@ -3088,11 +3120,16 @@ class PipelineCatalog(Catalog):
         self, collection_id: str,
     ) -> list[CreationField]:
         ref = containers.parse(collection_id)
-        if not isinstance(ref, GroupContainer):
+        if ref is None:
             return []
         proj = self._registry.get(ref.project_name)
         if proj is None:
             return []
+        if isinstance(ref, SceneContainer):
+            # A Root's editable surface is its asset list. Returning []
+            # here made the host's Edit Root… return without a word.
+            self._activate_project(proj)
+            return self._containers.scene_edit_fields(ref)
         self._activate_project(proj)
         from tumblepipe.config import groups as grp_mod
         from tumblepipe.config import department as dept_mod
@@ -3119,12 +3156,26 @@ class PipelineCatalog(Catalog):
         self, collection_id: str, fields: dict,
     ) -> bool:
         ref = containers.parse(collection_id)
-        if not isinstance(ref, GroupContainer):
+        if ref is None:
             return False
         proj = self._registry.get(ref.project_name)
         if proj is None:
             return False
         self._activate_project(proj)
+        if isinstance(ref, SceneContainer):
+            try:
+                changed = self._containers.edit_scene_assets(
+                    ref, fields.get("assets", ()) or (),
+                )
+            except Exception as exc:
+                raise ConfigError(
+                    self.id,
+                    f"failed to edit root {collection_id}: {exc}",
+                    cause=exc,
+                ) from exc
+            if changed:
+                self._invalidate_membership_cache()
+            return True
         from tumblepipe.config import groups as grp_mod
         grp = grp_mod.get_group(ref.uri)
         if grp is None:
@@ -3224,6 +3275,20 @@ class PipelineCatalog(Catalog):
 
     def get_actions(self, detail: AssetDetail) -> list[AssetAction]:
         actions = []
+
+        # A Multi / Root has no export folder and no entity row in the
+        # database editor, so those two actions could only fail on it —
+        # one silently, one with a "cannot resolve" dialog. Offer what
+        # works: Edit (coverage / asset list) and Delete, both routed by
+        # container id.
+        if containers.parse(detail.id) is not None:
+            return [
+                AssetAction(id="edit_entity", label="Edit…", icon="settings"),
+                AssetAction(
+                    id="delete_entity", label="Delete", icon="x",
+                    destructive=True,
+                ),
+            ]
 
         is_asset = "type:asset" in detail.tags
 
@@ -3368,7 +3433,8 @@ class PipelineCatalog(Catalog):
 
         # Group coverage: depts where this member's workfile is
         # superseded by a group's multi-shot workfile. The deck item
-        # detail line shows "ⓖ GroupLabel" instead of a version, and
+        # detail line shows a "ⓜ" badge instead of a version (the
+        # tooltip names the Multi), and
         # the click action route through ``open_workfile:<dept>`` —
         # which now resolves via ``latest_hip_file_path_with_context``
         # and lands on the group's hip automatically.

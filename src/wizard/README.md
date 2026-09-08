@@ -104,6 +104,33 @@ no TumbleTrove hook fires on *upgrade* — `tt_install` is per-project rather
 than per-version, and `tt_setup` is driven by the Configure button. Every
 launch is the only reliable moment left.
 
+### Where the project comes from
+
+`TH_PROJECT_PATH` is a package-declared `[runtime]` variable, and the desktop
+does **not** put those into a hook's environment — it defers them to Houdini's
+package file and hands a hook only `HPM_PACKAGE_ROOT` plus the launch's `TT_*`
+context block. The first releases of this hook read the variable anyway, so
+every launch logged "TH_PROJECT_PATH is unset — nothing to migrate" and the
+window never opened for anyone. The hook now reads the path from the project's
+own manifest, `$TT_PROJECT_DIR/hpm.toml` (`[runtime].TH_PROJECT_PATH.value`),
+and only takes a literal path from it. The variable still wins when present,
+which is what the `--migrate` CLI and a hand-set shell rely on.
+
+Two consequences for testing: a dev launch does **not** exercise a hook change
+(the desktop runs hooks from the installed package, not a dev override), so run
+the built binary by hand with `TT_PROJECT_DIR` pointing at a desktop project
+dir (`~/.tumbletrove/projects/<id>`) and `TT_NONINTERACTIVE=1`.
+
+### A project that was never configured
+
+A folder with no `_config/db/entity.json` is not "at v0 and eight steps
+behind" — it was never set up. The hook opens a "project not configured"
+notice that points at Configure… on the TumblePipe card (and logs the same
+sentence on a headless launch); it never shows the migration plan for a
+`_config` that does not exist, and `--migrate` refuses such a project in the
+same words. The marker is `th_project_core::looks_like_project`, shared with
+`tt_setup`'s *Use an existing project* check.
+
 ### Rules the hook contract forces
 
 - **One JSON object on stdout, everything else on stderr.** Console subsystem,

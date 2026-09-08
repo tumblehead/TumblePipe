@@ -70,6 +70,15 @@ the missing override invisible to every property. Launch a project from
 TumbleTrove Desktop once so the SDK is fetched; `test_catalog_multis.py`
 refuses to run on the stub.
 
+A second class of silent break lives *between* the catalog's own modules:
+they reach each other through the catalog instance
+(`self._catalog._containers.x`), so a helper that moves in a refactor is an
+`AttributeError` only on the click that needs it — which is how "New:
+Template" on a Multi row, the one action that creates a multishot
+workfile, shipped broken for three months. `test_catalog_wiring.py` reads
+every module as source and checks each cross-module reference against the
+owning class, so that break now fails the suite instead of an artist.
+
 ## Linting
 
 Python is linted with [ruff](https://docs.astral.sh/ruff/) under the
@@ -519,7 +528,7 @@ from its internal network — a feature task, not a forwarder fix.
 
 `scripts/verify_entity_departments.py` reports a project's department pool in
 **pipeline order** (which is what the pool's key order *is* — see *Departments*
-in {doc}`configuration`), the entities scoped to a subset of it, assignments
+in [Departments](configuration.md#departments)), the entities scoped to a subset of it, assignments
 naming a department the pool no longer has, and departments with work on disk
 that their entity is not scoped to. It is read-only, so it is safe against a
 live project; run it before and after migrating one to config v3.
@@ -876,10 +885,72 @@ from TumbleTrove Desktop (≥ 0.38, which sets the variable from the Houdini
 versions it discovers) do the same thing. Release CI always builds the
 full matrix — see `.woodpecker/build-*.yml`.
 
-## Building the documentation locally
+## Writing the documentation
 
-The docs are written in [MyST Markdown](https://myst-parser.readthedocs.io)
-and built with [Sphinx](https://www.sphinx-doc.org). From the package root:
+`docs/` is plain Markdown and is read by two renderers:
+
+- **Offline, in the package.** The folder ships in the release archive and
+  `tumblepipe.startup.register_package` hands it to TumbleTrove as
+  `docs=<package root>/docs`. TumbleTrove 0.27.0+ renders it into a static
+  site under the Houdini prefs directory every time someone opens
+  **TumbleTrove ▸ Documentation ▸ TumblePipe**, with a sidebar, a per-page
+  outline and a top bar linking the other installed packages' docs. An older
+  TumbleTrove opens the folder itself instead of rendering it. The online
+  build stays reachable as **TumblePipe: Online documentation** in the same
+  menu.
+- **Online, on Read the Docs.** Sphinx + MyST builds the same files at
+  [tumblepipe.readthedocs.io](https://tumblepipe.readthedocs.io), rebuilt on
+  every push to `main` of the public mirror. `.readthedocs.yaml` at the
+  repository root and `docs/conf.py` configure it; neither ships in the
+  archive.
+
+The offline renderer is
+[python-markdown2](https://github.com/trentm/python-markdown2) (pipe tables,
+fenced code with a language, heading ids, task lists, footnotes, inline HTML),
+so the rules are:
+
+- **No MyST directives or roles** — no `{toctree}`, `{doc}`, `{include}`; a
+  fenced directive renders offline as a literal code block. Link pages with
+  relative `.md` paths, fragments allowed (`configuration.md#departments`).
+- **One `#` title per page**; `##` and `###` become the page outline.
+- **`index.md` is the navigation.** A `## Heading` opens a sidebar section; a
+  list item linking a `.md` file is a page, nested items nest. Every page
+  must be listed there — an unlisted page still renders, filed under a
+  trailing *Other pages* section. Sphinx gets its `toctree` from the same
+  lists: the `source-read` hook in `docs/conf.py` derives one hidden
+  `{toctree}` per section, so there is one navigation to maintain.
+  `docs/changelog.md` gets its `CHANGELOG.md` include the same way; offline it
+  links to the shipped file instead.
+- **Source links** are relative paths climbing out of `docs/`
+  (`../python/tumblepipe/startup.py`); offline they become `file://` links
+  into the installed package, so they must point at files the archive ships.
+- **Images** live inside `docs/`; folders starting with `_` or `.` are
+  skipped (`_static/`, `_build/`).
+
+`tests/test_docs_tree.py` renders the tree with TumbleTrove's own renderer
+and follows every link, anchor and source link, and fails when a page is
+missing from `index.md` or carries more than one title. It needs a
+`tumbletrove` with the `docs` module (0.27.0+): the newest one hpm has
+fetched, a sibling `tumbletrove` checkout, or `TUMBLETROVE_PYTHON`. It runs
+with the rest of the suite (and so on the push hook).
+
+To preview the offline rendering outside Houdini, with a TumbleTrove
+`python/` on `sys.path`:
+
+```python
+from pathlib import Path
+from tumbletrove.docs.render import Book, render_site
+
+build = render_site([Book(key="tumblepipe", name="TumblePipe", root=Path("docs"))],
+                    [], Path("/tmp/site"))
+print(build.hub)   # open this in a browser
+```
+
+Or, in a dev-launched Houdini, open **TumbleTrove ▸ Documentation ▸
+TumblePipe** — the site is re-rendered from the installed source on every
+open, so an edit shows up on the next click.
+
+To build the Sphinx site locally, from the package root:
 
 ```bash
 python -m venv .venv-docs
@@ -889,13 +960,6 @@ sphinx-build -b html docs docs/_build/html
 ```
 
 Then open `docs/_build/html/index.html` in a browser.
-
-## Documentation hosting
-
-The rendered docs live at
-[tumblepipe.readthedocs.io](https://tumblepipe.readthedocs.io). They are
-rebuilt automatically on every push to `main` in the public mirror repo.
-The RTD build configuration is `.readthedocs.yaml` at the repository root.
 
 ## License
 

@@ -106,7 +106,7 @@ in, and the only way to reach that work from a shot is its workfile
 (§*Seeing what composed*).
 
 "Pipeline order" is literally the department's position in the project's
-department pool (see *Departments* in {doc}`configuration`): the build
+department pool (see [Departments](configuration.md#departments)): the build
 sublayers the departments in *reversed* pool order, so a department further
 down the pool composes **stronger**. Reordering the pool therefore restages
 every entity in the project, which is why the pool editor warns before it
@@ -329,7 +329,9 @@ default, `--apply` disables and resaves with a backup copy.
 - **Roots** (config-driven scenes): a Root lists member assets in the
   project configuration; the Root's staged file sublayers each member's
   staged file, and shots pick the Root up through their root department.
-  Placement lives in the Root. (A *Multi* is not the same thing: it
+  Placement lives in the Root. In the asset browser, drag assets onto the
+  Root's sidebar leaf to add them, and **Edit Root…** (on the leaf, the
+  card, or the card's detail panel) edits the asset list as a whole. (A *Multi* is not the same thing: it
   groups entities into one shared **workfile** and adds nothing to
   composition — see [Configuration → Multis](configuration.md#multis-multishot-workfiles).)
 - **Nested assets** (workfile-driven): import assets directly into

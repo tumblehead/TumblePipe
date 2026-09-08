@@ -97,6 +97,32 @@ contract's way of saying "no env var changes" — so declining is not reported
 to the user as a failed hook. See `src/wizard/README.md` for the full exit
 contract.
 
+### If the project was never configured
+
+A project can carry TumblePipe and a `TH_PROJECT_PATH` that names a folder
+with no `_config/db/entity.json` — the wizard was skipped, or the path was
+typed by hand. Houdini still launches, but the pipeline has nothing to read,
+and for a while that was invisible: the catalog factory returned "no pipeline
+here" and the asset browser simply had no Assets or Shots. Two things now say
+so, in words that name the fix:
+
+- **At launch**, the `tt_prepare` hook opens a "project not configured"
+  window pointing at Configure… on the TumblePipe card (headless launches
+  log the same line and continue). It deliberately does *not* show the
+  migration window: a missing `_config` reads as layout v0, and "your
+  configuration is out of date" sends someone looking for a migration when
+  what they are missing is the setup step. `tt_prepare --migrate` refuses
+  such a project for the same reason.
+- **In the asset browser**, the pipeline catalog fails to build with
+  "TumblePipe is installed, but this project has not been configured yet",
+  which TumbleTrove shows as a failed source with the message on Houdini's
+  status bar. A `TH_PROJECT_PATH` that does not exist at all gets its own
+  message (mistyped path, or an unreachable share).
+
+"Configured" means the same thing to both: `<config>/db/entity.json`
+exists. The marker is shared with the wizard's *Use an existing project*
+check.
+
 ## The convention framework
 
 TumblePipe expects a config directory (pointed at by `TH_CONFIG_PATH`) that
@@ -234,11 +260,28 @@ What coverage means, mechanically:
 
 In the asset browser, Multis sit in a **Multis** subheader at the top of
 the Assets and Shots sections of each project. **New Multi…** creates one
-(name + context); drag cards onto the Multi's sidebar leaf or use
-**Add selected assets to Multi** to add members, and the leaf or the Multi
-card's right-click menu offers **Remove selected assets**, **Edit Multi…**,
-**Delete Multi** and **Open location**. The card's **Departments…** is the
-coverage editor described under *Per-entity assignment*.
+(name + context), and a new Multi **covers its context's whole department
+pool** from the start — coverage is what gives the Multi its department
+rows and what points a member's rows at the Multi's workfile, so a Multi
+that covered nothing had no rows, opened nothing, and read as a folder of
+shots. Trim the coverage through **Edit Multi…** (or the card's
+**Departments…**, the coverage editor described under *Per-entity
+assignment*) when a Multi is meant for fewer departments.
+
+The Multi is an entity, not a folder: its sidebar leaf lands on the Multi's
+own card, in list view, with one row per covered department, exactly as a
+shot's rows work. A row with a workfile opens it; a row without one reads
+*missing*, and its right-click **New: Template** creates the first version
+from the department template (one pinned graph per member, laid out in
+columns) — the same menu a shot's row has. Its members are
+one step away — **double-click** the Multi card to drill into them (the
+breadcrumb shows the Multi), and a member's own rows carry a **ⓜ** badge
+on every department the Multi covers (the tooltip names the Multi), and
+open the Multi's hip from there too. Drag cards onto the Multi's sidebar leaf or use
+**Add selected assets to Multi** to add members; the leaf's right-click menu
+offers **Edit Departments…**, **Remove selected assets from Multi** and
+**Delete Multi**, and the card's offers **Edit Multi…**, **Delete Multi** and
+**Open Location** (see [Multis and Roots](asset-browser/multis-and-roots.md)).
 
 Every one of those operations except creation is routed by TumbleTrove
 through the catalog's `owns_collection` hook, and silently does nothing
@@ -250,9 +293,10 @@ contract against the shipped SDK.
 ### Department templates
 
 `_config/templates/<context>/<department>/template.py` builds the node graph
-of a **new department workfile** — the "New from template" action runs the
-matching module's `create(stage, entity_uri, department_name)` against a
-freshly saved, empty hip.
+of a **new department workfile** — the **New: Template** action on a
+department row runs the matching module's
+`create(stage, entity_uri, department_name)` against a freshly saved,
+empty hip.
 
 Each template splits on the URI it is handed:
 
@@ -404,6 +448,22 @@ Two cases where the window deliberately never appears:
 - **A project it cannot fully migrate** — the run is refused as a whole and
   the window says which step is blocked and why, rather than migrating
   part-way. A project that cannot take every pending step is left untouched.
+
+And one case where a *different* window appears: a project that was never
+configured at all (no `_config/db/entity.json`) gets the "not configured"
+notice described under *Project setup wizard*, never the migration plan.
+
+**How the hook finds the project.** `TH_PROJECT_PATH` is a package-declared
+`[runtime]` variable, and TumbleTrove Desktop does not put those into a hook's
+environment — it defers them to Houdini's package file and hands a hook only
+the `TT_*` context block. The first releases of this hook read the variable
+anyway, so every launch logged "TH_PROJECT_PATH is unset — nothing to
+migrate" and the window never opened for anyone. The hook now reads the path
+out of the project's own manifest, `$TT_PROJECT_DIR/hpm.toml`, where the
+desktop records it; the variable still wins when it is present (the
+`--migrate` CLI and a hand-set shell rely on that). Only a literal path is
+accepted from the manifest — a value that refers to another variable is
+refused rather than misread.
 
 Because `_config` lives on a shared drive and every artist's launch runs this,
 the migration itself is taken under a lock, so two people launching at once

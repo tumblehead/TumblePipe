@@ -16,6 +16,10 @@ path = "src/main.rs"
 
 [dependencies]
 th_project_core = { path = "../core" }
+# The desktop does not put package-declared [runtime] vars into a hook's
+# environment, so the project path is read back out of the project's own
+# hpm.toml (under $TT_PROJECT_DIR) when TH_PROJECT_PATH is absent.
+toml = "0.8"
 # The migration UI. Same stack as tt_setup so the two apps look alike, but the
 # window is only ever created when a project actually has something pending —
 # the common launch reads one small file and exits before egui is touched.

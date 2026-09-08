@@ -1143,8 +1143,12 @@ class WorkfileManager:
 
         group_uri = uris.group(path)
         # Context for groups is the first segment ("shots" or "assets")
+        # (Lives on the ContainerManager since the container split; the
+        # old catalog-level name survived here and made every "New:
+        # Template" on a Multi row raise AttributeError.)
         ctx = (
-            self._catalog._group_context_from_tag(asset_id) or "shots"
+            self._catalog._containers._group_context_from_tag(asset_id)
+            or "shots"
         )
 
 

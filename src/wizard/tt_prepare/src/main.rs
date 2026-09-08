@@ -36,6 +36,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
+use th_project_core::looks_like_project;
 use th_project_core::migration::{
     self, config_dir, current_version, latest_version, pending, Readiness, Report, Step,
 };
@@ -77,7 +78,8 @@ fn main() -> std::process::ExitCode {
 }
 
 /// `tt_prepare --migrate [--dry-run] [<project>]` — headless, for a person or a
-/// bulk script. Falls back to `$TH_PROJECT_PATH` when no path is given, so it
+/// bulk script. Falls back to `$TH_PROJECT_PATH` (or the project manifest
+/// under `$TT_PROJECT_DIR`, see `project_path`) when no path is given, so it
 /// matches how the desktop's Scripts panel runs things.
 fn run_cli(parsed: &Args) -> Result<(), String> {
     let dry_run = parsed.dry_run;
@@ -86,6 +88,10 @@ fn run_cli(parsed: &Args) -> Result<(), String> {
         None => project_path()?,
     };
     let template = template_dir_from(parsed);
+
+    if !looks_like_project(&project) {
+        return Err(unconfigured_message(&project));
+    }
 
     let at = current_version(&project);
     let steps = pending(&project);
@@ -131,6 +137,20 @@ fn run(parsed: &Args) -> Result<(), String> {
     let project = project_path()?;
     let template = template_dir_from(parsed);
 
+    // A project that was never configured has no `_config` at all. To the
+    // migrator that reads as "_config v0, every step pending", and the window
+    // it would open says the configuration is *out of date* — which sends the
+    // artist looking for a migration when what they are missing is the setup
+    // step. Say so instead, in the words that lead to the fix.
+    if !looks_like_project(&project) {
+        eprintln!("tt_prepare: {}", unconfigured_message(&project));
+        if let Some(reason) = non_interactive_reason() {
+            eprintln!("tt_prepare: {reason} — not opening a window.");
+            return Ok(());
+        }
+        return show_unconfigured(project);
+    }
+
     // The common case, and the one that must stay cheap: read one small file,
     // compare an integer, and return before egui is ever touched.
     let steps = pending(&project);
@@ -166,12 +186,124 @@ fn run(parsed: &Args) -> Result<(), String> {
     show(plan)
 }
 
-/// `TH_PROJECT_PATH` is a required `[runtime]` var, so the hook environment has
-/// it whenever a project is actually being launched.
+/// The one sentence for "TumblePipe is installed here, but nothing set the
+/// project up" — shared by the window, the CLI and the desktop log so they
+/// cannot drift.
+fn unconfigured_message(project: &Path) -> String {
+    format!(
+        "TumblePipe is installed, but this project has not been configured yet: {} has no \
+         _config/db/entity.json. Use Configure… on the TumblePipe card in TumbleTrove Desktop \
+         to set the project up (or point TH_PROJECT_PATH at an existing TumblePipe project).",
+        project.display()
+    )
+}
+
+/// The "not configured" window: the message, the path, and a way out. It
+/// exists so a launch from an unconfigured project says *what to do* instead
+/// of showing the migration plan for a `_config` that does not exist.
+fn show_unconfigured(project: PathBuf) -> Result<(), String> {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([560.0, 240.0])
+            .with_resizable(true),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "TumblePipe — project not configured",
+        options,
+        Box::new(move |_cc| Ok(Box::new(Unconfigured { project }))),
+    )
+    .map_err(|e| format!("could not open the not-configured window: {e}"))?;
+    eprintln!("tt_prepare: launch continues without a configured project.");
+    Ok(())
+}
+
+struct Unconfigured {
+    project: PathBuf,
+}
+
+impl eframe::App for Unconfigured {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::TopBottomPanel::bottom("actions").show(ctx, |ui| {
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui.button("Launch anyway").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                ui.label("Houdini opens either way; the pipeline catalog will be missing until the project is configured.");
+            });
+            ui.add_space(6.0);
+        });
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.add_space(4.0);
+            ui.heading("This project has not been configured for TumblePipe yet");
+            ui.add_space(4.0);
+            ui.label(format!("{}", self.project.display()));
+            ui.colored_label(
+                STATUS_ERROR,
+                "No _config/db/entity.json was found there.",
+            );
+            ui.separator();
+            ui.label(
+                "In TumbleTrove Desktop, open the project, find the TumblePipe card and press \
+                 Configure…. The setup wizard either creates a new project from the template \
+                 or points TH_PROJECT_PATH at an existing TumblePipe project.",
+            );
+        });
+    }
+}
+
+/// Where the project is.
+///
+/// `TH_PROJECT_PATH` is a required `[runtime]` var, and the first version of
+/// this hook assumed the launch environment would therefore carry it. It does
+/// not: the desktop defers package-declared `[runtime]` keys to Houdini's
+/// package file and hands a hook only the `TT_*` context, so every launch since
+/// the hook shipped logged "TH_PROJECT_PATH is unset — nothing to migrate" and
+/// the migration window never opened for anyone. The value the desktop *does*
+/// hold is in the project's own manifest at `$TT_PROJECT_DIR/hpm.toml`, so
+/// that is read when the variable is absent. The variable still wins when
+/// present — the `--migrate` CLI and a hand-set environment rely on it.
 fn project_path() -> Result<PathBuf, String> {
-    match std::env::var("TH_PROJECT_PATH") {
-        Ok(value) if !value.trim().is_empty() => Ok(PathBuf::from(value)),
-        _ => Err("TH_PROJECT_PATH is unset — nothing to migrate".to_string()),
+    if let Ok(value) = std::env::var("TH_PROJECT_PATH") {
+        if !value.trim().is_empty() {
+            return Ok(PathBuf::from(value));
+        }
+    }
+    if let Ok(dir) = std::env::var("TT_PROJECT_DIR") {
+        if !dir.trim().is_empty() {
+            return project_path_from_manifest(&Path::new(&dir).join("hpm.toml"));
+        }
+    }
+    Err("TH_PROJECT_PATH is unset and TT_PROJECT_DIR names no project — nothing to migrate"
+        .to_string())
+}
+
+/// `TH_PROJECT_PATH` as the project's manifest records it, in the
+/// `[runtime]` table the desktop writes: `TH_PROJECT_PATH = { method = "set",
+/// value = "..." }`. Only a literal path is usable here — a value that refers
+/// to another variable would need an expansion this hook cannot do.
+fn project_path_from_manifest(manifest: &Path) -> Result<PathBuf, String> {
+    let text = std::fs::read_to_string(manifest)
+        .map_err(|e| format!("cannot read {}: {e}", manifest.display()))?;
+    let doc: toml::Value = toml::from_str(&text)
+        .map_err(|e| format!("cannot parse {}: {e}", manifest.display()))?;
+    let entry = doc.get("runtime").and_then(|runtime| runtime.get("TH_PROJECT_PATH"));
+    let value = match entry {
+        Some(toml::Value::Table(table)) => table.get("value").and_then(|v| v.as_str()),
+        Some(toml::Value::String(s)) => Some(s.as_str()),
+        _ => None,
+    };
+    match value {
+        Some(v) if !v.trim().is_empty() && !v.contains('$') => Ok(PathBuf::from(v)),
+        Some(v) => Err(format!(
+            "TH_PROJECT_PATH in {} is {v:?}, which this hook cannot expand",
+            manifest.display()
+        )),
+        None => Err(format!(
+            "{} sets no TH_PROJECT_PATH — the project has not been configured",
+            manifest.display()
+        )),
     }
 }
 
@@ -486,7 +618,41 @@ mod tests {
     fn a_missing_project_path_is_an_error_not_a_panic() {
         // The hook still exits 0; run() only reports why it did nothing.
         std::env::remove_var("TH_PROJECT_PATH");
+        std::env::remove_var("TT_PROJECT_DIR");
         assert!(project_path().is_err());
+    }
+
+    /// What the desktop actually hands a hook: no TH_PROJECT_PATH, but the
+    /// project dir whose hpm.toml records it. Every launch from v1.43.0 to
+    /// v1.45.1 fell through the old "unset — nothing to migrate" branch here.
+    #[test]
+    fn the_project_path_is_read_from_the_project_manifest_when_unset() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("hpm.toml"),
+            "[package]\nname = \"p\"\n\n[runtime]\nTH_CONFIG_PATH = { method = \"set\", value = \"$TH_PROJECT_PATH/_config\" }\nTH_PROJECT_PATH = { method = \"set\", value = \"C:/shows/film\" }\n",
+        )
+        .unwrap();
+        std::env::remove_var("TH_PROJECT_PATH");
+        std::env::set_var("TT_PROJECT_DIR", dir.path());
+        let found = project_path();
+        std::env::remove_var("TT_PROJECT_DIR");
+        assert_eq!(found, Ok(PathBuf::from("C:/shows/film")));
+    }
+
+    #[test]
+    fn a_manifest_without_the_project_path_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("hpm.toml"), "[package]\nname = \"p\"\n").unwrap();
+        let why = project_path_from_manifest(&dir.path().join("hpm.toml")).unwrap_err();
+        assert!(why.contains("not been configured"), "{why}");
+        // ...and a value that needs expansion is refused rather than misread.
+        std::fs::write(
+            dir.path().join("hpm.toml"),
+            "[runtime]\nTH_PROJECT_PATH = { method = \"set\", value = \"$SHOWS/film\" }\n",
+        )
+        .unwrap();
+        assert!(project_path_from_manifest(&dir.path().join("hpm.toml")).is_err());
     }
 
     fn argv(items: &[&str]) -> Args {
@@ -527,6 +693,39 @@ mod tests {
             PathBuf::from("/pkg").join("scripts").join("project_template")
         );
         std::env::remove_var("HPM_PACKAGE_ROOT");
+    }
+
+    /// The report behind this: a project with no `_config` launched fine and
+    /// the pipeline silently wasn't there. Before this, the migrator read the
+    /// missing directory as "v0, eight steps behind" and offered to migrate
+    /// it — the CLI must refuse in words that name the actual fix.
+    #[test]
+    fn an_unconfigured_project_is_refused_not_migrated() {
+        let dir = tempfile::tempdir().unwrap();
+        let parsed = Args {
+            migrate: true,
+            dry_run: true,
+            project: Some(dir.path().to_path_buf()),
+            ..Default::default()
+        };
+        let why = run_cli(&parsed).expect_err("an empty directory is not a project");
+        assert!(why.contains("has not been configured"), "{why}");
+        assert!(why.contains("Configure"), "{why}");
+        assert!(
+            !dir.path().join("_config").exists(),
+            "refusing must not scaffold anything"
+        );
+    }
+
+    /// ...and the marker the gate keys on is the config database, not the
+    /// directory: a bare `_config/` is still unconfigured.
+    #[test]
+    fn a_bare_config_dir_is_still_unconfigured() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("_config").join("db")).unwrap();
+        assert!(!looks_like_project(dir.path()));
+        std::fs::write(dir.path().join("_config").join("db").join("entity.json"), "{}").unwrap();
+        assert!(looks_like_project(dir.path()));
     }
 
     #[test]

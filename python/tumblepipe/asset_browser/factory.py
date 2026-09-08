@@ -39,6 +39,44 @@ from .types import projects_json_path
 log = logging.getLogger(__name__)
 
 
+class ProjectNotConfigured(RuntimeError):
+    """TumblePipe is installed on the launched project, but the project has no
+    pipeline configuration (or the path it names does not exist).
+
+    Raised from :func:`create_catalog` instead of returning ``None`` because
+    ``None`` means "no pipeline here" and TumbleTrove treats it as a clean
+    opt-out: the catalog just isn't there, and the artist reads an onboarding
+    gap as a broken asset browser. A raising factory becomes a visible
+    FailedCatalog whose message reaches the browser's status bar.
+    """
+
+
+def looks_like_project(project_path, config_path=None) -> bool:
+    """True when *project_path* carries a TumblePipe config database.
+
+    The marker is ``<config>/db/entity.json`` — the same one the native
+    ``tt_setup`` / ``tt_prepare`` hooks use (``th_project_core::looks_like_project``),
+    so the launch hook and the catalog agree on what "configured" means.
+    """
+    config = Path(config_path) if config_path else Path(project_path) / "_config"
+    return (config / "db" / "entity.json").is_file()
+
+
+def _unconfigured_error(project_path: str) -> ProjectNotConfigured:
+    p = Path(project_path)
+    if not p.is_dir():
+        return ProjectNotConfigured(
+            f"TumblePipe cannot find this project: TH_PROJECT_PATH points at "
+            f"{project_path}, which does not exist. Check the path in the project's "
+            f"settings in TumbleTrove Desktop, or that the share is reachable."
+        )
+    return ProjectNotConfigured(
+        f"TumblePipe is installed, but this project has not been configured yet: "
+        f"{project_path} has no _config/db/entity.json. Use Configure… on the "
+        f"TumblePipe card in TumbleTrove Desktop to set the project up."
+    )
+
+
 def create_catalog():
     """Factory — named by TumblePipe's package registration.
 
@@ -71,6 +109,12 @@ def create_catalog():
 
     env_proj = os.environ.get("TH_PROJECT_PATH", "").strip()
     if env_proj:
+        # Houdini was launched from a project that has TumblePipe installed.
+        # If that project is not set up, say so — this is the case an artist
+        # reads as "the asset browser is broken", not "no pipeline here".
+        env_config = os.environ.get("TH_CONFIG_PATH", "").strip() or None
+        if not looks_like_project(env_proj, env_config):
+            raise _unconfigured_error(env_proj)
         env_name = Path(env_proj).name or "default"
         if env_name in registry.names:
             # Scope this session to the launch-project only.
