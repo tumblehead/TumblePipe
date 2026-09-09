@@ -346,7 +346,8 @@ class SceneManager:
         ``AssetResolver.uri_for``, which does not know container ids), so
         widening its contract would change reload behaviour for Multis as
         a side effect. Callers that genuinely mean "whatever is open"
-        — the session panel — ask for it explicitly.
+        — :meth:`get_scene_dept_version`'s Multi branch — ask for it
+        explicitly.
         """
         return self._scene_id(entities_only=False)
 
@@ -410,9 +411,28 @@ class SceneManager:
         self, asset_id: str,
     ) -> tuple[str, str] | None:
         """Return ``(dept, version)`` of the loaded scene if it belongs
-        to ``asset_id``'s project + entity, else ``None``."""
+        to ``asset_id``'s project + entity, else ``None``.
+
+        The detail panel accents the returned department in the selected
+        asset's Departments section — "this row is the scene you are in".
+        """
         if not asset_id:
             return None
+        if asset_id.startswith("group:"):
+            # A Multi's workfile carries a two-segment groups: URI, which
+            # the entity-shaped resolver below has no answer for
+            # (``uri_for_ready`` splits for PROJECT/CATEGORY/NAME), so a
+            # Multi would never accent its open department. Compare on
+            # the container id instead — ``get_scene_id`` is the mapping
+            # that already knows both shapes, and it checks the project.
+            if self.get_scene_id() != asset_id:
+                return None
+            scene_ctx = self.get_loaded_scene_context()
+            if scene_ctx is None:
+                return None
+            return (
+                scene_ctx.department_name, scene_ctx.version_name or "",
+            )
         target_uri = self._catalog._resolver.uri_for_ready(asset_id)
         if target_uri is None:
             return None

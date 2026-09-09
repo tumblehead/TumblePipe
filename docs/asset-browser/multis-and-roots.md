@@ -99,10 +99,11 @@ lays out one pinned graph per member in columns
 ([Configuration → Department templates](../configuration.md#department-templates)).
 The Multi's rows do not offer **New: Current**.
 
-Once a Multi workfile is open, the session panel shows the Multi's name and
-**Save** versions the Multi's workfile. Publishing from it publishes each
-member's layer under that member's own entity; the Multi itself never
-composes anything.
+Once a Multi workfile is open, **Save** versions the Multi's workfile, and
+the Multi's own card marks that department as the open one — in its deck
+row and in its detail panel's **Departments** section. Publishing from it
+publishes each member's layer under that member's own entity; the Multi
+itself never composes anything.
 
 The browser's members-list open is Multi-aware, but **Open in New Houdini**
 on a member's row is not: it opens the newest file in the member's own

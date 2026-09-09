@@ -1,11 +1,10 @@
 """Pipeline catalog implementation — the :class:`PipelineCatalog` class
 and the per-project plumbing it composes.
 
-Lives separately from ``pipeline.py`` so the top-level file the
-TumbleTrove catalog registry discovers stays a minimal factory: a
-docstring plus :func:`pipeline.create_catalog`. Loading pipeline.py
-in turn imports this module, which carries all the catalog state and
-behaviour.
+Lives separately from ``factory.py`` so the entry point TumblePipe
+declares to TumbleTrove stays a minimal factory: a docstring plus
+:func:`factory.create_catalog`. Importing that factory pulls in this
+module, which carries all the catalog state and behaviour.
 """
 
 from __future__ import annotations
@@ -37,12 +36,12 @@ from tumbletrove.asset_browser.api.types import (
 )
 from tumbletrove.asset_browser.core.projects import ProjectConfig, PipelineProjectRegistry
 
-# Companion modules. Absolute imports (rather than ``from
-# Sibling modules import relatively: this is an ordinary package.
+# Companion modules. Sibling imports are relative: this is an
+# ordinary package.
 from .clients import ClientPool
 from . import containers as containers
 from .containers import ContainerManager, GroupContainer, SceneContainer
-from .drops import DropRouter
+from .drops import DropRouter, entity_uri_for
 from .houdini import ProjectActivator, report_failure, run_on_main_thread
 from .detail import DetailSectionBuilder
 from .resolver import AssetResolver
@@ -55,7 +54,6 @@ from .types import (
     DEPT_ICONS,
     DEPT_SHORT_NAMES,
     DECK_NOTES_SUPPORTED,
-    SESSION_HAS_SECTIONS,
     SHOT_DEPT_ICONS,
     DeptVersionStore,
     cascade_counts,
@@ -148,10 +146,7 @@ class PipelineCatalog(Catalog):
         # Global pipeline catalog prefs (autosave-on-scene-change, …).
         # Loaded once on init; mutators go through set_prefs() so on-disk
         # JSON stays in sync. See prefs.py.
-        # because tumbletrove's external-catalog discovery loads
-        # pipeline.py without a parent package — see the sys.path
-        # tweak at the top of this file.
-        from .prefs import load_prefs  # noqa: E402
+        from .prefs import load_prefs
         self._prefs = load_prefs()
 
         # Per-project Client lifecycle. Construction is deferred until
@@ -232,26 +227,14 @@ class PipelineCatalog(Catalog):
         self._activator = ProjectActivator()
 
         # Client construction is deferred until the first asset-browse
-        # call. ``initialize()`` is intentionally a no-op (Houdini 22
-        # runs it on the main thread during startup, so eager building
-        # there would block Houdini load on per-project ``Path.exists``
-        # SMB timeouts). Clients are built on demand by
-        # ``self._clients.get`` / ``self._clients.try_get`` from
-        # ``get_assets`` and the per-action helpers, which run on the
-        # asset-browser worker thread.
+        # call — eager building on the main thread would block Houdini
+        # load on per-project ``Path.exists`` SMB timeouts. Clients are
+        # pre-warmed by ``warm_up_worker_thread`` and otherwise built on
+        # demand by ``self._clients.get`` / ``self._clients.try_get``
+        # from ``get_assets`` and the per-action helpers, all of which
+        # run on the asset-browser worker thread.
 
     # ── Warm-up hooks ─────────────────────────────────────
-
-    def initialize(self) -> None:
-        """No-op. Houdini 22's asset browser invokes this on the main
-        thread during startup, so any work here blocks Houdini load —
-        a single registered project that points at an unreachable
-        network share stalls startup for the SMB timeout per project.
-        Per-project Client construction is deferred to
-        :meth:`warm_up_worker_thread` (worker) and on-demand calls
-        from get_assets / per-action helpers (worker thread).
-        """
-        return
 
     def warm_up_main_thread(self) -> None:
         """Pre-import ``tumblepipe.api`` on the main thread.
@@ -308,6 +291,26 @@ class PipelineCatalog(Catalog):
     def _activate_project(self, project: ProjectConfig) -> None:
         """Delegate to the :class:`ProjectActivator` helper."""
         self._activator.activate(project)
+
+    # The next two are thin delegations that exist only because
+    # TumbleTrove's browser calls them by these names on the catalog
+    # object — ``_entity_uri_for`` and ``_project_for_asset_id`` at
+    # ui/browser.py:2569, :2579 and :2610, inside the deck-item drop
+    # path. Both used to be real methods here and moved out in the
+    # 2026-05-26 DropRouter / AssetResolver extractions; nothing told
+    # us, because every one of those call sites swallows the
+    # AttributeError. Do not inline them away again without changing
+    # the browser first. See ``docs/development.md``.
+
+    def _project_for_asset_id(self, asset_id: str) -> ProjectConfig | None:
+        """Project owning ``asset_id``, or None. Delegates to the
+        resolver's ``project_for``."""
+        return self._resolver.project_for(asset_id)
+
+    def _entity_uri_for(self, asset_or_detail) -> str | None:
+        """Entity URI string for an Asset/AssetDetail, or None.
+        Delegates to :func:`drops.entity_uri_for`."""
+        return entity_uri_for(asset_or_detail)
 
     # ── Tags ──────────────────────────────────────────────
 
@@ -952,10 +955,7 @@ class PipelineCatalog(Catalog):
                 # A Multi's departments are a coverage decision, not an
                 # assignment, and EntityDepartmentsDialog rejects it
                 # outright (uri_for has no answer for a container id).
-                # Route it to the coverage editor instead. This is the
-                # one surface the session panel displaced that had no
-                # right-click equivalent: everything else on the retired
-                # detail tabs is already in this menu.
+                # Route it to the coverage editor instead.
                 (
                     lambda aid=asset_id: self._edit_group_departments(aid)
                 ) if "type:group" in (asset.tags or ()) else (
@@ -1078,31 +1078,17 @@ class PipelineCatalog(Catalog):
         department lookups and ``tumblepipe.api.default_client`` resolve
         against the right install.
 
-        Loads submit_jobs_dialog by file path: this catalog is loaded
-        via importlib.util.spec_from_file_location (see registry.py),
-        so it has no parent package and `from .submit_jobs_dialog`
-        would raise ImportError. spec_from_file_location keeps the
-        module out of sys.path entirely, which avoids polluting the
-        global module namespace.
+        An ordinary sibling import, done here rather than at module
+        scope so opening the browser panel does not pull the dialog's Qt
+        widgets in with it. It used to load the file by path, from back
+        when catalog discovery left these modules outside any package.
+        That load stripped the dialog's package as well, so the dialog's
+        own ``from . import submit_jobs_resolve`` raised "attempted
+        relative import with no known parent package" and every open
+        failed with that in a message box.
         """
         try:
-            import importlib.util
-            import sys
-            mod_name = "tumblepipe_asset_browser_submit_jobs_dialog"
-            mod = sys.modules.get(mod_name)
-            if mod is None:
-                dlg_path = Path(__file__).parent / "submit_jobs_dialog.py"
-                spec = importlib.util.spec_from_file_location(
-                    mod_name, dlg_path,
-                )
-                if spec is None or spec.loader is None:
-                    raise ImportError(
-                        f"Cannot build module spec for {dlg_path}",
-                    )
-                mod = importlib.util.module_from_spec(spec)
-                sys.modules[mod_name] = mod
-                spec.loader.exec_module(mod)
-            SubmitJobsDialog = mod.SubmitJobsDialog
+            from .submit_jobs_dialog import SubmitJobsDialog
             import hou
             parent = hou.qt.mainWindow()
             dlg = SubmitJobsDialog(
@@ -1466,8 +1452,10 @@ class PipelineCatalog(Catalog):
         there is no OK to wire, so a dialog frame is all that was
         missing.
 
-        That tab is unreachable while the session panel owns the right
-        pane, which is what makes this the Multi's only way in.
+        The detail panel's Departments tab reaches the same widget now
+        that selection drives the right pane again; this dialog is the
+        route from the card's right-click menu, which does not require
+        selecting the Multi first.
         """
         import hou
         from tumbletrove.common.gui import is_main_thread
@@ -1756,39 +1744,11 @@ class PipelineCatalog(Catalog):
                 ),
             ]
 
-        # Asset actions live at the TOP of the detail panel so their
-        # placement is consistent across assets — the user always knows
-        # where Save/Publish/Refresh are regardless of selection.
-        # Section title shows the loaded scene context
-        # ('PROP/TemplateTest / lookdev / v0024'), or 'Scene Actions'
-        # when there's no pipeline scene loaded.
-        scene_ctx = self._scene.get_loaded_scene_context()
-        if scene_ctx is not None:
-            try:
-                segs = scene_ctx.entity_uri.segments
-                short = (
-                    f"{segs[1]}/{segs[2]}"
-                    if len(segs) >= 3 else str(scene_ctx.entity_uri)
-                )
-            except Exception:
-                short = str(scene_ctx.entity_uri)
-            try:
-                import hou
-                scene_proj = self._project_for_hip_path(
-                    Path(hou.hipFile.path()),
-                )
-            except Exception:
-                scene_proj = None
-            project_prefix = (
-                f"{scene_proj.name}/" if scene_proj is not None else ""
-            )
-            actions_title = (
-                f"{project_prefix}{short} / {scene_ctx.department_name} "
-                f"/ {scene_ctx.version_name or '?'}"
-            )
-        else:
-            actions_title = "Scene Actions"
-
+        # Entity sections. This list is rebuilt on every card click now
+        # that selection drives the pane, so it does no filesystem work:
+        # the loaded-scene title it used to compute here (a hip read plus
+        # a project lookup per click) was stashed on the instance and
+        # never read by anything.
         sections: list[DetailSection] = [
             DetailSection(
                 key="info",
@@ -1809,9 +1769,6 @@ class PipelineCatalog(Catalog):
                 widget_factory=self._detail.build_todos_section,
             ),
         ]
-        # Stash for use inside the combined info section (the actions
-        # widget builds inline rather than as a tab now).
-        self._actions_section_title = actions_title
         return sections
 
     # ── Settings ──────────────────────────────────────────
@@ -1903,147 +1860,24 @@ class PipelineCatalog(Catalog):
     # ── Session panel ──────────────────────────────────────
 
     def session_panel_mode(self) -> str:
-        """The right pane tracks the open .hip, not the grid selection.
+        """The right pane follows the grid selection, like every other
+        catalog's.
 
-        Our entities *are* the open scene — "what am I in?" is the
-        question this catalog's users ask of that pane, and the answer
-        never depends on what they last clicked.
+        It used to be ``"replace"``: a session pane pinned to the open
+        ``.hip``, on the reasoning that "what am I in?" is the question
+        this catalog's users ask of that pane. Artists asked for the
+        opposite, and the report is the stronger evidence — browsing is
+        comparing, and a pane that answers about lilGuy while you click
+        through five other assets answers nobody's question. Clicking a
+        card now retargets the pane.
+
+        Nothing about the open scene is lost by this: the toolbar label
+        names the open workfile (``CHAR_lilGuy_model_v0044.hipnc``
+        carries entity, department and version), the grid pins its card,
+        and the selected asset's Departments section accents the
+        department that scene is in.
         """
-        return "replace"
-
-    def get_session(self):
-        """Return the open workfile as titled detail sections.
-
-        Runs on a worker thread (see ``Catalog.get_session``): stats the
-        open ``.hip`` and its latest export and reads a sidecar for each,
-        over a share.
-
-        Two sections — **Current Workspace** (the open ``.hip``) and
-        **Latest Export** (its published output) — so the pane answers
-        "what am I in, and is my export current with it?". It deliberately
-        does *not* re-list the entity's departments: the centre grid's
-        deck expander already shows that list, and a second copy of it on
-        the right was the duplication this shape removed.
-        """
-        if not SESSION_HAS_SECTIONS:
-            # Older tumbletrove (< 0.22): its SessionInfo still takes
-            # ``rows``, so a ``sections=`` build would TypeError on a
-            # frozen dataclass every scope/hip change. Degrade to an empty
-            # pane. Ship tumbletrove first — the coupling is a convention,
-            # not an hpm dependency.
-            return None
-        try:
-            from tumbletrove.asset_browser.api.catalog import (
-                SessionField, SessionInfo, SessionSection,
-            )
-        except ImportError:
-            log.debug("SessionInfo unavailable; session panel disabled")
-            return None
-
-        scene_ctx = self._scene.get_loaded_scene_context()
-        if scene_ctx is None:
-            return None                      # not a pipeline scene
-        # get_scene_id, not get_scene_asset_id: a Multi's workfile is
-        # addressed by a container id, and this pane must show it rather
-        # than go blank the moment someone opens one.
-        scene_id = self._scene.get_scene_id()
-        if not scene_id:
-            return None
-        asset = self.get_asset(scene_id)
-        if asset is None:
-            return None
-
-        dept = scene_ctx.department_name
-        version = scene_ctx.version_name or ""
-
-        # Current Workspace — the open .hip, read by path so a Multi's
-        # group workfile resolves the same as a regular entity's.
-        ws_user, ws_mtime = self._workfiles.get_open_workspace_meta()
-        workspace = SessionSection(
-            title="Current Workspace", icon="save-all",
-            fields=(
-                SessionField("Version", version or "—", dim=not version),
-                SessionField(
-                    "Time", self._fmt_ts(ws_mtime), dim=not ws_mtime,
-                ),
-                SessionField("User", ws_user or "—", dim=not ws_user),
-            ),
-        )
-
-        # Latest Export — one resolve; N/A + dim when nothing published
-        # yet (or, for a Multi, where per-dept export tracking is
-        # deferred and the group id does not resolve to one export).
-        ex_ver, ex_mtime, ex_user = self._workfiles.get_export_meta(
-            scene_id, dept,
-        )
-        has_export = bool(ex_ver)
-        export = SessionSection(
-            title="Latest Export", icon="send",
-            fields=(
-                SessionField(
-                    "Version", ex_ver or "N/A", dim=not has_export,
-                ),
-                SessionField(
-                    "Time",
-                    self._fmt_ts(ex_mtime) if has_export else "N/A",
-                    dim=not has_export,
-                ),
-                SessionField(
-                    "User", ex_user or "N/A", dim=not has_export,
-                ),
-            ),
-        )
-
-        return SessionInfo(
-            title=asset.name,
-            breadcrumb=self._session_breadcrumb(scene_id),
-            subtitle=dept,
-            asset_id=scene_id,
-            icon=asset.icon or (
-                "layers-3" if "type:group" in asset.tags
-                else "clapperboard" if "type:shot" in asset.tags
-                else "box"
-            ),
-            sections=(workspace, export),
-        )
-
-    @staticmethod
-    def _fmt_ts(epoch: float) -> str:
-        """Format an epoch as ``2026/07/17 (14:02)``, or ``—`` for 0.
-
-        Absolute, not relative: the list view's deck columns already
-        answer "how long ago" — this block answers "exactly when", the
-        detail the old Project Browser's workspace/export panels showed.
-        """
-        if not epoch:
-            return "—"
-        import datetime as dt
-        try:
-            return dt.datetime.fromtimestamp(epoch).strftime(
-                "%Y/%m/%d (%H:%M)"
-            )
-        except (OSError, ValueError, OverflowError):
-            return "—"
-
-    def _session_breadcrumb(self, scene_id: str) -> tuple[str, ...]:
-        """``(project, category-or-sequence)`` for the session header.
-
-        Both id shapes land here: an entity's ``PROJECT/CATEGORY/NAME``
-        and a Multi's ``group:PROJECT:<ctx>/<name>``.
-        """
-        if scene_id.startswith("group:"):
-            try:
-                _, rest = scene_id.split(":", 1)
-                project_name, path = rest.split(":", 1)
-                head = path.split("/", 1)[0] if "/" in path else "assets"
-                return (project_name, head)
-            except ValueError:
-                return ()
-        parsed = self._resolver.split(scene_id)
-        if parsed is None:
-            return ()
-        project_name, second, _third = parsed
-        return (project_name, second)
+        return "off"
 
     # ── Quick Actions (top bar) ────────────────────────────
 
@@ -3357,9 +3191,7 @@ class PipelineCatalog(Catalog):
         # Group container cards: one deck item per dept the group
         # covers. "missing" status (no action_id) for covered depts
         # that don't have a workfile yet — right-click → "New:
-        # Template" creates one. Active-version tracking against the
-        # currently-loaded scene is deferred (groups don't have a
-        # ``_get_scene_dept_version`` equivalent yet).
+        # Template" creates one.
         if "type:group" in asset.tags:
             # ``departments`` on a group card is dict[str, str]: dept
             # name → latest version (empty string when uncovered).
@@ -3377,11 +3209,16 @@ class PipelineCatalog(Catalog):
                 key=lambda n: (order.get(n, len(order)), n),
             )
             # Per-dept author, save time and note for the list view's
-            # User/Edited/Note columns and the session panel's rows (one
-            # stat + sidecar read per dept, deck rows populate lazily on
-            # expand).
+            # User/Edited/Note columns (one stat + sidecar read per dept,
+            # deck rows populate lazily on expand).
             attribution = self._containers._group_dept_attribution(
                 asset.id)
+            # A Multi's open workfile marks its row "active", the same
+            # as an entity's below: get_scene_dept_version reads a
+            # container id now, so the two branches no longer disagree
+            # about which department the user is in.
+            group_dv = self._scene.get_scene_dept_version(asset.id)
+            group_active = group_dv[0] if group_dv else None
             cards: list[DeckItem] = []
             for dept_name in sorted_depts:
                 short = DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
@@ -3393,7 +3230,10 @@ class PipelineCatalog(Catalog):
                     cards.append(DeckItem(
                         key=dept_name,
                         label=short,
-                        status="available",
+                        status=(
+                            "active" if dept_name == group_active
+                            else "available"
+                        ),
                         detail=latest,
                         icon=DEPT_ICONS.get(dept_name, "package"),
                         action_id=f"open_workfile:{dept_name}",

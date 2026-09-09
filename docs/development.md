@@ -77,7 +77,46 @@ they reach each other through the catalog instance
 Template" on a Multi row, the one action that creates a multishot
 workfile, shipped broken for three months. `test_catalog_wiring.py` reads
 every module as source and checks each cross-module reference against the
-owning class, so that break now fails the suite instead of an artist.
+owning class, so that break now fails the suite instead of an artist. The
+same file also bans loading one of these modules by file path, which is
+how the Submit Jobs dialog lost its package (and with it the relative
+import of its own resolver) in the move into `tumblepipe.asset_browser`.
+
+A third class, and the one that has cost the most: **the base `Catalog`
+is not the whole host contract.** TumbleTrove's browser also reaches
+members on the catalog object that its abstract base does not declare,
+so a rename on either side raises nothing — the call simply stops
+happening. Their call sites wrap these in bare `except` handlers, which
+is what turns a missing name into a feature that quietly does nothing.
+
+It has bitten three times. `attach_network_thumbnail` stopped attaching
+thumbnails during their v0.28.1 refactor. `delete_bucket`,
+`list_root_assigned_shots` and `rebuild_root_assigned_shots` were called
+but undeclared, two of them behind `hasattr` probes that convert a
+drifted name into a no-op by design; they are declared on their base
+class as of tumbletrove 4292713, unreleased at the time of writing.
+Worst, `_entity_uri_for` and `_project_for_asset_id` left this catalog
+in the 2026-05-26 DropRouter and AssetResolver extractions while their
+deck-item drop path went on calling them, so dragging a department deck
+item into a LOP network did nothing at all from v1.10.0 to v1.47.0.
+Both are back as thin delegations, and the comment above them says not
+to inline them away again.
+
+Six private members of `PipelineCatalog` are still reached this way
+(`_activate_project`, `_entity_uri_for`, `_project_for_asset_id`,
+`_project_for_hip_path`, `_count_for_project_category`,
+`_count_for_project_sequence`). Renaming any of them silently breaks a
+released TumbleTrove. The real fix is to move that drop path behind
+`on_deck_drop`, which we already implement, and take their three
+`tumblepipe` imports with it; until then, treat those six as public.
+
+`test_catalog_wiring` now guards this from our end and their
+`test_catalog_calls` guards it from theirs. Neither is sufficient
+alone, and the reason is worth keeping: each one first shipped scanning
+a chosen list of their directories, and each missed a real surface the
+other's list covered. A checker cannot report what its own scope left
+out — it passes loudly while blind. Ours therefore reads the whole
+package rather than a list.
 
 ## Linting
 

@@ -12,6 +12,26 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.47.0 — 2026-09-08
+
+### Fixes
+- fix(hda): export_layer hides the inner USD ROP's folder (the "Save to Disk" that did nothing) (`75b58d4`)
+- fix(hda): image_plane_painter ships its Krita template instead of reading W:/_pipeline (`3ee464e`)
+- fix(hda): karmafogbox shows its Emission parms (`b51b3e7`)
+- fix(hda): create_model strips its Import Path Prefix, not the reference prim path (`5d6de09`)
+- fix(hda): material_assigner "Update Materials Paths" no longer NameErrors on a missing material (`c44ba59`)
+- fix(logging): warnings and above always reach the process console (`e77ffd1`)
+- fix(asset-browser): disk-touching handlers resolve the entity from a READY client (`eb28c6c`)
+- fix(context): a stale extension hint no longer hides the hip on disk; repair corrects it (`0e511fa`)
+- fix(workfiles): record the hip extension Houdini actually wrote; Education saves .hipnc (`f75874f`)
+
+### Documentation
+- docs: console echo in "Where the logs are"; test_logging in the tests README (`6adf393`)
+- docs: regenerate CHANGELOG.md for v1.46.0 (`9291efb`)
+
+### Tests
+- test(context): pin the licence-driven extension rewrite, stale-hint reading, and repair (`6fe1fc6`)
+
 ## v1.46.0 — 2026-09-08
 
 ### Features
@@ -621,7 +641,7 @@ CI and build commits are omitted deliberately.
 ## v1.28.0 — 2026-07-13
 
 ### Features
-- feat(browser): add Update quick action â€” refresh imports without reloading (`d43ff74`)
+- feat(browser): add Update quick action — refresh imports without reloading (`d43ff74`)
 
 ### Fixes
 - fix(resolver): make refresh_context() reload stale entity layers (`02a8869`)
@@ -850,7 +870,7 @@ CI and build commits are omitted deliberately.
 ### Performance
 - perf(asset_browser): one enumeration + one scandir per card, GUI-thread guard (`1c8bc2e`)
 - perf(config): list_entity_uris for uri-only listings + coherent() batching (`9117975`)
-- perf(config): stamp once per read + memoize results â€” fix v1.16.5 stat storm (`fca1617`)
+- perf(config): stamp once per read + memoize results — fix v1.16.5 stat storm (`fca1617`)
 
 ### Documentation
 - docs: document the shipped recipes/ directory (`c021184`)
@@ -902,7 +922,7 @@ CI and build commits are omitted deliberately.
 - feat(export): recognize deliberately inlined assets in the publish guards (`32f97a3`)
 
 ### Fixes
-- fix(catalogue): preserve case in category/sequence tags â€” pipeline naming is case-sensitive (`e48b825`)
+- fix(catalogue): preserve case in category/sequence tags — pipeline naming is case-sensitive (`e48b825`)
 
 ### Refactors
 - refactor(catalogue): drop unused Qt import and ctx_seg local left by the case-preservation fix (`de1be61`)
@@ -994,7 +1014,7 @@ CI and build commits are omitted deliberately.
 ## v1.16.1 — 2026-06-24
 
 ### Fixes
-- fix(catalogue): drop stale schema arg from add_entity â€” silent shot/asset create failure (`f5320ec`)
+- fix(catalogue): drop stale schema arg from add_entity — silent shot/asset create failure (`f5320ec`)
 
 ### Refactors
 - refactor(catalogue): remove dead schema_* URI helpers (`37abde2`)
@@ -1061,7 +1081,7 @@ CI and build commits are omitted deliberately.
 ## v1.13.0 — 2026-06-16
 
 ### Features
-- feat(farm): drop WSL2 â€” use Houdini's native hoiiotool/hffmpeg (`2add15c`)
+- feat(farm): drop WSL2 — use Houdini's native hoiiotool/hffmpeg (`2add15c`)
 - feat(farm): run tasks in native Windows python via hpm package-env (`7e252be`)
 
 ### Documentation
@@ -1197,7 +1217,7 @@ _No user-facing changes._
 ## v1.6.0 — 2026-06-08
 
 ### Features
-- feat(asset_browser): entity lifecycle â€” bucket create/delete + asset delete (`ab37570`)
+- feat(asset_browser): entity lifecycle — bucket create/delete + asset delete (`ab37570`)
 - feat(asset_browser): rewrite asset hover popup as a widget tree with dept icons (`d587bab`)
 - feat(asset_browser): auto-import latest on workfile open (`1a8ed8e`)
 
@@ -1325,7 +1345,7 @@ _No user-facing changes._
 - chore(asset_browser): retag the now-tiny "Detail panel layout" section (`ab24f9d`)
 - chore(asset_browser): drop _mix_hex residue + extend docs for the new managers (`ce52079`)
 - chore(asset_browser): post-sweep cleanup + flesh out the docs (`a6da1d2`)
-- chore(asset_browser): defensive sweep â€” flatten _publish_current_scene_impl (`6762a84`)
+- chore(asset_browser): defensive sweep — flatten _publish_current_scene_impl (`6762a84`)
 - chore(asset_browser): first pass of the defensive try/except sweep (`3345a9d`)
 - chore(asset_browser): post-refactor cleanup + document the catalog directory (`0832c0c`)
 - chore(asset_browser): tidy post-refactor stragglers (`21dfb38`)
@@ -1363,7 +1383,7 @@ _No user-facing changes._
 - test: property-based tests for the config layer (uv + minigun-soren-n) (`596c0f6`)
 
 ### Chores
-- chore(tests): drop the tumbleheadâ†’tumblepipe convention patch shim (`d438205`)
+- chore(tests): drop the tumblehead→tumblepipe convention patch shim (`d438205`)
 - chore(otls): drop stale .OPdummydefs / .OPfallbacks from create_asset_model (`062286d`)
 - chore(asset_browser): clean up post-refactor stragglers (`80ad0e0`)
 
@@ -1380,7 +1400,7 @@ _No user-facing changes._
 - feat(asset_browser): drop assets into SOP networks as th::import_model (`12cb40c`)
 
 ### Fixes
-- fix(otls): import_model â€” swap Variant parm for Department picker (`6d7738c`)
+- fix(otls): import_model — swap Variant parm for Department picker (`6d7738c`)
 
 ## v1.4.1 — 2026-05-19
 
@@ -1503,12 +1523,12 @@ _No user-facing changes._
 ## v1.1.23 — 2026-05-05
 
 ### Chores
-- chore: bump to 1.1.23 â€” CI fix for new TumbleTrove API shape (`5348e4c`)
+- chore: bump to 1.1.23 — CI fix for new TumbleTrove API shape (`5348e4c`)
 
 ## v1.1.22 — 2026-05-05
 
 ### Chores
-- chore: bump to 1.1.22 â€” Houdini 22 support (`62552fc`)
+- chore: bump to 1.1.22 — Houdini 22 support (`62552fc`)
 
 ### Other Changes
 - houdini_majors: link 'add a new major' to hpm.toml max_version bump (`af89b69`)
@@ -1524,7 +1544,7 @@ _No user-facing changes._
 
 ### Features
 - feat(asset_browser): playblast preview cards + department short labels (`365761c`)
-- feat(asset_browser): add Render asset type â€” browse on-disk renders + dailies (`b8f1d0b`)
+- feat(asset_browser): add Render asset type — browse on-disk renders + dailies (`b8f1d0b`)
 - feat(asset_browser): consolidated Info tab + Tasks rename (`4509a0e`)
 - feat(asset_browser): ship TumblePipe brand logo as catalog icon (`d7d04b7`)
 
@@ -1536,7 +1556,7 @@ _No user-facing changes._
 - docs(resolver): document imperative factory registration and file-based debug log (`e02ef02`)
 
 ### Chores
-- chore: bump to 1.1.21 â€” shot drop fix (`1f9deb0`)
+- chore: bump to 1.1.21 — shot drop fix (`1f9deb0`)
 
 ## v1.1.20 — 2026-04-29
 
@@ -1615,7 +1635,7 @@ _No user-facing changes._
 - fix(hda): fix active_variant off-by-one in create_asset_model (`0c6b2aa`)
 
 ### Chores
-- chore: bump to 1.1.11 â€” add asset_browser_catalogs to INCLUDE_PATTERNS (`f032134`)
+- chore: bump to 1.1.11 — add asset_browser_catalogs to INCLUDE_PATTERNS (`f032134`)
 
 ## v1.1.10 — 2026-04-23
 
@@ -1640,7 +1660,7 @@ _No user-facing changes._
 - fix(ci): use GET /v1/storage list to resolve storage public URL (`522d8c9`)
 - fix(ci): update release script to use creator storage API (`38acfd7`)
 - fix(ci): update storage presign URL to new /v1/storage/{id}/upload route (`8681b46`)
-- fix(ci): remove binary HDAs from otls â€” only decompiled dirs should be tracked (`4e22907`)
+- fix(ci): remove binary HDAs from otls — only decompiled dirs should be tracked (`4e22907`)
 - fix(hda): remove accidentally saved subnet contents from create_asset_lookdev (`0e8f3e0`)
 - fix(hda): remove auto-layout on variant add in create_asset_lookdev (`151b144`)
 
@@ -1724,7 +1744,7 @@ _No user-facing changes._
 - feat: initial TumblePipe Houdini package (`52df04b`)
 
 ### Fixes
-- fix(release): curl PUT â€” disable Expect/chunked/default CT, log URL (`98e31ac`)
+- fix(release): curl PUT — disable Expect/chunked/default CT, log URL (`98e31ac`)
 - fix(release): only send Content-Type header if it is signed (`f64f17b`)
 - fix(release): upload archive via curl, not urllib (`11ecbf2`)
 - fix(release): resolve creator/slug to package id via /v1/creator/packages (`69c8c74`)

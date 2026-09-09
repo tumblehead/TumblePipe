@@ -1,8 +1,8 @@
 """Value types and constants for the Pipeline catalog.
 
-Extracted from ``pipeline.py`` so the catalog file focuses on behavior
+Extracted from ``catalog.py`` so the catalog file focuses on behavior
 (the :class:`PipelineCatalog` ABC subclass) rather than data shapes.
-Imported back into ``pipeline.py`` and re-exported for any internal
+Imported back into ``catalog.py`` and re-exported for any internal
 caller that historically pulled from there.
 """
 
@@ -358,10 +358,8 @@ def _type_supports(type_name: str, field_name: str) -> bool:
     That is survivable for a field the framework *reads*, which an older
     version simply ignores. It is not survivable for one we *pass*: these
     are frozen dataclasses, so an unknown keyword is a ``TypeError`` at
-    construction. For ``SessionInfo`` that means a studio on an older
-    tumbletrove (whose ``SessionInfo`` still takes ``rows``, not
-    ``sections``) would crash ``get_session`` every scope/hip change; the
-    probe lets it degrade to an empty session pane instead.
+    construction rather than a feature quietly missing. Probe before
+    passing, and degrade to the shape the older version does accept.
     """
     try:
         import dataclasses
@@ -378,12 +376,6 @@ def _type_supports(type_name: str, field_name: str) -> bool:
     except Exception:
         return False
 
-
-#: tumbletrove >= 0.22 (SessionInfo carries ``sections`` of SessionSection
-#: rather than ``rows`` of DeckItem). Below this, ``get_session`` must
-#: return ``None`` — building a ``sections=`` SessionInfo against the old
-#: rows-based type is a ``TypeError`` on a frozen dataclass.
-SESSION_HAS_SECTIONS = _type_supports("SessionInfo", "sections")
 
 #: tumbletrove >= 0.24 (``DeckItem.note`` + ``ListColumn.deck_note``).
 #: Both halves are probed as one flag on purpose: they ship together, and

@@ -218,7 +218,7 @@ def submit_entity_batch(config: dict) -> list[str]:
     render_priority = settings.get('render_priority', 50)
     tile_count = settings.get('tile_count', 4)
     # No fallback: the submitter resolves the frame range per entity (see
-    # asset_browser_catalogs/submit_jobs_resolve.py), and omits the keys
+    # tumblepipe/asset_browser/submit_jobs_resolve.py), and omits the keys
     # when the entity has none. Defaulting to 1001-1100 here is how a
     # multi-shot batch used to render every shot at a wrong length, and how
     # an entity with no configured range rendered a plausible-looking
@@ -228,7 +228,7 @@ def submit_entity_batch(config: dict) -> list[str]:
     last_frame = settings.get('last_frame')
     # The render handles. Unlike first_frame/last_frame above, these DO take a
     # default: the dialog declares default=0 for both (the FIELDS table in
-    # asset_browser_catalogs/submit_jobs_resolve.py, sourced from the entity's
+    # tumblepipe/asset_browser/submit_jobs_resolve.py, sourced from the entity's
     # roll_start / roll_end), and 0 is the identity - no handles - rather than
     # a guessed range.
     pre_roll = settings.get('pre_roll', 0)

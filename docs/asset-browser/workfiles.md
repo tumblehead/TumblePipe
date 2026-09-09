@@ -66,8 +66,8 @@ Two JSON files sit in every department folder:
 
 - `context.json` — the **pointer**: which entity (`uri`), `department` and
   `version` this folder's latest workfile is, plus `timestamp` and `user`.
-  This is what tells the browser, the session panel and the export nodes
-  what an open hip *is*; a hip without it (an old migrated project) falls
+  This is what tells the browser and the export nodes what an open hip
+  *is*; a hip without it (an old migrated project) falls
   back to parsing the folder path.
 - `_context/vNNNN.json` — one **lineage entry** per version: `user`,
   `timestamp`, `from_version` (the version it was saved from),

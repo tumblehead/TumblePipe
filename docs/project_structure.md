@@ -147,12 +147,11 @@ Qt and the pipeline clients onto the launch path.
   hip-context helpers, including which browser id addresses the open
   .hip.
 - `detail.py` — Qt widget construction for every section in the
-  right-hand detail panel. Note the detail panel is only reachable at
-  the unscoped **All** scope: in the Pipeline scope the right pane is
-  tumbletrove's *session* panel, which tracks the open .hip rather than
-  the selection (`get_session`). The Info / Tasks / Departments sections
-  still build for All, and a Multi's coverage editor is hosted from the
-  card menu.
+  right-hand detail panel, which the browser fills from the selected
+  card in every scope (`session_panel_mode` is `"off"`, so tumbletrove's
+  open-document *session* panel never takes the pane). A Multi's
+  coverage editor is also hosted from the card menu, which reaches it
+  without selecting the Multi first.
 - `departments.py` — the entity Departments… dialog (per-entity pool
   scoping).
 - `submit_jobs_dialog.py`, `submit_jobs_resolve.py` — the Submit Jobs

@@ -47,7 +47,7 @@ def is_int(datum) -> bool:
     # rejecting the config. These validators are the last check before a farm
     # worker acts on a JSON config, so the bool must be refused here even
     # though the submit dialog already refuses it upstream
-    # (asset_browser_catalogs/submit_jobs_resolve.py _as_int, same reasoning).
+    # (tumblepipe/asset_browser/submit_jobs_resolve.py _as_int, same reasoning).
     return isinstance(datum, int) and not isinstance(datum, bool)
 
 def is_bool(datum) -> bool:

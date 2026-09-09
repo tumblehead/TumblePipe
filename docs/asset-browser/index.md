@@ -196,28 +196,20 @@ The **Note** column only appears on TumbleTrove 0.24 or newer.
 Sort options: **Name A-Z**, **Name Z-A**, **Latest Update**, **Oldest
 Update**.
 
-## The session panel
+## The detail panel
 
-While the TumblePipe catalog is active the right pane is the **session
-panel** rather than the selected card's detail. It describes the workfile
-open in Houdini — not the card you clicked — and goes blank when the open
-scene is not a pipeline workfile. It also follows a Multi's workfile.
+The right pane describes the card you clicked, and re-reads every time you
+click another one. It used to be a *session panel* pinned to the open
+`.hip` instead, which meant browsing five assets while lilGuy was open
+showed lilGuy five times.
 
-- Header: the entity's name, its project and category or sequence, and the
-  department.
-- **Current Workspace**: **Version**, **Time** (`2026/07/17 (14:02)` style)
-  and **User** of the open `.hip`.
-- **Latest Export**: the same three for the department's newest export, or
-  `N/A` dimmed when nothing has been published yet.
+Nothing about the open scene was lost with it: the toolbar label names the
+open `.hip`, its card is marked in the grid, and the open department is the
+bright row in whichever entity's **Departments** section you are looking at
+— a Multi's included.
 
-The panel re-reads on scene load, save and the panel's refresh button; it
-does not watch other artists' saves.
-
-### The detail panel at Home
-
-Click the active rail icon to return to Home (every catalog together) and
-the right pane becomes the ordinary detail panel again. For a pipeline card
-it shows ([`detail.py`](../../python/tumblepipe/asset_browser/detail.py)):
+For a pipeline card the panel shows
+([`detail.py`](../../python/tumblepipe/asset_browser/detail.py)):
 
 - **Info**: the entity URI (with a copy button), the export folder path, a
   small table (project, category and channels for an asset; project,
@@ -233,8 +225,10 @@ it shows ([`detail.py`](../../python/tumblepipe/asset_browser/detail.py)):
   (**Clear completed** / **Clear all**).
 - A bottom action bar: **Import to Scene** (assets only; creates a
   `th::import_asset` in `/stage`), **Open Export Folder**, **Open in
-  Database Editor…**, **Edit…** and **Delete**. Multi and Root cards get
-  only **Edit…** and **Delete**.
+  Database Editor…**, **Edit…** and **Delete**.
+
+A Multi card gets **Info** and **Departments** (its coverage rows), a Root
+card **Info** alone, and both an action bar of **Edit…** and **Delete**.
 
 ## Quick actions
 

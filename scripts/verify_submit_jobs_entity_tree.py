@@ -87,8 +87,7 @@ def main() -> int:
     QApplication.instance() or QApplication([])
 
     mod = _load_dialog_module()
-    # The dialog puts the catalog dir on sys.path at import time, so the
-    # pure resolver is importable by name from here too.
+    # Same package, so the pure resolver is importable by name here too.
     from tumblepipe.asset_browser import submit_jobs_resolve as resolve
 
     from tumblepipe.api import default_client

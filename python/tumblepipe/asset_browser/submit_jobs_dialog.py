@@ -52,9 +52,7 @@ install missing hpm.toml's ``[python_dependencies]``).
 from __future__ import annotations
 
 import logging
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Sequence
 
 from PySide6.QtCore import QEvent, Qt
@@ -71,17 +69,7 @@ from tumbletrove.asset_browser.core.theme import (
     TEXT_PRIMARY, TEXT_SECONDARY,
 )
 
-# The catalog dir is not a package: tumbletrove loads pipeline.py by file
-# path, and this dialog is loaded the same way. pipeline.py already puts
-# this directory on sys.path for the underscore-prefixed modules, but the
-# verify harness loads this file directly, so do it here too rather than
-# depend on load order. Mirrors catalog's `from prefs
-# import ...`.
-_HERE = str(Path(__file__).resolve().parent)
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
-from . import submit_jobs_resolve as resolve  # noqa: E402
+from . import submit_jobs_resolve as resolve
 
 log = logging.getLogger(__name__)
 
