@@ -278,10 +278,10 @@ one step away — **double-click** the Multi card to drill into them (the
 breadcrumb shows the Multi), and a member's own rows carry a **ⓜ** badge
 on every department the Multi covers (the tooltip names the Multi), and
 open the Multi's hip from there too. Drag cards onto the Multi's sidebar leaf or use
-**Add selected assets to Multi** to add members; the leaf's right-click menu
-offers **Edit Departments…**, **Remove selected assets from Multi** and
-**Delete Multi**, and the card's offers **Edit Multi…**, **Delete Multi** and
-**Open Location** (see [Multis and Roots](asset-browser/multis-and-roots.md)).
+**Add selected to Multi** to add members. The leaf's right-click menu is the
+card's (**Open Multi**, **Open Location**, **Edit Multi…**, **Delete Multi**)
+plus **Add selected to Multi** and **Remove selected from Multi** (see
+[Multis and Roots](asset-browser/multis-and-roots.md)).
 
 Every one of those operations except creation is routed by TumbleTrove
 through the catalog's `owns_collection` hook, and silently does nothing

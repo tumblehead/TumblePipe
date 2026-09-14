@@ -40,6 +40,12 @@ every other task of the context is listed unchecked. Publish, by contrast,
 enables everything. An unsaved hip is refused: "Cannot determine workfile
 context. Save the file first."
 
+When the scene holds no export node the workfile can run, both entry points
+stop with a warning instead of an empty dialog: "No export tasks found for
+the current context." (from a node) or "Publish: no export tasks found for
+the current scene." Its details list every export node that was left out and
+why — see [Why a node is left out](#why-a-node-is-left-out).
+
 ## The process dialog
 
 Source: [`process_dialog.py`](../../python/tumblepipe/pipe/houdini/ui/process_dialog.py),
@@ -49,7 +55,10 @@ and built by [`task_factory.py`](../../python/tumblepipe/pipe/houdini/ui/task_fa
 ### The task tree
 
 Tasks are grouped under one row per entity (a Multi workfile lists every
-member). Columns: **Task, Department, Channel, Version, First, Last,
+member). Departments downstream of the workfile's department are listed too,
+in pool order — for a Multi workfile that is the whole pool after its
+department; up to TumblePipe 1.47.1 a Multi workfile listed only its own
+department. Columns: **Task, Department, Channel, Version, First, Last,
 Status**. *Version* shows the version currently on disk and is replaced by
 the version a task wrote once it completes.
 
@@ -65,6 +74,35 @@ the version a task wrote once it completes.
 Bypassed nodes, nodes addressing another entity, and `layer_split` nodes not
 wired into an export node are left out. Ticking a parent ticks its children;
 a task whose parent is unchecked is drawn grey.
+
+### Why a node is left out
+
+Which export nodes a workfile runs is decided by the workfile's own entity,
+recorded in its `context.json` — not by the node:
+
+| Workfile belongs to | An export node is collected when |
+|---|---|
+| a shot or an asset | its **Entity** is that same shot or asset, and its **Department** is the workfile's department or one downstream of it. |
+| a Multi | its **Entity** is a member of the Multi, with the same department rule. |
+| an asset's `rig` department | it is a `th::export_rig` for that asset. |
+
+When nothing is collected, the warning's details say which rule each node
+failed ([`describe_missing_tasks`](../../python/tumblepipe/pipe/houdini/ui/task_collection.py)):
+
+| Detail | Meaning |
+|---|---|
+| *This workfile publishes `<entity>` (`<dept>`).* | Always first: the entity and department the workfile belongs to. |
+| *An export node only runs for the workfile's own entity. These address a different one …*, then one line per entity with its nodes | The nodes target other entities. Move them into that entity's workfile, or into a Multi that has it as a member. |
+| *Multi `<name>` already lists every one of them as a member.* | Those entities are all in that Multi: work in the Multi's own workfile. |
+| *An export node only runs for a member of this Multi. These address a non-member …* | Add the entity to the Multi, or move the node. |
+| *Departments published from here: … These nodes export into another one:* | The node's department is upstream of the workfile's, or not in the pool. |
+| *Bypassed:* … | Un-bypass the node. |
+| *No entity resolved …* | The node's **Entity** names something that no longer exists, or is `from_context` in a workfile with no entity. |
+| *It contains no `th::export_layer` nodes.* | Nothing to export. |
+
+A scene saved as a *shot* cannot become a Multi's workfile by adding
+departments to the Multi: the file still belongs to the shot. See
+[Troubleshooting](../troubleshooting.md#export-says-no-export-tasks-found-for-the-current-context).
 
 ### Execution Mode
 

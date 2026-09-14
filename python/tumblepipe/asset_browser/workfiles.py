@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .houdini import report_failure, run_on_main_thread, session_nc_type
+from .resolver import EntityNotRegistered
 from .types import latest_workfile, workfile_for_version
 from . import uris as uris
 
@@ -461,7 +462,13 @@ class WorkfileManager:
         client = self._catalog._resolver.client_for(asset_id)
         if client is None:
             return
-        entity_uri = self._catalog._resolver.uri_for_ready(asset_id)
+        # A write path: never create a workfile for an entity the config
+        # does not hold (see EntityNotRegistered).
+        try:
+            entity_uri = self._catalog._resolver.registered_uri_for(asset_id)
+        except EntityNotRegistered as exc:
+            report_failure(f"Creating a workfile for {asset_id}/{dept}", exc)
+            return
         if entity_uri is None:
             return
 
@@ -636,7 +643,13 @@ class WorkfileManager:
         if proj is None:
             return
         self._catalog._activate_project(proj)
-        entity_uri = self._catalog._resolver.uri_for_ready(asset_id)
+        # A write path: never save the open scene as a workfile of an entity
+        # the config does not hold (see EntityNotRegistered).
+        try:
+            entity_uri = self._catalog._resolver.registered_uri_for(asset_id)
+        except EntityNotRegistered as exc:
+            report_failure(f"New from Current for {asset_id}/{dept}", exc)
+            return
         if entity_uri is None:
             return
 

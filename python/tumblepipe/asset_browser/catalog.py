@@ -71,6 +71,40 @@ log = logging.getLogger(__name__)
 _GROUP_ACCENT_COLOR = "#e08c4a"
 
 
+def creation_scope(tags) -> str:
+    """What a browser scope creates: ``assets``, ``shots``, ``group``,
+    ``scene``, or ``""`` when it is not narrowed to one.
+
+    *tags* are the browser's filter atoms: the active view's merged tags,
+    or a sidebar node's own tag split on ``+``. The browser offers the
+    same :meth:`PipelineCatalog.get_creation_options` in both places, the
+    "+" card and the right-click menu of the node you selected. So the
+    scope has to read every sidebar tag right. A category is an asset
+    scope even without ``type:asset``, and a Multi's member drill
+    (``group:<project>:<ctx>/<name>``) is the scope of its context.
+    """
+    tags = frozenset(tags)
+    if "type:group" in tags:
+        return "group"
+    if "type:scene" in tags:
+        return "scene"
+    assets = "type:asset" in tags
+    shots = "type:shot" in tags
+    for tag in tags:
+        key, _, value = tag.partition(":")
+        if key == "category":
+            assets = True
+        elif key == "sequence":
+            shots = True
+        elif key == "group":
+            ctx = value.partition(":")[2].partition("/")[0]
+            assets = assets or ctx == "assets"
+            shots = shots or ctx == "shots"
+    if assets != shots:
+        return "assets" if assets else "shots"
+    return ""
+
+
 class PipelineCatalog(Catalog):
     """Browse assets and shots from the Tumblehead pipeline."""
 
@@ -2332,17 +2366,32 @@ class PipelineCatalog(Catalog):
     # ── Entity Creation ────────────────────────────────
 
     def get_creation_options(self, tags=frozenset()):
+        """What can be created in the scope *tags*.
+
+        The browser shows this list on the grid's "+" card, the list's
+        "+" row, both empty-space menus, and every sidebar node's
+        right-click menu. Only the scope decides the list. A category
+        offered "New Shot..." when only ``type:*`` tags were read.
+        "New Category..." and "New Sequence..." are listed here, not
+        only in the sidebar, so the views can reach them too.
+        """
         from tumbletrove.asset_browser.api.catalog import CreationOption
-        has_asset = "type:asset" in tags
-        has_shot = "type:shot" in tags
-        opts = []
-        if has_asset or not has_shot:
-            opts.append(CreationOption("new_asset", "New Asset...", "plus"))
-        if has_shot or not has_asset:
-            opts.append(CreationOption("new_shot", "New Shot...", "plus"))
-        opts.append(CreationOption("new_group", "New Multi...", "users"))
-        opts.append(CreationOption("new_scene", "New Root...", "layers"))
-        return opts
+        asset = CreationOption("new_asset", "New Asset...", "plus")
+        category = CreationOption("new_category", "New Category...", "folder")
+        shot = CreationOption("new_shot", "New Shot...", "plus")
+        sequence = CreationOption("new_sequence", "New Sequence...", "folder")
+        multi = CreationOption("new_group", "New Multi...", "users")
+        root = CreationOption("new_scene", "New Root...", "layers")
+        scope = creation_scope(tags)
+        if scope == "group":
+            return [multi]
+        if scope == "scene":
+            return [root]
+        if scope == "assets":
+            return [asset, category, multi, root]
+        if scope == "shots":
+            return [shot, sequence, multi, root]
+        return [asset, shot, multi, root]
 
     def _resolve_project_from_tags(self, tags):
         """Extract project name from tags like 'project:growth'."""
@@ -2364,9 +2413,9 @@ class PipelineCatalog(Catalog):
             fields = [
                 CreationField("name", "Name", required=True),
             ]
-            # Category dropdown — strict (no free-text). To create a new
-            # category, use the right-click "New category…" action on the
-            # Assets section header, which routes to ``new_category``.
+            # Category dropdown — strict (no free-text). A new category
+            # is its own option, ``new_category``, offered in every asset
+            # scope.
             cats = (
                 self._list_categories_for_project(default_proj)
                 if default_proj else self._list_categories()
@@ -2446,9 +2495,9 @@ class PipelineCatalog(Catalog):
             return fields
 
         if option_id == "new_category":
-            # The only place free-text category entry survives. Reached
-            # via right-click "New category…" on the Assets section
-            # header. Creates an empty category-only entity
+            # The only place free-text category entry survives. Offered
+            # as "New Category..." in any asset scope, both on "+" and on
+            # a sidebar node's menu. Creates an empty category-only entity
             # (``entity:/assets/<name>``) — tumblepipe supports
             # parent-only entities, so no first asset is required.
             fields = [
@@ -2481,13 +2530,29 @@ class PipelineCatalog(Catalog):
             return fields
 
         if option_id == "new_group":
+            # A Multis section under Assets or Shots binds the context,
+            # so the field is locked there. Anywhere else narrowed to one
+            # context only preselects it. It used to default to "shots"
+            # everywhere, so "New Multi" under Assets made a shot Multi.
+            bound_ctx = next(
+                (t.partition(":")[2] for t in tags
+                 if t.startswith("multi_context:")),
+                "",
+            )
+            if bound_ctx not in ("shots", "assets"):
+                bound_ctx = ""
+            scope = creation_scope(tags)
+            default_ctx = bound_ctx or (
+                scope if scope in ("shots", "assets") else "shots"
+            )
             fields = [
                 CreationField("name", "Name", required=True),
                 CreationField(
                     "context", "Context",
                     field_type="dropdown",
                     choices=("shots", "assets"),
-                    default="shots",
+                    default=default_ctx,
+                    readonly=bool(bound_ctx),
                 ),
             ]
             if len(projects) > 1:
@@ -2780,6 +2845,11 @@ class PipelineCatalog(Catalog):
             return False
         project_name = parts[0]
         client = self._clients.get(project_name)
+        # Writing an entity's own properties creates the entity when it is
+        # missing, so an Edit reached with an id that names no real entity
+        # would register one as a side effect (see EntityNotRegistered).
+        # Refuse before anything is written; the host reports the raise.
+        self._resolver.registered_uri_for(asset_id)
         submitted = {}
         if "frame_start" in fields:
             try:

@@ -1,0 +1,64 @@
+# Dialog script for th::material::1.0 automatically generated
+
+{
+    name	th::material::1.0
+    script	th::material::1.0
+    label	"th material"
+
+    help {
+	""
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "mat"
+        label   "Material"
+        type    string
+        default { "$OS" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_action" "import loputils\nkwargs['ctrl'] = True\nloputils.selectPrimsInParm(kwargs, False)" }
+        parmtag { "script_action_help" "Select a primitive using the primitive picker dialog." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "sidefx::usdpathtype" "prim" }
+    }
+    parm {
+        name    "primpattern"
+        label   "Assignment"
+        type    string
+        default { "`lopinputprims('.', 0)`" }
+        menutoggle {
+            [ "opmenu -l -a assign_material primpattern1" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True, allowinstanceproxies=True)" }
+        parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nShift-click to select using the primitive pattern editor.\nAlt-click to toggle movement of the display flag." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "sidefx::usdpathtype" "primlist" }
+    }
+    parm {
+        name    "matpathprefix"
+        label   "Material Path"
+        type    string
+        default { "`lopinputprims('.', 0)`/mtl/" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, False)" }
+        parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nAlt-click to toggle movement of the display flag." }
+        parmtag { "script_action_icon" "BUTTONS_reselect" }
+        parmtag { "sidefx::usdpathtype" "prim" }
+    }
+    parm {
+        name    "bindpurpose"
+        label   "Purpose"
+        type    string
+        default { "" }
+        menu {
+            [ "opmenu -l -a assign_material bindpurpose1" ]
+        }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+}

@@ -12,6 +12,30 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.47.1 — 2026-09-09
+
+### Fixes
+- fix(asset-browser): dropping a department deck item into a LOP works again (`9f5d04a`)
+- fix(asset-browser): the Submit Jobs dialog opens again (`c86aa84`)
+- fix(catalog): the right pane follows the grid selection again (`2eec5db`)
+
+### Refactors
+- refactor(asset-browser): delete an override of a hook nobody calls (`a05de74`)
+
+### Documentation
+- docs: the host-contract section, rewritten around what it actually cost (`ab97d91`)
+- docs(development): the base Catalog is not the whole host contract (`fb1e478`)
+- docs: name the package, not the retired asset_browser_catalogs/ dir (`bd87fef`)
+- docs: the right pane is the detail panel, in all four places that said otherwise (`21097b6`)
+- docs: regenerate CHANGELOG.md for v1.47.0 (`04195d1`)
+
+### Tests
+- test(catalog): scan the whole SDK package, not a list of host directories (`baf5278`)
+- test(catalog): scan core/ for catalog reach-ins too, not just ui/ (`2afe151`)
+- test(catalog): every attribute the browser reaches on a catalog exists (`d264ab0`)
+- test(catalog): no module in the package may be loaded by file path (`bc746e3`)
+- test(catalog): pin the open scene, and the pane that has to show it (`938b0a9`)
+
 ## v1.47.0 — 2026-09-08
 
 ### Fixes

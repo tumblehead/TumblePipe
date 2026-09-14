@@ -201,6 +201,14 @@ NOT applied — check the log)* if step 3 failed. Because the empty scene is
 saved first, the version exists on disk even when the template throws; the
 log has the traceback.
 
+Before step 1, the shot or asset must exist in the project configuration.
+If it does not, nothing is reserved or saved and an error dialog reads
+*Creating a workfile for … failed: EntityNotRegistered: `<entity>` is not in
+this project's configuration. Nothing was created or changed.* Up to
+TumblePipe 1.47.1 the browser created the workfile anyway, under a shot that
+existed nowhere else. Create the shot or asset first; for a Multi use the
+Multi's own rows.
+
 ## New: Current
 
 **New: Current** saves the scene you have open **as the next version of the
@@ -210,6 +218,11 @@ scene's context is recorded as the new version's `from_version`, so the
 lineage shows where it came from. Use it to seed a shot's `light` from a
 sibling shot, or to fork a department across assets. Status: *Saved
 010_sh030_light_v0001.hip*.
+
+It refuses a shot or asset that is not in the project configuration, the same
+way **New: Template** does, with *New from Current for … failed:
+EntityNotRegistered: …*. It is not offered on a Multi's rows, and it cannot
+turn a shot's workfile into a Multi's.
 
 ## Open in New Houdini
 

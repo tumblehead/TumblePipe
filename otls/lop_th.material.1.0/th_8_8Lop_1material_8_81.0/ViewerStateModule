@@ -1,0 +1,98 @@
+import hou
+import viewerstate.utils as su
+
+
+class DropToSetPathState(object):
+    """
+    Viewer state bound to a LOP node type. While the node is being
+    dragged over the scene viewer, prims under the cursor are highlighted.
+    On drop, the node's Primitive Path parameter is set to whatever prim
+    was under the cursor at drop time.
+    """
+
+    MSG = "Drop on a prim to set its path"
+    PARM_NAME = "primpattern"   # change to "primpath" etc. for your node type
+
+    def __init__(self, state_name, scene_viewer):
+        self.state_name = state_name
+        self.scene_viewer = scene_viewer
+        self.node = None
+        self.hover_path = None
+
+    def onEnter(self, kwargs):
+        self.node = kwargs["node"]
+        self.hover_path = None
+        self.scene_viewer.setPromptMessage(self.MSG, hou.promptMessageType.Prompt)
+
+    def onInterrupt(self, kwargs):
+        self.hover_path = None
+
+    def onExit(self, kwargs):
+        self.hover_path = None
+
+    # --- drag / drop plumbing -------------------------------------------
+
+    def onDragTest(self, kwargs):
+        # We're already in this node's own state because it's the thing
+        # being dragged, so just accept the drag.
+        return True
+
+    def onDropGetOptions(self, kwargs):
+        # Single obvious action, no popup menu needed
+        kwargs["drop_options"]["ids"] = ("set_path",)
+        kwargs["drop_options"]["labels"] = ("Set Primitive Path",)
+
+    def onDropAccept(self, kwargs):
+        if not self.hover_path:
+            self.scene_viewer.setPromptMessage(
+                "No prim under cursor - nothing was set", hou.promptMessageType.Warning)
+            return False
+
+        parm = self.node.parm(self.PARM_NAME)
+        if parm is None:
+            su.log("No parm named '%s' on %s" % (self.PARM_NAME, self.node.path()))
+            return False
+
+        parm.set(self.hover_path)
+        return True
+
+    # --- hover picking / highlighting ------------------------------------
+
+    def onMouseEvent(self, kwargs):
+        ui_event = kwargs["ui_event"]
+        device = ui_event.device()
+        viewport = ui_event.curViewport()
+
+        prim = viewport.queryPrimAtPixel(None, device.mouseX(), device.mouseY())
+        path = self._primPath(prim)
+
+        if path != self.hover_path:
+            self.hover_path = path
+            if path:
+                self.scene_viewer.setPromptMessage(
+                    "Drop to set %s -> %s" % (self.PARM_NAME, path),
+                    hou.promptMessageType.Prompt)
+            else:
+                self.scene_viewer.setPromptMessage(self.MSG, hou.promptMessageType.Prompt)
+
+    @staticmethod
+    def _primPath(prim):
+        if prim is None:
+            return None
+        geo = prim.geometry()
+        if geo.findPrimAttrib("path"):
+            return prim.attribValue("path")
+        return None
+
+
+def createViewerStateTemplate():
+    template = hou.ViewerStateTemplate(
+        "th_material",
+        "Th Material",
+        hou.lopNodeTypeCategory(),
+    )
+    template.bindFactory(DropToSetPathState)
+    # Bind to a specific node type's default state so the state activates
+    # automatically when that node type is dragged/entered in the viewer:
+    # template.bindNodeType("mylop_type_name")
+    return template

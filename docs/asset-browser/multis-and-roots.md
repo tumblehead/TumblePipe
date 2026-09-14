@@ -38,8 +38,10 @@ shots only, an assets Multi assets only.
 ### Creating a Multi
 
 **New Multi…** (the Multis subheader's right-click menu, or the **+** card)
-asks for a **Name** and a **Context** (`shots` or `assets`; `shots` is the
-default). Status: *Created Multi: seqA (shots, covers 9 departments)*. A new
+asks for a **Name** and a **Context** (`shots` or `assets`). From a Multis
+subheader the context is that subheader's and is fixed, shown in the title
+as **New Multi in assets**. Under Assets or Shots it starts on that context;
+elsewhere it starts on `shots`. Status: *Created Multi: seqA (shots, covers 9 departments)*. A new
 Multi **covers every department in its context's pool** and starts with no
 members. If it is meant for fewer departments, trim the coverage next.
 
@@ -51,8 +53,7 @@ writing the same list:
 
 | Where | Label | Dialog |
 |---|---|---|
-| Multi card right-click, or the detail panel's **Edit…** | **Edit Multi…** | **Edit *name***, a **Departments** multi-select; **OK** applies. |
-| Multi row in the sidebar | **Edit Departments…** | the same dialog |
+| Multi card or sidebar row right-click, or the detail panel's **Edit…** | **Edit Multi…** | **Edit *name***, a **Departments** multi-select; **OK** applies. |
 | Multi card right-click | **Departments…** | **Departments — *name***: one row per department in the pool with a checkbox; each toggle writes immediately, **Close** dismisses. |
 
 What coverage does to a member, as soon as it is written:
@@ -77,12 +78,12 @@ Add shots or assets to a Multi by:
 - dragging cards onto the Multi's row in the sidebar (the drag label reads
   **Add to *name***);
 - right-clicking a card → **Add to Multi ▸** → the Multi;
-- selecting cards, then right-clicking the Multi's row → **Add selected
-  assets to Multi**.
+- selecting cards, then right-clicking the Multi's row → **Add selected to
+  Multi**.
 
 The status bar reports *Added 3*, or *Added 2 of 3 — 1 skipped (group
 accepts shots only)* when the wrong kind of entity was in the batch. Remove
-with **Remove selected assets from Multi** on the row, **Remove from Multi:
+with **Remove selected from Multi** on the row, **Remove from Multi:
 *name*** on the member's card, or **Remove from *name*** on a ⓜ row.
 
 Double-click the Multi card to see its members. A member's card also lists
@@ -99,6 +100,12 @@ lays out one pinned graph per member in columns
 ([Configuration → Department templates](../configuration.md#department-templates)).
 The Multi's rows do not offer **New: Current**.
 
+Only a workfile created from the Multi's own rows is a Multi workfile. A
+multi-shot scene built in a *shot's* department — even a shot named after
+the Multi — belongs to that shot, and exporting from it finds no tasks for
+the member shots; see
+[Troubleshooting](../troubleshooting.md#export-says-no-export-tasks-found-for-the-current-context).
+
 Once a Multi workfile is open, **Save** versions the Multi's workfile, and
 the Multi's own card marks that department as the open one — in its deck
 row and in its detail panel's **Departments** section. Publishing from it
@@ -111,8 +118,8 @@ department folder (see [Workfiles](workfiles.md#open-in-new-houdini)).
 
 ### Open Location and Delete
 
-**Open Location** on the card opens `<project>/groups/<context>/<name>` in
-Explorer, when the folder exists.
+**Open Location** on the card or the sidebar row opens
+`<project>/groups/<context>/<name>` in Explorer, when the folder exists.
 
 **Delete Multi** (card, row, or the detail panel's **Delete**) asks *Delete
 Multi 'name'? This cannot be undone from the browser.* and removes the Multi
@@ -144,13 +151,12 @@ for a **Name**. Status: *Created Root: forest*. It starts empty.
 ### Members
 
 Add assets the same three ways as a Multi: drag onto the Root's sidebar row,
-**Add to Root ▸** on a card, or **Add selected assets to Root** on the row.
+**Add to Root ▸** on a card, or **Add selected to Root** on the row.
 Each new asset joins with one instance on the default channel; an asset
 already listed is skipped (*already in Root*).
 
 Dropping a **shot** on a Root does not add it to the list: it sets that
-shot's Root to this one. Removing a shot (**Remove selected assets from
-Root**, or **Remove from Root: *name*** on the shot's card) clears the
+shot's Root to this one. Removing a shot (**Remove selected from Root**, or **Remove from Root: *name*** on the shot's card) clears the
 shot's Root only when the shot itself points at this Root; a shot whose
 Root is inherited from its sequence still lists the entry but is skipped
 (*Skipped 1*). **Clear Root** on the shot's card appears only for a Root
@@ -175,7 +181,7 @@ means the shots that use this Root are composing an older asset list.
 
 ### Root actions
 
-Right-click a Root card:
+Right-click a Root card, its list row, or its sidebar row:
 
 | Action | What it does |
 |---|---|

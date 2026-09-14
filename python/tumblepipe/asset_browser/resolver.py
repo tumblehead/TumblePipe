@@ -48,6 +48,20 @@ class AssetResolutionError(CatalogError):
     """
 
 
+class EntityNotRegistered(AssetResolutionError):
+    """The id parses to an entity URI the project's config does not hold.
+
+    :meth:`AssetResolver.uri_for` is string math: any ``PROJECT/X/Y`` becomes
+    ``entity:/shots/X/Y`` (or ``assets``) whether or not that entity exists.
+    Nothing downstream checks either — reserving a workfile version and
+    writing an entity's own properties both create whatever is missing. So a
+    create or an edit reached with an id that names no real entity quietly
+    manufactured one: a layout department's multi-shot scene lived for a week
+    as workfiles of ``entity:/shots/010/Multishots``, a shot that was never in
+    the config, and every export from it collected nothing.
+    """
+
+
 @dataclass(frozen=True)
 class AssetCtx:
     """Fully-resolved view of an asset id.
@@ -154,6 +168,38 @@ class AssetResolver:
         if client is None:
             return None
         return self.uri_for(asset_id)
+
+    def registered_uri_for(self, asset_id: str) -> "Uri | None":
+        """:meth:`uri_for_ready`, refusing an entity the config does not hold.
+
+        For paths that *write* against an entity — creating a workfile,
+        saving the open scene as one, editing properties. Those would
+        otherwise create the entity (or its workspace) as a side effect; see
+        :class:`EntityNotRegistered`. Reading paths keep ``uri_for_ready``: an
+        open or a listing of something missing already comes back empty.
+
+        Returns ``None`` exactly where ``uri_for_ready`` does (malformed id,
+        Client not buildable — the pool surfaces that error).
+
+        Raises:
+            EntityNotRegistered: the id is well formed, but no such entity
+                exists in the project's config.
+        """
+        uri = self.uri_for_ready(asset_id)
+        if uri is None:
+            return None
+        client, _err = self._clients.try_get(asset_id.split("/", 1)[0])
+        if client is None:
+            return None
+        if client.config.get_properties(uri) is None:
+            raise EntityNotRegistered(
+                self._catalog_id,
+                f"{uri} is not in this project's configuration. Nothing was "
+                f"created or changed. If this is a shot or an asset, create "
+                f"it first; if it is meant to be a Multi, use the Multi's own "
+                f"row instead.",
+            )
+        return uri
 
     def client_for(self, asset_id: str):
         """Best-effort client lookup — ``None`` on parse failure or

@@ -88,6 +88,33 @@ is hidden in later releases; on 1.46.0 or older, use **Export**. Second, the
 version: a TumblePipe older than **1.42.0** predates the failure dialogs;
 check it under **TumbleTrove ▸ About TumbleTrove...** and update.
 
+### Export says "No export tasks found for the current context"
+
+The workfile's own entity decides which export nodes run. A node addressing
+any other entity is left out, and when every node is left out there is
+nothing to export. Open the warning's details: they list each dropped node,
+the entity it asked for, and the entity the workfile belongs to. The rules
+and every detail line are under
+[Why a node is left out](asset-browser/export-and-publish.md#why-a-node-is-left-out);
+TumblePipe 1.47.1 and older show the bare warning with no details.
+
+The common case is a multi-shot scene that is not in a Multi. A workfile
+made from a *shot's* department row belongs to that shot, even when the shot
+is named like a Multi and its export nodes target the Multi's members. Adding
+departments to the Multi does not change that file. Work in the Multi's own
+department row instead (**New: Template** there, then bring the scene's nodes
+across), and check the details line *Multi … already lists every one of them
+as a member* to confirm which Multi.
+
+Two related traps:
+
+- **A Multi with no department rows.** Before 1.46.0 **New Multi…** created
+  a Multi covering no departments, so it had no rows to open or create from.
+  Add its departments through **Edit Multi…**; see
+  [Multis and Roots](asset-browser/multis-and-roots.md#coverage-which-departments-the-multi-owns).
+- **A Multi workfile that only exports its own department.** Up to 1.47.1 a
+  Multi workfile never listed downstream departments; later releases do.
+
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 
 Each is a deliberate guard in `th::export_layer`, and the dialog names the

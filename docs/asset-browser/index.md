@@ -87,18 +87,21 @@ sequences are listed too, so a bucket can exist before its first entity.
 The sidebar has no Todos section; an entity's tasks live on its card's
 **Tasks…** menu item and on the detail panel's **Tasks** tab.
 
-Right-click menus on sidebar rows:
+Right-click menus on sidebar rows. Each starts with the creation options the
+**+** card offers when that row is selected (see
+[Creating entities](#creating-entities)); the table lists what follows them.
 
-| Row | Menu |
-|---|---|
-| **Assets** header | **New category…** |
-| **Shots** header | **New sequence…** |
-| **Multis** subheader | **New Multi…** |
-| **Roots** header | **New Root…** |
-| a category | **New asset in *category*…**, **Delete category '*category*'…** |
-| a sequence | **New shot in *sequence*…**, **Delete sequence '*sequence*'…** |
-| a Multi | **Edit Departments…**, **Add selected assets to Multi**, **Remove selected assets from Multi**, **Delete Multi** |
-| a Root | **Add selected assets to Root**, **Remove selected assets from Root**, **Delete Root** |
+| Row | Creation options | Then |
+|---|---|---|
+| **Assets** header, a category | **New Asset...**, **New Category...**, **New Multi...**, **New Root...** | a category adds **Delete category '*category*'…** |
+| **Shots** header, a sequence | **New Shot...**, **New Sequence...**, **New Multi...**, **New Root...** | a sequence adds **Delete sequence '*sequence*'…** |
+| **Multis** subheader, a Multi | **New Multi...** | a Multi adds the Multi card's menu, plus **Add selected to Multi** and **Remove selected from Multi** |
+| **Roots** header | **New Root...** | |
+| a Root | **New Asset...**, **New Shot...**, **New Multi...**, **New Root...** | the Root card's menu, plus **Add selected to Root** and **Remove selected from Root** |
+
+A Multi or Root row's menu is its card's menu, from **Open** to **Delete**,
+Root export actions included (see
+[Multis and Roots](multis-and-roots.md#root-actions)).
 
 The add/remove entries act on the grid's current selection and are greyed
 out without one. Multi and Root rows also accept dragged cards.
@@ -275,11 +278,17 @@ catalog contributes
 
 ## Creating entities
 
-The dashed **+** card, a right-click on empty grid space, and the sidebar
-menus above all lead to the same small forms
-([`get_creation_fields`](../../python/tumblepipe/asset_browser/catalog.py)).
-The **+** card offers **New Asset...** under Assets, **New Shot...** under
-Shots, both elsewhere, plus **New Multi...** and **New Root...**. A
+The dashed **+** card, the list view's **+** row, a right-click on empty
+space in either view, and the sidebar menus above all offer the same list for
+the same place
+([`get_creation_options`](../../python/tumblepipe/asset_browser/catalog.py))
+and lead to the same small forms (`get_creation_fields`). Under Assets (or a
+category) the list is **New Asset...**, **New Category...**, **New
+Multi...** and **New Root...**; under Shots (or a sequence) it is **New
+Shot...**, **New Sequence...**, **New Multi...** and **New Root...**. A
+Multis subheader offers **New Multi...** alone, the Roots header **New
+Root...** alone, and anywhere unscoped offers **New Asset...**, **New
+Shot...**, **New Multi...** and **New Root...**. A
 **Project** dropdown is added to every form when more than one project is
 registered.
 
@@ -303,7 +312,11 @@ department row's **New: Template**.
 shows **Project**, **Sequence** and **Name** read-only and lets you change
 **Frame Start** and **Frame End**; only values you actually changed are
 written, as the shot's own override, so an untouched field keeps following
-the sequence. For an asset every field is read-only.
+the sequence. For an asset every field is read-only. Edit refuses an entity
+that is not in the project configuration and writes nothing; the status bar
+reads *Edit failed for 'name' — see Python Shell*, and the shell shows
+`EntityNotRegistered`. Up to TumblePipe 1.47.1 such an edit silently added
+the entity.
 
 **Delete** removes the entity from the project configuration after a
 **Delete entity** confirmation (*Delete 'name'? This cannot be undone from

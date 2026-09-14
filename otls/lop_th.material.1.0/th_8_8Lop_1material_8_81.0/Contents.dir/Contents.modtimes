@@ -1,0 +1,13 @@
+{
+	"hdaroot/material_library/material/surface.def":1788964860,
+	"hdaroot/material_library/material/material_properties.def":1788938206,
+	"hdaroot/material_library.def":1789053278,
+	"hdaroot/material_library/material/Material_Outputs_and_AOVs.def":1788964860,
+	"hdaroot/material_library/material.def":1789053277,
+	"hdaroot/material_library/material/inputs.def":1788942880,
+	"hdaroot/output0.def":1788940502,
+	"hdaroot/assign_material.def":1789053277,
+	"hdaroot/material_library/material/geometry_color.def":1788942973,
+	"hdaroot.def":1789053278,
+	"hdaroot/material_library/material/displacement.def":1788942871
+}

@@ -8,7 +8,7 @@ export node. Builds the individual tasks through ``task_factory``.
 
 import uuid
 
-from tumblepipe.config.groups import get_group
+from tumblepipe.config.groups import get_group, list_groups
 from tumblepipe.config.department import (
     list_departments,
     list_entity_departments,
@@ -48,6 +48,18 @@ def _get_downstream_departments(
         context = 'shots'
     elif entity_type == 'asset':
         context = 'assets'
+    elif entity_type == 'group':
+        # A Multi's URI is ``groups:/<context>/<name>``, so its first
+        # segment names the context its members are drawn from. The Multi
+        # carries no department assignment of its own — its members' can
+        # differ — so it takes the whole pool, which is what the paragraph
+        # above always promised and what this branch did not do: it fell
+        # through to the bare ``return []``, so a Multi workfile offered
+        # only its own department and never anything downstream of it.
+        if entity_uri is None or len(entity_uri.segments) == 0:
+            return []
+        context = entity_uri.segments[0]
+        entity_uri = None
     else:
         return []
 
@@ -84,8 +96,7 @@ def collect_publish_tasks(context: Context) -> list[ProcessTask]:
 
     # Get downstream departments to include
     downstream_departments = _get_downstream_departments(
-        entity_type, department_name,
-        entity_uri=context.entity_uri if entity_type in ('shot', 'asset') else None,
+        entity_type, department_name, entity_uri=context.entity_uri,
     )
     all_departments = [department_name] + downstream_departments
 
@@ -100,6 +111,171 @@ def collect_publish_tasks(context: Context) -> list[ProcessTask]:
             tasks = _collect_asset_publish_tasks(context, all_departments)
 
     return tasks
+
+
+def _format_node_group(grouped: dict[str, list[str]], limit: int = 6) -> list[str]:
+    """Render ``{reason key: [node paths]}`` as one indented line per key."""
+    lines = []
+    for key in sorted(grouped):
+        paths = sorted(grouped[key])
+        shown = ', '.join(paths[:limit])
+        if len(paths) > limit:
+            shown += f', ... ({len(paths)} nodes total)'
+        lines.append(f'  {key} - {shown}')
+    return lines
+
+
+def _multis_covering(entity_uri_strings) -> list[str]:
+    """Names of the Multis whose membership covers every given entity.
+
+    Used to turn "these export nodes address a foreign entity" into the
+    actionable half of the sentence: the artist is usually holding a
+    multi-shot scene that someone built as a plain shot, and the Multi that
+    already lists those shots is the workfile they should be in.
+    """
+    uris = []
+    for raw in entity_uri_strings:
+        try:
+            uris.append(Uri.parse_unsafe(raw))
+        except ValueError:
+            return []
+    contexts = {uri.segments[0] for uri in uris if len(uri.segments) > 0}
+    if len(contexts) != 1:
+        return []
+    covering = []
+    for group in list_groups(contexts.pop()):
+        members = set(group.members)
+        if all(uri in members for uri in uris):
+            covering.append(group.name)
+    return sorted(covering)
+
+
+def describe_missing_tasks(context: Context) -> str:
+    """Explain why :func:`collect_publish_tasks` came back empty.
+
+    The collectors filter the scene's export nodes silently: a node whose
+    entity this workfile does not own is simply not collected. An empty
+    result therefore reads the same whether the scene holds no export nodes
+    at all or holds twenty that all address another entity. A layout
+    department lost a day to the second case — their multi-shot scene was a
+    *shot* that had been named like a Multi, so every per-shot export node in
+    it was foreign to it, and the only feedback was "No export tasks found
+    for the current context."
+
+    Returns extra lines for the caller's warning, or '' when the warning has
+    nothing to add.
+    """
+    if context is None:
+        return ''
+
+    entity_type = get_entity_type(context.entity_uri)
+    if entity_type is None:
+        return (
+            f"This workfile's entity is {context.entity_uri}, which is "
+            f"neither a shot, an asset nor a Multi."
+        )
+
+    member_uris = None
+    if entity_type == 'group':
+        group = get_group(context.entity_uri)
+        if group is None:
+            return (
+                f"Multi {context.entity_uri} is no longer in this project's "
+                f"configuration."
+            )
+        member_uris = set(group.members)
+
+    departments = [context.department_name] + _get_downstream_departments(
+        entity_type, context.department_name, entity_uri=context.entity_uri,
+    )
+
+    # Mirror the collector that actually ran: only a rig context collects
+    # export_rig SOPs, every other context collects export_layer LOPs.
+    if entity_type == 'asset' and context.department_name == 'rig':
+        nodes = [
+            export_rig.ExportRig(native)
+            for native in ns.list_by_node_type('export_rig', 'Sop')
+        ]
+        node_kind = 'th::export_rig'
+    else:
+        nodes = [
+            export_layer.ExportLayer(native)
+            for native in ns.list_by_node_type('export_layer', 'Lop')
+        ]
+        node_kind = 'th::export_layer'
+
+    owner = (
+        f'Multi {context.entity_uri}' if entity_type == 'group'
+        else str(context.entity_uri)
+    )
+    header = f'This workfile publishes {owner} ({context.department_name}).'
+
+    if len(nodes) == 0:
+        return f'{header}\nIt contains no {node_kind} nodes.'
+
+    foreign: dict[str, list[str]] = {}
+    wrong_department: dict[str, list[str]] = {}
+    bypassed: list[str] = []
+    unresolved: list[str] = []
+
+    for node in nodes:
+        if node.native().isBypassed():
+            bypassed.append(node.path())
+            continue
+        entity_uri = node.get_entity_uri()
+        if entity_uri is None:
+            unresolved.append(node.path())
+            continue
+        owned = (
+            entity_uri in member_uris if member_uris is not None
+            else entity_uri == context.entity_uri
+        )
+        if not owned:
+            foreign.setdefault(str(entity_uri), []).append(node.path())
+            continue
+        department_name = node.get_department_name()
+        if department_name not in departments:
+            wrong_department.setdefault(
+                str(department_name), []).append(node.path())
+
+    lines = [header]
+    if foreign:
+        if member_uris is None:
+            lines.append(
+                "An export node only runs for the workfile's own entity. "
+                "These address a different one — move them into that "
+                "entity's workfile, or publish from a Multi that has it as "
+                "a member:"
+            )
+        else:
+            lines.append(
+                "An export node only runs for a member of this Multi. "
+                "These address a non-member — add the entity to the Multi, "
+                "or move the node:"
+            )
+        lines.extend(_format_node_group(foreign))
+        if member_uris is None:
+            covering = _multis_covering(foreign.keys())
+            if covering:
+                lines.append(
+                    'Multi ' + ', '.join(covering) + ' already lists every '
+                    'one of them as a member.'
+                )
+    if wrong_department:
+        lines.append(
+            f'Departments published from here: {", ".join(departments)}. '
+            f'These nodes export into another one:'
+        )
+        lines.extend(_format_node_group(wrong_department))
+    if bypassed:
+        lines.append('Bypassed: ' + ', '.join(sorted(bypassed)))
+    if unresolved:
+        lines.append(
+            "No entity resolved (an Entity parm naming something that is "
+            "gone, or 'from_context' in a workfile with no entity): "
+            + ', '.join(sorted(unresolved))
+        )
+    return '\n'.join(lines)
 
 
 def _collect_group_publish_tasks(context: Context, departments: list[str]) -> list[ProcessTask]:

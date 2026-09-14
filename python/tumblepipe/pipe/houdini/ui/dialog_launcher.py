@@ -16,7 +16,10 @@ the two used to cycle.
 
 from pathlib import Path
 
-from .task_collection import collect_tasks_for_export_node
+from .task_collection import (
+    collect_tasks_for_export_node,
+    describe_missing_tasks,
+)
 
 
 def open_process_dialog_for_node(export_node, dialog_title: str = "Export") -> None:
@@ -49,8 +52,14 @@ def open_process_dialog_for_node(export_node, dialog_title: str = "Export") -> N
 
     all_tasks, enabled_task_ids = collect_tasks_for_export_node(export_node, context)
     if not all_tasks:
+        # Say which nodes were dropped and why. Every collector filters
+        # silently, so the bare warning read identically to an artist whose
+        # scene held no export nodes and to one whose twenty export nodes all
+        # addressed an entity this workfile does not own.
         hou.ui.displayMessage(
             "No export tasks found for the current context.",
+            details=describe_missing_tasks(context) or None,
+            details_expanded=True,
             severity=hou.severityType.Warning
         )
         return
@@ -114,6 +123,8 @@ def open_process_dialog_for_publish(context, dialog_title: str = "Publish") -> N
     if not all_tasks:
         hou.ui.displayMessage(
             "Publish: no export tasks found for the current scene.",
+            details=describe_missing_tasks(context) or None,
+            details_expanded=True,
             severity=hou.severityType.Warning,
         )
         return

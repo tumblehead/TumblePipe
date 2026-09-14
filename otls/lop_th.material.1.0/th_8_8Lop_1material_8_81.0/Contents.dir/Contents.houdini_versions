@@ -1,0 +1,12 @@
+{
+	"values":["22.0.368"
+	],
+	"indexes":{
+		"hdaroot/material_library/material.userdata":0,
+		"hdaroot/material_library/material/Material_Outputs_and_AOVs.userdata":0,
+		"hdaroot/material_library/material/inputs.userdata":0,
+		"hdaroot/assign_material.userdata":0,
+		"hdaroot/output0.userdata":0,
+		"hdaroot/material_library.userdata":0
+	}
+}
