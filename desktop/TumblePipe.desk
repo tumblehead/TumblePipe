@@ -12,7 +12,7 @@ root {
                 pane panetab1 -a 1 -l 1 -H /stage/ -T LOP -m details
             }
             split 0.291257 V {
-                tabs 0 0 {
+                tabs 0 1 {
                     pane panetab2 -a 0 -l 1 -H /stage/ -T LOP -m sceneview
                 }
                 tabs 0 0 {
@@ -20,7 +20,7 @@ root {
                 }
             }
         }
-        tabs 0 0 {
+        tabs 0 1 {
             pane panetab11 -a 0 -l 1 -H /stage/ -T LOP -m neteditor
         }
     }
@@ -28,8 +28,8 @@ root {
 shelfdock -o 0 -l small_icon -G "0.50 0.50" add solaris_1 solaris_2
 geospreadsheet -c 0 -l vertical -s 0.454137 -m none -f 0 panetab1
 scenegraphtree -S 0.25 -m 2 -p "/collections /lights" -c  -i  -o  -x 1 -s 1 -M 0 -C primtype,populated,loaded,activation,visibility,solo,selectability  panetab1
-viewerstow -x stow -b stow -l stow -m hide -c hide -d stow ${DESKNAME}.panetab2.solaris
-viewerstow -b stow -x stow -l stow -m hide -c hide -d stow ${DESKNAME}.panetab2.solaris
+viewerstow -t open -x open -b open -l open -m hide -c open -d open ${DESKNAME}.panetab2.solaris
+viewerstow -t open -b open -x open -l open -m hide -c open -d open ${DESKNAME}.panetab2.solaris
 vieweroption -r 'View: Mantra' ${DESKNAME}.panetab2.solaris
 viewergrouplist -g off -s 0 0 -c  on -t matchselect -m '*' -e on -p off -h on ${DESKNAME}.panetab2.solaris
 vieweroption -p 0 ${DESKNAME}.panetab2.solaris
@@ -248,7 +248,7 @@ viewtype -t ortho_right ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.paneta
 viewtype -t ortho_front ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",3)`
 viewtype -t ortho_top ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",1)`
 viewtype -t perspective ${DESKNAME}.panetab2.solaris.`vpname("${DESKNAME}.panetab2.solaris",2)`
-networkeditor -p '{\n	"backgroundimagebrightness":"1.0",\n	"gridmode":"0",\n	"showcopsmenu":"1",\n	"taskgraphcollapsemode":"Off",\n	"showtasksmenu":"1",\n	"useworkitemcolorattribute":"1",\n	"typesidebarsplit":"0.25",\n	"showmenu":"0",\n	"gridxstep":"2.0",\n	"treesplit":"0.25",\n	"showparmdialogmax":"1",\n	"perfstatname":"Time",\n	"palettemode":"0",\n	"taskgraphsortdirection":"0",\n	"showchilddep":"1",\n	"backgroundimageediting":"0",\n	"showtaskgraphperf":"0",\n	"showgrouplist":"0",\n	"showperfstats":"1",\n	"showparmdialog":"0",\n	"overviewmode":"2",\n	"showdep":"0",\n	"palettecolors":"",\n	"obj:listmode":"0",\n	"showspareinputdep":"1",\n	"workitemcolorattribute":"",\n	"palettesize":"150 150",\n	"showtypesidebar":"0",\n	"showtimedep":"1",\n	"showtree":"0",\n	"overviewbounds":"0.000000 0.000000 427.500000 567.300000",\n	"taskgraphperfstatname":"Cook Time",\n	"gridystep":"1.0",\n	"taskgraphsortcriteria":"Automatic",\n	"workitemattrtocollapseby":"",\n	"grouplistsplit":"0.75"\n}\n' panetab11
+networkeditor -p '{\n	"backgroundimagebrightness":"1.0",\n	"gridmode":"0",\n	"showcopsmenu":"1",\n	"taskgraphcollapsemode":"Off",\n	"showtasksmenu":"1",\n	"useworkitemcolorattribute":"1",\n	"typesidebarsplit":"0.25",\n	"showmenu":"1",\n	"gridxstep":"2.0",\n	"treesplit":"0.25",\n	"showparmdialogmax":"1",\n	"perfstatname":"Time",\n	"palettemode":"0",\n	"taskgraphsortdirection":"0",\n	"showchilddep":"1",\n	"backgroundimageediting":"0",\n	"showtaskgraphperf":"0",\n	"showgrouplist":"0",\n	"showperfstats":"1",\n	"showparmdialog":"0",\n	"overviewmode":"2",\n	"showdep":"0",\n	"palettecolors":"",\n	"obj:listmode":"0",\n	"showspareinputdep":"1",\n	"workitemcolorattribute":"",\n	"palettesize":"150 150",\n	"showtypesidebar":"0",\n	"showtimedep":"1",\n	"showtree":"0",\n	"overviewbounds":"0.000000 0.000000 427.500000 567.300000",\n	"taskgraphperfstatname":"Cook Time",\n	"gridystep":"1.0",\n	"taskgraphsortcriteria":"Automatic",\n	"workitemattrtocollapseby":"",\n	"grouplistsplit":"0.75"\n}\n' panetab11
 netcolumns -c display,xray,select,origin,capture,bone -n OBJ panetab11
 netcolumns -c display,render,template,selectabletemplate,highlight,unload,bypass,lock -n SOP panetab11
 netcolumns -c delscript,comment -n CHOPNET panetab11

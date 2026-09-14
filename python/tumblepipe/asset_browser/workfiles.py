@@ -33,6 +33,33 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def _show_stage_in_network_editors() -> None:
+    """Point every unpinned network editor at ``/stage``.
+
+    ``hou.hipFile.clear()`` drops network editors back to ``/obj``, but the
+    department templates build in ``/stage`` — so a fresh workfile opened
+    onto an empty ``/obj``. Call this after the clear and *before* the
+    template runs: templates that want a deeper network (rig, blendshape
+    cd into their SOP) still get the last word. Pinned editors belong to
+    the artist and are left alone.
+    """
+    import hou
+    if not hou.isUIAvailable():
+        return
+    stage = hou.node("/stage")
+    if stage is None:
+        return
+    for pane_tab in hou.ui.paneTabs():
+        if pane_tab.type() != hou.paneTabType.NetworkEditor:
+            continue
+        if pane_tab.isPin():
+            continue
+        try:
+            pane_tab.setPwd(stage)
+        except hou.Error:
+            log.exception("Could not point %s at /stage", pane_tab.name())
+
+
 class WorkfileManager:
     """Open, create, and inspect workfiles for the Pipeline catalog."""
 
@@ -526,6 +553,7 @@ class WorkfileManager:
                 next_path.parent.mkdir(parents=True, exist_ok=True)
 
                 hou.hipFile.clear(suppress_save_prompt=True)
+                _show_stage_in_network_editors()
                 # Houdini may rewrite the extension (Education/Apprentice
                 # save .hip as .hipnc); record the path it actually wrote.
                 next_path = save_hip_file(next_path)
@@ -1103,6 +1131,7 @@ class WorkfileManager:
                 next_path.parent.mkdir(parents=True, exist_ok=True)
 
                 hou.hipFile.clear(suppress_save_prompt=True)
+                _show_stage_in_network_editors()
                 # Houdini may rewrite the extension (Education/Apprentice
                 # save .hip as .hipnc); record the path it actually wrote.
                 next_path = save_hip_file(next_path)

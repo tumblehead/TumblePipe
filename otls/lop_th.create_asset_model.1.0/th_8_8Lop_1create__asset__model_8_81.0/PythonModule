@@ -1,34 +1,23 @@
 def _sync_variants(node):
-    """Reconcile the internal node network with the current multiparm state.
+    """Reconcile the variant outputs with the current multiparm state.
 
-    Per multiparm entry i (0-based, 1-based variant_idx = i+1), ensure:
-        create_variants/OUT_<name>  (output node, outputidx = i)
-            -> OUT_<name>           (null, sibling of create_variants, wired
-                                     from create_variants at output index i)
+    Per multiparm entry i (0-based, 1-based variant_idx = i+1), ensure an
+    output node create_variants/OUT_<name> with outputidx = i. Orphans are
+    destroyed.
 
-    The LOP foreach iterates over per-variant nulls; import_model_variants
-    fetches via ../variant_sopnet/OUT_`@VARIANTNAME`. Orphans are destroyed.
+    Only create_variants is editable: import_model_variants fetches each
+    variant straight from ../variant_sopnet/create_variants/OUT_`@VARIANTNAME`,
+    so nothing is ever created in variant_sopnet itself. Keeping that parent
+    locked is what lets "U" from the dive target jump back out of the HDA.
     """
     count = node.parm("variants").eval()
-    variant_subnet = node.node("variant_sopnet")
-    variant_create = variant_subnet.node("create_variants")
-
-    # Sweep any leftover per-variant wrangles from a prior design.
-    for n in list(variant_subnet.children()):
-        if n.type().name() == "attribwrangle" and n.name().startswith("set_variant"):
-            n.destroy()
+    variant_create = node.node("variant_sopnet/create_variants")
 
     # Existing outputs in create_variants keyed by outputidx.
     existing_outputs = {}
     for n in variant_create.children():
         if n.type().name() == "output":
             existing_outputs[n.evalParm("outputidx")] = n
-
-    # Existing managed nulls keyed by name (any OUT_*).
-    existing_nulls_by_name = {}
-    for n in variant_subnet.children():
-        if n.type().name() == "null" and n.name().startswith("OUT_"):
-            existing_nulls_by_name[n.name()] = n
 
     desired = set(range(count))
     for idx in set(existing_outputs) - desired:
@@ -52,17 +41,6 @@ def _sync_variants(node):
             out_node.setName(f"OUT_{variant_name}")
         except hou.OperationFailed:
             out_node.setName(f"VARIANT{variant_idx}_OUTPUT")
-
-        null_name = f"OUT_{variant_name}"
-        null = existing_nulls_by_name.pop(null_name, None)
-        if null is None:
-            null = variant_subnet.createNode("null", null_name)
-        null.setInput(0, variant_create, output_index=i)
-
-    for null in existing_nulls_by_name.values():
-        null.destroy()
-
-    variant_subnet.layoutChildren()
 
 
 def _get_node(kwargs):
@@ -94,13 +72,12 @@ def add_variant(kwargs):
 
 
 def on_variant_name(kwargs):
-    """Variant name changed — rename the paired output + null."""
+    """Variant name changed — rename the paired output node."""
     variant_idx = kwargs.get("script_multiparm_index")
     variant_name = kwargs.get("script_value")
 
     node = _get_node(kwargs)
-    variant_subnet = node.node("variant_sopnet")
-    variant_create = variant_subnet.node("create_variants")
+    variant_create = node.node("variant_sopnet/create_variants")
 
     target_idx = int(variant_idx) - 1
 
@@ -111,20 +88,6 @@ def on_variant_name(kwargs):
             except hou.OperationFailed:
                 pass
             break
-
-    for n in variant_subnet.children():
-        if n.type().name() != "null":
-            continue
-        for conn in n.inputConnections():
-            if conn.inputNode() == variant_create and conn.outputIndex() == target_idx:
-                try:
-                    n.setName(f"OUT_{variant_name}")
-                except hou.OperationFailed:
-                    pass
-                break
-        else:
-            continue
-        break
 
 
 def jump_to_variant(kwargs):

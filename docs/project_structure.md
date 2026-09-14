@@ -177,9 +177,10 @@ than the two entries a radial ring requires exist) at startup by
 `tumblepipe.startup` from the live `Recipes.hda` and the asset-browser
 favorites, so they cannot drift from what exists — they are gitignored
 and never ship. The directory is registered via
-`radial.add_custom_menu_dir()`; the `network.cop` / `network.vop`
-context menus are registered from Python in `tumblepipe.startup`
-rather than as JSON.
+`radial.add_custom_menu_dir()`. The `network.cop` / `network.vop`
+context menus are built in Python in `tumblepipe.startup` rather than as
+JSON, and bound with `radial.bind()` on Radial's own trigger key
+(Radial 0.4.0+).
 
 ### `recipes/`
 

@@ -199,7 +199,7 @@ caught before an artist hit it.
 
 `harness` runs only the two `scripts/verify_*.py` harnesses that work with
 no arguments (`verify_entity_from_context`, `verify_hda_callbacks`). The
-other 17 need Houdini, a Qt display, or a live `<project_path>` — including
+rest need Houdini, a Qt display, or a live `<project_path>` — including
 `verify_entity_casing` and `verify_tracked_asset_counts`, which look
 headless from their imports but argparse-require a project. Preflight says
 how many it skipped rather than implying full coverage.
@@ -372,6 +372,28 @@ instance must anchor on definition *parm* names (never renamed) via
 under any project hython (e.g. TumbleTrove Desktop's run_hython with
 dev overrides); it drives the UI rebuild with synthetic layers and
 touches no project data.
+
+## HDA dive-target harness
+
+`scripts/verify_variant_dive_up.py` pins **U** from the
+`th::create_asset_model` and `th::create_asset_lookdev` dive targets. Houdini
+walks up past non-editable parents only (`nodegraphview.changeNetwork`), so
+the only editable network in each node is its dive target, nothing is ever
+created beside it, and the LOP side fetches the dive target's outputs
+directly. The harness re-runs Houdini's walk and checks it lands on the
+node's parent, then drives add / rename / remove through the variant sync
+and cooks each variant to check it publishes its own output. Run it under
+any project hython; it needs no project data. The static rule for every HDA
+is `tests/test_hda_dive_targets.py`.
+
+Changing an HDA's EditableNodes changes what an existing `.hip` keeps. A
+node that stops being editable loads from the definition, and its saved
+children are dropped with *Ignoring data for locked node* warnings. Children
+of a node that is still editable are kept. Before shrinking the list, save a
+scene with the old build (stash the change so the dev override compiles the
+old HDA) and reopen it with the new one. Swapping definitions inside one
+hython session with `hou.hda.uninstallFile` / `installFile` saves a broken
+scene that reloads empty under *either* build, so it proves nothing.
 
 ## Submit Jobs dialog harness
 

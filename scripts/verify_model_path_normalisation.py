@@ -103,8 +103,8 @@ def check_create_asset_model(stage_ctx, failures):
         node.parm("use_entity").set(0)
         node.parm("primpath").set(ASSET_PRIMPATH)
 
-        sopnet = node.node("variant_sopnet")
-        sopnet.node("OUT_default").setInput(0, _author_geometry(sopnet, snippet))
+        create = node.node("variant_sopnet/create_variants")
+        create.node("OUT_default").setInput(0, _author_geometry(create, snippet))
 
         meshes = _meshes(node)
         scope = node.stage().GetPrimAtPath(f"{ASSET_PRIMPATH}/geo")

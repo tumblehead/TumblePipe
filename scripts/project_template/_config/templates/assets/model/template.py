@@ -54,9 +54,8 @@ def _sticky_note(scene_node, offset: hou.Vector2):
 def _seed_variant_geo(model_node, variant_names: list):
     """Give every variant a starter box inside create_variants.
 
-    _sync_variants has already made the per-variant OUT_<name> output (and
-    its paired null in variant_sopnet); all that is missing is geometry
-    feeding it. It places those outputs with moveToGoodPosition(), so the
+    _sync_variants has already made the per-variant OUT_<name> output; all
+    that is missing is geometry feeding it. It places those outputs with moveToGoodPosition(), so the
     positions are restated here to keep each variant in its own column.
     """
     variant_sopnet = model_node.node('variant_sopnet')

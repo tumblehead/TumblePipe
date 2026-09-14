@@ -48,6 +48,12 @@ register`. Install it from TumbleTrove and restart. Alt+R and Alt+F are also
 absent when fewer than two recipes / favourites exist. See
 [Radial menus](radial-menus.md).
 
+TumblePipe v1.48.0 and earlier fail at startup against Radial 0.4.0 with
+`AttributeError: module 'tumbleradial' has no attribute 'register'`, which
+takes Alt+T, Alt+R, Alt+F and the COP/VOP menus down with it. Update
+TumblePipe. If only the COP/VOP menus are missing and the log says
+`tumbleradial predates bind() (Radial 0.4.0)`, update Radial instead.
+
 ### The User column is blank
 
 `TH_USER` is empty. The package wires it to `TT_USER_NAME`, which only the
@@ -191,6 +197,18 @@ HDA parm internal names keep the old spelling on purpose, and readers accept
 both. A project whose column still reads *Variants* has not taken the v5
 config migration. See
 [Channels, and why they are not USD variants](composition.md#channels-and-why-they-are-not-usd-variants).
+
+### Opening a model or lookdev scene warns "Ignoring data for locked node"
+
+Expected once, on a scene saved before `MODEL` and `LOOKDEV` locked their
+wrapper networks (`variant_sopnet`, `lookdev_variant_subnet`) so that **U**
+from inside them leads back to `/stage`. The warning lists what was
+dropped: the old per-variant nulls, plus anything you had placed in the
+wrapper *beside* `create_variants` / `lookdev_subnet`. Everything inside
+those two networks, which is where your geometry and materials live, is
+kept. Rebuild anything you need from beside them inside the network, then
+save to stop the warning. See
+[`th::create_asset_model`](nodes/assets.md#thcreate_asset_model-lop).
 
 ### Multi actions do nothing (delete, edit, add members, drag-and-drop)
 

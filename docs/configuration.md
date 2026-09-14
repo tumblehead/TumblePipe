@@ -259,7 +259,8 @@ What coverage means, mechanically:
   itself composes nothing (it is not a Root).
 
 In the asset browser, Multis sit in a **Multis** subheader at the top of
-the Assets and Shots sections of each project. **New Multi…** creates one
+the Assets and Shots sections of each project (a side with no Multi has
+no subheader). **New Multi…** creates one
 (name + context), and a new Multi **covers its context's whole department
 pool** from the start — coverage is what gives the Multi its department
 rows and what points a member's rows at the Multi's workfile, so a Multi
@@ -296,7 +297,10 @@ contract against the shipped SDK.
 of a **new department workfile** — the **New: Template** action on a
 department row runs the matching module's
 `create(stage, entity_uri, department_name)` against a freshly saved,
-empty hip.
+empty hip. By the time `create` runs, the unpinned network editors are
+already at `/stage`. A template that wants the artist to start deeper can
+move them itself: the `rig` and `blendshape` templates open the editor
+inside their SOP network.
 
 Each template splits on the URI it is handed:
 

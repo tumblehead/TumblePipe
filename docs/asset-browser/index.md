@@ -77,8 +77,8 @@ Per project:
 
 | Section | Rows underneath | Notes |
 |---|---|---|
-| **Assets** | a **Multis** subheader, then one row per category | |
-| **Shots** | a **Multis** subheader, then one row per sequence | Sequences open in list view by default. |
+| **Assets** | a **Multis** subheader (only once an assets Multi exists), then one row per category | |
+| **Shots** | a **Multis** subheader (only once a shots Multi exists), then one row per sequence | Sequences open in list view by default. |
 | **Roots** | one row per Root | |
 
 Count pills show how many assets or shots a row holds. Empty categories and
@@ -331,15 +331,23 @@ Drop targets and what gets built
 
 | You drag | Onto | Result |
 |---|---|---|
-| an asset card | a LOP network | a `th::import_asset` node named after the asset, executed, display and render flags set |
+| an asset card | a LOP network | a `th::import_asset` node named after the asset, executed, display flag set (LOP nodes have no render flag) |
 | a shot card | a LOP network | a `th::import_shot` node named `sequence_shot` |
 | an asset card | an existing `th::import_assets` node | the asset is appended to that node (*Added X to Y*) |
 | an asset card | an existing `th::import_asset` node | the node is replaced by a `th::import_assets` holding both assets, keeping its name, wiring and options (*Combined X into Y*) |
-| several asset cards | a LOP network | one `th::import_assets` with an entry per asset; shots in the selection are skipped |
+| several asset cards | a LOP network | one `th::import_assets` with an entry per asset, and nothing else; shots in the selection are skipped. If the build fails you get *Failed to import N assets (see console)*, not a `th::import_asset` per card |
 | an asset card | a SOP network | a `th::import_model` with its **department** set to `model` (`blendshape` for assets tagged so) |
 | a shot card | a SOP network | refused: *Shots can only be imported into LOP networks* |
 | a Root card | a LOP network | a stock `sublayer` node whose file path is the Root's `entity:/scenes/…` URI, so it follows the Root's latest export |
 | department deck items or list rows | a LOP network | one `th::import_layer` per department, wired and flagged (TumbleTrove's default path) |
+
+A single asset or shot card dropped into a LOP or SOP network also
+pins the entity's `thumbnail.png` above the new node in the network
+editor, saved with the hip. On `th::import_asset`, `th::import_shot` and
+`th::import_model` the image follows a rename and goes away with the
+node. `th::import_assets` has neither callback, so the image a *Combined
+X into Y* drop pins stays behind when that node is renamed or deleted.
+A multi-card drop adds no thumbnail.
 
 Any other pane: *Pipeline assets can only be imported into LOP or SOP
 networks.* While you hover a network editor a ghost of the node to be

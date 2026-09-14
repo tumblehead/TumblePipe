@@ -12,8 +12,9 @@ guard below used to swallow that silently, every menu here quietly stopped
 registering. The old Houdini-native ``radialmenu/`` system was purged in
 favour of the radial; the pipeline-specific menus it carried live on here as:
 
-- ``network.cop`` / ``network.vop`` context menus (registered Python menus,
-  same mechanism tumbletrove uses for its built-in sop/lop/network menus).
+- ``network.cop`` / ``network.vop`` context menus, built in Python and bound
+  to the chord Radial opens its own built-in menus with (see
+  :func:`_bind_context_menus`).
 - ``radial_menus/tumblepipe_pipeline.json`` — static custom menu shipped
   with the package (ASSET / RENDER submenus of pipeline HDAs).
 - ``tumblepipe_recipes.json`` + ``tumblepipe_asset_favorites.json`` —
@@ -31,9 +32,9 @@ logger = logging.getLogger(__name__)
 def register_radial(pipeline_path: Path) -> None:
     """Register TumblePipe's actions, context menus and JSON menu directory.
 
-    Order matters: this runs at Houdini startup (synchronous), well before the
-    radial's own deferred ``install()`` call, so the autoload picks up the
-    menus in ``radial_menus/``.
+    Order matters: this runs at Houdini startup (synchronous), before Radial's
+    own deferred startup scans the custom-menu directories, so that scan
+    picks up the menus in ``radial_menus/``.
     """
     try:
         import tumbleradial as radial
@@ -50,17 +51,21 @@ def register_radial(pipeline_path: Path) -> None:
         return
 
     _register_general_actions(radial)
-    _register_cop_menu(radial)
-    _register_vop_menu(radial)
+    context_menus = {
+        "network.cop": _build_cop_menu(radial),
+        "network.vop": _build_vop_menu(radial),
+    }
 
-    # Generate the dynamic menus + register the menu directory so the
-    # autoload picks up both the generated files and the shipped
-    # tumblepipe_pipeline.json.
+    # Generate the dynamic menus + register the menu directory so Radial's
+    # startup scan of custom-menu directories picks up both the generated
+    # files and the shipped tumblepipe_pipeline.json.
     menu_dir = pipeline_path / 'radial_menus'
     menu_dir.mkdir(exist_ok=True)
     _generate_recipes_radial(radial, menu_dir, key="Alt+R")
     _generate_asset_favorites_radial(radial, menu_dir, key="Alt+F")
     radial.add_custom_menu_dir(menu_dir)
+
+    _bind_context_menus(radial, context_menus)
 
 
 def _defer(fn):
@@ -143,8 +148,8 @@ def _register_general_actions(radial) -> None:
 # ── COP (Copernicus) context menu ────────────────────────────────────────────
 #
 # Ported from the native radialmenu/definitions/cop.json + cop/composite.json.
-# Registered at "network.cop" — the same context ID tumbletrove's detector
-# emits for Copernicus networks.
+# Bound at "network.cop", the context ID Radial's detector reports for a
+# Copernicus network.
 
 def _cop_nodes_call(fn_name: str, *args):
     """Callback running a tumblepipe.tools.coputils helper on the selection."""
@@ -155,7 +160,7 @@ def _cop_nodes_call(fn_name: str, *args):
     return _cb
 
 
-def _register_cop_menu(radial) -> None:
+def _build_cop_menu(radial):
     _node = radial.make_node_callback
     act = radial.register_action
     item = radial.item_from_action
@@ -199,14 +204,14 @@ def _register_cop_menu(radial) -> None:
     act("cop.file",   "File",   _node("file"),                  "COP_file")
     act("cop.render", "Render", _cop_nodes_call("render_cop"),  "NETWORKS_cop")
 
-    radial.register("network.cop", radial.menu([
+    return radial.menu([
         item("cop.convert", children=_convert),
         item("cop.pattern", children=_pattern),
         item("cop.filter",  children=_filter),
         item("cop.comp",    children=_comp),
         item("cop.file"),
         item("cop.render"),
-    ], label="COP"))
+    ], label="COP")
 
 
 # ── VOP (MaterialX) context menu ─────────────────────────────────────────────
@@ -215,7 +220,7 @@ def _register_cop_menu(radial) -> None:
 # entries fixed (two malformed node names) and the mislabeled "Math"
 # submenu renamed to what its nodes actually are.
 
-def _register_vop_menu(radial) -> None:
+def _build_vop_menu(radial):
     _node = radial.make_node_callback
     act = radial.register_action
     item = radial.item_from_action
@@ -253,12 +258,66 @@ def _register_vop_menu(radial) -> None:
     _util = [item(f"vop.util.{k}") for k in
              ("normalmap", "bump", "multiply", "add", "subtract", "divide")]
 
-    radial.register("network.vop", radial.menu([
+    return radial.menu([
         item("vop.image",  children=_image),
         item("vop.adjust", children=_adjust),
         item("vop.gen",    children=_gen),
         item("vop.util",   children=_util),
-    ], label="VOP"))
+    ], label="VOP")
+
+
+# ── Binding the context menus ────────────────────────────────────────────────
+
+#: Owner name for the COP / VOP bindings, so a chord change can withdraw
+#: exactly these and nothing a user or another package bound.
+_CONTEXT_MENU_SOURCE = "tumblepipe.context_menus"
+
+
+def _bind_context_menus(radial, menus: dict) -> None:
+    """Bind the COP and VOP menus on the chord Radial's own menus open with.
+
+    Radial 0.4.0 replaced ``register(context, menu)`` with
+    ``bind(chord, context, menu, source)``. TumblePipe v1.48.0 still called
+    ``register``, so startup raised AttributeError at the COP menu and never
+    reached the VOP menu or the Alt+T, Alt+R and Alt+F menus after it.
+
+    The chord is Radial's *Open menus with* setting (``trigger_key``, Space
+    by default), so these open where the shipped network menu would. When
+    that setting changes the bindings move with it, and an empty setting
+    unbinds them, as it does Radial's own menus.
+
+    Binding installs the chord's controller on Houdini's UI event loop. A
+    headless session therefore binds nothing, and a GUI session binds once
+    the UI is up.
+    """
+    if not hasattr(radial, "bind"):
+        logger.warning(
+            "tumbleradial predates bind() (Radial 0.4.0), so TumblePipe's COP "
+            "and VOP network menus will not register"
+        )
+        return
+
+    import hou
+    if not hou.isUIAvailable():
+        return
+
+    from tumbleradial import settings
+
+    def _rebind():
+        chord = str(settings.get("trigger_key") or "").strip()
+        with radial.batch():
+            radial.unbind_source(_CONTEXT_MENU_SOURCE)
+            if not chord:
+                return
+            for context, menu in menus.items():
+                radial.bind(chord, context, menu, source=_CONTEXT_MENU_SOURCE)
+
+    def _on_setting_changed(key, _value):
+        if key == "trigger_key":
+            _rebind()
+
+    settings.subscribe(_on_setting_changed)
+    _defer(_rebind)
 
 
 # ── Recipes radial (generated from Recipes.hda) ──────────────────────────────

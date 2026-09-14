@@ -89,17 +89,21 @@ current desktop when the UI comes up (only if a desktop named `TumblePipe`
 exists and is not already current — switching desktops mid-session is
 respected until the next launch). It is a Solaris layout:
 
-- left column, top: a details pane pinned to `/stage` (the Scene Graph Tree);
-- left column, middle: a Scene Viewer on `/stage`;
-- left column, bottom: a Python Panel running the **Asset Browser**;
+- far left: a details pane pinned to `/stage` (the Scene Graph Tree);
+- middle, top: a Scene Viewer on `/stage`;
+- middle, bottom: a Python Panel running the **Asset Browser**;
 - right: the Network Editor, open at `/stage`.
+
+The Scene Viewer and Network Editor open with their bars expanded: pane tabs,
+the viewer's toolbars including the color correction toolbar (only the view
+memory toolbar stays hidden), and the network editor's menu bar.
 
 The shelf carries the two Solaris shelf sets.
 
 **The Asset Browser.** TumbleTrove's browser panel, with TumblePipe's
 *pipeline* catalog registered into it. The sidebar has **Assets**, **Shots**
-and **Roots** sections for each project (Multis sit in a **Multis** subheader
-under Assets and Shots). Selecting an entity shows its card and one row per
+and **Roots** sections for each project (Multis, once there are any, sit in a
+**Multis** subheader under Assets and Shots). Selecting an entity shows its card and one row per
 department. The bar above the browser carries five quick actions that act on
 the scene currently loaded: **Save**, **Publish**, **Render**, **Update** and
 **Reload**. See [Asset Browser](asset-browser/index.md); the browser's

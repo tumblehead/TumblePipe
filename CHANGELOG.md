@@ -12,6 +12,24 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.48.0 — 2026-09-14
+
+### Features
+- feat(otls): add th::material LOP HDA (`c40178a`)
+
+### Fixes
+- fix(browser): creation options follow the scope, not only type tags (`0b84664`)
+- fix(browser): refuse to create or edit an entity the config does not hold (`93b4759`)
+- fix(publish): say why an export found no tasks; Multis get downstream departments (`6f9a5ff`)
+
+### Documentation
+- docs(browser): one action list per object across views and sidebar (`3c97130`)
+- docs: why an export finds no tasks, and the entity-not-registered refusals (`feb5c84`)
+- docs: regenerate CHANGELOG.md for v1.47.1 (`bd25813`)
+
+### Tests
+- test: headless qtpy stub, so pipe/houdini/ui is importable at all (`0e06451`)
+
 ## v1.47.1 — 2026-09-09
 
 ### Fixes

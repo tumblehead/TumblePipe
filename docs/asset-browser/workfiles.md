@@ -187,6 +187,9 @@ workfile, or a fresh one after existing versions (`v(N+1)`), from the
 department template:
 
 1. The next version number is reserved and an empty scene is saved there.
+   Clearing the scene would leave the network editors on `/obj`, so every
+   unpinned network editor is pointed at `/stage`. Pinned editors are left
+   alone.
 2. `_config/templates/<context>/<department>/template.py` is run against
    `/stage` to build the department's starting graph
    ([Configuration → Department templates](../configuration.md#department-templates)).

@@ -198,9 +198,9 @@ own hierarchy; string-matching it away cannot tell it apart from a genuine
 sub-part that happens to share the asset's name.
 
 In `create_asset_model` the wrangle lives at HDA top level rather than inside
-`variant_sopnet`, because `variant_sopnet` is an editable node — its contents
-are saved per-instance in the `.hip`, so a fix placed there would never reach
-existing artist scenes.
+`variant_sopnet/create_variants`, because that is the node's editable network —
+its contents are saved per-instance in the `.hip`, so a fix placed there would
+never reach existing artist scenes.
 
 `th::create_model` holds the same contract and normalises the same way. The
 two model nodes are meant to agree — if you change one, change the other.

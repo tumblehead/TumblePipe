@@ -38,13 +38,13 @@ def _build(stage, name, category):
     model.parm("use_entity").set(0)
     model.parm("primpath").set(f"/{category}/{name}")
 
-    sopnet = model.node("variant_sopnet")
-    box = sopnet.createNode("box")
-    wrangle = sopnet.createNode("attribwrangle")
+    create = model.node("variant_sopnet/create_variants")
+    box = create.createNode("box")
+    wrangle = create.createNode("attribwrangle")
     wrangle.setInput(0, box)
     wrangle.parm("class").set(1)
     wrangle.parm("snippet").set('s@path = "hull/body";')
-    sopnet.node("OUT_default").setInput(0, wrangle)
+    create.node("OUT_default").setInput(0, wrangle)
 
     payload = stage.createNode("th::asset_payload::1.0", "p_" + name)
     payload.setInput(0, model)

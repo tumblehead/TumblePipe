@@ -16,7 +16,10 @@ logs this warning and registers nothing:
 tumbleradial is not installed, so TumblePipe's radial menus (pipeline submenus, recipes, asset favorites, cop/vop network menus) will not register
 ```
 
-Install the package, restart Houdini, and the menus appear. There is no
+Install the package, restart Houdini, and the menus appear. The COP and
+VOP network menus need **Radial 0.4.0 or later**; an older Radial registers
+the other menus and logs `tumbleradial predates bind() (Radial 0.4.0), so
+TumblePipe's COP and VOP network menus will not register`. There is no
 other fallback — the Houdini-native `radialmenu/` system that used to carry
 these menus was retired in the radial's favour.
 
@@ -138,12 +141,16 @@ where you want to force it. A failure shows a warning dialog:
 
 ## COP and VOP network context menus
 
-Two further menus are registered from Python rather than JSON, at the
-radial's `network.cop` and `network.vop` contexts — the context IDs the
-radial reports for a Copernicus and a VOP network — so they are what the
-radial's own context menu (its Space key; see
-[Project structure → radial_menus](project_structure.md#radial_menus)) shows
-there:
+Two further menus are built in Python rather than JSON and bound at the
+radial's `network.cop` and `network.vop` contexts, the context IDs the
+radial reports for a Copernicus and a VOP network. They open on the same
+key as the radial's own menus: Radial's **Open menus with** setting
+(**TumbleTrove ▸ Settings… ▸ Radial**, Space by default). Over a COP or VOP
+network that key opens these menus in place of Radial's network menu.
+Change the setting and they move with it; clear it and they are unbound
+along with Radial's own. They are bound once the Houdini UI is up, so a
+headless `hython` session has none. See
+[Project structure → radial_menus](project_structure.md#radial_menus).
 
 - **COP** — submenus **Convert** (Mono/UV/RGB/RGBA), **Pattern**, **Filter**,
   **Composite** (over, blend, multiply, add, under, subtract, divide), plus
@@ -154,6 +161,7 @@ there:
 
 ## Keyboard shortcuts
 
-TumblePipe registers no Houdini hotkeys of its own; the only keys it claims
+TumblePipe registers no Houdini hotkeys of its own. The only keys it claims
 are the three radial keys above (**Alt+T**, **Alt+R**, **Alt+F**), and only
-while `tumbleradial` is installed.
+while `tumbleradial` is installed. The COP and VOP menus claim no key; they
+use whichever key Radial's own menus open with.

@@ -405,7 +405,8 @@ class PipelineCatalog(Catalog):
         are nested inside
         Assets / Shots based on the Multi's own context (they can't
         mix) — a single ``Multis`` subheader on each side filters the
-        grid to that context's Multi cards.
+        grid to that context's Multi cards. A side with no Multi has no
+        subheader.
         """
         project_tag = f"project:{proj.name}"
         sections: list[Collection] = []
@@ -414,11 +415,12 @@ class PipelineCatalog(Catalog):
         asset_multis, shot_multis = self._containers._build_groups_for_project(proj)
 
         # Multis go at the top of each side — artists favour multi-shot
-        # / multi-asset workflows when one exists. The subheaders are
-        # always present (even with zero children) so the affordance
-        # stays one click away.
+        # / multi-asset workflows when one exists. A side with no Multi
+        # gets no subheader: an empty "Multis" row is noise in a project
+        # that doesn't use them, and "New Multi..." is already on the
+        # Assets / Shots headers' own menus.
         cats = self._list_categories_for_project(proj.name)
-        cat_children = [asset_multis]
+        cat_children = [asset_multis] if asset_multis.children else []
         for cat in cats:
             count = self._count_for_project_category(proj.name, cat)
             cat_children.append(Collection(
@@ -437,7 +439,7 @@ class PipelineCatalog(Catalog):
         ))
 
         seqs = self._list_sequences_for_project(proj.name)
-        seq_children = [shot_multis]
+        seq_children = [shot_multis] if shot_multis.children else []
         for seq in seqs:
             count = self._count_for_project_sequence(proj.name, seq)
             # default_view="list": shots browse better as list rows —

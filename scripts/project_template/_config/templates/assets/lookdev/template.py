@@ -19,13 +19,12 @@ STAGE_NOTE = ('Create Lookdev In here -->',
 
 # --- lookdev_variant_subnet layout ---------------------------------------
 LOOKDEV_SUBNET_POS = hou.Vector2(8.02, 10.24)
-VARIANT_OUT_POS = hou.Vector2(8.02, 8.35)
-VARIANT_STRIDE = 2.5
 
 # --- lookdev_subnet layout -----------------------------------------------
 MATERIAL_LIBRARY_POS = hou.Vector2(-14.5, 12.85)
 MATERIAL_ASSIGNER_POS = hou.Vector2(-14.5, 11.42)
 VARIANT_OUTPUT_POS = hou.Vector2(-14.5, 9.95)
+VARIANT_STRIDE = 2.5
 
 # The LOOKDEV HDA's primpath, seen from inside the material library.
 MATPATHPREFIX = '`chs("../../../primpath")`/mtl/'
@@ -180,14 +179,6 @@ def _build_lookdev(lookdev_node, variant_names: list):
     lookdev_subnet.setDisplayFlag(True)
 
     _build_lookdev_subnet(lookdev_subnet, variant_names)
-
-    # _sync_variants leaves the per-variant nulls at the origin
-    for i in range(len(variant_names)):
-        null_node = variant_subnet.node(f'VARIANT{i+1}_OUT')
-        if null_node is None: continue
-        null_node.setPosition(
-            VARIANT_OUT_POS + hou.Vector2(i * VARIANT_STRIDE, 0.0)
-        )
 
 def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
            offset: hou.Vector2 = hou.Vector2(0.0, 0.0), pin: bool = False):

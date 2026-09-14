@@ -72,6 +72,24 @@ def is_import_asset_node(node) -> bool:
         return False
 
 
+def show_dropped_node(raw) -> None:
+    """Make a freshly dropped node the one the viewport shows.
+
+    Only SOP (and OBJ) nodes carry a render flag. ``hou.LopNode`` has no
+    ``setRenderFlag`` at all, so calling it on an import_asset raises
+    AttributeError. Until v1.4.5 an ``except AttributeError: pass`` hid
+    that; a cleanup then removed it as dead code. After that, every LOP
+    drop failed at this line, after the node had been built. The
+    single-asset thumbnail was never attached, and a multi-drop reported
+    failure, so the browser dropped each asset again as its own
+    import_asset.
+    """
+    raw.setDisplayFlag(True)
+    set_render_flag = getattr(raw, "setRenderFlag", None)
+    if set_render_flag is not None:
+        set_render_flag(True)
+
+
 class DropRouter:
     """Dispatches asset/shot/Root drops to the right Houdini handler.
 
@@ -219,8 +237,7 @@ class DropRouter:
             else:
                 raw.moveToGoodPosition()
             raw.setSelected(True, clear_all_selected=True)
-            raw.setDisplayFlag(True)
-            raw.setRenderFlag(True)
+            show_dropped_node(raw)
             self.attach_network_thumbnail(detail.id, raw, drop)
         except Exception:
             log.exception("Failed to drop %s", detail.id)
@@ -250,6 +267,11 @@ class DropRouter:
         Multiple assets → one ``th::import_assets::2.0`` with multiparm
         entries populated. Shots are skipped (multi-shot drops are not
         supported yet).
+
+        Returns False only when there is no asset to bundle. The browser
+        answers False by dropping each asset on its own, which would put
+        an import_asset beside the import_assets this built. A failure is
+        reported here and the drop still counts as handled.
         """
         import hou
 
@@ -295,7 +317,12 @@ class DropRouter:
                     "Failed to append %d assets to %s",
                     len(asset_items), target.path(),
                 )
-                return False
+                hou.ui.setStatusMessage(
+                    f"Failed to add {len(asset_items)} assets to "
+                    f"{target.name()} (see console)",
+                    severity=hou.severityType.Error,
+                )
+                return True
             hou.ui.setStatusMessage(
                 f"Added {added} assets to {target.name()}",
                 severity=hou.severityType.Message,
@@ -323,11 +350,14 @@ class DropRouter:
             else:
                 raw.moveToGoodPosition()
             raw.setSelected(True, clear_all_selected=True)
-            raw.setDisplayFlag(True)
-            raw.setRenderFlag(True)
+            show_dropped_node(raw)
         except Exception:
             log.exception("Failed multi-drop of %d assets", len(asset_items))
-            return False
+            hou.ui.setStatusMessage(
+                f"Failed to import {len(asset_items)} assets (see console)",
+                severity=hou.severityType.Error,
+            )
+            return True
 
         hou.ui.setStatusMessage(
             f"Imported {len(asset_items)} assets",
@@ -445,8 +475,7 @@ class DropRouter:
             else:
                 raw.moveToGoodPosition()
             raw.setSelected(True, clear_all_selected=True)
-            raw.setDisplayFlag(True)
-            raw.setRenderFlag(True)
+            show_dropped_node(raw)
             self.attach_network_thumbnail(detail.id, raw, drop)
         except Exception:
             log.exception("Failed to drop %s as import_model", detail.id)

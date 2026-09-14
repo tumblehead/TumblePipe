@@ -329,11 +329,9 @@ class ContainerManager:
         Each subheader is a single ``Multis`` Collection whose
         children are the actual Multi leaves; the subheader's tag
         filters the grid to that context's Multi cards via
-        ``type:group+multi_context:<assets|shots>``. The headers are
-        always returned (never ``None``) — including empty contexts
-        — so artists can always see and click through to the Multi
-        grid view, and right-click → "New Multi…" stays one motion
-        away even before the first Multi exists.
+        ``type:group+multi_context:<assets|shots>``. Both headers are
+        always returned (never ``None``), even for an empty context;
+        the caller leaves a childless one out of the sidebar.
 
         Callers inject these into the Assets / Shots sections rather
         than rendering a separate top-level Multis section, so the

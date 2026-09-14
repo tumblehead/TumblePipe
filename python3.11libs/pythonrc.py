@@ -1,7 +1,7 @@
 """Houdini Python startup hook for TumblePipe.
 
 Adds `$TH_PIPELINE_PATH/python` to sys.path so `tumblepipe` imports, then
-delegates all startup registrations (tumbletrove radial menus/actions) to
+delegates all startup registrations (Radial menus/actions) to
 `tumblepipe.startup` so Houdini 21 and Houdini 22 run identical code —
 this stub must stay byte-identical to its sibling in the other
 python3.*libs directory.

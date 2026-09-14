@@ -139,7 +139,7 @@ Source: [`otls/lop_th.create_asset_model.1.0`](../../otls/lop_th.create_asset_mo
 | Variants | 1 row, `default` | One row per variant: a name and a **Jump to Output** button that takes the network editor to that variant's `OUT_<name>` output node |
 
 What happens per variant: the node object-merges
-`variant_sopnet/OUT_<name>`, runs it through the `NORMALIZE_PATHS` wrangle
+`variant_sopnet/create_variants/OUT_<name>`, runs it through the `NORMALIZE_PATHS` wrangle
 (fall back `name` → `path`, strip the asset's own path if the value is
 already rooted there, make it relative, clear `name`), imports it with SOP
 Import under `<asset>` + Import Path Prefix with kind `component`, and adds
@@ -147,19 +147,26 @@ the result as a variant of the `model` set. The full rules, including what
 Alembic and USD→SOP round trips do to `path`, are in
 [The path attribute is normalised first](../composition.md#the-path-attribute-is-normalised-first).
 
-Where you work: `variant_sopnet` is the node's editable network, and its
-dive target is `variant_sopnet/create_variants`. Inside, each variant is an
-Output SOP named `OUT_<name>` (output index = row index); whatever you wire
-into it is that variant. The template drops a starter polymesh box on each.
+Where you work: the dive target, `variant_sopnet/create_variants`, is the
+node's only editable network. Inside, each variant is an Output SOP named
+`OUT_<name>` (output index = row index); whatever you wire into it is that
+variant. The template drops a starter polymesh box on each. **U** from there
+goes straight back to the network the node sits in: `variant_sopnet` is
+locked, so Houdini walks past it (an editable wrapper would stop the walk,
+which is how it behaved before 2026-09-14).
 
 Adding or removing a Variants row creates or destroys the matching
-`OUT_<name>` output and its sibling null (the sync runs just after the
-callback returns); renaming a row renames them. Orphaned outputs are
+`OUT_<name>` output (the sync runs just after the callback returns);
+renaming a row renames it. Orphaned outputs are
 deleted, so **removing a row deletes that variant's output node** — move
 your geometry first.
 
 Gotchas:
 
+- Nodes placed in `variant_sopnet` beside `create_variants` are not kept:
+  the wrapper is locked, and a scene saved while it was editable drops them
+  on open with an *Ignoring data for locked node* load warning. Everything
+  inside `create_variants` is kept. Save once to clear the warning.
 - Keep variant names legal node names (no spaces, no leading digit). The
   per-variant fetch looks up `OUT_<name>` literally; a name Houdini cannot
   give a node yields an empty variant with no error.
@@ -189,8 +196,9 @@ Source: [`otls/lop_th.create_asset_lookdev.1.0`](../../otls/lop_th.create_asset_
 | Active Variant | first variant | Variant selected on the node's output |
 | Variants | 1 row, `default` | Name + **Jump to Output** per variant |
 
-Where you work: the dive target is `lookdev_variant_subnet/lookdev_subnet`.
-It ships with a `material_library` (Material Library LOP whose *Material
+Where you work: the dive target is `lookdev_variant_subnet/lookdev_subnet`,
+the node's only editable network (so **U** from it leaves the node, as on
+`th::create_asset_model`). It ships with a `material_library` (Material Library LOP whose *Material
 Path Prefix* is `<asset>/mtl/` and whose parent prim type is `Scope`)
 holding `default_mtl`, a Karma Material Builder with a red base colour, and
 one Output LOP per variant named `OUT_<name>`. The template inserts a
@@ -198,14 +206,14 @@ one Output LOP per variant named `OUT_<name>`. The template inserts a
 the outputs, so every variant reads the same assigned stage; a look that
 needs different materials gets its own branch wired by hand.
 
-Per variant the node fetches `lookdev_variant_subnet/VARIANT<n>_OUT`, adds
+Per variant the node fetches `lookdev_subnet` at output index `@ITERATION`, adds
 it as a variant of the `lookdev` set on the asset prim, and the Active
 Variant is selected on the output. Why the published layer is all `over`s
 and looks empty on its own is in
 [Where lookdev materials land under the asset](../composition.md#where-lookdev-materials-land-under-the-asset).
 
-Adding a Variants row creates `OUT_<name>` in `lookdev_subnet` and a
-`VARIANT<n>_OUT` null wired to it. **Only the first output is wired for
+Adding a Variants row creates `OUT_<name>` in `lookdev_subnet` with output
+index = row index. **Only the first output is wired for
 you** (to `material_library`); every later `OUT_<name>` is created with no
 input, and an unwired output publishes an empty variant. Wire it — usually
 from `material_assigner` — before you publish.

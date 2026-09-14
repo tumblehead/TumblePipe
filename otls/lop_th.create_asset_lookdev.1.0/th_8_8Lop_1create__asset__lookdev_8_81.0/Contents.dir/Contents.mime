@@ -2024,69 +2024,11 @@ Content-Type: text/plain
 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/VARIANT1_OUT.init"
-Content-Type: text/plain
-
-type = null
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/VARIANT1_OUT.def"
-Content-Type: text/plain
-
-comment ""
-position 0 0
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-}
-inputsNamed3
-{
-0 	lookdev_subnet 1 1 "input1"
-}
-inputs
-{
-0 	lookdev_subnet 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.6 0.7 0.77 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/VARIANT1_OUT.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet/VARIANT1_OUT.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.order"
 Content-Type: text/plain
 
-2
+1
 lookdev_subnet
-VARIANT1_OUT
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/lookdev_variant_subnet.net"
@@ -2132,13 +2074,27 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/fetch_variant.chn"
+Content-Type: text/plain
+
+{
+    channel outputidx {
+      lefttype = extend
+      righttype = extend
+      default = 0
+      flags = 0
+      segment { length = 0 value = 0 0 expr = @ITERATION }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/fetch_variant.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-loppath	[ 0	locks=0 ]	(	../lookdev_variant_subnet/VARIANT`@ITERATION+1`_OUT	)
-outputidx	[ 0	locks=0 ]	(	0	)
+loppath	[ 0	locks=0 ]	(	../lookdev_variant_subnet/lookdev_subnet	)
+outputidx	[ 0	locks=0 ]	(	[ outputidx	0 ] 	)
 erroroninvalidlop	[ 0	locks=0 ]	(	"off"	)
 layerbreak	[ 0	locks=0 ]	(	"off"	)
 popcontextoptions	[ 0	locks=0 ]	(	0	)

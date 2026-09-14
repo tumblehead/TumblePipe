@@ -30,14 +30,16 @@ behaviour.
 ### Where they are
 
 Each project's **Assets** and **Shots** sections start with a **Multis**
-subheader. Click it for a grid of that context's Multis; click a Multi
+subheader once that side has a Multi; a side with none has no subheader.
+Click it for a grid of that context's Multis; click a Multi
 underneath for the Multi's own card in list view, with one row per
 department it covers. Multis are locked to one context: a shots Multi takes
 shots only, an assets Multi assets only.
 
 ### Creating a Multi
 
-**New Multi…** (the Multis subheader's right-click menu, or the **+** card)
+**New Multi…** (the right-click menu of the Assets or Shots header or of a
+Multis subheader, or the **+** card)
 asks for a **Name** and a **Context** (`shots` or `assets`). From a Multis
 subheader the context is that subheader's and is fixed, shown in the title
 as **New Multi in assets**. Under Assets or Shots it starts on that context;
