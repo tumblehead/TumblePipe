@@ -272,8 +272,8 @@ assignment*) when a Multi is meant for fewer departments.
 The Multi is an entity, not a folder: its sidebar leaf lands on the Multi's
 own card, in list view, with one row per covered department, exactly as a
 shot's rows work. A row with a workfile opens it; a row without one reads
-*missing*, and its right-click **New: Template** creates the first version
-from the department template (one pinned graph per member, laid out in
+*missing*, and a double-click or its right-click **New from Template** creates
+the first version from the department template (one pinned graph per member, laid out in
 columns) — the same menu a shot's row has. Its members are
 one step away — **double-click** the Multi card to drill into them (the
 breadcrumb shows the Multi), and a member's own rows carry a **ⓜ** badge
@@ -294,7 +294,7 @@ contract against the shipped SDK.
 ### Department templates
 
 `_config/templates/<context>/<department>/template.py` builds the node graph
-of a **new department workfile** — the **New: Template** action on a
+of a **new department workfile** — the **New from Template** action on a
 department row runs the matching module's
 `create(stage, entity_uri, department_name)` against a freshly saved,
 empty hip. By the time `create` runs, the unpinned network editors are

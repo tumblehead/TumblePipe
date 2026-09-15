@@ -94,13 +94,13 @@ the Multi on the detail panel's Departments tab as an `M` pill.
 ### The Multi's workfiles
 
 The Multi's own rows work like a shot's. A row with a workfile opens it
-(**Open Latest**), **Open Location** opens
+(**Open Latest**), **Open Folder** opens
 `<project>/groups/<context>/<name>/<department>/`, and a row without one
-reads *missing* until **New: Template** creates `v0001` there, named
-`<name>_<department>_v0001.hip`. The template runs its group branch, which
+reads *missing* until **New from Template** (or a double-click on the row)
+creates `v0001` there, named `<name>_<department>_v0001.hip`. The template runs its group branch, which
 lays out one pinned graph per member in columns
 ([Configuration → Department templates](../configuration.md#department-templates)).
-The Multi's rows do not offer **New: Current**.
+The Multi's rows do not offer **New from Current**.
 
 Only a workfile created from the Multi's own rows is a Multi workfile. A
 multi-shot scene built in a *shot's* department — even a shot named after

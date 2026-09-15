@@ -108,7 +108,7 @@ The common case is a multi-shot scene that is not in a Multi. A workfile
 made from a *shot's* department row belongs to that shot, even when the shot
 is named like a Multi and its export nodes target the Multi's members. Adding
 departments to the Multi does not change that file. Work in the Multi's own
-department row instead (**New: Template** there, then bring the scene's nodes
+department row instead (**New from Template** there, then bring the scene's nodes
 across), and check the details line *Multi … already lists every one of them
 as a member* to confirm which Multi.
 

@@ -165,22 +165,26 @@ order.
 Labels are the department's `short` from the pool when it has one,
 otherwise `Anim`, `Blend`, `Comp`, `Enviro` or the title-cased name.
 
-Double-click an item to open that department's latest workfile. Right-click
-one for:
+Double-click an item to open that department's latest workfile. On an item
+with no workfile yet (it reads *missing*), a double-click creates the first
+version from the department template instead. Right-click one for:
 
 | Item has versions | Item has none |
 |---|---|
-| **Open Latest (vNNNN)** | |
-| **Open Location** | **Open Location** |
+| **Open Latest (vNNNN)** | **New from Template** |
+| **Open Folder** | **New from Current** |
 | **View Latest Export** | |
-| **Open in New Houdini** | |
+| **Open in New Houdini** | **Open Folder** |
 | **Reload Scene** (only on the open department) | |
 | **Remove from *Multi*** (only on a ⓜ item) | |
-| **New: Current** | **New: Current** |
-| **New: Template** | **New: Template** |
+| **New from Template** | |
+| **New from Current** | |
 
-What each does is on the [Workfiles](workfiles.md) page. A Multi's own deck
-items offer **Open Latest**, **Open Location** and **New: Template**.
+The item an artist almost always wants comes first: creating the first
+version on an empty item, opening the latest on one that has versions. What
+each does is on the [Workfiles](workfiles.md) page. A Multi's own deck items
+offer **New from Template** and **Open Folder**, plus **Open Latest** once a
+version exists.
 
 ### List view columns
 
@@ -304,7 +308,7 @@ registered.
 Names are written as typed; the new asset or shot is selected in the grid
 once it appears. A new shot stores its frame range on the shot entity; a new
 asset stores only its name. Neither creates a workfile — that is the
-department row's **New: Template**.
+department row's **New from Template**.
 
 ## Editing and deleting entities
 

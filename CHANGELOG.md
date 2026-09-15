@@ -12,6 +12,29 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.49.0 — 2026-09-14
+
+### Features
+- feat(desktop): open the TumblePipe desktop with its bars expanded (`d4e5e18`)
+
+### Fixes
+- fix(desktop): show the viewer's color correction toolbar by default (`d785784`)
+- fix(hdas): U from the MODEL and LOOKDEV dive targets leaves the node (`cd564f6`)
+- fix(browser): hide the Multis subheader until its context has a Multi (`d3992dc`)
+- fix(browser): New: Template opens the network editor on /stage, not /obj (`5fe335d`)
+- fix(startup): bind the COP and VOP radial menus with Radial 0.4.0's bind() (`e83297e`)
+- fix(browser): LOP drops stop duplicating nodes and get their thumbnail back (`572d130`)
+
+### Documentation
+- docs: the TumblePipe viewer opens with its color correction toolbar (`724176a`)
+- docs: the TumblePipe desktop opens with its bars expanded (`50d26ec`)
+- docs: MODEL and LOOKDEV dive targets are their only editable networks (`20fb645`)
+- docs: the Multis subheader shows only once a context has a Multi (`b4fcd35`)
+- docs: New: Template lands the network editor on /stage (`36b14ca`)
+- docs: COP/VOP radial menus follow Radial's key; catalogue the new tests (`ef9c4f0`)
+- docs(browser): LOP drops set no render flag; document drop thumbnails (`f34e722`)
+- docs: regenerate CHANGELOG.md for v1.48.0 (`68d393e`)
+
 ## v1.48.0 — 2026-09-14
 
 ### Features

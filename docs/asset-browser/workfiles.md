@@ -101,11 +101,13 @@ What happens, in order:
    publishes; see
    [Composition → Picking up new versions on open](../composition.md#picking-up-new-versions-on-open).
 
-A row with no workfile has nothing to open: double-clicking it does nothing,
-its menu offers **New: Template** and **New: Current**, and the detail
-panel's play button creates `v0001` (tooltip *Create dept/v0001 from the
-dept template.*). If a version that should exist is missing from disk the
-status bar reads *Workfile not found: entity / dept / vNNNN*.
+A row with no workfile has nothing to open, so double-clicking it creates
+`v0001` from the department template — the same thing as **New from
+Template**, which leads its menu (then **New from Current** and **Open
+Folder**). The detail panel's play button does the same (tooltip *Create
+dept/v0001 from the dept template.*). If a version that should exist is
+missing from disk the status bar reads *Workfile not found: entity / dept /
+vNNNN*.
 
 ## Switching scenes with unsaved changes
 
@@ -180,9 +182,9 @@ On an entity row both describe the most recently saved department. The
 detail panel's department rows show the same pair per row, plus the age and
 author of the department's latest export.
 
-## New: Template
+## New from Template
 
-**New: Template** on a department row creates the department's first
+**New from Template** on a department row creates the department's first
 workfile, or a fresh one after existing versions (`v(N+1)`), from the
 department template:
 
@@ -212,9 +214,9 @@ TumblePipe 1.47.1 the browser created the workfile anyway, under a shot that
 existed nowhere else. Create the shot or asset first; for a Multi use the
 Multi's own rows.
 
-## New: Current
+## New from Current
 
-**New: Current** saves the scene you have open **as the next version of the
+**New from Current** saves the scene you have open **as the next version of the
 department you right-clicked**, regardless of which entity it was loaded
 from. The scene stays open, now pointing at the new file. The previous
 scene's context is recorded as the new version's `from_version`, so the
@@ -223,7 +225,7 @@ sibling shot, or to fork a department across assets. Status: *Saved
 010_sh030_light_v0001.hip*.
 
 It refuses a shot or asset that is not in the project configuration, the same
-way **New: Template** does, with *New from Current for … failed:
+way **New from Template** does, with *New from Current for … failed:
 EntityNotRegistered: …*. It is not offered on a Multi's rows, and it cannot
 turn a shot's workfile into a Multi's.
 
@@ -240,9 +242,9 @@ This path picks the newest file by modification time in the entity's own
 department folder, so for a department covered by a Multi it does not
 redirect to the Multi's hip the way an in-session open does.
 
-## Open Location and View Latest Export
+## Open Folder and View Latest Export
 
-- **Open Location** opens the department folder in Explorer, or the entity's
+- **Open Folder** opens the department folder in Explorer, or the entity's
   folder when the department has no folder yet.
 - **View Latest Export** opens the department's newest export folder
   (default channel). Nothing published yet: *No export found for dept.*

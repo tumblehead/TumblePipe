@@ -70,6 +70,15 @@ log = logging.getLogger(__name__)
 # superseded by a group workfile.
 _GROUP_ACCENT_COLOR = "#e08c4a"
 
+# Hover text on a dept card that has no workfile yet. The card's
+# double-click and its first right-click item both create v0001 from
+# the department template; the tooltip says so because a dimmed card
+# otherwise reads as inert.
+_MISSING_DEPT_TOOLTIP = (
+    "{short} — no workfile yet\n"
+    "Double-click to create the first version from the template"
+)
+
 
 def creation_scope(tags) -> str:
     """What a browser scope creates: ``assets``, ``shots``, ``group``,
@@ -1162,38 +1171,49 @@ class PipelineCatalog(Catalog):
         """Right-click items for a dept deck item in the deck popup.
 
         Mirrors the detail-panel dept context menu so behavior stays
-        consistent across both surfaces. Exposes ``New: Current`` and
-        ``New: Template`` so the user can spawn a fresh version from
-        either the loaded scene or a template regardless of whether
-        the dept already has versions.
+        consistent across both surfaces. Exposes ``New from Template``
+        and ``New from Current`` so the user can spawn a fresh version
+        from a template or the loaded scene regardless of whether the
+        dept already has versions.
+
+        Ordering rule: the item the artist almost always wants comes
+        first. A dept with no workfile yet leads with **New from
+        Template** (it is what nearly every right-click on an empty
+        card is for, and double-clicking the card does the same); a
+        dept with versions leads with **Open Latest**.
         """
         dept = deck_item_key
         asset_id = asset.id
 
-        # Group container deck items: simpler menu — Open / Open
-        # Location / New: Template. "New: Current" is intentionally
-        # omitted for v1 since the active-scene-context resolver
-        # doesn't track group workfiles yet.
+        # Group container deck items: simpler menu — New from Template
+        # / Open Latest / Open Folder. "New from Current" is
+        # intentionally omitted for v1 since the active-scene-context
+        # resolver doesn't track group workfiles yet.
         if asset_id.startswith("group:"):
+            new_tmpl = (
+                "New from Template",
+                lambda aid=asset_id, dn=dept:
+                    self._workfiles.new_group_from_template(
+                        aid, dn, self._request_global_detail_refresh,
+                    ),
+            )
+            open_folder = (
+                "Open Folder",
+                lambda aid=asset_id, dn=dept:
+                    self._workfiles.open_group_dept_work_dir(aid, dn),
+            )
+            group_depts = asset.metadata.get("departments") or {}
+            if not group_depts.get(dept):
+                return [new_tmpl, ("__separator__", None), open_folder]
             return [
                 (
                     "Open Latest",
                     lambda aid=asset_id, dn=dept:
                         self._workfiles.open_group_workfile(aid, dn),
                 ),
-                (
-                    "Open Location",
-                    lambda aid=asset_id, dn=dept:
-                        self._workfiles.open_group_dept_work_dir(aid, dn),
-                ),
+                open_folder,
                 ("__separator__", None),
-                (
-                    "New: Template",
-                    lambda aid=asset_id, dn=dept:
-                        self._workfiles.new_group_from_template(
-                            aid, dn, self._request_global_detail_refresh,
-                        ),
-                ),
+                new_tmpl,
             ]
 
         if self._resolver.uri_for(asset_id) is None:
@@ -1204,6 +1224,26 @@ class PipelineCatalog(Catalog):
         scene_dv = self._scene.get_scene_dept_version(asset_id)
         is_active = bool(scene_dv) and scene_dv[0] == dept
 
+        new_tmpl = (
+            "New from Template",
+            lambda aid=asset_id, dn=dept:
+                self._workfiles.new_from_template(
+                    aid, dn, self._request_global_detail_refresh,
+                ),
+        )
+        new_cur = (
+            "New from Current",
+            lambda aid=asset_id, dn=dept:
+                self._workfiles.new_from_current(
+                    aid, dn, self._request_global_detail_refresh,
+                ),
+        )
+        open_folder = (
+            "Open Folder",
+            lambda aid=asset_id, dn=dept:
+                self._workfiles.open_dept_work_dir(aid, dn),
+        )
+
         items: list = []
         if available:
             items.append((
@@ -1211,11 +1251,7 @@ class PipelineCatalog(Catalog):
                 lambda aid=asset_id, dn=dept, v=latest:
                     self._workfiles.open_version_now(aid, dn, v, None),
             ))
-            items.append((
-                "Open Location",
-                lambda aid=asset_id, dn=dept:
-                    self._workfiles.open_dept_work_dir(aid, dn),
-            ))
+            items.append(open_folder)
             items.append((
                 "View Latest Export",
                 lambda aid=asset_id, dn=dept:
@@ -1232,11 +1268,12 @@ class PipelineCatalog(Catalog):
                     lambda: self._scene.reload_current_scene(None),
                 ))
         else:
-            items.append((
-                "Open Location",
-                lambda aid=asset_id, dn=dept:
-                    self._workfiles.open_dept_work_dir(aid, dn),
-            ))
+            # Empty dept: creating the first version is the whole
+            # point of right-clicking here, so it leads.
+            items.append(new_tmpl)
+            items.append(new_cur)
+            items.append(("__separator__", None))
+            items.append(open_folder)
 
         # "Remove from <group>" — visible only when this dept is
         # currently covered by a group's workfile for this member.
@@ -1254,21 +1291,10 @@ class PipelineCatalog(Catalog):
                     self._containers._remove_member_from_group(aid, gid),
             ))
 
-        items.append(("__separator__", None))
-        items.append((
-            "New: Current",
-            lambda aid=asset_id, dn=dept:
-                self._workfiles.new_from_current(
-                    aid, dn, self._request_global_detail_refresh,
-                ),
-        ))
-        items.append((
-            "New: Template",
-            lambda aid=asset_id, dn=dept:
-                self._workfiles.new_from_template(
-                    aid, dn, self._request_global_detail_refresh,
-                ),
-        ))
+        if available:
+            items.append(("__separator__", None))
+            items.append(new_tmpl)
+            items.append(new_cur)
         return items
 
     def _generate_master_scene(self, asset_id: str) -> None:
@@ -3257,13 +3283,29 @@ class PipelineCatalog(Catalog):
             else:
                 self._workfiles.open_workfile(target_id, dept)
 
+        elif action_id.startswith("new_from_template:"):
+            # Double-click on a dept card that has no workfile yet:
+            # the same thing its right-click "New from Template" does.
+            dept = action_id.split(":", 1)[1]
+            target_id = detail.id if detail else ""
+            if target_id.startswith("group:"):
+                self._workfiles.new_group_from_template(
+                    target_id, dept, self._request_global_detail_refresh,
+                )
+            else:
+                self._workfiles.new_from_template(
+                    target_id, dept, self._request_global_detail_refresh,
+                )
+
     # ── Deck items (departments) ───────────────────────────
 
     def get_deck_items(self, asset: Asset) -> list[DeckItem]:
         # Group container cards: one deck item per dept the group
-        # covers. "missing" status (no action_id) for covered depts
-        # that don't have a workfile yet — right-click → "New:
-        # Template" creates one.
+        # covers. "missing" status for covered depts that don't have a
+        # workfile yet — right-click "New from Template" creates one,
+        # and so does a double-click (``new_from_template:<dept>``;
+        # tumbletrove < 0.34 ignores an action on a missing item, so
+        # there the double-click is simply inert as before).
         if "type:group" in asset.tags:
             # ``departments`` on a group card is dict[str, str]: dept
             # name → latest version (empty string when uncovered).
@@ -3323,6 +3365,9 @@ class PipelineCatalog(Catalog):
                         label=short,
                         status="missing",
                         icon=DEPT_ICONS.get(dept_name, "package"),
+                        action_id=f"new_from_template:{dept_name}",
+                        dismiss_on_click=True,
+                        tooltip=_MISSING_DEPT_TOOLTIP.format(short=short),
                     ))
             return cards
 
@@ -3422,11 +3467,20 @@ class PipelineCatalog(Catalog):
                     **({"note": note} if DECK_NOTES_SUPPORTED else {}),
                 ))
             else:
+                # No workfile yet. Double-click creates v0001 from the
+                # template — the action nearly every click on an empty
+                # card is after. ``dismiss_on_click`` because it loads
+                # a new scene: the list view then waits for a double-
+                # click too (a stray single click must not create a
+                # workfile), and the grid shows the loading overlay.
                 cards.append(DeckItem(
                     key=dept_name,
                     label=short,
                     status="missing",
                     icon=_icon_for(dept_name),
+                    action_id=f"new_from_template:{dept_name}",
+                    dismiss_on_click=True,
+                    tooltip=_MISSING_DEPT_TOOLTIP.format(short=short),
                 ))
 
         return cards

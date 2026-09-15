@@ -153,7 +153,7 @@ class AssetResolver:
         ``uri_for`` guesses the *shot* shape while the project's categories
         are unknown, which is right for painting a sidebar before background
         init finishes and wrong for anything that then resolves a workspace
-        from the URI: a New: Current or Open Latest clicked during a slow
+        from the URI: a New from Current or Open Latest clicked during a slow
         (SMB) client warm-up would reserve, save or look for the workfile
         under ``shots/<cat>/<asset>/``. Paths that read or write on disk must
         use this. It blocks on Client construction, so it belongs on the

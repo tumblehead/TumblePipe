@@ -48,7 +48,7 @@ by `th::import_model` with Department `blendshape`.
 ### Walkthrough: model → lookdev → shot
 
 1. **Model.** In the browser select the asset, right-click its `model` row,
-   **New: Template**. Dive into `MODEL` (the Variants folder has a
+   **New from Template**. Dive into `MODEL` (the Variants folder has a
    **Jump to Output** button per variant that lands you on that variant's
    `OUT_<name>` inside `variant_sopnet/create_variants`). Replace the
    starter box with your geometry and name the pieces — a primitive `name`
@@ -57,7 +57,7 @@ by `th::import_model` with Department `blendshape`.
    **Save**, then **Publish** (or press **Export** on `EXPORT_MODEL`). The
    layer lands under `export/<asset>/default/model/v0001/` and the asset is
    staged.
-2. **Lookdev.** Right-click the `lookdev` row, **New: Template**.
+2. **Lookdev.** Right-click the `lookdev` row, **New from Template**.
    `IMPORT_MODEL` has already been run for you and shows the model version
    it found. Dive into `LOOKDEV` → `lookdev_subnet`: build materials inside
    `material_library` (copy `default_mtl` or add *Karma Material Builder*
@@ -74,7 +74,7 @@ by `th::import_model` with Department `blendshape`.
    asset, **Import**. You get the staged build: lookdev over model, at
    `latest`. Re-publishing the model or lookdev later is picked up as in
    [Picking up new versions on open](../composition.md#picking-up-new-versions-on-open).
-4. **Rig (optional).** Right-click the `rig` row, **New: Template**, build
+4. **Rig (optional).** Right-click the `rig` row, **New from Template**, build
    the APEX rig inside `rigging` from `import_model`, and press **Export**
    on `export_rig`. The animation shot template's `th::animate` then lists
    the rig in its `th::import_rigs` —

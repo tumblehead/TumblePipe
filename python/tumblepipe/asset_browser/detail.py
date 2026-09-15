@@ -1168,6 +1168,11 @@ class DetailSectionBuilder:
     ) -> None:
         """Right-click menu for a dept row in the details panel.
 
+        Same items and ordering as the deck popup's
+        (:meth:`PipelineCatalog.get_deck_item_menu_items`): a row with
+        no workfile leads with **New from Template**, a row with
+        versions leads with **Open**.
+
         ``pos`` is the click position in ``source_widget`` coordinates;
         the menu pops at the cursor (mapped to global). Falls back to
         the widget's bottom-left when ``pos`` is None.
@@ -1178,6 +1183,18 @@ class DetailSectionBuilder:
         menu = QMenu(source_widget)
         menu.setStyleSheet(MENU_STYLE)
 
+        def _add_new_items() -> None:
+            new_tmpl_act = menu.addAction("New from Template")
+            new_tmpl_act.triggered.connect(
+                lambda _checked=False:
+                    self._catalog._workfiles.new_from_template(asset_id, dept, refresh_cb)
+            )
+            new_cur_act = menu.addAction("New from Current")
+            new_cur_act.triggered.connect(
+                lambda _checked=False:
+                    self._catalog._workfiles.new_from_current(asset_id, dept, refresh_cb)
+            )
+
         if available and combo is not None:
             ver = combo.currentData()
             open_act = menu.addAction(f"Open {ver}" if ver else "Open")
@@ -1186,7 +1203,11 @@ class DetailSectionBuilder:
                     self._catalog._workfiles.open_version_now(asset_id, dept, ver, refresh_cb)
             )
 
-        loc_act = menu.addAction("Open Location")
+        if not available:
+            _add_new_items()
+            menu.addSeparator()
+
+        loc_act = menu.addAction("Open Folder")
         loc_act.triggered.connect(
             lambda _checked=False: self._catalog._workfiles.open_dept_work_dir(asset_id, dept)
         )
@@ -1210,17 +1231,9 @@ class DetailSectionBuilder:
                 lambda _checked=False: self._catalog._scene.reload_current_scene(refresh_cb)
             )
 
-        menu.addSeparator()
-        new_cur_act = menu.addAction("New: Current")
-        new_cur_act.triggered.connect(
-            lambda _checked=False:
-                self._catalog._workfiles.new_from_current(asset_id, dept, refresh_cb)
-        )
-        new_tmpl_act = menu.addAction("New: Template")
-        new_tmpl_act.triggered.connect(
-            lambda _checked=False:
-                self._catalog._workfiles.new_from_template(asset_id, dept, refresh_cb)
-        )
+        if available:
+            menu.addSeparator()
+            _add_new_items()
 
         if pos is not None:
             global_pos = source_widget.mapToGlobal(pos)

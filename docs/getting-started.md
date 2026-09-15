@@ -124,13 +124,14 @@ the TumblePipe pipeline radial in a network editor, **Alt+R** the recipes and
 1. **Pick a shot** in the browser: open **Shots** in the sidebar and select
    the shot. Its department rows appear; a department with no workfile yet
    reads *missing*.
-2. **Create the first workfile.** Right-click the department row (say
-   `light`) and choose **New: Template**. Other entries on that menu are
-   **New: Current** (a new version from whatever scene is loaded) and, once a
-   version exists, **Open Latest (v0001)**, **Open Location**, **View Latest
-   Export** and **Open in New Houdini**.
+2. **Create the first workfile.** Double-click the department row (say
+   `light`), or right-click it and choose **New from Template**, the first
+   entry on an empty row's menu. Below it are **New from Current** (a new
+   version from whatever scene is loaded) and **Open Folder**; once a version
+   exists the menu leads with **Open Latest (v0001)** instead and adds
+   **View Latest Export** and **Open in New Houdini**.
 
-   New: Template clears the session, saves an empty hip at the next version
+   New from Template clears the session, saves an empty hip at the next version
    path (`v0001` for an empty department), records the workfile's context,
    runs the department's template against `/stage`, applies the shot's frame
    range and fps from the project config, and saves again. The status bar
@@ -173,7 +174,7 @@ the TumblePipe pipeline radial in a network editor, **Alt+R** the recipes and
    [Export and publish](asset-browser/export-and-publish.md) and
    [Composition](composition.md#layer-save-paths-and-export-portability).
 6. **Open the next department.** Select the row of the department downstream
-   of yours and use **New: Template** (first time) or **Open Latest**. A
+   of yours and use **New from Template** (first time) or **Open Latest**. A
    workfile opened through the browser re-executes its import nodes so the
    layer you just published is composed — the
    **Auto-import latest on workfile open** preference, on by default. An

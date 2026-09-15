@@ -471,7 +471,7 @@ class WorkfileManager:
         """Save the next ``dept/vNNNN`` workfile for ``asset_id`` from
         the department template.
 
-        Mirrors Project Browser's 'New: Template' action: activate the
+        Mirrors Project Browser's 'New from Template' action: activate the
         target project's env, clear the scene, save an empty hip at the
         next versioned path, then run the matching
         ``config:/templates/{context}/{dept}/template.py`` to populate
@@ -658,7 +658,7 @@ class WorkfileManager:
         """Save the *currently loaded* scene as the next ``dept/vNNNN``
         workfile for ``asset_id``.
 
-        Mirrors Project Browser's 'New: Current' action — copies the
+        Mirrors Project Browser's 'New from Current' action — copies the
         in-memory scene state into a fresh workfile slot for the target
         dept, regardless of which entity the scene was originally
         loaded from. The previous scene's context (if any) becomes
@@ -1105,7 +1105,7 @@ class WorkfileManager:
                     )
                 except Exception:
                     log.exception(
-                        "New: Template (group): reserving next version "
+                        "New from Template (group): reserving next version "
                         "failed for %s/%s", asset_id, dept,
                     )
                     return
@@ -1123,7 +1123,7 @@ class WorkfileManager:
                     template_path = client.storage.resolve(template_uri)
                 except Exception:
                     log.exception(
-                        "New: Template (group): failed to resolve "
+                        "New from Template (group): failed to resolve "
                         "template URI for %s/%s", ctx, dept,
                     )
                     template_path = None
@@ -1166,7 +1166,7 @@ class WorkfileManager:
                             hou.hipFile.save(str(next_path))
                     except Exception:
                         log.exception(
-                            "New: Template (group): template apply "
+                            "New from Template (group): template apply "
                             "failed for %s/%s", ctx, dept,
                         )
 
@@ -1181,13 +1181,13 @@ class WorkfileManager:
                     hou.hipFile.save(str(next_path))
                 except Exception:
                     log.exception(
-                        "New: Template (group): applying scene timeline "
+                        "New from Template (group): applying scene timeline "
                         "failed for %s/%s", asset_id, dept,
                     )
 
                 log.info("Created group workfile: %s", next_path)
                 # The detail-panel-driven refresh path only fires for
-                # the currently-displayed card. After New: Template
+                # the currently-displayed card. After New from Template
                 # from a deck item right-click we need the Multi card
                 # itself to swap out its "missing" deck item for the
                 # new "v0001"-bearing one — regardless of whether the
