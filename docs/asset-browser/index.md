@@ -249,7 +249,7 @@ them is the open `.hip`'s filename.
 |---|---|---|
 | **Save** | Save current scene | Saves the open scene as the **next version** of its own department. Asks for a note first. See [Workfiles → Saving](workfiles.md#saving-a-new-version). |
 | **Publish** | Publish exports | Opens the **Publish** process dialog for the open scene's entity, with every export task listed and a local/farm choice. |
-| **Render** | Submit render jobs for the current scene's entity | Opens the **Submit Jobs** dialog for the scene's shot or asset, with the render department seeded from the open workfile's department. |
+| **Render** | Submit render jobs for the current scene's entity | Opens the **Submit Jobs** dialog for the scene's shot or asset (for a Multi workfile, its member shots), with the render department seeded from the open workfile's department. |
 | **Update** | Re-import latest published versions into the current scene (no scene reload) | Re-executes every `th::import_*` node. Status: *Imports updated to latest published versions (N node(s)).* If any node failed a warning dialog says how many. See [Composition → Picking up new versions mid-session](../composition.md#picking-up-new-versions-mid-session). |
 | **Reload** | Reload current scene | Reloads the open `.hip` from disk (after the unsaved-changes prompt), then re-applies the timeline and the import refresh. |
 

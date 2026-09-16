@@ -250,7 +250,9 @@ class PipelineCatalog(Catalog):
         # Recipes: node clusters saved under <project>/recipes/, the
         # third entity type beside assets and shots. Scan cache, cards,
         # save / load / edit / delete — see recipes.py.
-        self._recipes = RecipeManager(self)
+        self._recipes = RecipeManager(
+            self, on_counts_changed=self._request_sidebar_refresh,
+        )
         # Errors accumulated during the most recent discovery pass.
         # Drained by ``drain_discovery_errors`` so the QueryEngine can
         # attach them to the AssetPage. A new browse begins by clearing
@@ -1762,6 +1764,25 @@ class PipelineCatalog(Catalog):
                     )
         except Exception:
             log.debug("Global grid refresh failed", exc_info=True)
+
+    def _request_sidebar_refresh(self) -> None:
+        """Rebuild the sidebar of every open asset browser.
+
+        Any thread: the rebuild is marshalled onto the GUI thread. Used
+        when a worker-side recipe rescan changes the per-context counts
+        the sidebar was last built from.
+        """
+        def _repopulate() -> None:
+            try:
+                from PySide6.QtWidgets import QApplication
+                from tumbletrove.asset_browser.ui.browser import AssetBrowserWidget
+                for w in QApplication.allWidgets():
+                    if isinstance(w, AssetBrowserWidget):
+                        w._populate_collections()
+            except Exception:
+                log.debug("Sidebar refresh failed", exc_info=True)
+
+        run_on_main_thread(_repopulate)
 
     def _request_card_refresh_for_id(self, asset_id: str) -> None:
         """Rebuild ``asset_id``'s card and swap it in any open grid.

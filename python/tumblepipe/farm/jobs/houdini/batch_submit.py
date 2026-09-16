@@ -255,6 +255,16 @@ def submit_entity_batch(config: dict) -> list[str]:
     if not do_publish and not do_render and not do_playblast:
         return []
 
+    # A Multi owns no staged stage, frame range or channels — its members
+    # do. Without this, it got as far as the staged-file lookup and failed
+    # with "Publish the shot first", which no publish could ever satisfy.
+    if entity_uri.purpose == 'groups':
+        raise BatchSubmitError(
+            f"{entity_uri} is a Multi, not a shot or asset. Submit its "
+            "member entities instead (the Submit Jobs dialog does this "
+            "when opened from a Multi)."
+        )
+
     if do_render and (first_frame is None or last_frame is None):
         raise BatchSubmitError(
             f"No frame range for {entity_uri}: submit 'first_frame' and "

@@ -580,3 +580,48 @@ def _department_warning(
     if name in set(departments):
         return []
     return [f"department '{name}' is not assigned to this entity"]
+
+
+# ── Submission targets ────────────────────────────────────
+
+GROUP_PURPOSE = 'groups'
+
+
+def is_group_target(uri: Any) -> bool:
+    """Whether ``uri`` names a Multi (``groups:/<context>/<name>``).
+
+    Duck-typed on ``purpose`` so the tests can pass plain stand-ins.
+    """
+    return getattr(uri, 'purpose', None) == GROUP_PURPOSE
+
+
+def expand_targets(uris: Sequence, members_of) -> list:
+    """Replace every Multi in ``uris`` with its member entities.
+
+    A Multi is not a farm target: it has no staged stage, no frame range
+    and no channels of its own — its member shots do. Opening the dialog
+    from a Multi workfile used to submit the ``groups:`` URI itself, which
+    showed one unticked-looking "Multishots" leaf instead of the shots and
+    then failed on the farm side with "No staged file found". Expanding
+    here is the dialog's version of what export/publish already do for a
+    Multi: the work fans out to the members.
+
+    ``members_of(uri)`` returns the Multi's member URIs (``[]`` when it has
+    none or can't be read). Order is preserved — a Multi's members in its
+    own order, at the Multi's position — and a URI reached twice (named
+    directly and via a Multi, or via two Multis) appears once, first
+    occurrence wins.
+    """
+    seen: set[str] = set()
+    expanded: list = []
+    for uri in uris:
+        candidates = members_of(uri) if is_group_target(uri) else [uri]
+        for candidate in candidates:
+            if is_group_target(candidate):
+                continue  # a Multi does not nest; never submit one
+            key = str(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            expanded.append(candidate)
+    return expanded

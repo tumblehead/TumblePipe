@@ -125,7 +125,7 @@ Two per-entity files live beside the entity's folders, not in `export/`:
 |---|---|
 | `<project>/assets/<category>/<asset>/thumbnail.png` (or `shots/<sequence>/<shot>/`) | **Select thumbnail…** (any image, converted to PNG) and **Capture thumbnail** (the active scene viewer) on a card's right-click menu |
 | `<project>/assets/<category>/<asset>/description.txt` (same for shots) | **Edit description…** on a card's right-click menu |
-| `<project>/recipes/<context>/<slug>/` (`entry.json`, `recipe.cpio`, `thumbnail.png`) | **New Recipe...**, or dragging selected nodes onto the grid; see [Recipes](recipes.md) |
+| `<project>/recipes/<context>/<slug>/` (`entry.json`, `recipe.cpio`, `thumbnail.png`) | **New Recipe...**, or dragging nodes onto the grid; see [Recipes](recipes.md) |
 
 Workfile version notes and `context.json` sidecars belong to
 [Workfiles](workfiles.md); the `_config/db/*.json` databases to

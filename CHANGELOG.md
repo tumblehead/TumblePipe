@@ -12,6 +12,32 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.51.0 — 2026-09-16
+
+### Features
+- feat(config): refresh department templates again at migration v9 (`5edacb3`)
+- feat(templates): enumerate points after promote_name in the rig template (`af0a552`)
+- feat(templates): promote the model's name attribute to points in the rig template (`deea801`)
+- feat(browser): recipes are a project entity type beside assets and shots (`86ffc25`)
+
+### Fixes
+- fix(templates): animation scene invoke outputs unpacked geometry (`df071b3`)
+- fix(browser): New from Current moves the scene's nodes to the new context (`68250f1`)
+- fix(farm): publish forces standalone import_asset and import_rig to latest too (`f67b9b7`)
+- fix(browser): refresh import nodes on every scene load, not only Browser opens (`5659efd`)
+- fix(import nodes): un-bypass import_assets, import_rigs and import_shot on success (`7b91b87`)
+- fix(import_layer): load the pinned version even when latest mode was left on (`1a96c89`)
+- fix(process-dialog): paint the Execute button and end a clean run on a green Done (`ef0bbc6`)
+- fix(otls): clear project-specific paths baked into HDA sources (`2934f6f`)
+
+### Documentation
+- docs: th::animate scene invoke settings and the empty Tab-menu dive (`83c215b`)
+- docs: New from Current moves pinned nodes to the new context (`5fd0b4a`)
+- docs: radial-menus points at project recipes, not the old network catalog (`38d10db`)
+- docs: process dialog footer states (green Done, Close plus retry) (`1d8a068`)
+- docs: HDAs remember the project they were saved in; hdapaths stage (`a899f2a`)
+- docs: regenerate CHANGELOG.md for v1.50.0 (`2f85b41`)
+
 ## v1.50.0 — 2026-09-15
 
 ### Features

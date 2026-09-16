@@ -13,16 +13,33 @@ or many shots or assets to Deadline. Source:
 
 | From | Menu / button | What is pre-checked |
 |---|---|---|
-| The toolbar, with a workfile loaded | **Render** quick action | The loaded scene's entity. Its workfile department seeds the Render and Playblast departments. Only shots and assets qualify. |
+| The toolbar, with a workfile loaded | **Render** quick action | The loaded scene's entity — or, in a [Multi](multis-and-roots.md#multis) workfile, every member of the Multi. Its workfile department seeds the Render and Playblast departments. Only shots, assets and Multis of them qualify. |
 | A card's right-click menu | **Submit Jobs…** | That entity. |
 | A multi-selection's right-click menu | **Submit Jobs for N selected…** | Every selected card in the same context (all shots, or all assets) as the one you right-clicked. |
 
 The dialog is scoped to one context — shots or assets — because the
 department lists differ between them.
 
+A Multi is never a farm target itself: it has no staged stage, frame range
+or channels of its own. Opened from a Multi, the dialog checks the Multi's
+members instead, so each member shot is submitted with its own settings —
+the same fan-out export and publish do. Before this was fixed the dialog
+submitted the Multi's `groups:` URI as if it were a shot, showed no member
+shots to pick from, and failed on the farm side with `No staged file found
+for groups:/… Publish the shot first`, which no publish could satisfy.
+`submit_entity_batch` now refuses a Multi outright with `<uri> is a Multi,
+not a shot or asset`.
+
+## Layout
+
+The header reads `Submit jobs for N entities (shots): <names…>`. Below it
+the dialog has two columns: the [form](#the-form) — what to submit — on the
+left, and the entity tree — who to submit it for — on the right, taking the
+dialog's full height.
+
 ## The entity tree
 
-The header reads `Submit jobs for N entities (shots): <names…>`. Below it:
+The right column holds:
 
 - a **Filter shots…** / **Filter assets…** box with **All** and **None**
   buttons that check or uncheck every *visible* entity;
@@ -38,9 +55,9 @@ active does not quietly submit what you cannot see.
 
 ## The form
 
-Three checkable sections — **Publish** (off by default), **Render** (on) and
-**Playblast** (shots only, off) — then **Pre-flight** and the **Submit** /
-**Cancel** buttons.
+The left column holds three checkable sections — **Publish** (off by
+default), **Render** (on) and **Playblast** (shots only, off) — then
+**Pre-flight**. **Submit** / **Cancel** sit below both columns.
 
 ### Fields follow each entity unless you pin them
 

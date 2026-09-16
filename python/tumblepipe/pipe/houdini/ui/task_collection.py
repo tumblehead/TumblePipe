@@ -100,17 +100,49 @@ def collect_publish_tasks(context: Context) -> list[ProcessTask]:
     )
     all_departments = [department_name] + downstream_departments
 
-    if entity_type == 'group':
+    if _is_rig_context(context, entity_type):
+        owned = _owned_entity_uris(context, entity_type)
+        tasks = _collect_rig_publish_tasks(owned) if owned else []
+    elif entity_type == 'group':
         tasks = _collect_group_publish_tasks(context, all_departments)
     elif entity_type == 'shot':
         tasks = _collect_shot_publish_tasks(context, all_departments)
     elif entity_type == 'asset':
-        if department_name == 'rig':
-            tasks = _collect_rig_publish_tasks(context)
-        else:
-            tasks = _collect_asset_publish_tasks(context, all_departments)
+        tasks = _collect_asset_publish_tasks(context, all_departments)
 
     return tasks
+
+
+def _is_rig_context(context: Context, entity_type: str | None) -> bool:
+    """Does this workfile publish export_rig SOPs rather than export_layer LOPs?
+
+    The rig department of an asset *or of an asset Multi*. The Multi half
+    was missing: a character team merged their rigs into one Multi rig
+    workfile and every export_rig in it went uncollected, because the
+    group collector only looks for export_layer — so Publish and each
+    node's own Export button both said "no export tasks".
+    """
+    if context.department_name != 'rig':
+        return False
+    if entity_type == 'asset':
+        return True
+    if entity_type == 'group':
+        segments = context.entity_uri.segments
+        return len(segments) > 0 and segments[0] == 'assets'
+    return False
+
+
+def _owned_entity_uris(context: Context, entity_type: str | None) -> set[Uri] | None:
+    """The entities this workfile publishes: itself, or its Multi's members.
+
+    None when the workfile is a Multi that is no longer configured.
+    """
+    if entity_type != 'group':
+        return {context.entity_uri}
+    group = get_group(context.entity_uri)
+    if group is None:
+        return None
+    return set(group.members)
 
 
 def _format_node_group(grouped: dict[str, list[str]], limit: int = 6) -> list[str]:
@@ -191,7 +223,7 @@ def describe_missing_tasks(context: Context) -> str:
 
     # Mirror the collector that actually ran: only a rig context collects
     # export_rig SOPs, every other context collects export_layer LOPs.
-    if entity_type == 'asset' and context.department_name == 'rig':
+    if _is_rig_context(context, entity_type):
         nodes = [
             export_rig.ExportRig(native)
             for native in ns.list_by_node_type('export_rig', 'Sop')
@@ -270,10 +302,19 @@ def describe_missing_tasks(context: Context) -> str:
     if bypassed:
         lines.append('Bypassed: ' + ', '.join(sorted(bypassed)))
     if unresolved:
+        if member_uris is not None:
+            reason = (
+                "a Multi has no single entity for 'from_context' to pick — "
+                "set each node's Entity to the member it exports, or the "
+                "Entity names something that is gone"
+            )
+        else:
+            reason = (
+                "an Entity parm naming something that is gone, or "
+                "'from_context' in a workfile with no entity"
+            )
         lines.append(
-            "No entity resolved (an Entity parm naming something that is "
-            "gone, or 'from_context' in a workfile with no entity): "
-            + ', '.join(sorted(unresolved))
+            f"No entity resolved ({reason}): " + ', '.join(sorted(unresolved))
         )
     return '\n'.join(lines)
 
@@ -704,13 +745,17 @@ def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> li
     return tasks
 
 
-def _collect_rig_publish_tasks(context: Context) -> list[ProcessTask]:
-    """Collect publish tasks for a rig"""
+def _collect_rig_publish_tasks(owned_uris: set[Uri]) -> list[ProcessTask]:
+    """Collect publish tasks for the export_rig nodes addressing ``owned_uris``.
+
+    One asset for an asset rig workfile, every member for an asset Multi.
+    """
     tasks = []
 
     def _is_rig_export_correct(node):
-        asset_uri = node.get_entity_uri()
-        return asset_uri == context.entity_uri
+        if node.native().isBypassed():
+            return False
+        return node.get_entity_uri() in owned_uris
 
     rig_export_nodes = list(
         filter(

@@ -13,7 +13,8 @@ seeded with the entities it was opened for. Any number of entities can be
 checked, so a single-entity open (the Render quick action on the loaded
 scene) can still fan out to a whole batch without going back to the browser
 to multi-select first. Groups appear as a second root whose leaves mirror
-the same entities.
+the same entities. Opened from a Multi (a ``groups:`` URI), the dialog checks
+the Multi's members instead — a Multi has no staged stage of its own.
 
 The form is **not** a shared override. Each field is tri-state: left alone
 it is *unpinned* and every entity follows its own configured value; touching
@@ -298,6 +299,17 @@ def _list_groups(context: str) -> list[tuple[str, list[object]]]:
         return []
 
 
+def _group_members(group_uri) -> list[object]:
+    """Member URIs of the Multi at ``group_uri``; empty list on failure."""
+    try:
+        from tumblepipe.config.groups import get_group
+        group = get_group(group_uri)
+        return list(group.members) if group is not None else []
+    except Exception:
+        log.exception("Failed to read the members of %s", group_uri)
+        return []
+
+
 # ── Widgets ───────────────────────────────────────────────
 
 class _CheckableComboBox(QComboBox):
@@ -554,6 +566,16 @@ class SubmitJobsDialog(QDialog):
             raise ValueError("entity_uris must be non-empty")
         if context not in ("shots", "assets"):
             raise ValueError(f"context must be 'shots' or 'assets', got {context!r}")
+        # A Multi is never submitted itself: its member entities are, all
+        # checked to start with, the way export/publish fan a Multi out.
+        if any(resolve.is_group_target(uri) for uri in entity_uris):
+            entity_uris = resolve.expand_targets(entity_uris, _group_members)
+            if not entity_uris:
+                raise ValueError(
+                    "This Multi has no member entities to submit. Add "
+                    "members to it in the browser first."
+                )
+            entity_names = [uri.segments[-1] for uri in entity_uris]
         self._entity_uris = list(entity_uris)
         self._entity_names = list(entity_names)
         self._context = context
@@ -580,7 +602,7 @@ class SubmitJobsDialog(QDialog):
         self._fallbacks: dict = {}
 
         self.setWindowTitle("Submit Jobs")
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(900)
         self.setStyleSheet(_DIALOG_STYLE)
 
         root = QVBoxLayout(self)
@@ -596,20 +618,31 @@ class SubmitJobsDialog(QDialog):
         # Entity tree — check any number of entities in this context. The
         # entities the dialog was opened for start checked; everything else
         # in the project is one click away, so a single-entity open (the
-        # Render quick action) can still fan out to a whole batch.
-        root.addWidget(self._build_entity_tree())
+        # Render quick action) can still fan out to a whole batch. Built
+        # first, as it always was; it is only *placed* in the right column.
+        tree = self._build_entity_tree()
+
+        # Two columns: [ what to submit | who to submit it for ]. The forms
+        # read top to bottom on the left; the entity tree gets the full
+        # height on the right, where a long shot list has room to breathe.
+        body = QHBoxLayout()
+        body.setSpacing(12)
+        root.addLayout(body, 1)
+        forms = QVBoxLayout()
+        forms.setSpacing(10)
+        body.addLayout(forms, 3)
 
         self._publish_box = self._build_publish_section()
         self._publish_box.toggled.connect(
             lambda *_a: self._refresh_preflight()
         )
-        root.addWidget(self._publish_box)
+        forms.addWidget(self._publish_box)
 
         self._render_box = self._build_render_section()
         self._render_box.toggled.connect(
             lambda *_a: self._refresh_preflight()
         )
-        root.addWidget(self._render_box)
+        forms.addWidget(self._render_box)
 
         # Playblast is a shots-only GL preview; the section is absent entirely
         # for the assets context.
@@ -619,12 +652,15 @@ class SubmitJobsDialog(QDialog):
             self._playblast_box.toggled.connect(
                 lambda *_a: self._refresh_preflight()
             )
-            root.addWidget(self._playblast_box)
+            forms.addWidget(self._playblast_box)
 
         # Pre-flight sits below the job sections: it reports on them, so it
-        # reads top-to-bottom as "who, what, then what that actually means".
+        # reads top-to-bottom as "what, then what that actually means".
         self._preflight_box = self._build_preflight()
-        root.addWidget(self._preflight_box)
+        forms.addWidget(self._preflight_box)
+        forms.addStretch(1)
+
+        body.addWidget(tree, 2)
 
         self._apply_open_department()
         self._reseed_form(initial=True)
@@ -789,6 +825,10 @@ class SubmitJobsDialog(QDialog):
         none_btn = QPushButton("None")
         none_btn.setToolTip("Uncheck every visible entity")
         none_btn.clicked.connect(lambda: self._set_all_checked(False))
+        # Compact: in the narrow right column the default padding leaves
+        # the filter field too little room to type in.
+        for btn in (all_btn, none_btn):
+            btn.setStyleSheet("padding: 3px 8px;")
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
         top_row.addWidget(self._filter, 1)
@@ -800,9 +840,11 @@ class SubmitJobsDialog(QDialog):
 
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
+        # No height cap: the tree owns the dialog's right column, so it
+        # takes whatever height the forms on the left give the dialog.
         self._tree.setMinimumHeight(160)
-        self._tree.setMaximumHeight(260)
-        column.addWidget(self._tree)
+        self._tree.setMinimumWidth(240)
+        column.addWidget(self._tree, 1)
 
         opened = {str(uri): uri for uri in self._entity_uris}
         listed = _list_selectable_entities(self._context)

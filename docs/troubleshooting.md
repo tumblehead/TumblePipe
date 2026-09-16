@@ -120,6 +120,11 @@ Two related traps:
   [Multis and Roots](asset-browser/multis-and-roots.md#coverage-which-departments-the-multi-owns).
 - **A Multi workfile that only exports its own department.** Up to 1.47.1 a
   Multi workfile never listed downstream departments; later releases do.
+- **Rigs in an asset Multi.** Up to 1.51.0 an asset Multi's `rig` workfile
+  never collected its `th::export_rig` nodes, even with the Entity set, and
+  the details said *no th::export_layer nodes*. Later releases collect them;
+  set each node's **Entity** to its character, since `from_context` cannot
+  pick one member of a Multi.
 
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 

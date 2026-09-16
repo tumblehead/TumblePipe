@@ -541,16 +541,29 @@ class RecipeManager:
     id, and the browser-refresh helpers.
     """
 
-    def __init__(self, catalog: "PipelineCatalog") -> None:
+    def __init__(
+        self,
+        catalog: "PipelineCatalog",
+        on_counts_changed: Callable[[], None] | None = None,
+    ) -> None:
         self._catalog = catalog
         # project name → entries. None until the first scan, so the
         # sidebar can tell "not scanned yet" from "no recipes".
         self._cache: dict[str, list[RecipeEntry]] | None = None
+        # Set by a Refresh. The entries stay readable until the grid
+        # query rescans: Refresh rebuilds the sidebar on the GUI thread
+        # *before* that query runs, and dropping the entries here left
+        # the Recipes section with no rows and no count after every
+        # Refresh (the auto-refresh timer included).
+        self._stale = False
+        # Called after a rescan changes the per-context counts, so the
+        # sidebar — already rebuilt from the previous scan — catches up.
+        self._on_counts_changed = on_counts_changed
 
     # ── Cache ────────────────────────────────────────────
 
     def invalidate(self) -> None:
-        self._cache = None
+        self._stale = True
 
     def scan_all(self) -> list[RecipeEntry]:
         """Walk every registered project's ``recipes/`` and cache the result.
@@ -558,6 +571,7 @@ class RecipeManager:
         Worker thread (``warm_up_worker_thread``, ``get_assets``), or the
         GUI thread right after a local write — a small, local scan.
         """
+        before = self._all_counts() if self._cache is not None else None
         cache: dict[str, list[RecipeEntry]] = {}
         for proj in self._catalog._registry.all():
             try:
@@ -566,7 +580,20 @@ class RecipeManager:
                 log.exception("recipe scan failed for %s", proj.name)
                 cache[proj.name] = []
         self._cache = cache
+        self._stale = False
+        if (
+            before is not None
+            and self._on_counts_changed is not None
+            and self._all_counts() != before
+        ):
+            try:
+                self._on_counts_changed()
+            except Exception:
+                log.debug("recipe count notification failed", exc_info=True)
         return self.cached_entries()
+
+    def _all_counts(self) -> dict[str, dict[str, int]]:
+        return {p: self.context_counts(p) for p in (self._cache or {})}
 
     def cached_entries(self) -> list[RecipeEntry]:
         """Entries from the last scan; empty before any scan."""
@@ -575,8 +602,10 @@ class RecipeManager:
         return [e for entries in self._cache.values() for e in entries]
 
     def entries(self) -> list[RecipeEntry]:
-        """Entries, scanning first if nothing is cached (worker thread)."""
-        if self._cache is None:
+        """Entries, rescanning first if nothing is cached or a Refresh
+        marked the cache stale. The sidebar reads :meth:`context_counts`
+        instead, which never scans."""
+        if self._cache is None or self._stale:
             return self.scan_all()
         return self.cached_entries()
 
@@ -871,7 +900,12 @@ class RecipeManager:
         description = str(fields.get("description", "")).strip()
         tags = _split_tags(str(fields.get("tags", "")))
 
-        parent = selected[0].parent()
+        # hou.selectedNodes() spans every network, and a selection left
+        # behind in another one (/obj while working in /stage) made
+        # saveItemsToFile refuse the lot: "Failed to save selected
+        # nodes." Keep the network of the most recently selected node.
+        parent = selected[-1].parent()
+        selected = [n for n in selected if n.parent() == parent]
         cat = parent.childTypeCategory()
         context = _short_context(cat.name()) if cat else "sop"
 

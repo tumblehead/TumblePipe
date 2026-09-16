@@ -15,7 +15,7 @@ tells you when there is none.
 |---|---|---|
 | **Save** | Save current scene | Saves the scene as the **next workfile version** of its own context (never in place). With *Ask for a version note on save* on (the default), a **Save Version** dialog asks "Note for the next `<dept>` version of `<entity>` (after `vNNNN`) — optional:". Cancel there aborts the save without burning a version. Status line: `Saved <file>`. |
 | **Publish** | Publish exports | Opens the process dialog (title **Process: Publish**) with every export and build task for the scene's entity, current department **and all departments downstream of it**. See below. |
-| **Render** | Submit render jobs for the current scene's entity | Opens the [Submit Jobs dialog](submit-jobs.md) for the loaded scene's entity, with the Render department seeded from the workfile's department. Only shots and assets can be submitted. |
+| **Render** | Submit render jobs for the current scene's entity | Opens the [Submit Jobs dialog](submit-jobs.md) for the loaded scene's entity — or a Multi workfile's members — with the Render department seeded from the workfile's department. Only shots, assets and Multis of them can be submitted. |
 | **Update** | Re-import latest published versions into the current scene (no scene reload) | Re-executes every import node in place (`import_shot`, `import_assets`, `import_asset`, `import_layer`, `import_rigs`, `import_rig`, `import_model`), so `current` and `latest` pick up the newest publish. Status line: `Imports updated to latest published versions (N node(s)).` If any node fails you get a warning dialog instead — the scene may still reference older versions. |
 | **Reload** | Reload current scene | Reloads the hip from disk. Unsaved changes get the **Save Scene** prompt ("Save a new version before switching?" with **Save new version** / **Discard changes** / **Cancel**) — or a silent version-up when *Autosave (version up) on scene change* is on. After the load the timeline is re-applied and, if *Auto-import latest on workfile open* is on, imports are refreshed. |
 
@@ -84,7 +84,8 @@ recorded in its `context.json` — not by the node:
 |---|---|
 | a shot or an asset | its **Entity** is that same shot or asset, and its **Department** is the workfile's department or one downstream of it. |
 | a Multi | its **Entity** is a member of the Multi, with the same department rule. |
-| an asset's `rig` department | it is a `th::export_rig` for that asset. |
+| an asset's `rig` department | it is an un-bypassed `th::export_rig` for that asset. |
+| an asset Multi's `rig` department | it is an un-bypassed `th::export_rig` whose **Entity** is a member of the Multi — one *Export rig* task per node. `from_context` cannot pick a member, so set each node's Entity. Up to TumblePipe 1.51.0 a Multi collected no rig exports at all. |
 
 When nothing is collected, the warning's details say which rule each node
 failed ([`describe_missing_tasks`](../../python/tumblepipe/pipe/houdini/ui/task_collection.py)):
@@ -97,8 +98,8 @@ failed ([`describe_missing_tasks`](../../python/tumblepipe/pipe/houdini/ui/task_
 | *An export node only runs for a member of this Multi. These address a non-member …* | Add the entity to the Multi, or move the node. |
 | *Departments published from here: … These nodes export into another one:* | The node's department is upstream of the workfile's, or not in the pool. |
 | *Bypassed:* … | Un-bypass the node. |
-| *No entity resolved …* | The node's **Entity** names something that no longer exists, or is `from_context` in a workfile with no entity. |
-| *It contains no `th::export_layer` nodes.* | Nothing to export. |
+| *No entity resolved …* | The node's **Entity** names something that no longer exists, or is `from_context` in a workfile with no entity. In a Multi the detail says to set each node's Entity to the member it exports. |
+| *It contains no `th::export_layer` nodes.* (`th::export_rig` in a rig workfile) | Nothing to export. |
 
 A scene saved as a *shot* cannot become a Multi's workfile by adding
 departments to the Multi: the file still belongs to the shot. See

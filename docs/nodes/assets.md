@@ -373,7 +373,7 @@ Source: [`otls/sop_th.export_rig.1.0`](../../otls/sop_th.export_rig.1.0/th_8_8So
 
 | Label | Default | What it does |
 |---|---|---|
-| Entity | `from_context` | Plain menu of `from_context` plus every asset. `from_context` outside an asset workfile resolves to nothing and the export refuses rather than guessing |
+| Entity | `from_context` | Plain menu of `from_context` plus every asset. `from_context` outside an asset workfile resolves to nothing and the export refuses rather than guessing. In an asset Multi's rig workfile, set it to the member this rig belongs to |
 | Channel | `default` | Channel to publish under |
 
 **Export** opens the *Export Rig* task dialog (the same dialog as Publish).
