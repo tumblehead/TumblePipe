@@ -173,13 +173,12 @@ class PipelineSettingsWidget(QWidget):
             "Auto-import latest on workfile open"
         )
         self._auto_refresh_checkbox.setToolTip(
-            "After opening a workfile from the asset browser, re-execute "
-            "every import node in the scene (import_asset, import_assets, "
-            "import_shot, import_layer, import_rigs) so their 'latest' "
-            "references pull in the newest published versions. Runs in "
-            "manual update mode and does not re-cook create_model / "
-            "build_comp, so it re-resolves references without cooking the "
-            "whole workgraph."
+            "Whenever a scene is opened in this Houdini, from the asset "
+            "browser, File > Open or anywhere else, re-execute every "
+            "import node in it so 'current' and 'latest' pull in the "
+            "newest published versions. Runs in manual update mode and "
+            "does not re-cook create_model / build_comp, so it re-resolves "
+            "references without cooking the whole workgraph."
         )
         self._auto_refresh_checkbox.setChecked(
             self._catalog._prefs.auto_refresh_on_open

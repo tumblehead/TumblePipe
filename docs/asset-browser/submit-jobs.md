@@ -156,6 +156,13 @@ is already newer than its workfile. Each surviving department gets a
 workfile and its `context.json`; a Discord **notify** follows. Render and
 playblast jobs depend on the last publish job when both are enabled.
 
+Before it exports, a publish job points every import node in the workfile at
+its newest publish and re-runs it, overriding any version the artist pinned
+while working: a published department always composes against the newest
+upstream. The node types are the ones the scene-load refresh uses
+(`scene_imports.REFRESH_SPECS`). Before this was fixed, a standalone
+`import_asset` or `import_rig` kept the version the workfile was saved with.
+
 **Render** — the render department must be renderable (`Render department
 '<x>' is not renderable. Renderable departments: …` otherwise). The
 [department cut](../composition.md#the-department-cut) — every pool

@@ -47,6 +47,8 @@ pub enum Step {
     FixConventionImports,
     /// v8 — repoint `temp:/` from the project drive to machine-local scratch.
     TempToLocalScratch,
+    /// v9 — refresh `_config/templates` again, for the scaffold changes since v2.
+    RefreshTemplatesAgain,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -90,7 +92,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 8] = [
+pub const STEPS: [Step; 9] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -99,6 +101,7 @@ pub const STEPS: [Step; 8] = [
     Step::DropKitsFromStorageConvention,
     Step::FixConventionImports,
     Step::TempToLocalScratch,
+    Step::RefreshTemplatesAgain,
 ];
 
 impl Step {
@@ -113,6 +116,7 @@ impl Step {
             Step::DropKitsFromStorageConvention => 6,
             Step::FixConventionImports => 7,
             Step::TempToLocalScratch => 8,
+            Step::RefreshTemplatesAgain => 9,
         }
     }
 
@@ -136,6 +140,9 @@ impl Step {
             }
             Step::TempToLocalScratch => {
                 "repoint temp:/ from the project drive to machine-local scratch"
+            }
+            Step::RefreshTemplatesAgain => {
+                "refresh _config/templates from the packaged scaffold again"
             }
         }
     }
@@ -232,7 +239,7 @@ impl Step {
                     )),
                 }
             }
-            Step::RefreshTemplates => {
+            Step::RefreshTemplates | Step::RefreshTemplatesAgain => {
                 let source = scaffold_templates_dir(template_dir);
                 if source.is_dir() {
                     Readiness::Ready
@@ -385,10 +392,19 @@ mod newlines {
 /// Never clobbers an existing `.bak`: a prior run already preserved the true
 /// original, and by then the live file may be the replacement.
 fn write_preserving(path: &Path, text: &str) -> Result<(), String> {
+    write_preserving_as(path, text, "bak")
+}
+
+/// [`write_preserving`] with the backup at `<name>.<suffix>`.
+///
+/// A step that rewrites files an earlier step already backed up needs its own
+/// suffix: the existing `.bak` is the earlier original and is kept, so writing
+/// through the plain form would leave nothing of what this step replaced.
+fn write_preserving_as(path: &Path, text: &str, suffix: &str) -> Result<(), String> {
     let style = newlines::style_of_file(path);
     if let Ok(existing) = std::fs::read_to_string(path) {
         let backup = path.with_file_name(format!(
-            "{}.bak",
+            "{}.{suffix}",
             path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
         ));
         if !backup.exists() {
@@ -539,36 +555,13 @@ impl Step {
                     )),
                 }
             }
-            Step::RefreshTemplates => {
-                let source = scaffold_templates_dir(template_dir);
-                if !source.is_dir() {
-                    return Err(format!(
-                        "packaged templates not found at {}",
-                        source.display()
-                    ));
-                }
-                let target = cfg.join("templates");
-                let mut found = Vec::new();
-                find_files(&source, Some("template.py"), &mut found);
-                for src in found {
-                    let relative = src.strip_prefix(&source).map_err(|e| e.to_string())?;
-                    let dst = target.join(relative);
-                    let new_text = std::fs::read_to_string(&src)
-                        .map_err(|e| format!("could not read {}: {e}", src.display()))?;
-                    match std::fs::read_to_string(&dst) {
-                        // Identical bar line endings — leave it, and leave its
-                        // mtime alone. Comparing raw bytes would rewrite and
-                        // back up every CRLF template on every run.
-                        Ok(old)
-                            if newlines::normalize(&old) == newlines::normalize(&new_text) =>
-                        {
-                            continue
-                        }
-                        _ => write_preserving(&dst, &new_text)?,
-                    }
-                }
-                Ok(())
-            }
+            Step::RefreshTemplates => refresh_templates(&cfg, template_dir, "bak"),
+            // v2 was the only template refresh, so a project past it never saw
+            // a scaffold template change again: HideAndReek sat on the packed
+            // Scene Invoke, the pre-promote_name rig and the old MODEL/LOOKDEV
+            // dive targets. Its own backup suffix, because v2 may already have
+            // left a `.bak` that must stay the true original.
+            Step::RefreshTemplatesAgain => refresh_templates(&cfg, template_dir, "v9.bak"),
             Step::AddEntityDepartments => {
                 let path = cfg.join("db").join("schemas.json");
                 if !path.is_file() {
@@ -725,6 +718,36 @@ impl Step {
             }
         }
     }
+}
+
+/// Copy every packaged `template.py` over the project's, backing up any that
+/// differ. Replacing is fine here, unlike `storage_convention.py`: a hand-tuned
+/// template only shapes future workfiles, and the backup keeps it.
+fn refresh_templates(cfg: &Path, template_dir: &Path, backup_suffix: &str) -> Result<(), String> {
+    let source = scaffold_templates_dir(template_dir);
+    if !source.is_dir() {
+        return Err(format!(
+            "packaged templates not found at {}",
+            source.display()
+        ));
+    }
+    let target = cfg.join("templates");
+    let mut found = Vec::new();
+    find_files(&source, Some("template.py"), &mut found);
+    for src in found {
+        let relative = src.strip_prefix(&source).map_err(|e| e.to_string())?;
+        let dst = target.join(relative);
+        let new_text = std::fs::read_to_string(&src)
+            .map_err(|e| format!("could not read {}: {e}", src.display()))?;
+        match std::fs::read_to_string(&dst) {
+            // Identical bar line endings — leave it, and leave its mtime
+            // alone. Comparing raw bytes would rewrite and back up every CRLF
+            // template on every run.
+            Ok(old) if newlines::normalize(&old) == newlines::normalize(&new_text) => continue,
+            _ => write_preserving_as(&dst, &new_text, backup_suffix)?,
+        }
+    }
+    Ok(())
 }
 
 /// Record the layout version a project has reached.
@@ -1374,6 +1397,37 @@ mod tests {
             "the helper import should lead the import block:\n{after}"
         );
         assert!(after.contains("        self.temp_path = default_temp_path()"));
+    }
+
+    /// v9 re-runs the refresh for a project already past v2, and keeps both
+    /// originals: v2's `.bak` is not overwritten, v9's lands beside it.
+    #[test]
+    fn a_project_past_v2_gets_the_templates_refreshed_again() {
+        let dir = database_project();
+        let template = scaffold();
+        let dst = dir
+            .path()
+            .join("_config")
+            .join("templates")
+            .join("assets")
+            .join("template.py");
+        std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
+        std::fs::write(&dst, "# stale\r\n").unwrap();
+        std::fs::write(dst.with_file_name("template.py.bak"), "# v2 original\n").unwrap();
+        write_version(&dir.path().join("_config"), 8).unwrap();
+
+        let report = migrate(dir.path(), template.path());
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.to, 9);
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "# packaged\r\n");
+        assert_eq!(
+            std::fs::read_to_string(dst.with_file_name("template.py.bak")).unwrap(),
+            "# v2 original\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dst.with_file_name("template.py.v9.bak")).unwrap(),
+            "# stale\r\n"
+        );
     }
 
     #[test]

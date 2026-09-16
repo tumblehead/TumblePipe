@@ -64,6 +64,20 @@ Editing rules learned the hard way:
   `execute()` builds a layer stack and spare parms, which a locked HDA
   blocks. Check with `node.isEditableInsideLockedHDA()`, and compare
   against a known-good HDA rather than trusting that the section exists.
+- **An HDA remembers the project it was saved in.** "Save Node Type"
+  writes every embedded node's *current* parameter values into
+  `Contents.mime`, including whatever file an inner import/File/ROP node
+  was pointing at in the scene you edited from. `th::import_model` shipped
+  with `P:/growth/export/assets/CHAR/Baby/.../v0003.usd` in its inner
+  `import_layer` and `import_enable2 on`, so a Tab-created node loaded that
+  Baby model into every other project until Import was pressed; playblast,
+  maps_baker and image_card carried `C:/users/<me>/th_temp/...` and
+  `P:/cazoo/...` the same way. Before saving, point inner file parms at
+  `""`, a `$HIP`/`$HFS` form, or an `opdef:../?file` embedded resource, and
+  clear any `*_label` parm the node fills at runtime. The `hdapaths`
+  preflight stage (`.ci/quality_gates/check_hda_project_paths.py`) greps
+  for drive-letter, UNC, home, `entity:/<entity>` and `th_temp` paths and
+  fails on any it finds.
 - **Rebuilding an HDA from Python?** `createDigitalAsset()` will not give
   you a shippable asset on its own — it drops things silently:
   - it promotes the parms onto the *node* but leaves the **definition's**

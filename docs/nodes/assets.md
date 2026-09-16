@@ -20,7 +20,7 @@ A new project ships four asset departments
 | `model` | yes (independent, renderable) | `MODEL` (`th::create_asset_model`, one variant per channel with a starter box) → `EXPORT_MODEL` |
 | `blendshape` | **no** (not a render layer) | `IMPORT_MODEL` (`th::import_layer`, Department `model`) → `BLENDSHAPES` (a SOP Create at `<asset>/blshp/`; inside: LOP Import of the model at frame 1001 → Unpack → `sculpt` → `cache` → `name` → `merge`, boxed as *BLENDSHAPE 1* to copy per shape) → `EXPORT_BLENDSHAPES` |
 | `lookdev` | yes (renderable over-layer) | `IMPORT_MODEL` (`th::import_layer`, Department `model`) → `LOOKDEV` (`th::create_asset_lookdev`, one variant per channel; inside: `material_library` with a red `default_mtl` → `material_assigner` → every variant's output) → `EXPORT_LOOKDEV` |
-| `rig` | **no** (not a render layer) | `rigging` (a SOP Create; inside: `import_model` (`th::import_model`), an unwired `import_blendshapes` (`th::import_model`, Department `blendshape`), and `export_rig` (`th::export_rig`) wired from the model import) |
+| `rig` | **no** (not a render layer) | `rigging` (a SOP Create; inside: `import_model` (`th::import_model`), an unwired `import_blendshapes` (`th::import_model`, Department `blendshape`), `promote_name` (Attribute Promote: `name` primitive → point, original kept), `enumerate` (Enumerate, Group Type Points: integer point `index`; holds the display flag), and `export_rig` (`th::export_rig`) wired from `enumerate`) |
 
 Sources: [`templates/assets/model`](../../scripts/project_template/_config/templates/assets/model/template.py),
 [`lookdev`](../../scripts/project_template/_config/templates/assets/lookdev/template.py),
@@ -75,7 +75,8 @@ by `th::import_model` with Department `blendshape`.
    `latest`. Re-publishing the model or lookdev later is picked up as in
    [Picking up new versions on open](../composition.md#picking-up-new-versions-on-open).
 4. **Rig (optional).** Right-click the `rig` row, **New from Template**, build
-   the APEX rig inside `rigging` from `import_model`, and press **Export**
+   the APEX rig inside `rigging` from `enumerate` (the model
+   with `name` copied onto points and an `index` point attribute), and press **Export**
    on `export_rig`. The animation shot template's `th::animate` then lists
    the rig in its `th::import_rigs` —
    [`th::animate`](import-and-export.md#thanimate-lop).
@@ -365,7 +366,7 @@ Gotchas:
 ## `th::export_rig` (SOP)
 
 Publish the rig department. `_TumblePipe/pipeline`; the rig template wires
-one from `import_model` inside `rigging`. It is a sink — no output
+one from `import_model` through `promote_name` and `enumerate` inside `rigging`. It is a sink — no output
 connector — so put it at the end of the rig.
 Source: [`otls/sop_th.export_rig.1.0`](../../otls/sop_th.export_rig.1.0/th_8_8Sop_1export__rig_8_81.0/DialogScript),
 [`sops/export_rig.py`](../../python/tumblepipe/pipe/houdini/sops/export_rig.py).

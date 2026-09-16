@@ -14,6 +14,10 @@ it means a renamed factory is an ImportError here instead of a catalog that
 silently stops appearing, and it means the catalog's settings page is filed
 under TumblePipe rather than under whoever hosts the browser.
 
+It also installs the scene-load callback that re-runs import nodes, so a
+scene opened by any route picks up newer publishes
+(``tumblepipe.asset_browser.load_hook``).
+
 Best-effort and deferred: TumblePipe must load with or without TumbleTrove,
 and nothing here may gate a Houdini launch.
 """
@@ -32,6 +36,13 @@ if os.environ.get("TUMBLEPIPE_BOOTSTRAPPED") != "1":
         except Exception:
             import traceback
             print("[tumblepipe] package registration failed:")
+            traceback.print_exc()
+        try:
+            from tumblepipe.asset_browser.load_hook import register
+            register()
+        except Exception:
+            import traceback
+            print("[tumblepipe] scene-load import refresh not installed:")
             traceback.print_exc()
 
     # `tumblepipe` lives under $TH_PIPELINE_PATH/python, which hpm sets.

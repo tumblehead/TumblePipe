@@ -9,7 +9,6 @@ TumblePipe/
 ├── README.md                    # Short project overview
 ├── LICENSE                      # MIT License
 ├── radial_menus/                # Radial menus (shipped JSON + startup-generated)
-├── recipes/                     # Shipped asset-browser recipes (read-only)
 ├── desktop/
 │   └── TumblePipe.desk          # Houdini desktop layout
 ├── otls/                        # Houdini Digital Assets (text format)
@@ -182,12 +181,12 @@ context menus are built in Python in `tumblepipe.startup` rather than as
 JSON, and bound with `radial.bind()` on Radial's own trigger key
 (Radial 0.4.0+).
 
-### `recipes/`
+### Recipes
 
-Network-catalog entries (saved node-cluster recipes) that ship with the
-package. `hpm.toml` prepends this directory to
-`ASSET_BROWSER_NETWORK_PATH`; TumbleTrove's asset browser (> 0.9.1)
-scans it as a **read-only** recipe root alongside the user's personal
-library — entries browse and drop normally but cannot be edited or
-deleted, and new recipes are never saved here. Layout and the authoring
-workflow are documented in `recipes/README.md`.
+Asset-browser recipes (saved node clusters) are project content, not
+package content: they live under `<project>/recipes/<context>/<slug>/`
+and are read and written by `python/tumblepipe/asset_browser/recipes.py`.
+The package used to ship a read-only `recipes/` root through
+`ASSET_BROWSER_NETWORK_PATH`; that root went with TumbleTrove's Network
+catalog (TumbleTrove 0.35.0), and no entry was ever shipped in it. See
+[Recipes](asset-browser/recipes.md).

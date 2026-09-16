@@ -395,4 +395,9 @@ material binding, transforms zeroed, and kinds set by depth
 `_TumblePipe/pipeline`. The animation shot template places one as
 `animate_shot` with `th::import_rigs` and the APEX scene-animate nodes
 inside its dive target; see [Building assets → `th::import_rigs`](assets.md#thimport_rigs-sop).
+Its APEX Scene Invoke is set to **Unpacked Geometry** output (the node
+defaults to packed, which drops the rig geometry's `path`/`name` attributes)
+and **Shapes** `Base`. A `th::animate` placed from the Tab menu has an empty
+dive (just `output0`), so build `th::import_rigs` → APEX Scene Animate →
+APEX Scene Invoke (with those settings) → `output0` inside it yourself.
 Source: [`otls/lop_th.animate.2.0`](../../otls/lop_th.animate.2.0/th_8_8Lop_1animate_8_82.0/DialogScript).

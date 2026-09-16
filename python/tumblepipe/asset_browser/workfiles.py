@@ -444,15 +444,13 @@ class WorkfileManager:
                     return  # user cancelled the save prompt
                 self._catalog._activate_project(target_proj)
                 # Manual update mode so neither the load, the
-                # hou.setFrame() in apply_scene_timeline, nor the import
+                # hou.setFrame() in apply_scene_timeline, nor load_hook's import
                 # re-execute triggers a live full-graph cook. Mirrors
                 # the open flow of the since-retired Project Browser.
                 with util.update_mode(hou.updateMode.Manual):
                     hou.hipFile.load(path_str, suppress_save_prompt=decision)
                     log.info("Opened workfile: %s", path_str)
                     self._catalog._scene.apply_scene_timeline(asset_id)
-                    if self._catalog._prefs.auto_refresh_on_open:
-                        self._catalog._scene.refresh_scene_imports()
             except Exception as exc:
                 report_failure(f"Opening {path_str}", exc)
                 return
@@ -738,10 +736,36 @@ class WorkfileManager:
                 )
                 save_entity_context(next_path.parent, new_ctx)
 
-                log.info("New from Current: saved %s", next_path)
+                # Nodes still pinned to the scene's old entity/department
+                # would publish over it: point them at the new workfile.
+                retargeted = []
+                if prev_ctx is not None:
+                    from tumblepipe.pipe.houdini import util
+                    from tumblepipe.pipe.houdini.scene_retarget import (
+                        retarget_scene,
+                    )
+                    try:
+                        with util.update_mode(hou.updateMode.Manual):
+                            retargeted = retarget_scene(prev_ctx, new_ctx)
+                        hou.hipFile.save(str(next_path))
+                    except Exception:
+                        log.exception(
+                            "New from Current: retargeting nodes failed "
+                            "for %s", next_path,
+                        )
+
+                log.info(
+                    "New from Current: saved %s (retargeted %d node(s))",
+                    next_path, len(retargeted),
+                )
+                msg = f"Saved {Path(next_path).name}"
+                if retargeted:
+                    msg += (
+                        f" ({len(retargeted)} node(s) now follow the "
+                        "new context)"
+                    )
                 hou.ui.setStatusMessage(
-                    f"Saved {Path(next_path).name}",
-                    severity=hou.severityType.Message,
+                    msg, severity=hou.severityType.Message,
                 )
             except Exception as exc:
                 report_failure(
@@ -899,16 +923,14 @@ class WorkfileManager:
                             return  # user cancelled the save prompt
                         self._catalog._activate_project(target_proj)
                         # Manual update mode so neither the load, the
-                        # hou.setFrame() in apply_scene_timeline, nor the
-                        # import re-execute triggers a live full-graph
+                        # hou.setFrame() in apply_scene_timeline, nor
+                        # load_hook's import re-execute triggers a live full-graph
                         # cook. Mirrors the open flow of the since-retired
                         # Project Browser.
                         with util.update_mode(hou.updateMode.Manual):
                             hou.hipFile.load(str(p), suppress_save_prompt=decision)
                             log.info("Opened workfile: %s", p)
                             self._catalog._scene.apply_scene_timeline(asset_id)
-                            if self._catalog._prefs.auto_refresh_on_open:
-                                self._catalog._scene.refresh_scene_imports()
                     except Exception as exc:
                         report_failure(f"Opening {p}", exc)
                         return
@@ -964,16 +986,14 @@ class WorkfileManager:
                             return  # user cancelled the save prompt
                         self._catalog._activate_project(target_proj)
                         # Manual update mode so neither the load, the
-                        # hou.setFrame() in apply_scene_timeline, nor the
-                        # import re-execute triggers a live full-graph
+                        # hou.setFrame() in apply_scene_timeline, nor
+                        # load_hook's import re-execute triggers a live full-graph
                         # cook. Mirrors the open flow of the since-retired
                         # Project Browser.
                         with util.update_mode(hou.updateMode.Manual):
                             hou.hipFile.load(str(p), suppress_save_prompt=decision)
                             log.info("Opened group workfile: %s", p)
                             self._catalog._scene.apply_scene_timeline(asset_id)
-                            if self._catalog._prefs.auto_refresh_on_open:
-                                self._catalog._scene.refresh_scene_imports()
                     except Exception as exc:
                         report_failure(f"Opening the group workfile {p}", exc)
                         return

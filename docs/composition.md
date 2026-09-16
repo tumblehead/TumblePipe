@@ -566,18 +566,34 @@ department published *after* the staged build won't appear just by
 reopening the workfile, and the `latest` label on an import node does
 nothing on its own at load time.
 
-Opening a workfile **through the Asset Browser** closes the gap: it
-re-executes every `th::import_*` node in the scene
-(`_pipeline_scene.refresh_scene_imports`), and each node's `latest`
-reference re-resolves under resolver latest-mode, which ignores the
-baked `version=` pins and floats to the newest published version — the
-same cascade a fresh import would get. So a newly published upstream
-department reaches a downstream workfile on its next catalogue open,
-with no re-import. This is governed by the **Auto-import latest on
-workfile open** preference (Asset Browser → pipeline settings, *on* by
-default), persisted to
+TumblePipe closes the gap on **every scene load** in a graphical Houdini,
+whichever way the scene was opened: the Asset Browser, File ▸ Open, recent
+files, double-clicking a `.hip`, Open in New Instance or the asset layer
+inspector. A `hou.hipFile` load callback
+(`tumblepipe.asset_browser.load_hook`) re-executes every import node in the
+scene (`tumblepipe.pipe.houdini.scene_imports.refresh_scene_imports`). A node
+on `current` takes the newest version on disk. A node on `latest` also
+re-resolves under resolver latest-mode, which ignores the baked `version=`
+pins and floats to the newest published version, the same cascade a fresh
+import would get. So a newly published upstream department reaches a
+downstream workfile the next time it is opened, with no re-import. This is
+governed by the **Auto-import latest on workfile open** preference (Asset
+Browser → pipeline settings, *on* by default), persisted to
 `$HOUDINI_USER_PREF_DIR/asset_browser/pipeline_prefs.json`; disabling it
-restores load-time-frozen behavior.
+restores load-time-frozen behavior. hython and farm jobs never refresh:
+they keep the versions they were submitted with.
+
+The refreshed node types are `import_shot`, `import_assets`, `import_asset`,
+`import_layer`, `import_rigs`, `import_rig` and the SOP `import_model`. An
+import node inside another one (the children `import_assets` builds, the
+`import_layer` inside `import_model`) is left to its parent, so nothing
+imports twice. A node pinned to a specific version stays on that version:
+`import_layer` resolves its pin with latest-mode off, even when a `latest`
+node elsewhere in the session turned it on.
+
+`tests/test_scene_imports.py` fails when a shipped HDA with a `version`
+parm has no refresh decision, and `scripts/verify_import_refresh.py`
+(hython) checks the whole path against real nodes.
 
 The refresh only touches import nodes — `create_model` and `build_comp`
 are deliberately excluded, so a plain open re-resolves references

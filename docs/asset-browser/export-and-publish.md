@@ -16,7 +16,7 @@ tells you when there is none.
 | **Save** | Save current scene | Saves the scene as the **next workfile version** of its own context (never in place). With *Ask for a version note on save* on (the default), a **Save Version** dialog asks "Note for the next `<dept>` version of `<entity>` (after `vNNNN`) — optional:". Cancel there aborts the save without burning a version. Status line: `Saved <file>`. |
 | **Publish** | Publish exports | Opens the process dialog (title **Process: Publish**) with every export and build task for the scene's entity, current department **and all departments downstream of it**. See below. |
 | **Render** | Submit render jobs for the current scene's entity | Opens the [Submit Jobs dialog](submit-jobs.md) for the loaded scene's entity, with the Render department seeded from the workfile's department. Only shots and assets can be submitted. |
-| **Update** | Re-import latest published versions into the current scene (no scene reload) | Re-executes every `th::import_shot`, `import_assets`, `import_asset`, `import_layer` (LOP) and `import_rigs` (SOP) node in place, so `latest` references float to the newest publish. Status line: `Imports updated to latest published versions (N node(s)).` If any node fails you get a warning dialog instead — the scene may still reference older versions. |
+| **Update** | Re-import latest published versions into the current scene (no scene reload) | Re-executes every import node in place (`import_shot`, `import_assets`, `import_asset`, `import_layer`, `import_rigs`, `import_rig`, `import_model`), so `current` and `latest` pick up the newest publish. Status line: `Imports updated to latest published versions (N node(s)).` If any node fails you get a warning dialog instead — the scene may still reference older versions. |
 | **Reload** | Reload current scene | Reloads the hip from disk. Unsaved changes get the **Save Scene** prompt ("Save a new version before switching?" with **Save new version** / **Discard changes** / **Cancel**) — or a silent version-up when *Autosave (version up) on scene change* is on. After the load the timeline is re-applied and, if *Auto-import latest on workfile open* is on, imports are refreshed. |
 
 Right-clicking **Save** offers **Emergency Save (off-thread)**: an inline
@@ -128,7 +128,11 @@ batch is farm-only, a rig export is local-only).
    noting the result on disk is incomplete; if a Build USD was among them
    it adds that imports and render submissions will fail until Build USD
    has run. Re-open the dialog with only the unrun steps checked to finish.
-4. When done, Cancel becomes **Close**.
+4. When the run finishes cleanly, the footer collapses to a single green
+   **Done** button (Execute and the selection buttons disappear; the
+   execution mode locks). After a failed or cancelled run the footer stays
+   as it was: fix the selection and **Execute** again to retry, or
+   **Close**.
 
 Outcomes:
 

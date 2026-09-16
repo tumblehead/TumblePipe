@@ -413,6 +413,6 @@ small pre-wired network you then retarget:
   missing type; replace it with `th::export_layer`.
 
 The recipes were saved in Houdini 20.5; re-save any that misbehave on a
-newer major. They are distinct from the network-catalog recipes under the
-package's `recipes/` directory, which is currently empty apart from its
-[README](../../recipes/README.md).
+newer major. They are distinct from the asset browser's project recipes
+(saved node clusters under `<project>/recipes/`, see
+[Recipes](../asset-browser/recipes.md)).

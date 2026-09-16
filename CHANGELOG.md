@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.50.0 — 2026-09-15
+
+### Features
+- feat(browser): empty department card leads with New from Template and creates it on double-click (`728d2a3`)
+
+### Documentation
+- docs: department menus read New from Template / New from Current / Open Folder (`a5f4ac9`)
+- docs: regenerate CHANGELOG.md for v1.49.0 (`3ba63a9`)
+
 ## v1.49.0 — 2026-09-14
 
 ### Features

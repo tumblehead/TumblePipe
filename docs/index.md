@@ -25,6 +25,7 @@ the other installed packages' documentation. The same pages are online at
   - [Export and publish](asset-browser/export-and-publish.md) — what Export and Publish do, the process dialog, validators
   - [Submitting to the farm](asset-browser/submit-jobs.md) — the Submit Jobs dialog and the jobs it creates
   - [Multis and Roots](asset-browser/multis-and-roots.md) — shared multi-shot workfiles and config-driven scenes
+  - [Recipes](asset-browser/recipes.md) — node clusters saved into the project and dropped back into any scene
   - [Pipeline settings and files](asset-browser/settings.md) — every option, and every file TumblePipe writes
   - [The config database editor](asset-browser/config-editor.md) — editing entities, schemas and departments
 - [Pipeline nodes](nodes/index.md) — the `th::` node families and the concepts they share

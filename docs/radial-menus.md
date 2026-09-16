@@ -82,9 +82,9 @@ override* and *th configure render layer matte*.
 A radial ring needs at least two filled slots, so when fewer than two
 recipes exist the menu is not written (and a stale file from an earlier
 session is deleted) — Alt+R then does nothing. (These HDA recipes are a
-different thing from the node-cluster recipes under the package's `recipes/`
-directory, which the Asset Browser's network catalog lists as read-only
-entries.) See [Tools](nodes/tools.md).
+different thing from the Asset Browser's project recipes, the saved node
+clusters under `<project>/recipes/` — see
+[Recipes](asset-browser/recipes.md).) See [Tools](nodes/tools.md).
 
 ## Alt+F: asset favourites
 

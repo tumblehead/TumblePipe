@@ -80,9 +80,11 @@ Per project:
 | **Assets** | a **Multis** subheader (only once an assets Multi exists), then one row per category | |
 | **Shots** | a **Multis** subheader (only once a shots Multi exists), then one row per sequence | Sequences open in list view by default. |
 | **Roots** | one row per Root | |
+| **Recipes** | one row per Houdini context (**SOP**, **LOP**, …) that holds a saved recipe | See [Recipes](recipes.md). |
 
-Count pills show how many assets or shots a row holds. Empty categories and
-sequences are listed too, so a bucket can exist before its first entity.
+Count pills show how many assets, shots or recipes a row holds. Empty
+categories and sequences are listed too, so a bucket can exist before its
+first entity, and the Recipes section is listed before its first recipe.
 
 The sidebar has no Todos section; an entity's tasks live on its card's
 **Tasks…** menu item and on the detail panel's **Tasks** tab.
@@ -97,7 +99,8 @@ Right-click menus on sidebar rows. Each starts with the creation options the
 | **Shots** header, a sequence | **New Shot...**, **New Sequence...**, **New Multi...**, **New Root...** | a sequence adds **Delete sequence '*sequence*'…** |
 | **Multis** subheader, a Multi | **New Multi...** | a Multi adds the Multi card's menu, plus **Add selected to Multi** and **Remove selected from Multi** |
 | **Roots** header | **New Root...** | |
-| a Root | **New Asset...**, **New Shot...**, **New Multi...**, **New Root...** | the Root card's menu, plus **Add selected to Root** and **Remove selected from Root** |
+| a Root | **New Asset...**, **New Shot...**, **New Recipe...**, **New Multi...**, **New Root...** | the Root card's menu, plus **Add selected to Root** and **Remove selected from Root** |
+| **Recipes** header, a context row | **New Recipe...** | |
 
 A Multi or Root row's menu is its card's menu, from **Open** to **Delete**,
 Root export actions included (see
@@ -280,6 +283,9 @@ catalog contributes
 | **Clear Root** | Shots only, and only when a Root is set directly on the shot (not inherited from the sequence). Clears it. |
 | **Remove from Multi: *name*** / **Remove from Root: *name*** | One entry per container the entity belongs to. |
 
+A recipe card has its own menu — **Edit Description…**, **Set Icon…**, **Open
+Recipe Folder**, **Delete Recipe** — see [Recipes](recipes.md#card-menu-and-detail-actions).
+
 ## Creating entities
 
 The dashed **+** card, the list view's **+** row, a right-click on empty
@@ -291,8 +297,10 @@ category) the list is **New Asset...**, **New Category...**, **New
 Multi...** and **New Root...**; under Shots (or a sequence) it is **New
 Shot...**, **New Sequence...**, **New Multi...** and **New Root...**. A
 Multis subheader offers **New Multi...** alone, the Roots header **New
-Root...** alone, and anywhere unscoped offers **New Asset...**, **New
-Shot...**, **New Multi...** and **New Root...**. A
+Root...** alone, the Recipes section **New Recipe...** alone, and anywhere
+unscoped offers **New Asset...**, **New Shot...**, **New Recipe...**, **New
+Multi...** and **New Root...**. Dragging selected nodes from a network editor
+onto the grid also opens **New Recipe** (TumbleTrove 0.35 or later). A
 **Project** dropdown is added to every form when more than one project is
 registered.
 
@@ -304,6 +312,7 @@ registered.
 | **New sequence** | **Sequence** (free text) | Creates an empty sequence. |
 | **New Multi** | **Name**; **Context** (`shots` or `assets`, default `shots`) | See [Multis and Roots](multis-and-roots.md#creating-a-multi). |
 | **New Root** | **Name** | See [Multis and Roots](multis-and-roots.md#creating-a-root). |
+| **New Recipe** | **Name**; **Description**; **Tags** | Saves the nodes selected in the network editor. See [Recipes](recipes.md#saving-a-recipe). |
 
 Names are written as typed; the new asset or shot is selected in the grid
 once it appears. A new shot stores its frame range on the shot entity; a new
@@ -343,6 +352,7 @@ Drop targets and what gets built
 | an asset card | a SOP network | a `th::import_model` with its **department** set to `model` (`blendshape` for assets tagged so) |
 | a shot card | a SOP network | refused: *Shots can only be imported into LOP networks* |
 | a Root card | a LOP network | a stock `sublayer` node whose file path is the Root's `entity:/scenes/…` URI, so it follows the Root's latest export |
+| a recipe card | any network editor | the recipe's nodes, wired and placed at the cursor; another context than the one it was saved in asks **Load Anyway** first. See [Recipes](recipes.md#using-a-recipe) |
 | department deck items or list rows | a LOP network | one `th::import_layer` per department, wired and flagged (TumbleTrove's default path) |
 
 A single asset or shot card dropped into a LOP or SOP network also

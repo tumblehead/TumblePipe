@@ -54,6 +54,8 @@ def _build_animate_dive(animate_node, rig_imports: dict):
         'apex::sceneinvoke',
         'scene_invoke'
     )
+    # Unpacked keeps the rig geometry's path/name attributes for export
+    invoke_scene_node.parm('outputmode').set('unpacked')
     invoke_scene_node.parm('shapepattern').set('Base')
     invoke_scene_node.setInput(0, scene_animate_node)
     output_animate_node.setInput(0, invoke_scene_node)

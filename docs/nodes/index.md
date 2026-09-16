@@ -167,7 +167,10 @@ Why this matters to you:
 - A node on `from_context` keeps working when the scene is copied to another
   workfile, when the entity is renamed, or when a template is instantiated
   for a new asset. A node with a baked URI keeps pointing at the entity it
-  was born in.
+  was born in. The Asset Browser's
+  [New from Current](../asset-browser/workfiles.md#new-from-current) switches
+  a node pinned to the old workfile's own entity or department back to
+  `from_context`; **File > Save As** does not.
 - `from_context` needs a **saved pipeline workfile**. In an unsaved scene, or
   a hip outside the project, it resolves to nothing and the node bypasses
   itself (its comment tells you why).

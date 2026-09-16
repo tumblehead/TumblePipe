@@ -12,15 +12,10 @@ from tumblepipe.pipe.paths import (
     get_workfile_context,
 )
 from tumblepipe.pipe.houdini import nodes as ns
+from tumblepipe.pipe.houdini import scene_imports
 from tumblepipe.pipe.houdini.lops import (
-    import_shot,
-    import_assets,
-    import_layer,
     export_layer,
     layer_split
-)
-from tumblepipe.pipe.houdini.sops import (
-    import_rigs
 )
 from tumblepipe.pipe.houdini.cops import (
     build_comp
@@ -48,87 +43,31 @@ def _get_workfile_group():
     return get_group(context.entity_uri)
 
 def _update():
-
-    # Find import shot nodes
-    import_shot_nodes = list(map(
-        import_shot.ImportShot,
-        ns.list_by_node_type('import_shot', 'Lop')
-    ))
-
-    # Find build comp nodes
-    build_comp_nodes = list(map(
-        build_comp.BuildComp,
-        ns.list_by_node_type('build_comp', 'Cop')
-    ))
-
-    # Find import asset nodes
-    import_assets_nodes = list(map(
-        import_assets.ImportAssets,
-        ns.list_by_node_type('import_assets', 'Lop')
-    ))
-
-    # Find the import layer nodes (unified)
-    import_layer_nodes = list(map(
-        import_layer.ImportLayer,
-        ns.list_by_node_type('import_layer', 'Lop')
-    ))
-
-    # Find the import rigs nodes
-    import_rigs_nodes = list(map(
-        import_rigs.ImportRigs,
-        ns.list_by_node_type('import_rigs', 'Sop')
-    ))
-
     # A publish always composes against the newest upstream: every import is
     # forced to its latest available version, overriding any per-node or
     # per-row version pin the artist set while working. Artist pins are a
     # working-context convenience (previewing an older dependency); they must
     # not leak into a published department. Render determinism does not rely on
     # these node pins — the render/stage builder (render_stage.py) rebuilds a
-    # fresh graph and never reads them. Without this, only import_layer was
-    # forced to latest while shot/assets/rigs honoured pins — an inconsistency
-    # that let a pinned rig/asset publish against a stale version.
-    def _force_rows_latest(node, count_parm):
-        # Multi-row import nodes (import_assets, import_rigs) carry a per-row
-        # version parm; force every row to 'latest' before execute.
-        count = node.parm(count_parm).eval()
-        for index in range(1, count + 1):
-            node.set_version_name(index, 'latest')
-
-    # Import latest shot stages
-    for import_shot_node in import_shot_nodes:
-        if not import_shot_node.is_valid(): continue
-        import_shot_node.set_version_name('latest')
-        import_shot_node.execute()
-        print(f'Updated {import_shot_node.path()}')
+    # fresh graph and never reads them.
+    #
+    # The node types come from scene_imports.REFRESH_SPECS, the list the
+    # scene-load refresh uses. This used to be a hand list of its own that
+    # left out standalone import_asset and import_rig nodes, which then
+    # published whatever version the workfile was saved with. Unlike the
+    # scene-load refresh, a failing node fails the publish.
+    for native, spec in scene_imports.find_import_nodes():
+        scene_imports.force_newest(native, spec)
+        scene_imports.execute(native, spec)
+        print(f'Updated {native.path()}')
 
     # Import latest comp builds
-    for build_comp_node in build_comp_nodes:
+    for build_comp_node in map(
+        build_comp.BuildComp, ns.list_by_node_type('build_comp', 'Cop')
+    ):
         if not build_comp_node.is_valid(): continue
         build_comp_node.update()
         print(f'Updated {build_comp_node.path()}')
-
-    # Import latest assets
-    for import_assets_node in import_assets_nodes:
-        if not import_assets_node.is_valid(): continue
-        _force_rows_latest(import_assets_node, 'asset_imports')
-        import_assets_node.execute()
-        print(f'Updated {import_assets_node.path()}')
-
-    # Import latest layers (unified). import_layer has no 'latest' sentinel;
-    # its 'current' resolves to the newest staged version.
-    for import_node in import_layer_nodes:
-        if not import_node.is_valid(): continue
-        import_node.set_version_name('current')
-        import_node.execute()
-        print(f'Updated {import_node.path()}')
-
-    # Import latest rigs
-    for import_node in import_rigs_nodes:
-        if not import_node.is_valid(): continue
-        _force_rows_latest(import_node, 'rig_imports')
-        import_node.execute()
-        print(f'Updated {import_node.path()}')
 
 def _publish(entity_uri: Uri, department_name: str):
 

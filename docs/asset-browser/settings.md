@@ -33,7 +33,7 @@ Each checkbox is saved the moment you click it — no Apply needed.
 | Checkbox | Default | Pref key | Effect |
 |---|---|---|---|
 | **Autosave (version up) on scene change** | off | `autosave_on_scene_change` | When opening another workfile from the browser while the current scene has unsaved changes: **on** saves a new version silently; **off** asks (**Save Scene**: *Save new version* / *Discard changes* / *Cancel*). Either way the current workfile is never overwritten in place. Off-pipeline hips fall back to Houdini's own prompt. |
-| **Auto-import latest on workfile open** | on | `auto_refresh_on_open` | After opening (or reloading) a workfile through the browser, re-execute every `import_asset`, `import_assets`, `import_shot`, `import_layer` and `import_rigs` node so `latest` references pick up the newest publish. Runs in manual update mode and skips `create_model` / `build_comp`. See [Picking up new versions on open](../composition.md#picking-up-new-versions-on-open). |
+| **Auto-import latest on workfile open** | on | `auto_refresh_on_open` | Whenever this Houdini loads a scene, through the browser or any other way, re-execute its import nodes so `current` and `latest` pick up the newest publish. Runs in manual update mode and skips `create_model` / `build_comp`. See [Picking up new versions on open](../composition.md#picking-up-new-versions-on-open). |
 | **Ask for a version note on save** | on | `prompt_note_on_save` | The **Save** quick action asks for a note that shows in the browser's Note column; Cancel aborts the save without burning a version. Off saves with a blank note. Autosave-on-scene-change and the emergency save never prompt. |
 
 A failed write shows `Failed to persist … preference — see Houdini console`
@@ -125,6 +125,7 @@ Two per-entity files live beside the entity's folders, not in `export/`:
 |---|---|
 | `<project>/assets/<category>/<asset>/thumbnail.png` (or `shots/<sequence>/<shot>/`) | **Select thumbnail…** (any image, converted to PNG) and **Capture thumbnail** (the active scene viewer) on a card's right-click menu |
 | `<project>/assets/<category>/<asset>/description.txt` (same for shots) | **Edit description…** on a card's right-click menu |
+| `<project>/recipes/<context>/<slug>/` (`entry.json`, `recipe.cpio`, `thumbnail.png`) | **New Recipe...**, or dragging selected nodes onto the grid; see [Recipes](recipes.md) |
 
 Workfile version notes and `context.json` sidecars belong to
 [Workfiles](workfiles.md); the `_config/db/*.json` databases to

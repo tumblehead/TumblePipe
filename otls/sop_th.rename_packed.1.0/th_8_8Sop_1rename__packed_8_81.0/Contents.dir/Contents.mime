@@ -176,7 +176,7 @@ Content-Type: text/plain
     channel from0 {
       lefttype = extend
       righttype = extend
-      defaultString = \"/CHAR/Baby/*\"
+      defaultString = \"\"
       flags = 0
       start = 41.666666666666664
       segment { length = 0 expr = chs(\"../from0\") }
@@ -184,7 +184,7 @@ Content-Type: text/plain
     channel to0 {
       lefttype = extend
       righttype = extend
-      defaultString = \"/CHAR/Baby0/*\"
+      defaultString = \"\"
       flags = 0
       start = 41.666666666666664
       segment { length = 0 expr = chs(\"../to0\") }

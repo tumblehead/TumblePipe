@@ -156,6 +156,11 @@ same words. The marker is `th_project_core::looks_like_project`, shared with
 - Steps that touch `storage_convention.py` edit it **surgically**. A project's
   convention legitimately differs — several carry their own `_primary_path` —
   so replacing it would repoint where a show's assets and exports resolve.
+- **Templates refresh only in a numbered step** (v2, v9). A project past the
+  last refresh step never sees a later change to
+  `scripts/project_template/_config/templates/`; shipping one to live projects
+  means adding another refresh step (with its own backup suffix, since
+  `write_preserving` never overwrites an existing `.bak`).
 
 ### CLI
 

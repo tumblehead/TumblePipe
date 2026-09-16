@@ -96,9 +96,9 @@ What happens, in order:
    unless they are marked `animatable: false` — so a re-timed shot opens at
    its current length. Non-animatable assets keep whatever range was saved
    in the hip.
-5. With **Auto-import latest on workfile open** enabled (the default) every
-   `th::import_*` node is re-executed so the scene picks up newer
-   publishes; see
+5. With **Auto-import latest on workfile open** enabled (the default) the
+   scene's import nodes are re-executed during the load so it picks up newer
+   publishes. The same happens for a scene opened outside the browser; see
    [Composition → Picking up new versions on open](../composition.md#picking-up-new-versions-on-open).
 
 A row with no workfile has nothing to open, so double-clicking it creates
@@ -223,6 +223,19 @@ scene's context is recorded as the new version's `from_version`, so the
 lineage shows where it came from. Use it to seed a shot's `light` from a
 sibling shot, or to fork a department across assets. Status: *Saved
 010_sh030_light_v0001.hip*.
+
+The scene's pipeline nodes are moved to the new context with it. A node on
+[`from_context`](../nodes/index.md#entity-and-department-default-to-from_context)
+follows on its own. A node with the **old** workfile's own entity or
+department picked explicitly is switched to `from_context`, so an export
+publishes to the new entity and department instead of over the one the scene
+came from. Switched import nodes re-import, and every node's `from_context:`
+label is rewritten. Nodes addressing any other entity keep their Entity and
+Department: an import of the shot or of another asset's `model` is left
+alone. When anything was switched, the status reads *Saved
+010_sh030_light_v0001.hip (3 node(s) now follow the new context)*. A scene
+that was not a pipeline workfile has no old context to compare, so nothing
+is switched. Houdini's own **File > Save As** does none of this.
 
 It refuses a shot or asset that is not in the project configuration, the same
 way **New from Template** does, with *New from Current for … failed:

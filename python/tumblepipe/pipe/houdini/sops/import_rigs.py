@@ -192,6 +192,9 @@ class ImportRigs(ns.Node):
             ns.set_node_comment(context, "Bypassed: No rigs configured")
             context.bypass(True)
             return
+        # Undo a bypass left by an earlier empty run, or the node reports
+        # "Imported" while passing nothing through.
+        context.bypass(False)
 
         # Build asset nodes
         prev_node = None

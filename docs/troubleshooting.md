@@ -150,10 +150,12 @@ offending paths or prims:
 
 Two different staleness layers:
 
-- **Opening the workfile** re-resolves imports only when opened **through
-  the Asset Browser** with **Auto-import latest on workfile open** enabled
-  (on by default, on the browser's TumblePipe settings page). A plain
-  File ▸ Open restores the versions baked into the hip. See
+- **Opening the workfile** re-resolves imports, however it is opened, while
+  **Auto-import latest on workfile open** is enabled (on by default, on the
+  browser's TumblePipe settings page). With it off, an open restores the
+  versions baked into the hip. Before this was fixed, only an open through
+  the Asset Browser refreshed; File ▸ Open did not. A node set to a specific
+  version keeps that version on purpose. See
   [Picking up new versions on open](composition.md#picking-up-new-versions-on-open).
 - **An already-open scene** needs the **Update** quick action, which
   re-executes every `th::import_*` node against the newest publishes without

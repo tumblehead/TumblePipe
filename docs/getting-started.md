@@ -175,8 +175,8 @@ the TumblePipe pipeline radial in a network editor, **Alt+R** the recipes and
    [Composition](composition.md#layer-save-paths-and-export-portability).
 6. **Open the next department.** Select the row of the department downstream
    of yours and use **New from Template** (first time) or **Open Latest**. A
-   workfile opened through the browser re-executes its import nodes so the
-   layer you just published is composed — the
+   workfile re-executes its import nodes when it opens, so the layer you
+   just published is composed — the
    **Auto-import latest on workfile open** preference, on by default. An
    already-open scene picks up a new publish with **Update**. See
    [Picking up new versions on open](composition.md#picking-up-new-versions-on-open).

@@ -853,6 +853,8 @@ class ImportShot(ns.Node):
             ns.set_node_comment(context, "Bypassed: No shot selected")
             context.bypass(True)
             return
+        # Undo a bypass left by an earlier run with no shot selected.
+        context.bypass(False)
 
         # Get staged file path based on version and channel selection
         version_name = self.get_version_name()
@@ -878,6 +880,7 @@ class ImportShot(ns.Node):
         if staged_file_path is None or not staged_file_path.exists():
             # No staged build yet - set empty state and return
             import_node.parm('num_files').set(0)
+            ns.set_node_comment(context, "No staged build yet")
             return
 
         # Get assets based on version type

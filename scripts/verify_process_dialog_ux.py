@@ -24,6 +24,14 @@ than the one it superseded:
   6. a child raising TaskSkipped is SKIPPED, its siblings still run, and the
      skip is surfaced in a warning — while a user-unchecked task stays quiet
 
+...and that the footer reads unambiguously before and after a run
+(tumblepipe__bugs 2026-09-16, "this window is still confusing"):
+
+  7. Execute is a fully styled (bordered, filled) button, so Houdini's style
+     paints it rather than dropping it to bare text; a clean run collapses
+     the footer to one green Done button that accepts the dialog, while a
+     failed or cancelled run keeps Execute for a retry and offers Close
+
 Run:
     cd scripts
     uv run --python 3.12 --with pyside6 --with qtpy python verify_process_dialog_ux.py
@@ -290,6 +298,78 @@ def main() -> int:
         not warnings,
         repr(warnings),
     )
+
+    # --- Case 7: footer states -----------------------------------------------
+    # Before a run: Execute is the call to action and Cancel is Cancel.
+    fresh = ProcessDialog('Publish', [make_task('Export (chars)', 'render', lambda: 'v0002')])
+    execute_style = fresh._execute_button.styleSheet()
+    check(
+        'Execute button carries a full stylesheet (border + background)',
+        'border:' in execute_style and 'background-color:' in execute_style and 'padding:' in execute_style,
+        execute_style,
+    )
+    check('Execute is the default button', fresh._execute_button.isDefault())
+    check(
+        'before a run the footer offers Execute and Cancel',
+        not fresh._execute_button.isHidden() and fresh._cancel_button.text() == 'Cancel',
+        fresh._cancel_button.text(),
+    )
+
+    # A clean run: only a green Done remains, and it accepts the dialog.
+    clean = run_dialog([make_task('Export (chars)', 'render', lambda: 'v0002')])
+    check(
+        'clean run hides Execute and the selection buttons',
+        clean._execute_button.isHidden()
+        and clean._select_all_button.isHidden()
+        and clean._select_none_button.isHidden(),
+    )
+    check('clean run turns Cancel into Done', clean._cancel_button.text() == 'Done', clean._cancel_button.text())
+    check('Done is the default button', clean._cancel_button.isDefault())
+    check(
+        'Done is styled green',
+        '#3c9a4e' in clean._cancel_button.styleSheet() and 'border:' in clean._cancel_button.styleSheet(),
+        clean._cancel_button.styleSheet(),
+    )
+    check(
+        'clean run locks the execution mode',
+        not clean._local_radio.isEnabled() and not clean._farm_radio.isEnabled(),
+    )
+    # Ticking a row afterwards must not overwrite the result line with
+    # "Ready to execute" — there is no Execute button to honour it.
+    clean._model.itemChanged.emit(clean._model.item(0))
+    check(
+        'the result line survives later tree edits',
+        clean._status_label.text().startswith('All tasks completed'),
+        clean._status_label.text(),
+    )
+    clean._on_cancel_clicked()
+    check('Done accepts the dialog', clean.result() == QtWidgets.QDialog.Accepted, str(clean.result()))
+
+    # A cancelled run keeps the retry path: Execute stays, Cancel reads Close.
+    check(
+        'cancelled run keeps Execute for a retry',
+        not cancel_dialog._execute_button.isHidden() and cancel_dialog._execute_button.isEnabled(),
+    )
+    check('cancelled run offers Close, not Done', cancel_dialog._cancel_button.text() == 'Close', cancel_dialog._cancel_button.text())
+    check('cancelled run keeps the execution mode editable', cancel_dialog._local_radio.isEnabled())
+
+    # A failed run likewise: the error report is captured instead of shown.
+    reports = []
+    ProcessDialog._show_error_report = lambda self, failed_tasks: reports.append(failed_tasks)
+
+    def failing_body():
+        raise RuntimeError('boom')
+
+    failing = make_task('Export (chars)', 'render', failing_body)
+    failed_dialog = run_dialog([failing])
+    check('failed run shows the error report', len(reports) == 1 and reports[0] == [failing], repr(reports))
+    check(
+        'failed run keeps Execute for a retry',
+        not failed_dialog._execute_button.isHidden() and failed_dialog._execute_button.isEnabled(),
+    )
+    check('failed run offers Close, not Done', failed_dialog._cancel_button.text() == 'Close', failed_dialog._cancel_button.text())
+    failed_dialog._on_cancel_clicked()
+    check('Close after a failure rejects the dialog', failed_dialog.result() == QtWidgets.QDialog.Rejected, str(failed_dialog.result()))
 
     failed = [name for name, ok, _ in _checks if not ok]
     print()

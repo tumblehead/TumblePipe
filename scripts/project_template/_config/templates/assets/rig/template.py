@@ -18,7 +18,9 @@ STAGE_NOTE = ('Create Rig in here -->',
 # --- sopnet/create layout ------------------------------------------------
 IMPORT_MODEL_POS = hou.Vector2(0.0, 0.0)
 IMPORT_BLENDSHAPES_POS = hou.Vector2(3.94, 0.0)
-EXPORT_RIG_POS = hou.Vector2(0.0, -3.19)
+PROMOTE_NAME_POS = hou.Vector2(0.0, -1.6)
+ENUMERATE_POS = hou.Vector2(0.0, -2.8)
+EXPORT_RIG_POS = hou.Vector2(0.0, -4.4)
 
 NOTE_TEXT_COLOR = hou.Color((0.8, 0.8, 0.8))
 NOTE_COLOR = hou.Color((0.0, 0.0, 0.0))
@@ -80,9 +82,25 @@ def _build_sop_dive(sop_dive_node, entity_uri: Uri, pin: bool):
     _run_import(import_blendshapes_node)
     import_blendshapes_node.setPosition(IMPORT_BLENDSHAPES_POS)
 
+    # Copy the primitive 'name' onto points, where rigging tools look for
+    # it. Keep the primitive attribute too (deletein defaults on).
+    promote_name_node = sop_dive_node.createNode('attribpromote', 'promote_name')
+    promote_name_node.parm('inname').set('name')
+    promote_name_node.parm('inclass').set('primitive')
+    promote_name_node.parm('outclass').set('point')
+    promote_name_node.parm('deletein').set(False)
+    promote_name_node.setInput(0, import_model_node)
+    promote_name_node.setPosition(PROMOTE_NAME_POS)
+
+    # Number the points: an integer 'index' point attribute.
+    enumerate_node = sop_dive_node.createNode('enumerate', 'enumerate')
+    enumerate_node.parm('grouptype').set('point')
+    enumerate_node.setInput(0, promote_name_node)
+    enumerate_node.setPosition(ENUMERATE_POS)
+
     # Create the export rig node (terminal sink, no output connector)
     export_node = export_rig.create(sop_dive_node, 'export_rig')
-    export_node.setInput(0, import_model_node)
+    export_node.setInput(0, enumerate_node)
     export_node.native().setPosition(EXPORT_RIG_POS)
 
     # Tuck the subnet's indirect inputs into a minimized box, out of the way.
@@ -96,12 +114,12 @@ def _build_sop_dive(sop_dive_node, entity_uri: Uri, pin: bool):
     inputs_box.setPosition(INPUTS_BOX_POS)
     inputs_box.setSize(INPUTS_BOX_SIZE)
 
-    # The model is what the rigger works against: createNode() left the
-    # flags on the last node made.
-    import_model_node.setDisplayFlag(True)
-    import_model_node.setRenderFlag(True)
+    # The name-promoted, enumerated model is what the rigger works against:
+    # createNode() left the flags on the last node made.
+    enumerate_node.setDisplayFlag(True)
+    enumerate_node.setRenderFlag(True)
 
-    return import_model_node
+    return enumerate_node
 
 def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
            offset: hou.Vector2 = hou.Vector2(0.0, 0.0), pin: bool = False):

@@ -3216,7 +3216,7 @@ Content-Type: text/plain
     channel filename {
       lefttype = extend
       righttype = extend
-      defaultString = \"C:/Users/tumblehead/Desktop/images/testing.psd\"
+      defaultString = \"\"
       flags = 0
       segment { length = 0 expr = "hda = hou.pwd().node(\"../../..\")
 image_save_path = hda.evalParm(\"image_save_path\")

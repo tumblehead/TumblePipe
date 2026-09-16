@@ -373,7 +373,10 @@ the two it does depends on how load-bearing the file is:
   a new department workfile's node graph, so a fix there (leaving entity-aware
   HDAs on their `from_context` default instead of baking an entity URI in)
   would otherwise never reach a live project. If you *had* hand-tuned a
-  template, reconcile it from the `.bak`.
+  template, reconcile it from the `.bak`. The refresh runs only as a
+  numbered step (v2, then v9 as `template.py.v9.bak`), so a later scaffold
+  template change reaches existing projects only once another refresh step
+  ships.
 - **`_config/db/schemas.json` gains the `entity.departments` default (v3).**
   Additive and data-neutral — it declares the per-entity department
   assignment property (default `[]` = "inherit the pool") so the store can
@@ -431,6 +434,17 @@ the two it does depends on how load-bearing the file is:
   `tumblepipe.storage.default_temp_path()` and adds the import it needs,
   leaving every other path where the project put it. A project that already
   keeps scratch somewhere other than the project drive is left alone.
+
+- **The department templates are refreshed again (v9).** v2 was the only
+  template refresh, so a project past it never received a later scaffold
+  template change. v9 re-runs the same refresh, picking up the animation
+  template's Scene Invoke outputting unpacked geometry (packed output drops
+  the rig geometry's `path`/`name` attributes), the rig template promoting
+  `name` to points, and the MODEL/LOOKDEV dive-target fix. A template that
+  differs from the scaffold is replaced, with the original kept as
+  `template.py.v9.bak` — a separate name so a `.bak` left by v2 is not
+  overwritten. Existing workfiles are not touched; only new ones pick up the
+  change.
 
 ### Migrating at launch
 

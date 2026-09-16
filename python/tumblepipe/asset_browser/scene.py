@@ -75,105 +75,29 @@ class SceneManager:
 
     def refresh_scene_imports(self) -> tuple[int, int]:
         """Re-execute every import node in the loaded scene so the latest
-        published versions flow in.
+        published versions flow in. Returns ``(executed, failed)``.
 
-        Restores the import side of the old project_browser
-        auto-import/update-on-open behavior (``main._refresh_scene``):
-        each ``th::import_*`` node re-resolves its ``latest`` reference
-        and rewrites its prims/geometry. Only meant to run on the GUI
-        thread (it mutates the network), so callers invoke it from inside
-        the ``run_on_main_thread`` open tick, right after
-        :meth:`apply_scene_timeline`.
-
-        Scoped to import nodes only. The old refresh also re-executed
-        ``th::create_model`` (rebuilds model metadata/geometry) and
-        ``th::build_comp`` (a COP comp) — both heavy, non-import nodes
-        that cooked large swaths of the graph on open without pulling in
-        any newer published version. They're intentionally excluded so a
-        plain open re-resolves references without cooking the comp.
-
-        Each node type is wrapped in its own try/except: a single bad
-        node (stale HDA, missing export, cross-project reference) must
-        not abort the whole refresh. Node wrappers already no-op when
-        ``is_valid()`` is false, matching the old behavior.
-
-        Returns ``(executed, failed)``. The failure count is the whole
-        reason this reports back: swallowing per-node errors is right (one
-        bad node must not abort the sweep) but *counting* them is what lets
-        an artist-initiated Update Imports avoid claiming success over a
-        scene where every node blew up. The open/reload callers ignore the
-        return — a refresh nobody asked for stays quiet.
+        Opening a scene no longer calls this: ``load_hook`` refreshes on
+        every ``hou.hipFile`` load, however the scene was opened. What is
+        left is the artist's Update Imports, which reports the failure
+        count rather than claiming success over a scene where every node
+        failed. Must run on the GUI thread (it mutates the network).
         """
-        try:
-            import tumblepipe.pipe.houdini.nodes as ns
-            from tumblepipe.pipe.houdini.lops import (
-                import_shot, import_assets,
-                import_asset, import_layer,
-            )
-            from tumblepipe.pipe.houdini.sops import import_rigs
-            from tumblepipe import resolver
-        except Exception:
-            log.exception("Auto-refresh: failed to import node wrappers")
-            return (0, 1)
-
-        # (wrapper class, node type name, network context). Import nodes
-        # only — create_model / build_comp are deliberately excluded (see
-        # docstring); they cook heavily without re-resolving references.
-        node_specs = [
-            (import_shot.ImportShot, "import_shot", "Lop"),
-            (import_assets.ImportAssets, "import_assets", "Lop"),
-            (import_asset.ImportAsset, "import_asset", "Lop"),
-            (import_layer.ImportLayer, "import_layer", "Lop"),
-            (import_rigs.ImportRigs, "import_rigs", "Sop"),
-        ]
-
-        # Each LOP import wrapper's execute() requests a global resolver
-        # refresh (a re-resolve + reload sweep over every loaded entity://
-        # layer). Defer them so the whole batch costs one sweep at the
-        # end instead of one per node.
-        executed = 0
-        failed = 0
-        with resolver.deferred_refresh():
-            for wrapper_cls, type_name, context in node_specs:
-                try:
-                    nodes = ns.list_by_node_type(type_name, context)
-                except Exception:
-                    log.exception(
-                        "Auto-refresh: listing %s nodes failed", type_name,
-                    )
-                    failed += 1
-                    continue
-                for native in nodes:
-                    try:
-                        node = wrapper_cls(native)
-                        if not node.is_valid():
-                            continue
-                        node.execute()
-                        executed += 1
-                    except Exception:
-                        log.exception(
-                            "Auto-refresh: executing %s node failed", type_name,
-                        )
-                        failed += 1
-
-        if executed or failed:
-            log.info(
-                "Auto-refresh: re-executed %d import node(s), %d failed",
-                executed, failed,
-            )
-        return (executed, failed)
+        from tumblepipe.pipe.houdini.scene_imports import (
+            refresh_scene_imports,
+        )
+        return refresh_scene_imports()
 
     def update_scene_imports(self, refresh_cb=None) -> None:
         """Re-execute the loaded scene's import nodes in place — no hip
         reload, no save prompt.
 
         This is the mid-session path for "an upstream department just
-        published": :meth:`refresh_scene_imports` only ran on the open /
-        reload flows, so an artist sitting in an open scene had no way to
-        pull a new publish short of reloading (or, in practice, restarting
-        Houdini). Marshals to the main thread (the refresh mutates the
-        network) and runs in Manual update mode like the open paths, so
-        the re-execute itself doesn't trigger a live full-graph cook.
+        published": ``load_hook`` refreshes only when a scene loads, so
+        without this an artist sitting in an open scene had to reload to
+        pull a new publish. Marshals to the main thread (the refresh
+        mutates the network) and runs in Manual update mode like a load,
+        so the re-execute itself doesn't trigger a live full-graph cook.
 
         The loaded scene's project is re-activated first so the import
         wrappers resolve against the correct project config, matching
@@ -304,18 +228,17 @@ class SceneManager:
                 with util.update_mode(hou.updateMode.Manual):
                     hou.hipFile.load(hip, suppress_save_prompt=decision)
                     log.info("Reloaded scene: %s", hip)
-                    # Reconcile timeline + imports exactly like the open
-                    # paths - same unforced apply_scene_timeline call, so
-                    # reload and open agree on which entities get the
-                    # config range re-applied (animatable only) and which
-                    # keep their saved range (assets). Without this a
-                    # reload would land on whatever stale fps the saved hip
-                    # carried while open reconciled it - a silent divergence.
+                    # Reconcile the timeline exactly like the open paths -
+                    # same unforced apply_scene_timeline call, so reload and
+                    # open agree on which entities get the config range
+                    # re-applied (animatable only) and which keep their saved
+                    # range (assets). Without this a reload would land on
+                    # whatever stale fps the saved hip carried while open
+                    # reconciled it - a silent divergence. Imports were
+                    # already refreshed by load_hook during the load.
                     asset_id = self.get_scene_asset_id()
                     if asset_id is not None:
                         self.apply_scene_timeline(asset_id)
-                        if self._catalog._prefs.auto_refresh_on_open:
-                            self.refresh_scene_imports()
                 self._catalog._request_global_detail_refresh()
             except Exception as exc:
                 report_failure("Reload Scene", exc)

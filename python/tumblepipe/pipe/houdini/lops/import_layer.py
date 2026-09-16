@@ -120,6 +120,20 @@ def _inline_marker_script(assets: list[dict]) -> str:
 
     return '\n'.join(script_lines)
 
+def _resolve_pinned(uri: str) -> str | None:
+    """Resolve a ``&version=``-pinned URI to exactly that version.
+
+    The resolver's latest mode is one switch for the whole session, and an
+    import_asset or import_shot on ``latest`` leaves it on. Resolving under
+    it swapped a pinned v0001 for the newest file while the node still said
+    v0001. This node always pins the version it chose, so it resolves with
+    latest mode off and restores the mode afterwards.
+    """
+    from tumblepipe import resolver
+
+    with resolver.latest_mode(False):
+        return resolver.try_resolve_entity_uri(uri)
+
 class ImportLayer(EntityNode):
 
     def __init__(self, native):
@@ -279,7 +293,7 @@ class ImportLayer(EntityNode):
             if shared_path is not None:
                 shared_version = shared_path.name
                 shared_uri = f"{entity_uri}?dept={department_name}&variant=_shared&version={shared_version}"
-                resolved = _resolver.try_resolve_entity_uri(shared_uri)
+                resolved = _resolve_pinned(shared_uri)
                 if resolved and Path(resolved).exists():
                     shared_resolved = resolved
                     shared_exists = True
@@ -290,7 +304,7 @@ class ImportLayer(EntityNode):
 
         # Channel layer (index 2)
         channel_uri = f"{entity_uri}?dept={department_name}&variant={channel_name}&version={version_name}"
-        resolved_channel = _resolver.try_resolve_entity_uri(channel_uri)
+        resolved_channel = _resolve_pinned(channel_uri)
         channel_exists = bool(resolved_channel) and Path(resolved_channel).exists()
         self.parm('import_filepath2').set(resolved_channel if channel_exists else '')
         self.parm('import_enable2').set(1 if channel_exists else 0)

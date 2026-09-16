@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.50.0"
+version = "1.51.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -41,9 +41,6 @@ TH_PIPELINE_PATH = { method = "set", value = "$HPM_PACKAGE_ROOT" }
 # renamed factory fails loudly instead of the catalog quietly not appearing,
 # and its settings page is filed under TumblePipe rather than under whichever
 # package hosts the browser. Needs TumbleTrove >= 0.26.0.
-# Read-only network-catalog entries (recipes) shipped with the package —
-# scanned by tumbletrove's asset browser (> 0.9.1); older versions ignore it.
-ASSET_BROWSER_NETWORK_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/recipes" }
 # Required placeholder — deliberately NO `value`. hpm reads a valueless entry
 # with `required = true` as "the consuming project must supply this"; the old
 # `value = ""` was an ordinary *satisfied* entry, so prepare succeeded and
@@ -172,7 +169,6 @@ include = [
     # sidebar. The Sphinx build files alongside it are carved out below.
     "docs/**",
     "radial_menus/**",
-    "recipes/**",
     "otls/**",
     "python/tumblepipe/**",
     "python3.11libs/**",

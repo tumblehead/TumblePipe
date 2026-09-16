@@ -2091,7 +2091,7 @@ Content-Type: text/plain
     channel base_color_file {
       lefttype = extend
       righttype = extend
-      defaultString = \"P:/cazoo/resources/textures/SasquatchDrive/background.jpeg\"
+      defaultString = \"\"
       flags = 0
       start = 41.666666666666664
       segment { length = 0 expr = chs(\"../base_color_file\") }

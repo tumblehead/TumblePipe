@@ -440,6 +440,9 @@ class ImportAssets(EntityNode):
             self.parm('set_metadata_python').set('')  # Clear metadata script
             context.bypass(True)
             return
+        # Undo a bypass left by an earlier empty run, or the node reports
+        # "Imported" while passing nothing through.
+        context.bypass(False)
 
         # Build the merge node
         merge_node = dive_node.createNode('merge', 'merge')

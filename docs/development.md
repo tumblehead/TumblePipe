@@ -186,7 +186,8 @@ what to run before tagging:
 uv run --no-project python .ci/preflight.py
 ```
 
-Stages: `lint` (ruff E9,F), `hdas`, `hdapy`, `reports`, `tests`, `harness`.
+Stages: `lint` (ruff E9,F), `hdas`, `hdapy`, `hdapaths`, `reports`, `tests`,
+`harness`.
 
 `hdapy` runs `.ci/quality_gates/check_hda_python.py`: the `PythonModule` and
 event-script sections of every expanded HDA under `otls/` are extensionless,
@@ -195,6 +196,20 @@ when the button is pressed. The gate streams each one to ruff as a `.py`
 (E9, F821, F823, with `hou` and `kwargs` as builtins), which is how a
 `NameError` on an error branch of `th::material_assigner` would have been
 caught before an artist hit it.
+
+`hdapaths` runs `.ci/quality_gates/check_hda_project_paths.py`: an HDA is
+saved from inside a project scene, so every embedded node ships with
+whatever it pointed at when "Save Node Type" was pressed. That is how
+`th::import_model` came to carry one project's
+`P:/growth/export/assets/CHAR/Baby/.../v0003.usd` in its inner
+`import_layer` with the import enabled, and loaded that Baby model into
+every other project's rigging workfile until Import was pressed. The gate
+greps the text parts of every `Contents.mime` and `DialogScript` for
+drive-letter and UNC paths, `/Users/` and `/home/` paths, `entity:/` URIs
+that name an entity, and the `th_temp` root; `op:/`, `opdef:`, `$HIP` and
+`$HFS` forms pass. Findings that need an asset change rather than a string
+edit (the paint COPs' textures) sit in `KNOWN_OPEN` and are printed
+without failing the gate.
 `--list` prints them, `--only <stage>` runs one.
 
 `harness` runs only the two `scripts/verify_*.py` harnesses that work with
@@ -219,8 +234,9 @@ widget stacks involved are pure qtpy:
   (click-away/Enter/Tab commit, key renames, reverts).
 - `verify_process_dialog_ux.py` — the process dialog's execution UX
   (running-child status label, progress breadcrumbs, the
-  cancel-leaves-steps-unrun warning, exported-version reporting, and the
-  skip-vs-fail split described below).
+  cancel-leaves-steps-unrun warning, exported-version reporting, the
+  skip-vs-fail split described below, and the footer states: a styled
+  Execute, a green Done after a clean run, Close plus retry otherwise).
 
 They need a desktop session and a Qt binding:
 

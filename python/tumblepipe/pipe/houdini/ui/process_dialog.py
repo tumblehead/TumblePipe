@@ -13,6 +13,40 @@ from .helpers import has_staged_export
 logger = logging.getLogger(__name__)
 
 
+def _primary_button_style(base: str, hover: str, pressed: str, border: str) -> str:
+    """A complete stylesheet for a filled call-to-action button.
+
+    Houdini's application style draws QPushButton from its own rules; a
+    widget stylesheet that only sets ``background-color`` loses the frame and
+    renders as bare text (tumblepipe__bugs 2026-09-16). Setting border,
+    padding and radius alongside the colour makes Qt paint the whole button.
+    """
+    return f"""
+        QPushButton {{
+            background-color: {base};
+            color: white;
+            font-weight: bold;
+            border: 1px solid {border};
+            border-radius: 3px;
+            padding: 4px 18px;
+            min-width: 80px;
+        }}
+        QPushButton:hover {{ background-color: {hover}; }}
+        QPushButton:pressed {{ background-color: {pressed}; }}
+        QPushButton:disabled {{
+            background-color: #4a4a4a;
+            color: #8c8c8c;
+            border-color: #3c3c3c;
+        }}
+    """
+
+
+# Blue: the one action the dialog exists for.
+EXECUTE_BUTTON_STYLE = _primary_button_style('#4a90e2', '#5c9eea', '#3a7bc8', '#2f6fbf')
+# Green: a clean run is over, nothing left to do but leave.
+DONE_BUTTON_STYLE = _primary_button_style('#3c9a4e', '#48ad5b', '#33853f', '#2e7a3c')
+
+
 class ProcessDialog(QtWidgets.QDialog):
     """Dialog for executing process tasks with local/farm mode selection"""
 
@@ -33,6 +67,9 @@ class ProcessDialog(QtWidgets.QDialog):
         self._is_executing = False
         self._running_status_text = ""
         self._was_cancelled = False
+        # True once a run finished with nothing failed or cancelled: the
+        # footer collapses to a single green Done button (see _show_done_state).
+        self._run_done = False
         self._pre_execute_callback = pre_execute_callback
         self._current_department = current_department
 
@@ -150,7 +187,7 @@ class ProcessDialog(QtWidgets.QDialog):
         # Execute/Cancel buttons
         self._execute_button = QtWidgets.QPushButton("Execute")
         self._execute_button.setDefault(True)
-        self._execute_button.setStyleSheet("background-color: #4A90E2; color: white;")
+        self._execute_button.setStyleSheet(EXECUTE_BUTTON_STYLE)
         self._execute_button.clicked.connect(self._on_execute_clicked)
         button_layout.addWidget(self._execute_button)
 
@@ -239,8 +276,8 @@ class ProcessDialog(QtWidgets.QDialog):
 
     def _update_status(self):
         """Update status label based on current state"""
-        if self._is_executing:
-            return  # Don't update during execution
+        if self._is_executing or self._run_done:
+            return  # Don't update during execution, or over a finished run's result
 
         enabled_count = self._model.get_enabled_count()
         total_count = len(self._model.get_tasks())
@@ -299,6 +336,9 @@ class ProcessDialog(QtWidgets.QDialog):
             self._executor.cancel()
             self._status_label.setText("Cancelling after the current task...")
             self._status_label.setStyleSheet("color: orange; font-weight: bold;")
+        elif self._run_done:
+            # Done: the run succeeded and the user is leaving
+            self.accept()
         else:
             # Close dialog
             self.reject()
@@ -354,6 +394,25 @@ class ProcessDialog(QtWidgets.QDialog):
             self._cancel_button.setText("Cancel")
         else:
             self._cancel_button.setText("Close")
+
+    def _show_done_state(self):
+        """Collapse the footer to a single green Done button.
+
+        After a clean run there is nothing left to select or execute, so the
+        Execute and selection buttons go away and the close button turns
+        into a green Done. A failed or cancelled run keeps the normal footer
+        instead: the tree is editable again and Execute retries the selection.
+        """
+        self._run_done = True
+        self._execute_button.hide()
+        self._select_all_button.hide()
+        self._select_none_button.hide()
+        self._local_radio.setEnabled(False)
+        self._farm_radio.setEnabled(False)
+        self._cancel_button.setText("Done")
+        self._cancel_button.setStyleSheet(DONE_BUTTON_STYLE)
+        self._cancel_button.setDefault(True)
+        self._cancel_button.setFocus()
 
     def _find_task_with_parent(self, task_id: str) -> tuple[ProcessTask | None, ProcessTask | None]:
         """Find a task by ID across top-level tasks and their children.
@@ -459,6 +518,7 @@ class ProcessDialog(QtWidgets.QDialog):
                 f"All tasks completed ({len(completed)} succeeded, {len(skipped)} skipped)"
             )
             self._status_label.setStyleSheet("color: green; font-weight: bold;")
+            self._show_done_state()
 
             # A task that skipped itself wrote nothing. Say so - "All tasks
             # completed" over a silently missing channel reads as success.
