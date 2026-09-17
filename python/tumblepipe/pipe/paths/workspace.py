@@ -48,6 +48,18 @@ def _resolve_workspace(
     )
     return workfile_uri, api.storage.resolve(workspace_uri)
 
+def resolve_workfile_uri(entity_uri: Uri, department_name: str) -> Uri:
+    """The URI a department workfile of ``entity_uri`` belongs to.
+
+    The entity itself, or — for a Multi member in a department the Multi
+    covers — the Multi, because that is whose folder the hip lands in. This
+    is the URI a workfile's ``context.json`` must record: recording the
+    member instead makes the Multi's shared scene claim to be that one shot,
+    and Publish then drops every other member's export node.
+    """
+    workfile_uri, _ = _resolve_workspace(entity_uri, department_name)
+    return workfile_uri
+
 def get_workspace_relpath(
     entity_uri: Uri,
     department_name: str

@@ -68,7 +68,11 @@ Two JSON files sit in every department folder:
   `version` this folder's latest workfile is, plus `timestamp` and `user`.
   This is what tells the browser and the export nodes what an open hip
   *is*; a hip without it (an old migrated project) falls
-  back to parsing the folder path.
+  back to parsing the folder path. In a Multi's folder `uri` is always the
+  Multi (`groups:/…`), even when the workfile was created or saved from a
+  member's covered row; up to TumblePipe 1.52.0 such a save recorded the
+  member instead (see
+  [Troubleshooting](../troubleshooting.md#publish-from-a-multi-workfile-only-lists-one-member)).
 - `_context/vNNNN.json` — one **lineage entry** per version: `user`,
   `timestamp`, `from_version` (the version it was saved from),
   `to_version`, `houdini_version`, `extension` and `note`.

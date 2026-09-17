@@ -28,6 +28,7 @@ from tumblepipe.pipe.build import get_source_department
 from tumblepipe.pipe.usd import (
     read_staged_sublayer_refs,
     parse_entity_sublayer_uri,
+    nested_asset_department_refs,
 )
 from tumblepipe.pipe.asset_layers import build_asset_layer_report
 from tumblepipe import resolver
@@ -534,6 +535,22 @@ class ImportShot(ns.Node):
         if len(shot_uri_raw) == 0: return Uri.parse_unsafe(shot_uris[1])  # Skip 'from_context'
         if shot_uri_raw not in shot_uris: return None  # Compare strings
         return Uri.parse_unsafe(shot_uri_raw)
+
+    def get_exclude_asset_department_names(self) -> list[str]:
+        parm = self.parm('asset_departments')
+        if parm is None: return []  # older HDA binary; nothing excluded
+        return list(filter(len, parm.eval().split()))
+
+    def set_exclude_asset_department_names(self, department_names):
+        parm = self.parm('asset_departments')
+        if parm is None: return
+        asset_department_names = self.list_asset_department_names()
+        parm.set(' '.join([
+            department_name
+            for department_name in department_names
+            if department_name in asset_department_names
+        ]))
+
     def get_downstream_shot_department_names(self):
         shot_department_names = self.list_shot_department_names()
         if len(shot_department_names) == 0: return []
@@ -979,6 +996,7 @@ class ImportShot(ns.Node):
         # Configure Sublayer LOP with filtered layers
         import_node.parm('num_files').set(len(layers_to_load))
 
+        loaded_refs = []
         for i, info in enumerate(layers_to_load):
             # Handle both filesystem paths (Path objects) and entity URIs (strings)
             path_value = info['path']
@@ -1000,6 +1018,7 @@ class ImportShot(ns.Node):
                 # Filesystem Path object
                 layer_path = path_str(path_value)
             import_node.parm(f'filepath{i+1}').set(layer_path)
+            loaded_refs.append(layer_path)
 
             # Stamp what the resolver actually lands on, so the Layer Stack
             # reports the loaded version rather than the pin we just stripped.
@@ -1011,6 +1030,18 @@ class ImportShot(ns.Node):
 
         # Update layer stack UI with checkboxes and link to sublayer enables
         self._update_layer_stack_ui(layers_to_load)
+
+        # Excluded asset departments are muted, not filtered: the layers sit
+        # several sublayers below anything this node loads (scene assets go
+        # root -> scene -> asset staged -> department), so there is no list
+        # to take them out of. The refs are read from the same staged files
+        # the stage composes, in the resolver mode set above.
+        excluded_asset_departments = self.get_exclude_asset_department_names()
+        mute_refs = nested_asset_department_refs(
+            loaded_refs,
+            excluded_asset_departments,
+            resolver.try_resolve_entity_uri,
+        )
 
         # Set FPS and frame range. Apply fps *before* the range so the range
         # is stored against the final fps from the start; an fps change after
@@ -1042,10 +1073,11 @@ class ImportShot(ns.Node):
             metadata_node.parm('python').set(metadata_script)
 
         # Handle asset duplication for assets with instances > 1
-        self._setup_asset_duplication(context, assets)
+        self._setup_asset_duplication(context, assets, mute_refs)
 
         # Set success comment with import metadata
         resolved_version = staged_file_path.parent.name
+        comment = f"Imported: {resolved_version}"
         # Try to get timestamp and user from context.json
         if context_data is not None:
             outputs = context_data.get('outputs', [])
@@ -1054,19 +1086,27 @@ class ImportShot(ns.Node):
                 timestamp = output.get('timestamp', '')
                 user = output.get('user', '')
                 if timestamp and user:
-                    ns.set_node_comment(context, f"Imported: {resolved_version}\n{timestamp}\nby {user}")
-                else:
-                    ns.set_node_comment(context, f"Imported: {resolved_version}")
-            else:
-                ns.set_node_comment(context, f"Imported: {resolved_version}")
-        else:
-            ns.set_node_comment(context, f"Imported: {resolved_version}")
+                    comment += f"\n{timestamp}\nby {user}"
+        if excluded_asset_departments:
+            # Say what the exclusion did: a name matching no layer (no asset
+            # in the shot exported it) otherwise looks applied.
+            comment += (
+                f"\nMuted asset {', '.join(excluded_asset_departments)}: "
+                f"{len(mute_refs)} layer{'' if len(mute_refs) == 1 else 's'}"
+            )
+        ns.set_node_comment(context, comment)
 
-    def _setup_asset_duplication(self, context, assets):
+    def _setup_asset_duplication(self, context, assets, mute_refs=()):
         """Configure duplication for assets with instance count > 1.
 
         Creates/updates duplicate nodes for each asset that needs multiple instances.
         The 'duplicates' subnet is part of the HDA template.
+
+        ``mute_refs`` are layer identifiers to mute (excluded asset
+        departments). They get a Configure Stage node at the head of the
+        same chain: this subnet is the HDA's one editable place rebuilt on
+        every import, and a mute only has to come before whatever reads the
+        composed stage.
         """
         from tumblepipe.pipe.houdini.util import uri_to_prim_path
         from tumblepipe.api import default_client
@@ -1086,6 +1126,18 @@ class ImportShot(ns.Node):
         duplicates_output = duplicates_node.node('output0')
 
         prev_node = duplicates_input
+
+        if mute_refs:
+            # 'addremove', not 'set': a mute configured upstream of this
+            # node must survive it.
+            mute_node = duplicates_node.createNode(
+                'configurestage', 'mute_asset_departments'
+            )
+            mute_node.parm('editmute').set('addremove')
+            mute_node.parm('mutepaths').set(' '.join(sorted(mute_refs)))
+            if prev_node:
+                mute_node.setInput(0, prev_node)
+            prev_node = mute_node
 
         # Create duplicate nodes for each asset with instances > 1
         # Metadata in customData travels with the scene prim automatically

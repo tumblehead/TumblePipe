@@ -305,6 +305,28 @@ def save_hip_file(next_path: Path) -> Path:
     return next_path
 
 
+def workfile_context(
+    entity_uri: Uri,
+    department_name: str,
+    hip_path: Path,
+) -> Context:
+    """The context a freshly saved workfile at ``hip_path`` records.
+
+    Built from what was asked for, never read back from the folder's
+    existing ``context.json``: that pointer may be wrong, and reading it
+    carries the error into every new version. The URI is the workfile's
+    owner (:func:`resolve_workfile_uri`), so a Multi member's workfile,
+    which lives in the Multi's folder, records the Multi.
+    """
+    from tumblepipe.pipe.paths import resolve_workfile_uri
+
+    return Context(
+        entity_uri=resolve_workfile_uri(entity_uri, department_name),
+        department_name=department_name,
+        version_name=Path(hip_path).stem.rsplit("_", 1)[-1],
+    )
+
+
 def commit_next_workfile(
     entity_uri: Uri,
     department_name: str,
@@ -346,18 +368,13 @@ def commit_next_workfile(
     )
 
     next_path = reserve_next_hip_file_path(entity_uri, department_name, nc_type=nc_type)
-    version_name = next_path.stem.rsplit("_", 1)[-1]
     try:
         next_path = save_hip_file(next_path)
     except BaseException:
         release_reserved_version(next_path)
         raise
 
-    next_context = Context(
-        entity_uri=entity_uri,
-        department_name=department_name,
-        version_name=version_name,
-    )
+    next_context = workfile_context(entity_uri, department_name, next_path)
     save_context(
         next_path.parent, prev_context, next_context,
         file_extension=next_path.suffix.lstrip("."),

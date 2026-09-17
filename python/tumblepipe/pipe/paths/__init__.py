@@ -54,6 +54,7 @@ from tumblepipe.pipe.paths.workspace import (
     load_entity_context,
     get_workfile_context,
     get_workspace_relpath,
+    resolve_workfile_uri,
 )
 from tumblepipe.pipe.paths.export import (
     get_export_path,
@@ -127,6 +128,7 @@ __all__ = [
     'load_entity_context',
     'get_workfile_context',
     'get_workspace_relpath',
+    'resolve_workfile_uri',
     # export
     'get_export_path',
     'latest_export_path',

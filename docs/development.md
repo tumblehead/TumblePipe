@@ -375,6 +375,17 @@ project hython (e.g. TumbleTrove Desktop's run_hython, with dev
 overrides for a local build). It sandboxes `TH_EXPORT_PATH` to a
 tempdir, so it never touches live project data.
 
+`scripts/verify_import_shot_asset_exclude.py` pins import_shot's
+*Exclude Asset Departments*: excluding a department must mute exactly
+the asset layers of that department the shot composes, no shot layers, and
+clearing it must restore the stage. It reads **live project data** (read
+only) and needs a licensed hython plus the tumbleResolver plugin
+(`PXR_PLUGINPATH_NAME` / `PATH` as in its docstring). Choose the target
+with `VERIFY_PROJECT`, `VERIFY_SHOT`, `VERIFY_VERSION` and
+`VERIFY_DEPARTMENT`. Also run it on a project whose root layers sublayer a
+scene (RND, Snail): that is the only path to scene assets, and paleindia
+has none.
+
 ## HDA spare-parm UI harness
 
 `scripts/verify_import_shot_layer_stack.py` pins the import_shot Layer

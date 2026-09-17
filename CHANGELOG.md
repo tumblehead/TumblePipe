@@ -12,6 +12,21 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.52.0 — 2026-09-16
+
+### Features
+- feat(submit-jobs): forms on the left, entity tree on the right (`1f85a06`)
+
+### Fixes
+- fix(publish): collect export_rig nodes in an asset Multi's rig workfile (`5de2a40`)
+- fix(submit-jobs): a Multi submits its member shots, not itself (`f9c255b`)
+- fix(browser): a recipe saves one network's nodes; document node-drop saves (`b352445`)
+- fix(browser): Refresh no longer empties the Recipes sidebar section (`0181082`)
+
+### Documentation
+- docs: rig exports from an asset Multi (`35a8f37`)
+- docs: regenerate CHANGELOG.md for v1.51.0 (`2524589`)
+
 ## v1.51.0 — 2026-09-16
 
 ### Features

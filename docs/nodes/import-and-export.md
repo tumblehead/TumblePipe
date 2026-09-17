@@ -119,6 +119,7 @@ Source: [`otls/lop_th.import_shot.1.0`](../../otls/lop_th.import_shot.1.0/th_8_8
 | Channel | `default` | Which channel's staged build |
 | Department | `from_context` | The cut: this department **and everything downstream of it** in the shot's pipeline order is excluded, so you compose what is upstream of your own work. The reserved value `none` (type it; it is not in the menu) excludes nothing |
 | Version | `latest` | `latest` / `current` / `v####` |
+| Exclude Asset Departments | *(none)* | Checkable list of asset departments (e.g. `lookdev`) to leave out of **every** asset in the shot, nested ones included; ticking re-imports immediately |
 | Include procedurals | off | Currently wired to nothing |
 | Load Payloads | on | Currently wired to nothing (payloads always load) |
 
@@ -147,6 +148,18 @@ Gotchas:
   floated in, which can differ from the pins recorded in the build.
 - Assets are dropped along with the department that introduced them, so a
   lookdev-only exclusion never removes a model.
+- Exclude Asset Departments **mutes** the layers instead of dropping rows:
+  an asset's department layers sit inside its staged build (and, for scene
+  assets, inside the root and scene layers), so they never appear in the
+  Layer Stack. The import creates a Configure Stage node,
+  `duplicates/mute_asset_departments`, and the comment says how many layers
+  it muted (*Muted asset lookdev: 6 layers*). Zero means no asset in the
+  shot exported that department.
+- The mute applies to the whole stage from this node down, so an
+  `import_asset` further down the network can lose the same layers. It is
+  per-asset-*version*: after a new export floats in, press **Import** again
+  (the automatic refresh on scene open does this for you). It affects this
+  session only; farm renders still compose every department.
 - An invisible `Exclude Downstream Of` parm exists for the farm's stage task
   ([The department cut](../composition.md#the-department-cut)); it is not
   something you set by hand.

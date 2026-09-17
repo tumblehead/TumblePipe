@@ -513,6 +513,18 @@ layer stack per department, and applies through nesting: excluding
 `lookdev` when importing a set also drops the lookdev layers of every
 nested asset.
 
+`import_shot`'s *Exclude Asset Departments* does the same for every asset in
+a shot, but it cannot filter: an asset's department layers sit several
+sublayers below the node (shot staged → root → scene → asset staged →
+department), so nothing it loads directly contains them. It **mutes** them
+instead, through a Configure Stage node inside the import. USD mutes by
+exact layer identifier (no patterns), and an `entity:/` layer's identifier
+is its ref as written in the parent file, version pin included. So the node
+reads the staged `.usda` chain and mutes exactly those strings
+(`pipe.usd.nested_asset_department_refs`). Two consequences: the mute holds
+for the whole stage below the node, and a newly floated version is only
+covered after the next import.
+
 It is a **working view, and it does not survive the session**. The setting
 lives only on the node: it is never written to `context.json`, the render
 stage never reads it, and no farm job sets it. A staged build re-sublayers

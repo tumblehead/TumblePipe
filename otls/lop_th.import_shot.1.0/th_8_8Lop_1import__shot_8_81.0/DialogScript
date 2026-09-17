@@ -123,6 +123,25 @@
         label   "Settings"
 
         parm {
+            name    "asset_departments"
+            label   "Exclude Asset Departments"
+            type    string
+            default { "" }
+            menutoggle {
+                [ "from tumblepipe.pipe.houdini.lops import import_shot" ]
+                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "" ]
+                [ "node = import_shot.ImportShot(hou.pwd())" ]
+                [ "return util.list_to_checked_menu(" ]
+                [ "    node.list_asset_department_names()," ]
+                [ "    node.get_exclude_asset_department_names()" ]
+                [ ")" ]
+                language python
+            }
+            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
             name    "include_procedurals"
             label   "Include procedurals"
             type    toggle

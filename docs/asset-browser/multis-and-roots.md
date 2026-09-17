@@ -63,7 +63,9 @@ What coverage does to a member, as soon as it is written:
 - The member's deck item and list row for that department show **ⓜ** on
   an orange tint instead of a version, with the tooltip *Dept — covered by
   Multi: name. Double-click to open the Multi's workfile*. Opening the row
-  opens the Multi's hip.
+  opens the Multi's hip, and creating a workfile from it (**New from
+  Template**, **New from Current**) writes the next version of the Multi's
+  workfile, recorded as the Multi's.
 - The member's own workfiles for that department, if any exist, stay on
   disk and stop being what the row opens. Uncover the department and they
   are back.

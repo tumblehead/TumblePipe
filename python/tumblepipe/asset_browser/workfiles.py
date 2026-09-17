@@ -498,9 +498,7 @@ class WorkfileManager:
             return
 
         try:
-            from tumblepipe.pipe.paths import (
-                reserve_next_hip_file_path, Context,
-            )
+            from tumblepipe.pipe.paths import reserve_next_hip_file_path
         except Exception as exc:
             report_failure("Create workfile", exc)
             return
@@ -509,9 +507,9 @@ class WorkfileManager:
         def _do_create(target_proj=proj):
             try:
                 import hou
-                from tumblepipe.pipe.paths import get_workfile_context
                 from tumblepipe.pipe.context import (
                     save_context, save_entity_context, save_hip_file,
+                    workfile_context,
                 )
 
                 # Re-activate inside the deferred tick so no background
@@ -556,11 +554,7 @@ class WorkfileManager:
                 # save .hip as .hipnc); record the path it actually wrote.
                 next_path = save_hip_file(next_path)
 
-                new_ctx = get_workfile_context(next_path) or Context(
-                    entity_uri=entity_uri,
-                    department_name=dept,
-                    version_name=Path(next_path).stem.rsplit("_", 1)[-1],
-                )
+                new_ctx = workfile_context(entity_uri, dept, next_path)
                 save_context(
                     next_path.parent, None, new_ctx,
                     file_extension=next_path.suffix.lstrip("."),
@@ -684,10 +678,11 @@ class WorkfileManager:
             try:
                 import hou
                 from tumblepipe.pipe.paths import (
-                    reserve_next_hip_file_path, get_workfile_context, Context,
+                    reserve_next_hip_file_path, get_workfile_context,
                 )
                 from tumblepipe.pipe.context import (
                     save_context, save_entity_context, save_hip_file,
+                    workfile_context,
                 )
 
                 # Re-activate inside the deferred tick so no background
@@ -725,11 +720,7 @@ class WorkfileManager:
                 # save .hip as .hipnc); record the path it actually wrote.
                 next_path = save_hip_file(next_path)
 
-                new_ctx = get_workfile_context(next_path) or Context(
-                    entity_uri=entity_uri,
-                    department_name=dept,
-                    version_name=Path(next_path).stem.rsplit("_", 1)[-1],
-                )
+                new_ctx = workfile_context(entity_uri, dept, next_path)
                 save_context(
                     next_path.parent, prev_ctx, new_ctx,
                     file_extension=next_path.suffix.lstrip("."),
@@ -1091,9 +1082,7 @@ class WorkfileManager:
             return
 
         try:
-            from tumblepipe.pipe.paths import (
-                reserve_next_hip_file_path, Context,
-            )
+            from tumblepipe.pipe.paths import reserve_next_hip_file_path
         except Exception as exc:
             report_failure("New group workfile from template", exc)
             return
@@ -1112,9 +1101,9 @@ class WorkfileManager:
         def _do_create(target_proj=proj):
             try:
                 import hou
-                from tumblepipe.pipe.paths import get_workfile_context
                 from tumblepipe.pipe.context import (
                     save_context, save_entity_context, save_hip_file,
+                    workfile_context,
                 )
 
                 self._catalog._activate_project(target_proj)
@@ -1156,11 +1145,7 @@ class WorkfileManager:
                 # save .hip as .hipnc); record the path it actually wrote.
                 next_path = save_hip_file(next_path)
 
-                new_ctx = get_workfile_context(next_path) or Context(
-                    entity_uri=group_uri,
-                    department_name=dept,
-                    version_name=Path(next_path).stem.rsplit("_", 1)[-1],
-                )
+                new_ctx = workfile_context(group_uri, dept, next_path)
                 save_context(
                     next_path.parent, None, new_ctx,
                     file_extension=next_path.suffix.lstrip("."),

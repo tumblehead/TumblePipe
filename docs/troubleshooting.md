@@ -126,6 +126,27 @@ Two related traps:
   set each node's **Entity** to its character, since `from_context` cannot
   pick one member of a Multi.
 
+### Publish from a Multi workfile only lists one member
+
+The scene sits in the Multi's folder
+(`<project>/groups/<context>/<name>/<department>/`) and its export nodes
+target every member. But Publish only offers the nodes for one member shot,
+and the warning details, if any, start with *This workfile publishes
+`entity:/shots/…`* rather than the Multi. Copying export nodes in from
+another department's workfile is not the cause, as long as each node's
+**Entity** and **Department** are right.
+
+The folder's `context.json` names a member instead of the Multi. Up to
+TumblePipe 1.52.0, creating a workfile from a member's *covered* department
+row wrote the file into the Multi's folder but recorded the member, and
+every later Save kept it. Publish then treats the scene as that one shot
+(see [Why a node is left out](asset-browser/export-and-publish.md#why-a-node-is-left-out)).
+
+With a later release, **Save** once and reopen the scene: the save
+records the Multi again. On an older release, change `uri` in that
+folder's `context.json` to the Multi's `groups:/<context>/<name>`, keeping a
+copy of the file, then reopen the scene.
+
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 
 Each is a deliberate guard in `th::export_layer`, and the dialog names the

@@ -897,6 +897,70 @@ def excluded_staged_refs(
     return excluded
 
 
+def nested_asset_department_refs(
+    refs: list[str],
+    department_names: list[str],
+    resolve,
+) -> set[str]:
+    """Asset department layer refs reachable from ``refs``, verbatim.
+
+    A shot composes its assets several sublayers deep — shot staged file,
+    root layer, scene staged file, asset staged file, and only then the
+    asset's department exports — so an asset department cannot be left out
+    by picking which files to sublayer. It has to be *muted*, and USD mutes
+    by exact layer identifier: no patterns (a Configure Stage LOP takes
+    ``*`` literally). For an ``entity:/`` sublayer the identifier is the
+    ref exactly as authored in its parent layer, pin and all, so this
+    returns the strings the staged files actually hold.
+
+    ``refs`` are the layers the stage loads, as handed to the Sublayer LOP.
+    ``resolve`` maps a ref to a filesystem path or None — the caller's
+    resolver, in the same latest/pinned mode the stage resolves in, so the
+    staged files read here are the ones that compose.
+
+    Only ``.usda`` layers are read: staged files, scene files and the shot
+    root. Department exports are crate files and never sublayer assets, so
+    refs carrying a department (other than the shot's ``root``
+    pseudo-department) are matched but never opened. Matching is limited
+    to ``entity:/assets/`` refs — a shot department sharing a name with an
+    asset one is not the asset's layer.
+    """
+    wanted = set(department_names)
+    found: set[str] = set()
+    if not wanted:
+        return found
+
+    visited: set[str] = set()
+    pending = list(refs)
+    while pending:
+        ref = pending.pop()
+        parsed = parse_entity_sublayer_uri(ref)
+        if parsed is None:
+            continue
+        if parsed.department is not None:
+            if parsed.base.startswith('entity:/assets/'):
+                if parsed.department in wanted:
+                    found.add(ref)
+                continue
+            if parsed.department != 'root':
+                continue
+        resolved = resolve(ref)
+        if not resolved:
+            continue
+        path = Path(resolved)
+        if path.suffix.lower() != '.usda':
+            continue
+        key = os.path.normcase(os.path.normpath(str(path)))
+        if key in visited:
+            continue
+        visited.add(key)
+        try:
+            pending.extend(read_staged_sublayer_refs(path))
+        except OSError:
+            continue
+    return found
+
+
 def collapse_latest_references(
     staged_file_path: Path,
     output_path: Path,

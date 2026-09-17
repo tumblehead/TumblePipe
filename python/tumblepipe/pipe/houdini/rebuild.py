@@ -27,6 +27,8 @@ NODE_CONFIGS = {
         ('get_shot_uri', 'set_shot_uri'),
         ('get_department_name', 'set_department_name'),
         ('get_exclude_downstream_of', 'set_exclude_downstream_of'),
+        ('get_exclude_asset_department_names',
+         'set_exclude_asset_department_names'),
         ('get_include_procedurals', 'set_include_procedurals'),
     ]),
     'layer_split': (layer_split.LayerSplit, [

@@ -252,3 +252,5 @@ Inline deliberately; leaving a real asset untagged trips the
 A checkable list of the entity's departments. Ticked departments are dropped
 from the layer stack while you work — a working view that is never published;
 see [Department exclusion](../composition.md#department-exclusion).
+On `th::import_shot` the list is **Exclude Asset Departments**: it names
+asset departments and applies to every asset the shot composes.
