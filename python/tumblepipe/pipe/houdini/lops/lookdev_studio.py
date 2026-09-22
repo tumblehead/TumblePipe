@@ -83,6 +83,12 @@ class LookdevStudio(ns.Node):
         # Get the entity
         context = _entity_from_context_json()
         assert context is not None, 'Invalid workfile path'
+        # A Multi's workfile records the Multi, and a turntable renders one
+        # asset: the group URI names no entity for the farm to resolve.
+        assert context.entity_uri.purpose == 'entity', (
+            f'This workfile belongs to the Multi {context.entity_uri}, and a '
+            f'turntable renders one asset.'
+        )
 
         # Parameters
         node_path = self.node('OUT/stage_OUT').path()

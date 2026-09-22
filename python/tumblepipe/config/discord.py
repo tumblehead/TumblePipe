@@ -4,10 +4,18 @@ from tumblepipe.util.uri import Uri
 DISCORD_URI = Uri.parse_unsafe('config:/discord')
 
 def get_token() -> str | None:
-    """Get the Discord bot token."""
+    """Get the Discord bot token, or None when the project has not set one.
+
+    A project created from the template carries an empty ``token`` string, so
+    a blank value means "not configured" just as much as a missing key does.
+    """
     properties = api.config.get_properties(DISCORD_URI)
     if properties is None: return None
-    return properties.get('token')
+    token = properties.get('token')
+    if not isinstance(token, str): return None
+    token = token.strip()
+    if len(token) == 0: return None
+    return token
 
 def get_user_discord_id(username: str) -> int | None:
     """Get the Discord user ID for a given username."""
@@ -43,3 +51,14 @@ def list_channels() -> list[str]:
     discord_children = discord_data.get('children', {}).get('discord', {}).get('children', {})
     channels_children = discord_children.get('channels', {}).get('children', {})
     return list(channels_children.keys())
+
+def is_configured() -> bool:
+    """Whether this project has a usable Discord setup at all.
+
+    The project template ships an empty discord block -- no token, no users,
+    no channels -- so a project nobody has wired up answers False here and
+    callers can skip posting instead of failing.
+    """
+    if get_token() is None: return False
+    if len(list_channels()) == 0: return False
+    return True

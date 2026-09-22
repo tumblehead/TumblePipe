@@ -1,21 +1,48 @@
-"""RenderSettings and RenderProduct validation."""
+"""RenderSettings and RenderProduct validation.
+
+Nothing here assumes a prim path. Where the settings and products live is
+project-owned — 7 of 13 live projects keep them under `/scene/Render`, the
+rest at `/Render` — so a validator that looked at `/Render/rendersettings`
+reported "not found" on a stage that has one, and skipped the render-camera
+check entirely on the projects most likely to need it. See
+`pipe.usd.find_render_settings_prim_path` and
+docs/composition.md#where-the-render-settings-live.
+"""
+
+from tumblepipe.pipe.usd import (
+    RenderSettingsError,
+    find_render_settings_prim_path,
+)
 
 from .base import ValidationResult
 
 
 _SUGG_ADD_RENDERSETTINGS = (
-    "Add a Render Settings LOP that creates /Render/rendersettings. The shot "
-    "render template normally provides this; check the shot's render layer."
+    "Add a Render Settings LOP that creates the shot's RenderSettings prim. "
+    "The shot render template normally provides this; check the shot's "
+    "render layer."
 )
 _SUGG_FIX_RS_CAMERA = (
-    "Set Camera Path on the Render Settings LOP to a valid /cameras/... prim."
+    "Set Camera Path on the Render Settings LOP to a valid camera prim."
 )
 _SUGG_ADD_PRODUCTS = (
-    "Add at least one Render Product LOP under /Render/Products and reference "
-    "it from Render Settings' Products input."
+    "Add at least one Render Product LOP and reference it from Render "
+    "Settings' Products input."
 )
+
+
+def _render_products(stage) -> list:
+    """Every RenderProduct prim on *stage*, wherever the project puts them."""
+    from pxr import Usd, UsdRender
+
+    return [
+        prim
+        for prim in Usd.PrimRange.Stage(stage, Usd.PrimAllPrimsPredicate)
+        if prim.IsA(UsdRender.Product)
+    ]
 _SUGG_FIX_PRODUCT_CAMERA = (
-    "Set Camera Path on the Render Product LOP. Each product needs a camera."
+    "Set Camera Path on the Render Settings LOP so every product inherits it, "
+    "or on this Render Product LOP to override it for this product alone."
 )
 
 
@@ -23,8 +50,7 @@ def validate_render_settings(root) -> ValidationResult:
     """Validate that RenderSettings prim exists and is properly configured.
 
     Checks:
-    - /Render/rendersettings prim exists
-    - Prim is of type RenderSettings
+    - the stage carries exactly one RenderSettings prim
     - Camera relationship exists and targets a valid prim
     """
     result = ValidationResult()
@@ -33,33 +59,21 @@ def validate_render_settings(root) -> ValidationResult:
         result.add_warning("No stage available for validation")
         return result
 
-    # Check RenderSettings prim exists
-    settings_prim = stage.GetPrimAtPath('/Render/rendersettings')
-    if not settings_prim.IsValid():
-        result.add_error(
-            "RenderSettings prim not found at /Render/rendersettings",
-            suggestion=_SUGG_ADD_RENDERSETTINGS,
-        )
+    # Where the settings prim is, asked of the stage. Zero and many are both
+    # errors the artist has to resolve: husk picks by the same question.
+    try:
+        settings_path = find_render_settings_prim_path(stage)
+    except RenderSettingsError as error:
+        result.add_error(str(error), suggestion=_SUGG_ADD_RENDERSETTINGS)
         return result
-
-    # Check prim type
-    prim_type = settings_prim.GetTypeName()
-    if prim_type != 'RenderSettings':
-        result.add_error(
-            f"Prim at /Render/rendersettings has type '{prim_type}', expected 'RenderSettings'",
-            '/Render/rendersettings',
-            suggestion=(
-                "Re-author /Render/rendersettings via a Render Settings LOP "
-                "(or set its type to UsdRenderSettings on a Configure Primitive)."
-            ),
-        )
+    settings_prim = stage.GetPrimAtPath(settings_path)
 
     # Check camera relationship
     camera_rel = settings_prim.GetRelationship('camera')
     if not camera_rel.IsValid():
         result.add_error(
             "RenderSettings missing 'camera' relationship",
-            '/Render/rendersettings',
+            settings_path,
             suggestion=_SUGG_FIX_RS_CAMERA,
         )
     else:
@@ -67,7 +81,7 @@ def validate_render_settings(root) -> ValidationResult:
         if not camera_targets:
             result.add_error(
                 "RenderSettings 'camera' relationship has no target",
-                '/Render/rendersettings',
+                settings_path,
                 suggestion=_SUGG_FIX_RS_CAMERA,
             )
         else:
@@ -77,7 +91,7 @@ def validate_render_settings(root) -> ValidationResult:
             if not camera_prim.IsValid():
                 result.add_error(
                     f"RenderSettings camera target does not exist: {camera_path}",
-                    '/Render/rendersettings',
+                    settings_path,
                     suggestion=(
                         "The Camera Path on Render Settings doesn't resolve. "
                         "Update it or add the missing camera to the stage."
@@ -89,7 +103,7 @@ def validate_render_settings(root) -> ValidationResult:
     if not products_rel.IsValid():
         result.add_warning(
             "RenderSettings missing 'products' relationship",
-            '/Render/rendersettings',
+            settings_path,
             suggestion=_SUGG_ADD_PRODUCTS,
         )
     else:
@@ -97,7 +111,7 @@ def validate_render_settings(root) -> ValidationResult:
         if not products_targets:
             result.add_warning(
                 "RenderSettings 'products' relationship has no targets",
-                '/Render/rendersettings',
+                settings_path,
                 suggestion=_SUGG_ADD_PRODUCTS,
             )
 
@@ -108,10 +122,9 @@ def validate_render_products(root) -> ValidationResult:
     """Validate that RenderProduct prims exist and are properly configured.
 
     Checks:
-    - /Render/Products hierarchy exists
-    - At least one RenderProduct prim exists
-    - Each RenderProduct has a camera relationship
-    - Each RenderProduct camera target exists
+    - At least one RenderProduct prim exists, wherever it lives
+    - Each RenderProduct renders through a camera that exists — its own if it
+      overrides one, otherwise the RenderSettings'
     """
     result = ValidationResult()
     stage = root.GetStage()
@@ -119,28 +132,31 @@ def validate_render_products(root) -> ValidationResult:
         result.add_warning("No stage available for validation")
         return result
 
-    # Check /Render/Products exists
-    products_prim = stage.GetPrimAtPath('/Render/Products')
-    if not products_prim.IsValid():
-        result.add_error(
-            "/Render/Products prim not found",
-            suggestion=_SUGG_ADD_PRODUCTS,
-        )
-        return result
-
-    # Find all RenderProduct prims
-    render_products = []
-    for child in products_prim.GetChildren():
-        if child.GetTypeName() == 'RenderProduct':
-            render_products.append(child)
-
+    # Found by type, not under an assumed /Render/Products scope: the project
+    # owns that hierarchy too, and the template nests products one level
+    # deeper (<settings root>/Render/Products/renderproduct).
+    render_products = _render_products(stage)
     if not render_products:
         result.add_error(
-            "No RenderProduct prims found under /Render/Products",
-            '/Render/Products',
+            "No RenderProduct prims found on the stage",
             suggestion=_SUGG_ADD_PRODUCTS,
         )
         return result
+
+    # A product's `camera` is an *override* of the settings' camera, not a
+    # requirement — UsdRenderProduct inherits it when absent, which is how
+    # every live project template is authored. Demanding one here failed
+    # every stage the pipeline itself produces, so it is only an error when
+    # the settings prim does not supply one either.
+    try:
+        settings_prim = stage.GetPrimAtPath(
+            find_render_settings_prim_path(stage)
+        )
+        settings_camera = bool(
+            settings_prim.GetRelationship('camera').GetTargets()
+        )
+    except RenderSettingsError:
+        settings_camera = False
 
     # Validate each RenderProduct
     for product in render_products:
@@ -148,35 +164,31 @@ def validate_render_products(root) -> ValidationResult:
 
         # Check camera relationship
         camera_rel = product.GetRelationship('camera')
-        if not camera_rel.IsValid():
-            result.add_error(
-                "RenderProduct missing 'camera' relationship",
-                product_path,
-                suggestion=_SUGG_FIX_PRODUCT_CAMERA,
-            )
-            continue
-
-        camera_targets = camera_rel.GetTargets()
+        camera_targets = camera_rel.GetTargets() if camera_rel.IsValid() else []
         if not camera_targets:
-            result.add_error(
-                "RenderProduct 'camera' relationship has no target",
-                product_path,
-                suggestion=_SUGG_FIX_PRODUCT_CAMERA,
-            )
-            continue
-
-        # Verify camera target exists
-        camera_path = str(camera_targets[0])
-        camera_prim = stage.GetPrimAtPath(camera_path)
-        if not camera_prim.IsValid():
-            result.add_error(
-                f"RenderProduct camera target does not exist: {camera_path}",
-                product_path,
-                suggestion=(
-                    "The Render Product's Camera Path doesn't resolve. Update "
-                    "it on the Render Product LOP or add the missing camera."
-                ),
-            )
+            # No override. Fine when there is a settings camera to inherit;
+            # the productName check below still runs either way.
+            if not settings_camera:
+                result.add_error(
+                    "RenderProduct renders through no camera, and the "
+                    "RenderSettings names none to inherit",
+                    product_path,
+                    suggestion=_SUGG_FIX_PRODUCT_CAMERA,
+                )
+        else:
+            # Verify the overriding camera target exists
+            camera_path = str(camera_targets[0])
+            camera_prim = stage.GetPrimAtPath(camera_path)
+            if not camera_prim.IsValid():
+                result.add_error(
+                    f"RenderProduct camera target does not exist: {camera_path}",
+                    product_path,
+                    suggestion=(
+                        "The Render Product's Camera Path doesn't resolve. "
+                        "Update it on the Render Product LOP or add the "
+                        "missing camera."
+                    ),
+                )
 
         # Check productName attribute (warning only)
         product_name_attr = product.GetAttribute('productName')

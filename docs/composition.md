@@ -802,7 +802,10 @@ constant.** The current project template's
 renderSettingsPrimPath = "/scene/Render/rendersettings"
 ```
 
-and 6 of 13 live projects have it there, while the rest keep the older
+and 7 of 13 live projects have it there (HideAndReek, OneCall, SideFXrig,
+SideFXrig2, Test, chad, hotdog — surveyed 2026-09-22 with
+`grep renderSettingsPrimPath /p/*/_config/usd/root_default_prims.usda`),
+while the rest keep the older
 root-level `/Render/rendersettings`. Both paths used to hardcode the latter,
 so on the `/scene` projects the direct render's `over` chain composed onto a
 prim that does not exist and the stage task's lookup found nothing — every
@@ -837,10 +840,48 @@ Two traps if you touch this:
   payloads, because "there is no settings prim" and "I could not see one" have
   different fixes.
 
-Still hardcoded and *not* covered by this: the render-settings and camera
-validators (`pipe/houdini/validators/`), and the `asset_thumbnail`,
-`lookdev_studio` and `lpe_tags` HDAs. The validators will mis-report on the
-projects that use the `/scene` path.
+#### husk has to be *told* where they are
+
+Finding the prim is only half of it. husk's own discovery, verified against
+22.0.429:
+
+- it searches **`/Render` and nothing else** (`husk --list-settings` reports
+  "No render settings found" for a stage whose settings are under `/scene`,
+  even when it then renders through them);
+- it reads the `renderSettingsPrimPath` metadatum off the **root layer**
+  only. The project's declaration lives in `root_default_prims.usda`, which
+  reaches a collapsed farm stage as a *sublayer* — invisible to husk.
+
+So on the `/scene` projects husk found no settings at all and fell back to the
+first camera it traversed, which is the template's placeholder at the origin
+with a 0.5mm lens: `No camera in render settings, defaulting to
+/scene/cameras/render_camera`. Every farm render and playblast there was shot
+through the wrong camera, and looked like a plausible image.
+
+`collapse_latest_references` therefore **writes** the discovered path onto the
+collapsed stage's root layer. That is not the refuted "read it back off the
+composed stack" above — the stage is still the authority for *finding* the
+prim; the metadatum is how the answer is handed to husk. The three log lines
+worth knowing, in order of preference:
+
+```
+Using stage default settings: <path>                       # the root layer named it
+Defaulting to use settings found at /Render/rendersettings  # husk's own search
+No camera in render settings, defaulting to <camera>        # neither: wrong view
+```
+
+A farm playblast is the exception that proves the rule: it renders through a
+settings prim the submitter *authors* at `/Render/tumblepipe_playblast`,
+because Hydra Storm cannot fill the Karma LPE render vars the project's
+products order. See [Playblast](compositing.md#playblast) and
+`scripts/debug_playblast.py`.
+
+Still hardcoded and *not* covered by this: the `asset_thumbnail`,
+`lookdev_studio` and `lpe_tags` HDAs. The render-settings and camera
+validators (`pipe/houdini/validators/`) were in this list until they were
+moved onto `find_render_settings_prim_path`; before that, on a `/scene`
+project, `render_settings` reported "not found" for a stage that has one and
+`cameras` skipped its render-camera check entirely.
 
 ## Performance note
 

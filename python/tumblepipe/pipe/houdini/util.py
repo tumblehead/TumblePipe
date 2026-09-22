@@ -496,6 +496,29 @@ def list_cameras(prim):
     def _get_path(prim): return str(prim.GetPath())
     return list(map(_get_path, iter_scene(prim, is_camera)))
 
+# Where projects keep their cameras. Both spellings are live: the current
+# project template nests everything under /scene, older projects sit at the
+# root. Order is preference, not precedence — the first scope that holds a
+# camera wins.
+CAMERA_SCOPE_PATHS = ('/cameras', '/scene/cameras')
+
+def list_stage_cameras(root):
+    """Every camera a node can offer, wherever the project keeps them.
+
+    Asking for one hardcoded scope is what left the playblast nodes with an
+    empty camera menu (and "No camera path found" on export) on every
+    /scene-rooted project. The known scopes are tried first because they make
+    the menu cheap on a heavy shot stage; anything else falls back to walking
+    the stage, which is slower but never wrong.
+    """
+    for scope_path in CAMERA_SCOPE_PATHS:
+        scope = root.GetPrimAtPath(scope_path)
+        if scope is None: continue
+        if not scope.IsValid(): continue
+        cameras = list_cameras(scope)
+        if cameras: return cameras
+    return list_cameras(root)
+
 def list_render_vars(prim):
     def _get_path(prim): return str(prim.GetPath())
     return list(map(_get_path, iter_scene(prim, is_render_var)))

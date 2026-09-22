@@ -172,6 +172,7 @@ from tumblepipe.config.variants import (
 )
 
 from tumblepipe.config.discord import (
+    is_configured as is_discord_configured,
     get_token as get_discord_token,
     get_user_discord_id,
     get_channel_id as get_discord_channel_id,
@@ -271,6 +272,7 @@ __all__ = [
     'remove_variant',
     'has_variant',
     # Discord
+    'is_discord_configured',
     'get_discord_token',
     'get_user_discord_id',
     'get_discord_channel_id',

@@ -147,6 +147,27 @@ records the Multi again. On an older release, change `uri` in that
 folder's `context.json` to the Multi's `groups:/<context>/<name>`, keeping a
 copy of the file, then reopen the scene.
 
+### A node's menu raises "Not an entity URI: groups:/..."
+
+Opening a Multi's workfile, or just clicking a parameter on
+`th::playblast` (LOP) there, pops a traceback ending in
+
+```
+ValueError: Not an entity URI: groups:/shots/<Multi>
+```
+
+Nothing was pressed: the error comes from the node's **Department** menu.
+A Multi's workfile records the Multi (`groups:/shots/<Multi>`) as its
+entity, which is correct — but 1.52.1 and older handed that group straight
+to the department lookup, which only accepts a single shot or asset.
+
+Later releases resolve nothing from the context there instead, and the
+Department menu lists the departments the Multi covers. The node still
+needs a shot to write to, so set **Entity** to From settings and pick the
+member — see [`th::playblast` (LOP)](nodes/lighting-and-rendering.md#thplayblast-lop).
+`th::create_model` and `th::render_debug` read the same pointer and now
+turn a Multi away the same way.
+
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 
 Each is a deliberate guard in `th::export_layer`, and the dialog names the
@@ -268,6 +289,33 @@ The job used the legacy **UV** plugin, which bakes the submitter's absolute
 package path; it only works when every worker mirrors that path. Submit with
 the default **HPM** plugin. See [Deadline and the render farm](deadline.md).
 
+### Farm job failed: `Channel not found in discord config: renders`
+
+Every job family ends in a **notify** job that posts to Discord, so a notify
+that fails reds the whole batch — even when the render or playblast it
+trails went through perfectly.
+
+The name (`renders` for render and playblast, `exports` for publish and
+stage) is looked up under `discord/channels` in the project's `config`
+database. Fill the missing name in under `config:/discord` in
+[the config database editor](asset-browser/config-editor.md#the-databases),
+copying it from a project that already posts. The message lists the names
+the project does have.
+
+**Before 1.52.2** this was also what a project with *no* Discord setup at
+all looked like. A project created from the template ships that block
+**empty** — `token: ""`, no users, no channels — and the token guard tested
+`is None`, so the empty string read as a set token and only the channel
+lookup failed. Every notify in such a project failed, and with it every
+render and playblast batch. From 1.52.2 that case is quiet instead: the
+notify logs `Skipping discord notification: this project has no discord
+configuration` and succeeds, so the error above now means the project *does*
+have a token and channels, but not this name.
+
+`scripts/audit_discord_config.py` grades every project on the drive, which
+separates the quiet projects from the ones a name is missing from. See
+[Job families](asset-browser/submit-jobs.md#job-families).
+
 ### Playblast frames are black or missing on the farm
 
 Farm playblasts render with husk's Storm (GL) delegate, which needs a real GPU
@@ -277,6 +325,46 @@ GPU/GL context on this worker. Confirm the playblast farm group has
 GL-capable, non-headless workers.` Assign only GL-capable workers to the
 `playblast` Deadline group. See [Playblast](compositing.md#playblast) and
 [Farm worker prerequisites](deadline.md#farm-worker-prerequisites).
+
+Before **1.52.2** that message was also what a *stage* problem looked like:
+the playblast inherited the project's `UsdRender.Settings`, whose
+`RenderProduct` orders Karma's LPE render vars (`beauty`, with
+`sourceName = "C.*[LO]"`). Storm cannot fill those, so husk logged `All AOVs
+bypassed or missing. Nothing to write` and wrote no image on a perfectly good
+GPU. The submitter now authors a Storm-renderable settings prim for the
+playblast instead — update and resubmit.
+
+### The farm playblast renders the wrong view
+
+husk picks the camera from the stage's `UsdRender.Settings`. It only
+*searches* `/Render` for one, and it only reads the `renderSettingsPrimPath`
+metadatum off the **root** layer. A project whose settings live at
+`/scene/Render/rendersettings` declares that path in
+`_config/usd/root_default_prims.usda`, which reaches the collapsed farm stage
+as a sublayer — so before **1.52.2** husk saw neither, logged `No camera in
+render settings, defaulting to <first camera on the stage>` and rendered the
+shot from the project template's placeholder camera (at the origin, with a
+0.5mm lens). The submitter now names the settings prim on the collapsed
+stage's root layer and refuses the submission when the stage does not say
+which camera to render through.
+
+To see what husk will resolve for a shot *without* submitting anything:
+
+    hython scripts/debug_playblast.py --shot entity:/shots/<seq>/<shot> \
+        --department <dept> --husk
+
+It collapses the same staged stage the farm would, reports the settings prim,
+the camera and its focal length and world position, the cameras and lights on
+the stage, and which layers the department cut dropped; `--husk` renders one
+frame locally with the worker's own flags. The collapsed `.usda` it writes is
+left behind and printed, so it can be opened in usdview.
+
+In a farm log, the lines that answer "which camera?" are husk's own — the
+playblast worker runs it with `--verbose a2`:
+
+    Using stage default settings: /scene/Render/rendersettings   # named on the root layer
+    Defaulting to use settings found at /Render/rendersettings   # found by husk's own search
+    No camera in render settings, defaulting to /scene/cameras/render_camera   # neither — wrong view
 
 ### The render came back at project defaults — my overrides were ignored
 

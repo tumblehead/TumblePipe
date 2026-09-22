@@ -43,6 +43,11 @@ class RenderDebug(ns.Node):
             file_path = Path(hou.hipFile.path())
             context = get_workfile_context(file_path)
             if context is None: return None
+            # A Multi's workfile records the group, which is not a shot: it
+            # has no channels and no render to debug.
+            if context.entity_uri.purpose != 'entity': return None
+            if not context.entity_uri.segments: return None
+            if context.entity_uri.segments[0] != 'shots': return None
             return context.entity_uri
         # From settings
         shot_uris = self.list_shot_uris()

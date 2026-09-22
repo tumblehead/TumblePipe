@@ -110,6 +110,12 @@ the Multi — belongs to that shot, and exporting from it finds no tasks for
 the member shots; see
 [Troubleshooting](../troubleshooting.md#export-says-no-export-tasks-found-for-the-current-context).
 
+Nodes added to a Multi workfile by hand need their **Entity** set to the
+member they work on: `from_context` resolves to nothing there, because the
+workfile belongs to the Multi rather than to one member (see
+[Entity and Department default to `from_context`](../nodes/index.md#entity-and-department-default-to-from_context)).
+The per-member graphs the template lays out are already pinned that way.
+
 Once a Multi workfile is open, **Save** versions the Multi's workfile, and
 the Multi's own card marks that department as the open one — in its deck
 row and in its detail panel's **Departments** section. Publishing from it

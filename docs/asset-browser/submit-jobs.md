@@ -33,13 +33,14 @@ not a shot or asset`.
 ## Layout
 
 The header reads `Submit jobs for N entities (shots): <names…>`. Below it
-the dialog has two columns: the [form](#the-form) — what to submit — on the
-left, and the entity tree — who to submit it for — on the right, taking the
-dialog's full height.
+the dialog has two columns: the entity tree — who to submit it for — on the
+left, taking the dialog's full height, and the [form](#the-form) — what to
+submit — on the right. You pick the entities first, then the settings that
+apply to them.
 
 ## The entity tree
 
-The right column holds:
+The left column holds:
 
 - a **Filter shots…** / **Filter assets…** box with **All** and **None**
   buttons that check or uncheck every *visible* entity;
@@ -55,7 +56,7 @@ active does not quietly submit what you cannot see.
 
 ## The form
 
-The left column holds three checkable sections — **Publish** (off by
+The right column holds three checkable sections — **Publish** (off by
 default), **Render** (on) and **Playblast** (shots only, off) — then
 **Pre-flight**. **Submit** / **Cancel** sit below both columns.
 
@@ -213,9 +214,18 @@ fixed Deadline **group** per task type. Every family ends in a **notify**
 job that posts to Discord — render and playblast notifies address the
 channel named `renders`, publish and stage notifies the one named
 `exports`; the name is looked up under `discord/channels` in the project's
-`config` database (see [The config database editor](config-editor.md#the-databases)),
-and a name with no `channel_id` there fails the notify job with
-`Channel not found in discord config: <name>`.
+`config` database (see [The config database editor](config-editor.md#the-databases)).
+
+A project that has **no** Discord setup at all — no token and no channels,
+which is what a project created from the template carries — posts nothing
+and the notify job succeeds anyway, logging `Skipping discord notification:
+this project has no discord configuration`. The notify is the last job in
+its family, so failing it would red the whole batch over a message nobody
+had asked for. Once a project *does* have a token and channels, a name with
+no `channel_id` is a real misconfiguration and fails the notify job with
+`Channel not found in discord config: <name> (configured channels: …)`.
+Both behaviours are from **1.52.2**; before it, every notify on an
+unconfigured project failed, and with it every render and playblast batch.
 Output locations are in [Compositing → Where renders land](../compositing.md#where-renders-land).
 
 | Family | Triggered by | Chain (job name → group) | Output |

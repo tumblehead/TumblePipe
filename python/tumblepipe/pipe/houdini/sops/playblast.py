@@ -50,10 +50,7 @@ class Playblast(EntityNode):
     def list_camera_paths(self):
         root = self._get_stage_root()
         if root is None: return []
-        cameras = root.GetPrimAtPath('/cameras')
-        if cameras is None: return []
-        if not cameras.IsValid(): return []
-        return util.list_cameras(cameras)
+        return util.list_stage_cameras(root)
     
     def list_camera_names(self):
         camera_paths = self.list_camera_paths()

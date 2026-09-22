@@ -492,6 +492,60 @@ installed package and skips that structural check on a dev checkout (hpm
 won't ship a Task from an editable tree). Run it under a project hython with
 at least one shot.
 
+`scripts/debug_playblast.py` answers "why did that playblast come back
+wrong?" without submitting anything. It collapses exactly what the farm
+would — same staged `default` build, same department cut, same
+`collapse_latest_references` — then opens the result and reports what husk
+will resolve from it: the `renderSettingsPrimPath` on the root layer (the
+only place husk reads it), every RenderSettings prim and camera on the
+stage, the render camera with its focal length and world position at frame,
+the light count, the AOVs each product orders, and which layers the cut
+dropped. It flags the two failure modes by name — a settings prim husk
+cannot find (outside `/Render`, unnamed by the root layer) and an `lpe`
+render var Storm cannot fill — and warns on a sub-1mm focal length, which is
+the project template's placeholder camera rather than a shot camera.
+
+```bash
+hython scripts/debug_playblast.py                                   # every shot
+hython scripts/debug_playblast.py --shot entity:/shots/030/060 \
+    --department light --husk
+```
+
+`--husk` renders one frame locally with the playblast worker's own flags, so
+"the stage is wrong" and "this machine has no GL context" stop being the same
+symptom. The collapsed `.usda` files are left in a temp directory whose path
+is printed, ready to open in usdview. Exit status is non-zero if any shot
+would not playblast correctly. Run it under a project hython.
+
+`scripts/verify_discord_notify.py` pins the notify task's discord gate. A
+project created from `scripts/project_template` carries an EMPTY
+`config:/discord` block — `token: ""`, no users, no channels — and before
+1.52.2 `get_token()` tested `is None`, so that empty string read as a set
+token and sailed past its own guard. The channel lookup then failed the
+notify, and notify is the **last** job in every family, so every render and
+playblast batch on such a project read as failed. The script stubs the
+`discord` library, so it posts nothing: it checks that a blank token reads
+as unset, that an unconfigured project skips and returns **0**, and that a
+configured project still fails an unknown channel — naming the ones it has —
+while a known channel reaches the client. The unconfigured and configured
+checks are mutually exclusive, so run it under a project hython once against
+each kind.
+
+`scripts/audit_discord_config.py` sweeps projects for the same gap, reading
+the config JSON straight off disk — no `hou`, no pipeline import, so it
+covers projects too stale to open. It grades each one `ok`, `unconfigured`
+(quiet: notifies skip) or `partial`, which is the dangerous one: a token or
+some channels but not every name the pipeline hardcodes, so those notifies
+— and the batches behind them — fail. Keep `ADDRESSED_CHANNELS` in step with
+`grep -rn "channel_name\s*=\s*'" python/`.
+
+```bash
+python scripts/audit_discord_config.py P:/ --users soren-n,magnus
+python scripts/audit_discord_config.py P:/HideAndReek --quiet
+```
+
+Exit status is non-zero if any project is `partial`.
+
 `scripts/verify_asset_payload_fixes.py` pins the two asset-payload fixes
 against regression. It is the **only** coverage of either, so run it after
 touching `th::asset_payload` or `export_layer`'s publish path:
@@ -525,7 +579,7 @@ pins the node to whichever entity it was *born* in: copy the scene to another
 asset, rename the entity, or build a shot from a template, and it keeps
 publishing to the old one.
 
-It checks the three ways that contract has been broken:
+It checks the four ways that contract has been broken:
 
 1. **Parm defaults** — an entity-addressing parm whose default is a concrete
    URI, or the empty string. Empty is not neutral:
@@ -539,6 +593,17 @@ It checks the three ways that contract has been broken:
    stamping a specific entity URI. Only the multi-entity `_create_group`
    branch needs to: a group workfile holds several entities at once, so
    `from_context` cannot resolve to one of them.
+4. **Group URIs** — a resolver that reads the workfile's `context.json` and
+   uses its `entity_uri` as an entity without checking that it *is* one. A
+   Multi's workfile records the Multi (`groups:/shots/<name>`), and the
+   config layer raises *Not an entity URI* on it: that is how the LOP
+   playblast's Department menu started throwing in a Multi's animation
+   scene. This check walks the wrapper ASTs, follows one hop through a
+   module's own reader helper (the playblast reached the pointer through
+   `self._get_context()`), and accepts a `uri.purpose` comparison, an
+   `is_group_uri()` call or an `entity:` prefix test as the guard. A reader
+   that hands groups back on purpose is listed in `GROUP_AWARE`, and vouches
+   for nobody: its callers must check for themselves.
 
 It reads the expanded `otls/` DialogScripts and the Python wrappers as text,
 so it needs no Houdini and no project:

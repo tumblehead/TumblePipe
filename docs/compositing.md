@@ -118,9 +118,13 @@ so their versions interleave:
 - **On the farm** — tick **Playblast** in the Submit Jobs dialog (shots
   only, alongside Publish and Render) and each checked shot gets one job:
   a single task renders the shot's staged `default` stage with husk's
-  Hydra **Storm** (GL) delegate — no `--camera`, so husk uses the render
-  camera baked into the stage's `RenderSettings`, the same one the Karma
-  render reads — then encodes an MP4 and writes the versioned playblast
+  Hydra **Storm** (GL) delegate — through a `RenderSettings` prim the
+  submitter authors on the collapsed stage at
+  `/Render/tumblepipe_playblast`, aimed at the same render camera the
+  project's own settings name (Storm cannot fill the Karma LPE AOVs those
+  settings order, and husk finds a settings prim outside `/Render` only
+  when the root layer names it) — then encodes an MP4 and writes the
+  versioned playblast
   **and** the daily, exactly like the render/composite MP4s above. The
   frame range (rolls included) and fps come from the shot config per
   shot. So do resolution (720p default) and pool/priority, unless you

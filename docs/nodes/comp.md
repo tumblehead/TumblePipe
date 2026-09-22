@@ -51,7 +51,9 @@ Gotchas:
 
 - The node needs a saved **shot** workfile; Submit fails with *Invalid
   workfile path* otherwise, and `from_context` in an asset workfile resolves
-  nothing.
+  nothing. In a Multi's comp workfile it resolves nothing either — a
+  composite is built for one shot, so set **Shot** to the member; Submit
+  there says so rather than sending the farm the Multi.
 - Update is the only thing that retargets versions. The Asset Browser's
   refresh-on-open deliberately skips this node, so a comp never silently
   picks up new renders — press Update when you want them.

@@ -44,7 +44,7 @@ template ships these:
 | `departments` | `departments:/shots/<name>`, `departments:/assets/<name>`, `departments:/render/<name>` | The department pools, in pipeline order, with `independent` / `publishable` / `renderable` flags. Normally edited through the [pool editor](settings.md#the-department-pool-editor). |
 | `groups` | `groups:/shots/<name>`, `groups:/assets/<name>` | Multis — each with `members` and the `departments` it covers. |
 | `scenes` | `scenes:/<name>` | Roots (config-driven scenes) and their asset lists. |
-| `config` | `config:/project`, `config:/discord/…`, `config:/submission/…` | Project-wide settings: fps, the Discord token and its `users` / `channels` / `departments` maps, submission column presets. |
+| `config` | `config:/project`, `config:/discord/…`, `config:/submission/…` | Project-wide settings: fps, the Discord token and its `users` / `channels` / `departments` maps, submission column presets. The `discord` block is **empty in the template** — until a token and channels are filled in, farm notify jobs post nothing (see [Job families](submit-jobs.md#job-families)). |
 | `procedurals` | `procedurals:/assets/…`, `procedurals:/shots/…` | Procedural definitions (empty in the template). |
 
 Right-clicking empty space in the tree offers **Add Purpose** — a new,

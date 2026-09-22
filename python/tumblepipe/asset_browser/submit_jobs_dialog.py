@@ -618,16 +618,17 @@ class SubmitJobsDialog(QDialog):
         # Entity tree — check any number of entities in this context. The
         # entities the dialog was opened for start checked; everything else
         # in the project is one click away, so a single-entity open (the
-        # Render quick action) can still fan out to a whole batch. Built
-        # first, as it always was; it is only *placed* in the right column.
+        # Render quick action) can still fan out to a whole batch.
         tree = self._build_entity_tree()
 
-        # Two columns: [ what to submit | who to submit it for ]. The forms
-        # read top to bottom on the left; the entity tree gets the full
-        # height on the right, where a long shot list has room to breathe.
+        # Two columns: [ who to submit for | what to submit ]. The tree owns
+        # the left column and the full dialog height, where a long shot list
+        # has room to breathe; the forms read top to bottom on the right.
+        # Selection before settings, the same order the browser reads in.
         body = QHBoxLayout()
         body.setSpacing(12)
         root.addLayout(body, 1)
+        body.addWidget(tree, 2)
         forms = QVBoxLayout()
         forms.setSpacing(10)
         body.addLayout(forms, 3)
@@ -659,8 +660,6 @@ class SubmitJobsDialog(QDialog):
         self._preflight_box = self._build_preflight()
         forms.addWidget(self._preflight_box)
         forms.addStretch(1)
-
-        body.addWidget(tree, 2)
 
         self._apply_open_department()
         self._reseed_form(initial=True)
@@ -825,7 +824,7 @@ class SubmitJobsDialog(QDialog):
         none_btn = QPushButton("None")
         none_btn.setToolTip("Uncheck every visible entity")
         none_btn.clicked.connect(lambda: self._set_all_checked(False))
-        # Compact: in the narrow right column the default padding leaves
+        # Compact: in the narrow tree column the default padding leaves
         # the filter field too little room to type in.
         for btn in (all_btn, none_btn):
             btn.setStyleSheet("padding: 3px 8px;")
@@ -840,8 +839,8 @@ class SubmitJobsDialog(QDialog):
 
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
-        # No height cap: the tree owns the dialog's right column, so it
-        # takes whatever height the forms on the left give the dialog.
+        # No height cap: the tree owns the dialog's left column, so it
+        # takes whatever height the forms beside it give the dialog.
         self._tree.setMinimumHeight(160)
         self._tree.setMinimumWidth(240)
         column.addWidget(self._tree, 1)

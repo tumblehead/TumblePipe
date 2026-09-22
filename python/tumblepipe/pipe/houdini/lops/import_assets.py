@@ -567,8 +567,11 @@ class ImportAssets(EntityNode):
         workfile_context = get_workfile_context(file_path)
         if workfile_context is not None:
             entity_uri = workfile_context.entity_uri
-            # Only track shot context (not asset context)
-            if entity_uri.segments and entity_uri.segments[0] == 'shots':
+            # Only track shot context (not asset context, and not the group a
+            # Multi's workfile records — that is not a shot to attribute to)
+            if (entity_uri.purpose == 'entity'
+                    and entity_uri.segments
+                    and entity_uri.segments[0] == 'shots'):
                 shot_uri = entity_uri
                 shot_department = workfile_context.department_name
 

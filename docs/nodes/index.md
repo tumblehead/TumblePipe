@@ -177,6 +177,15 @@ Why this matters to you:
 - Some nodes only accept one side. `th::import_asset` and `th::import_rig`
   only ever import assets, so `from_context` inside a **shot** workfile
   resolves to nothing rather than to the shot.
+- In a **Multi's** workfile, Entity `from_context` resolves to nothing. The
+  file's `context.json` records the Multi (`groups:/shots/<name>`), which is
+  not an entity: it has no frame range, no export folder and no single
+  camera, and one workfile holds several members. Set each node's Entity to
+  the member it works on — the department templates do exactly that for the
+  graph they lay out per member
+  ([Multis and Roots](../asset-browser/multis-and-roots.md#the-multis-workfiles)).
+  **Department** `from_context` still resolves: a Multi covers departments,
+  so the workfile's own department is unambiguous.
 - An **empty** Entity is *not* the same as `from_context`: the wrapper
   resolves an empty parm to the first entity in the project. Do not clear
   the field; put it back to `from_context` or pick an entity.

@@ -83,14 +83,28 @@ def main(
         # RenderSettings prim, exactly as the Karma render worker relies on.
         # --resolver-context is required for the custom ArResolver (entity:/
         # storage: URIs in the staged USD) to work under husk.
+        #
+        # -V a2 is what makes a wrong-looking playblast debuggable at all.
+        # Without it husk renders silently, and the one line that says which
+        # camera the frames were shot through --
+        #
+        #   Using stage default settings: /scene/Render/rendersettings
+        #   Defaulting to use settings found at /Render/rendersettings
+        #   No camera in render settings, defaulting to <some camera>
+        #
+        # -- never reaches the Deadline log. The third of those is the
+        # "renders the wrong view" failure: husk found no settings prim and
+        # picked the first camera on the stage. 'a' also emits ALF_PROGRESS,
+        # which Deadline reads as task progress.
         _headline('Rendering playblast frames (Hydra Storm)')
         width, height = resolution
-        husk.run(
+        exit_code = husk.run(
             to_windows_path(input_path),
             [
                 '--resolver-context', path_str(to_windows_path(input_path)),
                 '--renderer', STORM_DELEGATE,
                 '--gpu',
+                '--verbose', 'a2',
                 '--make-output-path',
                 '--no-mplay',
                 '--res', str(width), str(height),
@@ -101,6 +115,11 @@ def main(
             ],
             env=env
         )
+        # A non-zero husk is reported, not inferred from the frame count: a
+        # husk that dies halfway leaves enough frames behind for the encode to
+        # produce a plausible short mp4.
+        if exit_code != 0:
+            print(f'husk exited {exit_code}')
 
         # Check that the frames were generated
         rendered = 0
@@ -110,9 +129,13 @@ def main(
                 rendered += 1
         if rendered == 0:
             return _error(
-                'Playblast produced no frames -- the GL (Storm) delegate likely '
-                'has no usable GPU/GL context on this worker. Confirm the '
-                'playblast farm group has GL-capable, non-headless workers.'
+                'Playblast produced no frames. Read the husk log above before '
+                'blaming the worker: "All AOVs bypassed or missing" means the '
+                'stage asked Storm for a render var it cannot fill (a Karma '
+                'LPE AOV), which is a submission problem, not a machine one. '
+                'Otherwise the GL (Storm) delegate likely has no usable '
+                'GPU/GL context here -- confirm the playblast farm group has '
+                'GL-capable, non-headless workers.'
             )
         print(f'Rendered {rendered}/{len(render_range)} frames')
 

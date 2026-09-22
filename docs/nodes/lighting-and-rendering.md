@@ -362,6 +362,13 @@ Gotchas:
 - The node only ever playblasts a **shot**: From context inside an asset
   workfile resolves nothing. The department must be renderable — a
   non-renderable workfile department resolves nothing too.
+- In a **Multi**'s workfile From context resolves nothing either: a Multi
+  holds several shots, and a playblast writes one shot's MP4 and daily. Set
+  **Entity** to From settings and pick the member. The Department menu there
+  lists the departments the Multi covers. Pressing a button with nothing
+  resolved says which Multi the workfile belongs to. `th::lookdev_studio`,
+  which has no entity parm at all, refuses the same way: its turntable
+  renders one asset.
 - No camera under `/cameras` fails the button with *No camera path found*.
 
 ## `th::playblast` (SOP)

@@ -9,7 +9,7 @@ or build a shot from a template, and the node keeps publishing to the old
 one. The 'from_context' sentinel instead resolves the entity from the
 workfile the node lives in, every time it is evaluated.
 
-This checks the three ways that contract has been broken before:
+This checks the four ways that contract has been broken before:
 
 1. HDA parm defaults — an entity-addressing parm whose default is a concrete
    URI, or the empty string (which several wrappers silently resolve to the
@@ -18,11 +18,18 @@ This checks the three ways that contract has been broken before:
    the parm at creation, defeating the sentinel it just defaulted to.
 3. Department templates — the single-entity branch (_create_entity) stamping
    a specific entity URI, which only the multi-entity group branch needs.
+4. Group URIs — a resolver that reads the workfile's context.json and uses
+   its 'entity_uri' as an entity, without first checking that it *is* one.
+   A Multi's workfile records the Multi ('groups:/shots/<name>'), which is
+   not an entity: the config layer raises 'Not an entity URI' on it, and a
+   node that lets it through addresses a thing with no frame range, no
+   export folder and no single camera.
 
 Runs headlessly against the repo sources: it reads the expanded otls/ HDA
 DialogScripts and the Python wrappers as text, so it needs no Houdini.
 """
 
+import ast
 import re
 import sys
 from pathlib import Path
@@ -49,6 +56,14 @@ EXEMPT = {
     # from_settings mode.
     'lop_th.playblast.1.0': 'entity_source menu gates the shot parm',
 }
+
+# Resolvers that read the pointer but deliberately accept a group, with the
+# reason. They must handle it, not merely tolerate it.
+GROUP_AWARE = {
+    'cops/build_comp.py::_entity_from_context_json':
+        'the comp builder runs in a Multi workfile and branches on the group',
+}
+
 
 _PARM_BLOCK = re.compile(
     r'parm\s*\{(?P<body>.*?)\n(?P<indent>\s*)\}', re.DOTALL
@@ -146,10 +161,137 @@ def check_templates_single_entity() -> list[str]:
     return failures
 
 
+def _called_name(call: ast.Call) -> str:
+    """'get_workfile_context', 'uri.startswith', ... for a call node."""
+    func = call.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ''
+
+
+READERS = ('get_workfile_context', 'load_entity_context')
+
+
+def _reads_the_pointer(func: ast.AST, helpers: frozenset = frozenset()) -> bool:
+    """Does this function load the workfile's context.json?
+
+    Directly, or through one of the module's own reader ``helpers`` — the
+    LOP playblast reached it through ``self._get_context()``, and a check
+    that only followed direct calls would have missed the bug it is here
+    to catch. One hop is enough for the shapes in the tree.
+    """
+    return any(
+        isinstance(node, ast.Call)
+        and _called_name(node) in (READERS + tuple(helpers))
+        for node in ast.walk(func)
+    )
+
+
+def _reader_helpers(tree: ast.AST) -> frozenset:
+    """The module's own functions that read the pointer directly."""
+    return frozenset(
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and _reads_the_pointer(node)
+    )
+
+
+def _vouching_helpers(tree: ast.AST, module_key: str) -> frozenset:
+    """Reader helpers that check the URI *and* turn a group away.
+
+    A caller of one of these needs no check of its own — import_shot's
+    ``_entity_from_context_json`` already returns None for a group. A
+    reader listed in GROUP_AWARE vouches for nobody: it hands groups back
+    on purpose, so whoever turns its result into an entity must check.
+    """
+    return frozenset(
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and _reads_the_pointer(node)
+        and _checks_what_it_got(node)
+        and f'{module_key}::{node.name}' not in GROUP_AWARE
+    )
+
+
+def _uses_the_uri(func: ast.AST) -> bool:
+    """Does it go on to use that context's entity URI?"""
+    return any(
+        isinstance(node, ast.Attribute) and node.attr == 'entity_uri'
+        for node in ast.walk(func)
+    )
+
+
+def _checks_what_it_got(func: ast.AST) -> bool:
+    """Does it ask what kind of URI it is before using it?
+
+    Three shapes are in the tree, all of them honest: comparing
+    ``uri.purpose``, asking ``is_group_uri()``, and testing the string
+    against an ``entity:`` prefix. Matched through the AST rather than the
+    text, so an unrelated ``purpose='turntable'`` keyword does not pass.
+    """
+    for node in ast.walk(func):
+        if isinstance(node, ast.Compare):
+            left = node.left
+            if isinstance(left, ast.Attribute) and left.attr == 'purpose':
+                return True
+            for comparator in node.comparators:
+                if (isinstance(comparator, ast.Constant)
+                        and isinstance(comparator.value, str)
+                        and comparator.value.startswith('entity:')):
+                    return True
+        if isinstance(node, ast.Call):
+            if _called_name(node) == 'is_group_uri':
+                return True
+            if _called_name(node) == 'startswith':
+                first = node.args[0] if node.args else None
+                if (isinstance(first, ast.Constant)
+                        and isinstance(first.value, str)
+                        and first.value.startswith('entity:')):
+                    return True
+    return False
+
+
+def check_group_uris_rejected() -> list[str]:
+    """A resolver that uses the workfile's URI checks that it is an entity."""
+    failures = []
+    for path in sorted(WRAPPERS.rglob('*.py')):
+        rel = path.relative_to(REPO_ROOT)
+        try:
+            tree = ast.parse(path.read_text(encoding='utf-8'))
+        except SyntaxError as exc:
+            failures.append(f'{rel}: could not be parsed ({exc})')
+            continue
+        module_key = path.relative_to(WRAPPERS).as_posix()
+        helpers = _reader_helpers(tree)
+        vouching = _vouching_helpers(tree, module_key)
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if f'{module_key}::{node.name}' in GROUP_AWARE:
+                continue
+            if not (_reads_the_pointer(node, helpers) and _uses_the_uri(node)):
+                continue
+            if _checks_what_it_got(node):
+                continue
+            if _reads_the_pointer(node, vouching) and not _reads_the_pointer(node):
+                continue  # its reader already turned the group away
+            failures.append(
+                f'{rel}:{node.lineno}: {node.name}() uses the workfile URI '
+                f"without checking it is an entity — a Multi's workfile "
+                f'records a groups:/ URI'
+            )
+    return failures
+
+
 CHECKS = (
     ('HDA entity parms default to from_context', check_hda_defaults),
     ('no on_created bakes the workfile URI', check_no_baked_on_created),
     ('templates leave single-entity graphs on from_context', check_templates_single_entity),
+    ('from_context resolvers reject a group URI', check_group_uris_rejected),
 )
 
 

@@ -107,7 +107,8 @@ def generate_usda_content(
     fps: float = None,
     start_frame: int = None,
     end_frame: int = None,
-    use_absolute_paths: bool = False
+    use_absolute_paths: bool = False,
+    render_settings_prim_path: str = None
 ) -> str:
     """
     Generate USDA file content with sublayers.
@@ -124,6 +125,9 @@ def generate_usda_content(
         start_frame: Start time code (optional)
         end_frame: End time code (optional)
         use_absolute_paths: If True, output absolute filesystem paths (for baked/collapsed stages)
+        render_settings_prim_path: Prim path of the stage's RenderSettings, stamped
+                    as `renderSettingsPrimPath` layer metadata (optional). See
+                    the note below for why this has to be on the ROOT layer.
 
     Returns:
         USDA file content as string
@@ -140,6 +144,21 @@ def generate_usda_content(
 
     if end_frame is not None:
         lines.append(f'    endTimeCode = {end_frame}')
+
+    # Which RenderSettings husk renders with. It has to be stamped on THIS
+    # layer: husk reads the metadatum off the root layer only, and its own
+    # search for a settings prim covers `/Render` and nothing else. A project
+    # whose settings live at `/scene/Render/rendersettings` (7 of 13 live
+    # projects) declares that path in root_default_prims.usda, which reaches a
+    # collapsed stage as a *sublayer* — husk never sees it, logs "No camera in
+    # render settings, defaulting to <first camera in the stage>" and renders
+    # the whole shot from the project template's origin camera. Verified
+    # against husk 22.0.429: with the metadatum here it logs "Using stage
+    # default settings: <path>" instead.
+    if render_settings_prim_path:
+        lines.append(
+            f'    renderSettingsPrimPath = "{render_settings_prim_path}"'
+        )
 
     # Add standard USD metadata
     lines.append('    metersPerUnit = 1')
@@ -404,14 +423,61 @@ def find_render_settings_prim_path(stage) -> str:
             'is sublayered into the build.'
         )
         raise RenderSettingsError(
-            'the stage carries no UsdRender.Settings prim, so there is '
-            'nothing for the render overrides to apply to.' + detail
+            'the stage carries no UsdRender.Settings prim, so nothing on it '
+            'says what to render -- and a render override has nothing to '
+            'apply to.' + detail
         )
     raise RenderSettingsError(
         'the stage carries more than one UsdRender.Settings prim, so which '
         'one husk renders is not knowable from here: '
         f'{", ".join(sorted(found))}. Leave exactly one on the stage.'
     )
+
+
+def find_render_camera_prim_path(stage, settings_prim_path: str) -> str:
+    """The camera prim *stage* renders through, per its RenderSettings.
+
+    The ``camera`` relationship is the only authority: a shot stage carries
+    the project template's placeholder camera as well as whatever the layout
+    department exported, and "the first camera found" picks between them by
+    traversal order — which is how a playblast ends up shot from the origin
+    with a 0.5mm lens.
+
+    Raises RenderSettingsError when the relationship is missing, has no
+    target, or targets a prim that is not on the stage: a playblast rendered
+    through a camera nobody chose is the silent-wrong-result this prevents.
+    """
+    from pxr import Usd, UsdGeom
+
+    settings_prim = stage.GetPrimAtPath(settings_prim_path)
+    if not settings_prim or not settings_prim.IsValid():
+        raise RenderSettingsError(
+            f'no prim at the render settings path {settings_prim_path}'
+        )
+    relationship = settings_prim.GetRelationship('camera')
+    targets = list(relationship.GetTargets()) if relationship else []
+    if not targets:
+        raise RenderSettingsError(
+            f"{settings_prim_path} has no 'camera' relationship target, so "
+            'the stage does not say which camera to render through.'
+        )
+    camera_path = targets[0].pathString
+    camera_prim = stage.GetPrimAtPath(camera_path)
+    if not camera_prim or not camera_prim.IsValid():
+        cameras = sorted(
+            prim.GetPath().pathString
+            for prim in Usd.PrimRange.Stage(stage, Usd.PrimAllPrimsPredicate)
+            if prim.IsA(UsdGeom.Camera)
+        )
+        detail = (
+            f' Cameras on the stage: {", ".join(cameras)}.'
+            if cameras else ' The stage carries no camera at all.'
+        )
+        raise RenderSettingsError(
+            f'{settings_prim_path} renders through {camera_path}, which is '
+            'not on the stage.' + detail
+        )
+    return camera_path
 
 
 def _render_overrides_prim_path(staged_file_path: Path) -> str:
@@ -448,6 +514,107 @@ def _render_overrides_prim_path(staged_file_path: Path) -> str:
             'settings'
         )
     return find_render_settings_prim_path(stage)
+
+
+def _composed_render_view(staged_file_path: Path) -> tuple[str, str]:
+    """``(settings prim path, camera prim path)`` for *staged_file_path*.
+
+    One compose for both answers, since a playblast needs the camera the
+    settings prim names and the settings path to read it from. Same raising
+    contract as :func:`_render_overrides_prim_path`.
+    """
+    try:
+        from pxr import Usd
+    except ImportError as error:
+        raise RenderSettingsError(
+            'USD (pxr) is unavailable, so the stage cannot say which camera '
+            f'it renders through: {staged_file_path}'
+        ) from error
+
+    try:
+        stage = Usd.Stage.Open(str(staged_file_path), Usd.Stage.LoadAll)
+    except Exception as error:
+        raise RenderSettingsError(
+            f'could not compose {staged_file_path} to locate its render '
+            f'settings: {error}'
+        ) from error
+    if stage is None:
+        raise RenderSettingsError(
+            f'could not compose {staged_file_path} to locate its render '
+            'settings'
+        )
+    settings_prim_path = find_render_settings_prim_path(stage)
+    return settings_prim_path, find_render_camera_prim_path(
+        stage, settings_prim_path
+    )
+
+
+# Where a collapsed playblast stage carries the RenderSettings husk renders
+# it through. Its own prim, not the project's: see
+# _generate_playblast_settings_section.
+PLAYBLAST_SETTINGS_PRIM_PATH = '/Render/tumblepipe_playblast'
+_PLAYBLAST_SCOPE_NAME = 'TumblePipePlayblast'
+
+
+def _generate_playblast_settings_section(camera_prim_path: str) -> str:
+    """USDA text defining the RenderSettings a GL playblast renders through.
+
+    A playblast cannot reuse the project's RenderSettings, because its
+    RenderProduct orders Karma's LPE RenderVars (``beauty`` with
+    ``sourceName = "C.*[LO]"``, ``sourceType = "lpe"``). Hydra Storm cannot
+    produce those buffers, so husk logs
+
+        Render delegate doesn't provide buffer for: beauty
+        All AOVs bypassed or missing. Nothing to write to <path>
+
+    and writes no image at all — which reached the worker as "produced no
+    frames", where it was reported as a missing GPU on the render node.
+    Verified against husk 22.0.429.
+
+    So the playblast gets its own settings prim: one plain ``color`` RenderVar
+    Storm does provide, and the camera the project's own settings name (passed
+    in, never guessed — see find_render_camera_prim_path). Resolution is left
+    to the worker's ``--res``. ``driver:parameters:aov:name`` is not optional:
+    without it husk refuses the RenderVar outright ("Missing
+    driver:parameters:aov:husk:name token").
+    """
+    scope_path = f'/Render/{_PLAYBLAST_SCOPE_NAME}'
+    settings_name = PLAYBLAST_SETTINGS_PRIM_PATH.rsplit('/', 1)[-1]
+    return '\n'.join([
+        '',
+        '# GL playblast render settings, authored by the submitter. The',
+        "# project's own settings prim orders Karma LPE AOVs that Hydra Storm",
+        '# cannot fill, which leaves husk with nothing to write.',
+        'def Scope "Render"',
+        '{',
+        f'    def Scope "{_PLAYBLAST_SCOPE_NAME}"',
+        '    {',
+        '        def RenderVar "color"',
+        '        {',
+        '            uniform token dataType = "color4f"',
+        '            uniform string sourceName = "color"',
+        '            uniform token sourceType = "raw"',
+        '            custom string driver:parameters:aov:name = "color"',
+        '        }',
+        '',
+        '        def RenderProduct "product"',
+        '        {',
+        f'            rel orderedVars = [ <{scope_path}/color> ]',
+        '            token productName = "playblast"',
+        '            uniform token productType = "raster"',
+        '        }',
+        '    }',
+        '',
+        f'    def RenderSettings "{settings_name}"',
+        '    {',
+        f'        rel camera = <{camera_prim_path}>',
+        f'        rel products = <{scope_path}/product>',
+        '        uniform token[] includedPurposes = ["default", "render"]',
+        '        uniform token aspectRatioConformPolicy = "expandAperture"',
+        '    }',
+        '}',
+        '',
+    ])
 
 
 def _generate_render_overrides_section(
@@ -965,7 +1132,8 @@ def collapse_latest_references(
     staged_file_path: Path,
     output_path: Path,
     render_overrides: dict = None,
-    excluded_refs: set[str] = None
+    excluded_refs: set[str] = None,
+    playblast: bool = False
 ) -> str:
     """
     Create a fully baked USDA with all sublayers resolved to filesystem paths.
@@ -988,17 +1156,24 @@ def collapse_latest_references(
         excluded_refs: Optional set of top-level sublayer refs to drop, from
                        excluded_staged_refs(). Used to render only part of
                        the department stack; None composes everything.
+        playblast: Collapse for a Hydra Storm playblast rather than a Karma
+                   render — authors a Storm-renderable RenderSettings and
+                   points the stage at it. See
+                   _generate_playblast_settings_section.
 
     Returns:
         USDA file content as string with all leaf layers as absolute paths,
-        instance prim definitions for multi-instance assets, and render overrides
+        a renderSettingsPrimPath naming the RenderSettings husk is to render
+        through, instance prim definitions for multi-instance assets, and
+        render overrides
 
     Raises:
         ValueError: If staged file doesn't exist or has invalid format
         LayerCollectionError: If a layer the build records is missing from
                               disk, or the collapse yields no layers at all
-        RenderSettingsError: If render_overrides are given and the stage's
-                             RenderSettings prim cannot be identified
+        RenderSettingsError: If render_overrides are given, or playblast is
+                             set, and the stage's RenderSettings prim (or the
+                             camera it names) cannot be identified
     """
     if not staged_file_path.exists():
         raise ValueError(f"Staged file does not exist: {staged_file_path}")
@@ -1026,6 +1201,40 @@ def collapse_latest_references(
             f"sublayered into the staged build."
         )
 
+    # Where this stage's RenderSettings lives, asked of the composed staged
+    # build. Stamped onto the collapsed root layer below so husk renders
+    # through the project's own settings prim (and therefore its camera)
+    # instead of falling back to the first camera it happens to traverse --
+    # see generate_usda_content. Resolved once and shared with the overrides
+    # section, which needs the same answer.
+    #
+    # A failure here is only fatal when there is something that depends on the
+    # answer -- overrides to place, or a playblast settings prim to aim at a
+    # camera. With neither, omitting the metadatum leaves husk exactly where
+    # it was, whereas raising would refuse submissions that render today.
+    playblast_section = None
+    try:
+        if playblast:
+            settings_prim_path, camera_prim_path = _composed_render_view(
+                staged_file_path
+            )
+            playblast_section = _generate_playblast_settings_section(
+                camera_prim_path
+            )
+            # The playblast renders through the settings authored above, not
+            # the project's Karma ones.
+            settings_prim_path = PLAYBLAST_SETTINGS_PRIM_PATH
+        else:
+            settings_prim_path = _render_overrides_prim_path(staged_file_path)
+    except RenderSettingsError as error:
+        if render_overrides or playblast:
+            raise
+        settings_prim_path = None
+        logging.warning(
+            f"Collapsed stage carries no renderSettingsPrimPath: {error}. "
+            "husk will pick its own render settings and camera."
+        )
+
     # Generate USDA with absolute filesystem paths (no entity URIs)
     usda_content = generate_usda_content(
         layer_paths=leaf_layers,
@@ -1033,7 +1242,8 @@ def collapse_latest_references(
         fps=metadata['fps'],
         start_frame=metadata['start_frame'],
         end_frame=metadata['end_frame'],
-        use_absolute_paths=True
+        use_absolute_paths=True,
+        render_settings_prim_path=settings_prim_path
     )
 
     # Generate instance prim definitions for multi-instance assets, with
@@ -1049,13 +1259,16 @@ def collapse_latest_references(
     if instance_prims:
         usda_content = usda_content + '\n' + instance_prims
 
+    if playblast_section:
+        usda_content = usda_content + '\n' + playblast_section
+
     # Generate render settings overrides. The prim path comes from the
     # composed stage, never a constant: the project decides where its
     # RenderSettings lives, and an `over` chain aimed at the wrong path drops
     # every override in silence.
     if render_overrides:
         overrides_section = _generate_render_overrides_section(
-            render_overrides, _render_overrides_prim_path(staged_file_path)
+            render_overrides, settings_prim_path
         )
         if overrides_section:
             usda_content = usda_content + '\n' + overrides_section

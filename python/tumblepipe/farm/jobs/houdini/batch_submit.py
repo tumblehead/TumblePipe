@@ -30,6 +30,7 @@ from tumblepipe.pipe.paths import (
 )
 from tumblepipe.pipe.usd import (
     LayerCollectionError,
+    RenderSettingsError,
     collapse_latest_references,
     excluded_staged_refs,
 )
@@ -609,9 +610,12 @@ def submit_entity_batch(config: dict) -> list[str]:
         # Add playblast job (GL preview of the shot's staged stage)
         if do_playblast:
             # Playblast previews the same staged 'default' stage the render
-            # reads, so husk auto-resolves the same shot camera from its baked
-            # RenderSettings. Collapse the latest staged references (no render
-            # overrides) into a self-contained USD and bundle it.
+            # reads, collapsed into a self-contained USD (no render overrides)
+            # and bundled with the job. It does NOT render through the same
+            # RenderSettings prim: `playblast=True` authors a Storm-renderable
+            # one aimed at the camera the project's settings name — husk under
+            # Storm can neither fill Karma's LPE AOVs nor find a settings prim
+            # outside /Render on its own.
             latest_staged_path = get_latest_staged_file_path(entity_uri, 'default')
             if latest_staged_path is None or not latest_staged_path.exists():
                 raise BatchSubmitError(
@@ -635,12 +639,20 @@ def submit_entity_batch(config: dict) -> list[str]:
                     latest_staged_path,
                     collapsed_playblast_path,
                     {},
-                    excluded_refs=pb_excluded_refs
+                    excluded_refs=pb_excluded_refs,
+                    playblast=True
                 )
             except LayerCollectionError as e:
                 raise BatchSubmitError(
                     f"Cannot collapse the staged stage for the {entity_uri} "
                     f"playblast: {e}"
+                ) from e
+            except RenderSettingsError as e:
+                # Refused at submit time rather than rendered from whatever
+                # camera husk lands on: a playblast of the wrong view reads as
+                # a finished preview all the way into dailies.
+                raise BatchSubmitError(
+                    f"Cannot playblast {entity_uri}: {e}"
                 ) from e
             store_text(collapsed_playblast_path, collapsed_content)
             relative_playblast_input = collapsed_playblast_path.relative_to(temp_path)

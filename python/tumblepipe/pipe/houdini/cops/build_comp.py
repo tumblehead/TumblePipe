@@ -226,6 +226,11 @@ class BuildComp(ns.Node):
         if shot_uri_raw == 'from_context':
             context = _entity_from_context_json()
             if context is None: return None
+            # A Multi's workfile records the group. A composite is built for
+            # one shot — its channels, frame range and AOV paths all come
+            # from that shot — so resolve nothing and let the Shot parm name
+            # the member instead.
+            if context.entity_uri.purpose != 'entity': return None
             return context.entity_uri
         # From settings
         shot_uris = self.list_shot_uris()
@@ -1202,6 +1207,15 @@ class BuildComp(ns.Node):
         workfile_path = Path(hou.hipFile.path())
         context = get_workfile_context(workfile_path)
         assert context is not None, 'Invalid workfile path'
+        # A Multi's workfile records the Multi, and a composite renders one
+        # shot: the farm job would take the group URI as a shot and resolve
+        # its AOV paths against an entity that does not exist. Submit Jobs
+        # is the surface that expands a Multi into its members.
+        assert context.entity_uri.purpose == 'entity', (
+            f'This workfile belongs to the Multi {context.entity_uri}, and a '
+            f'composite renders one shot. Submit the members from the Asset '
+            f'Browser (Submit Jobs), which expands a Multi.'
+        )
 
         # Convert context to entity_json for farm submission
         entity_json = {

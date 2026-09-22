@@ -1,6 +1,11 @@
 """Camera validation for USD render stages."""
 
 from tumblepipe.pipe.houdini import util
+from tumblepipe.pipe.usd import (
+    RenderSettingsError,
+    find_render_settings_prim_path,
+)
+
 from .base import ValidationResult
 
 
@@ -26,15 +31,25 @@ def validate_cameras(root) -> ValidationResult:
         result.add_error(
             "No Camera prims found in stage",
             suggestion=(
-                "Add a camera under /cameras/ via a Camera LOP, or sublayer in "
-                "the layout/animation department where the shot camera lives."
+                "Add a camera via a Camera LOP, or sublayer in the "
+                "layout/animation department where the shot camera lives."
             ),
         )
         return result
 
-    # Check render camera from RenderSettings
-    settings_prim = stage.GetPrimAtPath('/Render/rendersettings')
-    if settings_prim.IsValid():
+    # Check render camera from RenderSettings. The settings prim's path is
+    # project-owned, so it is asked of the stage: looking at a fixed
+    # /Render/rendersettings meant this check silently did not run at all on
+    # the projects that keep theirs under /scene — the ones where the render
+    # camera is most likely to still be the template placeholder.
+    # A stage with no settings prim is render_settings' error to report,
+    # not this validator's.
+    try:
+        settings_path = find_render_settings_prim_path(stage)
+    except RenderSettingsError:
+        settings_path = None
+    if settings_path is not None:
+        settings_prim = stage.GetPrimAtPath(settings_path)
         camera_rel = settings_prim.GetRelationship('camera')
         if camera_rel.IsValid():
             camera_targets = camera_rel.GetTargets()
@@ -43,7 +58,7 @@ def validate_cameras(root) -> ValidationResult:
                 if render_camera_path not in camera_paths:
                     result.add_error(
                         f"Render camera path not found in stage: {render_camera_path}",
-                        '/Render/rendersettings',
+                        settings_path,
                         suggestion=(
                             "Update the Camera Path on the Render Settings LOP "
                             "to point at an existing camera, or add the missing "

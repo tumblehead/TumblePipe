@@ -54,7 +54,10 @@ class CreateModel(ns.Node):
             file_path = Path(hou.hipFile.path())
             context = get_workfile_context(file_path)
             if context is None: return None
-            # Verify it's an asset entity
+            # Verify it's an asset entity (a Multi's workfile records the
+            # group, which is not one asset and has no model to create)
+            if context.entity_uri.purpose != 'entity': return None
+            if not context.entity_uri.segments: return None
             if context.entity_uri.segments[0] != 'assets': return None
             return context.entity_uri
         # From settings

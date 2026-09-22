@@ -26,9 +26,11 @@ from tumblepipe.apps import mp4, houdini
 from tumblepipe.apps.houdini import IConvert
 from tumblepipe.util.io import load_json
 from tumblepipe.config.discord import (
+    is_configured as is_discord_configured,
     get_token as get_discord_token,
     get_user_discord_id,
-    get_channel_id as get_discord_channel_id
+    get_channel_id as get_discord_channel_id,
+    list_channels as list_discord_channels
 )
 from tumblepipe.farm.tasks.notify import _spec
 from tumblepipe.farm.tasks.env import ocio_value, print_env
@@ -72,6 +74,17 @@ def _post(
     callback
     ) -> int:
 
+    # A project with no discord setup at all has nothing to post to. That is
+    # not a failure of the work this task trails -- say so and leave the farm
+    # job green, rather than reddening a render that went fine.
+    if not is_discord_configured():
+        print(
+            'Skipping discord notification: this project has no discord '
+            'configuration (set config:/discord token and channels to '
+            f'enable it). Would have posted to #{channel_name}.'
+        )
+        return 0
+
     # Get discord token
     token = get_discord_token()
     if token is None:
@@ -82,10 +95,16 @@ def _post(
     if user_id is None:
         print(f'Warning: User not found in discord config: {user_name} (will post without mention)')
 
-    # Find the channel to post to
+    # Find the channel to post to. The project does have discord configured,
+    # so an unknown channel name is a real misconfiguration -- name the ones
+    # it does know, so the fix is obvious from the farm log.
     channel_id = get_discord_channel_id(channel_name)
     if channel_id is None:
-        return _error(f'Channel not found in discord config: {channel_name}')
+        known_channels = ', '.join(sorted(list_discord_channels()))
+        return _error(
+            f'Channel not found in discord config: {channel_name} '
+            f'(configured channels: {known_channels})'
+        )
 
     # Post mp4 to discord and ping user
     intents = discord.Intents.default()

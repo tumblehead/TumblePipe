@@ -12,6 +12,17 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.52.1 — 2026-09-17
+
+### Fixes
+- fix(workfiles): record the Multi, not the member, in a Multi folder's context.json (`25ce1a7`)
+- fix(import_shot): restore excluding asset departments, as layer mutes (`69ec577`)
+
+### Documentation
+- docs: a Multi workfile whose context.json names one member (`a30dfab`)
+- docs: import_shot asset department exclusion (`d68d9f4`)
+- docs: regenerate CHANGELOG.md for v1.52.0 (`e672712`)
+
 ## v1.52.0 — 2026-09-16
 
 ### Features

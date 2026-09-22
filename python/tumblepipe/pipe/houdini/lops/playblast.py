@@ -11,6 +11,7 @@ from tumblepipe.config.department import (
     list_departments,
     list_entity_departments,
 )
+from tumblepipe.config.groups import Group, get_group, is_group_uri
 from tumblepipe.config.timeline import FrameRange, get_frame_range, get_fps
 from tumblepipe.apps import mp4
 from tumblepipe.pipe.houdini import util
@@ -44,21 +45,25 @@ class Playblast(ns.Node):
 
     def list_department_names(self):
         # Playblast isn't an EntityNode (it resolves a shot, not a generic
-        # entity), so it narrows to the shot's own departments by hand.
+        # entity), so it narrows to the shot's own departments by hand. In a
+        # Multi's workfile no single shot resolves, and the group URI is not
+        # an entity URI — handing it to list_entity_departments raises — so
+        # the Multi's own department list is the pool there.
         shot_uri = self.get_shot_uri()
-        departments = (
-            list_departments('shots') if shot_uri is None
-            else list_entity_departments(shot_uri)
-        )
+        if shot_uri is not None:
+            departments = list_entity_departments(shot_uri)
+        else:
+            departments = list_departments('shots')
+            multi = self.get_multi()
+            if multi is not None:
+                covered = set(multi.departments)
+                departments = [d for d in departments if d.name in covered]
         return [d.name for d in departments if d.renderable]
 
     def list_camera_paths(self):
         root = self._get_stage_root()
         if root is None: return []
-        cameras = root.GetPrimAtPath('/cameras')
-        if cameras is None: return []
-        if not cameras.IsValid(): return []
-        return util.list_cameras(cameras)
+        return util.list_stage_cameras(root)
 
     def list_camera_names(self):
         camera_paths = self.list_camera_paths()
@@ -72,10 +77,39 @@ class Playblast(ns.Node):
     def _get_context(self):
         return get_workfile_context(Path(hou.hipFile.path()))
 
+    def get_multi(self) -> Group | None:
+        """The Multi whose folder this workfile lives in, if any.
+
+        A member's covered department row saves into its Multi's folder, so
+        that workfile's context.json names the group ('groups:/shots/<name>')
+        and not one of its shots. A playblast renders one camera into one
+        shot's folder, so 'from_context' cannot resolve there and the shot
+        has to be picked on the node instead.
+        """
+        context = self._get_context()
+        if context is None: return None
+        if not is_group_uri(context.entity_uri): return None
+        return get_group(context.entity_uri)
+
+    def _no_shot_message(self) -> str:
+        """Why 'from_context' resolved no shot, in the artist's terms."""
+        multi = self.get_multi()
+        if multi is not None:
+            return (
+                f'This workfile belongs to the Multi {multi.name}, which holds '
+                f'several shots. Set Entity Source to "From Settings" and pick '
+                f'the shot to playblast.'
+            )
+        return 'No shot found for this playblast.'
+
     def get_shot_uri(self) -> Uri | None:
         if self.get_entity_source() == 'from_context':
             context = self._get_context()
             if context is None: return None
+            # A Multi's workfile records the group, which is not an entity: it
+            # has no frame range, no playblast folder and no single camera.
+            if context.entity_uri.purpose != 'entity': return None
+            if not context.entity_uri.segments: return None
             if context.entity_uri.segments[0] != 'shots': return None
             return context.entity_uri
         # From settings
@@ -171,6 +205,7 @@ class Playblast(ns.Node):
 
         # Parameters
         shot_uri = self.get_shot_uri()
+        assert shot_uri is not None, self._no_shot_message()
         department_name = self.get_department_name()
         camera_path = self.get_camera_path()
         frame_range = self.get_frame_range()
@@ -238,6 +273,12 @@ class Playblast(ns.Node):
 
         # Parameters and paths
         shot_uri = self.get_shot_uri()
+        if shot_uri is None:
+            return hou.ui.displayMessage(
+                self._no_shot_message(),
+                title='Playblast',
+                severity=hou.severityType.Error
+            )
         department_name = self.get_department_name()
         output_playblast_path = get_latest_playblast_path(shot_uri, department_name)
 
@@ -257,6 +298,12 @@ class Playblast(ns.Node):
 
         # Parameters and paths
         shot_uri = self.get_shot_uri()
+        if shot_uri is None:
+            return hou.ui.displayMessage(
+                self._no_shot_message(),
+                title='Playblast',
+                severity=hou.severityType.Error
+            )
         department_name = self.get_department_name()
         output_playblast_path = get_latest_playblast_path(shot_uri, department_name)
         # No playblast yet → fall back to the (not-yet-populated) output dir.
