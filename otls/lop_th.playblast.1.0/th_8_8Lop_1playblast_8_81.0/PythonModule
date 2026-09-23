@@ -8,3 +8,9 @@ def view_latest():
 
 def open_location():
     playblast.open_location()
+
+def select():
+    playblast.select()
+
+def update_labels():
+    playblast.update_labels()

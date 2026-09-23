@@ -347,9 +347,9 @@ Source: [`otls/lop_th.playblast.1.0`](../../otls/lop_th.playblast.1.0/th_8_8Lop_
 
 | Label | Default | What it does |
 |---|---|---|
-| Entity | From context | From context (the workfile's shot and department) or From settings |
-| Shot, Department | | With From settings: any shot; its **renderable** departments |
-| Camera | first camera | The cameras under `/cameras` in the input stage |
+| Entity | `from_context` | The shot — the shared Entity button (shots only, *Select Shot*), as on `th::import_shot`; the label beside it shows what `from_context` resolved to |
+| Department | `from_context` | `from_context` (the workfile's department) or one of the shot's **renderable** departments |
+| Camera | first camera | The cameras in the input stage: under `/cameras` or `/scene/cameras`, else anywhere on the stage |
 | Shading Mode, Lighting | Smooth Shaded, Headlight Only | Viewport look of the flipbook |
 | Frame Range | From Config | The shot's configured range plus roll, or From Settings (**First/Last-Frame**, **Pre/Post-Roll**) |
 | Resolution | `1280 720` | |
@@ -362,14 +362,18 @@ Gotchas:
 - The node only ever playblasts a **shot**: From context inside an asset
   workfile resolves nothing. The department must be renderable — a
   non-renderable workfile department resolves nothing too.
-- In a **Multi**'s workfile From context resolves nothing either: a Multi
-  holds several shots, and a playblast writes one shot's MP4 and daily. Set
-  **Entity** to From settings and pick the member. The Department menu there
-  lists the departments the Multi covers. Pressing a button with nothing
-  resolved says which Multi the workfile belongs to. `th::lookdev_studio`,
-  which has no entity parm at all, refuses the same way: its turntable
-  renders one asset.
-- No camera under `/cameras` fails the button with *No camera path found*.
+- In a **Multi**'s workfile Entity `from_context` resolves nothing either:
+  a Multi holds several shots, and a playblast writes one shot's MP4 and
+  daily. Pick the member with the **Entity** button; Department can stay on
+  `from_context`. The Department menu there lists the departments the Multi
+  covers. Pressing a button with nothing resolved says which Multi the
+  workfile belongs to. `th::lookdev_studio`, which has no entity parm at
+  all, refuses the same way: its turntable renders one asset.
+- Nodes saved before 1.52.3 carried an *Entity* menu (From context / From
+  settings) and a *Shot* menu. Those parms are gone: an old node opens on
+  `from_context`, so one that had a shot picked under From settings needs it
+  picked again with the Entity button.
+- A stage with no camera at all fails the button with *No camera path found*.
 
 ## `th::playblast` (SOP)
 
@@ -383,7 +387,7 @@ Source: [`otls/sop_th.playblast.2.0`](../../otls/sop_th.playblast.2.0/th_8_8Sop_
 |---|---|---|
 | Entity | `from_context` | The shot |
 | Department | `from_context` | Menu of the shot's renderable departments — **pick one**: the node does not resolve `from_context` here, and an unlisted value makes the buttons fail |
-| Camera | *(empty)* | Cameras under `/cameras` of the stage the node reads |
+| Camera | *(empty)* | Cameras in the stage the node reads, found as on the LOP |
 | Playblast, View Latest, Browse All | | As the LOP |
 
 The frame range is always the shot's configured range plus roll; there is no

@@ -192,14 +192,32 @@ RUNNER_SCRIPT_PATH = Path(__file__).parent / 'houdini_runner.py'
 # tumblepipe.farm.tasks.env.get_base_env for where it is set.
 HOUDINI_VERSION_ENV = 'TH_HOUDINI_VERSION'
 
+# Houdini (and hython) export their own full version into the process env.
+# An artist's session never has TH_HOUDINI_VERSION — only farm jobs do — so
+# without this an in-session caller (the LOP playblast's mp4 encode) asked for
+# DEFAULT_HOUDINI_VERSION's major and found no install on an all-22 machine.
+RUNNING_HOUDINI_VERSION_ENV = 'HOUDINI_VERSION'
+
+def _parse_version_name(version: str | None) -> str | None:
+    if not version: return None
+    parts = version.split('.')
+    if len(parts) != 3: return None
+    if not all(part.isdigit() for part in parts): return None
+    return version
+
 def _resolve_default_version() -> str:
     """The Houdini version an app wrapper should target when none is given.
 
-    Prefers the creating instance's version forwarded through the job env
-    (``TH_HOUDINI_VERSION``); falls back to ``DEFAULT_HOUDINI_VERSION`` for
-    non-farm callers and legacy jobs that predate the env var.
+    In priority order: the creating instance's version forwarded through the
+    job env (``TH_HOUDINI_VERSION``); the running Houdini's own version
+    (``HOUDINI_VERSION``, set by Houdini itself); ``DEFAULT_HOUDINI_VERSION``
+    for plain-python callers and legacy jobs that predate the env var.
     """
-    return os.environ.get(HOUDINI_VERSION_ENV, DEFAULT_HOUDINI_VERSION)
+    return (
+        _parse_version_name(os.environ.get(HOUDINI_VERSION_ENV))
+        or _parse_version_name(os.environ.get(RUNNING_HOUDINI_VERSION_ENV))
+        or DEFAULT_HOUDINI_VERSION
+    )
 
 def _is_valid_version(version: str) -> bool:
     if len(version) != 8: return False

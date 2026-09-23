@@ -51,10 +51,6 @@ EXEMPT = {
     # single 'from_context' default is meaningless. The rows start empty.
     'lop_th.import_assets.2.0': 'multiparm rows name distinct entities',
     'sop_th.import_rigs.2.0': 'multiparm rows name distinct entities',
-    # Uses an explicit entity_source menu ('from_context'/'from_settings')
-    # instead of a sentinel in the shot parm; the shot parm is only read in
-    # from_settings mode.
-    'lop_th.playblast.1.0': 'entity_source menu gates the shot parm',
 }
 
 # Resolvers that read the pointer but deliberately accept a group, with the

@@ -163,8 +163,8 @@ to the department lookup, which only accepts a single shot or asset.
 
 Later releases resolve nothing from the context there instead, and the
 Department menu lists the departments the Multi covers. The node still
-needs a shot to write to, so set **Entity** to From settings and pick the
-member — see [`th::playblast` (LOP)](nodes/lighting-and-rendering.md#thplayblast-lop).
+needs a shot to write to, so pick the member with the **Entity** button —
+see [`th::playblast` (LOP)](nodes/lighting-and-rendering.md#thplayblast-lop).
 `th::create_model` and `th::render_debug` read the same pointer and now
 turn a Multi away the same way.
 
@@ -274,6 +274,13 @@ The worker has no Houdini of the **major** the job was submitted from (the
 submitting Houdini's full version travels with the job as
 `TH_HOUDINI_VERSION`). Install that major on the workers before submitting
 from it. See [Farm worker prerequisites](deadline.md#farm-worker-prerequisites).
+
+The same assert raised by `th::playblast` (LOP) **inside Houdini**, after
+the frames rendered and at the MP4 encode (`mp4.from_jpg` → `FFmpeg`), is a
+different bug: 1.52.2 and older looked for Houdini's bundled `hffmpeg` under
+the pipeline's default major (21) rather than the Houdini you are running, so
+it failed on any machine with only Houdini 22 installed. Later releases use
+the running Houdini's own version.
 
 ### Farm job failed: `Required env var 'TH_PROJECT_PATH' for package 'tumblepipe' has no value`
 
