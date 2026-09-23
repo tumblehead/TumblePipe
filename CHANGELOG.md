@@ -12,6 +12,42 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.52.3 — 2026-09-23
+
+### Fixes
+- fix(playblast): pick the shot with an Entity parm, as import_shot does (`dcfafc3`)
+- fix(apps): in-session tools use the Houdini that is running (`13f4da8`)
+
+### Documentation
+- docs: playblast Entity parm, in-session encode failure, camera lookup (`031be18`)
+
+## v1.52.2 — 2026-09-22
+
+### Features
+- feat(playblast): husk's own decisions reach the farm log (`542775e`)
+
+### Fixes
+- fix(notify): a project with no discord configuration skips, not fails (`9e39713`)
+- fix(playblast): find cameras wherever the project keeps them (`9701d90`)
+- fix(validators): the render validators ask the stage where its settings live (`8b9a7c3`)
+- fix(playblast): render through settings husk can find and Storm can fill (`9567fea`)
+- fix(submit): give the entity tree the dialog's left column (`21e8747`)
+- fix(nodes): turn a group URI away wherever a workfile resolves an entity (`9cd8895`)
+- fix(playblast): a Multi's workfile resolves no shot, not a traceback (`7c83968`)
+
+### Documentation
+- docs: what a farm notify does when the project has no discord config (`850d656`)
+- docs: husk finds render settings under /Render, or on the root layer (`4e94077`)
+- docs: from_context resolves nothing in a Multi's workfile (`f8b5bb6`)
+- docs: regenerate CHANGELOG.md for v1.52.1 (`5908967`)
+
+### Tests
+- test: pin the stage a farm playblast renders (`a41910f`)
+
+### Other Changes
+- tools: report which projects can actually post a farm notify (`4cc35bd`)
+- tools: report what a farm playblast will render, without submitting one (`a663c77`)
+
 ## v1.52.1 — 2026-09-17
 
 ### Fixes

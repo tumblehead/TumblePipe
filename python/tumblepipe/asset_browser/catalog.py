@@ -63,6 +63,7 @@ from .types import (
     latest_version,
     projects_json_path,
     scan_workfiles,
+    version_code,
 )
 
 log = logging.getLogger(__name__)
@@ -1309,6 +1310,27 @@ class PipelineCatalog(Catalog):
                 lambda aid=asset_id, dn=dept, v=latest:
                     self._workfiles.open_version_now(aid, dn, v, None),
             ))
+            # Every older version, newest first — a submenu, which the
+            # browser renders from a nested item list (TumbleTrove >=
+            # 0.39.0). Omitted when the latest is the only version.
+            older = sorted(
+                (v for v in versions if v != latest),
+                key=version_code, reverse=True,
+            )
+            if older:
+                items.append((
+                    "Open Version",
+                    [
+                        (
+                            v,
+                            lambda aid=asset_id, dn=dept, v=v:
+                                self._workfiles.open_version_now(
+                                    aid, dn, v, None,
+                                ),
+                        )
+                        for v in older
+                    ],
+                ))
             items.append(open_folder)
             items.append((
                 "View Latest Export",

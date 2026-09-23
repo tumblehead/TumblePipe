@@ -84,8 +84,10 @@ Do not hand-edit these; the browser reads them on every card build.
 ## Opening a workfile
 
 Double-click a department row (or a deck item), pick **Open Latest (vNNNN)**
-from its right-click menu, or press the play button on a row of the detail
-panel's Departments tab (which opens whichever version its dropdown shows).
+from its right-click menu (or an older one under **Open Version ▸**, which
+lists every other version newest first and only appears once there are two),
+or press the play button on a row of the detail panel's Departments tab
+(which opens whichever version its dropdown shows).
 What happens, in order:
 
 1. If the department is covered by a Multi the Multi's workfile is opened

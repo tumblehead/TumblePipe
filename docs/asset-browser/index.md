@@ -175,9 +175,10 @@ version from the department template instead. Right-click one for:
 | Item has versions | Item has none |
 |---|---|
 | **Open Latest (vNNNN)** | **New from Template** |
-| **Open Folder** | **New from Current** |
-| **View Latest Export** | |
-| **Open in New Houdini** | **Open Folder** |
+| **Open Version ▸** (older versions, newest first) | **New from Current** |
+| **Open Folder** | |
+| **View Latest Export** | **Open Folder** |
+| **Open in New Houdini** | |
 | **Reload Scene** (only on the open department) | |
 | **Remove from *Multi*** (only on a ⓜ item) | |
 | **New from Template** | |

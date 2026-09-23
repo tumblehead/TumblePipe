@@ -110,8 +110,8 @@ the scene currently loaded: **Save**, **Publish**, **Render**, **Update** and
 TumblePipe settings live on the **Projects** page of TumbleTrove's settings
 dialog ([Settings](asset-browser/settings.md)).
 
-**The TumbleTrove menu** in Houdini's main menu bar (next to Help) lists every
-registered package's items, **Settings...**, a **Documentation** submenu (the
+**The TumbleTrove menu** in Houdini's main menu bar (next to Help) gives every
+registered package a submenu of its items, **Settings...**, a **Documentation** submenu (the
 TumblePipe docs are listed there) and **About TumbleTrove...**, which shows
 the installed version of every registered package.
 
