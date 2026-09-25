@@ -12,6 +12,11 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.54.1 — 2026-09-24
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.54.0 (`9260d3d`)
+
 ## v1.54.0 — 2026-09-24
 
 ### Features

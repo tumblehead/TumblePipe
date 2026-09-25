@@ -5,12 +5,12 @@
 # `[compat].houdini` in hpm.toml so the install gate matches what's actually
 # built (the bound is EXCLUSIVE: support through major N => "<(N+1)").
 #
-# macOS is currently an exception: SideFX ships H22 macOS as
-# arm64-only, and our macOS worker is an x86_64 iMac, so
-# .woodpecker/build-macos.yml is pinned to HPM_HOUDINI_MAJORS="21" until
-# there's an Apple Silicon worker. The per-platform HPM_HOUDINI_MAJORS
-# env in each build-<platform>.yml is the source of truth for what
-# actually gets built; this file mirrors the *intent* across the
-# matrix.
+# All three workers build every major. macOS used to be the exception:
+# SideFX ships H22 for macOS as arm64-only, and the old macOS worker was
+# an x86_64 machine, so build-macos.yml was pinned to "21". The Apple
+# Silicon worker (2026-09) has both 21.0 and 22.0 installed. The
+# per-platform HPM_HOUDINI_MAJORS env in each build-<platform>.yml is the
+# source of truth for what actually gets built; this file mirrors the
+# *intent* across the matrix, so keep the two in step.
 
 majors = [21, 22]

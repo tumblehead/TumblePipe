@@ -5,6 +5,9 @@ of shots or assets to Deadline. It shows every entity of a context as a row
 and every pipeline step as a column, so you can see what is out of date and
 tick what should run, from one cell up to the whole project. Submitting hands
 the work to a separate process, so Houdini is usable again within seconds.
+Farm Submit arrived in TumblePipe **1.54.1**; it replaced the Submit Jobs
+dialog, which had one form for the whole batch and submitted from inside
+Houdini.
 
 Source: [`submit_jobs_dialog.py`](../../python/tumblepipe/asset_browser/submit_jobs_dialog.py)
 (the dialog), [`farm_grid.py`](../../python/tumblepipe/asset_browser/farm_grid.py)
@@ -250,7 +253,7 @@ the last publish job the batch adds a staged **build** job per channel the
 previews need (a first-ever department export, or a newly imported asset, is
 absent from the old build), and then a **collapse** job (`houdini` group)
 that snapshots the freshly built stage and submits the playblast and render
-jobs itself, with that snapshot bundled. Up to TumblePipe 1.53, previews were
+jobs itself, with that snapshot bundled. Up to TumblePipe 1.53.0, previews were
 snapshotted when the dialog submitted — *before* the publish had run — so a
 publish + playblast submission played the previous version and nothing
 flagged it. A **Standalone** render builds its stage on the farm anyway; after
