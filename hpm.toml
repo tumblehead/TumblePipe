@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.53.0"
+version = "1.54.1"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -308,6 +308,25 @@ cmd = "python scripts/migrate_config.py"
 python = "3.11"
 label = "Migrate Project Config"
 description = "Bring this project's _config layout up to the current pipeline version"
+
+# farm opens the Farm Submit grid (publish / playblast / render any shots on the
+# farm) from the desktop's per-project Scripts panel, with no Houdini session.
+# The launcher is stdlib-only, so the uv-managed python just runs it; it then
+# finds a Houdini install matching this manifest's and the project's [compat],
+# replays the project's generated Houdini package files into an environment
+# (the Scripts panel passes HOUDINI_PACKAGE_DIR and the project's own vars, not
+# TumblePipe's [runtime] ones) and starts the window in that Houdini's bundled
+# Python, which has PySide6 and pxr and takes no licence. See
+# designs/farm-pipeline-grid.md §3.6.
+#
+# The script is addressed through $HPM_PACKAGE_ROOT, which the desktop expands
+# before spawning: scripts run with their working directory set to the desktop
+# project dir, so a bare relative path would be looked up there instead.
+[scripts.farm]
+cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\""
+python = "3.11"
+label = "Farm Submit"
+description = "Publish, playblast and render shots on the farm, without opening Houdini"
 
 # Operator index. Declares every HDA node type this package bundles so
 # `hpm pack` can emit a searchable asset index for registry-level node

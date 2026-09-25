@@ -250,7 +250,8 @@ them is the open `.hip`'s filename.
 |---|---|---|
 | **Save** | Save current scene | Saves the open scene as the **next version** of its own department. Asks for a note first. See [Workfiles → Saving](workfiles.md#saving-a-new-version). |
 | **Publish** | Publish exports | Opens the **Publish** process dialog for the open scene's entity, with every export task listed and a local/farm choice. |
-| **Render** | Submit render jobs for the current scene's entity | Opens the **Submit Jobs** dialog for the scene's shot or asset (for a Multi workfile, its member shots), with the render department seeded from the open workfile's department. |
+| **Render** | Submit render jobs for the current scene's entity | Opens the [Farm Submit](submit-jobs.md) dialog with the scene's shot or asset's **Render** cell ticked (for a Multi workfile, its member shots'), and the preview cut pinned to the open workfile's department. |
+| **Farm Submit** | Publish, playblast and render any shots on the farm | Opens the [Farm Submit](submit-jobs.md) dialog with every shot and nothing ticked: tick publish, playblast and render cells for any number of shots and submit them in the background. |
 | **Update** | Re-import latest published versions into the current scene (no scene reload) | Re-executes every `th::import_*` node. Status: *Imports updated to latest published versions (N node(s)).* If any node failed a warning dialog says how many. See [Composition → Picking up new versions mid-session](../composition.md#picking-up-new-versions-mid-session). |
 | **Reload** | Reload current scene | Reloads the open `.hip` from disk (after the unsaved-changes prompt), then re-applies the timeline and the import refresh. |
 
@@ -274,7 +275,7 @@ catalog contributes
 
 | Item | What it does |
 |---|---|
-| **Submit Jobs…** / **Submit Jobs for N selected…** | Opens the **Submit Jobs** dialog for this entity, or for every selected card of the same kind (shots with shots, assets with assets). |
+| **Submit Jobs…** / **Submit Jobs for N selected…** | Opens the [Farm Submit](submit-jobs.md) dialog with this entity's **Render** cell ticked, or every selected card's of the same kind (shots with shots, assets with assets). |
 | **Generate Master…** | Merges each department's latest workfile into `<entity folder>/master/<name>_master.hip`, one network box per department, after a **Generate Master Scene** confirmation. Opens that scene. |
 | **Edit description…** | Edits the `description.txt` sidecar in the entity's folder (dialog **Edit Description**). Shown on the Info tab. |
 | **Tasks…** | Opens TumbleTrove's **Tasks — *name*** dialog for the entity's todo list. |

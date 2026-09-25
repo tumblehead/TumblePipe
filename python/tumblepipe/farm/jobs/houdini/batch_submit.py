@@ -1,7 +1,12 @@
-"""Batch job submission for the catalog Submit Jobs dialog.
+"""Batch job submission for the Submit Jobs dialog.
 
-This module orchestrates the creation and submission of publish and render jobs
-based on the job submission dialog configuration.
+This module orchestrates the creation and submission of publish, render and
+playblast jobs for one entity, from the settings the dialog resolved for it.
+
+When the same submission publishes the entity *and* previews it (render or
+playblast), the preview's input is snapshotted on the farm after the publish
+chain and a fresh staged build, by a ``collapse`` job — see
+``farm/jobs/houdini/_preview.py`` for why it cannot be taken at submit time.
 """
 
 from tempfile import TemporaryDirectory
@@ -16,33 +21,19 @@ from tumblepipe.api import (
     api
 )
 from tumblepipe.util.uri import Uri
-from tumblepipe.util.io import store_json, load_json, store_text
-from tumblepipe.pipe.context import get_aov_names_from_context, aggregate_aov_names_from_inputs
 from tumblepipe.config.channels import read_channel_names
 from tumblepipe.config.department import list_departments, department_names_up_to
 from tumblepipe.apps.deadline import (
     Deadline,
     Batch
 )
-from tumblepipe.pipe.paths import (
-    latest_export_path,
-    get_latest_staged_file_path,
-)
-from tumblepipe.pipe.usd import (
-    LayerCollectionError,
-    RenderSettingsError,
-    collapse_latest_references,
-    excluded_staged_refs,
-)
-from tumblepipe.config.timeline import FrameRange, get_fps, get_frame_range
+from tumblepipe.config.timeline import FrameRange
 import tumblepipe.farm.tasks.stage.task as stage_task
+import tumblepipe.farm.tasks.collapse.task as collapse_task
+import tumblepipe.farm.jobs.houdini.build.job as build_job
 import tumblepipe.farm.jobs.houdini.render.job as render_job
 import tumblepipe.farm.jobs.houdini.playblast.job as playblast_job
-from tumblepipe.farm.jobs.houdini import _publish
-
-# The local playblast HDAs default to 720p; farm playblasts match unless the
-# dialog overrides it.
-DEFAULT_PLAYBLAST_RES = [1280, 720]
+from tumblepipe.farm.jobs.houdini import _preview, _publish
 
 # Mapping from column keys to Karma/USD render setting attribute paths
 # These are used to build overrides for render_settings.json
@@ -112,58 +103,50 @@ def _build_render_overrides(settings: dict) -> dict:
     return overrides
 
 
-def _get_aov_names(entity_uri: Uri, department: str, channels: list[str]) -> list[str]:
-    """Get AOV names from layer exports, including AOVs from referenced assets.
+def publish_department_names(settings: dict, department_names: list[str]) -> tuple[list[str], bool]:
+    """``(departments to publish in pool order, whether to skip an up-to-date prefix)``.
 
-    Checks all shot departments for AOVs (since AOVs can be defined in any department),
-    then aggregates AOVs from referenced assets.
+    Two spellings, from two eras of the dialog:
 
-    Args:
-        entity_uri: The entity URI for the shot/asset
-        department: The render department name (unused, kept for API compatibility)
-        channels: List of channel names to check
-
-    Returns:
-        List of unique AOV names from shot + all referenced assets, or empty list if not found
+    * ``pub_departments`` — the grid's: exactly the ticked departments, in
+      pool order. The grid shows what is stale and the artist picked, so
+      nothing is skipped behind their back.
+    * ``pub_department`` — the old form's: every department up to this one,
+      skipping the up-to-date ones at the front of the chain.
     """
-    aov_set = set()
+    chosen = settings.get('pub_departments')
+    if chosen is not None:
+        unknown = [name for name in chosen if name not in department_names]
+        if unknown:
+            raise BatchSubmitError(
+                f"Invalid publish department(s): {', '.join(unknown)}"
+            )
+        wanted = set(chosen)
+        return [name for name in department_names if name in wanted], False
+    pub_department = settings.get('pub_department')
+    if pub_department is None:
+        raise BatchSubmitError("Publish department not specified")
+    if pub_department not in department_names:
+        raise BatchSubmitError(f"Invalid publish department: {pub_department}")
+    return department_names_up_to(department_names, pub_department), True
 
-    # Determine entity context for department list
-    entity_context = 'shots' if str(entity_uri).startswith('entity:/shots/') else 'assets'
-    all_departments = [d.name for d in list_departments(entity_context)]
 
-    # Try to get from layer exports - check ALL departments
-    for channel in channels:
-        for dept in all_departments:
-            export_path = latest_export_path(entity_uri, channel, dept)
-            if export_path is None:
-                continue
+def _check_preview_department(kind: str, name, department_names, renderable_names):
+    """A render or playblast department must be real and renderable.
 
-            context_path = export_path / 'context.json'
-            context_data = load_json(context_path)
-            if context_data is None:
-                continue
-
-            # Get shot's own AOV names
-            shot_aov_names = get_aov_names_from_context(context_data, channel)
-            aov_set.update(shot_aov_names)
-
-            # Aggregate AOV names from asset inputs
-            asset_aov_names = aggregate_aov_names_from_inputs(context_data, channel)
-            aov_set.update(asset_aov_names)
-
-    # If we found any AOVs, return them
-    if aov_set:
-        return list(aov_set)
-
-    # Fallback: read from root layer context
-    root_context_path = api.storage.resolve(Uri.parse_unsafe('config:/usd/context.json'))
-    root_context = load_json(root_context_path)
-    aov_names = get_aov_names_from_context(root_context)
-    if aov_names:
-        return aov_names
-
-    return []
+    The preview composes the pool prefix ending at this department, so a
+    non-renderable pick has no layer to end on, and silently composing the
+    whole pool is the bug this prevents.
+    """
+    if name is None:
+        raise BatchSubmitError(f"{kind} department not specified")
+    if name not in department_names:
+        raise BatchSubmitError(f"Invalid {kind.lower()} department: {name}")
+    if name not in renderable_names:
+        raise BatchSubmitError(
+            f"{kind} department '{name}' is not renderable. "
+            f"Renderable departments: {', '.join(renderable_names)}"
+        )
 
 
 def submit_entity_batch(config: dict) -> list[str]:
@@ -176,7 +159,10 @@ def submit_entity_batch(config: dict) -> list[str]:
             - settings:
                 - publish: bool - whether to submit publish jobs
                 - render: bool - whether to submit render jobs
-                - Publish section: pub_department, pub_pool, pub_priority
+                - playblast: bool - whether to submit a playblast (shots)
+                - Publish section: pub_departments (the ticked departments)
+                                   or pub_department (up to this one),
+                                   pub_pool, pub_priority
                 - Render section: render_department, channels, render_pool,
                                   render_priority, tile_count, pre_roll,
                                   first_frame, last_frame, post_roll,
@@ -191,6 +177,8 @@ def submit_entity_batch(config: dict) -> list[str]:
                                   the rendered range (first_frame - pre_roll
                                   .. last_frame + post_roll), matching what
                                   the dialog shows.
+                - Playblast section: pb_department, pb_pool, pb_priority,
+                                     pb_res
 
     Returns:
         List of submitted job IDs
@@ -208,7 +196,6 @@ def submit_entity_batch(config: dict) -> list[str]:
     do_playblast = settings.get('playblast', False)
 
     # Publish settings
-    pub_department = settings.get('pub_department')
     pub_pool = settings.get('pub_pool', 'general')
     pub_priority = settings.get('pub_priority', 50)
 
@@ -224,7 +211,7 @@ def submit_entity_batch(config: dict) -> list[str]:
     # multi-shot batch used to render every shot at a wrong length, and how
     # an entity with no configured range rendered a plausible-looking
     # sequence instead of failing. Playblast has always asked config per
-    # shot a few lines down; this is render catching up.
+    # shot; this is render catching up.
     first_frame = settings.get('first_frame')
     last_frame = settings.get('last_frame')
     # The render handles. Unlike first_frame/last_frame above, these DO take a
@@ -244,7 +231,7 @@ def submit_entity_batch(config: dict) -> list[str]:
     pb_department = settings.get('pb_department')
     pb_pool = settings.get('pb_pool', 'general')
     pb_priority = settings.get('pb_priority', 50)
-    pb_res = settings.get('pb_res', DEFAULT_PLAYBLAST_RES)
+    pb_res = settings.get('pb_res', _preview.DEFAULT_PLAYBLAST_RES)
 
     # 'first_middle_last' submits the partial_render chain (3 check frames
     # + notify) instead of the full_render chain (all frames + slapcomp/mp4).
@@ -278,8 +265,8 @@ def submit_entity_batch(config: dict) -> list[str]:
     # handles as applied. Routed through FrameRange rather than plain
     # arithmetic so the roll validation applies (a start_roll that would take
     # the first frame to <= 0 raises rather than producing a bad range), and so
-    # this matches the playblast branch below, which already resolves its range
-    # through FrameRange.full_range().
+    # this matches the playblast, which resolves its range through
+    # FrameRange.full_range() too.
     if do_render:
         try:
             render_frame_range = FrameRange(
@@ -293,7 +280,7 @@ def submit_entity_batch(config: dict) -> list[str]:
         last_frame = render_frame_range.last_frame
 
     # Playblast is a shots-only preview (mirrors the shot playblast HDAs). The
-    # dialog only offers the section for the shots context, but guard here too.
+    # dialog only offers the column for the shots context, but guard here too.
     if do_playblast and entity_context != 'shots':
         raise BatchSubmitError(
             f"Playblast is only supported for shots, not '{entity_context}'"
@@ -304,57 +291,18 @@ def submit_entity_batch(config: dict) -> list[str]:
     department_names = [d.name for d in departments]
     renderable_names = [d.name for d in departments if d.renderable]
 
-    # Validate publish department
+    pub_dept_names, skip_up_to_date = [], False
     if do_publish:
-        if pub_department is None:
-            raise BatchSubmitError("Publish department not specified")
-        if pub_department not in department_names:
-            raise BatchSubmitError(f"Invalid publish department: {pub_department}")
-
-    # Validate render department. The render composes the pool prefix ending
-    # at this department (see render_department_names below), so it has to be
-    # renderable as well as real — a non-renderable pick has no layer to end
-    # on, and silently composing the whole pool is the bug this prevents.
-    render_department_names = []
-    if do_render:
-        if render_department is None:
-            raise BatchSubmitError("Render department not specified")
-        if render_department not in department_names:
-            raise BatchSubmitError(f"Invalid render department: {render_department}")
-        if render_department not in renderable_names:
-            raise BatchSubmitError(
-                f"Render department '{render_department}' is not renderable. "
-                f"Renderable departments: {', '.join(renderable_names)}"
-            )
-        # Departments up to and including the selection — the render mirrors
-        # the publish slice above, so 'render lighting' means the same cut of
-        # the pipeline in both sections of the dialog.
-        #
-        # Sliced over the whole pool, not just the renderable ones: the cut is
-        # by pipeline position, and a non-renderable upstream department
-        # (tracking, notes) composes into the staged build today. Slicing the
-        # renderable-only list would drop those too, which is a second,
-        # unasked-for behaviour change.
-        render_department_names = department_names_up_to(
-            department_names, render_department
+        pub_dept_names, skip_up_to_date = publish_department_names(
+            settings, department_names
         )
-
-    # Validate playblast department. Same cut as the render: a playblast
-    # previews the same staged stage husk renders, so 'playblast lighting'
-    # has to mean the same slice of the pipeline that 'render lighting' does.
-    pb_department_names = []
+    if do_render:
+        _check_preview_department(
+            'Render', render_department, department_names, renderable_names
+        )
     if do_playblast:
-        if pb_department is None:
-            raise BatchSubmitError("Playblast department not specified")
-        if pb_department not in department_names:
-            raise BatchSubmitError(f"Invalid playblast department: {pb_department}")
-        if pb_department not in renderable_names:
-            raise BatchSubmitError(
-                f"Playblast department '{pb_department}' is not renderable. "
-                f"Renderable departments: {', '.join(renderable_names)}"
-            )
-        pb_department_names = department_names_up_to(
-            department_names, pb_department
+        _check_preview_department(
+            'Playblast', pb_department, department_names, renderable_names
         )
 
     # Connect to Deadline
@@ -410,24 +358,28 @@ def submit_entity_batch(config: dict) -> list[str]:
     root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
     root_temp_path.mkdir(parents=True, exist_ok=True)
 
-    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
-        temp_path = Path(temp_dir)
+    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_path_str:
+        temp_path = Path(temp_path_str)
         paths = {}  # Shared paths dict for bundling files
 
         # Add publish jobs
         if do_publish:
-            # Get departments up to and including publish target
-            pub_dept_names = department_names_up_to(department_names, pub_department)
-
             prev_job_name = None
             # Use 'default' channel for batch publish jobs
             channel_name = 'default'
             for dept_name in pub_dept_names:
                 if not _publish.is_submissable(entity_uri, dept_name):
+                    logging.warning(
+                        f"No workfile to publish for {entity_uri}/{dept_name}"
+                    )
                     continue
 
-                # Check if out of date (or if downstream changed)
-                if prev_job_name is None and not _publish.is_out_of_date(entity_uri, channel_name, dept_name):
+                # The old "up to" spelling skips an up-to-date prefix. A
+                # department named explicitly is published regardless.
+                if (
+                    skip_up_to_date and prev_job_name is None
+                    and not _publish.is_out_of_date(entity_uri, channel_name, dept_name)
+                ):
                     continue
 
                 job_name = f'publish_{dept_name}'
@@ -441,135 +393,116 @@ def submit_entity_batch(config: dict) -> list[str]:
                 except ValueError as e:
                     logging.warning(f"Could not create publish job for {entity_uri}/{dept_name}: {e}")
 
+        render_overrides = _build_render_overrides(settings) if do_render else {}
+
+        # A preview after a publish reads the stage the publish produces, so
+        # the staged build runs again (a first-ever department export or a
+        # newly imported asset is absent from the old one) and the previews'
+        # input is snapshotted on the farm once it has.
+        preview_after_publish = last_publish_job_name is not None and (
+            do_render or do_playblast
+        )
+        preview_deps = [last_publish_job_name] if last_publish_job_name else []
+        if preview_after_publish:
+            build_channels = list(channels) if do_render else []
+            if do_playblast and 'default' not in build_channels:
+                build_channels.append('default')
+            build_names = []
+            for build_channel in build_channels:
+                job_name = f'build_{build_channel}'
+                jobs[job_name] = build_job.create(dict(
+                    entity_uri=str(entity_uri),
+                    priority=pub_priority,
+                    pool_name=pub_pool,
+                    variant_name=build_channel,
+                ), temp_path)
+                deps[job_name] = [last_publish_job_name]
+                build_names.append(job_name)
+            preview_deps = build_names
+
+        # Farm-side snapshot for the direct render and/or the playblast.
+        collapse_config = None
+        if preview_after_publish and ((do_render and not standalone) or do_playblast):
+            collapse_config = dict(
+                entity=dict(
+                    uri=str(entity_uri),
+                    department=render_department if do_render else pb_department,
+                ),
+                settings=dict(
+                    user_name=user_name,
+                    pool_name=pub_pool,
+                    priority=pub_priority,
+                ),
+            )
+
         # Add stage + render jobs
         if do_render:
-            if not channels:
-                channels = ['default']
-
-            # Build render overrides from settings (maps column keys to USD paths)
-            render_overrides = _build_render_overrides(settings)
-
-            # Get AOV names from layer exports or root layer context
-            aov_names = _get_aov_names(entity_uri, render_department, channels)
-
             if not standalone:
                 # === DIRECT RENDER MODE (standalone=False) ===
-                # Skip stage task, render directly using existing staged file with resolved references
-
-                # Create render_settings.json (no overrides - baked into collapsed_stage.usda)
-                render_settings_path = temp_path / 'render_settings.json'
-                store_json(render_settings_path, dict(
-                    variant_names=channels,
-                    aov_names=aov_names
-                ))
-                relative_render_settings_path = render_settings_path.relative_to(temp_path)
-
-                # Create collapsed USD for each channel with resolved version references and render overrides
-                input_paths = {}
-                for channel_name in channels:
-                    latest_staged_path = get_latest_staged_file_path(entity_uri, channel_name)
-                    if latest_staged_path is None or not latest_staged_path.exists():
-                        raise BatchSubmitError(
-                            f"No staged file found for {entity_uri} channel '{channel_name}'. "
-                            f"Expected staged files at: export:/{'/'.join(entity_uri.segments)}/_staged/{channel_name}/. "
-                            "Publish the entity first to create staged files."
-                        )
-
-                    # Drop the department layers past the render cut. The
-                    # staged build composes every department that exported, so
-                    # this is what makes 'render up to lighting' mean it.
-                    excluded_refs = excluded_staged_refs(
-                        latest_staged_path,
-                        render_department_names,
-                        department_names
-                    )
-
-                    # Create collapsed USD for this channel. A layer the
-                    # build records but that is missing from disk fails the
-                    # submission: collapsing around it would queue a render of
-                    # a stage with that department silently absent. Translated
-                    # to BatchSubmitError so one bad shot fails alone instead
-                    # of taking the rest of the batch down with it.
-                    collapsed_stage_path = temp_path / f'collapsed_stage_{channel_name}.usda'
-                    try:
-                        collapsed_content = collapse_latest_references(
-                            latest_staged_path,
-                            collapsed_stage_path,
-                            render_overrides,
-                            excluded_refs=excluded_refs
-                        )
-                    except LayerCollectionError as e:
-                        raise BatchSubmitError(
-                            f"Cannot collapse the staged stage for {entity_uri} "
-                            f"channel '{channel_name}': {e}"
-                        ) from e
-                    store_text(collapsed_stage_path, collapsed_content)
-                    relative_collapsed_path = collapsed_stage_path.relative_to(temp_path)
-                    input_paths[channel_name] = path_str(relative_collapsed_path)
-
-                    # Add to paths for bundling
-                    paths[collapsed_stage_path] = relative_collapsed_path
-
-                # Build render config for render job module
-                # - render_settings_path: absolute (loaded locally during job building)
-                # - input_paths: per-channel relative paths (resolves in job data dir on farm)
-                render_config = dict(
-                    entity=dict(
-                        uri=str(entity_uri),
-                        department=render_department
-                    ),
-                    settings=dict(
-                        user_name=user_name,
-                        purpose='render',
+                # Render a collapsed snapshot of the staged file, with the
+                # overrides baked onto its render-settings prim.
+                if collapse_config is not None:
+                    collapse_config['render'] = dict(
+                        department=render_department,
+                        variant_names=list(channels),
+                        overrides=render_overrides,
+                        task_key=render_task_key,
                         pool_name=render_pool,
-                        variant_names=channels,
-                        render_department_name=render_department,
-                        render_settings_path=path_str(render_settings_path),
-                        input_paths=input_paths,  # Per-channel relative paths for farm (resolves in job data dir)
+                        priority=render_priority,
                         tile_count=tile_count,
                         first_frame=first_frame,
                         last_frame=last_frame,
-                        step_size=1,
                         batch_size=batch_size,
-                        copy_to_edit=copy_to_edit
-                    ),
-                    tasks={
-                        render_task_key: dict(
-                            priority=render_priority,
-                            denoise=denoise,
-                            channel_name='renders'
-                        )
-                    }
-                )
-
-                # Add render settings to paths for bundling (collapsed stage files already added in loop)
-                paths[render_settings_path] = relative_render_settings_path
-
-                # Build render jobs and add to batch (depends on last publish job if any)
-                render_depends_on = [last_publish_job_name] if last_publish_job_name else []
-                try:
-                    render_job.build(
-                        render_config,
-                        paths,
-                        temp_path,
-                        jobs,
-                        deps,
-                        depends_on=render_depends_on
+                        denoise=denoise,
+                        copy_to_edit=copy_to_edit,
                     )
-                    logging.info(f"Added render jobs for {entity_uri}")
-                except Exception as e:
-                    raise BatchSubmitError(f"Could not build render jobs for {entity_uri}: {e}")
+                else:
+                    try:
+                        input_paths = _preview.collapse_render_inputs(
+                            entity_uri, channels, render_department,
+                            render_overrides, temp_path, paths,
+                        )
+                    except _preview.PreviewError as e:
+                        raise BatchSubmitError(str(e)) from e
+                    render_settings_path = _preview.write_render_settings(
+                        temp_path, paths, channels,
+                        _preview.aov_names(entity_uri, channels),
+                    )
+                    render_config = _preview.render_config(
+                        entity_uri,
+                        department=render_department,
+                        channels=channels,
+                        input_paths=input_paths,
+                        render_settings_path=render_settings_path,
+                        user_name=user_name,
+                        pool_name=render_pool,
+                        priority=render_priority,
+                        tile_count=tile_count,
+                        first_frame=first_frame,
+                        last_frame=last_frame,
+                        batch_size=batch_size,
+                        denoise=denoise,
+                        copy_to_edit=copy_to_edit,
+                        task_key=render_task_key,
+                    )
+                    try:
+                        render_job.build(
+                            render_config, paths, temp_path, jobs, deps,
+                            depends_on=preview_deps,
+                        )
+                        logging.info(f"Added render jobs for {entity_uri}")
+                    except Exception as e:
+                        raise BatchSubmitError(f"Could not build render jobs for {entity_uri}: {e}")
             else:
                 # === STAGE + RENDER MODE (standalone=True) ===
-                # Create stage job on farm, then render
-
-                # Create render_settings.json (with overrides for dynamic application by stage task)
-                render_settings_path = temp_path / 'render_settings.json'
-                store_json(render_settings_path, dict(
-                    variant_names=channels,
-                    aov_names=aov_names,
-                    overrides=render_overrides
-                ))
+                # A farm stage job builds the render stage, applying the
+                # overrides, then submits the render itself. It composes when
+                # it runs, so after a publish it only needs to wait for it.
+                render_settings_path = _preview.write_render_settings(
+                    temp_path, {}, channels,
+                    _preview.aov_names(entity_uri, channels),
+                    overrides=render_overrides,
+                )
                 relative_render_settings_path = render_settings_path.relative_to(temp_path)
 
                 stage_config = dict(
@@ -603,110 +536,53 @@ def submit_entity_batch(config: dict) -> list[str]:
                     stage_paths = {render_settings_path: relative_render_settings_path}
                     stage_job = stage_task.build(stage_config, stage_paths, temp_path)
                     jobs[stage_job_name] = stage_job
-                    deps[stage_job_name] = [last_publish_job_name] if last_publish_job_name else []
+                    deps[stage_job_name] = list(preview_deps)
                 except Exception as e:
                     logging.warning(f"Could not create stage job for {entity_uri}: {e}")
 
         # Add playblast job (GL preview of the shot's staged stage)
         if do_playblast:
-            # Playblast previews the same staged 'default' stage the render
-            # reads, collapsed into a self-contained USD (no render overrides)
-            # and bundled with the job. It does NOT render through the same
-            # RenderSettings prim: `playblast=True` authors a Storm-renderable
-            # one aimed at the camera the project's settings name — husk under
-            # Storm can neither fill Karma's LPE AOVs nor find a settings prim
-            # outside /Render on its own.
-            latest_staged_path = get_latest_staged_file_path(entity_uri, 'default')
-            if latest_staged_path is None or not latest_staged_path.exists():
-                raise BatchSubmitError(
-                    f"No staged file found for {entity_uri} channel 'default'. "
-                    "Publish the shot first to create staged files."
-                )
-
-            # Drop the department layers past the playblast cut, exactly as
-            # the render does — the staged build carries every department
-            # that exported, so this is what makes the selection mean
-            # anything.
-            pb_excluded_refs = excluded_staged_refs(
-                latest_staged_path,
-                pb_department_names,
-                department_names
-            )
-
-            collapsed_playblast_path = temp_path / 'collapsed_playblast.usda'
-            try:
-                collapsed_content = collapse_latest_references(
-                    latest_staged_path,
-                    collapsed_playblast_path,
-                    {},
-                    excluded_refs=pb_excluded_refs,
-                    playblast=True
-                )
-            except LayerCollectionError as e:
-                raise BatchSubmitError(
-                    f"Cannot collapse the staged stage for the {entity_uri} "
-                    f"playblast: {e}"
-                ) from e
-            except RenderSettingsError as e:
-                # Refused at submit time rather than rendered from whatever
-                # camera husk lands on: a playblast of the wrong view reads as
-                # a finished preview all the way into dailies.
-                raise BatchSubmitError(
-                    f"Cannot playblast {entity_uri}: {e}"
-                ) from e
-            store_text(collapsed_playblast_path, collapsed_content)
-            relative_playblast_input = collapsed_playblast_path.relative_to(temp_path)
-            paths[collapsed_playblast_path] = relative_playblast_input
-
-            fps = get_fps(entity_uri) or 24
-
-            # Derive the range per-entity from config (rolls included), matching
-            # the local playblast HDA -- NOT the render UI's shared first/last,
-            # so each shot in a multi-shot batch plays its own full range.
-            frame_range = get_frame_range(entity_uri)
-            if frame_range is None:
-                raise BatchSubmitError(
-                    f"No frame range configured for {entity_uri}"
-                )
-            playblast_range = frame_range.full_range()
-
-            playblast_config = dict(
-                entity=dict(
-                    uri=str(entity_uri),
-                    department=pb_department
-                ),
-                settings=dict(
-                    user_name=user_name,
-                    purpose='render',
+            if collapse_config is not None:
+                collapse_config['playblast'] = dict(
+                    department=pb_department,
                     pool_name=pb_pool,
                     priority=pb_priority,
-                    input_path=path_str(relative_playblast_input),
-                    first_frame=playblast_range.first_frame,
-                    last_frame=playblast_range.last_frame,
-                    step_size=1,
-                    fps=fps,
                     res=list(pb_res),
-                    channel_name='renders'
                 )
-            )
+            else:
+                try:
+                    playblast_input = _preview.collapse_playblast_input(
+                        entity_uri, pb_department, temp_path, paths,
+                    )
+                    playblast_config = _preview.playblast_config(
+                        entity_uri,
+                        department=pb_department,
+                        input_path=playblast_input,
+                        user_name=user_name,
+                        pool_name=pb_pool,
+                        priority=pb_priority,
+                        res=pb_res,
+                    )
+                except _preview.PreviewError as e:
+                    raise BatchSubmitError(str(e)) from e
+                try:
+                    playblast_job.build(
+                        playblast_config, paths, temp_path, jobs, deps,
+                        depends_on=preview_deps,
+                    )
+                    logging.info(f"Added playblast job for {entity_uri}")
+                except Exception as e:
+                    raise BatchSubmitError(
+                        f"Could not build playblast job for {entity_uri}: {e}"
+                    )
 
-            # Depend on the publish chain if we're also publishing this entity.
-            playblast_depends_on = (
-                [last_publish_job_name] if last_publish_job_name else []
-            )
+        if collapse_config is not None:
             try:
-                playblast_job.build(
-                    playblast_config,
-                    paths,
-                    temp_path,
-                    jobs,
-                    deps,
-                    depends_on=playblast_depends_on
-                )
-                logging.info(f"Added playblast job for {entity_uri}")
+                jobs['collapse'] = collapse_task.build(collapse_config, {}, temp_path)
+                deps['collapse'] = list(preview_deps)
             except Exception as e:
                 raise BatchSubmitError(
-                    f"Could not build playblast job for {entity_uri}: {e}"
+                    f"Could not build the collapse job for {entity_uri}: {e}"
                 )
 
         # Submit batch (within temp directory context so files can be copied)

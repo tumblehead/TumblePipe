@@ -6,8 +6,8 @@ what refuses to.
 
 ## The quick actions
 
-The Asset Browser's toolbar carries five quick actions for the **currently
-loaded** `.hip`. The toolbar label is the loaded hip's filename; every action
+The Asset Browser's toolbar carries six quick actions; all but **Farm Submit** act on
+the **currently loaded** `.hip`. The toolbar label is the loaded hip's filename; every action
 first resolves the scene's pipeline context (entity, department, version) and
 tells you when there is none.
 
@@ -15,7 +15,8 @@ tells you when there is none.
 |---|---|---|
 | **Save** | Save current scene | Saves the scene as the **next workfile version** of its own context (never in place). With *Ask for a version note on save* on (the default), a **Save Version** dialog asks "Note for the next `<dept>` version of `<entity>` (after `vNNNN`) — optional:". Cancel there aborts the save without burning a version. Status line: `Saved <file>`. |
 | **Publish** | Publish exports | Opens the process dialog (title **Process: Publish**) with every export and build task for the scene's entity, current department **and all departments downstream of it**. See below. |
-| **Render** | Submit render jobs for the current scene's entity | Opens the [Submit Jobs dialog](submit-jobs.md) for the loaded scene's entity — or a Multi workfile's members — with the Render department seeded from the workfile's department. Only shots, assets and Multis of them can be submitted. |
+| **Render** | Submit render jobs for the current scene's entity | Opens the [Farm Submit dialog](submit-jobs.md) with the loaded scene's entity's **Render** cell ticked — or every member's, for a Multi workfile — and the Playblast / Render cut pinned to the workfile's department. Only shots, assets and Multis of them can be submitted. |
+| **Farm Submit** | Publish, playblast and render any shots on the farm | Opens the [Farm Submit dialog](submit-jobs.md) with every shot (every asset, when the loaded scene is an asset's) and nothing ticked. Works with no scene loaded. |
 | **Update** | Re-import latest published versions into the current scene (no scene reload) | Re-executes every import node in place (`import_shot`, `import_assets`, `import_asset`, `import_layer`, `import_rigs`, `import_rig`, `import_model`), so `current` and `latest` pick up the newest publish. Status line: `Imports updated to latest published versions (N node(s)).` If any node fails you get a warning dialog instead — the scene may still reference older versions. |
 | **Reload** | Reload current scene | Reloads the hip from disk. Unsaved changes get the **Save Scene** prompt ("Save a new version before switching?" with **Save new version** / **Discard changes** / **Cancel**) — or a silent version-up when *Autosave (version up) on scene change* is on. After the load the timeline is re-applied and, if *Auto-import latest on workfile open* is on, imports are refreshed. |
 

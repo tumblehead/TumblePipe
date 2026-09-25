@@ -268,6 +268,32 @@ and [Configuration → Multis](configuration.md#multis-multishot-workfiles).
 
 ## Rendering and the farm
 
+### An entity failed in the Farm submission window
+
+The window shows the error under the entity's row; it is the same message the
+submission raised, before anything for that entity reached Deadline (the
+entities before and after it are unaffected). Most are about the entity, not
+the submission — `No frame range for …`, `No staged file found for … Publish
+the shot first`, `Render department '<x>' is not renderable` — and the
+Warnings column of the [Farm Submit dialog](asset-browser/submit-jobs.md#warnings)
+flags the common ones before you submit. Fix the entity and use **Retry
+failed**, which submits just the failed entities again.
+
+When every entity fails with `Could not load the submitter`, or the window
+says `the submission process stopped early — see the log`, the background
+process itself broke: **Open log folder** shows `runner.log`, next to the
+`plan.json` of exactly what was sent. See
+[Submit](asset-browser/submit-jobs.md#submit).
+
+### The Farm Submit button in TumbleTrove Desktop reports no Houdini
+
+`No installed Houdini satisfies '>=22.0' and '>=21, <23'` means no Houdini in
+the standard install location meets both the project's and TumblePipe's
+version range. Install one, or set `HFS` to the Houdini to use.
+`HOUDINI_PACKAGE_DIR is not set` means the launcher was run outside the
+Desktop's Scripts panel, which is what provides the project's package files.
+See [From TumbleTrove Desktop](asset-browser/submit-jobs.md#from-tumbletrove-desktop).
+
 ### Farm job failed: `No valid Houdini version was found`
 
 The worker has no Houdini of the **major** the job was submitted from (the
@@ -420,6 +446,10 @@ light carries. Two causes:
   points at a real folder, so an absent log on a broken project is not
   evidence that nothing went wrong. See
   [Where the logs are](development.md#where-the-logs-are).
+- **Farm submissions.** Each one keeps its `plan.json`, `progress.jsonl` and
+  `runner.log` in its own folder under `temp:/farm_submissions/` on the
+  machine that submitted it; the Farm submission window's **Open log folder**
+  opens it.
 - **Versions.** **TumbleTrove ▸ About TumbleTrove...** in Houdini's menu bar
   lists every registered package with its version, plus the Houdini and
   Python versions. The Alt+T radial's **Project info** shows the project

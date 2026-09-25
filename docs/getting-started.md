@@ -104,9 +104,10 @@ The shelf carries the two Solaris shelf sets.
 *pipeline* catalog registered into it. The sidebar has **Assets**, **Shots**
 and **Roots** sections for each project (Multis, once there are any, sit in a
 **Multis** subheader under Assets and Shots). Selecting an entity shows its card and one row per
-department. The bar above the browser carries five quick actions that act on
-the scene currently loaded: **Save**, **Publish**, **Render**, **Update** and
-**Reload**. See [Asset Browser](asset-browser/index.md); the browser's
+department. The bar above the browser carries quick actions that act on
+the scene currently loaded — **Save**, **Publish**, **Render**, **Update** and
+**Reload** — and **Farm Submit**, which publishes, playblasts and renders any shots
+on the farm. See [Asset Browser](asset-browser/index.md); the browser's
 TumblePipe settings live on the **Projects** page of TumbleTrove's settings
 dialog ([Settings](asset-browser/settings.md)).
 
@@ -182,7 +183,7 @@ the TumblePipe pipeline radial in a network editor, **Alt+R** the recipes and
    [Picking up new versions on open](composition.md#picking-up-new-versions-on-open).
 
 From here: rendering and farm submission are covered in
-[Submit jobs](asset-browser/submit-jobs.md) and
+[Submitting to the farm](asset-browser/submit-jobs.md) and
 [Deadline and the render farm](deadline.md); the shipped nodes in
 [Nodes](nodes/index.md).
 

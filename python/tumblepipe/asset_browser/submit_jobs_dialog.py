@@ -1,68 +1,47 @@
-"""Slim submit-jobs dialog for the TumblePipe asset-browser catalog.
+"""The Farm Submit dialog: tick publish, playblast and render steps per entity, submit.
 
-A compact dialog (this replaced the retired Project Browser's
-``JobSubmissionDialog``).
-One shared form drives publish + render submission for all selected entities;
-defaults are seeded from the first entity's properties. Render starts enabled
-and publish disabled — the dialog opens from the top-bar Render quick action
-(current scene's entity) as well as the multi-select context menu, and
-rendering is the common case for both.
+Rows are the entities of one context (shots, or assets), grouped by sequence
+or category; columns are pipeline steps — one publish column per department
+in pool order, then Playblast (shots only) and Render. A ticked cell means
+"do this step for this entity", and each cell shows how up to date that step
+is: never done, stale, current, or nothing to do. Every row, column and
+sequence carries a tri-state checkbox. The policy behind all of it — states,
+ticks, warnings, what a row submits — is pure and lives in ``farm_grid``; the
+status scan is ``farm_status``.
 
-Every open gets a checkable entity tree, scoped to the dialog's context and
-seeded with the entities it was opened for. Any number of entities can be
-checked, so a single-entity open (the Render quick action on the loaded
-scene) can still fan out to a whole batch without going back to the browser
-to multi-select first. Groups appear as a second root whose leaves mirror
-the same entities. Opened from a Multi (a ``groups:`` URI), the dialog checks
-the Multi's members instead — a Multi has no staged stage of its own.
+The settings stay the per-entity tri-state form it has been since the
+multi-entity rework: left alone a field is *unpinned* and every entity uses
+its own configured value (``⟨per entity⟩`` when they disagree); touching it
+*pins* it for the whole submission. Resolution order and the rules live in
+``submit_jobs_resolve``. The grid chooses the *steps*; the form never did.
 
-The form is **not** a shared override. Each field is tri-state: left alone
-it is *unpinned* and every entity follows its own configured value; touching
-it *pins* it as a batch-wide choice. Unpinned fields render dimmed, with
-``⟨per entity⟩`` standing in when the checked entities disagree — the
-dimmed-default / bold-override grammar the retired Project Browser's
-per-entity grid used, moved from cells to fields. The resolution order
-(exception > pinned form > entity property > default) lives in
-``submit_jobs_resolve``, which is pure and covered by
-``tests/test_submit_jobs_resolve.py``.
+Submit writes a plan and hands it to a separate process
+(``tumblepipe.farm.submit_plan``) running Houdini's bundled Python, then
+closes: Houdini is free in seconds however large the submission, and a
+non-modal status window (``farm_submission_window``) follows the progress.
 
-That matters most for the frame range: the form used to seed from the first
-checked entity and send those numbers for the whole batch, so submitting six
-shots rendered all six at the first shot's length. With one entity checked
-nothing can disagree, so the Render quick action's form is unchanged.
-
-A field that offers a *choice* still spans the batch: the Render channel
-menu lists the union of the checked entities' channels and submits exactly
-what is checked. A channel a given entity does not define still reaches
-``submit_entity_batch`` and still fails there — that visible failure is the
-contract, and the pre-flight warnings surface it before the loop fires
-rather than turning it into a silent skip.
-
-Submission goes through ``tumblepipe.pipe.houdini.ui.process_dialog`` — one
-farm-only ``ProcessTask`` per checked entity, each calling
-``tumblepipe.farm.jobs.houdini.batch_submit.submit_entity_batch`` with its own
-resolved settings. That buys a per-entity progress tree, a working Cancel and
-a per-task error report, and it is safe on the GUI thread because
-``ProcessExecutor`` has no worker thread: it sequences with
-``QTimer.singleShot`` on the main thread, so the event loop keeps turning
-between entities. A synchronous loop with one summary box at the end remains
-as the fallback for when that UI is not importable (outside Houdini, or an
-install missing hpm.toml's ``[python_dependencies]``).
+Opened from the Render quick action or a card's **Submit Jobs…**, the grid
+has those entities' Render cells ticked; from the **Farm Submit** quick action it
+opens with every entity and nothing ticked.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, Sequence
 
-from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QColor, QStandardItem, QStandardItemModel
+from PySide6.QtCore import QEvent, QRect, QSize, Qt, QTimer
+from PySide6.QtGui import (
+    QColor, QFont, QFontMetrics, QPainter, QPen, QStandardItem, QStandardItemModel,
+)
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
-    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
-    QSpinBox, QStyledItemDelegate, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-    QWidget,
+    QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QComboBox,
+    QDialog, QFormLayout,
+    QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
+    QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStyledItemDelegate, QToolTip,
+    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from tumbletrove.asset_browser.core.theme import (
@@ -70,6 +49,8 @@ from tumbletrove.asset_browser.core.theme import (
     TEXT_PRIMARY, TEXT_SECONDARY,
 )
 
+from . import farm_grid as grid
+from . import farm_status
 from . import submit_jobs_resolve as resolve
 
 log = logging.getLogger(__name__)
@@ -79,35 +60,79 @@ log = logging.getLogger(__name__)
 # "per entity".
 PER_ENTITY_TEXT = "⟨per entity⟩"
 
-# Pre-flight warning text. Not from the asset-browser theme: those tokens
-# are background/foreground roles, and this needs to read as a caution
-# against BG_DARK without being an error.
-WARNING_COLOUR = "#d8a657"
+# Cell colours. The theme's own tokens where it has one; amber and green for
+# the two states that must be told apart at a glance (they also differ in
+# lightness, not only hue).
+STALE_COLOUR = "#f0a030"
+CURRENT_COLOUR = "#2bae86"
+NEVER_COLOUR = "#c8c8cc"
+DIM_COLOUR = "#5c5c62"
+TICK_OUTLINE = "#3fb58f"
+RULE_COLOUR = "#3a3a3a"
+ZEBRA_COLOUR = "#1f1f1f"
+BAND_COLOUR = "#262626"
+WARNING_COLOUR = STALE_COLOUR
 
-# Item-data role carrying a leaf's entity URI string. Branch items have no
-# value here, which is what ``_is_leaf`` keys off.
+GLYPHS = {
+    grid.NONE: "·", grid.NEVER: "○", grid.STALE: "●",
+    grid.CURRENT: "✓", grid.PENDING: "…",
+}
+GLYPH_COLOURS = {
+    grid.NONE: DIM_COLOUR, grid.NEVER: NEVER_COLOUR, grid.STALE: STALE_COLOUR,
+    grid.CURRENT: CURRENT_COLOUR, grid.PENDING: DIM_COLOUR,
+}
+TIPS = {
+    grid.PUBLISH: {
+        grid.NONE: "no workfile for this department",
+        grid.NEVER: "never exported",
+        grid.STALE: "the workfile was saved after the last export",
+        grid.CURRENT: "exported since the last workfile save",
+        grid.PENDING: "reading status…",
+    },
+    'preview': {
+        grid.NONE: "not available: no frame range configured",
+        grid.NEVER: "never made",
+        grid.STALE: "older than the newest publish it composes",
+        grid.CURRENT: "newer than every publish it composes",
+        grid.PENDING: "reading status…",
+    },
+}
+
+# Item data role carrying a shot row's URI string, or a sequence row's key.
 _URI_ROLE = Qt.UserRole
+_GROUP_ROLE = Qt.UserRole + 1
 
 # Every entity has this channel implicitly, whether or not its properties
 # list it. Owned by submit_jobs_resolve so the pure resolution policy and
 # the widget that drives it can't drift apart.
 _DEFAULT_CHANNEL = resolve.DEFAULT_CHANNEL
 
-
-@dataclass
-class _EntityLeaf:
-    """One entity, and every tree item that stands for it.
-
-    An entity appears once under the context root and once per group that
-    contains it; ``items`` holds all of them so a check on any one can be
-    mirrored to the rest.
-    """
-    uri: object
-    name: str
-    items: list = field(default_factory=list)
+# Rows whose folders are resolved per event-loop turn while the grid fills.
+_PROBE_CHUNK = 12
 
 
 # ── Theme ─────────────────────────────────────────────────
+
+# Always-visible scrollbars. TumbleTrove's shared SCROLLBAR_STYLE draws the
+# handle transparent, which hides that the grid and the settings panel
+# scroll at all. Shared with the submission window.
+VISIBLE_SCROLLBARS = """
+QScrollBar:vertical {
+    background: #1f1f1f; width: 10px; margin: 0; border: none;
+}
+QScrollBar:horizontal {
+    background: #1f1f1f; height: 10px; margin: 0; border: none;
+}
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+    background: #4a4a4a; border-radius: 4px; margin: 2px;
+}
+QScrollBar::handle:vertical { min-height: 30px; }
+QScrollBar::handle:horizontal { min-width: 30px; }
+QScrollBar::handle:hover { background: #6a6a6a; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; }
+QScrollBar::add-page, QScrollBar::sub-page { background: none; }
+"""
+
 
 _DIALOG_STYLE = f"""
 QDialog {{ background-color: {BG_DARKEST}; }}
@@ -122,7 +147,7 @@ QGroupBox {{
     font-family: "{FONT_FAMILY}";
     font-size: {FONT_BODY}px;
     border: 1px solid {BORDER};
-    border-radius: 4px;
+    border-radius: 6px;
     margin-top: 10px;
     padding-top: 8px;
 }}
@@ -130,9 +155,8 @@ QGroupBox::title {{
     subcontrol-origin: margin;
     subcontrol-position: top left;
     padding: 0 6px;
-    color: {TEXT_PRIMARY};
+    color: {TEXT_SECONDARY};
 }}
-QGroupBox::indicator {{ width: 14px; height: 14px; }}
 QLineEdit, QSpinBox, QComboBox {{
     background-color: {BG_DARK};
     color: {TEXT_PRIMARY};
@@ -165,7 +189,7 @@ QPushButton {{
     background-color: {BG_DARK};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
-    border-radius: 3px;
+    border-radius: 4px;
     padding: 5px 14px;
     font-family: "{FONT_FAMILY}";
     font-size: {FONT_BODY}px;
@@ -173,31 +197,20 @@ QPushButton {{
 QPushButton:hover {{ border-color: {ACCENT}; }}
 QPushButton:default {{
     background-color: {ACCENT};
-    color: {BG_DARKEST};
+    color: #ffffff;
     border-color: {ACCENT};
 }}
 QTreeWidget {{
-    background-color: {BG_DARK};
+    background-color: {BG_DARKEST};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
-    border-radius: 3px;
+    border-radius: 6px;
     font-family: "{FONT_FAMILY}";
     font-size: {FONT_BODY}px;
     outline: none;
 }}
-QTreeWidget::item {{ padding: 2px 0; }}
-QTreeWidget::item:selected {{ background-color: {BG_DARKEST}; }}
-/* The pre-flight table alternates rows; without an explicit colour Qt
-   picks a light default that reads as white-on-white against this theme. */
-QTreeWidget {{ alternate-background-color: {BG_DARKEST}; }}
-QHeaderView::section {{
-    background-color: {BG_DARKEST};
-    color: {TEXT_SECONDARY};
-    border: none;
-    border-bottom: 1px solid {BORDER};
-    padding: 3px 6px;
-}}
-"""
+QScrollArea {{ border: none; background: transparent; }}
+""" + VISIBLE_SCROLLBARS
 
 
 # ── Helpers ───────────────────────────────────────────────
@@ -206,9 +219,8 @@ def _properties_for(entity_uris: Sequence) -> list[dict]:
     """Resolved properties for each URI, read in one coherency scope.
 
     Bare ``get_properties`` re-stamps the config files per call, and this
-    runs over the whole checked batch (which is every entity in the project
-    after an "All"), so the reads are batched — same contract as the entity
-    sweep. Empty list on failure.
+    runs over every entity in the context, so the reads are batched. Empty
+    list on failure.
 
     Importing ``tumblepipe.api`` here is a passive lookup: the catalog has
     already activated the project before showing the dialog.
@@ -249,15 +261,13 @@ def _list_dept_names(context: str, *, only_publishable: bool, only_renderable: b
 def _list_selectable_entities(context: str) -> list[object]:
     """Return every terminal entity URI in ``context``, sorted by path.
 
-    Empty list on failure — the tree then falls back to just the entities
+    Empty list on failure — the grid then falls back to just the entities
     the dialog was opened for.
 
     ``list_entity_uris(closure=True)`` returns childless *category* nodes
     (e.g. an empty ``assets/CHAR``) alongside real entities, so each URI is
-    vetted with ``is_terminal_entity`` (schema-keyed). That's a read per
-    URI, so the whole sweep runs inside a ``coherent()`` scope — otherwise
-    a project with hundreds of shots stamps the config file once per shot
-    every time the dialog opens.
+    vetted with ``is_terminal_entity`` (schema-keyed), all inside one
+    ``coherent()`` scope.
     """
     try:
         from tumblepipe.api import default_client
@@ -273,17 +283,15 @@ def _list_selectable_entities(context: str) -> list[object]:
         entities.sort(key=str)
         return entities
     except Exception:
-        log.exception("Failed to list entities for the entity tree")
+        log.exception("Failed to list entities for the grid")
         return []
 
 
 def _list_groups(context: str) -> list[tuple[str, list[object]]]:
     """Return ``(group_name, member_uris)`` for every group in ``context``.
 
-    Groups are a config-authored convenience set (e.g. all the hero shots);
-    they appear in the tree as a second root whose leaves *mirror* the same
-    entities listed under the context root. Empty list on failure — the
-    Groups root is simply not shown.
+    Offered as a filter above the grid: picking a Multi narrows the rows to
+    its members. Empty list on failure.
     """
     try:
         from tumblepipe.api import default_client
@@ -308,6 +316,34 @@ def _group_members(group_uri) -> list[object]:
     except Exception:
         log.exception("Failed to read the members of %s", group_uri)
         return []
+
+
+def _box(painter: QPainter, rect: QRect, state: str) -> None:
+    """Draw a tri-state checkbox (``on`` / ``mixed`` / ``off``) in ``rect``."""
+    painter.save()
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    if state == 'off':
+        painter.setPen(QPen(QColor("#6a6a70"), 1))
+        painter.setBrush(QColor(BG_DARKEST))
+    else:
+        painter.setPen(QPen(QColor(TICK_OUTLINE), 1))
+        painter.setBrush(QColor(ACCENT))
+    painter.drawRoundedRect(rect.adjusted(0, 0, -1, -1), 3, 3)
+    if state != 'off':
+        painter.setPen(QPen(QColor("#ffffff"), 2))
+        r = rect.adjusted(3, 3, -3, -3)
+        if state == 'on':
+            painter.drawLine(r.left(), r.center().y(), r.left() + r.width() // 3, r.bottom())
+            painter.drawLine(r.left() + r.width() // 3, r.bottom(), r.right(), r.top())
+        else:
+            painter.drawLine(r.left(), r.center().y(), r.right(), r.center().y())
+    painter.restore()
+
+
+BOX = 14
+# The first column's left gutter: a sequence row's expand arrow sits in it,
+# and every row's checkbox starts right after it, so they line up.
+_ARROW_WIDTH = 20
 
 
 # ── Widgets ───────────────────────────────────────────────
@@ -425,15 +461,15 @@ class _CheckableComboBox(QComboBox):
 # ── Tri-state form fields ────────────────────────────
 
 class _PinnedField:
-    """A form widget that can defer to each checked entity's own value.
+    """A form widget that can defer to each entity's own value.
 
     Three states, and the middle one is the reason this class exists:
 
-    * **pinned** — the artist set it, so it applies to the whole batch and
-      is drawn normally.
-    * **unpinned, agreed** — every checked entity resolves to the same
-      value, so the widget shows it, dimmed. Informative, but still the
-      entity's value: check in a shot that disagrees and it turns into…
+    * **pinned** — the artist set it, so it applies to the whole submission
+      and is drawn normally.
+    * **unpinned, agreed** — every entity in the submission resolves to the
+      same value, so the widget shows it, dimmed. Informative, but still the
+      entity's value: tick a shot that disagrees and it turns into…
     * **unpinned, mixed** — the widget shows ``⟨per entity⟩`` and the
       submit sends no value for it at all, so each entity keeps its own.
 
@@ -460,7 +496,7 @@ class _PinnedField:
     # ── state ──────────────────────────────────────
 
     def pin(self) -> None:
-        """Mark as an explicit batch-wide choice (a user edit happened)."""
+        """Mark as an explicit submission-wide choice (a user edit happened)."""
         if not self.pinned:
             self.pinned = True
             self._restyle()
@@ -532,25 +568,93 @@ class _PinnedField:
         colour = TEXT_PRIMARY if self.pinned else TEXT_SECONDARY
         self.widget.setStyleSheet(f"color: {colour};")
 
+
+# ── Grid painting ─────────────────────────────────────────
+
+class _GridDelegate(QStyledItemDelegate):
+    """Paints every grid cell from the dialog's state; the items hold no data
+    beyond which row they are, so a tick is a repaint, not a model write."""
+
+    def __init__(self, dialog: "SubmitJobsDialog") -> None:
+        super().__init__(dialog)
+        self._dialog = dialog
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        return QSize(size.width(), 28)
+
+    def paint(self, painter: QPainter, option, index) -> None:
+        dialog = self._dialog
+        item = dialog._tree.itemFromIndex(index)
+        if item is None:
+            return
+        rect = option.rect
+        column = index.column()
+        painter.save()
+        is_group = item.data(0, _GROUP_ROLE) is not None
+        if is_group:
+            painter.fillRect(rect, QColor(BAND_COLOUR))
+        elif item.data(0, _URI_ROLE) in dialog._zebra:
+            painter.fillRect(rect, QColor(ZEBRA_COLOUR))
+        dialog._paint_cell(painter, rect, item, column, is_group)
+        # Grid rules: a right rule per column, a bottom rule per row, and a
+        # heavier one ahead of the preview columns.
+        painter.setPen(QPen(QColor(RULE_COLOUR), 1))
+        painter.drawLine(rect.topRight(), rect.bottomRight())
+        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+        if column == dialog._first_preview_column:
+            painter.setPen(QPen(QColor("#5a5a5a"), 2))
+            painter.drawLine(rect.topLeft(), rect.bottomLeft())
+        painter.restore()
+
+
+class _CheckHeader(QHeaderView):
+    """Column headers with a tri-state checkbox under each step's label."""
+
+    def __init__(self, dialog: "SubmitJobsDialog") -> None:
+        super().__init__(Qt.Horizontal, dialog)
+        self._dialog = dialog
+        self.setSectionsClickable(True)
+        self.setHighlightSections(False)
+        self.setDefaultAlignment(Qt.AlignCenter)
+
+    def sizeHint(self):
+        size = super().sizeHint()
+        return QSize(size.width(), 50)
+
+    def paintSection(self, painter: QPainter, rect: QRect, logical: int) -> None:
+        painter.save()
+        painter.fillRect(rect, QColor(BAND_COLOUR))
+        painter.setPen(QPen(QColor(RULE_COLOUR), 1))
+        painter.drawLine(rect.topRight(), rect.bottomRight())
+        painter.setPen(QPen(QColor("#4a4a4a"), 1))
+        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+        if logical == self._dialog._first_preview_column:
+            painter.setPen(QPen(QColor("#5a5a5a"), 2))
+            painter.drawLine(rect.topLeft(), rect.bottomLeft())
+        self._dialog._paint_header(painter, rect, logical)
+        painter.restore()
+
+
 # ── Dialog ────────────────────────────────────────────────
 
 class SubmitJobsDialog(QDialog):
-    """Compact submit dialog for one or more pipeline entities.
+    """The Farm Submit grid for one context's entities.
 
     Args:
-        entity_uris: List of ``tumblepipe.util.uri.Uri`` (or any object with
-            ``str(uri)``) — one per selected entity. All must share the
-            same ``context`` (i.e. all shots OR all assets).
+        entity_uris: Entities to start with ticked (``tick_kinds`` on each).
+            May be empty — the Farm Submit quick action opens with nothing ticked.
+            A Multi (``groups:`` URI) stands for its members.
         entity_names: Display names parallel to ``entity_uris``.
-        context: ``'shots'`` or ``'assets'`` — drives department filtering.
+        context: ``'shots'`` or ``'assets'``.
         parent: Parent widget. Pass ``hou.qt.mainWindow()`` from Houdini.
         department: Department the dialog was opened *from* — the loaded
-            workfile's department when the dialog comes from a scene quick
-            action. Seeds the Render (and Playblast) department combos, so
-            submitting from a lighting workfile defaults to lighting instead
-            of whichever department config happens to list first. ``None``
-            (the asset-browser path, which has no "opened from") falls back
-            to the entity's ``submission.*.department`` property.
+            workfile's. Pins the Render (and Playblast) cut, so submitting
+            from a lighting workfile previews up to lighting. ``None`` falls
+            back to each entity's ``submission.render.department``.
+        tick_kinds: Step kinds to tick for ``entity_uris`` —
+            ``grid.RENDER`` by default, what the Render quick action and
+            **Submit Jobs…** have always meant.
     """
 
     def __init__(
@@ -560,14 +664,12 @@ class SubmitJobsDialog(QDialog):
         context: str,
         parent: QWidget | None = None,
         department: str | None = None,
+        tick_kinds: Sequence[str] = (grid.RENDER,),
     ) -> None:
         super().__init__(parent)
-        if not entity_uris:
-            raise ValueError("entity_uris must be non-empty")
         if context not in ("shots", "assets"):
             raise ValueError(f"context must be 'shots' or 'assets', got {context!r}")
-        # A Multi is never submitted itself: its member entities are, all
-        # checked to start with, the way export/publish fan a Multi out.
+        # A Multi is never submitted itself: its member entities are.
         if any(resolve.is_group_target(uri) for uri in entity_uris):
             entity_uris = resolve.expand_targets(entity_uris, _group_members)
             if not entity_uris:
@@ -575,108 +677,663 @@ class SubmitJobsDialog(QDialog):
                     "This Multi has no member entities to submit. Add "
                     "members to it in the browser first."
                 )
-            entity_names = [uri.segments[-1] for uri in entity_uris]
-        self._entity_uris = list(entity_uris)
-        self._entity_names = list(entity_names)
         self._context = context
+        self._noun = ('shot', 'shots') if context == 'shots' else ('asset', 'assets')
         # Department the dialog was opened from (a loaded workfile), or None.
         self._open_department = department or None
 
-        # Every entity leaf in the tree, keyed by URI string. One URI can own
-        # several items (once under the context root, once per group that
-        # contains it) — check state is mirrored across them.
-        self._leaves: dict[str, _EntityLeaf] = {}
-        # Guards the itemChanged handler against the writes it makes itself.
-        self._syncing = False
         # Guards the spin boxes' valueChanged against programmatic seeding
         # (Qt gives QSpinBox no user-only edit signal).
         self._seeding = False
         # Every tri-state form field, keyed by its settings key.
         self._fields: dict[str, _PinnedField] = {}
-        # Resolved properties for the checked batch, refreshed on every
-        # selection change inside one coherency scope.
-        self._properties: list[dict] = []
         # Context-derived defaults the pure resolver can't look up itself
-        # (the first publishable / renderable department). Filled once the
-        # department combos are populated.
+        # (the last renderable department, for the preview cuts).
         self._fallbacks: dict = {}
 
-        self.setWindowTitle("Submit Jobs")
-        self.setMinimumWidth(900)
+        # Rows: every entity in the context, plus any opened entity the
+        # listing does not know (an off-config scene keeps its row).
+        opened = {str(uri): uri for uri in entity_uris}
+        by_uri = {str(uri): uri for uri in _list_selectable_entities(context)}
+        by_uri.update(opened)
+        self._uris: list[str] = sorted(by_uri)
+        self._uri_objects = by_uri
+        props = _properties_for([by_uri[key] for key in self._uris])
+        if len(props) != len(self._uris):
+            props = [{} for _ in self._uris]
+        self._props: dict[str, dict] = dict(zip(self._uris, props))
+
+        self._publish_departments = _list_dept_names(
+            context, only_publishable=True, only_renderable=False,
+        )
+        self._renderable_departments = _list_dept_names(
+            context, only_publishable=False, only_renderable=True,
+        )
+        self._fallbacks['render_department'] = grid.default_preview_department(
+            self._renderable_departments
+        )
+        self._fallbacks['pb_department'] = self._fallbacks['render_department']
+        self._columns = grid.columns_for(context, self._publish_departments)
+        self._first_preview_column = next(
+            (i + 1 for i, c in enumerate(self._columns) if c.kind != grid.PUBLISH),
+            -1,
+        )
+        self._warnings_column = len(self._columns) + 1
+
+        # Grid state: ticks and per-cell states, keyed (uri, column key).
+        self._ticks: set = set()
+        self._states: dict = {}
+        self._statuses: dict[str, farm_status.RowStatus] = {}
+        self._warnings: dict[str, list[str]] = {}
+        self._zebra: set = set()
+        self._hidden: set = set()
+        self._items: dict[str, QTreeWidgetItem] = {}
+        self._group_items: dict[str, QTreeWidgetItem] = {}
+        self._group_uris: dict[str, list[str]] = {}
+
+        # Background status scan.
+        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="farm-status")
+        self._pending: dict = {}
+        self._probe_queue: list[str] = []
+        self._preview_only = False
+        self._poll = QTimer(self)
+        self._poll.setInterval(120)
+        self._poll.timeout.connect(self._drain_scans)
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(0)
+        self._refresh_timer.timeout.connect(self._refresh)
+
+        self.setWindowTitle("Farm Submit")
+        self.setMinimumSize(1100, 640)
+        # Opens wide enough for every column and the settings beside them;
+        # the grid scrolls sideways below that.
+        self.resize(1560, 820)
         self.setStyleSheet(_DIALOG_STYLE)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
+        root.addLayout(self._build_toolbar())
 
-        # Header — entity count and a truncated name list.
-        self._header = QLabel(self._build_header_text())
-        self._header.setWordWrap(True)
-        self._header.setStyleSheet(f"color: {TEXT_SECONDARY};")
-        root.addWidget(self._header)
-
-        # Entity tree — check any number of entities in this context. The
-        # entities the dialog was opened for start checked; everything else
-        # in the project is one click away, so a single-entity open (the
-        # Render quick action) can still fan out to a whole batch.
-        tree = self._build_entity_tree()
-
-        # Two columns: [ who to submit for | what to submit ]. The tree owns
-        # the left column and the full dialog height, where a long shot list
-        # has room to breathe; the forms read top to bottom on the right.
-        # Selection before settings, the same order the browser reads in.
         body = QHBoxLayout()
         body.setSpacing(12)
         root.addLayout(body, 1)
-        body.addWidget(tree, 2)
-        forms = QVBoxLayout()
-        forms.setSpacing(10)
-        body.addLayout(forms, 3)
+        body.addWidget(self._build_grid(), 1)
+        body.addWidget(self._build_forms())
 
-        self._publish_box = self._build_publish_section()
-        self._publish_box.toggled.connect(
-            lambda *_a: self._refresh_preflight()
-        )
-        forms.addWidget(self._publish_box)
-
-        self._render_box = self._build_render_section()
-        self._render_box.toggled.connect(
-            lambda *_a: self._refresh_preflight()
-        )
-        forms.addWidget(self._render_box)
-
-        # Playblast is a shots-only GL preview; the section is absent entirely
-        # for the assets context.
-        self._playblast_box = None
-        if self._context == "shots":
-            self._playblast_box = self._build_playblast_section()
-            self._playblast_box.toggled.connect(
-                lambda *_a: self._refresh_preflight()
-            )
-            forms.addWidget(self._playblast_box)
-
-        # Pre-flight sits below the job sections: it reports on them, so it
-        # reads top-to-bottom as "what, then what that actually means".
-        self._preflight_box = self._build_preflight()
-        forms.addWidget(self._preflight_box)
-        forms.addStretch(1)
+        footer = QHBoxLayout()
+        self._summary = QLabel()
+        self._summary.setStyleSheet(f"color: {TEXT_PRIMARY};")
+        footer.addWidget(self._summary, 1)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.reject)
+        self._submit_btn = QPushButton("Submit")
+        self._submit_btn.setDefault(True)
+        self._submit_btn.clicked.connect(self._on_submit)
+        footer.addWidget(close_btn)
+        footer.addWidget(self._submit_btn)
+        root.addLayout(footer)
 
         self._apply_open_department()
+        # Seed the tick state from the entities the dialog was opened for.
+        for key in opened:
+            for column in self._columns:
+                if column.kind in tick_kinds:
+                    self._ticks.add((key, column.key))
+        self._scroll_to_first_ticked(opened)
         self._reseed_form(initial=True)
+        self._start_scan()
 
-        # Submit / Cancel row.
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
-            parent=self,
+    # ── Toolbar ───────────────────────────────────────────
+
+    def _build_toolbar(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self._filter = QLineEdit()
+        self._filter.setPlaceholderText(f"Filter {self._context}…")
+        self._filter.setClearButtonEnabled(True)
+        self._filter.setFixedWidth(200)
+        self._filter.textChanged.connect(lambda *_a: self._apply_filter())
+        row.addWidget(self._filter)
+
+        self._group_filter = QComboBox()
+        self._group_filter.addItem(f"All {self._context}", None)
+        for name, members in _list_groups(self._context):
+            self._group_filter.addItem(name, [str(m) for m in members])
+        self._group_filter.setToolTip("Show only the members of one Multi")
+        self._group_filter.currentIndexChanged.connect(lambda *_a: self._apply_filter())
+        if self._group_filter.count() == 1:
+            self._group_filter.hide()
+        row.addWidget(self._group_filter)
+
+        stale_btn = QPushButton("Select stale")
+        stale_btn.setToolTip(
+            "Tick every visible cell that is stale or never done"
         )
-        ok_btn = buttons.button(QDialogButtonBox.Ok)
-        ok_btn.setText("Submit")
-        ok_btn.setDefault(True)
-        buttons.accepted.connect(self._on_submit)
-        buttons.rejected.connect(self.reject)
-        root.addWidget(buttons)
+        stale_btn.clicked.connect(self._select_stale)
+        row.addWidget(stale_btn)
+        clear_btn = QPushButton("Clear")
+        clear_btn.setToolTip("Untick every cell")
+        clear_btn.clicked.connect(self._clear_ticks)
+        row.addWidget(clear_btn)
 
-    # ── Tri-state field factories ────────────────────────
+        row.addStretch(1)
+        legend = QLabel(
+            f"<span style='color:{CURRENT_COLOUR}'>✓</span> current &nbsp; "
+            f"<span style='color:{STALE_COLOUR}'>●</span> stale &nbsp; "
+            f"<span style='color:{NEVER_COLOUR}'>○</span> never &nbsp; "
+            f"<span style='color:{DIM_COLOUR}'>·</span> nothing to do"
+        )
+        legend.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        row.addWidget(legend)
+        self._status_label = QLabel("")
+        self._status_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        row.addWidget(self._status_label)
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.setToolTip("Read every cell's status from disk again")
+        refresh_btn.clicked.connect(self._start_scan)
+        row.addWidget(refresh_btn)
+        return row
+
+    # ── Grid ──────────────────────────────────────────────
+
+    def _build_grid(self) -> QWidget:
+        tree = QTreeWidget()
+        self._tree = tree
+        tree.setColumnCount(len(self._columns) + 2)
+        tree.setHeader(_CheckHeader(self))
+        tree.setHeaderLabels(
+            [self._noun[0].capitalize()]
+            + [c.label for c in self._columns] + ["Warnings"]
+        )
+        tree.setItemDelegate(_GridDelegate(self))
+        tree.setSelectionMode(QAbstractItemView.NoSelection)
+        tree.setFocusPolicy(Qt.NoFocus)
+        tree.setExpandsOnDoubleClick(False)
+        tree.setUniformRowHeights(True)
+        # No indentation and no Qt branch arrows: the sequence row draws its
+        # own arrow, so every row's first column starts at the same x and the
+        # checkboxes down it form one straight line.
+        tree.setRootIsDecorated(False)
+        tree.setIndentation(0)
+        tree.setMouseTracking(True)
+        header = tree.header()
+        header.setStretchLastSection(True)
+        header.setMinimumSectionSize(40)
+        header.resizeSection(0, 170)
+        # Wide enough for the header label ('environment', 'animation'),
+        # which _paint_header draws at 12px; never narrower than a cell needs.
+        label_font = QFont(FONT_FAMILY)
+        label_font.setPixelSize(12)
+        label_font.setBold(True)
+        metrics = QFontMetrics(label_font)
+        for index, column in enumerate(self._columns, start=1):
+            floor = 56 if column.kind == grid.PUBLISH else 82
+            header.resizeSection(
+                index, max(floor, metrics.horizontalAdvance(column.label) + 16),
+            )
+            header.setSectionResizeMode(index, QHeaderView.Fixed)
+        header.sectionClicked.connect(self._on_header_clicked)
+
+        for uri in self._uris:
+            group = self._group_key(uri)
+            group_item = self._group_items.get(group)
+            if group_item is None:
+                group_item = QTreeWidgetItem(tree, [group])
+                group_item.setData(0, _GROUP_ROLE, group)
+                self._group_items[group] = group_item
+                self._group_uris[group] = []
+            item = QTreeWidgetItem(group_item, [self._uri_objects[uri].segments[-1]])
+            item.setData(0, _URI_ROLE, uri)
+            self._items[uri] = item
+            self._group_uris[group].append(uri)
+            for column in self._columns:
+                self._states[(uri, column.key)] = grid.PENDING
+        tree.expandAll()
+        self._restripe()
+        tree.viewport().installEventFilter(self)
+        return tree
+
+    def _group_key(self, uri: str) -> str:
+        """The sequence (or category path) a row sits under."""
+        segments = self._uri_objects[uri].segments
+        return '/'.join(segments[1:-1]) or self._context
+
+    def _restripe(self) -> None:
+        """Alternate row shading over the *visible* rows of each group."""
+        self._zebra = set()
+        for uris in self._group_uris.values():
+            visible = [u for u in uris if u not in self._hidden]
+            self._zebra.update(visible[1::2])
+
+    def eventFilter(self, obj, event):
+        if (
+            event.type() == QEvent.Wheel
+            and isinstance(obj, (QAbstractSpinBox, QComboBox))
+            and not obj.hasFocus()
+        ):
+            QApplication.sendEvent(self._forms_scroll.verticalScrollBar(), event)
+            return True
+        if obj is self._tree.viewport():
+            if event.type() == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton:
+                self._on_grid_click(event.position().toPoint())
+                return False
+            if event.type() == QEvent.ToolTip:
+                text = self._tooltip_at(event.pos())
+                if text:
+                    QToolTip.showText(event.globalPos(), text, self._tree)
+                else:
+                    QToolTip.hideText()
+                return True
+        return super().eventFilter(obj, event)
+
+    def _tooltip_at(self, pos) -> str:
+        index = self._tree.indexAt(pos)
+        if not index.isValid():
+            return ""
+        item = self._tree.itemFromIndex(index)
+        uri = item.data(0, _URI_ROLE)
+        column = index.column()
+        if uri is None or column == 0:
+            return ""
+        if column == self._warnings_column:
+            return "\n".join(self._warnings.get(uri, []))
+        step = self._columns[column - 1]
+        state = self._states.get((uri, step.key), grid.PENDING)
+        table = TIPS[grid.PUBLISH if step.kind == grid.PUBLISH else 'preview']
+        ticked = " — will be submitted" if (uri, step.key) in self._ticks else ""
+        return f"{item.text(0)} · {step.label}: {table[state]}{ticked}"
+
+    def _on_grid_click(self, pos) -> None:
+        index = self._tree.indexAt(pos)
+        if not index.isValid():
+            return
+        item = self._tree.itemFromIndex(index)
+        column = index.column()
+        uri = item.data(0, _URI_ROLE)
+        group = item.data(0, _GROUP_ROLE)
+        if column == 0 and group is not None:
+            left = self._tree.visualRect(index).left()
+            if pos.x() < left + _ARROW_WIDTH:
+                item.setExpanded(not item.isExpanded())
+                return
+        if column == self._warnings_column:
+            return
+        if column == 0:
+            keys = self._row_keys(uri) if uri else self._group_keys(group)
+        else:
+            step = self._columns[column - 1]
+            if uri:
+                keys = [(uri, step.key)] if self._tickable(uri, step.key) else []
+            else:
+                keys = self._group_keys(group, step.key)
+        self._toggle(keys)
+
+    def _on_header_clicked(self, logical: int) -> None:
+        if logical == 0:
+            self._toggle(self._visible_keys())
+        elif 1 <= logical <= len(self._columns):
+            self._toggle(self._visible_keys(self._columns[logical - 1].key))
+
+    # ── Keys ──────────────────────────────────────────────
+
+    def _tickable(self, uri: str, column_key: str) -> bool:
+        return self._states.get((uri, column_key), grid.PENDING) in grid.TICKABLE
+
+    def _row_keys(self, uri: str) -> list:
+        return [
+            (uri, c.key) for c in self._columns if self._tickable(uri, c.key)
+        ]
+
+    def _group_keys(self, group: str, column_key: str | None = None) -> list:
+        keys = []
+        for uri in self._group_uris.get(group, []):
+            if uri in self._hidden:
+                continue
+            columns = [column_key] if column_key else [c.key for c in self._columns]
+            keys.extend((uri, key) for key in columns if self._tickable(uri, key))
+        return keys
+
+    def _visible_keys(self, column_key: str | None = None) -> list:
+        keys = []
+        for group in self._group_uris:
+            keys.extend(self._group_keys(group, column_key))
+        return keys
+
+    def _toggle(self, keys: list) -> None:
+        if not keys:
+            return
+        self._ticks = grid.toggle(keys, self._ticks)
+        self._changed()
+
+    def _select_stale(self) -> None:
+        visible = {
+            key: state for key, state in self._states.items()
+            if key[0] not in self._hidden
+        }
+        self._ticks |= set(grid.stale_keys(visible))
+        self._changed()
+
+    def _clear_ticks(self) -> None:
+        self._ticks = set()
+        self._changed()
+
+    def _changed(self) -> None:
+        """Ticks changed: repaint now, recompute warnings and the form soon."""
+        self._tree.viewport().update()
+        self._tree.header().viewport().update()
+        self._refresh_timer.start()
+
+    def _refresh(self) -> None:
+        self._reseed_form()
+        self._recompute_warnings()
+        self._summary.setText(
+            grid.summary(self._uris, self._columns, self._ticks, self._noun)
+        )
+        self._tree.viewport().update()
+
+    # ── Painting ──────────────────────────────────────────
+
+    def _paint_header(self, painter: QPainter, rect: QRect, logical: int) -> None:
+        painter.setPen(QColor(TEXT_SECONDARY))
+        font = QFont(FONT_FAMILY)
+        font.setPixelSize(12)
+        if logical == 0:
+            box = QRect(rect.left() + _ARROW_WIDTH, rect.center().y() - BOX // 2, BOX, BOX)
+            _box(painter, box, grid.tri_state(self._visible_keys(), self._ticks))
+            painter.setFont(font)
+            painter.drawText(
+                rect.adjusted(_ARROW_WIDTH + BOX + 8, 0, 0, 0),
+                Qt.AlignVCenter | Qt.AlignLeft, "All",
+            )
+            return
+        if logical == self._warnings_column:
+            painter.setFont(font)
+            painter.drawText(rect.adjusted(10, 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft, "Warnings")
+            return
+        column = self._columns[logical - 1]
+        if column.kind != grid.PUBLISH:
+            font.setBold(True)
+            painter.setPen(QColor(TEXT_PRIMARY))
+        painter.setFont(font)
+        painter.drawText(
+            QRect(rect.left(), rect.top() + 6, rect.width(), 18), Qt.AlignCenter, column.label,
+        )
+        box = QRect(rect.center().x() - BOX // 2, rect.bottom() - BOX - 8, BOX, BOX)
+        _box(painter, box, grid.tri_state(self._visible_keys(column.key), self._ticks))
+
+    def _paint_cell(self, painter, rect, item, column: int, is_group: bool) -> None:
+        font = QFont(FONT_FAMILY)
+        font.setPixelSize(13)
+        if is_group:
+            group = item.data(0, _GROUP_ROLE)
+            if column == 0:
+                painter.setPen(QColor(TEXT_SECONDARY))
+                small = QFont(FONT_FAMILY)
+                small.setPixelSize(10)
+                painter.setFont(small)
+                painter.drawText(
+                    QRect(rect.left(), rect.top(), _ARROW_WIDTH, rect.height()),
+                    Qt.AlignCenter, "▼" if item.isExpanded() else "▶",
+                )
+                box = QRect(rect.left() + _ARROW_WIDTH, rect.center().y() - BOX // 2, BOX, BOX)
+                _box(painter, box, grid.tri_state(self._group_keys(group), self._ticks))
+                font.setBold(True)
+                painter.setFont(font)
+                painter.setPen(QColor(TEXT_PRIMARY))
+                painter.drawText(
+                    rect.adjusted(_ARROW_WIDTH + BOX + 8, 0, 0, 0), Qt.AlignVCenter, group,
+                )
+            elif column == self._warnings_column:
+                font.setPixelSize(11)
+                painter.setFont(font)
+                painter.setPen(QColor(TEXT_SECONDARY))
+                count = len([u for u in self._group_uris[group] if u not in self._hidden])
+                painter.drawText(
+                    rect.adjusted(10, 0, 0, 0), Qt.AlignVCenter,
+                    f"{count} {self._noun[count != 1]}",
+                )
+            else:
+                step = self._columns[column - 1]
+                keys = self._group_keys(group, step.key)
+                if keys:
+                    box = QRect(rect.center().x() - BOX // 2, rect.center().y() - BOX // 2, BOX, BOX)
+                    _box(painter, box, grid.tri_state(keys, self._ticks))
+                stale = sum(
+                    1 for uri in self._group_uris[group]
+                    if uri not in self._hidden
+                    and self._states.get((uri, step.key)) in grid.NEEDS_WORK
+                )
+                if stale:
+                    # In the corner, so the checkbox stays centred under the
+                    # header's.
+                    small = QFont(FONT_FAMILY)
+                    small.setPixelSize(10)
+                    painter.setFont(small)
+                    painter.setPen(QColor(STALE_COLOUR))
+                    painter.drawText(rect.adjusted(0, 2, -4, 0), Qt.AlignTop | Qt.AlignRight, str(stale))
+            return
+
+        uri = item.data(0, _URI_ROLE)
+        if column == 0:
+            box = QRect(rect.left() + _ARROW_WIDTH, rect.center().y() - BOX // 2, BOX, BOX)
+            _box(painter, box, grid.tri_state(self._row_keys(uri), self._ticks))
+            painter.setFont(font)
+            painter.setPen(QColor(TEXT_PRIMARY))
+            painter.drawText(
+                rect.adjusted(_ARROW_WIDTH + BOX + 8, 0, 0, 0), Qt.AlignVCenter, item.text(0),
+            )
+            return
+        if column == self._warnings_column:
+            warnings = self._warnings.get(uri)
+            if warnings:
+                font.setPixelSize(12)
+                painter.setFont(font)
+                painter.setPen(QColor(WARNING_COLOUR))
+                painter.drawText(
+                    rect.adjusted(10, 0, -4, 0), Qt.AlignVCenter,
+                    painter.fontMetrics().elidedText("; ".join(warnings), Qt.ElideRight, rect.width() - 14),
+                )
+            return
+        step = self._columns[column - 1]
+        key = (uri, step.key)
+        state = self._states.get(key, grid.PENDING)
+        ticked = key in self._ticks
+        if ticked:
+            painter.fillRect(rect.adjusted(1, 1, -1, -1), QColor(ACCENT))
+            painter.setPen(QPen(QColor(TICK_OUTLINE), 1))
+            painter.drawRect(rect.adjusted(1, 1, -2, -2))
+        painter.setFont(font)
+        painter.setPen(QColor("#ffffff" if ticked else GLYPH_COLOURS[state]))
+        painter.drawText(rect, Qt.AlignCenter, GLYPHS[state])
+
+    # ── Filtering ─────────────────────────────────────────
+
+    def _apply_filter(self) -> None:
+        """Hide rows that don't match; ticks are untouched.
+
+        Filtering narrows the view, never the submission — but every tick
+        operation (headers, sequences, Select stale) only reaches visible
+        rows, so checking a column under a filter cannot quietly submit what
+        you cannot see.
+        """
+        needle = self._filter.text().strip().lower()
+        members = self._group_filter.currentData()
+        wanted = set(members) if members else None
+        self._hidden = set()
+        for uri, item in self._items.items():
+            visible = (not needle or needle in uri.lower()) and (
+                wanted is None or uri in wanted
+            )
+            item.setHidden(not visible)
+            if not visible:
+                self._hidden.add(uri)
+        for group, item in self._group_items.items():
+            item.setHidden(all(u in self._hidden for u in self._group_uris[group]))
+        self._restripe()
+        self._changed()
+
+    def _scroll_to_first_ticked(self, opened: dict) -> None:
+        for uri in self._uris:
+            if uri in opened:
+                self._tree.scrollToItem(self._items[uri])
+                return
+
+    # ── Status scan ───────────────────────────────────────
+
+    def _start_scan(self, *, preview_only: bool = False) -> None:
+        """(Re)read every row's status in the background, visible rows first."""
+        self._preview_only = preview_only
+        visible = [u for u in self._uris if u not in self._hidden]
+        rest = [u for u in self._uris if u in self._hidden]
+        self._probe_queue = visible + rest
+        # Scans already in flight answer an older question; drop them (the
+        # workers finish on their own and their results are ignored).
+        self._pending = {}
+        if not preview_only:
+            for key in list(self._states):
+                self._states[key] = grid.PENDING
+        self._status_label.setText("Reading status…")
+        self._poll.start()
+        self._tree.viewport().update()
+
+    def _cut(self, uri: str, key: str) -> str | None:
+        """This row's preview cut: the pinned department, else the entity's."""
+        entry = self._fields.get(key)
+        if entry is not None and entry.pinned:
+            value = entry.value()
+            if value is not resolve.MIXED:
+                return value
+        value = resolve.entity_value(
+            resolve.FIELDS_BY_KEY[key], self._props.get(uri, {}), self._fallbacks,
+        )
+        return None if value is resolve.REQUIRED else value
+
+    def _drain_scans(self) -> None:
+        """Main-thread poll: resolve a chunk of probes, apply finished scans."""
+        if self._probe_queue:
+            chunk = self._probe_queue[:_PROBE_CHUNK]
+            self._probe_queue = self._probe_queue[_PROBE_CHUNK:]
+            try:
+                from tumblepipe.api import default_client
+                with default_client().config.coherent():
+                    for uri in chunk:
+                        probe = farm_status.plan_probe(
+                            self._uri_objects[uri],
+                            [] if self._preview_only else self._publish_departments,
+                            playblast_department=(
+                                self._cut(uri, 'pb_department')
+                                if self._context == 'shots' else None
+                            ),
+                            render_department=self._cut(uri, 'render_department'),
+                        )
+                        self._pending[self._executor.submit(farm_status.scan, probe)] = (
+                            uri, self._preview_only,
+                        )
+            except Exception:
+                log.exception("Could not resolve status folders")
+                self._probe_queue = []
+
+        finished = [future for future in self._pending if future.done()]
+        for future in finished:
+            uri, preview_only = self._pending.pop(future)
+            try:
+                status = future.result()
+            except Exception as error:
+                status = farm_status.RowStatus(uri=uri, error=str(error))
+            if preview_only:
+                # Only the preview folders were read; keep the publish half.
+                old = self._statuses.get(uri)
+                if old is None:
+                    continue
+                old.playblast_mtime = status.playblast_mtime
+                old.render_mtime = status.render_mtime
+            else:
+                self._statuses[uri] = status
+            self._apply_status(uri)
+        if finished:
+            self._ticks = grid.drop_untickable(self._ticks, self._states)
+            self._changed()
+        if not self._probe_queue and not self._pending:
+            self._poll.stop()
+            self._status_label.setText("")
+        else:
+            done = len(self._uris) - len(self._probe_queue) - len(self._pending)
+            self._status_label.setText(f"Reading status… {done}/{len(self._uris)}")
+
+    def _apply_status(self, uri: str) -> None:
+        status = self._statuses.get(uri)
+        if status is None:
+            return
+        props = self._props.get(uri, {})
+        has_range = (
+            resolve.nested(props, 'frame_start') is not None
+            and resolve.nested(props, 'frame_end') is not None
+        )
+        departments = self._publish_departments
+        for column in self._columns:
+            key = (uri, column.key)
+            if status.error:
+                self._states[key] = grid.PENDING
+                continue
+            if column.kind == grid.PUBLISH:
+                self._states[key] = grid.publish_state(
+                    status.hip_mtimes.get(column.department),
+                    status.export_mtimes.get(column.department),
+                )
+                continue
+            field_key = 'pb_department' if column.kind == grid.PLAYBLAST else 'render_department'
+            cut = grid.preview_cut(departments, self._cut(uri, field_key))
+            preview = (
+                status.playblast_mtime if column.kind == grid.PLAYBLAST
+                else status.render_mtime
+            )
+            self._states[key] = grid.preview_state(
+                preview,
+                [status.export_mtimes.get(name) for name in cut],
+                available=has_range,
+            )
+
+    # ── Forms ─────────────────────────────────────────────
+
+    def _build_forms(self) -> QWidget:
+        column = QWidget()
+        # A scroll area's viewport keeps the platform palette (light grey)
+        # unless its contents paint their own background.
+        column.setObjectName("farmForms")
+        column.setStyleSheet(f"QWidget#farmForms {{ background-color: {BG_DARKEST}; }}")
+        layout = QVBoxLayout(column)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        layout.addWidget(self._build_publish_section())
+        if self._context == "shots":
+            layout.addWidget(self._build_playblast_section())
+        else:
+            self._pb_dept = None
+        layout.addWidget(self._build_render_section())
+        layout.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setWidget(column)
+        scroll.viewport().setStyleSheet(f"background-color: {BG_DARKEST};")
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # The widest rows are two spin boxes sized for ⟨per entity⟩ plus a
+        # label and a ↺ (about 450px); narrower clips the ↺ buttons.
+        scroll.setFixedWidth(max(480, column.minimumSizeHint().width() + 24))
+        # Scrolling the panel with the wheel must not edit what passes under
+        # the pointer: a spin box or combo takes the wheel even unfocused,
+        # and every settings edit pins that field for the whole submission,
+        # so a scroll silently set e.g. 63 samples on every shot. They take
+        # the wheel only once clicked into; otherwise it scrolls the panel.
+        self._forms_scroll = scroll
+        # One findChildren per type: PySide6 takes no tuple of types.
+        guarded = column.findChildren(QAbstractSpinBox) + column.findChildren(QComboBox)
+        for widget in guarded:
+            widget.setFocusPolicy(Qt.StrongFocus)
+            widget.installEventFilter(self)
+        return scroll
 
     def _register(self, key: str, widget: QWidget, kind: str) -> QWidget:
         """Wrap ``widget`` as a tri-state field and wire its pin signal.
@@ -687,16 +1344,11 @@ class SubmitJobsDialog(QDialog):
         """
         entry = _PinnedField(key, widget, kind)
         self._fields[key] = entry
-        # Look the signal up by name: a dict of the four bound signals would
-        # evaluate every branch, and only one of them exists on any given
-        # widget class.
         signal_name = {
             'spin': 'valueChanged', 'check': 'clicked',
             'combo': 'activated', 'line': 'textEdited',
         }[kind]
-        getattr(widget, signal_name).connect(
-            lambda *_a: self._refresh_preflight()
-        )
+        getattr(widget, signal_name).connect(lambda *_a: self._changed())
         if kind == 'spin':
             # No user-only signal exists; the dialog's _seeding flag is
             # what separates a user edit from a reseed.
@@ -730,8 +1382,8 @@ class SubmitJobsDialog(QDialog):
         box.setRange(low - 1, high)
         box.setSpecialValueText(PER_ENTITY_TEXT)
         box.setToolTip(
-            "Leave on ⟨per entity⟩ to let each checked entity use its "
-            "own configured value."
+            "Leave on ⟨per entity⟩ to let each entity use its own "
+            "configured value."
         )
         self._register(key, box, 'spin')
         return box
@@ -760,14 +1412,10 @@ class SubmitJobsDialog(QDialog):
         return edit
 
     def _revert(self, *keys: str) -> QPushButton:
-        """A ↺ that returns its fields to the per-entity default.
-
-        One per *row* rather than per widget: a frame row is two spin boxes
-        only meaningful together, and a button apiece would double the
-        form's visual weight for a control most submits never touch.
-        """
+        """A ↺ that returns its fields to the per-entity default."""
         button = QPushButton("↺")
         button.setFixedWidth(24)
+        button.setStyleSheet("padding: 2px;")
         button.setToolTip("Use each entity's own configured value")
         button.clicked.connect(lambda: self._unpin(keys))
         return button
@@ -782,331 +1430,10 @@ class SubmitJobsDialog(QDialog):
                     entry.unpin(seeded.get(key, resolve.MIXED))
         finally:
             self._seeding = False
-
-    # ── UI construction ───────────────────────────────────
-
-    def _build_header_text(self) -> str:
-        n = len(self._entity_uris)
-        if n == 0:
-            return f"No {self._context} checked — check at least one to submit."
-        names = ", ".join(self._entity_names[:8])
-        if len(self._entity_names) > 8:
-            names += f", +{len(self._entity_names) - 8} more"
-        suffix = "entity" if n == 1 else "entities"
-        return f"Submit jobs for {n} {suffix} ({self._context}): {names}"
-
-    def _build_entity_tree(self) -> QWidget:
-        """Build the checkable entity tree, scoped to the dialog's context.
-
-        Two roots: the context itself (``Shots`` / ``Assets``), nested by
-        category, and ``Groups`` (when the project has any), whose leaves
-        mirror the same entities. The tree is scoped to one context because
-        the department lists and the group listing both are — batching shots
-        and assets together would need two department combos.
-
-        Entities the dialog was opened for start checked. If one of them
-        isn't in the config listing (an off-config scene), it still gets a
-        leaf, so the dialog never silently drops its own target.
-        """
-        wrap = QWidget()
-        column = QVBoxLayout(wrap)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(6)
-
-        # Filter + bulk-check row.
-        self._filter = QLineEdit()
-        self._filter.setPlaceholderText(f"Filter {self._context}…")
-        self._filter.setClearButtonEnabled(True)
-        self._filter.textChanged.connect(self._apply_filter)
-        all_btn = QPushButton("All")
-        all_btn.setToolTip("Check every visible entity")
-        all_btn.clicked.connect(lambda: self._set_all_checked(True))
-        none_btn = QPushButton("None")
-        none_btn.setToolTip("Uncheck every visible entity")
-        none_btn.clicked.connect(lambda: self._set_all_checked(False))
-        # Compact: in the narrow tree column the default padding leaves
-        # the filter field too little room to type in.
-        for btn in (all_btn, none_btn):
-            btn.setStyleSheet("padding: 3px 8px;")
-        top_row = QHBoxLayout()
-        top_row.setSpacing(6)
-        top_row.addWidget(self._filter, 1)
-        top_row.addWidget(all_btn)
-        top_row.addWidget(none_btn)
-        top_wrap = QWidget()
-        top_wrap.setLayout(top_row)
-        column.addWidget(top_wrap)
-
-        self._tree = QTreeWidget()
-        self._tree.setHeaderHidden(True)
-        # No height cap: the tree owns the dialog's left column, so it
-        # takes whatever height the forms beside it give the dialog.
-        self._tree.setMinimumHeight(160)
-        self._tree.setMinimumWidth(240)
-        column.addWidget(self._tree, 1)
-
-        opened = {str(uri): uri for uri in self._entity_uris}
-        listed = _list_selectable_entities(self._context)
-        # Union, so an off-config opened entity survives; sorted for a stable
-        # tree order (which is also the submission order).
-        by_uri = {str(uri): uri for uri in listed}
-        by_uri.update(opened)
-        all_uris = [by_uri[key] for key in sorted(by_uri)]
-
-        context_root = QTreeWidgetItem(self._tree, [self._context.capitalize()])
-        context_root.setFlags(context_root.flags() | Qt.ItemIsUserCheckable)
-        context_root.setCheckState(0, Qt.Unchecked)
-        for uri in all_uris:
-            # segments == [context, *categories, name]
-            parent = self._branch(context_root, uri.segments[1:-1])
-            self._add_leaf(parent, uri)
-
-        for name, members in _list_groups(self._context):
-            group_root = None
-            for member in members:
-                key = str(member)
-                if key not in by_uri:
-                    continue  # stale member — not a live entity any more
-                if group_root is None:
-                    groups_root = self._groups_root()
-                    group_root = QTreeWidgetItem(groups_root, [name])
-                    group_root.setFlags(group_root.flags() | Qt.ItemIsUserCheckable)
-                    group_root.setCheckState(0, Qt.Unchecked)
-                self._add_leaf(group_root, by_uri[key])
-
-        self._tree.expandItem(context_root)
-        # Seed the check state from the entities the dialog was opened for.
-        self._syncing = True
-        for key in opened:
-            for item in self._leaves[key].items:
-                item.setCheckState(0, Qt.Checked)
-        self._syncing = False
-        self._refresh_branch_states()
-        self._scroll_to_first_checked()
-        self._tree.itemChanged.connect(self._on_item_changed)
-        return wrap
-
-    def _groups_root(self) -> QTreeWidgetItem:
-        """The lazily-created ``Groups`` top-level item."""
-        existing = getattr(self, "_groups_item", None)
-        if existing is None:
-            existing = QTreeWidgetItem(self._tree, ["Groups"])
-            existing.setFlags(existing.flags() | Qt.ItemIsUserCheckable)
-            existing.setCheckState(0, Qt.Unchecked)
-            self._groups_item = existing
-        return existing
-
-    def _branch(self, root: QTreeWidgetItem, path: list[str]) -> QTreeWidgetItem:
-        """Return (creating as needed) the branch item at ``path`` under
-        ``root`` — e.g. ``['000']`` for ``entity:/shots/000/sh020``."""
-        node = root
-        for segment in path:
-            child = None
-            for i in range(node.childCount()):
-                candidate = node.child(i)
-                if candidate.text(0) == segment and not self._is_leaf(candidate):
-                    child = candidate
-                    break
-            if child is None:
-                child = QTreeWidgetItem(node, [segment])
-                child.setFlags(child.flags() | Qt.ItemIsUserCheckable)
-                child.setCheckState(0, Qt.Unchecked)
-            node = child
-        return node
-
-    def _add_leaf(self, parent: QTreeWidgetItem, uri) -> None:
-        """Add a checkable entity leaf under ``parent`` and register it as a
-        mirror of every other leaf carrying the same URI."""
-        key = str(uri)
-        name = uri.segments[-1]
-        item = QTreeWidgetItem(parent, [name])
-        item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-        item.setCheckState(0, Qt.Unchecked)
-        item.setData(0, _URI_ROLE, key)
-        leaf = self._leaves.get(key)
-        if leaf is None:
-            self._leaves[key] = _EntityLeaf(uri=uri, name=name, items=[item])
-        else:
-            leaf.items.append(item)
-
-    @staticmethod
-    def _is_leaf(item: QTreeWidgetItem) -> bool:
-        return item.data(0, _URI_ROLE) is not None
-
-    # ── Tree check state ──────────────────────────────────
-
-    def _on_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
-        if self._syncing:
-            return
-        self._syncing = True
-        try:
-            state = item.checkState(0)
-            if self._is_leaf(item):
-                self._mirror_leaf(item, state)
-            else:
-                # A branch check cascades to its (visible) leaves. Filtered-out
-                # leaves are left alone — checking "Shots" while a filter is
-                # active shouldn't quietly submit the shots you can't see.
-                for leaf_item in self._descendant_leaves(item):
-                    if not leaf_item.isHidden():
-                        self._mirror_leaf(leaf_item, state)
-            self._refresh_branch_states()
-        finally:
-            self._syncing = False
-        self._on_selection_changed()
-
-    def _mirror_leaf(self, item: QTreeWidgetItem, state) -> None:
-        """Apply ``state`` to every leaf sharing this item's URI (the same
-        entity can sit under the context root and under N groups)."""
-        key = item.data(0, _URI_ROLE)
-        leaf = self._leaves.get(key)
-        if leaf is None:
-            return
-        for mirror in leaf.items:
-            if mirror.checkState(0) != state:
-                mirror.setCheckState(0, state)
-
-    def _descendant_leaves(self, item: QTreeWidgetItem) -> list[QTreeWidgetItem]:
-        if self._is_leaf(item):
-            return [item]
-        found: list[QTreeWidgetItem] = []
-        for i in range(item.childCount()):
-            found.extend(self._descendant_leaves(item.child(i)))
-        return found
-
-    def _refresh_branch_states(self) -> None:
-        """Roll leaf check states up into partially-checked branches."""
-        for i in range(self._tree.topLevelItemCount()):
-            self._roll_up(self._tree.topLevelItem(i))
-
-    def _roll_up(self, item: QTreeWidgetItem) -> None:
-        if self._is_leaf(item):
-            return
-        leaves = self._descendant_leaves(item)
-        if not leaves:
-            return
-        for i in range(item.childCount()):
-            self._roll_up(item.child(i))
-        checked = sum(1 for leaf in leaves if leaf.checkState(0) == Qt.Checked)
-        if checked == 0:
-            state = Qt.Unchecked
-        elif checked == len(leaves):
-            state = Qt.Checked
-        else:
-            state = Qt.PartiallyChecked
-        if item.checkState(0) != state:
-            item.setCheckState(0, state)
-
-    def _set_all_checked(self, checked: bool) -> None:
-        state = Qt.Checked if checked else Qt.Unchecked
-        self._syncing = True
-        try:
-            for leaf in self._leaves.values():
-                if all(item.isHidden() for item in leaf.items):
-                    continue  # filtered out — leave it as it is
-                for item in leaf.items:
-                    item.setCheckState(0, state)
-            self._refresh_branch_states()
-        finally:
-            self._syncing = False
-        self._on_selection_changed()
-
-    def _apply_filter(self, text: str) -> None:
-        """Hide leaves whose name doesn't match, then hide emptied branches.
-
-        Check state is untouched — filtering narrows the view, never the
-        submission.
-        """
-        needle = text.strip().lower()
-        for i in range(self._tree.topLevelItemCount()):
-            self._filter_item(self._tree.topLevelItem(i), needle)
-        if needle:
-            self._tree.expandAll()
-
-    def _filter_item(self, item: QTreeWidgetItem, needle: str) -> bool:
-        """Hide ``item`` unless it (or a descendant) matches. Returns
-        whether it stayed visible."""
-        if self._is_leaf(item):
-            visible = not needle or needle in item.text(0).lower()
-            item.setHidden(not visible)
-            return visible
-        any_visible = False
-        for i in range(item.childCount()):
-            if self._filter_item(item.child(i), needle):
-                any_visible = True
-        item.setHidden(not any_visible)
-        return any_visible
-
-    def _scroll_to_first_checked(self) -> None:
-        for i in range(self._tree.topLevelItemCount()):
-            for item in self._descendant_leaves(self._tree.topLevelItem(i)):
-                if item.checkState(0) == Qt.Checked:
-                    self._tree.scrollToItem(item)
-                    parent = item.parent()
-                    while parent is not None:
-                        self._tree.expandItem(parent)
-                        parent = parent.parent()
-                    return
-
-    def _checked_entities(self) -> list[tuple[object, str]]:
-        """``(uri, name)`` for every checked entity, in tree order."""
-        return [
-            (leaf.uri, leaf.name)
-            for key, leaf in sorted(self._leaves.items())
-            if leaf.items[0].checkState(0) == Qt.Checked
-        ]
-
-    def _on_selection_changed(self) -> None:
-        """Re-target the submission at whatever is checked now.
-
-        Reseeding only touches *unpinned* fields, so growing the batch
-        re-derives the per-entity defaults without discarding anything the
-        artist deliberately set for the whole batch.
-        """
-        checked = self._checked_entities()
-        self._entity_uris = [uri for uri, _ in checked]
-        self._entity_names = [name for _, name in checked]
-        self._header.setText(self._build_header_text())
-        self._reseed_form()
-
-    def _build_publish_section(self) -> QGroupBox:
-        box = QGroupBox("Publish")
-        box.setCheckable(True)
-        box.setChecked(False)
-        form = QFormLayout(box)
-        form.setContentsMargins(10, 14, 10, 10)
-        form.setSpacing(6)
-
-        pub_depts = _list_dept_names(
-            self._context, only_publishable=True, only_renderable=False,
-        )
-        # The department lists are context-scoped and the context is fixed
-        # for the dialog's life, so they are built once here rather than
-        # refilled on every selection change.
-        self._fallbacks['pub_department'] = pub_depts[0] if pub_depts else None
-        self._pub_dept = self._combo('pub_department', pub_depts)
-        self._pub_dept.setToolTip(
-            "Publishes every department up to and including this one, in "
-            "pipeline order."
-        )
-        form.addRow("Department:", self._pub_dept)
-
-        self._pub_pool = self._line('pub_pool', 'general')
-        form.addRow("Pool:", self._pub_pool)
-
-        self._pub_priority = self._spin('pub_priority', 0, 100)
-        form.addRow("Priority:", self._row(
-            self._pub_priority, revert=('pub_priority',),
-        ))
-
-        return box
+        self._changed()
 
     def _row(self, *widgets, revert: Sequence[str] = ()) -> QWidget:
-        """Pack widgets onto one form row, with an optional ↺ at the end.
-
-        A plain string becomes an inline label, so a row can read
-        ``Pri: [ ] Tiles: [ ] Batch: [ ] ↺`` instead of three form rows.
-        """
+        """Pack widgets onto one form row, with an optional ↺ at the end."""
         layout = QHBoxLayout()
         layout.setSpacing(6)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1121,64 +1448,80 @@ class SubmitJobsDialog(QDialog):
         wrap.setLayout(layout)
         return wrap
 
-    def _build_render_section(self) -> QGroupBox:
-        box = QGroupBox("Render")
-        box.setCheckable(True)
-        # Render is the common case for this dialog (publish has its own
-        # quick action), so it starts enabled.
-        box.setChecked(True)
+    def _section(self, title: str) -> tuple[QGroupBox, QFormLayout]:
+        box = QGroupBox(title)
         form = QFormLayout(box)
         form.setContentsMargins(10, 14, 10, 10)
         form.setSpacing(6)
+        return box, form
 
-        rnd_depts = _list_dept_names(
-            self._context, only_publishable=False, only_renderable=True,
-        )
-        self._renderable_departments = rnd_depts
-        self._fallbacks['render_department'] = (
-            rnd_depts[0] if rnd_depts else None
-        )
-        self._fallbacks['pb_department'] = self._fallbacks['render_department']
+    def _build_publish_section(self) -> QGroupBox:
+        box, form = self._section("Publish")
+        self._pub_pool = self._line('pub_pool', 'general')
+        form.addRow("Pool:", self._pub_pool)
+        self._pub_priority = self._spin('pub_priority', 0, 100)
+        form.addRow("Priority:", self._row(self._pub_priority, revert=('pub_priority',)))
+        return box
 
-        self._rnd_dept = self._combo('render_department', rnd_depts)
+    def _build_playblast_section(self) -> QGroupBox:
+        """A GL (Storm) preview on the farm — shots only.
+
+        The input is the shot's staged 'default' stage cut at this
+        department, and the frame range is the shot's own, so there is no
+        frame or channel field here.
+        """
+        box, form = self._section("Playblast")
+        self._pb_dept = self._combo('pb_department', self._renderable_departments)
+        self._pb_dept.setToolTip(
+            "Playblasts every department up to and including this one, in "
+            "pipeline order — the same cut the render uses."
+        )
+        self._pb_dept.activated.connect(lambda *_a: self._on_cut_changed())
+        form.addRow("Up to:", self._pb_dept)
+        self._pb_width = self._spin('pb_res_x', 16, 8192)
+        self._pb_height = self._spin('pb_res_y', 16, 8192)
+        form.addRow("Resolution:", self._row(
+            self._pb_width, "×", self._pb_height, revert=('pb_res_x', 'pb_res_y'),
+        ))
+        self._pb_pool = self._line('pb_pool', 'general')
+        form.addRow("Pool:", self._pb_pool)
+        self._pb_priority = self._spin('pb_priority', 0, 100)
+        form.addRow("Priority:", self._row(self._pb_priority, revert=('pb_priority',)))
+        return box
+
+    def _build_render_section(self) -> QGroupBox:
+        box, form = self._section("Render")
+        self._rnd_dept = self._combo('render_department', self._renderable_departments)
         self._rnd_dept.setToolTip(
             "Renders every department up to and including this one, in "
             "pipeline order — departments after it are left out of the "
             "composed stage. Also names the render output."
         )
-        form.addRow("Department:", self._rnd_dept)
+        self._rnd_dept.activated.connect(lambda *_a: self._on_cut_changed())
+        form.addRow("Up to:", self._rnd_dept)
 
-        # Channels — a checkable menu of the channels the checked entities
+        # Channels — a checkable menu of the channels the ticked entities
         # actually define. A batch field by contract: the menu spans the
-        # batch and submits exactly what is checked, so a channel a given
-        # entity lacks still fails visibly on the farm rather than being
-        # quietly dropped. The pre-flight table warns about it up front.
+        # submission and submits exactly what is checked, so a channel a
+        # given entity lacks still fails visibly on the farm rather than
+        # being quietly dropped. The Warnings column says so up front.
         self._rnd_channels = _CheckableComboBox(
             empty_text="(none — check at least one)",
             hint="Channels to render — one render per checked channel.",
         )
         all_channels = QPushButton("All")
-        all_channels.setToolTip("Check every channel")
+        all_channels.setStyleSheet("padding: 3px 8px;")
+        all_channels.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self._rnd_channels.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         all_channels.clicked.connect(
-            lambda: self._rnd_channels.set_checked(
-                self._rnd_channels.options()
-            )
+            lambda: self._rnd_channels.set_checked(self._rnd_channels.options())
         )
-        no_channels = QPushButton("None")
-        no_channels.setToolTip("Uncheck every channel")
-        no_channels.clicked.connect(lambda: self._rnd_channels.set_checked([]))
-        self._rnd_channels.model().dataChanged.connect(
-            lambda *_a: self._refresh_preflight()
-        )
-        form.addRow("Channels:", self._row(
-            self._rnd_channels, all_channels, no_channels,
-        ))
+        self._rnd_channels.model().dataChanged.connect(lambda *_a: self._changed())
+        form.addRow("Channels:", self._row(self._rnd_channels, all_channels))
 
-        # Range mode — a batch field: a choice about the submission, not a
-        # property of the entity, so it has no per-entity state. Full range
-        # submits the full_render chain (all frames + slapcomp/mp4); First /
-        # Middle / Last submits partial_render (3 check frames + notify) for
-        # a look before committing the farm to the whole range.
+        # Range mode — a batch field: Full range submits the full_render chain
+        # (all frames + slapcomp/mp4); First / Middle / Last submits
+        # partial_render (3 check frames + notify).
         self._rnd_mode = QComboBox()
         self._rnd_mode.addItems(["Full range", "First / Middle / Last"])
         form.addRow("Range:", self._rnd_mode)
@@ -1186,36 +1529,25 @@ class SubmitJobsDialog(QDialog):
         self._rnd_first = self._spin('first_frame', -1_000_000, 1_000_000)
         self._rnd_last = self._spin('last_frame', -1_000_000, 1_000_000)
         form.addRow("Frames:", self._row(
-            self._rnd_first, "→", self._rnd_last,
-            revert=('first_frame', 'last_frame'),
+            self._rnd_first, "→", self._rnd_last, revert=('first_frame', 'last_frame'),
         ))
-
         self._rnd_pre = self._spin('pre_roll', 0, 1000)
         self._rnd_post = self._spin('post_roll', 0, 1000)
         form.addRow("Pre / Post roll:", self._row(
-            self._rnd_pre, "/", self._rnd_post,
-            revert=('pre_roll', 'post_roll'),
+            self._rnd_pre, "/", self._rnd_post, revert=('pre_roll', 'post_roll'),
         ))
-
         self._rnd_pool = self._line('render_pool', 'general')
         form.addRow("Pool:", self._rnd_pool)
-
         self._rnd_priority = self._spin('render_priority', 0, 100)
         self._rnd_tile = self._spin('tile_count', 1, 64)
         self._rnd_batch = self._spin('batch_size', 1, 1000)
-        form.addRow("", self._row(
-            "Pri:", self._rnd_priority, "Tiles:", self._rnd_tile,
-            "Batch:", self._rnd_batch,
-            revert=('render_priority', 'tile_count', 'batch_size'),
+        form.addRow("Pri / Tiles:", self._row(
+            self._rnd_priority, self._rnd_tile,
+            revert=('render_priority', 'tile_count'),
         ))
-
+        form.addRow("Batch:", self._row(self._rnd_batch, revert=('batch_size',)))
         self._rnd_samples = self._spin('samples', 1, 4096)
-        form.addRow("Samples:", self._row(
-            self._rnd_samples, revert=('samples',),
-        ))
-
-        # Tri-state: PartiallyChecked means "each entity keeps its own",
-        # and is also the way back after clicking one by accident.
+        form.addRow("Samples:", self._row(self._rnd_samples, revert=('samples',)))
         self._rnd_denoise = self._check('denoise', "Denoise")
         self._rnd_mblur = self._check('mblur', "Motion blur")
         self._rnd_dof = self._check('dof', "DOF")
@@ -1223,72 +1555,33 @@ class SubmitJobsDialog(QDialog):
             self._rnd_denoise, self._rnd_mblur, self._rnd_dof,
             revert=('denoise', 'mblur', 'dof'),
         ))
-
-        # Batch fields: plain two-state checkboxes, no per-entity source.
         self._rnd_standalone = QCheckBox("Standalone")
-        self._rnd_standalone.setChecked(False)
         self._rnd_copy_edit = QCheckBox("Copy to edit")
-        self._rnd_copy_edit.setChecked(False)
-        form.addRow("", self._row(
-            self._rnd_standalone, self._rnd_copy_edit,
-        ))
-
+        form.addRow("", self._row(self._rnd_standalone, self._rnd_copy_edit))
         return box
 
-    def _build_playblast_section(self) -> QGroupBox:
-        """A GL (Storm) preview on the farm — shots only.
+    def _on_cut_changed(self) -> None:
+        """A preview cut changed: its cells' staleness depends on it.
 
-        The department is just the output label (which
-        ``playblast/<shot>/<dept>/`` and daily the mp4 lands under); the
-        input is always the shot's staged 'default' stage, and the frame
-        range is derived per-shot from config at submit time — the pattern
-        the render half now follows too — so there is no frame or channel
-        field here. Starts unchecked: an opt-in extra alongside render.
+        The publish columns are unaffected, so only the preview folders are
+        read again — unless the first full scan is still running, which
+        reads the new cut's folders anyway once restarted.
         """
-        box = QGroupBox("Playblast")
-        box.setCheckable(True)
-        box.setChecked(False)
-        form = QFormLayout(box)
-        form.setContentsMargins(10, 14, 10, 10)
-        form.setSpacing(6)
-
-        self._pb_dept = self._combo(
-            'pb_department', self._renderable_departments,
-        )
-        self._pb_dept.setToolTip(
-            "Playblasts every department up to and including this one, in "
-            "pipeline order — the same cut the render uses."
-        )
-        form.addRow("Department:", self._pb_dept)
-
-        self._pb_width = self._spin('pb_res_x', 16, 8192)
-        self._pb_height = self._spin('pb_res_y', 16, 8192)
-        form.addRow("Resolution:", self._row(
-            self._pb_width, "×", self._pb_height,
-            revert=('pb_res_x', 'pb_res_y'),
-        ))
-
-        self._pb_pool = self._line('pb_pool', 'general')
-        form.addRow("Pool:", self._pb_pool)
-
-        self._pb_priority = self._spin('pb_priority', 0, 100)
-        form.addRow("Priority:", self._row(
-            self._pb_priority, revert=('pb_priority',),
-        ))
-
-        return box
+        for uri in self._uris:
+            self._apply_status(uri)
+        scanning = bool(self._probe_queue or self._pending)
+        self._start_scan(preview_only=not scanning)
+        self._changed()
 
     # ── Seeding ───────────────────────────────────────────
 
     def _apply_open_department(self) -> None:
         """Pin the department the dialog was opened from.
 
-        Submitting from a lighting workfile almost always means "render what
-        I am looking at", for every shot in the batch — an explicit intent,
-        so it pins rather than merely seeding. Skipped when the department
-        is not renderable, or when the dialog came from the browser (which
-        has no opened-from department); those combos then resolve per entity
-        from ``submission.render.department``.
+        Submitting from a lighting workfile almost always means "preview what
+        I am looking at", for every entity — an explicit intent, so it pins
+        rather than merely seeding. Skipped when the department is not
+        renderable, or when there is no opened-from department.
         """
         name = self._open_department
         if not name or name not in self._renderable_departments:
@@ -1302,37 +1595,27 @@ class SubmitJobsDialog(QDialog):
                 entry.widget.setCurrentIndex(index)
                 entry.pin()
 
-    def _properties_aligned(self) -> list[dict]:
-        """Resolved properties, guaranteed parallel to ``_entity_uris``.
-
-        ``_properties_for`` returns ``[]`` on a config failure, and a short
-        list would silently drop the tail of the batch out of a zip — so pad
-        rather than truncate.
-        """
-        properties = list(self._properties)
-        if len(properties) != len(self._entity_uris):
-            return [{} for _ in self._entity_uris]
-        return properties
+    def _batch(self) -> list[str]:
+        """Rows the form speaks for: every ticked row, else every visible row."""
+        ticked = {uri for uri, _key in self._ticks}
+        rows = [u for u in self._uris if u in ticked]
+        return rows or [u for u in self._uris if u not in self._hidden]
 
     def _seed_values(self) -> dict:
-        """Per-field agreement across the checked batch (or ``MIXED``)."""
+        """Per-field agreement across the batch (or ``MIXED``)."""
         return resolve.seed_form(
-            self._properties_aligned(),
+            [self._props.get(u, {}) for u in self._batch()],
             sections=resolve.SECTIONS,
             fallbacks=self._fallbacks,
         )
 
     def _reseed_form(self, *, initial: bool = False) -> None:
-        """Re-derive every *unpinned* field from the checked entities.
+        """Re-derive every *unpinned* field from the entities being submitted.
 
-        Pinned fields are the artist's explicit batch-wide choice and
-        survive a change of selection untouched. This replaces the old
-        "reseed only when the primary entity changes" rule: there is no
-        primary any more, and growing the batch can no longer clobber a
-        tuned form because it only ever re-derives what the artist did not
-        set.
+        Pinned fields are the artist's explicit choice and survive a change
+        of ticks untouched; growing the submission only re-derives what the
+        artist did not set.
         """
-        self._properties = _properties_for(self._entity_uris)
         seeded = self._seed_values()
         self._seeding = True
         try:
@@ -1342,158 +1625,39 @@ class SubmitJobsDialog(QDialog):
         finally:
             self._seeding = False
         self._refresh_channel_options(initial=initial)
-        self._refresh_preflight()
 
     def _refresh_channel_options(self, *, initial: bool = False) -> None:
-        """Repopulate the channel menu from the checked entities.
+        """Repopulate the channel menu from the rows being rendered.
 
-        The menu lists the *union* over the batch, because a channel only
-        the second checked shot defines still has to be selectable — which
-        is what typing into the old csv field allowed.
-
-        On the first build the *intersection* starts checked — the channels
-        every opened entity actually defines. For one entity that is its own
-        list, exactly what the csv field pre-filled; for a batch it is the
-        largest set that renders on all of them. Seeding the union instead
-        would check every channel any shot defines and warn on all of them
-        (paleindia shots carry 6-13 channels and barely overlap).
-
-        After that, picks carry over by name, so a channel arriving with an
-        entity checked *into* the batch starts unchecked: widening the batch
-        must never widen the render.
+        The menu lists the *union*, because a channel only one shot defines
+        still has to be selectable. The first build checks the
+        *intersection* — for one entity exactly its own list; for a batch
+        the largest set that renders on all of them. After that, picks carry
+        over by name, so a channel arriving with a newly ticked entity
+        starts unchecked: widening the submission must never widen the
+        render.
         """
-        properties = self._properties_aligned()
+        render_rows = [
+            uri for uri in self._uris if (uri, grid.RENDER) in self._ticks
+        ] or self._batch()
+        properties = [self._props.get(u, {}) for u in render_rows]
         names = resolve.channel_union(properties)
         if initial:
             checked = resolve.channel_intersection(properties)
         else:
             if names == self._rnd_channels.options():
-                return  # nothing new in the batch — leave the picks alone
+                return
             checked = self._rnd_channels.checked_items()
         self._rnd_channels.set_options(names, checked)
 
-    # ── Pre-flight ────────────────────────────────────────
-
-    def _build_preflight(self) -> QGroupBox:
-        """A table of what each checked entity will actually be submitted with.
-
-        The form is no longer one shared override, so "what am I about to
-        send?" stopped being answerable by reading the form. This answers it:
-        one row per checked entity, one column per setting the batch does
-        *not* agree on, plus whatever warnings that entity would hit.
-
-        Every warning here used to surface only as a ``BatchSubmitError`` in
-        the summary box — after the loop had already submitted every entity
-        ahead of it.
-        """
-        box = QGroupBox("Pre-flight")
-        box.setCheckable(True)
-        # Collapsed by default: a homogeneous batch has nothing to say, and
-        # a single-entity submit is the common case.
-        box.setChecked(False)
-        column = QVBoxLayout(box)
-        column.setContentsMargins(10, 14, 10, 10)
-        column.setSpacing(6)
-
-        self._preflight = QTreeWidget()
-        self._preflight.setRootIsDecorated(False)
-        self._preflight.setAlternatingRowColors(True)
-        self._preflight.setMinimumHeight(120)
-        self._preflight.setMaximumHeight(220)
-        column.addWidget(self._preflight)
-
-        self._preflight_note = QLabel()
-        self._preflight_note.setWordWrap(True)
-        self._preflight_note.setStyleSheet(f"color: {TEXT_SECONDARY};")
-        column.addWidget(self._preflight_note)
-
-        box.toggled.connect(lambda *_a: self._refresh_preflight())
-        return box
-
-    def _refresh_preflight(self) -> None:
-        """Rebuild the pre-flight rows from the current form and selection.
-
-        Cheap enough to run on every keystroke: the batch's properties are
-        already resolved and cached, so this is pure dict work — no config
-        reads, and therefore none of the stat-storm risk that the entity
-        sweep had to be scoped against.
-        """
-        table = getattr(self, "_preflight", None)
-        if table is None:
-            return  # called during construction, before the table exists
-        table.clear()
-        if not self._preflight_box.isChecked():
-            self._preflight_note.setText("")
-            return
-
-        rows = self._resolved_batch()
-        sections = self._active_sections()
-        columns = resolve.varying_fields(
-            self._properties_aligned(),
-            sections=sections,
-            pinned=self._pinned_keys(),
-            fallbacks=self._fallbacks,
-        )
-        table.setColumnCount(2 + len(columns))
-        table.setHeaderLabels(
-            [self._context[:-1].capitalize()]
-            + [column.label for column in columns]
-            + ["Warnings"]
-        )
-
-        warned = 0
-        for name, settings, warnings in rows:
-            cells = [name]
-            for column in columns:
-                value = settings.get(column.key)
-                if isinstance(value, list):
-                    value = ", ".join(str(v) for v in value)
-                cells.append("—" if value is None else str(value))
-            cells.append("; ".join(warnings))
-            item = QTreeWidgetItem(table, cells)
-            if warnings:
-                warned += 1
-                item.setForeground(len(cells) - 1, QColor(WARNING_COLOUR))
-        for index in range(table.columnCount()):
-            table.resizeColumnToContents(index)
-
-        if not rows:
-            note = f"Nothing checked — check at least one {self._context[:-1]}."
-        elif not columns:
-            note = (
-                f"All {len(rows)} agree on every setting shown here."
-                if len(rows) > 1 else ""
-            )
-        else:
-            varying = ", ".join(c.label.lower() for c in columns)
-            note = f"Varies across the batch: {varying}."
-        if warned:
-            note += (
-                f" {warned} of {len(rows)} would be submitted with a warning."
-            )
-        self._preflight_note.setText(note.strip())
-
     # ── Resolution ────────────────────────────────────────
-
-    def _active_sections(self) -> list[str]:
-        """The enabled job sections, in submission order."""
-        boxes = (
-            ('publish', self._publish_box),
-            ('render', self._render_box),
-            ('playblast', self._playblast_box),
-        )
-        return [
-            name for name, box in boxes
-            if box is not None and box.isChecked()
-        ]
 
     def _form_values(self) -> dict:
         """Every current form value, keyed by settings key.
 
         Tri-state fields report ``MIXED`` when they sit on their unset
         representation; the resolver reads that as "fall through to the
-        entity". The batch fields are read straight off their widgets —
-        they have no per-entity source to fall through to.
+        entity". The batch fields are read straight off their widgets.
         """
         values = {key: entry.value() for key, entry in self._fields.items()}
         values.update({
@@ -1508,274 +1672,155 @@ class SubmitJobsDialog(QDialog):
         return values
 
     def _pinned_keys(self) -> list[str]:
-        """Fields the artist explicitly set — these apply to the whole batch."""
         return [key for key, entry in self._fields.items() if entry.pinned]
 
-    def _resolved_batch(self) -> list[tuple[str, dict, list[str]]]:
-        """``(name, settings, warnings)`` for every checked entity.
+    def _resolved_rows(self) -> list[tuple[str, dict, list[str]]]:
+        """``(uri, settings, warnings)`` for every ticked row, in grid order.
 
-        The single source of truth for both the pre-flight table and the
-        submit loop, so what the table shows is by construction what gets
+        The single source of truth for the Warnings column and the submit,
+        so what the grid warns about is by construction what gets
         submitted.
         """
-        sections = self._active_sections()
         form = self._form_values()
         pinned = self._pinned_keys()
-        rows: list[tuple[str, dict, list[str]]] = []
-        # strict: _properties_aligned() guarantees the pairing, and a
-        # silent truncation here would drop the tail of the batch out of
-        # the pre-flight AND the submit — the bug class that alignment
-        # helper exists to prevent, so fail loudly if it ever regresses.
-        for name, properties in zip(
-            self._entity_names, self._properties_aligned(), strict=True,
-        ):
-            settings = resolve.resolve_settings(
-                properties,
-                sections=sections,
-                form=form,
-                pinned=pinned,
-                fallbacks=self._fallbacks,
-            )
-            # An empty assignment means "inherit the whole pool", so there is
-            # nothing to warn about. Read off the properties dict we already
-            # hold rather than calling get_entity_departments, which would be
-            # one more config read per entity for the same value.
-            assigned = list(properties.get('departments') or []) or None
-            rows.append((
-                name, settings,
-                resolve.entity_warnings(
-                    properties, settings, departments=assigned,
+        rows = []
+        for uri in self._uris:
+            kinds = grid.row_kinds(uri, self._columns, self._ticks)
+            if not kinds:
+                continue
+            properties = self._props.get(uri, {})
+            settings = grid.finish_row_settings(
+                resolve.resolve_settings(
+                    properties, sections=kinds, form=form, pinned=pinned,
+                    fallbacks=self._fallbacks,
                 ),
-            ))
+                grid.row_publish_departments(uri, self._columns, self._ticks),
+            )
+            assigned = list(properties.get('departments') or []) or None
+            warnings = resolve.entity_warnings(properties, settings, departments=assigned)
+            missing = grid.unpublished_upstream(
+                uri, self._columns, self._ticks, self._states,
+                cuts={
+                    grid.PLAYBLAST: settings.get('pb_department'),
+                    grid.RENDER: settings.get('render_department'),
+                },
+            )
+            if missing:
+                warnings.insert(0, f"{', '.join(missing)} stale and not ticked")
+            rows.append((uri, settings, warnings))
         return rows
+
+    def _recompute_warnings(self) -> None:
+        self._warnings = {uri: w for uri, _s, w in self._resolved_rows() if w}
 
     # ── Submit ────────────────────────────────────────────
 
     def _on_submit(self) -> None:
-        if not self._entity_uris:
+        rows = self._resolved_rows()
+        if not rows:
             QMessageBox.warning(
-                self, "Submit Jobs",
-                f"Check at least one {self._context[:-1]} in the tree before "
+                self, "Farm Submit", "Tick at least one cell before submitting.",
+            )
+            return
+        if any(s.get('render') for _u, s, _w in rows) and not self._rnd_channels.checked_items():
+            QMessageBox.warning(
+                self, "Farm Submit",
+                "Check at least one channel in the Render settings before "
                 "submitting.",
             )
             return
 
-        sections = self._active_sections()
-        if not sections:
-            QMessageBox.warning(
-                self, "Submit Jobs",
-                "Enable at least one of Publish, Render or Playblast before "
-                "submitting.",
-            )
-            return
-
-        if 'render' in sections and not self._rnd_channels.checked_items():
-            # The csv field this replaced fell back to 'default' when it was
-            # emptied, which rendered something nobody asked for.
-            QMessageBox.warning(
-                self, "Submit Jobs",
-                "Check at least one channel in the Render section before "
-                "submitting.",
-            )
-            return
-
-        rows = self._resolved_batch()
-
-        # A wide fan-out is expensive and easy to trigger by mis-clicking a
-        # branch, so make the user own it. The warning count is the part
-        # worth reading: it is the difference between a batch that renders
-        # and one that half-fails an hour from now.
-        if len(rows) > 1 or any(warnings for _n, _s, warnings in rows):
-            pinned = len(self._pinned_keys())
+        warned = [
+            f"  • {self._uri_objects[uri].segments[-1]}: {'; '.join(w)}"
+            for uri, _s, w in rows if w
+        ]
+        if len(rows) > 1 or warned:
             lines = [
-                f"Submit {' + '.join(sections)} jobs for "
-                f"{len(rows)} {self._context}?",
-                "",
-                f"{pinned} setting{'' if pinned == 1 else 's'} pinned to the "
-                f"whole batch; the rest follow each entity's own config.",
-            ]
-            warned = [
-                f"  • {name}: {'; '.join(warnings)}"
-                for name, _s, warnings in rows if warnings
+                f"Submit {grid.summary(self._uris, self._columns, self._ticks, self._noun)}?",
             ]
             if warned:
                 lines += ["", f"{len(warned)} with warnings:"] + warned[:10]
                 if len(warned) > 10:
                     lines.append(f"  … and {len(warned) - 10} more")
             confirm = QMessageBox.question(
-                self, "Submit Jobs", "\n".join(lines),
-                QMessageBox.Ok | QMessageBox.Cancel,
-                QMessageBox.Cancel,
+                self, "Farm Submit", "\n".join(lines),
+                QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Cancel,
             )
             if confirm != QMessageBox.Ok:
                 return
 
-        # ProcessDialog gives the batch a per-entity progress tree, a
-        # working Cancel and its own error report. The inline loop is the
-        # fallback for when the pipeline UI isn't importable.
-        if not self._submit_via_process_dialog(rows):
-            self._submit_inline(rows)
-
-    def _submit_tasks(self, rows: Sequence[tuple]) -> list:
-        """One ``ProcessTask`` per checked entity, or ``[]`` if unavailable.
-
-        ``ProcessDialog`` and its executor survived the Project Browser's
-        retirement (they moved up to ``pipe/houdini/ui/``) and are what the
-        export/publish flows use, so this is reuse rather than a rebuild —
-        the retired ``JobSubmissionDialog`` submitted exactly this way.
-
-        Safe on the GUI thread: ``ProcessExecutor`` has no worker thread. It
-        sequences tasks with ``QTimer.singleShot(0, ...)`` on the main
-        thread, so the event loop keeps turning between entities (progress
-        paints, Cancel responds) without any of the affinity hazards that
-        come with moving pipeline work off it.
-
-        Returns an empty list when the pipeline import fails, which is the
-        signal to fall back to the inline loop.
-        """
-        try:
-            from tumblepipe.pipe.houdini.ui.process_task import ProcessTask
-            from tumblepipe.farm.jobs.houdini.batch_submit import (
-                submit_entity_batch,
-            )
-        except Exception:
-            log.exception("ProcessTask/batch_submit unavailable")
-            return []
-
-        import uuid
-
-        tasks = []
-        for uri, (name, settings, warnings) in zip(
-            self._entity_uris, rows, strict=True,
-        ):
-            kinds = [k for k in resolve.SECTIONS if settings.get(k)]
-            departments = [
-                settings[key] for key in
-                ('pub_department', 'render_department', 'pb_department')
-                if settings.get(key)
-            ]
-            # dict.fromkeys, not set(): the order is the pipeline's, and a
-            # summary that reshuffles it reads as a different cut.
-            label = ', '.join(dict.fromkeys(departments)) or 'N/A'
-            description = f"{'+'.join(kinds)} [{label}]"
-            if warnings:
-                description += f"  ⚠ {'; '.join(warnings)}"
-            config = {
+        configs = [
+            {
                 'entity': {
-                    'uri': str(uri), 'name': name, 'context': self._context,
+                    'uri': uri,
+                    'name': self._uri_objects[uri].segments[-1],
+                    'context': self._context,
                 },
                 'settings': settings,
             }
-            tasks.append(ProcessTask(
-                id=str(uuid.uuid4()),
-                uri=uri,
-                department=label,
-                task_type='farm_submit',
-                description=description,
-                # Farm-only: no local execution for a farm submission, which
-                # is also what pins ProcessDialog to its farm mode.
-                execute_local=None,
-                execute_farm=lambda c=config: submit_entity_batch(c),
-                first_frame=settings.get('first_frame'),
-                last_frame=settings.get('last_frame'),
-            ))
-        return tasks
-
-    def _submit_via_process_dialog(self, rows: Sequence[tuple]) -> bool:
-        """Run the batch through ProcessDialog. False if it isn't available.
-
-        Worth the indirection for anything past one entity: the inline loop
-        blocks the GUI for the whole batch with no progress and no way out,
-        and reports which entity failed only once every entity has been
-        tried.
-        """
-        tasks = self._submit_tasks(rows)
-        if not tasks:
-            return False
+            for uri, settings, _w in rows
+        ]
         try:
-            from tumblepipe.pipe.houdini.ui.process_dialog import ProcessDialog
-        except Exception:
-            log.exception("ProcessDialog unavailable — falling back inline")
-            return False
-
-        dialog = ProcessDialog(
-            title="Submit to Farm",
-            tasks=tasks,
-            # None disables the local/farm mode filtering: every task here is
-            # farm-only, so there is nothing to filter by department.
-            current_department=None,
-            parent=self,
-        )
-        dialog.process_completed.connect(self._on_submission_completed)
-        dialog.exec()
-        return True
-
-    def _on_submission_completed(self, results: dict) -> None:
-        """Close on a clean run; stay open so a failure can be retried.
-
-        ProcessDialog reports the per-task errors itself, so this deliberately
-        adds no second summary box on top of it.
-        """
-        if results.get('failed') or results.get('skipped'):
-            return
-        if results.get('completed'):
-            self.accept()
-
-    def _submit_inline(self, rows: Sequence[tuple]) -> None:
-        """Blocking per-entity loop with a single summary at the end.
-
-        The fallback for when ``ProcessDialog`` can't be imported (outside
-        Houdini, or a partial install). Identical submission, worse feedback.
-        """
-        try:
-            from tumblepipe.farm.jobs.houdini.batch_submit import (
-                submit_entity_batch,
-            )
-        except Exception as exc:
+            window = start_submission(configs, parent=self.parentWidget())
+        except Exception as error:
+            log.exception("Could not start the background submission")
             QMessageBox.critical(
-                self, "Submit Jobs",
-                f"tumblepipe.farm.jobs.houdini.batch_submit unavailable:\n{exc}",
+                self, "Farm Submit",
+                "Could not start the submission in the background:\n\n"
+                f"{error}",
             )
             return
+        window.show()
+        self.accept()
 
-        successes: list[tuple[str, list[str]]] = []
-        failures: list[tuple[str, str]] = []
-        for uri, (name, settings, _warnings) in zip(
-            self._entity_uris, rows, strict=True,
-        ):
-            config = {
-                'entity': {
-                    'uri': str(uri), 'name': name, 'context': self._context,
-                },
-                'settings': settings,
-            }
-            try:
-                job_ids = submit_entity_batch(config)
-                successes.append((name, list(job_ids or [])))
-            except Exception as exc:
-                log.exception("submit_entity_batch failed for %s", uri)
-                failures.append((name, str(exc)))
+    def done(self, result: int) -> None:
+        self._poll.stop()
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        super().done(result)
 
-        lines: list[str] = []
-        if successes:
-            lines.append(
-                f"Submitted {len(successes)}/{len(self._entity_uris)} entities."
-            )
-            for name, ids in successes:
-                lines.append(
-                    f"  • {name}: {', '.join(ids) if ids else '(no ids)'}"
-                )
-        if failures:
-            lines.append("")
-            lines.append(f"{len(failures)} failed:")
-            for name, err in failures:
-                lines.append(f"  • {name}: {err}")
-        msg_text = "\n".join(lines) if lines else "Nothing was submitted."
 
-        if failures and not successes:
-            QMessageBox.critical(self, "Submit Jobs", msg_text)
-        elif failures:
-            QMessageBox.warning(self, "Submit Jobs", msg_text)
-        else:
-            QMessageBox.information(self, "Submit Jobs", msg_text)
-            self.accept()
+def start_submission(configs: list[dict], parent: QWidget | None = None):
+    """Write ``configs`` as a plan, launch the runner, return its status window.
+
+    Shared by the dialog and the status window's **Retry failed**.
+    """
+    import datetime as dt
+    import os
+    import uuid
+
+    from tumblepipe.api import api, local_path
+    from tumblepipe.util.uri import Uri
+    from tumblepipe.farm import submit_plan
+
+    from .farm_submission_window import FarmSubmissionWindow
+
+    houdini_version = os.environ.get('TH_HOUDINI_VERSION')
+    try:
+        import hou
+        houdini_version = hou.applicationVersionString()
+    except Exception:
+        pass
+
+    stamp = dt.datetime.now().strftime('%Y%m%d_%H%M%S')
+    directory = Path(local_path(api.storage.resolve(
+        Uri.parse_unsafe('temp:/farm_submissions')
+    ))) / f'{stamp}_{uuid.uuid4().hex[:6]}'
+    plan = submit_plan.make_plan(configs, env=dict(os.environ), houdini_version=houdini_version)
+    plan_path = submit_plan.write_plan(directory, plan)
+    process = submit_plan.launch(plan_path)
+    window = FarmSubmissionWindow(plan_path, process, configs, parent=parent)
+    # A window with no parent (the Farm Submit app outside Houdini) would be
+    # collected the moment the caller returns; hold it until it closes.
+    _OPEN_WINDOWS.append(window)
+    window.destroyed.connect(lambda *_a, w=window: _forget_window(w))
+    return window
+
+
+_OPEN_WINDOWS: list = []
+
+
+def _forget_window(window) -> None:
+    try:
+        _OPEN_WINDOWS.remove(window)
+    except ValueError:
+        pass

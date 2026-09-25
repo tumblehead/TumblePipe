@@ -1175,12 +1175,19 @@ class PipelineCatalog(Catalog):
     def _open_submit_jobs_dialog(
         self, uris: list, names: list[str], context: str,
         department: str | None = None,
+        tick_kinds: tuple[str, ...] = ("render",),
     ) -> None:
-        """Open :class:`SubmitJobsDialog` for the given entities.
+        """Open the Farm Submit grid (:class:`SubmitJobsDialog`) for ``context``.
 
-        The caller must have activated the owning project already so
+        ``uris`` start with ``tick_kinds`` ticked — Render, for the Render
+        quick action and **Submit Jobs…**; nothing, for the Farm Submit quick
+        action. The caller must have activated the owning project already so
         department lookups and ``tumblepipe.api.default_client`` resolve
         against the right install.
+
+        Non-modal: Houdini stays usable while the grid is open, and the
+        submission itself runs in another process once it is sent. The
+        dialog is kept on the catalog so it is not collected while shown.
 
         An ordinary sibling import, done here rather than at module
         scope so opening the browser panel does not pull the dialog's Qt
@@ -1197,12 +1204,15 @@ class PipelineCatalog(Catalog):
             parent = hou.qt.mainWindow()
             dlg = SubmitJobsDialog(
                 uris, names, context, parent=parent, department=department,
+                tick_kinds=tick_kinds,
             )
-            dlg.exec()
+            self._farm_dialog = dlg
+            dlg.show()
+            dlg.raise_()
         except Exception as exc:
             # Was a hand-rolled QMessageBox predating report_failure: same
             # job, minus the log location, plus its own silent fallback.
-            report_failure("Opening the Submit Jobs dialog", exc)
+            report_failure("Opening the Farm Submit dialog", exc)
 
     def _shot_has_direct_scene_ref(self, asset_id: str) -> bool:
         try:
@@ -2065,6 +2075,10 @@ class PipelineCatalog(Catalog):
                 tooltip="Submit render jobs for the current scene's entity",
             ),
             QuickAction(
+                id="farm", label="Farm Submit", icon="layout-grid",
+                tooltip="Publish, playblast and render any shots on the farm",
+            ),
+            QuickAction(
                 id="update", label="Update", icon="download",
                 tooltip="Re-import latest published versions into the "
                         "current scene (no scene reload)",
@@ -2090,6 +2104,8 @@ class PipelineCatalog(Catalog):
             self._scene.publish_current_scene(done_cb)
         elif action_id == "render":
             self._scene.render_current_scene(done_cb)
+        elif action_id == "farm":
+            self._scene.open_farm(done_cb)
         elif action_id == "update":
             self._scene.update_scene_imports(done_cb)
         elif action_id == "reload":

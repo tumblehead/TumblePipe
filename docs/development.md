@@ -422,152 +422,49 @@ old HDA) and reopen it with the new one. Swapping definitions inside one
 hython session with `hou.hda.uninstallFile` / `installFile` saves a broken
 scene that reloads empty under *either* build, so it proves nothing.
 
-## Submit Jobs dialog harness
+## Farm Submit dialog harness
 
-`scripts/verify_submit_jobs_entity_tree.py` pins the Submit Jobs
-dialog's entity-tree contract: every open shows a checkable tree scoped
-to the dialog's context, listing that context's terminal entities
-(vetted with `is_terminal_entity`, so empty seeded categories don't
-appear) and starting with the opened entities checked. Checking more
-entities fans the submission out to all of them; branch checks cascade
-and roll up to a partial state; an entity that also appears under a
-group is submitted once, not once per group; the filter narrows the
-view without touching check state; and reseeding only re-derives
-*unpinned* fields, so growing the batch doesn't clobber a tuned form. It also pins the coherent-read contract: the sweep vets
-every URI with `is_terminal_entity` (one read each), so it runs inside
-a `config.coherent()` scope and the harness counts config stats to
-catch a regression back into the stat-storm bug class (see the config
-engine notes in `configuration.md`). It reads a real project config, so
-run it under a project hython whose project has at least two shots and
-one asset (e.g. TumbleTrove Desktop's run_hython with dev overrides). Qt runs
-offscreen; no project data is written and nothing is submitted. It also pins
-the shots-only **Playblast** section (present for shots, absent for assets,
-department list = renderable shot departments, opt-in default), and the
-department seeding: the department the dialog was opened *from* wins for
-both Render and Playblast, and one that is not renderable is ignored rather
-than left shadowing the entity-property default.
-
-It pins the **tri-state form** and the per-entity resolution behind it (the
-policy itself is pure, and lives in
-`python/tumblepipe/asset_browser/submit_jobs_resolve.py` with property tests in
-`tests/test_submit_jobs_resolve.py`). A field left alone is *unpinned*,
-renders italic, and lets every checked entity resolve its own configured
-value; touching it *pins* it as a batch-wide choice. Where the entities
-disagree the widget parks on its native unset state — a spin box on
-`specialValueText` one step below its real minimum, a check box on
-`PartiallyChecked`, a combo on a placeholder row, a line edit on empty —
-and no value for it is sent at all. The harness pins the regression this
-exists for: submitting six shots used to render all six at the *first*
-shot's frame range, because the form seeded from one entity and sent one
-shared `settings` dict for the batch.
-
-It pins the **Pre-flight** table (one row per checked entity, a column for
-each setting the batch does not agree on, per-entity warnings) and that the
-table and the submit loop both come from one `_resolved_batch()`, so what
-the table shows is by construction what gets sent. And it pins the
-**ProcessDialog** submission path: one farm-only task per entity, each
-carrying and submitting its own settings, on an executor that sequences with
-`QTimer.singleShot` on the main thread rather than a worker. That section
-skips rather than fails when hpm.toml's `[python_dependencies]` (qtpy,
-tomli_w) aren't importable, which is the case under a bare Houdini
-interpreter — put an hpm venv's `Lib/site-packages` on `PYTHONPATH` to
-exercise it.
-
-It also pins the Render **Channels** menu, which replaced a free-text csv
-field: the menu offers the channels the checked entities actually define
-(the union over the batch, `default` first), opens with the primary
-entity's own list checked, and keeps the artist's picks when the batch
-grows — a channel arriving with an entity checked *into* the batch starts
-unchecked, so widening the batch never widens the render behind their
-back. Submitting with nothing checked is refused rather than quietly
-falling back to `default`. The menu reads properties for every checked
-entity, so those reads sit inside a `config.coherent()` scope and the
-harness counts stats there too.
-
-`scripts/verify_playblast_job.py` pins the farm playblast job family:
-the task/job config validators, and that the versioned playblast + rolling
-daily paths resolve **under the shot's department** (the arity bug the
-department fix closed stays closed). It builds the batch when run from an
-installed package and skips that structural check on a dev checkout (hpm
-won't ship a Task from an editable tree). Run it under a project hython with
-at least one shot.
-
-`scripts/debug_playblast.py` answers "why did that playblast come back
-wrong?" without submitting anything. It collapses exactly what the farm
-would — same staged `default` build, same department cut, same
-`collapse_latest_references` — then opens the result and reports what husk
-will resolve from it: the `renderSettingsPrimPath` on the root layer (the
-only place husk reads it), every RenderSettings prim and camera on the
-stage, the render camera with its focal length and world position at frame,
-the light count, the AOVs each product orders, and which layers the cut
-dropped. It flags the two failure modes by name — a settings prim husk
-cannot find (outside `/Render`, unnamed by the root layer) and an `lpe`
-render var Storm cannot fill — and warns on a sub-1mm focal length, which is
-the project template's placeholder camera rather than a shot camera.
+`scripts/verify_farm_grid.py` pins the Farm Submit dialog, its status scan and its
+background runner against a real project, with no licence and no Houdini
+session, and without submitting anything. Run it through the Desktop
+launcher, which builds the environment a Houdini session would have for a
+TumbleTrove Desktop project and uses that Houdini's bundled Python:
 
 ```bash
-hython scripts/debug_playblast.py                                   # every shot
-hython scripts/debug_playblast.py --shot entity:/shots/030/060 \
-    --department light --husk
+HOUDINI_PACKAGE_DIR=~/.tumbletrove/projects/<id>/.hpm/packages \
+    python scripts/farm_launcher.py --run scripts/verify_farm_grid.py
 ```
 
-`--husk` renders one frame locally with the playblast worker's own flags, so
-"the stage is wrong" and "this machine has no GL context" stop being the same
-symptom. The collapsed `.usda` files are left in a temp directory whose path
-is printed, ready to open in usdview. Exit status is non-zero if any shot
-would not playblast correctly. Run it under a project hython.
+`FARM_VERIFY_SCREENSHOT=<png>` also grabs the dialog to an image (offscreen
+Qt has no fonts, so text renders as boxes; layout, colours and checkboxes are
+true). It checks that the grid lists the context's terminal entities with one
+publish column per publishable department in pool order; that an open for one
+shot ticks only that shot's Render cell and the opened-from department pins
+both preview cuts; that the status scan finishes with no cell pending; that
+column headers, sequence rows, the filter and **Select stale** tick exactly
+what they should; that a ticked row resolves to exactly its ticked publish
+departments (`pub_departments`) over its own frame range; that a real staged
+stage collapses in Houdini's bundled Python (the snapshot the runner takes
+when a row publishes nothing); and that the runner starts, runs and reports
+through its progress file — fed a Multi, which `submit_entity_batch` refuses
+before it contacts Deadline; and that the mouse wheel over an unfocused
+settings field scrolls the panel instead of editing (and pinning) the field.
 
-`scripts/verify_discord_notify.py` pins the notify task's discord gate. A
-project created from `scripts/project_template` carries an EMPTY
-`config:/discord` block — `token: ""`, no users, no channels — and before
-1.52.2 `get_token()` tested `is None`, so that empty string read as a set
-token and sailed past its own guard. The channel lookup then failed the
-notify, and notify is the **last** job in every family, so every render and
-playblast batch on such a project read as failed. The script stubs the
-`discord` library, so it posts nothing: it checks that a blank token reads
-as unset, that an unconfigured project skips and returns **0**, and that a
-configured project still fails an unknown channel — naming the ones it has —
-while a known channel reaches the client. The unconfigured and configured
-checks are mutually exclusive, so run it under a project hython once against
-each kind.
+The policy under the dialog is pure and has property tests:
+`tests/test_farm_grid.py` (cell states, the tri-state checkboxes, stale
+warnings, what a row submits), `tests/test_farm_submission.py` (explicit
+publish departments, the collapse task's config, the worker-thread status
+scan, the plan and progress files) and `tests/test_farm_launcher.py` (version
+ranges, replaying the Houdini package files, picking Houdini's own Python).
+The per-entity settings resolution keeps its own tests in
+`tests/test_submit_jobs_resolve.py`.
 
-`scripts/audit_discord_config.py` sweeps projects for the same gap, reading
-the config JSON straight off disk — no `hou`, no pipeline import, so it
-covers projects too stale to open. It grades each one `ok`, `unconfigured`
-(quiet: notifies skip) or `partial`, which is the dangerous one: a token or
-some channels but not every name the pipeline hardcodes, so those notifies
-— and the batches behind them — fail. Keep `ADDRESSED_CHANNELS` in step with
-`grep -rn "channel_name\s*=\s*'" python/`.
-
-```bash
-python scripts/audit_discord_config.py P:/ --users soren-n,magnus
-python scripts/audit_discord_config.py P:/HideAndReek --quiet
-```
-
-Exit status is non-zero if any project is `partial`.
-
-`scripts/verify_asset_payload_fixes.py` pins the two asset-payload fixes
-against regression. It is the **only** coverage of either, so run it after
-touching `th::asset_payload` or `export_layer`'s publish path:
-
-- the `th::asset_payload` primpath duplication — it composes
-  create_asset → create_asset_model → geo → asset_payload in a scratch
-  subnet and asserts no duplicated `/char/test/test` prim appears. The fix
-  it guards (`primpath1` = `` `lopinputprim('../payload_layer', 0)` `` rather
-  than `` `@sourcename` ``) is still what ships.
-- `export_layer._localize_external_sidecars` — it crafts a layer whose
-  payload arc points at an external `payload.usd` and asserts the sidecar is
-  copied beside the layer and the arc rewritten to the bare relative form.
-  That function is live (called from `export_layer`'s publish), and the
-  `tests/` suite does not cover it.
-
-Unlike the audits below it needs a live Houdini: it imports both `hou` and
-`pxr`, and `pxr` is not in the `tests/` venv, so it cannot run there. Drive it
-through TumbleTrove Desktop's `sessions_exec_python`, or paste it into a
-Houdini Python Shell and call `main()`. Each check prints PASS / FAIL / SKIP
-and degrades to SKIP rather than failing when a prerequisite is absent. A
-third end-to-end export check exists but is off behind `RUN_EXPORT = False`
-because it publishes a real version — only enable it with a throwaway entity.
+**Mutation-testing these, a trap.** Python reuses a module's `.pyc` when the
+source's size and modification second are unchanged. A same-length mutation
+(`NEVER` → `STALE`, `+` → `-`), or narrowing a test module's `spec` to a
+property whose name is as long as the previous one, can therefore run the
+*previous* bytecode and report a pass. Delete the module's `__pycache__/*.pyc`
+after every write — the mutation, the narrowed spec, and the restore.
 
 ## Entity `from_context` audit
 

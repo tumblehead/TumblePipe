@@ -690,8 +690,45 @@ class SceneManager:
                 except Exception:
                     log.exception("Detail refresh after publish failed")
 
+    def open_farm(self, refresh_cb=None) -> None:
+        """Open the Farm Submit grid with every entity and nothing ticked.
+
+        Shots, unless the loaded scene is an asset's — then assets, since
+        the grid shows one context at a time. The loaded workfile's
+        department still pins the preview cut, as it does for Render.
+        """
+        run_on_main_thread(lambda: self._open_farm(refresh_cb))
+
+    def _open_farm(self, refresh_cb=None) -> None:
+        try:
+            context = "shots"
+            department = None
+            scene_ctx = self.get_loaded_scene_context()
+            if scene_ctx is not None:
+                import hou
+                scene_proj = self._catalog._project_for_hip_path(
+                    Path(hou.hipFile.path()),
+                )
+                if scene_proj is not None:
+                    self._catalog._activate_project(scene_proj)
+                segments = scene_ctx.entity_uri.segments
+                if segments and segments[0] == "assets":
+                    context = "assets"
+                department = scene_ctx.department_name
+            self._catalog._open_submit_jobs_dialog(
+                [], [], context, department=department, tick_kinds=(),
+            )
+        except Exception as exc:
+            report_failure("Opening the Farm Submit dialog", exc)
+        finally:
+            if callable(refresh_cb):
+                try:
+                    refresh_cb()
+                except Exception:
+                    log.exception("Detail refresh after opening Farm failed")
+
     def render_current_scene(self, refresh_cb=None) -> None:
-        """Open the Submit Jobs dialog for the loaded scene's entity.
+        """Open the Farm Submit grid with the loaded scene's entity's Render ticked.
 
         The quick-action sibling of :meth:`publish_current_scene`: same
         main-thread marshalling (the action can fire off the GUI thread,
@@ -733,7 +770,7 @@ class SceneManager:
                 )
                 return
             name = segments[-1]
-            # Blocks on the modal dialog until the user submits/closes it.
+            # Opens the non-modal Farm Submit grid with this entity's Render ticked.
             self._catalog._open_submit_jobs_dialog(
                 [uri], [name], context,
                 # The workfile the artist is in seeds the render department.

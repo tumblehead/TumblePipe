@@ -115,8 +115,10 @@ so their versions interleave:
   Houdini's own GL (the viewport flipbook / OpenGL ROP) right in the
   artist's session. It is *viewport-accurate*: what you see is what you
   get. Use it when the look has to match the viewport.
-- **On the farm** — tick **Playblast** in the Submit Jobs dialog (shots
-  only, alongside Publish and Render) and each checked shot gets one job:
+- **On the farm** — tick a shot's **Playblast** cell in the
+  [Farm Submit dialog](asset-browser/submit-jobs.md) (shots only; publish cells on
+  the same row run first, and the playblast then shows what they publish)
+  and each ticked shot gets one job:
   a single task renders the shot's staged `default` stage with husk's
   Hydra **Storm** (GL) delegate — through a `RenderSettings` prim the
   submitter authors on the collapsed stage at

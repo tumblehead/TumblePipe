@@ -121,8 +121,8 @@ the Multi's own card marks that department as the open one — in its deck
 row and in its detail panel's **Departments** section. Publishing from it
 publishes each member's layer under that member's own entity; the Multi
 itself never composes anything. **Render** does the same fan-out: the
-[Submit Jobs dialog](submit-jobs.md#opening-it) opens with the members
-checked, never the Multi.
+[Farm Submit dialog](submit-jobs.md#opening-it) opens with the members' Render
+cells ticked, never the Multi.
 
 The browser's members-list open is Multi-aware, but **Open in New Houdini**
 on a member's row is not: it opens the newest file in the member's own

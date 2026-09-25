@@ -258,7 +258,7 @@ def entity_value(
     """This entity's own value for ``field``, ignoring form and exceptions.
 
     Falls back to ``fallbacks[field.key]`` (context-derived defaults the
-    caller looks up — e.g. the first renderable department, which this pure
+    caller looks up — e.g. the last renderable department, which this pure
     module can't know), then to ``field.default``. Returns :data:`REQUIRED`
     when the field has no fallback constant and the entity carries no value.
     """
@@ -294,7 +294,7 @@ def resolve_settings(
         pinned: Field keys the artist explicitly set — these apply to the
             whole batch. A field absent from ``pinned`` resolves per entity.
         exception: Per-entity overrides for this entity, highest priority.
-        fallbacks: Context-derived defaults (first renderable department,
+        fallbacks: Context-derived defaults (last renderable department,
             …) used when the entity carries no value of its own.
 
     Returns:

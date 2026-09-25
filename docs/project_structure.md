@@ -153,8 +153,15 @@ Qt and the pipeline clients onto the launch path.
   without selecting the Multi first.
 - `departments.py` — the entity Departments… dialog (per-entity pool
   scoping).
-- `submit_jobs_dialog.py`, `submit_jobs_resolve.py` — the Submit Jobs
-  dialog and the pure per-entity settings resolver behind it.
+- `submit_jobs_dialog.py`, `submit_jobs_resolve.py` — the Farm Submit dialog
+  (the grid of publish / playblast / render steps per entity) and the pure
+  per-entity settings resolver behind its form.
+- `farm_grid.py` — the grid's pure policy: cell states, tri-state ticks,
+  stale warnings and what each row submits.
+- `farm_status.py` — reads each cell's status: folder resolution on the main
+  thread, listing and stats on a worker thread.
+- `farm_submission_window.py` — the non-modal window that follows a
+  submission running in its own process.
 - `thumbnails.py` — sidecar thumbnail read / write / refresh.
 - `widgets.py` — detail-panel custom QLabel / QComboBox.
 - `types.py` — value-types and module-level constants.

@@ -12,6 +12,36 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.54.0 — 2026-09-24
+
+### Features
+- feat(farm): call it Farm Submit, and drop the title before the filter (`8af0f47`)
+- feat(farm): open the Farm grid from TumbleTrove Desktop, without Houdini (`fc0bece`)
+- feat(farm): the Farm grid replaces Submit Jobs, submitting in the background (`1b9f118`)
+
+### Fixes
+- fix(farm): the Farm dialog's scrollbars are visible (`f31dee9`)
+- fix(farm): scrolling the settings panel no longer edits and pins fields (`04f0835`)
+- fix(farm): an unconfigured preview cut composes the whole shot (`9f46871`)
+- fix(farm): the Farm dialog fits its headers and settings (`a1d2b3e`)
+- fix(farm): previews after a publish show what the submission published (`281c493`)
+
+### Documentation
+- docs: Farm Submit's live test, the wheel guard and the harness's check 11 (`e97a8c2`)
+- docs: the Farm dialog, farm-side preview snapshots and the Desktop button (`b14da3f`)
+- docs(design): farm pipeline grid for publish, playblast and render (`c1f40e4`)
+- docs: regenerate CHANGELOG.md for v1.53.0 (`a03689d`)
+
+## v1.53.0 — 2026-09-23
+
+### Features
+- feat(asset-browser): Open Version submenu on department deck items (`9fa9d4c`)
+
+### Documentation
+- docs: the TumbleTrove menu gives each package a submenu (`0de9455`)
+- docs: Open Version on the department right-click menu (`0c61c29`)
+- docs: regenerate CHANGELOG.md for v1.52.3 (`b82e970`)
+
 ## v1.52.3 — 2026-09-23
 
 ### Fixes
