@@ -166,12 +166,14 @@ def expand(value: str, env: dict) -> str:
     return _VAR.sub(replace, value)
 
 
-def apply_package(data: dict, env: dict) -> None:
+def apply_package(data: dict, env: dict) -> set[str]:
     """Apply one Houdini package file's ``env`` entries to ``env``, in order.
 
     ``{"VAR": "value"}`` sets; ``{"VAR": {"method": "prepend"|"append"|"set",
-    "value": str | [str, ...]}}`` does what it says, path-joined.
+    "value": str | [str, ...]}}`` does what it says, path-joined. Returns
+    the names it set.
     """
+    names: set[str] = set()
     entries = data.get('env') or []
     if isinstance(entries, dict):
         entries = [entries]
@@ -191,6 +193,25 @@ def apply_package(data: dict, env: dict) -> None:
                 env[name] = existing + os.pathsep + text
             else:
                 env[name] = text
+            names.add(name)
+    return names
+
+
+def blank_unresolved(env: dict, names: set[str]) -> None:
+    """Expand what is still unresolved in ``names`` to empty, as Houdini does.
+
+    A package may name a variable nothing sets: TumblePipe wires
+    ``TH_USER = $TT_USER_NAME``, and the Desktop does not pass
+    ``TT_USER_NAME`` to scripts. Houdini expands that to "", which
+    ``get_user_name`` reads as unattributed; left as written, every farm
+    job was submitted by the user ``$TT_USER_NAME``. Only package-set
+    names: the inherited environment is not Houdini's to expand (Windows'
+    own ``PROMPT=$P$G``).
+    """
+    for name in names:
+        value = env.get(name)
+        if value and '$' in value:
+            env[name] = _VAR.sub('', value)
 
 
 def resolve_references(env: dict, passes: int = 8) -> None:
@@ -218,16 +239,19 @@ def resolve_references(env: dict, passes: int = 8) -> None:
 def replay_packages(package_dir: Path, env: dict) -> list[str]:
     """Apply every ``*.json`` in ``package_dir``, name order (``~`` sorts last,
     which is where hpm puts the project's own overrides), then resolve the
-    references between them. Returns the names applied."""
+    references between them and blank what nothing set. Returns the file
+    names applied."""
     applied = []
+    names: set[str] = set()
     for path in sorted(package_dir.glob('*.json')):
         try:
             data = json.loads(path.read_text(encoding='utf-8'))
         except (OSError, ValueError):
             continue
-        apply_package(data, env)
+        names |= apply_package(data, env)
         applied.append(path.name)
     resolve_references(env)
+    blank_unresolved(env, names)
     return applied
 
 

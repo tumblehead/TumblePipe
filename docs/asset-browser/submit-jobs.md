@@ -23,11 +23,15 @@ Source: [`submit_jobs_dialog.py`](../../python/tumblepipe/asset_browser/submit_j
 
 | From | Menu / button | Rows | Ticked |
 |---|---|---|---|
-| The toolbar | **Farm Submit** quick action | Every shot (every asset when the loaded scene is an asset's) | Nothing |
-| The toolbar, with a workfile loaded | **Render** quick action | Every entity of the scene's context | The loaded scene's entity's **Render** cell — or, in a [Multi](multis-and-roots.md#multis) workfile, every member's |
+| The toolbar | **Farm Submit** quick action | Every shot (every asset when the loaded scene is an asset's) | The loaded workfile's entity's publish cell for the workfile's department — or, in a [Multi](multis-and-roots.md#multis) workfile, every member's. Nothing with no workfile loaded. |
+| The toolbar | **Render** quick action | Every entity of the scene's context (every shot with no workfile loaded) | The loaded scene's entity's **Render** cell — or, in a Multi workfile, every member's. Nothing with no workfile loaded. |
 | A card's right-click menu | **Submit Jobs…** | Every entity of the card's context | That entity's **Render** cell |
 | A multi-selection's right-click menu | **Submit Jobs for N selected…** | Every entity of the context | Each selected card's **Render** cell |
 | TumbleTrove Desktop, outside Houdini | the project's Scripts panel → **Farm Submit** | Every shot | Nothing — see [From TumbleTrove Desktop](#from-tumbletrove-desktop) |
+
+Neither needs a pipeline workfile: the rows are always every entity of the
+context, and the ticks are only a starting point — tick or untick any cell,
+on any entity, before submitting.
 
 When the dialog is opened from a workfile, that workfile's department pins
 the **Up to** department of Playblast and Render (when it is renderable), so
@@ -59,6 +63,7 @@ category). Columns are the pipeline steps:
 |---|---|---|
 | `·` dim | no workfile for this department — nothing to do | no frame range configured — cannot run |
 | `○` | a workfile exists but was never exported | never made |
+| `○` dim | the only workfile is a [Multi](multis-and-roots.md#multis)'s, and it has never exported this entity — Select stale skips it, but you can tick it | — |
 | `●` amber | the workfile was saved after its latest export | older than the newest publish it composes |
 | `✓` green | exported since the last workfile save | newer than every publish it composes |
 | `…` | status not read yet | status not read yet |
@@ -68,6 +73,13 @@ A preview "composes" the departments of its **Up to** cut: a playblast up to
 animation is stale when layout or animation was published after it, not when
 lighting was. Changing a Playblast or Render **Up to** re-reads the preview
 columns. Hover a cell for what its state means.
+
+A Multi covers every member for its departments, but its workfile need not
+export them all: an environment Multi may export one shot of twenty. Until it
+has exported a member, that member has no workfile of its own to be stale
+against, so its cell is the dim `○` and **Select stale** and the stale
+warnings leave it out. Tick it by hand for a Multi's first publish; once an
+export exists the cell is stale or current like any other.
 
 Statuses are read in the background after the dialog opens, visible rows
 first; **Refresh** reads them all again. Only folder listings and one file
@@ -86,7 +98,8 @@ checks everything again when it runs.
   for every shot in the sequence, with the number of stale or never-done
   cells in its corner. Its ▶ / ▼ collapses and expands the sequence; a
   collapsed sequence's ticks still submit.
-- **Select stale** ticks every visible cell that is stale or never done.
+- **Select stale** ticks every visible cell that is stale or never done
+  (not the dim `○` of a Multi that never exported that entity).
   **Clear** unticks everything.
 - **Filter** narrows the rows by name, and the Multi menu beside it narrows
   them to one Multi's members. Filtering never unticks anything, but every
@@ -118,7 +131,11 @@ The Warnings column says, per row, what the submission would run into:
 ## The settings
 
 The right-hand column holds the settings for the ticked cells, in three
-groups: **Publish**, **Playblast** (shots only) and **Render**.
+groups: **Publish**, **Playblast** (shots only) and **Render**. A group shows
+only while at least one cell of its kind is ticked — tick a Render cell and
+the Render settings appear; with nothing ticked the column says *Tick a cell
+to see its settings.* A pinned field in a hidden group keeps its value, but
+only matters once a cell of that kind is ticked again.
 
 ### Fields follow each entity unless you pin them
 

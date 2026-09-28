@@ -19,6 +19,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from . import farm_grid
 from .houdini import report_failure, run_on_main_thread, session_nc_type
 from . import uris as uris
 
@@ -691,18 +692,44 @@ class SceneManager:
                     log.exception("Detail refresh after publish failed")
 
     def open_farm(self, refresh_cb=None) -> None:
-        """Open the Farm Submit grid with every entity and nothing ticked.
+        """Open the Farm Submit grid with the loaded workfile's publish ticked.
 
-        Shots, unless the loaded scene is an asset's — then assets, since
-        the grid shows one context at a time. The loaded workfile's
-        department still pins the preview cut, as it does for Render.
+        Every entity is listed either way; the loaded workfile's entities
+        (a Multi's members, for a group workfile) start with their
+        department's publish cell ticked, and any other cell can be ticked
+        by hand. With no pipeline workfile loaded the grid opens with
+        nothing ticked. Shots, unless the loaded scene is an asset's — then
+        assets, since the grid shows one context at a time.
         """
-        run_on_main_thread(lambda: self._open_farm(refresh_cb))
+        run_on_main_thread(lambda: self._open_farm_grid(
+            refresh_cb, tick_kinds=(farm_grid.PUBLISH,), action="Opening the Farm Submit dialog",
+        ))
 
-    def _open_farm(self, refresh_cb=None) -> None:
+    def render_current_scene(self, refresh_cb=None) -> None:
+        """Open the Farm Submit grid with the loaded workfile's Render ticked.
+
+        The quick-action sibling of :meth:`open_farm`: the same grid of
+        every entity, but seeded with the loaded entity's Render cell. The
+        workfile's department pins the render cut. With no pipeline workfile
+        loaded it opens with nothing ticked rather than refusing.
+        """
+        run_on_main_thread(lambda: self._open_farm_grid(
+            refresh_cb, tick_kinds=(farm_grid.RENDER,), action="Render submit",
+        ))
+
+    def _open_farm_grid(self, refresh_cb, *, tick_kinds, action: str) -> None:
+        """Open the Farm Submit grid, seeding ``tick_kinds`` on the loaded entity.
+
+        Marshalled onto the main thread by the callers: the quick actions can
+        fire off the GUI thread, and opening a Qt dialog (or touching
+        ``hou.hipFile``) off-thread is unsupported. The loaded scene's
+        project is activated first so department lookups and entity
+        properties resolve against the correct install.
+
+        No pipeline workfile is not an error: the grid lists every entity
+        whatever is loaded, so it opens on shots with nothing ticked.
+        """
         try:
-            context = "shots"
-            department = None
             scene_ctx = self.get_loaded_scene_context()
             if scene_ctx is not None:
                 import hou
@@ -711,79 +738,18 @@ class SceneManager:
                 )
                 if scene_proj is not None:
                     self._catalog._activate_project(scene_proj)
-                segments = scene_ctx.entity_uri.segments
-                if segments and segments[0] == "assets":
-                    context = "assets"
-                department = scene_ctx.department_name
+            uris, names, context, department = farm_seed(scene_ctx, _multi_members)
             self._catalog._open_submit_jobs_dialog(
-                [], [], context, department=department, tick_kinds=(),
+                uris, names, context, department=department, tick_kinds=tick_kinds,
             )
         except Exception as exc:
-            report_failure("Opening the Farm Submit dialog", exc)
+            report_failure(action, exc)
         finally:
             if callable(refresh_cb):
                 try:
                     refresh_cb()
                 except Exception:
-                    log.exception("Detail refresh after opening Farm failed")
-
-    def render_current_scene(self, refresh_cb=None) -> None:
-        """Open the Farm Submit grid with the loaded scene's entity's Render ticked.
-
-        The quick-action sibling of :meth:`publish_current_scene`: same
-        main-thread marshalling (the action can fire off the GUI thread,
-        and opening a Qt dialog off-thread is unsupported), same project
-        activation, but it lands in the render-first Submit Jobs dialog
-        instead of the export ProcessDialog.
-        """
-        run_on_main_thread(lambda: self._render_scene(refresh_cb))
-
-    def _render_scene(self, refresh_cb=None) -> None:
-        try:
-            import hou
-
-            scene_ctx = self.get_loaded_scene_context()
-            if scene_ctx is None:
-                hou.ui.displayMessage(
-                    "Render: the loaded scene has no pipeline context, so "
-                    "there is nothing to submit. Open or save the scene "
-                    "through the pipeline first.",
-                    severity=hou.severityType.Warning,
-                )
-                return
-            # Activate the loaded scene's project so department lookups and
-            # entity properties resolve against the correct install.
-            scene_proj = self._catalog._project_for_hip_path(
-                Path(hou.hipFile.path()),
-            )
-            if scene_proj is not None:
-                self._catalog._activate_project(scene_proj)
-
-            uri = scene_ctx.entity_uri
-            segments = uri.segments
-            context = segments[0] if segments else None
-            if context not in ("shots", "assets"):
-                hou.ui.displayMessage(
-                    f"Render: unsupported entity context for {uri} — only "
-                    "shots and assets can be submitted.",
-                    severity=hou.severityType.Warning,
-                )
-                return
-            name = segments[-1]
-            # Opens the non-modal Farm Submit grid with this entity's Render ticked.
-            self._catalog._open_submit_jobs_dialog(
-                [uri], [name], context,
-                # The workfile the artist is in seeds the render department.
-                department=scene_ctx.department_name,
-            )
-        except Exception as exc:
-            report_failure("Render submit", exc)
-        finally:
-            if callable(refresh_cb):
-                try:
-                    refresh_cb()
-                except Exception:
-                    log.exception("Detail refresh after render submit failed")
+                    log.exception("Detail refresh after opening Farm Submit failed")
 
     def refresh_asset(self, asset_id, refresh_cb) -> None:
         """Drop catalog caches for this asset and trigger a re-fetch."""
@@ -886,3 +852,38 @@ class SceneManager:
             return True  # discard: suppress the native prompt too
         return None  # cancel
 
+
+def farm_seed(scene_ctx, members_of) -> tuple[list, list[str], str, str | None]:
+    """What the Farm Submit grid opens on: ``(uris, names, context, department)``.
+
+    The loaded workfile's entity seeds the ticks and its department pins
+    the preview cuts; with no pipeline workfile nothing is seeded and the
+    grid opens on shots. A Multi workfile seeds its members (the dialog
+    expands it), except an empty Multi, which seeds nothing: the dialog
+    refuses a Multi with no members, right for **Submit Jobs…** on its card
+    but not for a quick action whose workfile only suggests ticks.
+    ``members_of(uri)`` lists a Multi's members.
+    """
+    from .submit_jobs_resolve import expand_targets, is_group_target
+
+    if scene_ctx is None:
+        return [], [], "shots", None
+    uri = scene_ctx.entity_uri
+    segments = uri.segments
+    department = scene_ctx.department_name
+    if not segments or segments[0] not in ("shots", "assets"):
+        return [], [], "shots", department
+    if is_group_target(uri) and not expand_targets([uri], members_of):
+        return [], [], segments[0], department
+    return [uri], [segments[-1]], segments[0], department
+
+
+def _multi_members(group_uri) -> list:
+    """Member URIs of the Multi at ``group_uri``; empty when unreadable."""
+    try:
+        from tumblepipe.config.groups import get_group
+        group = get_group(group_uri)
+        return list(group.members) if group is not None else []
+    except Exception:
+        log.exception("Failed to read the members of %s", group_uri)
+        return []

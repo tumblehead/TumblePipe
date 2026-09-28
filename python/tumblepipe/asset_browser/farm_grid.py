@@ -24,11 +24,14 @@ from typing import Iterable, Mapping, Sequence
 
 NONE = '-'      # nothing to do: no workfile / no frame range
 NEVER = 'o'     # never exported / never made
+UNCLAIMED = 'u' # only a Multi's workfile, and it has never exported this entity
 STALE = 's'     # older than what it is made from
 CURRENT = 'k'   # up to date
 PENDING = '?'   # status not read yet
 
-TICKABLE = frozenset({NEVER, STALE, CURRENT, PENDING})
+# UNCLAIMED is tickable (a Multi's first farm publish starts there) but never
+# needs work: Select stale and the upstream warnings leave it alone.
+TICKABLE = frozenset({NEVER, UNCLAIMED, STALE, CURRENT, PENDING})
 NEEDS_WORK = frozenset({NEVER, STALE})
 
 PUBLISH = 'publish'
@@ -65,16 +68,27 @@ def columns_for(context: str, publish_departments: Sequence[str]) -> list[Column
     return columns
 
 
-def publish_state(hip_mtime: float | None, export_mtime: float | None) -> str:
+def publish_state(
+    hip_mtime: float | None,
+    export_mtime: float | None,
+    shared: bool = False,
+) -> str:
     """A department's publish cell, from its newest workfile and export.
 
     The same rule as ``_publish.is_out_of_date``: stale when the workfile
     was saved after the latest export.
+
+    ``shared`` means the workfile is a Multi's, not the entity's own. A
+    Multi covers every member for its departments, but its workfile need
+    not export them all (HideAndReek's Backgrounds environment exports one
+    shot of twenty), so a member it has never exported is UNCLAIMED rather
+    than NEVER: nothing says that workfile publishes it. Once it has, the
+    member's cell is stale or current like any other.
     """
     if hip_mtime is None:
         return NONE
     if export_mtime is None:
-        return NEVER
+        return UNCLAIMED if shared else NEVER
     return STALE if hip_mtime > export_mtime else CURRENT
 
 
@@ -150,6 +164,39 @@ def row_kinds(uri: str, columns: Sequence[Column], ticks: set) -> list[str]:
     """The step kinds ticked on one row, in ``KINDS`` order."""
     ticked = {c.kind for c in columns if (uri, c.key) in ticks}
     return [kind for kind in KINDS if kind in ticked]
+
+
+def ticked_kinds(columns: Sequence[Column], ticks: set) -> list[str]:
+    """The step kinds with at least one ticked cell, in ``KINDS`` order.
+
+    The settings panel shows only these kinds' sections: a Render section
+    beside a grid that submits no render is settings for nothing.
+    """
+    kind_of = {c.key: c.kind for c in columns}
+    ticked = {kind_of.get(key) for _uri, key in ticks}
+    return [kind for kind in KINDS if kind in ticked]
+
+
+def opened_ticks(
+    uris: Iterable[str],
+    columns: Sequence[Column],
+    kinds: Sequence[str],
+    department: str | None = None,
+) -> set:
+    """The cells ticked when the grid opens for ``uris``.
+
+    Every ``kinds`` column of each row, except that a ``department`` (the
+    open workfile's) narrows the publish columns to that department's: the
+    grid opened from an animation workfile means "publish my animation",
+    not every department of the shot.
+    """
+    return {
+        (uri, c.key)
+        for uri in uris
+        for c in columns
+        if c.kind in kinds
+        and (c.kind != PUBLISH or department is None or c.department == department)
+    }
 
 
 def row_publish_departments(uri: str, columns: Sequence[Column], ticks: set) -> list[str]:

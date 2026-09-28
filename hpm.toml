@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.54.2"
+version = "1.55.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -304,8 +304,11 @@ cmd = [
 # the unlabeled build/lifecycle scripts (build-resolver, compile-hdas,
 # tt_setup) stay hidden from users. Supported since hpm 0.23 (deployed
 # HPM_VERSION is v0.25).
+#
+# Addressed through $HPM_PACKAGE_ROOT like [scripts.farm] below: the desktop
+# runs scripts from the project dir, where a bare relative path doesn't exist.
 [scripts.migrate-config]
-cmd = "python scripts/migrate_config.py"
+cmd = "python \"$HPM_PACKAGE_ROOT/scripts/migrate_config.py\""
 python = "3.11"
 label = "Migrate Project Config"
 description = "Bring this project's _config layout up to the current pipeline version"

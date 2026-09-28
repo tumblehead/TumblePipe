@@ -15,8 +15,8 @@ tells you when there is none.
 |---|---|---|
 | **Save** | Save current scene | Saves the scene as the **next workfile version** of its own context (never in place). With *Ask for a version note on save* on (the default), a **Save Version** dialog asks "Note for the next `<dept>` version of `<entity>` (after `vNNNN`) — optional:". Cancel there aborts the save without burning a version. Status line: `Saved <file>`. |
 | **Publish** | Publish exports | Opens the process dialog (title **Process: Publish**) with every export and build task for the scene's entity, current department **and all departments downstream of it**. See below. |
-| **Render** | Submit render jobs for the current scene's entity | Opens the [Farm Submit dialog](submit-jobs.md) with the loaded scene's entity's **Render** cell ticked — or every member's, for a Multi workfile — and the Playblast / Render cut pinned to the workfile's department. Only shots, assets and Multis of them can be submitted. |
-| **Farm Submit** | Publish, playblast and render any shots on the farm | Opens the [Farm Submit dialog](submit-jobs.md) with every shot (every asset, when the loaded scene is an asset's) and nothing ticked. Works with no scene loaded. |
+| **Render** | Submit render jobs for the current scene's entity | Opens the [Farm Submit dialog](submit-jobs.md) with the loaded scene's entity's **Render** cell ticked — or every member's, for a Multi workfile — and the Playblast / Render cut pinned to the workfile's department. With no pipeline workfile loaded it opens with nothing ticked. |
+| **Farm Submit** | Publish, playblast and render any shots on the farm | Opens the [Farm Submit dialog](submit-jobs.md) with every shot (every asset, when the loaded scene is an asset's) and the loaded workfile's entity's publish cell for its department ticked (every member's, for a Multi workfile). Works with no scene loaded, with nothing ticked. |
 | **Update** | Re-import latest published versions into the current scene (no scene reload) | Re-executes every import node in place (`import_shot`, `import_assets`, `import_asset`, `import_layer`, `import_rigs`, `import_rig`, `import_model`), so `current` and `latest` pick up the newest publish. Status line: `Imports updated to latest published versions (N node(s)).` If any node fails you get a warning dialog instead — the scene may still reference older versions. |
 | **Reload** | Reload current scene | Reloads the hip from disk. Unsaved changes get the **Save Scene** prompt ("Save a new version before switching?" with **Save new version** / **Discard changes** / **Cancel**) — or a silent version-up when *Autosave (version up) on scene change* is on. After the load the timeline is re-applied and, if *Auto-import latest on workfile open* is on, imports are refreshed. |
 
@@ -24,7 +24,7 @@ Right-clicking **Save** offers **Emergency Save (off-thread)**: an inline
 save for when Houdini is wedged behind its crash-report dialog and the
 normal queued save never lands. It never prompts for a note.
 
-Save, Publish and Render all say so in a dialog when the scene has no
+Save and Publish say so in a dialog when the scene has no
 pipeline context, e.g. "Publish: the loaded scene has no pipeline context,
 so there is nothing to publish. Save the scene through the pipeline first."
 The background preferences these actions consult are described in

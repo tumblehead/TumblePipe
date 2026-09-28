@@ -20,9 +20,12 @@ Submit writes a plan and hands it to a separate process
 closes: Houdini is free in seconds however large the submission, and a
 non-modal status window (``farm_submission_window``) follows the progress.
 
-Opened from the Render quick action or a card's **Submit Jobs…**, the grid
-has those entities' Render cells ticked; from the **Farm Submit** quick action it
-opens with every entity and nothing ticked.
+The grid always lists every entity of the context. Opened from the Render
+quick action or a card's **Submit Jobs…**, it has those entities' Render
+cells ticked; from the **Farm Submit** quick action, the open workfile's
+entities have their department's publish cell ticked. With no pipeline
+workfile open, both open with nothing ticked. The settings panel shows only
+the sections of the step kinds that have a ticked cell.
 """
 
 from __future__ import annotations
@@ -74,17 +77,22 @@ BAND_COLOUR = "#262626"
 WARNING_COLOUR = STALE_COLOUR
 
 GLYPHS = {
-    grid.NONE: "·", grid.NEVER: "○", grid.STALE: "●",
+    grid.NONE: "·", grid.NEVER: "○", grid.UNCLAIMED: "○", grid.STALE: "●",
     grid.CURRENT: "✓", grid.PENDING: "…",
 }
 GLYPH_COLOURS = {
-    grid.NONE: DIM_COLOUR, grid.NEVER: NEVER_COLOUR, grid.STALE: STALE_COLOUR,
+    grid.NONE: DIM_COLOUR, grid.NEVER: NEVER_COLOUR, grid.UNCLAIMED: DIM_COLOUR,
+    grid.STALE: STALE_COLOUR,
     grid.CURRENT: CURRENT_COLOUR, grid.PENDING: DIM_COLOUR,
 }
 TIPS = {
     grid.PUBLISH: {
         grid.NONE: "no workfile for this department",
         grid.NEVER: "never exported",
+        grid.UNCLAIMED: (
+            "no workfile of its own: its Multi's workfile has never exported "
+            "it, so Select stale skips it (tick it to publish from the Multi)"
+        ),
         grid.STALE: "the workfile was saved after the last export",
         grid.CURRENT: "exported since the last workfile save",
         grid.PENDING: "reading status…",
@@ -614,7 +622,7 @@ class _CheckHeader(QHeaderView):
     def __init__(self, dialog: "SubmitJobsDialog") -> None:
         super().__init__(Qt.Horizontal, dialog)
         self._dialog = dialog
-        self.setSectionsClickable(True)
+        # Clickable is set by _build_grid: QTreeView.setHeader() resets it.
         self.setHighlightSections(False)
         self.setDefaultAlignment(Qt.AlignCenter)
 
@@ -654,7 +662,8 @@ class SubmitJobsDialog(QDialog):
             back to each entity's ``submission.render.department``.
         tick_kinds: Step kinds to tick for ``entity_uris`` —
             ``grid.RENDER`` by default, what the Render quick action and
-            **Submit Jobs…** have always meant.
+            **Submit Jobs…** have always meant; ``grid.PUBLISH`` from the
+            Farm Submit quick action, narrowed to ``department``'s column.
     """
 
     def __init__(
@@ -744,6 +753,9 @@ class SubmitJobsDialog(QDialog):
         self._refresh_timer.setInterval(0)
         self._refresh_timer.timeout.connect(self._refresh)
 
+        # Parented to Houdini's main window, a closed dialog would otherwise
+        # live on hidden, rows and all, until Houdini exits: one per open.
+        self.setAttribute(Qt.WA_DeleteOnClose)
         self.setWindowTitle("Farm Submit")
         self.setMinimumSize(1100, 640)
         # Opens wide enough for every column and the settings beside them;
@@ -776,12 +788,13 @@ class SubmitJobsDialog(QDialog):
         root.addLayout(footer)
 
         self._apply_open_department()
-        # Seed the tick state from the entities the dialog was opened for.
-        for key in opened:
-            for column in self._columns:
-                if column.kind in tick_kinds:
-                    self._ticks.add((key, column.key))
+        # Seed the tick state from the entities the dialog was opened for;
+        # the open workfile's department narrows their publish cells to its.
+        self._ticks = grid.opened_ticks(
+            opened, self._columns, tick_kinds, self._open_department,
+        )
         self._scroll_to_first_ticked(opened)
+        self._show_active_sections()
         self._reseed_form(initial=True)
         self._start_scan()
 
@@ -823,7 +836,13 @@ class SubmitJobsDialog(QDialog):
             f"<span style='color:{CURRENT_COLOUR}'>✓</span> current &nbsp; "
             f"<span style='color:{STALE_COLOUR}'>●</span> stale &nbsp; "
             f"<span style='color:{NEVER_COLOUR}'>○</span> never &nbsp; "
+            f"<span style='color:{DIM_COLOUR}'>○</span> Multi's, never "
+            f"exported &nbsp; "
             f"<span style='color:{DIM_COLOUR}'>·</span> nothing to do"
+        )
+        legend.setToolTip(
+            "Dim ○: the only workfile is a Multi's, and it has never exported "
+            "this entity. Select stale skips it; tick it to publish from the Multi."
         )
         legend.setStyleSheet(f"color: {TEXT_SECONDARY};")
         row.addWidget(legend)
@@ -859,6 +878,10 @@ class SubmitJobsDialog(QDialog):
         tree.setIndentation(0)
         tree.setMouseTracking(True)
         header = tree.header()
+        # setHeader() makes the header clickable only if the view sorts, and
+        # this one does not: without this the header checkboxes never emit
+        # sectionClicked and a click on them does nothing.
+        header.setSectionsClickable(True)
         header.setStretchLastSection(True)
         header.setMinimumSectionSize(40)
         header.resizeSection(0, 170)
@@ -1025,7 +1048,15 @@ class SubmitJobsDialog(QDialog):
         self._tree.header().viewport().update()
         self._refresh_timer.start()
 
+    def _show_active_sections(self) -> None:
+        """Show the settings sections of the step kinds that have a tick."""
+        active = grid.ticked_kinds(self._columns, self._ticks)
+        for kind, box in self._sections.items():
+            box.setVisible(kind in active)
+        self._no_settings.setVisible(not active)
+
     def _refresh(self) -> None:
+        self._show_active_sections()
         self._reseed_form()
         self._recompute_warnings()
         self._summary.setText(
@@ -1281,6 +1312,7 @@ class SubmitJobsDialog(QDialog):
                 self._states[key] = grid.publish_state(
                     status.hip_mtimes.get(column.department),
                     status.export_mtimes.get(column.department),
+                    shared=column.department in status.shared,
                 )
                 continue
             field_key = 'pb_department' if column.kind == grid.PLAYBLAST else 'render_department'
@@ -1306,12 +1338,22 @@ class SubmitJobsDialog(QDialog):
         layout = QVBoxLayout(column)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-        layout.addWidget(self._build_publish_section())
+        # One section per step kind, shown only while a cell of that kind is
+        # ticked (``_show_active_sections``): settings for a step that will
+        # not run only read as if it will.
+        self._sections: dict[str, QGroupBox] = {}
+        self._sections[grid.PUBLISH] = self._build_publish_section()
         if self._context == "shots":
-            layout.addWidget(self._build_playblast_section())
+            self._sections[grid.PLAYBLAST] = self._build_playblast_section()
         else:
             self._pb_dept = None
-        layout.addWidget(self._build_render_section())
+        self._sections[grid.RENDER] = self._build_render_section()
+        self._no_settings = QLabel("Tick a cell to see its settings.")
+        self._no_settings.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        self._no_settings.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self._no_settings)
+        for box in self._sections.values():
+            layout.addWidget(box)
         layout.addStretch(1)
 
         scroll = QScrollArea()
@@ -1321,6 +1363,8 @@ class SubmitJobsDialog(QDialog):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # The widest rows are two spin boxes sized for ⟨per entity⟩ plus a
         # label and a ↺ (about 450px); narrower clips the ↺ buttons.
+        # Measured with every section showing, so the panel keeps one width
+        # as sections come and go.
         scroll.setFixedWidth(max(480, column.minimumSizeHint().width() + 24))
         # Scrolling the panel with the wheel must not edit what passes under
         # the pointer: a spin box or combo takes the wheel even unfocused,

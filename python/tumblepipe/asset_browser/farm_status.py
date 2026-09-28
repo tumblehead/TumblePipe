@@ -36,6 +36,7 @@ class PublishProbe:
     workspace_dir: Path
     hip_base: str          # '<workfile segments>_<department>' before '_vNNNN'
     export_dir: Path       # export:/<entity>/default/<department>
+    shared: bool = False   # the workfile is a Multi's, not the entity's own
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ class RowStatus:
     uri: str
     hip_mtimes: dict[str, float | None] = field(default_factory=dict)
     export_mtimes: dict[str, float | None] = field(default_factory=dict)
+    shared: set[str] = field(default_factory=set)  # departments on a Multi's workfile
     playblast_mtime: float | None = None
     render_mtime: float | None = None
     error: str | None = None
@@ -91,6 +93,7 @@ def plan_probe(
             hip_base='_'.join(workfile_uri.segments[1:] + [department]),
             # get_export_path(..., version) minus the version folder.
             export_dir=Path(get_export_path(entity_uri, 'default', department, 'v0001')).parent,
+            shared=workfile_uri.purpose == 'groups',
         ))
 
     playblast_dir = None
@@ -182,6 +185,8 @@ def scan(probe: RowProbe) -> RowStatus:
         for publish in probe.publish:
             hip = _latest_hip(probe, publish)
             status.hip_mtimes[publish.department] = None if hip is None else _mtime(hip)
+            if publish.shared:
+                status.shared.add(publish.department)
             export = _latest_version_dir(probe, publish.export_dir)
             status.export_mtimes[publish.department] = (
                 None if export is None else _mtime(export)

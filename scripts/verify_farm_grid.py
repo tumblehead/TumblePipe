@@ -16,7 +16,9 @@ Checks:
  2. Opened for one shot, only that shot's Render cell starts ticked, and the
     opened-from department pins the preview cuts.
  3. The status scan finishes and leaves no cell pending.
- 4. A column header ticks every tickable visible cell, then clears them.
+ 4. A mouse click on a column header's checkbox ticks every tickable
+    visible cell, a second click clears them, and a click on a partly
+    ticked column fills it.
  5. A sequence row ticks its shots' tickable cells.
  6. A filter hides rows, and a header toggle then only reaches visible ones.
  7. Select stale ticks exactly the stale and never-done cells.
@@ -29,6 +31,15 @@ Checks:
     refuses before it ever contacts Deadline).
 11. The mouse wheel over an unfocused settings field scrolls the panel
     instead of editing (and so pinning) the field.
+12. The settings panel shows only the sections of the ticked step kinds,
+    and a hint when nothing is ticked.
+13. Opened the way the Farm Submit quick action opens it — the workfile's
+    shot, Publish, its department — only that department's publish cell
+    is ticked; opened with no workfile, every row and nothing ticked.
+14. A department whose only workfile is a Multi's that has never exported
+    the entity is unclaimed: tickable, but Select stale leaves it alone.
+15. A closed dialog is deleted, not kept hidden under its parent (Houdini's
+    main window) until Houdini exits.
 """
 
 from __future__ import annotations
@@ -124,14 +135,34 @@ def main() -> int:
           f"{len(errors)} row errors")
 
     # ── 4-7: tick operations ──────────────────────────────
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    def click_header(logical: int) -> None:
+        # A real click, not _on_header_clicked(): the header must be
+        # clickable for Qt to emit sectionClicked at all, and once was not.
+        header = dlg._tree.header()
+        x = header.sectionViewportPosition(logical) + header.sectionSize(logical) // 2
+        QTest.mouseClick(header.viewport(), Qt.LeftButton, Qt.NoModifier,
+                         QPoint(x, header.height() - 12))
+        app.processEvents()
+
+    dlg.show()
+    app.processEvents()
     dlg._clear_ticks()
     render_col = next(i for i, c in enumerate(dlg._columns, 1) if c.kind == grid.RENDER)
-    dlg._on_header_clicked(render_col)
+    click_header(render_col)
     tickable = {(u, grid.RENDER) for u in uris if dlg._tickable(u, grid.RENDER)}
-    check("4. a column header ticks every tickable cell in it",
+    check("4. clicking a column header ticks every tickable cell in it",
           dlg._ticks == tickable, f"{len(tickable)} cells")
-    dlg._on_header_clicked(render_col)
+    click_header(render_col)
     check("4. ...and clears them on the second click", not dlg._ticks)
+    dlg._ticks = {(str(shot), grid.RENDER)}
+    click_header(render_col)
+    check("4. ...and a click on a partly ticked column fills it",
+          dlg._ticks == tickable, f"{len(dlg._ticks)} cells")
+    dlg._clear_ticks()
+    dlg.hide()
 
     group = dlg._group_key(str(shot))
     dlg._toggle(dlg._group_keys(group))
@@ -156,6 +187,20 @@ def main() -> int:
     dlg._select_stale()
     check("7. Select stale ticks exactly the stale and never-done cells",
           dlg._ticks == set(grid.stale_keys(dlg._states)), f"{len(dlg._ticks)} cells")
+
+    # ── 14: a Multi's workfile only claims what it exported ──
+    unclaimed = {
+        (uri, grid.publish_key(dept))
+        for uri, status in dlg._statuses.items()
+        for dept in status.shared
+        if status.hip_mtimes.get(dept) is not None
+        and status.export_mtimes.get(dept) is None
+    }
+    check("14. a Multi's never-exported members are unclaimed and not selected as stale",
+          all(dlg._states.get(key) == grid.UNCLAIMED for key in unclaimed)
+          and not (unclaimed & dlg._ticks)
+          and all(dlg._tickable(*key) for key in unclaimed),
+          f"{len(unclaimed)} unclaimed cells")
     dlg._clear_ticks()
 
     # ── 8: what a row resolves to ─────────────────────────
@@ -189,8 +234,31 @@ def main() -> int:
               frame_start is None or settings.get("first_frame") == frame_start,
               f"{settings.get('first_frame')}-{settings.get('last_frame')}")
 
+    # ── 12: only the ticked kinds' settings show ─────────
+    def shown() -> list:
+        return [k for k, box in dlg._sections.items() if not box.isHidden()]
+
+    dlg._ticks = {(str(shot), grid.RENDER)}
+    dlg._refresh()
+    check("12. a Render tick shows only the Render settings",
+          shown() == [grid.RENDER] and dlg._no_settings.isHidden(), f"{shown()}")
+    dlg._ticks = {(str(shot), grid.PLAYBLAST), (str(shots[1]), grid.publish_key(publish[0]))}
+    dlg._refresh()
+    check("12. Publish and Playblast ticks show those two sections",
+          shown() == [grid.PUBLISH, grid.PLAYBLAST], f"{shown()}")
+    dlg._clear_ticks()
+    dlg._refresh()
+    check("12. nothing ticked shows the hint and no section",
+          not shown() and not dlg._no_settings.isHidden(), f"{shown()}")
+
     # ── 11: the wheel scrolls the settings, never edits them ──
-    from PySide6.QtCore import QPoint, QPointF, Qt
+    # Every section showing, so the panel is tall enough to scroll.
+    dlg._ticks = {
+        (str(shot), grid.RENDER), (str(shot), grid.PLAYBLAST),
+        (str(shot), grid.publish_key(publish[0])),
+    }
+    dlg._refresh()
+    from PySide6.QtCore import QPointF
     from PySide6.QtGui import QWheelEvent
 
     def wheel(widget, dy):
@@ -225,6 +293,37 @@ def main() -> int:
         dlg.grab().save(shot_path)
         print(f"screenshot: {shot_path}")
     dlg.reject()
+
+    # ── 13: how the Farm Submit quick action opens it ────
+    farm_dept = publish[-1]
+    farm = mod.SubmitJobsDialog(
+        [shot], [shot.segments[-1]], "shots",
+        department=farm_dept, tick_kinds=(grid.PUBLISH,),
+    )
+    check("13. from a workfile only its department's publish cell is ticked",
+          farm._ticks == {(str(shot), grid.publish_key(farm_dept))}
+          and [k for k, b in farm._sections.items() if not b.isHidden()] == [grid.PUBLISH],
+          f"{sorted(farm._ticks)}")
+    farm.reject()
+    bare = mod.SubmitJobsDialog([], [], "shots", tick_kinds=(grid.PUBLISH,))
+    check("13. with no workfile every row is listed and nothing ticked",
+          not bare._ticks and set(bare._uris) >= {str(u) for u in shots},
+          f"{len(bare._uris)} rows")
+    bare.reject()
+
+    # ── 15: closing deletes the dialog ────────────────────
+    from PySide6.QtCore import QEvent
+    from PySide6.QtWidgets import QWidget
+    main_window = QWidget()  # stands in for hou.qt.mainWindow()
+    owned = mod.SubmitJobsDialog([], [], "shots", parent=main_window, tick_kinds=())
+    owned.show()
+    app.processEvents()
+    owned.reject()
+    app.sendPostedEvents(None, QEvent.DeferredDelete)
+    left = main_window.findChildren(mod.SubmitJobsDialog)
+    check("15. a closed dialog is deleted, not left under its parent",
+          not left, f"{len(left)} left")
+    main_window.deleteLater()
 
     # ── 9: a real snapshot in this interpreter ────────────
     staged = next(
