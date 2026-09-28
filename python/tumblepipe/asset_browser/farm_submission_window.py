@@ -58,11 +58,14 @@ QHeaderView::section {{
 }}
 QProgressBar {{
     background-color: {BG_DARK};
-    border: none;
-    border-radius: 2px;
-    max-height: 4px;
+    border: 1px solid {BORDER};
+    border-radius: 4px;
+    min-height: 28px;
+    max-height: 28px;
+    color: {TEXT_PRIMARY};
+    font-weight: 600;
+    text-align: center;
 }}
-QProgressBar::chunk {{ background-color: {ACCENT}; border-radius: 2px; }}
 QPushButton {{
     background-color: {BG_DARK};
     border: 1px solid {BORDER};
@@ -71,6 +74,22 @@ QPushButton {{
 }}
 QPushButton:hover {{ border-color: {ACCENT}; }}
 """ + VISIBLE_SCROLLBARS
+
+
+# The Close button once a submission finished cleanly. Border and padding are
+# set with the colour: Houdini's style draws a button that only gets a
+# background colour as bare text.
+_DONE_BUTTON_STYLE = f"""
+QPushButton {{
+    background-color: {DONE_COLOUR};
+    color: #ffffff;
+    font-weight: 600;
+    border: 1px solid {DONE_COLOUR};
+    border-radius: 4px;
+    padding: 5px 14px;
+}}
+QPushButton:hover {{ background-color: #35c095; border-color: #35c095; }}
+"""
 
 
 class FarmSubmissionWindow(QWidget):
@@ -107,10 +126,6 @@ class FarmSubmissionWindow(QWidget):
         root.setContentsMargins(16, 14, 16, 12)
         root.setSpacing(10)
 
-        self._title = QLabel()
-        self._title.setStyleSheet("font-weight: 600;")
-        root.addWidget(self._title)
-
         self._table = QTreeWidget()
         self._table.setRootIsDecorated(False)
         self._table.setAlternatingRowColors(True)
@@ -127,18 +142,22 @@ class FarmSubmissionWindow(QWidget):
         root.addWidget(self._table, 1)
 
         # Below the rows it counts, beside the note and buttons it leads to.
+        # It carries the summary ("Submitting… 3 of 20 · 1 failed") itself,
+        # so there is one place to look.
         self._bar = QProgressBar()
-        self._bar.setTextVisible(False)
+        self._bar.setTextVisible(True)
+        self._bar.setAlignment(Qt.AlignCenter)
         self._bar.setRange(0, max(1, len(self._configs)))
+        self._bar_colour = None
         root.addWidget(self._bar)
 
-        note = QLabel(
+        self._note = QLabel(
             "Runs in its own process: keep working, or close this window. "
             "Closing it does not stop the submission."
         )
-        note.setWordWrap(True)
-        note.setStyleSheet(f"color: {TEXT_SECONDARY};")
-        root.addWidget(note)
+        self._note.setWordWrap(True)
+        self._note.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        root.addWidget(self._note)
 
         buttons = QHBoxLayout()
         log_btn = QPushButton("Open log folder")
@@ -151,9 +170,11 @@ class FarmSubmissionWindow(QWidget):
         self._retry.setVisible(False)
         self._retry.clicked.connect(self._retry_failed)
         buttons.addWidget(self._retry)
-        hide_btn = QPushButton("Hide")
-        hide_btn.clicked.connect(self.close)
-        buttons.addWidget(hide_btn)
+        # "Hide" while the submission runs (closing does not stop it);
+        # "Close" once it is over — green when nothing failed.
+        self._close = QPushButton("Hide")
+        self._close.clicked.connect(self.close)
+        buttons.addWidget(self._close)
         root.addLayout(buttons)
 
         self._timer = QTimer(self)
@@ -225,8 +246,30 @@ class FarmSubmissionWindow(QWidget):
             text = f"Submitting… {done + failed} of {total}"
         if failed:
             text += f" · {failed} failed"
-        self._title.setText(text)
+        # QProgressBar's format expands %p/%v/%m; a literal % must be doubled.
+        self._bar.setFormat(text.replace('%', '%%'))
+        # The fill says how it is going: accent while running, green for a
+        # clean finish, amber once anything failed.
+        if failed:
+            colour = FAILED_COLOUR
+        elif self._state['finished']:
+            colour = DONE_COLOUR
+        else:
+            colour = ACCENT
+        if colour != self._bar_colour:
+            self._bar_colour = colour
+            self._bar.setStyleSheet(
+                f"QProgressBar::chunk {{ background-color: {colour}; border-radius: 3px; }}"
+            )
         self._retry.setVisible(bool(failed) and self._state['finished'])
+        if self._state['finished']:
+            # "Closing it does not stop the submission" is moot once it has
+            # stopped by itself.
+            self._note.hide()
+            self._close.setText("Close")
+            # Green only for a clean run: after failures Retry failed is the
+            # next step, and a filled Close would compete with it.
+            self._close.setStyleSheet(_DONE_BUTTON_STYLE if not failed else "")
 
     # ── actions ───────────────────────────────────────────
 

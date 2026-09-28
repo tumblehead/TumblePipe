@@ -234,7 +234,11 @@ is closed or crashes afterwards.
 
 A small non-modal **Farm submission** window follows it: one row per entity
 (`queued`, `submitting…`, `submitted · N jobs`, or `failed` with the error
-underneath), a progress bar below the rows, **Open log folder** and **Hide**.
+underneath), a progress bar below the rows carrying the summary
+(`Submitting… 3 of 20`, then `Submitted 20 of 20`, with `· N failed` when
+any did; green once done cleanly, amber if anything failed), **Open log
+folder** and **Hide**. Once the submission is over, **Hide** becomes
+**Close** — green after a clean run.
 When a finished submission has failures, **Retry failed** appears beside them:
 it submits just the failed entities again, as a new submission. Closing the
 window does not stop the submission.

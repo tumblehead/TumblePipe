@@ -12,6 +12,25 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.56.0 — 2026-09-28
+
+### Features
+- feat(farm): a Farm Submit confirmation that says what it sends (`90670e1`)
+
+### Fixes
+- fix(farm): a farm publish no longer saves a new workfile version (`6bdb77a`)
+- fix(farm): bundle only a workfile version whose save has finished (`fae902d`)
+- fix(houdini): network thumbnails do nothing without a UI instead of raising (`d54a023`)
+- fix(export): an uncookable input is a failure that quotes the cook error (`b8f5a58`)
+- fix(farm): farm jobs install the project's packages, not TumblePipe alone (`0399ba7`)
+- fix(farm): the submission window shows Retry failed only after failures (`a89915c`)
+
+### Documentation
+- docs: farm publishes don't save a workfile; bundles skip half-saved versions (`0000e4d`)
+- docs: farm jobs carry the project's packages; the uncookable-input error (`cf4d042`)
+- docs: the Farm Submit confirmation and the submission window's layout (`fa7640a`)
+- docs: regenerate CHANGELOG.md for v1.55.0 (`d88c8ce`)
+
 ## v1.55.0 — 2026-09-28
 
 ### Features
