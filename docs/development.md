@@ -456,7 +456,10 @@ warnings, what a row submits), `tests/test_farm_submission.py` (explicit
 publish departments, the collapse task's config, the worker-thread status
 scan, the plan and progress files) and `tests/test_farm_launcher.py` (version
 ranges, replaying the Houdini package files, picking Houdini's own Python).
-The per-entity settings resolution keeps its own tests in
+`tests/test_farm_job_manifest.py` pins the job's `hpm.toml` (the project's
+dependencies, runtime and registries, the task's package pinned; where the
+project manifest is found) and the `.hpm/packages` dir the worker's hython
+loads. The per-entity settings resolution keeps its own tests in
 `tests/test_submit_jobs_resolve.py`.
 
 **Mutation-testing these, a trap.** Python reuses a module's `.pyc` when the

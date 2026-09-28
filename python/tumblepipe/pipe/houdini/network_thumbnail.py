@@ -18,7 +18,11 @@ from pathlib import Path
 from typing import Union
 
 import hou
-import nodegraphutils
+
+# nodegraphutils is imported where it is used (_persist), not here: it reads
+# hou.ui at import time, and the import_* HDAs' OnDeleted/OnNameChanged
+# scripts import this module in hython too — a farm job tearing its scene
+# down printed one AttributeError traceback per import node.
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +61,8 @@ def _resolve_editor(editor=None):
     (e.g. drop landed on a scene viewer or Houdini was launched
     headless).
     """
+    if not hou.isUIAvailable():
+        return None  # hython / farm: there is no network editor to draw in
     if editor is not None and isinstance(editor, hou.NetworkEditor):
         return editor
     desktop = hou.ui.curDesktop()
@@ -71,6 +77,8 @@ def _resolve_editor(editor=None):
 def _persist(editor) -> None:
     """Save + reload the editor's current parent's background images
     so the change survives hip save/reopen."""
+    import nodegraphutils
+
     parent = editor.pwd()
     if parent is None:
         return

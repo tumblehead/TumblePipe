@@ -188,7 +188,8 @@ Farm mode submits instead of writing:
 - each `Export (<channel>)` child submits a **publish** job for the
   department (plus the *Downstream Exports* ticked on the node), bundling
   the department's **latest saved workfile** — so an unsaved edit is not
-  what the farm exports. It needs a Deadline pool and a priority (the node's
+  what the farm exports. A version still being saved is passed over for the
+  one before it. It needs a Deadline pool and a priority (the node's
   **Pool** / **Priority** parms); you get a **Farm Export Submitted** dialog
   naming the department and downstream departments, and the node's comment
   reads `farm export submitted`. A submission error shows
@@ -197,8 +198,12 @@ Farm mode submits instead of writing:
   pool `houdini`).
 
 The farm publish task runs the same export code headlessly, then posts a
-Discord notify; after a *renderable* asset department publishes it also
-queues the asset's build. Validation on the farm has no dialog: a failing
+Discord notify. It does **not** save a new workfile version: the export
+records what was published, and the workfile stays yours. (Through 1.55.0 it
+did, which gave a Multi's workfile one new version per shot published, each
+of the scene its job had loaded — possibly older than your latest save.)
+After a *renderable* asset department publishes it also queues the asset's
+build. Validation on the farm has no dialog: a failing
 validator fails the job. What each job family chains is tabulated in
 [Submitting to the farm](submit-jobs.md#job-families).
 
@@ -259,6 +264,7 @@ up in the Error Report:
 | `Frame range could not be determined for entity: …` | The entity's config resolves no frame range. Set one on the entity, or switch the node's frame range source to **From settings**. |
 | `Export aborted: channel '<x>' is not a channel of <entity> (listed: …)` | The node's **Channel** parm names an unlisted channel; it would otherwise publish under `default`. Fix the parm or register the channel. See [Channels](../composition.md#channels-and-why-they-are-not-usd-variants). |
 | *skipped* — `Nothing exported for channel '<x>': the node <path> has no stage input connected.` | Not a failure: a disconnected export node is skipped and its siblings still run. |
+| `Nothing exported for channel '<x>': the input of <path> failed to cook.` followed by `Cook error:` | The node is connected, but what feeds it errored — look for the red node upstream; the quoted error names it. On the farm, a rig that cooks at your desk but not here usually means a package the project uses is missing from the job (see [Farm job: rig fails to compile](../troubleshooting.md#farm-job-failed-rig-fails-to-compile-failed-to-load-subnet)). |
 | `Export aborted: asset(s) on the stage carry no pipeline metadata …` / `… asset(s) configured on upstream import nodes carry no pipeline metadata …` | An imported asset lost its `customData` tag and would vanish downstream. Re-run the import node (its **Import** button) and re-export; to bake an asset in on purpose set the import node's *Import Mode* to Inline. See [Dropped-metadata guard](../composition.md#dropped-metadata-guard). |
 | `Export aborted: the exported layer composes geometry from path(s) outside the export folder …` | A sublayer/reference/payload escapes the version folder — usually a LOP with **Enable Layer Save Path** on (Houdini 22's default on new SOP Create / SOP Import nodes). Disable it and re-export. Versioned `th::cache` locations are exempt. See [Layer save paths and export portability](../composition.md#layer-save-paths-and-export-portability). |
 | `Export aborted: the exported layer composes geometry from path(s) that do not exist …` | A dangling arc (e.g. a payload anchored to a machine-local scratch path); the published asset would import empty. Same section as above. |

@@ -278,6 +278,37 @@ def finish_row_settings(settings: dict, publish_departments: Sequence[str]) -> d
     return out
 
 
+def breakdown(
+    uris: Sequence[str],
+    columns: Sequence[Column],
+    ticks: set,
+) -> tuple[dict[str, int], dict[str, int], int]:
+    """What a submission holds: ``(per kind, per publish department, rows)``.
+
+    Kinds with nothing ticked are left out; publish departments come in
+    column (pool) order. The confirmation lists these, one line per kind.
+    """
+    kinds: dict[str, int] = {}
+    departments: dict[str, int] = {}
+    rows = 0
+    for uri in uris:
+        touched = False
+        for column in columns:
+            if (uri, column.key) not in ticks:
+                continue
+            touched = True
+            kinds[column.kind] = kinds.get(column.kind, 0) + 1
+            if column.kind == PUBLISH:
+                departments[column.department] = departments.get(column.department, 0) + 1
+        rows += touched
+    ordered_kinds = {kind: kinds[kind] for kind in KINDS if kind in kinds}
+    ordered_departments = {
+        c.department: departments[c.department]
+        for c in columns if c.kind == PUBLISH and c.department in departments
+    }
+    return ordered_kinds, ordered_departments, rows
+
+
 def summary(
     uris: Sequence[str],
     columns: Sequence[Column],

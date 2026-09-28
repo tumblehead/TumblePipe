@@ -308,6 +308,30 @@ the pipeline's default major (21) rather than the Houdini you are running, so
 it failed on any machine with only Houdini 22 installed. Later releases use
 the running Houdini's own version.
 
+### Farm job failed: `Invalid .hip file header`
+
+The job loads the workfile the submitter bundled into
+`export/other/jobs/<id>/data/workfiles/`, and that copy was cut short: it was
+taken while the version was still being saved. Through 1.55.0 every farm
+publish saved a new workfile version when it finished, so a batch publishing a
+Multi's shots kept writing new versions of that one workfile, and a later
+submission could bundle one mid-write. Later releases bundle only a version
+whose save has finished, and farm publishes no longer save a workfile at all.
+Resubmit from a current TumblePipe.
+
+### Farm job failed: rig fails to compile, Failed to load subnet
+
+An animation publish on the farm whose rig compiles at your desk. Through
+1.55.0 a farm job carried TumblePipe as its only package, so the worker's
+hython loaded no other: a TumbleRig rig could not find its components
+(`Failed to load subnet /fkik_01`, `/spline_01`, …) and every `th::animate`
+node failed. It surfaced as `the node /stage/Export_<shot> has no stage input
+connected`, which pointed at the wiring instead. Later releases build the job's
+`hpm.toml` from the project's own, so the worker sets up the project's packages
+(see [Worker prerequisites](deadline.md)); resubmit from a current TumblePipe.
+If the job log warns *No project hpm.toml found*, the submitter could not find
+the project — launch Houdini from TumbleTrove Desktop.
+
 ### Farm job failed: `Required env var 'TH_PROJECT_PATH' for package 'tumblepipe' has no value`
 
 The job's bundled `hpm.toml` did not supply `TH_PROJECT_PATH`, which

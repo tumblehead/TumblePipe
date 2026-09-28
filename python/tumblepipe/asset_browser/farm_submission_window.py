@@ -110,10 +110,6 @@ class FarmSubmissionWindow(QWidget):
         self._title = QLabel()
         self._title.setStyleSheet("font-weight: 600;")
         root.addWidget(self._title)
-        self._bar = QProgressBar()
-        self._bar.setTextVisible(False)
-        self._bar.setRange(0, max(1, len(self._configs)))
-        root.addWidget(self._bar)
 
         self._table = QTreeWidget()
         self._table.setRootIsDecorated(False)
@@ -130,6 +126,12 @@ class FarmSubmissionWindow(QWidget):
             self._items[uri] = item
         root.addWidget(self._table, 1)
 
+        # Below the rows it counts, beside the note and buttons it leads to.
+        self._bar = QProgressBar()
+        self._bar.setTextVisible(False)
+        self._bar.setRange(0, max(1, len(self._configs)))
+        root.addWidget(self._bar)
+
         note = QLabel(
             "Runs in its own process: keep working, or close this window. "
             "Closing it does not stop the submission."
@@ -144,7 +146,9 @@ class FarmSubmissionWindow(QWidget):
         buttons.addWidget(log_btn)
         buttons.addStretch(1)
         self._retry = QPushButton("Retry failed")
-        self._retry.setEnabled(False)
+        # Shown only once a finished run has failures: a greyed-out retry
+        # beside a clean run read as if something had gone wrong.
+        self._retry.setVisible(False)
         self._retry.clicked.connect(self._retry_failed)
         buttons.addWidget(self._retry)
         hide_btn = QPushButton("Hide")
@@ -222,7 +226,7 @@ class FarmSubmissionWindow(QWidget):
         if failed:
             text += f" · {failed} failed"
         self._title.setText(text)
-        self._retry.setEnabled(bool(failed) and self._state['finished'])
+        self._retry.setVisible(bool(failed) and self._state['finished'])
 
     # ── actions ───────────────────────────────────────────
 

@@ -128,6 +128,18 @@ The Warnings column says, per row, what the submission would run into:
 - `department '<x>' is not assigned to this entity` — the pool still
   composes it, so this is a warning, not a block.
 
+### Before it submits
+
+Submitting more than one entity, or anything with a warning, first asks
+**Submit to the farm?** It lists what will be sent — one line per step kind,
+with the publishes broken down by department — and how many entities that
+covers. Previews that would show stale, unticked departments get their own
+amber section naming them per entity, and a **Tick those publishes** button
+that ticks exactly those departments and takes you back to the grid to check
+before submitting. Any other warnings are listed below that. **Submit N
+steps** sends it (Enter does the same); **Back** returns to the grid with
+nothing changed.
+
 ## The settings
 
 The right-hand column holds the settings for the ticked cells, in three
@@ -222,9 +234,10 @@ is closed or crashes afterwards.
 
 A small non-modal **Farm submission** window follows it: one row per entity
 (`queued`, `submitting…`, `submitted · N jobs`, or `failed` with the error
-underneath), a progress bar, **Open log folder**, **Retry failed** (submits
-just the failed entities again, as a new submission) and **Hide**. Closing it
-does not stop the submission.
+underneath), a progress bar below the rows, **Open log folder** and **Hide**.
+When a finished submission has failures, **Retry failed** appears beside them:
+it submits just the failed entities again, as a new submission. Closing the
+window does not stop the submission.
 
 Each submission keeps its files in its own folder under
 `temp:/farm_submissions/` (machine-local): `plan.json` (the settings sent for

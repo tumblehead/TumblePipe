@@ -18,7 +18,9 @@ from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import list_departments
 from tumblepipe.config.groups import get_group
 from tumblepipe.config.channels import list_channels
-from tumblepipe.pipe.paths import next_staged_file_path, latest_hip_file_path
+from tumblepipe.pipe.paths import (
+    latest_complete_hip_file_path, latest_hip_file_path, next_staged_file_path,
+)
 from tumblepipe.apps.deadline import Job
 from tumblepipe.pipe import graph
 from tumblepipe.farm.jobs.houdini import _common
@@ -175,7 +177,8 @@ def build(
 
     # Helper to create a publish job for a given entity URI and department
     def _create_publish_job_for_entity(target_uri, dept_name, job_name_suffix=''):
-        workfile_path = latest_hip_file_path(target_uri, dept_name)
+        # The newest finished version; see _publish.create_publish_job.
+        workfile_path = latest_complete_hip_file_path(target_uri, dept_name)
         if workfile_path is None or not workfile_path.exists():
             return None
 

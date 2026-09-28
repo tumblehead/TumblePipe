@@ -20,9 +20,6 @@ from tumblepipe.pipe.houdini.lops import (
 from tumblepipe.pipe.houdini.cops import (
     build_comp
 )
-from tumblepipe.pipe.context import (
-    commit_next_workfile,
-)
 
 # Helpers
 def _headline(title):
@@ -210,9 +207,7 @@ def _publish(entity_uri: Uri, department_name: str):
         print(f'Published {shot_export_node.path()}')
 
     # Get entity type from URI. Failures raise so main()'s per-department
-    # handler records them and the task exits non-zero — a discarded error
-    # return here previously let _save() bump a version after a no-op
-    # publish and report success.
+    # handler records them and the task exits non-zero.
     if entity_uri.purpose == 'groups':
         # Expand group to member shots/assets
         group = get_group(entity_uri)
@@ -244,13 +239,6 @@ def _publish(entity_uri: Uri, department_name: str):
         )
     else:
         raise RuntimeError(f'Invalid entity type: {entity_uri.segments[0]}')
-
-def _save(entity_uri: Uri, department_name: str):
-    # Reserve + save + record the next version atomically. prev_context=None:
-    # a publish continues the department's existing lineage, so save_context
-    # grounds from_version in the real on-disk predecessor rather than
-    # re-anchoring the chain to v0000.
-    commit_next_workfile(entity_uri, department_name)
 
 def _load_workfile(bundled_path: Path, force_reload: bool = True) -> bool:
     """Load bundled workfile. Returns True if successful."""
@@ -336,13 +324,14 @@ def main(config) -> int:
             _headline('Updating')
             _update()
 
-            # Publish the department
+            # Publish the department. The workfile is not saved afterwards:
+            # the export records what was published, and the workfile stays
+            # the artist's. Saving a new version here meant one version per
+            # published shot of a Multi workfile, each of the scene its job
+            # had loaded - which could land on top of an artist's newer save,
+            # and a submission could bundle one of them half-written.
             _headline('Publishing')
             _publish(curr_entity_uri, curr_dept_name)
-
-            # Save new version
-            _headline('Saving')
-            _save(curr_entity_uri, curr_dept_name)
 
         except Exception as e:
             import traceback

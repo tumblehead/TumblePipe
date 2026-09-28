@@ -40,6 +40,10 @@ Checks:
     the entity is unclaimed: tickable, but Select stale leaves it alone.
 15. A closed dialog is deleted, not kept hidden under its parent (Houdini's
     main window) until Houdini exits.
+16. The submit confirmation: Submit is its one default button; a preview over
+    stale, unticked departments lists them, and "Tick those publishes" ticks
+    exactly those and returns to the grid without submitting; Back submits
+    nothing.
 """
 
 from __future__ import annotations
@@ -324,6 +328,59 @@ def main() -> int:
     check("15. a closed dialog is deleted, not left under its parent",
           not left, f"{len(left)} left")
     main_window.deleteLater()
+
+    # ── 16: the submit confirmation ───────────────────────
+    confirm_dlg = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    wait_for_scan(confirm_dlg)
+    preview_shot = next(
+        (u for u in confirm_dlg._uris
+         if confirm_dlg._tickable(u, grid.PLAYBLAST)
+         and any(confirm_dlg._states.get((u, c.key)) in grid.NEEDS_WORK
+                 for c in confirm_dlg._columns if c.kind == grid.PUBLISH)),
+        None,
+    )
+    if preview_shot is None:
+        print("SKIP: 16. no shot with a playblast over stale publishes")
+    else:
+        seen: dict = {}
+        submitted: list = []
+        real_exec, real_start = mod._ConfirmSubmit.exec, mod.start_submission
+
+        def fake_exec(choice):
+            def run(confirm):
+                buttons = confirm.findChildren(mod.QPushButton)
+                seen["default"] = [b.text() for b in buttons if b.isDefault()]
+                return choice
+            return run
+
+        def no_submission(*args, **kwargs):
+            submitted.append(args)
+            raise RuntimeError("verify: the submission must not start")
+
+        mod.start_submission = no_submission
+        try:
+            confirm_dlg._ticks = {(preview_shot, grid.PLAYBLAST)}
+            confirm_dlg._refresh()
+            settings = confirm_dlg._resolved_rows()[0][1]
+            missing = confirm_dlg._stale_upstream(preview_shot, settings)
+            mod._ConfirmSubmit.exec = fake_exec(0)
+            confirm_dlg._on_submit()
+            back_ok = not submitted and confirm_dlg._ticks == {(preview_shot, grid.PLAYBLAST)}
+            mod._ConfirmSubmit.exec = fake_exec(mod._ConfirmSubmit.TICK_STALE)
+            confirm_dlg._on_submit()
+            added = confirm_dlg._ticks - {(preview_shot, grid.PLAYBLAST)}
+        finally:
+            mod._ConfirmSubmit.exec, mod.start_submission = real_exec, real_start
+        check("16. Submit is the confirmation's one default button",
+              len(seen.get("default", [])) == 1
+              and seen["default"][0].startswith("Submit"),
+              f"{seen.get('default')}")
+        check("16. Back submits nothing and changes no tick", back_ok)
+        check("16. Tick those publishes ticks exactly the stale departments, submits nothing",
+              missing and not submitted
+              and added == {(preview_shot, grid.publish_key(d)) for d in missing},
+              f"{preview_shot.split('/')[-1]}: {missing}")
+    confirm_dlg.reject()
 
     # ── 9: a real snapshot in this interpreter ────────────
     staged = next(

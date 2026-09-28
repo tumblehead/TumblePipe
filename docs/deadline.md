@@ -96,6 +96,18 @@ For the **HPM** plugin specifically — **no per-node setup is required**:
 - The `hpm` CLI is **self-bootstrapped** under `~/.deadline/hpm` on the first
   job (version from `HpmVersion` → `HPM_VERSION` env → the studio-pinned default
   `v0.22.2`). No manual install needed.
+- Each job carries an `hpm.toml` built from the **project's own** `hpm.toml`:
+  its `[dependencies]` (TumbleRig and anything else the project uses, at the
+  project's pinned versions — TumblePipe itself pinned to the version that
+  submitted), its `[runtime]` and its registries. The worker's `hpm install`
+  sets those packages up and writes one Houdini package file per dependency
+  into the job's `.hpm/packages/`, which is the `HOUDINI_PACKAGE_DIR` the
+  task's hython loads. So a farm task runs with the packages the artist's
+  Houdini had. The project manifest is found from `TT_PROJECT_DIR`, from a
+  Desktop Houdini's `HOUDINI_PACKAGE_DIR` (`<project>/.hpm/packages`), or — for
+  a job submitted from a worker, like a collapse submitting its playblast —
+  from the running job's own manifest. With none found, the job carries
+  TumblePipe alone and the submitter logs a warning.
 - The job manifest declares its own `[[registries]]` (read from the submitter's
   hpm config at submit time), so a render node that was never
   `hpm registry add`-ed still resolves packages — no global hpm config on the

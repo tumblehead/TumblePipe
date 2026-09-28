@@ -152,6 +152,45 @@ def latest_hip_file_path(
     if len(hip_file_paths) == 0: return None
     return hip_file_paths[-1]
 
+def is_reservation_stub(context_entry) -> bool:
+    """Whether a ``_context/{version}.json`` entry is only a claim, not a saved version.
+
+    :func:`reserve_next_hip_file_path` writes ``{"reserved": "<version>"}``
+    before the hip is saved, and ``save_context`` replaces it with the real
+    lineage entry once the save is done. Until then the hip may be missing or
+    half-written.
+    """
+    return isinstance(context_entry, dict) and set(context_entry) == {'reserved'}
+
+
+def latest_complete_hip_file_path(
+    entity_uri: Uri,
+    department_name: str
+    ) -> Optional[Path]:
+    """The newest workfile whose save has finished, for copying elsewhere.
+
+    :func:`latest_hip_file_path` returns the highest version on disk, which may
+    be one another process is still writing: its ``_context`` entry is still the
+    reservation stub. A farm submission bundled such a file mid-save — cut off
+    a megabyte short — and the job failed with "Invalid .hip file header". A
+    version with no ``_context`` entry at all (older saves) counts as finished.
+    """
+    workfile_uri, workspace_path = _resolve_workspace(entity_uri, department_name)
+    base_pattern = '_'.join(workfile_uri.segments[1:] + [department_name, '*'])
+    hip_file_paths = _list_valid_hip_files(workspace_path, base_pattern)
+    for hip_file_path in reversed(hip_file_paths):
+        version_name = api.naming.get_version_name(
+            _get_file_path_version_code(hip_file_path)
+        )
+        try:
+            entry = load_json(workspace_path / '_context' / f'{version_name}.json')
+        except (OSError, ValueError):
+            entry = None  # unreadable: judge it as a version with no entry
+        if not is_reservation_stub(entry):
+            return hip_file_path
+    return None
+
+
 def latest_hip_file_path_with_context(
     entity_uri: Uri,
     department_name: str

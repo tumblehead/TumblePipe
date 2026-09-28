@@ -7,6 +7,7 @@ attaches the hpm.toml the HPM plugin installs on a worker cache miss. The
 generic `submit()` only writes `job.manifest` into the shared job dir and hands
 the plugin its path.
 """
+import logging
 import os
 import re
 from pathlib import Path
@@ -15,6 +16,11 @@ import tomli_w
 
 from tumblepipe.api import default_client, path_str, to_windows_path
 from tumblepipe.apps.deadline import Job, hpm_package_spec
+
+log = logging.getLogger(__name__)
+
+# Default for hpm_task_manifest's ``project``: read the project's manifest.
+_LOOK_UP = object()
 
 # Captures the package-root prefix (…/.hpm/packages/<name>@<version>) of a
 # script path, whether Windows (C:/…) or WSL (/mnt/c/…) form.
@@ -105,6 +111,97 @@ def _project_runtime() -> dict:
     }
 
 
+# ── the project's own manifest ────────────────────────────
+
+# `[package].path` of the synthetic manifest below. A worker-side submission
+# (a collapse task submitting its playblast) recognises its own job by it.
+JOB_PACKAGE_PATH = 'local/deadline-hpm-job'
+
+
+def project_manifest_candidates(env) -> list:
+    """Where the project's hpm.toml may be, most specific first.
+
+    - ``$HPM_PACKAGE_ROOT/hpm.toml`` when it is a farm job's own manifest: a
+      task submitting further jobs from a worker (collapse → playblast) runs
+      inside the job `hpm run` set up, whose manifest already carries the
+      project's dependencies. Any other package root is not the project.
+    - ``$TT_PROJECT_DIR/hpm.toml``: the project TumbleTrove Desktop launched.
+    - ``<project>/.hpm/packages`` on ``HOUDINI_PACKAGE_DIR`` → ``<project>/hpm.toml``:
+      how a Desktop-launched Houdini finds its packages.
+    """
+    candidates = []
+    root = env.get('HPM_PACKAGE_ROOT')
+    if root:
+        candidates.append((Path(root) / 'hpm.toml', True))
+    project_dir = env.get('TT_PROJECT_DIR')
+    if project_dir:
+        candidates.append((Path(project_dir) / 'hpm.toml', False))
+    for entry in (env.get('HOUDINI_PACKAGE_DIR') or '').split(os.pathsep):
+        parts = Path(entry).parts if entry else ()
+        if len(parts) >= 3 and parts[-2:] == ('.hpm', 'packages'):
+            candidates.append((Path(entry).parents[1] / 'hpm.toml', False))
+    return candidates
+
+
+def read_project_manifest(env=None) -> dict | None:
+    """The project's parsed hpm.toml, or None when none can be found.
+
+    A job manifest only counts under ``$HPM_PACKAGE_ROOT``; see
+    :func:`project_manifest_candidates`.
+    """
+    import tomllib
+    env = os.environ if env is None else env
+    for path, must_be_job in project_manifest_candidates(env):
+        try:
+            data = tomllib.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        is_job = (data.get('package') or {}).get('path') == JOB_PACKAGE_PATH
+        if must_be_job and not is_job:
+            continue
+        return data
+    return None
+
+
+def job_dependencies(project: dict | None, full_name: str, version: str) -> dict:
+    """The job's `[dependencies]`: the project's, with the task's package pinned.
+
+    A farm task needs the environment the artist's Houdini had — a rigged
+    shot's animation does not cook without TumbleRig's APEX components, and a
+    job that carried TumblePipe alone failed every animation publish with an
+    uncookable rig. The task's own package is pinned to the version running
+    it, whatever the project lists, because the task script belongs to it.
+    """
+    slug = full_name.split('/')[-1]
+    dependencies = {
+        name: pinned
+        for name, pinned in ((project or {}).get('dependencies') or {}).items()
+        # The project's entry for the same package, under either spelling
+        # (the full name falls back to the bare slug when unreadable).
+        if name.split('/')[-1] != slug
+    }
+    dependencies[full_name] = version
+    return dependencies
+
+
+def job_runtime(project: dict | None, project_runtime: dict) -> dict:
+    """The job's `[runtime]`: the project's, with ``project_runtime`` on top."""
+    runtime = dict((project or {}).get('runtime') or {})
+    runtime.update(project_runtime)
+    return runtime
+
+
+def job_registries(project: dict | None, submitter: list) -> list:
+    """The submitter's registries, then any other the project declares (by name)."""
+    registries = list(submitter)
+    names = {r.get('name') for r in registries}
+    for registry in (project or {}).get('registries') or []:
+        if registry.get('name') not in names:
+            registries.append(registry)
+            names.add(registry.get('name'))
+    return registries
+
+
 def _script_module(relative_script: str) -> str:
     """Dotted module path for `python -m` from a package-relative script path.
 
@@ -137,12 +234,13 @@ def _submitter_registries() -> list:
     return registries if registries else [_FALLBACK_REGISTRY]
 
 
-def hpm_task_manifest(script_path, requirements_path=None) -> str:
-    """hpm.toml that resolves the package a farm task runs from.
+def hpm_task_manifest(script_path, requirements_path=None, project=_LOOK_UP) -> str:
+    """hpm.toml that sets up the environment a farm task runs in.
 
-    A synthetic envelope package whose single dependency is the task's package
-    at its exact version — hpm has no "install <pkg>@<ver>" verb, so you declare
-    it as a dependency and `hpm install` resolves it into the shared store.
+    A synthetic envelope package whose dependencies are the project's, with the
+    task's package at its exact version — hpm has no "install <pkg>@<ver>" verb,
+    so you declare them as dependencies and `hpm install` resolves them into the
+    shared store.
 
     Gotchas baked in:
     - `[package].path` is required or hpm refuses to load the manifest.
@@ -167,7 +265,22 @@ def hpm_task_manifest(script_path, requirements_path=None) -> str:
     - `[runtime]` supplies TumblePipe's required `TH_PROJECT_PATH` placeholder;
       without it the worker's `hpm install` errors before the task runs. See
       `_project_runtime`.
+    - the dependencies, runtime and registries are the PROJECT's (its hpm.toml,
+      found by :func:`read_project_manifest`), so the worker's hpm sets up the
+      packages the artist's Houdini had — TumbleRig included — and writes one
+      Houdini package file per dependency into ``<job>/.hpm/packages``, which
+      ``tasks.env.get_hython_env`` hands to hython. ``project`` overrides the
+      lookup (tests); without a project manifest the job carries the task's
+      package alone, as it always did, and says so.
     """
+    if project is _LOOK_UP:
+        project = read_project_manifest()
+    if project is None:
+        log.warning(
+            "No project hpm.toml found (TT_PROJECT_DIR / HOUDINI_PACKAGE_DIR); "
+            "the farm job carries only the task's own package, so anything "
+            "that needs another package (a TumbleRig rig) will not cook"
+        )
     package_spec, relative_script = hpm_package_spec(script_path)
     bare_name, _, version = package_spec.partition('@')
     full_name = _package_full_name(script_path, bare_name)
@@ -181,14 +294,14 @@ def hpm_task_manifest(script_path, requirements_path=None) -> str:
         task_script['requirements'] = requirements
     return tomli_w.dumps({
         'package': {
-            'path': 'local/deadline-hpm-job',
+            'path': JOB_PACKAGE_PATH,
             'name': 'deadline-hpm-job',
             'version': '0.0.0',
         },
         'compat': {'houdini': '>=21, <99'},
-        'registries': _submitter_registries(),
-        'dependencies': {full_name: version},
-        'runtime': _project_runtime(),
+        'registries': job_registries(project, _submitter_registries()),
+        'dependencies': job_dependencies(project, full_name, version),
+        'runtime': job_runtime(project, _project_runtime()),
         'scripts': {
             'task': task_script,
         },

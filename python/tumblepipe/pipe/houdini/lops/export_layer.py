@@ -40,6 +40,25 @@ class ExportLayerError(Exception):
     pass
 
 
+# The cook errors quoted in an export failure are cut to this many characters:
+# an APEX rig that fails to compile repeats its whole chain per sample.
+_COOK_ERROR_LIMIT = 1500
+
+
+def _cook_errors(node) -> str:
+    """The cook errors of ``node`` (and so of what feeds it), for a failure message."""
+    try:
+        errors = [e.strip() for e in node.errors() if e.strip()]
+    except hou.Error:
+        errors = []
+    if not errors:
+        return "No cook error was reported; look for the red node upstream."
+    text = "\n".join(errors)
+    if len(text) > _COOK_ERROR_LIMIT:
+        text = text[:_COOK_ERROR_LIMIT] + " …"
+    return "Cook error:\n" + text
+
+
 def _list_expected_asset_uris(native) -> set[str]:
     """Asset URIs that upstream import nodes placed on the stage.
 
@@ -700,12 +719,21 @@ class ExportLayer(EntityNode):
         # Prepare for stage scrape
         stage = stage_node.stage() if stage_node is not None else None
         if stage is None:
-            # Usually a node left disconnected in the network. There is
-            # nothing to publish, so skip this one and let the other exports
-            # in the group run - it used to crash on None.GetPseudoRoot().
-            raise TaskSkipped(
-                f"Nothing exported for channel '{channel_name}': the node "
-                f"{self.path()} has no stage input connected."
+            if not any(native.inputs()):
+                # A node left disconnected in the network. There is nothing
+                # to publish, so skip this one and let the other exports in
+                # the group run - it used to crash on None.GetPseudoRoot().
+                raise TaskSkipped(
+                    f"Nothing exported for channel '{channel_name}': the node "
+                    f"{self.path()} has no stage input connected."
+                )
+            # Connected, but what feeds it failed to cook. That is a failure,
+            # not a skip, and saying "no stage input connected" sent people
+            # looking at the wiring (a farm job whose rig could not compile).
+            raise ExportLayerError(
+                f"Nothing exported for channel '{channel_name}': the input of "
+                f"{self.path()} failed to cook.\n"
+                + _cook_errors(stage_node)
             )
         root = stage.GetPseudoRoot()
 

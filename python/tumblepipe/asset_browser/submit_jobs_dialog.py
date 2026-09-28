@@ -41,7 +41,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QComboBox,
-    QDialog, QFormLayout,
+    QDialog, QFormLayout, QGridLayout,
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
     QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStyledItemDelegate, QToolTip,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
@@ -642,6 +642,167 @@ class _CheckHeader(QHeaderView):
             painter.drawLine(rect.topLeft(), rect.bottomLeft())
         self._dialog._paint_header(painter, rect, logical)
         painter.restore()
+
+
+# ── Confirmation ──────────────────────────────────────────
+
+# Rows shown per warning list before "… and N more".
+_CONFIRM_LIST_LIMIT = 8
+
+_KIND_LABELS = {
+    grid.PUBLISH: "Publish", grid.PLAYBLAST: "Playblast", grid.RENDER: "Render",
+}
+
+
+class _ConfirmSubmit(QDialog):
+    """"Submit to the farm?" — what is about to be sent, and what to check first.
+
+    Replaced a QMessageBox whose question icon, one-line summary and
+    Cancel-as-default read badly: the dialog stylesheet paints the *default*
+    button in the accent colour, so Cancel looked like the action. Here
+    **Submit** is the one filled button. A preview that would show stale,
+    unticked departments gets its own section and a **Tick those
+    publishes** button that adds them and returns to the grid.
+
+    ``exec()`` returns :attr:`SUBMIT`, :attr:`TICK_STALE`, or 0 for Back.
+    """
+
+    SUBMIT = 1
+    TICK_STALE = 2
+
+    def __init__(
+        self,
+        parent: QWidget,
+        kinds: dict[str, int],
+        departments: dict[str, int],
+        rows: int,
+        noun: tuple[str, str],
+        *,
+        stale: dict[str, list[str]],
+        other: dict[str, list[str]],
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Farm Submit")
+        self.setStyleSheet(_DIALOG_STYLE)
+        self.setMinimumWidth(460)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 16)
+        root.setSpacing(14)
+
+        heading = QLabel("Submit to the farm?")
+        heading.setStyleSheet(f"font-size: {FONT_BODY + 4}px; font-weight: bold;")
+        root.addWidget(heading)
+
+        counts = QGridLayout()
+        counts.setHorizontalSpacing(14)
+        counts.setVerticalSpacing(6)
+        for row, (kind, count) in enumerate(kinds.items()):
+            name = QLabel(_KIND_LABELS[kind])
+            name.setStyleSheet(f"color: {TEXT_SECONDARY};")
+            number = QLabel(str(count))
+            number.setStyleSheet("font-weight: bold;")
+            number.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            detail = QLabel(
+                " · ".join(f"{d} {n}" for d, n in departments.items())
+                if kind == grid.PUBLISH else ""
+            )
+            detail.setStyleSheet(f"color: {TEXT_SECONDARY};")
+            detail.setWordWrap(True)
+            counts.addWidget(name, row, 0)
+            counts.addWidget(number, row, 1)
+            counts.addWidget(detail, row, 2)
+        counts.setColumnStretch(2, 1)
+        root.addLayout(counts)
+
+        across = QLabel(f"across {rows} {noun[rows != 1]}")
+        across.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        root.addWidget(across)
+
+        if stale:
+            count = len(stale)
+            root.addWidget(self._panel(
+                STALE_COLOUR,
+                f"⚠  {count} {noun[count != 1]} will preview work that isn't published",
+                "The playblast or render composes departments that are stale "
+                "and not ticked, so it shows their last publish:",
+                {name: ", ".join(missing) for name, missing in stale.items()},
+            ))
+        if other:
+            count = sum(len(w) for w in other.values())
+            # "other" only beside the stale section it is other than.
+            root.addWidget(self._panel(
+                TEXT_SECONDARY,
+                f"{count}{' other' if stale else ''} warning{'s' if count != 1 else ''}",
+                "",
+                {name: "; ".join(warnings) for name, warnings in other.items()},
+            ))
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        if stale:
+            tick = QPushButton("Tick those publishes")
+            tick.setToolTip(
+                "Tick the stale departments listed above and go back to the "
+                "grid, so the previews show fresh publishes"
+            )
+            tick.setAutoDefault(False)
+            tick.clicked.connect(lambda: self.done(self.TICK_STALE))
+            buttons.addWidget(tick)
+        buttons.addStretch(1)
+        back = QPushButton("Back")
+        # Not auto-default: the stylesheet fills the default button, and a
+        # focused auto-default button would take that from Submit.
+        back.setAutoDefault(False)
+        back.clicked.connect(self.reject)
+        buttons.addWidget(back)
+        steps = sum(kinds.values())
+        submit = QPushButton(f"Submit {steps} step{'s' if steps != 1 else ''}")
+        submit.setDefault(True)
+        submit.clicked.connect(lambda: self.done(self.SUBMIT))
+        buttons.addWidget(submit)
+        root.addLayout(buttons)
+        self._submit = submit
+
+    def _panel(self, colour: str, title: str, text: str, items: dict[str, str]) -> QWidget:
+        """A tinted box: a title, an optional sentence, then ``name  detail`` rows."""
+        panel = QWidget()
+        panel.setObjectName("confirmPanel")
+        panel.setAttribute(Qt.WA_StyledBackground, True)
+        panel.setStyleSheet(
+            f"QWidget#confirmPanel {{ background-color: {BG_DARK};"
+            f" border: 1px solid {BORDER}; border-left: 3px solid {colour};"
+            f" border-radius: 4px; }}"
+        )
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
+        heading = QLabel(title)
+        heading.setStyleSheet(f"color: {colour}; font-weight: bold;")
+        layout.addWidget(heading)
+        if text:
+            sentence = QLabel(text)
+            sentence.setWordWrap(True)
+            sentence.setStyleSheet(f"color: {TEXT_SECONDARY};")
+            layout.addWidget(sentence)
+        rows = QGridLayout()
+        rows.setHorizontalSpacing(14)
+        rows.setVerticalSpacing(3)
+        shown = list(items.items())[:_CONFIRM_LIST_LIMIT]
+        for row, (name, detail) in enumerate(shown):
+            label = QLabel(name)
+            label.setStyleSheet("font-weight: bold;")
+            value = QLabel(detail)
+            value.setWordWrap(True)
+            rows.addWidget(label, row, 0, Qt.AlignTop)
+            rows.addWidget(value, row, 1)
+        rows.setColumnStretch(1, 1)
+        layout.addLayout(rows)
+        if len(items) > _CONFIRM_LIST_LIMIT:
+            more = QLabel(f"… and {len(items) - _CONFIRM_LIST_LIMIT} more")
+            more.setStyleSheet(f"color: {TEXT_SECONDARY};")
+            layout.addWidget(more)
+        return panel
 
 
 # ── Dialog ────────────────────────────────────────────────
@@ -1742,17 +1903,21 @@ class SubmitJobsDialog(QDialog):
             )
             assigned = list(properties.get('departments') or []) or None
             warnings = resolve.entity_warnings(properties, settings, departments=assigned)
-            missing = grid.unpublished_upstream(
-                uri, self._columns, self._ticks, self._states,
-                cuts={
-                    grid.PLAYBLAST: settings.get('pb_department'),
-                    grid.RENDER: settings.get('render_department'),
-                },
-            )
+            missing = self._stale_upstream(uri, settings)
             if missing:
                 warnings.insert(0, f"{', '.join(missing)} stale and not ticked")
             rows.append((uri, settings, warnings))
         return rows
+
+    def _stale_upstream(self, uri: str, settings: dict) -> list[str]:
+        """Stale, unticked departments a ticked preview on ``uri`` composes."""
+        return grid.unpublished_upstream(
+            uri, self._columns, self._ticks, self._states,
+            cuts={
+                grid.PLAYBLAST: settings.get('pb_department'),
+                grid.RENDER: settings.get('render_department'),
+            },
+        )
 
     def _recompute_warnings(self) -> None:
         self._warnings = {uri: w for uri, _s, w in self._resolved_rows() if w}
@@ -1774,23 +1939,34 @@ class SubmitJobsDialog(QDialog):
             )
             return
 
-        warned = [
-            f"  • {self._uri_objects[uri].segments[-1]}: {'; '.join(w)}"
-            for uri, _s, w in rows if w
-        ]
-        if len(rows) > 1 or warned:
-            lines = [
-                f"Submit {grid.summary(self._uris, self._columns, self._ticks, self._noun)}?",
-            ]
-            if warned:
-                lines += ["", f"{len(warned)} with warnings:"] + warned[:10]
-                if len(warned) > 10:
-                    lines.append(f"  … and {len(warned) - 10} more")
-            confirm = QMessageBox.question(
-                self, "Farm Submit", "\n".join(lines),
-                QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Cancel,
+        stale = {uri: self._stale_upstream(uri, s) for uri, s, _w in rows}
+        stale = {uri: missing for uri, missing in stale.items() if missing}
+        # _resolved_rows puts the stale-upstream warning first, when it has one.
+        other = {
+            uri: warnings[1:] if uri in stale else warnings
+            for uri, _s, warnings in rows
+        }
+        other = {uri: w for uri, w in other.items() if w}
+        if len(rows) > 1 or stale or other:
+            kinds, departments, row_count = grid.breakdown(
+                self._uris, self._columns, self._ticks,
             )
-            if confirm != QMessageBox.Ok:
+            confirm = _ConfirmSubmit(
+                self, kinds, departments, row_count, self._noun,
+                stale={self._uri_objects[u].segments[-1]: m for u, m in stale.items()},
+                other={self._uri_objects[u].segments[-1]: w for u, w in other.items()},
+            )
+            choice = confirm.exec()
+            if choice == _ConfirmSubmit.TICK_STALE:
+                # Tick what the previews would otherwise show stale, and go
+                # back to the grid so the artist sees what was added.
+                self._ticks |= {
+                    (uri, grid.publish_key(department))
+                    for uri, missing in stale.items() for department in missing
+                }
+                self._changed()
+                return
+            if choice != _ConfirmSubmit.SUBMIT:
                 return
 
         configs = [

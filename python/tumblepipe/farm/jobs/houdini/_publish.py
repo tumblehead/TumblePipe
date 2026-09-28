@@ -12,6 +12,7 @@ from tumblepipe.api import path_str
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import get_frame_range
 from tumblepipe.pipe.paths import (
+    latest_complete_hip_file_path,
     latest_hip_file_path,
     latest_export_path,
 )
@@ -65,7 +66,9 @@ def create_publish_job(
         ValueError: If the entity's frame range cannot be determined.
     """
     # Find the workfile
-    workfile_path = latest_hip_file_path(entity_uri, department_name)
+    # The newest FINISHED version: a save still in flight would bundle a
+    # half-written hip ("Invalid .hip file header" on the worker).
+    workfile_path = latest_complete_hip_file_path(entity_uri, department_name)
     if workfile_path is None or not workfile_path.exists():
         logging.warning(f'No workfile found for {entity_uri}/{department_name}')
         return None

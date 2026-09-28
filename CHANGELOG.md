@@ -12,6 +12,30 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.55.0 — 2026-09-28
+
+### Features
+- feat(farm): Farm Submit opens anywhere, ticks the workfile, shows only live settings (`a9be752`)
+
+### Fixes
+- fix(farm): the Farm Submit legend names the dim ○ (`83163e1`)
+- fix(farm): a closed Farm Submit dialog is deleted (`bc4bdaf`)
+- fix(farm): Farm Submit from an empty Multi's workfile opens instead of erroring (`d1acc48`)
+- fix(farm): the Desktop launcher blanks package variables nothing sets (`3877bf9`)
+- fix(farm): Select stale skips members a Multi's workfile never exported (`16e988f`)
+- fix(farm): the Farm Submit column header checkboxes respond to clicks (`f48cf5b`)
+- fix(hpm): migrate-config script resolves via $HPM_PACKAGE_ROOT (`3748edb`)
+
+### Documentation
+- docs: the dim ○ of a Multi that never exported a member (`ae10c5b`)
+- docs: Farm Submit opens without a workfile, ticks it with one, and hides idle settings (`51acfe0`)
+
+## v1.54.2 — 2026-09-25
+
+### Documentation
+- docs: Farm Submit shipped in 1.54.1; the macOS worker builds arm64 natively (`ad22d7c`)
+- docs: regenerate CHANGELOG.md for v1.54.1 (`df007b0`)
+
 ## v1.54.1 — 2026-09-24
 
 ### Documentation
@@ -1828,15 +1852,13 @@ _No user-facing changes._
 
 ## v1.1.11 — 2026-04-27
 
-### Fixes
-- fix(hda): fix active_variant off-by-one in create_asset_model (`0c6b2aa`)
-
 ### Chores
 - chore: bump to 1.1.11 — add asset_browser_catalogs to INCLUDE_PATTERNS (`f032134`)
 
-## v1.1.10 — 2026-04-23
+## v1.1.10 — 2026-04-27
 
 ### Fixes
+- fix(hda): fix active_variant off-by-one in create_asset_model (`0c6b2aa`)
 - fix(resolver): defer pxr.Ar import so pythonrc can register TumbleResolver (`de9bae2`)
 
 ### Chores

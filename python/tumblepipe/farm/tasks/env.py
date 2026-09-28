@@ -89,31 +89,56 @@ def ocio_value() -> str:
     return path_str(to_windows_path(Path(os.environ['OCIO'])))
 
 
+def houdini_package_dir(env, legacy: str) -> str:
+    """The ``HOUDINI_PACKAGE_DIR`` a farm task's hython loads packages from.
+
+    The job's own: `hpm install` of the job manifest writes one Houdini package
+    file per dependency into ``$HPM_PACKAGE_ROOT/.hpm/packages`` — the project's
+    packages, TumbleRig included — and `hpm run` exports ``HPM_PACKAGE_ROOT``
+    to the task. ``legacy`` (the pipeline package's ``houdini`` dir, which the
+    package does not ship) is only for a task run outside `hpm run`: it loaded
+    no package at all, so no rig could compile on the farm.
+    """
+    root = env.get('HPM_PACKAGE_ROOT')
+    if root:
+        packages = Path(root) / '.hpm' / 'packages'
+        if packages.is_dir():
+            return path_str(to_windows_path(packages))
+    return legacy
+
+
 def get_hython_env(api=None) -> dict:
     """Environment for a hython child process a farm task spawns to run a script.
 
-    Core pipeline paths + ``HOUDINI_PACKAGE_DIR`` (so the resolver and HDAs load)
-    + a Windows-normalized ``OCIO``. Distinct from ``get_base_env``, which builds
-    the *outer* Deadline task env (carrying the USD-resolver plugin vars and the
-    raw OCIO); this is what such a task hands to the hython it launches.
+    Core pipeline paths + ``HOUDINI_PACKAGE_DIR`` (the job's packages, so the
+    resolver, HDAs and the project's other packages load; see
+    :func:`houdini_package_dir`) + a Windows-normalized ``OCIO``. Distinct from
+    ``get_base_env``, which builds the *outer* Deadline task env (carrying the
+    USD-resolver plugin vars and the raw OCIO); this is what such a task hands
+    to the hython it launches.
     """
     if api is None:
         api = default_client()
     return {
         'TH_USER': get_user_name(),
+        # TumblePipe's package file sets TH_USER = $TT_USER_NAME, and a worker
+        # has no TT_USER_NAME: once hython loads the job's packages it would
+        # blank the job's user. Passing the account name keeps them agreeing.
+        'TT_USER_NAME': get_user_name(),
         'TH_CONFIG_PATH': path_str(to_windows_path(api.CONFIG_PATH)),
         'TH_PROJECT_PATH': path_str(to_windows_path(api.PROJECT_PATH)),
         'TH_PIPELINE_PATH': path_str(to_windows_path(api.PIPELINE_PATH)),
-        # Only the current package's houdini dir. The legacy per-project
+        # The job's packages, as hpm installed them. The legacy per-project
         # `project:/_pipeline/houdini` bundle was dropped: it ships its own
         # OCIO-setting package that Houdini pathsep-concatenates with the
         # package's OCIO into an unreadable multi-path value (the flipbook /
-        # viewport-Karma "could not read OCIO profile" failure). NOTE: needs a
-        # live farm job to confirm nothing still resolves HDAs/resolver content
-        # out of that legacy dir.
-        'HOUDINI_PACKAGE_DIR': path_str(to_windows_path(
-            api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini'))
-        )),
+        # viewport-Karma "could not read OCIO profile" failure).
+        'HOUDINI_PACKAGE_DIR': houdini_package_dir(
+            os.environ,
+            path_str(to_windows_path(
+                api.storage.resolve(Uri.parse_unsafe('pipeline:/houdini'))
+            )),
+        ),
         'OCIO': ocio_value(),
         # Forward the creating instance's version so a nested plain-python
         # resolve (apps.houdini) keeps selecting the same-major Houdini.
