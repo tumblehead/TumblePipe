@@ -6,10 +6,14 @@ from tumblepipe.pipe.houdini.lops import (
 )
 from tumblepipe.pipe.houdini.util import disable_layer_save_path
 
+# Environment dresses around what comes after it (the animation camera,
+# characters), so its import_shot leaves out only its own layer.
+
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
 
     # Create the import node
     import_node = import_shot.create(scene_node, 'import_shot')
+    import_node.set_exclude_mode(import_shot.EXCLUDE_SELF)
     prev_node = import_node.native()
 
     # Create the sop create node for environment work
@@ -35,6 +39,7 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
         import_node = import_shot.create(scene_node, f'import_shot_{member_name}')
         import_node.set_shot_uri(member_uri)
         import_node.set_department_name(department_name)
+        import_node.set_exclude_mode(import_shot.EXCLUDE_SELF)
         prev_node = import_node.native()
 
         # Create the sop create node for environment work

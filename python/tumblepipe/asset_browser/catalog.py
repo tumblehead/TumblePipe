@@ -56,6 +56,7 @@ from .types import (
     DEPT_ICONS,
     DEPT_SHORT_NAMES,
     DECK_NOTES_SUPPORTED,
+    MENU_ITEM_SUPPORTED,
     SHOT_DEPT_ICONS,
     DeptVersionStore,
     cascade_counts,
@@ -67,6 +68,22 @@ from .types import (
 )
 
 log = logging.getLogger(__name__)
+
+
+def _note_tooltip_html(version: str, user: str, note: str) -> str:
+    """Hover text for a noted version in the Open Version menu.
+
+    Rich text so the header can be bold and the note keeps its line
+    breaks; everything the artist typed is escaped first, or a ``<``
+    in a note would swallow the rest of it.
+    """
+    import html
+
+    header = f"<b>{html.escape(version)}</b>"
+    if user:
+        header += f" · {html.escape(user)}"
+    body = html.escape(note).replace("\n", "<br>")
+    return f"<qt>{header}<br>{body}</qt>"
 
 # Group accent — matches ``TYPE_COLORS["group"]`` in asset_browser's
 # theme.py. Reused as the deck item tint when a shot/asset dept is
@@ -1315,11 +1332,32 @@ class PipelineCatalog(Catalog):
 
         items: list = []
         if available:
-            items.append((
-                f"Open Latest ({latest})",
-                lambda aid=asset_id, dn=dept, v=latest:
-                    self._workfiles.open_version_now(aid, dn, v, None),
-            ))
+            # Versions with an artist's note get a comment icon and show
+            # the note on hover, so the ones worth reverting to stand out.
+            notes = (
+                self._workfiles.get_notes_for_versions(
+                    asset_id, dept, versions,
+                )
+                if MENU_ITEM_SUPPORTED else {}
+            )
+
+            def open_item(label: str, version: str):
+                fn = (
+                    lambda aid=asset_id, dn=dept, v=version:
+                        self._workfiles.open_version_now(aid, dn, v, None)
+                )
+                if version not in notes:
+                    return (label, fn)
+                from tumbletrove.asset_browser.api.types import MenuItem
+
+                user, note = notes[version]
+                return MenuItem(
+                    label, fn,
+                    icon="lucide:message-square",
+                    tooltip=_note_tooltip_html(version, user, note),
+                )
+
+            items.append(open_item(f"Open Latest ({latest})", latest))
             # Every older version, newest first — a submenu, which the
             # browser renders from a nested item list (TumbleTrove >=
             # 0.39.0). Omitted when the latest is the only version.
@@ -1329,17 +1367,7 @@ class PipelineCatalog(Catalog):
             )
             if older:
                 items.append((
-                    "Open Version",
-                    [
-                        (
-                            v,
-                            lambda aid=asset_id, dn=dept, v=v:
-                                self._workfiles.open_version_now(
-                                    aid, dn, v, None,
-                                ),
-                        )
-                        for v in older
-                    ],
+                    "Open Version", [open_item(v, v) for v in older],
                 ))
             items.append(open_folder)
             items.append((

@@ -217,6 +217,23 @@ Neither reaches the farm on its own — a render composes the shot's *staged*
 build, so the shot has to be re-staged for a new asset publish to appear
 there.
 
+### A later department's work is missing from my shot (e.g. no camera)
+
+`th::import_shot` leaves out your own department and, by default, every
+department after it, so an upstream department such as environment does not
+see the animation layer, or the camera that lives in it. Set the node's
+**Exclude** to **This Department Only** to see them; the environment template
+does this for new workfiles. Their opinions still win over yours in the final
+shot, which is why it is not the default — see
+[`th::import_shot`](nodes/import-and-export.md#thimport_shot-lop).
+
+Up to 1.56.1, inside a **Multi** workfile, Department `from_context` showed
+`from_context: none` and the node left out *nothing*: later departments
+appeared, and so did your own department's last publish, underneath your
+live edits. Later releases resolve the Multi's department, so a node left on
+`from_context` now cuts as above — set Exclude if you relied on seeing the
+later departments.
+
 ### An imported asset is empty
 
 Older publishes of `th::asset_payload` saved their payload to a bare
@@ -373,14 +390,37 @@ have a token and channels, but not this name.
 separates the quiet projects from the ones a name is missing from. See
 [Job families](asset-browser/submit-jobs.md#job-families).
 
+### The farm playblast fails with "No licenses could be found"
+
+husk exited 3 before rendering a frame, while Karma Renderer licenses were
+free. The playblast's husk used to run without
+`--check-licenses 'Karma Renderer'`, so it asked for a Houdini Engine / Core /
+FX seat first, and those seats are shared with artists. The playblast worker
+now passes the same flag as the render worker and takes a Karma license, for
+Storm too. Update the pipeline and resubmit. See
+[Farm worker prerequisites](deadline.md#farm-worker-prerequisites).
+
+### The farm playblast hangs on its first frame
+
+If the task log stops at `ALF_PROGRESS 0%` right after `>>> Render`, and the
+worker's GPU sits idle while husk holds several GB of memory, Storm is
+stalled on the stage. That is not a missing GL context. It happened on
+HideAndReek/030 in an ordinary desktop session, and it matches the judas
+farm hang that ended in a husk crash (`0xE06D7363`). Render the shot with
+the `xpu` engine instead (see [Playblast](compositing.md#playblast)), and try
+it locally first:
+
+    hython scripts/debug_playblast.py --shot entity:/shots/<seq>/<shot> \
+        --husk --engine xpu
+
 ### Playblast frames are black or missing on the farm
 
-Farm playblasts render with husk's Storm (GL) delegate, which needs a real GPU
-context. A headless worker produces nothing, and the task fails with
-`Playblast produced no frames -- the GL (Storm) delegate likely has no usable
-GPU/GL context on this worker. Confirm the playblast farm group has
-GL-capable, non-headless workers.` Assign only GL-capable workers to the
-`playblast` Deadline group. See [Playblast](compositing.md#playblast) and
+With the default `storm` engine, farm playblasts render with husk's Storm (GL)
+delegate, which needs a real GPU context. A headless worker produces nothing,
+and the task fails with `Playblast produced no frames`, a hint that the GL
+(Storm) delegate likely has no usable GPU/GL context. Assign only GL-capable
+workers to the `playblast` Deadline group, or render with the `xpu` engine,
+which needs no GL context. See [Playblast](compositing.md#playblast) and
 [Farm worker prerequisites](deadline.md#farm-worker-prerequisites).
 
 Before **1.52.2** that message was also what a *stage* problem looked like:
@@ -413,7 +453,8 @@ To see what husk will resolve for a shot *without* submitting anything:
 It collapses the same staged stage the farm would, reports the settings prim,
 the camera and its focal length and world position, the cameras and lights on
 the stage, and which layers the department cut dropped; `--husk` renders one
-frame locally with the worker's own flags. The collapsed `.usda` it writes is
+frame locally with the worker's own flags (`--engine xpu` for the Karma XPU
+engine; Storm by default). The collapsed `.usda` it writes is
 left behind and printed, so it can be opened in usdview.
 
 In a farm log, the lines that answer "which camera?" are husk's own — the

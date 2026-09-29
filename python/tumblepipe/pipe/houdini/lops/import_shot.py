@@ -17,7 +17,6 @@ from tumblepipe.config.channels import list_channels, read_channel
 import tumblepipe.pipe.houdini.nodes as ns
 import tumblepipe.pipe.houdini.util as util
 from tumblepipe.pipe.paths import (
-    get_workfile_context,
     load_entity_context,
     current_staged_file_path,
     get_staged_file_path,
@@ -35,27 +34,47 @@ from tumblepipe import resolver
 
 logger = logging.getLogger(__name__)
 
+# The 'exclude' parm: which shot department layers the node leaves out.
+EXCLUDE_DOWNSTREAM = 'downstream'  # own department and every later one
+EXCLUDE_SELF = 'self'              # own department only
+EXCLUDE_MODES = (EXCLUDE_DOWNSTREAM, EXCLUDE_SELF)
 
-def _context_from_workfile():
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
-    if context is None: return None
-    # Check if entity_uri is a shot (entity:/shots/sequence/shot)
-    if not str(context.entity_uri).startswith('entity:/shots/'): return None
-    if len(context.entity_uri) != 4: return None
-    return context
 
-def _entity_from_context_json():
-    # Path to current workfile
+def excluded_departments(department_name, downstream_departments, mode):
+    """Shot departments an import leaves out, before any render cut.
+
+    The node's own department is always out — the workfile authors it.
+    Its downstream is out only in ``EXCLUDE_DOWNSTREAM`` mode.
+    """
+    excluded = set()
+    if mode == EXCLUDE_DOWNSTREAM:
+        excluded.update(downstream_departments)
+    if department_name is not None:
+        excluded.add(department_name)
+    return excluded
+
+
+def _context_json():
+    """The workfile's context.json, whatever it names — shot or Multi."""
     file_path = Path(hou.hipFile.path())
     if not file_path.exists(): return None
-
-    # Look for context.json in the workfile directory
     context_json_path = file_path.parent / "context.json"
     if not context_json_path.exists(): return None
+    return load_entity_context(context_json_path)
 
-    # Load context using shared helper
-    context = load_entity_context(context_json_path)
+def _department_from_context_json():
+    """The workfile's department, also inside a Multi.
+
+    A Multi's context.json names the group, not a shot, so it must not go
+    through the shot filter below: that turned 'from_context' into *no*
+    department, and the node then excluded nothing — its own layer included.
+    """
+    context = _context_json()
+    if context is None: return None
+    return context.department_name or None
+
+def _entity_from_context_json():
+    context = _context_json()
     if context is None: return None
 
     # Verify it's a shot entity (not a group)
@@ -325,6 +344,8 @@ def _get_layer_display_name(layer_info: dict) -> str:
     if layer_type == 'root':
         return 'Root'
     elif layer_type == 'shot_department' and department:
+        if layer_info.get('downstream'):
+            return f'{department.capitalize()} (downstream)'
         return department.capitalize()
     elif layer_type == 'asset':
         path_value = layer_info.get('path', '')
@@ -512,10 +533,7 @@ class ImportShot(ns.Node):
         if department_name == 'none':
             return None
         if department_name == 'from_context':
-            # Use same context source as get_shot_uri() for consistency
-            context = _entity_from_context_json()
-            if context is None: return None
-            return context.department_name
+            return _department_from_context_json()
         # From settings
         department_names = self.list_department_names()
         if len(department_names) == 0: return None
@@ -559,6 +577,29 @@ class ImportShot(ns.Node):
         if department_name not in shot_department_names: return []
         shot_department_index = shot_department_names.index(department_name)
         return shot_department_names[shot_department_index + 1:]
+
+    def get_exclude_mode(self) -> str:
+        """``'downstream'`` (own + later departments) or ``'self'`` (own only).
+
+        ``'self'`` lets an upstream department see what comes after it — the
+        environment workfile seeing the animation camera. Safe for publishing:
+        export_layer layerbreaks everything this node loads.
+        """
+        parm = self.parm('exclude')
+        if parm is None: return EXCLUDE_DOWNSTREAM  # older HDA binary
+        mode = parm.eval()
+        if mode not in EXCLUDE_MODES: return EXCLUDE_DOWNSTREAM
+        return mode
+
+    def set_exclude_mode(self, mode: str):
+        if mode not in EXCLUDE_MODES:
+            raise ValueError(
+                f"Unknown exclude mode '{mode}': "
+                f"expected one of {', '.join(EXCLUDE_MODES)}"
+            )
+        parm = self.parm('exclude')
+        if parm is None: return
+        parm.set(mode)
 
     def get_exclude_downstream_of(self) -> str | None:
         """Department whose *downstream* alone should be excluded, or None.
@@ -949,11 +990,14 @@ class ImportShot(ns.Node):
         # Parse sublayers from staged file
         sublayers = _parse_staged_sublayers(staged_file_path)
 
-        # Exclude current department AND downstream departments
+        # Exclude the current department, and its downstream unless the node
+        # asks to see them. Shown downstream layers are tagged for the Layer
+        # Stack: their opinions beat this department's in the final shot.
         department_name = self.get_department_name()
-        departments_to_exclude = set(self.get_downstream_shot_department_names())
-        if department_name is not None:
-            departments_to_exclude.add(department_name)
+        downstream_departments = set(self.get_downstream_shot_department_names())
+        departments_to_exclude = excluded_departments(
+            department_name, downstream_departments, self.get_exclude_mode()
+        )
 
         # A render cut excludes downstream only — the selected department is
         # what the render is *of*, so it stays. Additive, so it composes with
@@ -992,6 +1036,9 @@ class ImportShot(ns.Node):
             info for info in sublayers
             if should_include_layer(info)
         ]))
+        for info in layers_to_load:
+            if info['type'] == 'shot_department':
+                info['downstream'] = info['department'] in downstream_departments
 
         # Configure Sublayer LOP with filtered layers
         import_node.parm('num_files').set(len(layers_to_load))

@@ -85,8 +85,9 @@ Do not hand-edit these; the browser reads them on every card build.
 
 Double-click a department row (or a deck item), pick **Open Latest (vNNNN)**
 from its right-click menu (or an older one under **Open Version ▸**, which
-lists every other version newest first and only appears once there are two),
-or press the play button on a row of the detail panel's Departments tab
+lists every other version newest first and only appears once there are two;
+a version saved with a note shows a comment icon, and hovering it shows the
+note — needs TumbleTrove 0.40 or later), or press the play button on a row of the detail panel's Departments tab
 (which opens whichever version its dropdown shows).
 What happens, in order:
 

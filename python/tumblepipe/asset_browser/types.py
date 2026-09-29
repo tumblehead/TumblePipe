@@ -388,6 +388,12 @@ DECK_NOTES_SUPPORTED = (
     and _type_supports("ListColumn", "deck_note")
 )
 
+#: tumbletrove >= 0.40 (``MenuItem``: a menu entry with an icon and a
+#: hover tooltip). Below this the version menus stay plain ``(label, fn)``
+#: pairs — an older browser unpacks every item as a pair, and a
+#: ``MenuItem`` it cannot import would never get that far anyway.
+MENU_ITEM_SUPPORTED = _type_supports("MenuItem", "tooltip")
+
 
 # ── Department iconography ───────────────────────────────────────
 

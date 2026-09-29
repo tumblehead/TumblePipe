@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.56.1 — 2026-09-28
+
+### Fixes
+- fix(farm): the submission window's progress bar carries the summary; Hide becomes Close (`f164261`)
+
+### Documentation
+- docs: the submission window's summary bar and Close button (`994af94`)
+- docs: regenerate CHANGELOG.md for v1.56.0 (`d78197d`)
+
 ## v1.56.0 — 2026-09-28
 
 ### Features

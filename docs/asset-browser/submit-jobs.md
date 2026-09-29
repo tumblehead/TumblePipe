@@ -357,5 +357,6 @@ Output locations are in [Compositing → Where renders land](../compositing.md#w
 
 Job priorities come from the settings; notify jobs run at 90, edit at 90,
 stage notify at 60. The playblast group is kept separate from `karma` so
-previews never contend with final frames — those workers need a GL-capable
-GPU, see [Farm worker prerequisites](../deadline.md#farm-worker-prerequisites).
+previews never contend with final frames — those workers need a GPU (and a
+GL context for Storm playblasts), see
+[Farm worker prerequisites](../deadline.md#farm-worker-prerequisites).

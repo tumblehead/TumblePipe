@@ -203,21 +203,23 @@ def _report_stage(collapsed_path: Path, frame: int) -> bool:
     return ok
 
 
-def _run_husk(collapsed_path: Path, frame: int, resolution, out_dir: Path) -> bool:
+def _run_husk(
+    collapsed_path: Path, frame: int, resolution, out_dir: Path, engine: str
+) -> bool:
     from tumblepipe.api import api, path_str, to_windows_path
     from tumblepipe.apps.houdini import Husk
     from tumblepipe.farm.tasks.env import get_base_env
-    from tumblepipe.farm.tasks.playblast.playblast import STORM_DELEGATE
+    from tumblepipe.farm.tasks.playblast.playblast import engine_args
 
-    out_path = out_dir / 'debug_playblast.$F4.jpg'
+    out_path = out_dir / f'debug_playblast_{engine}.$F4.jpg'
     width, height = resolution
-    print(f'  husk -> {out_path}')
+    print(f'  husk ({engine}) -> {out_path}')
     exit_code = Husk().run(
         to_windows_path(collapsed_path),
         [
             '--resolver-context', path_str(to_windows_path(collapsed_path)),
-            '--renderer', STORM_DELEGATE,
-            '--gpu',
+            '--check-licenses', 'Karma Renderer',
+            *engine_args(engine),
             '--verbose', 'a2',
             '--make-output-path',
             '--no-mplay',
@@ -228,7 +230,7 @@ def _run_husk(collapsed_path: Path, frame: int, resolution, out_dir: Path) -> bo
         ],
         env=get_base_env(api),
     )
-    rendered = sorted(out_dir.glob('debug_playblast.*.jpg'))
+    rendered = sorted(out_dir.glob(f'debug_playblast_{engine}.*.jpg'))
     print(f'  husk exit {exit_code}, {len(rendered)} frame(s) written')
     for path in rendered:
         print(f'    {path}')
@@ -259,6 +261,11 @@ def main(argv=None) -> int:
     parser.add_argument(
         '--husk', action='store_true',
         help='Also render one frame locally with the playblast worker flags.'
+    )
+    parser.add_argument(
+        '--engine', choices=('storm', 'xpu'), default='storm',
+        help='Renderer for --husk, as the playblast job picks it. '
+             'Default: storm.'
     )
     args = parser.parse_args(argv)
 
@@ -336,7 +343,9 @@ def main(argv=None) -> int:
         if args.husk:
             out_dir = collapsed_path.parent / collapsed_path.stem
             out_dir.mkdir(parents=True, exist_ok=True)
-            if not _run_husk(collapsed_path, frame, args.res, out_dir):
+            if not _run_husk(
+                collapsed_path, frame, args.res, out_dir, args.engine
+            ):
                 failures += 1
         print()
 

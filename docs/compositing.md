@@ -144,5 +144,15 @@ pixel-identical copy of the interactive viewport. That difference is
 exactly why the in-session node stays — playblast locally when the look
 must match the viewport, submit to the farm to offload a batch. The
 farm job's Deadline group is `playblast`, kept separate from `karma` so
-previews never contend with final-frame render slots; those workers must
-have a GL-capable GPU context.
+previews never contend with final-frame render slots; see
+[Farm worker prerequisites](deadline.md#farm-worker-prerequisites).
+
+The playblast job can also render with **Karma XPU** instead of Storm (the
+job's `engine` setting, `xpu`; the dialog does not offer it yet). The frames
+are a preview, not a final render: scene materials and lights are off, a
+headlight on the camera shades the stage with ambient occlusion, and the
+stage's display colours still show. XPU needs no GL context, which Storm
+does. On a heavy shot Storm can also stall where XPU renders: on
+HideAndReek/030, Storm sat at 0% on the first frame for over 12 minutes, and
+XPU rendered that frame in 72 s, most of it loading the stage and building
+the scene on the GPU.

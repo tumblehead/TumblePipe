@@ -240,6 +240,35 @@ class WorkfileManager:
             (str(note) if note else ""),
         )
 
+    def get_notes_for_versions(
+        self, asset_id: str, dept: str, versions: list[str],
+    ) -> dict[str, tuple[str, str]]:
+        """Return ``{version: (user, note)}`` for the versions with a note.
+
+        Feeds the right-click version menu, which is built on the GUI
+        thread and wants every version's note at once. That is one
+        sidecar read per version, and on a slow share those add up to a
+        visible stall before the menu opens — so the reads run
+        concurrently. Versions with no note (or no sidecar) are left out.
+        """
+        dept_dir = self.dept_dir_for(asset_id, dept)
+        versions = list(versions)
+        if dept_dir is None or not versions:
+            return {}
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(8, len(versions))) as pool:
+            sidecars = pool.map(
+                lambda v: self._read_version_sidecar(dept_dir, v), versions,
+            )
+            result = {}
+            for version, sidecar in zip(versions, sidecars):
+                note = sidecar.get("note")
+                if note:
+                    user = sidecar.get("user")
+                    result[version] = (str(user) if user else "", str(note))
+        return result
+
     def get_dept_row_meta(
         self, asset_id: str, dept: str, version: str,
     ) -> tuple[str, float, str]:

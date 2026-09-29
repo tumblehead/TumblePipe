@@ -178,8 +178,9 @@ cosmetic:
 - the staged build sublayers departments in *reversed* pool order, so later in
   the pool means a **stronger USD layer**;
 - **downstream** is everything below a department in the pool — it drives the
-  Downstream Exports menu, `import_shot`'s layer/asset exclusion, the publish
-  task graph, and the propagate/update farm jobs;
+  Downstream Exports menu, `import_shot`'s layer/asset exclusion (in its
+  default *Exclude* mode), the publish task graph, and the propagate/update
+  farm jobs;
 - AOV precedence ranks by pool index.
 
 So reordering an established pool restages composition for every existing

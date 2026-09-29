@@ -31,6 +31,38 @@ from tumblepipe.farm.tasks.playblast import _spec
 # copy of the viewport flipbook. Verified with `husk --list-renderers`.
 STORM_DELEGATE = 'HdStormRendererPlugin'
 
+# Karma XPU as a playblast: a clay look instead of the scene's shading.
+# --autoheadlight is the load-bearing flag -- --disable-scene-lights alone
+# leaves no light at all and every frame renders black; with it husk puts a
+# light on the camera, and --ao-* shades that headlight with occlusion so form
+# reads. -p 4 instead of 128 samples: noise is acceptable in a preview.
+# --timelimit-image stops a runaway frame at XPU_FRAME_SECONDS and keeps the
+# partial image, so one heavy frame cannot hold the whole shot.
+XPU_FRAME_SECONDS = 120
+XPU_ARGS = [
+    '--engine', 'xpu',
+    '--threads', '-1',
+    '--pixel-samples', '4',
+    '--disable-scene-materials',
+    '--disable-scene-lights',
+    '--autoheadlight',
+    '--headlight', 'distant',
+    '--ao-samples', '4',
+    '--ao-distance', '2',
+    '--disable-motionblur',
+    '--timelimit', str(XPU_FRAME_SECONDS),
+    '--timelimit-image',
+]
+
+
+def engine_args(engine: str) -> list[str]:
+    """The husk arguments that choose and tune the renderer for ``engine``."""
+    if engine == 'storm':
+        return ['--renderer', STORM_DELEGATE, '--gpu']
+    if engine == 'xpu':
+        return list(XPU_ARGS)
+    raise ValueError(f'Unknown playblast engine: {engine}')
+
 
 def _headline(title):
     print(f' {title} '.center(80, '='))
@@ -51,7 +83,8 @@ def main(
     fps: int,
     resolution: tuple[int, int],
     input_path: Path,
-    output_paths: list[Path]
+    output_paths: list[Path],
+    engine: str = _spec.DEFAULT_ENGINE
     ) -> int:
 
     # Storm reads the OCIO config just like the Karma path does.
@@ -78,7 +111,7 @@ def main(
         env = get_base_env(api)
         print_env()
 
-        # Render the whole range in one husk invocation with the GL delegate.
+        # Render the whole range in one husk invocation (see engine_args).
         # No --camera: husk resolves the render camera from the staged stage's
         # RenderSettings prim, exactly as the Karma render worker relies on.
         # --resolver-context is required for the custom ArResolver (entity:/
@@ -96,14 +129,20 @@ def main(
         # "renders the wrong view" failure: husk found no settings prim and
         # picked the first camera on the stage. 'a' also emits ALF_PROGRESS,
         # which Deadline reads as task progress.
-        _headline('Rendering playblast frames (Hydra Storm)')
+        #
+        # --check-licenses 'Karma Renderer' is what the render worker passes,
+        # and a playblast needs it too: without it husk takes a Houdini
+        # Core/FX seat (five, shared with artists) and fails "No licenses
+        # could be found" while Karma licences sit free. Storm renders fine on
+        # a Karma Renderer licence alone.
+        _headline(f'Rendering playblast frames ({engine})')
         width, height = resolution
         exit_code = husk.run(
             to_windows_path(input_path),
             [
                 '--resolver-context', path_str(to_windows_path(input_path)),
-                '--renderer', STORM_DELEGATE,
-                '--gpu',
+                '--check-licenses', 'Karma Renderer',
+                *engine_args(engine),
                 '--verbose', 'a2',
                 '--make-output-path',
                 '--no-mplay',
@@ -133,9 +172,11 @@ def main(
                 'blaming the worker: "All AOVs bypassed or missing" means the '
                 'stage asked Storm for a render var it cannot fill (a Karma '
                 'LPE AOV), which is a submission problem, not a machine one. '
-                'Otherwise the GL (Storm) delegate likely has no usable '
-                'GPU/GL context here -- confirm the playblast farm group has '
-                'GL-capable, non-headless workers.'
+                '"No licenses could be found" is licensing, not the GPU. '
+                'Otherwise, for the storm engine, the GL (Storm) delegate '
+                'likely has no usable GPU/GL context here -- confirm the '
+                'playblast farm group has GL-capable, non-headless workers, '
+                'or render with the xpu engine.'
             )
         print(f'Rendered {rendered}/{len(render_range)} frames')
 
@@ -194,7 +235,8 @@ def _run(config: dict) -> int:
         config['fps'],
         tuple(config['res']),
         input_path,
-        output_paths
+        output_paths,
+        _spec.get_engine(config)
     )
 
 

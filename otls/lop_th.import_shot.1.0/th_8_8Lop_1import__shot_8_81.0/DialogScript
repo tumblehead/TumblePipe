@@ -85,6 +85,19 @@
             default { "" }
         }
         parm {
+            name    "exclude"
+            label   "Exclude"
+            type    string
+            default { "downstream" }
+            help    "Which shot department layers to leave out. This + Downstream is the pipeline's authoring view. This Department Only also shows later departments (e.g. the animation camera in environment); their opinions still win over yours in the final shot."
+            menu {
+                "downstream"    "This + Downstream"
+                "self"          "This Department Only"
+            }
+            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
             name    "exclude_downstream_of"
             label   "Exclude Downstream Of"
             type    string

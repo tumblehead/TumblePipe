@@ -422,6 +422,22 @@ old HDA) and reopen it with the new one. Swapping definitions inside one
 hython session with `hou.hda.uninstallFile` / `installFile` saves a broken
 scene that reloads empty under *either* build, so it proves nothing.
 
+## Department `from_context` in a Multi
+
+A Multi's `context.json` names the group, so Entity `from_context` resolves
+to nothing there, but Department `from_context` must still resolve: the
+workfile's own department is unambiguous. `th::import_shot` read its
+department through its shot-only entity lookup, got nothing, and imported
+every department, its own included (fixed after 1.56.1).
+
+`tests/test_multi_workfile_nodes.py` resolves Department `from_context` on
+every node through a real Multi workfile on disk, and fails if any class
+under `pipe/houdini/` defines `get_department_name` without being listed.
+A new node with a Department parm goes in `_DEPARTMENT_FROM_CONTEXT`, or in
+`_DEPARTMENT_EXEMPT` with the reason it has no `from_context`. Read the
+department from `get_workfile_context`, never from a helper that filters
+the entity.
+
 ## Farm Submit dialog harness
 
 `scripts/verify_farm_grid.py` pins the Farm Submit dialog, its status scan and its
@@ -434,6 +450,16 @@ TumbleTrove Desktop project and uses that Houdini's bundled Python:
 HOUDINI_PACKAGE_DIR=~/.tumbletrove/projects/<id>/.hpm/packages \
     python scripts/farm_launcher.py --run scripts/verify_farm_grid.py
 ```
+
+**husk under `--run` cannot load Karma.** The launcher copies package
+values of `HOUDINI_PATH` and `HOUDINI_DSO_PATH` as they are written, and
+TumbleRig sets both without Houdini's defaults, which Houdini's own package
+loader would keep. husk started from a `--run` script then fails with
+`Unable to load render plugin: BRAY_HdKarmaXPU` (Storm still loads, because it
+ships with USD). Farm jobs are not affected, since neither variable is in a
+job's environment. Until the launcher keeps Houdini's defaults, a script that
+runs husk (e.g. `scripts/debug_playblast.py --husk`) should
+`os.environ.pop()` both before it starts.
 
 `FARM_VERIFY_SCREENSHOT=<png>` also grabs the dialog to an image (offscreen
 Qt has no fonts, so text renders as boxes; layout, colours and checkboxes are

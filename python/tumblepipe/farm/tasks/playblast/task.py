@@ -20,9 +20,9 @@ from tumblepipe.farm.deadline import Task
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.farm.tasks.playblast import _spec
 
-# Deadline worker group for GL (Storm) playblast renders. Kept distinct from
-# 'karma' so preview playblasts never contend with final-frame render slots;
-# farm workers assigned to this group must have a GL-capable GPU context.
+# Deadline worker group for playblast renders. Kept distinct from 'karma' so
+# preview playblasts never contend with final-frame render slots; workers in
+# this group need a GPU, and a GL-capable context for the 'storm' engine.
 PLAYBLAST_GROUP = 'playblast'
 
 SCRIPT_PATH = Path(__file__).parent / 'playblast.py'
@@ -60,7 +60,8 @@ def build(config, paths, staging_path):
         fps = config['fps'],
         res = list(config['res']),
         input_path = config['input_path'],
-        output_paths = config['output_paths']
+        output_paths = config['output_paths'],
+        engine = _spec.get_engine(config)
     ))
 
     # Create the task -- single monolithic chunk so the one worker sees the

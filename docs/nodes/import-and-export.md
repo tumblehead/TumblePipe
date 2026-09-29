@@ -117,7 +117,8 @@ Source: [`otls/lop_th.import_shot.1.0`](../../otls/lop_th.import_shot.1.0/th_8_8
 |---|---|---|
 | Entity | `from_context` | The shot (button opens *Select Shot*) |
 | Channel | `default` | Which channel's staged build |
-| Department | `from_context` | The cut: this department **and everything downstream of it** in the shot's pipeline order is excluded, so you compose what is upstream of your own work. The reserved value `none` (type it; it is not in the menu) excludes nothing |
+| Department | `from_context` | The department whose layer is left out — the workfile authors it. The reserved value `none` (type it; it is not in the menu) excludes nothing |
+| Exclude | This + Downstream | **This + Downstream** also leaves out every department after it in the shot's pipeline order, so you compose only what is upstream of your work. **This Department Only** keeps the later ones — the environment template uses it so environment sees the animation camera and characters. Changing it re-imports immediately |
 | Version | `latest` | `latest` / `current` / `v####` |
 | Exclude Asset Departments | *(none)* | Checkable list of asset departments (e.g. `lookdev`) to leave out of **every** asset in the shot, nested ones included; ticking re-imports immediately |
 | Include procedurals | off | Currently wired to nothing |
@@ -146,6 +147,11 @@ Gotchas:
   — no comment, no bypass. Check the Layer Stack folder is present.
 - With Version `latest` the versions shown in the stack are the ones that
   floated in, which can differ from the pins recorded in the build.
+- With Exclude on **This Department Only**, later departments are marked in
+  the Layer Stack, e.g. `Animation (downstream)`. In the final shot their
+  opinions sit on top of yours, so an edit to a prim they also touch shows
+  in your session but not in the render. Publishing is unaffected: the
+  export strips everything this node loads.
 - Assets are dropped along with the department that introduced them, so a
   lookdev-only exclusion never removes a model.
 - Exclude Asset Departments **mutes** the layers instead of dropping rows:
