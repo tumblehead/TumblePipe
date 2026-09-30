@@ -1669,7 +1669,7 @@ class SubmitJobsDialog(QDialog):
         return box
 
     def _build_playblast_section(self) -> QGroupBox:
-        """A GL (Storm) preview on the farm — shots only.
+        """A Karma XPU preview on the farm — shots only.
 
         The input is the shot's staged 'default' stage cut at this
         department, and the frame range is the shot's own, so there is no

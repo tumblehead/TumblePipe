@@ -75,8 +75,7 @@ Each worker needs the same environment as an artist workstation:
 
   The tasks that drive **husk** (`render`, `playblast`) pass
   `--check-licenses 'Karma Renderer'`, so they take a **Karma Renderer**
-  license and never a Houdini seat — for Storm playblasts too, which render
-  on a Karma license alone. A husk run without that flag asks for Engine /
+  license and never a Houdini seat. A husk run without that flag asks for Engine /
   Core / FX first; that is how early farm playblasts failed with
   `No licenses could be found` while Karma licenses sat free.
 
@@ -90,22 +89,14 @@ Each worker needs the same environment as an artist workstation:
 - **Drive mappings** — workers must map the project drives to the same letters
   the workstations use, so jobs that reference `P:\...` resolve identically.
   Without matching drive letters, the job will fail to read project files.
-- **A GPU for the `playblast` group** — playblast jobs render with one of
-  two engines, picked by the job's `engine` setting (there is no dialog
-  control yet; absent means `storm`):
-  - `storm` — husk's Hydra Storm (GL) delegate. The worker needs a
-    GL-capable GPU context (a real display/session, not a headless service).
-    A worker without one produces empty frames; the task fails loudly with
-    that hint rather than shipping a black MP4.
-  - `xpu` — Karma XPU in a preview mode (scene materials and lights off, a
-    camera headlight with ambient occlusion, 4 samples). It draws through
-    CUDA/OptiX with no GL context or display, and uses the worker's GPU memory
-    (3.5 GiB peak on a HideAndReek shot).
-
-  The group is kept separate from `karma` so previews never take final-render
-  slots. **The group must exist in Deadline**: a job whose group is missing
-  lands in `none` and can run on any worker, including an artist's
-  workstation.
+- **An NVIDIA GPU for the `karma` group** — final renders and playblasts
+  both run there. Playblast jobs render with
+  Karma XPU in a preview mode (scene materials and lights off, a camera
+  headlight with ambient occlusion, 4 samples). It draws through CUDA/OptiX
+  with no GL context or display, and uses the worker's GPU memory (3.5 GiB
+  peak on a HideAndReek shot). Hydra Storm (GL) used to be an option and was
+  removed: it hung on the first frame and crashed husk on every real shot
+  the farm tried.
 
 For the **HPM** plugin specifically — **no per-node setup is required**:
 

@@ -90,7 +90,12 @@ Node-wide: **Exclude departments** (lists the union of all rows' departments),
 **Import Mode**, the **Import** button, and a **Layout** folder that is a
 full Edit LOP (Primitives, Translate/Rotate/Scale, pivot, Apply / Reset /
 Remove Unused Transforms) so you can place the imported prims with the
-viewport handles; those edits survive re-imports.
+viewport handles; those edits survive re-imports and are published: the
+Layout edit is applied below the node's internal layerbreak, so the export
+carries it as `over` transforms on the asset prims while the assets
+themselves are re-referenced from their metadata. (Before this was fixed,
+the edit sat above the layerbreak and every placement was silently dropped
+on export.)
 
 Gotchas:
 
@@ -102,6 +107,10 @@ Gotchas:
   Instance count is what the staged `context.json` records, so it survives
   export and re-import.
 - Comment reads *Bypassed: No assets configured* or *Imported: N asset(s)*.
+- Don't disable the internal layerbreak to get placements through. It is
+  what keeps the asset files out of the publish; without it the export
+  aborts with *composes geometry from path(s) outside the export folder*,
+  listing the assets' `_staged/…` layers.
 
 ## `th::import_shot` (LOP)
 

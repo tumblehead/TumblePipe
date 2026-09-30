@@ -18,6 +18,14 @@ Editing rules learned the hard way:
   This shipped broken in v1.18.0/1.18.1 (the import layerbreak
   disabled itself). Write the arithmetically equivalent spaceless
   form instead: `expr = ch(\"../a\")*(1-ch(\"../b\"))`.
+- **Moving or renaming an inner node by hand touches four files.**
+  `Contents.mime` is only one of them: `Contents.houdini_versions`,
+  `Contents.createtimes` and `Contents.modtimes` key every node by its
+  `hdaroot/...` path too. Miss `houdini_versions` and the node loads with
+  no saved Houdini version, so Houdini's node-upgrade path runs on it —
+  moving `import_assets`' `layout_assets` Edit out of `dive/` silently
+  turned its `xformcommon` channel reference into `constant()`. Diff
+  `p.expression()` over every parm of the moved node, old build vs new.
 - **Never delete `*.orig` files** (e.g. `ViewerStateName.orig`) — they
   are load-bearing for compile-hdas.
 - DialogScript menu/toggle parms follow the existing idioms in each

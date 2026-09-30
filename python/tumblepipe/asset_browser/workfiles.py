@@ -133,6 +133,8 @@ class WorkfileManager:
         """
         if not asset_id or not dept:
             return None
+        if asset_id.startswith("group:"):
+            return self._group_dept_dir(asset_id, dept)
         parsed = self._catalog._resolver.split(asset_id)
         if parsed is None:
             return None
@@ -145,6 +147,39 @@ class WorkfileManager:
             kind = "assets" if second in cats else "shots"
             return root / kind / second / third / dept
         except Exception:
+            return None
+
+    def _group_project(self, asset_id: str):
+        """The registry project of a ``group:PROJECT:ctx/name`` id, or ``None``."""
+        try:
+            _, rest = asset_id.split(":", 1)
+            proj_name, _path = rest.split(":", 1)
+        except ValueError:
+            return None
+        return self._catalog._registry.get(proj_name)
+
+    def _group_dept_dir(self, asset_id: str, dept: str) -> Path | None:
+        """A Multi dept's workfile directory (``groups:/<path>/<dept>``).
+
+        Group ids don't split into ``PROJECT/SECOND/THIRD``, so without
+        this every per-version lookup on a Multi row — the Open button,
+        the user / edited label — resolved to nothing.
+        """
+        proj = self._group_project(asset_id)
+        if proj is None:
+            return None
+        path = asset_id.split(":", 2)[2]
+        try:
+            self._catalog._activate_project(proj)
+            from tumblepipe.api import api as tp_api
+            return tp_api.storage.resolve(
+                uris.groups_root() / uris.group(path).segments / dept,
+            )
+        except Exception:
+            log.debug(
+                "Group dept dir lookup failed for %s/%s", asset_id, dept,
+                exc_info=True,
+            )
             return None
 
     def workfile_path_for(
@@ -424,19 +459,25 @@ class WorkfileManager:
         """
         if not asset_id or not version:
             return
-        proj = self._catalog._resolver.project_for(asset_id)
+        is_group = asset_id.startswith("group:")
+        if is_group:
+            proj = self._group_project(asset_id)
+        else:
+            proj = self._catalog._resolver.project_for(asset_id)
         if proj is None:
             return
 
         # Cross-project: launch a new Houdini instance instead of
         # loading into the current session (resolver + env mismatch).
+        # Multis load in-process, like open_group_workfile.
         try:
             import hou
             scene_proj = self._catalog._project_for_hip_path(
                 Path(hou.hipFile.path()),
             )
             if (
-                scene_proj is not None
+                not is_group
+                and scene_proj is not None
                 and proj is not None
                 and scene_proj.name != proj.name
             ):
@@ -990,7 +1031,7 @@ class WorkfileManager:
         try:
             self._catalog._activate_project(proj)
             from tumblepipe.pipe import paths as paths_mod
-            from tumblepipe import api as tp_api
+            from tumblepipe.api import api as tp_api
             group_uri = uris.group(path)
             hip_path = paths_mod.latest_hip_file_path_with_context(
                 group_uri, dept,
@@ -1063,7 +1104,7 @@ class WorkfileManager:
             return
         try:
             self._catalog._activate_project(proj)
-            from tumblepipe import api as tp_api
+            from tumblepipe.api import api as tp_api
             group_uri = uris.group(path)
             workspace_uri = (
                 uris.groups_root() / group_uri.segments / dept

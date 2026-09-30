@@ -47,6 +47,8 @@ from .detail import DetailSectionBuilder
 from .resolver import AssetResolver
 from .scene import SceneManager
 from .thumbnails import ThumbnailManager
+from . import nodes as nodes
+from .nodes import PipelineNodes
 from . import recipes as recipes
 from .recipes import RecipeManager
 from . import uris as uris
@@ -102,7 +104,8 @@ _MISSING_DEPT_TOOLTIP = (
 
 def creation_scope(tags) -> str:
     """What a browser scope creates: ``assets``, ``shots``, ``group``,
-    ``scene``, ``recipes``, or ``""`` when it is not narrowed to one.
+    ``scene``, ``recipes``, ``nodes`` (which creates nothing), or ``""``
+    when it is not narrowed to one.
 
     *tags* are the browser's filter atoms: the active view's merged tags,
     or a sidebar node's own tag split on ``+``. The browser offers the
@@ -119,6 +122,8 @@ def creation_scope(tags) -> str:
         return "scene"
     if recipes.TYPE_TAG in tags:
         return "recipes"
+    if nodes.TYPE_TAG in tags:
+        return "nodes"
     assets = "type:asset" in tags
     shots = "type:shot" in tags
     for tag in tags:
@@ -192,6 +197,11 @@ class PipelineCatalog(Catalog):
         ref = recipes.parse_id(asset_id)
         if ref is not None:
             return ref.project
+        if nodes.is_node_id(asset_id):
+            # A package node belongs to every project. The browser keeps a
+            # favourite only when this equals the scoped (launch) project,
+            # so answer with that one; None would hide the star everywhere.
+            return self._activator.launch_project_name or None
         parts = self._resolver.split(asset_id)
         return parts[0] if parts else None
 
@@ -271,6 +281,9 @@ class PipelineCatalog(Catalog):
         self._recipes = RecipeManager(
             self, on_counts_changed=self._request_sidebar_refresh,
         )
+        # Nodes: every HDA this package ships, as a card you drag onto a
+        # network. Package-wide, not per project — see nodes.py.
+        self._nodes = PipelineNodes(self.id)
         # Errors accumulated during the most recent discovery pass.
         # Drained by ``drain_discovery_errors`` so the QueryEngine can
         # attach them to the AssetPage. A new browse begins by clearing
@@ -403,13 +416,15 @@ class PipelineCatalog(Catalog):
         # projects whose Clients haven't been warmed up yet.
         cats = self._list_categories()
         seqs = self._list_sequences()
+        node_contexts = {f.context for f in self._nodes.families()}
         return {
             "source": ["pipeline"],
-            "type": ["asset", "shot", "recipe"],
+            "type": ["asset", "shot", "recipe", "node"],
             "category": list(cats),
             "sequence": seqs,
-            "context": self._recipes.contexts(),
+            "context": sorted(set(self._recipes.contexts()) | node_contexts),
             "project": [p.name for p in self._registry.all()],
+            **self._nodes.available_tags(),
         }
 
     # ── Collections ───────────────────────────────────────
@@ -444,6 +459,11 @@ class PipelineCatalog(Catalog):
                     icon="folder",
                     children=tuple(sections),
                 ))
+        # Nodes ship with the package, so they sit beside the project
+        # sections rather than inside each one.
+        node_section = self._nodes.collection()
+        if node_section is not None:
+            result.append(node_section)
         return [cascade_counts(c) for c in result]
 
     def _build_project_sections(self, proj) -> list[Collection]:
@@ -655,6 +675,11 @@ class PipelineCatalog(Catalog):
         # _apply_category_prefix.
         self._last_query_tags = tags
 
+        # The Nodes section lists package HDAs, not project entities: no
+        # discovery pass, and no project filter (see PipelineNodes).
+        if nodes.TYPE_TAG in tags:
+            return self._nodes.get_assets(query, tags, cursor, page_size)
+
         # Container types (Groups / Scenes) take over the grid: the
         # cards are synthesized from sidebar Collection data rather than
         # the real asset/shot index. Drill-down (card click) clears the
@@ -791,6 +816,8 @@ class PipelineCatalog(Catalog):
             return self._containers._get_container_detail(asset_id)
         if recipes.is_recipe_id(asset_id):
             return self._recipes.get_detail(asset_id)
+        if nodes.is_node_id(asset_id):
+            return self._nodes.get_detail(asset_id, version)
 
         # asset_id format: "PROJECT/CATEGORY/AssetName" or "PROJECT/SEQ/Shot".
         parsed = self._resolver.split(asset_id)
@@ -1009,6 +1036,8 @@ class PipelineCatalog(Catalog):
     def get_thumbnail(self, asset: Asset):
         if recipes.is_recipe_id(asset.id):
             return self._recipes.get_thumbnail(asset)
+        if nodes.is_node_id(asset.id):
+            return self._nodes.get_thumbnail(asset)
         return self._thumbnails.get_thumbnail(asset)
 
     def get_card_menu_items(self, asset: Asset, *, selected_assets=None):
@@ -1024,6 +1053,8 @@ class PipelineCatalog(Catalog):
         asset_id = asset.id
         if recipes.is_recipe_id(asset_id):
             return self._recipes.card_menu_items(asset)
+        if nodes.is_node_id(asset_id):
+            return self._nodes.card_menu_items(asset)
 
         # Build the submit-jobs target list: the multi-selected cards if
         # the browser provided a selection scoped to this catalog AND
@@ -1914,9 +1945,9 @@ class PipelineCatalog(Catalog):
         # Departments tab where the user can toggle which depts the
         # group covers; scenes don't (no editable depts field).
         kind = detail.kind
-        if kind == "recipe":
+        if kind in ("recipe", nodes.KIND):
             # The framework's own tags / description sections say it all
-            # — a recipe has no departments, todos or entity URI.
+            # — a recipe or node has no departments, todos or entity URI.
             return None
         if kind == "group":
             return [
@@ -2042,6 +2073,8 @@ class PipelineCatalog(Catalog):
         from tumbletrove.asset_browser.core.ghost_overlay import GhostData, GhostNode
         if recipes.is_recipe_id(asset.id):
             return self._recipes.get_ghost_data(asset.id)
+        if nodes.is_node_id(asset.id):
+            return self._nodes.get_ghost_data(asset.id)
         if "type:shot" in asset.tags:
             return GhostData(nodes=[GhostNode("th::import_shot::1.0", 0.0, 0.0)])
         return GhostData(nodes=[GhostNode("th::import_asset::1.0", 0.0, 0.0)])
@@ -2056,6 +2089,8 @@ class PipelineCatalog(Catalog):
     def on_drop(self, detail, drop) -> bool:
         if recipes.is_recipe_id(detail.id):
             return self._recipes.on_drop(detail, drop)
+        if nodes.is_node_id(detail.id):
+            return self._nodes.on_drop(detail, drop)
         return self._drops.on_drop(detail, drop)
 
     def on_deck_drop(self, asset, deck_keys, drop) -> bool:
@@ -2067,6 +2102,11 @@ class PipelineCatalog(Catalog):
         # and would silently leave the recipe behind.
         if any(recipes.is_recipe_id(a.id) for a in assets):
             return False
+        # Node cards create one node each. Mixed with entities the nodes
+        # decline, and each card falls back to its own on_drop, for the
+        # same reason as recipes.
+        if any(nodes.is_node_id(a.id) for a in assets):
+            return self._nodes.on_multi_drop(assets, drop)
         return self._drops.on_multi_drop(assets, drop)
 
     # ── Session panel ──────────────────────────────────────
@@ -2229,9 +2269,9 @@ class PipelineCatalog(Catalog):
             FONT_TINY, FONT_TITLE, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
         )
 
-        if asset is None or recipes.is_recipe_id(asset.id):
-            # A recipe gets the framework's generic hover: its facts are
-            # the card's own tags and metadata, no department grid.
+        if asset is None or recipes.is_recipe_id(asset.id) or nodes.is_node_id(asset.id):
+            # A recipe or node gets the framework's generic hover: its facts
+            # are the card's own tags and metadata, no department grid.
             return None
 
         name = asset.name or "Untitled"
@@ -2576,6 +2616,8 @@ class PipelineCatalog(Catalog):
             return [root]
         if scope == "recipes":
             return [recipe]
+        if scope == "nodes":
+            return []       # nodes ship with the package; nothing to create
         if scope == "assets":
             return [asset, category, multi, root]
         if scope == "shots":
@@ -2981,6 +3023,8 @@ class PipelineCatalog(Catalog):
             return self.get_collection_edit_fields(asset_id)
         if recipes.is_recipe_id(asset_id):
             return self._recipes.get_edit_fields(asset_id)
+        if nodes.is_node_id(asset_id):
+            return []
         parts = self._resolver.split(asset_id)
         if parts is None:
             return []
@@ -3052,6 +3096,8 @@ class PipelineCatalog(Catalog):
             return self.edit_collection(asset_id, fields)
         if recipes.is_recipe_id(asset_id):
             return self._recipes.edit(asset_id, fields)
+        if nodes.is_node_id(asset_id):
+            return False
         uri = self._resolver.uri_for(asset_id)
         if uri is None:
             return False
@@ -3121,6 +3167,8 @@ class PipelineCatalog(Catalog):
             return self.delete_collection(asset_id)
         if recipes.is_recipe_id(asset_id):
             return self._recipes.delete(asset_id)
+        if nodes.is_node_id(asset_id):
+            return False
         uri = self._resolver.uri_for(asset_id)
         if uri is None:
             return False
@@ -3399,6 +3447,8 @@ class PipelineCatalog(Catalog):
 
         if recipes.is_recipe_id(detail.id):
             return self._recipes.get_actions(detail)
+        if nodes.is_node_id(detail.id):
+            return self._nodes.get_actions(detail)
 
         # A Multi / Root has no export folder and no entity row in the
         # database editor, so those two actions could only fail on it —
@@ -3455,6 +3505,9 @@ class PipelineCatalog(Catalog):
         if detail and recipes.is_recipe_id(detail.id):
             self._recipes.execute_action(action_id, detail)
             return
+        if detail and nodes.is_node_id(detail.id):
+            self._nodes.execute_action(action_id, detail)
+            return
 
         if action_id == "open_export":
             path = self._resolve_export_path(detail.id if detail else "")
@@ -3496,7 +3549,7 @@ class PipelineCatalog(Catalog):
     # ── Deck items (departments) ───────────────────────────
 
     def get_deck_items(self, asset: Asset) -> list[DeckItem]:
-        if recipes.is_recipe_id(asset.id):
+        if recipes.is_recipe_id(asset.id) or nodes.is_node_id(asset.id):
             return []
         # Group container cards: one deck item per dept the group
         # covers. "missing" status for covered depts that don't have a
@@ -3760,6 +3813,7 @@ class PipelineCatalog(Catalog):
         self._cached_assets = None
         self._cached_shots = None
         self._recipes.invalidate()
+        self._nodes.invalidate()
         self._containers.invalidate_membership_cache()
 
     def _invalidate_membership_cache(self) -> None:
@@ -3797,7 +3851,7 @@ class PipelineCatalog(Catalog):
     def get_asset_membership(
         self, asset_id: str,
     ) -> list[tuple[str, str, str]]:
-        if recipes.is_recipe_id(asset_id):
+        if recipes.is_recipe_id(asset_id) or nodes.is_node_id(asset_id):
             return []
         return self._containers.get_asset_membership(asset_id)
 
@@ -3964,6 +4018,8 @@ class PipelineCatalog(Catalog):
             return self._refresh_scene_asset(asset_id)
         if recipes.is_recipe_id(asset_id):
             return self._recipes.get_asset(asset_id)
+        if nodes.is_node_id(asset_id):
+            return self._nodes.get_asset(asset_id)
 
         parts = self._resolver.split(asset_id)
         if parts is None:

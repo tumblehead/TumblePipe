@@ -216,8 +216,9 @@ The layer it publishes is an **over-layer** — it defines nothing of its own
 and composes over the model.
 
 That last point matters when you inspect a published lookdev layer. Opening
-it alone and traversing shows only `/_METADATA`, because every prim in it is
-an `over` and the materials live inside its `lookdev` variant set. That is
+it alone and traversing shows nothing (publishes before v1.58.0 show a stray
+`/_METADATA`, which `th::import_layer` still authored), because every prim in
+it is an `over` and the materials live inside its `lookdev` variant set. That is
 correct, not a hollow publish. To read it, sublayer it over the model
 publish and traverse the composed stage.
 
@@ -872,8 +873,8 @@ No camera in render settings, defaulting to <camera>        # neither: wrong vie
 
 A farm playblast is the exception that proves the rule: it renders through a
 settings prim the submitter *authors* at `/Render/tumblepipe_playblast`,
-because Hydra Storm cannot fill the Karma LPE render vars the project's
-products order. See [Playblast](compositing.md#playblast) and
+because a preview wants one raw colour buffer, not the Karma LPE render vars
+the project's products order. See [Playblast](compositing.md#playblast) and
 `scripts/debug_playblast.py`.
 
 Still hardcoded and *not* covered by this: the `asset_thumbnail`,

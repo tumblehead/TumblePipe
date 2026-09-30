@@ -25,13 +25,15 @@ from tumblepipe.apps import mp4
 from tumblepipe.farm.tasks.env import get_base_env, print_env, job_data_dir
 from tumblepipe.farm.tasks.playblast import _spec
 
-# The one GL Hydra delegate husk can actually load headless. HD_HoudiniRenderer
-# (the delegate the interactive flipbook uses) fails with "Unable to load render
-# plugin" under husk, so a farm playblast is Storm-shaded, not a pixel-identical
-# copy of the viewport flipbook. Verified with `husk --list-renderers`.
-STORM_DELEGATE = 'HdStormRendererPlugin'
-
 # Karma XPU as a playblast: a clay look instead of the scene's shading.
+# It draws through CUDA/OptiX, so it needs a GPU but no GL context or display.
+#
+# There is deliberately no Storm (GL) option. It was the default until 1.57,
+# and on real shots it never finished: HideAndReek/010 on maria-2060 and 030
+# on judas both sat on frame 1 for over ten minutes, then husk died with
+# 0xE06D7363. XPU rendered 030's first frame in 72 s, most of it scene load.
+# The viewport look belongs to the local playblast node, not the farm.
+#
 # --autoheadlight is the load-bearing flag -- --disable-scene-lights alone
 # leaves no light at all and every frame renders black; with it husk puts a
 # light on the camera, and --ao-* shades that headlight with occlusion so form
@@ -55,15 +57,6 @@ XPU_ARGS = [
 ]
 
 
-def engine_args(engine: str) -> list[str]:
-    """The husk arguments that choose and tune the renderer for ``engine``."""
-    if engine == 'storm':
-        return ['--renderer', STORM_DELEGATE, '--gpu']
-    if engine == 'xpu':
-        return list(XPU_ARGS)
-    raise ValueError(f'Unknown playblast engine: {engine}')
-
-
 def _headline(title):
     print(f' {title} '.center(80, '='))
 
@@ -83,11 +76,10 @@ def main(
     fps: int,
     resolution: tuple[int, int],
     input_path: Path,
-    output_paths: list[Path],
-    engine: str = _spec.DEFAULT_ENGINE
+    output_paths: list[Path]
     ) -> int:
 
-    # Storm reads the OCIO config just like the Karma path does.
+    # XPU reads the OCIO config just like the render worker does.
     assert os.environ.get('OCIO') is not None, (
         'OCIO environment variable not set. '
         'Please set it to the OCIO config file.'
@@ -111,7 +103,7 @@ def main(
         env = get_base_env(api)
         print_env()
 
-        # Render the whole range in one husk invocation (see engine_args).
+        # Render the whole range in one husk invocation (see XPU_ARGS).
         # No --camera: husk resolves the render camera from the staged stage's
         # RenderSettings prim, exactly as the Karma render worker relies on.
         # --resolver-context is required for the custom ArResolver (entity:/
@@ -133,16 +125,15 @@ def main(
         # --check-licenses 'Karma Renderer' is what the render worker passes,
         # and a playblast needs it too: without it husk takes a Houdini
         # Core/FX seat (five, shared with artists) and fails "No licenses
-        # could be found" while Karma licences sit free. Storm renders fine on
-        # a Karma Renderer licence alone.
-        _headline(f'Rendering playblast frames ({engine})')
+        # could be found" while Karma licences sit free.
+        _headline('Rendering playblast frames')
         width, height = resolution
         exit_code = husk.run(
             to_windows_path(input_path),
             [
                 '--resolver-context', path_str(to_windows_path(input_path)),
                 '--check-licenses', 'Karma Renderer',
-                *engine_args(engine),
+                *XPU_ARGS,
                 '--verbose', 'a2',
                 '--make-output-path',
                 '--no-mplay',
@@ -170,13 +161,11 @@ def main(
             return _error(
                 'Playblast produced no frames. Read the husk log above before '
                 'blaming the worker: "All AOVs bypassed or missing" means the '
-                'stage asked Storm for a render var it cannot fill (a Karma '
-                'LPE AOV), which is a submission problem, not a machine one. '
-                '"No licenses could be found" is licensing, not the GPU. '
-                'Otherwise, for the storm engine, the GL (Storm) delegate '
-                'likely has no usable GPU/GL context here -- confirm the '
-                'playblast farm group has GL-capable, non-headless workers, '
-                'or render with the xpu engine.'
+                'stage asked for a render var the preview cannot fill, which '
+                'is a submission problem, not a machine one. "No licenses '
+                'could be found" is licensing, not the GPU. "Unable to load '
+                'render plugin: BRAY_HdKarmaXPU" or a CUDA/OptiX error means '
+                'this worker has no usable NVIDIA GPU for Karma XPU.'
             )
         print(f'Rendered {rendered}/{len(render_range)} frames')
 
@@ -235,8 +224,7 @@ def _run(config: dict) -> int:
         config['fps'],
         tuple(config['res']),
         input_path,
-        output_paths,
-        _spec.get_engine(config)
+        output_paths
     )
 
 

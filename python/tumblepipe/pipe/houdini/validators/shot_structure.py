@@ -6,6 +6,16 @@ from .base import ValidationResult
 # Allowed root prim names (exact matches)
 ALLOWED_ROOT_PRIMS = {'collections', 'lights', 'cameras', 'Render', 'scene'}
 
+# Houdini's own bookkeeping prim. Every LOP stage carries it and the USD
+# ROP strips it on save, so it never reaches a published layer.
+HOUDINI_ROOT_PRIMS = {'HoudiniLayerInfo'}
+
+# Metadata used to live in /_METADATA prims (replaced by customData in
+# April 2026). Publishes from before then still carry it and compose it
+# into downstream stages; the artist can't remove it from here, so it is
+# reported but does not block the export.
+LEGACY_ROOT_PRIMS = {'_METADATA'}
+
 # Categories and asset roots compose as either type: import nodes author
 # them as Scopes, but asset exports type them Xform (set_kinds makes
 # assembly/component prims transformable), and whichever layer wins
@@ -51,7 +61,19 @@ def validate_shot_root_prims(root) -> ValidationResult:
         prim_name = prim.GetName()
 
         # Check if it's an allowed fixed name
-        if prim_name in ALLOWED_ROOT_PRIMS:
+        if prim_name in ALLOWED_ROOT_PRIMS or prim_name in HOUDINI_ROOT_PRIMS:
+            continue
+
+        if prim_name in LEGACY_ROOT_PRIMS:
+            result.add_warning(
+                f"Legacy root prim '{prim_name}' from a pre-customData publish.",
+                f"/{prim_name}",
+                suggestion=(
+                    "Harmless. It comes from an upstream layer published "
+                    "before metadata moved to customData; re-exporting that "
+                    "upstream department clears it."
+                ),
+            )
             continue
 
         # Check if it looks like an asset category

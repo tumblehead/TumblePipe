@@ -15,7 +15,7 @@ Nothing is submitted to Deadline. Checks:
     shot and land under <shot>/<dept>/ (i.e. the department is passed --
     the arity bug this feature shipped a fix for stays fixed).
  4. build() populates the batch with a 'playblast' task + a 'playblast_notify'
-    that depends on it, the task carries the dedicated 'playblast' group, and
+    that depends on it, the task carries the 'karma' group, and
     its output paths are the versioned playblast + daily. Skipped (not failed)
     if Task construction can't run from a dev-override checkout (hpm requires
     the script under ~/.hpm/packages/<name>@<version>/).
@@ -135,8 +135,8 @@ def main() -> int:
         )
         pb_task = jobs.get("playblast")
         check(
-            "playblast task uses the dedicated 'playblast' group",
-            getattr(pb_task, "group", None) == "playblast",
+            "playblast task uses the 'karma' group",
+            getattr(pb_task, "group", None) == "karma",
             str(getattr(pb_task, "group", None)),
         )
         out = [str(p) for p in getattr(pb_task, "output_paths", [])]

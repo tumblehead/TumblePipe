@@ -11,13 +11,13 @@ none of them are visible from the mp4:
    husk sees neither: it logs "No camera in render settings, defaulting to
    <first camera on the stage>" and shoots the shot from the project
    template's origin camera.
-2. husk rendered nothing. Storm cannot fill Karma's LPE AOVs (``beauty``,
-   ``sourceName = "C.*[LO]"``), so if the playblast inherits the project's
-   RenderProduct husk logs "All AOVs bypassed or missing. Nothing to write"
-   and the worker reports it as a missing GPU.
+2. husk rendered nothing. The playblast authors its own preview settings
+   prim that orders only a raw ``color`` var; if the project's RenderProduct
+   (Karma LPE AOVs such as ``beauty``, ``sourceName = "C.*[LO]"``) leaks in
+   instead, husk can log "All AOVs bypassed or missing. Nothing to write".
 3. the department cut dropped a layer the view depends on (the camera, the
    lights, the set).
-4. the stage is fine and the worker environment is not (OCIO, GL context).
+4. the stage is fine and the worker environment is not (OCIO, the GPU).
 
 This script composes exactly what ``batch_submit`` would bundle -- same
 staged file, same department cut, same collapse -- and reports what husk will
@@ -196,30 +196,31 @@ def _report_stage(collapsed_path: Path, frame: int) -> bool:
                     )
                     if source_type == 'lpe':
                         print(
-                            '      FAIL: Hydra Storm cannot fill an LPE AOV. '
-                            'husk will write no image at all.'
+                            "      FAIL: an LPE AOV means the project's "
+                            'settings leaked into the playblast, which '
+                            'orders only raw color.'
                         )
                         ok = False
     return ok
 
 
 def _run_husk(
-    collapsed_path: Path, frame: int, resolution, out_dir: Path, engine: str
+    collapsed_path: Path, frame: int, resolution, out_dir: Path
 ) -> bool:
     from tumblepipe.api import api, path_str, to_windows_path
     from tumblepipe.apps.houdini import Husk
     from tumblepipe.farm.tasks.env import get_base_env
-    from tumblepipe.farm.tasks.playblast.playblast import engine_args
+    from tumblepipe.farm.tasks.playblast.playblast import XPU_ARGS
 
-    out_path = out_dir / f'debug_playblast_{engine}.$F4.jpg'
+    out_path = out_dir / 'debug_playblast.$F4.jpg'
     width, height = resolution
-    print(f'  husk ({engine}) -> {out_path}')
+    print(f'  husk -> {out_path}')
     exit_code = Husk().run(
         to_windows_path(collapsed_path),
         [
             '--resolver-context', path_str(to_windows_path(collapsed_path)),
             '--check-licenses', 'Karma Renderer',
-            *engine_args(engine),
+            *XPU_ARGS,
             '--verbose', 'a2',
             '--make-output-path',
             '--no-mplay',
@@ -230,7 +231,7 @@ def _run_husk(
         ],
         env=get_base_env(api),
     )
-    rendered = sorted(out_dir.glob(f'debug_playblast_{engine}.*.jpg'))
+    rendered = sorted(out_dir.glob('debug_playblast.*.jpg'))
     print(f'  husk exit {exit_code}, {len(rendered)} frame(s) written')
     for path in rendered:
         print(f'    {path}')
@@ -261,11 +262,6 @@ def main(argv=None) -> int:
     parser.add_argument(
         '--husk', action='store_true',
         help='Also render one frame locally with the playblast worker flags.'
-    )
-    parser.add_argument(
-        '--engine', choices=('storm', 'xpu'), default='storm',
-        help='Renderer for --husk, as the playblast job picks it. '
-             'Default: storm.'
     )
     args = parser.parse_args(argv)
 
@@ -344,7 +340,7 @@ def main(argv=None) -> int:
             out_dir = collapsed_path.parent / collapsed_path.stem
             out_dir.mkdir(parents=True, exist_ok=True)
             if not _run_husk(
-                collapsed_path, frame, args.res, out_dir, args.engine
+                collapsed_path, frame, args.res, out_dir
             ):
                 failures += 1
         print()

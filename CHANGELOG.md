@@ -12,6 +12,22 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.57.0 — 2026-09-29
+
+### Features
+- feat(asset-browser): noted versions stand out in Open Version (`bb54d28`)
+- feat(import_shot): an Exclude menu, so upstream departments can see downstream (`e6c74a4`)
+- feat(farm): playblasts can render with Karma XPU (`5d6a044`)
+
+### Fixes
+- fix(import_shot): resolve Department from_context inside a Multi (`310e557`)
+- fix(farm): farm playblasts take a Karma licence, not a Houdini seat (`b91372c`)
+
+### Documentation
+- docs: the comment icon on noted versions (`af1703d`)
+- docs: playblast licences, the XPU engine, and the Storm hang (`8741b88`)
+- docs: regenerate CHANGELOG.md for v1.56.1 (`ae06f6e`)
+
 ## v1.56.1 — 2026-09-28
 
 ### Fixes

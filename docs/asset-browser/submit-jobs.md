@@ -356,7 +356,6 @@ Output locations are in [Compositing → Where renders land](../compositing.md#w
 | **cloud_render**, **cloud_stage_render** | the cloud stage task, not the dialog | `stage` → render → denoise → slapcomp → mp4 → notify (`cloud_karma`) | as render |
 
 Job priorities come from the settings; notify jobs run at 90, edit at 90,
-stage notify at 60. The playblast group is kept separate from `karma` so
-previews never contend with final frames — those workers need a GPU (and a
-GL context for Storm playblasts), see
+stage notify at 60. Playblasts run in the `karma` group with final renders
+— they are Karma XPU renders and need the same NVIDIA GPU workers, see
 [Farm worker prerequisites](../deadline.md#farm-worker-prerequisites).

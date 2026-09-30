@@ -86,6 +86,35 @@ Count pills show how many assets, shots or recipes a row holds. Empty
 categories and sequences are listed too, so a bucket can exist before its
 first entity, and the Recipes section is listed before its first recipe.
 
+Beside the projects, once for the whole catalog:
+
+| Section | Rows underneath | Notes |
+|---|---|---|
+| **Nodes** | one row per TAB submenu that ships a node: **Pipeline**, **Model**, **Lookdev**, **Lighting**, **Rendering**, **Comp**, **Utils**, **Debug** | See [Finding and creating nodes](#finding-and-creating-nodes). |
+
+### Finding and creating nodes
+
+The **Nodes** section lists every `th::` node this package ships, one card per
+node, filed by its TAB submenu (`_TumblePipe/pipeline` is the **Pipeline**
+row). It is how you find `import_shot` or `export_layer` without knowing
+where they sit in the TAB menu: search matches the node's name, type name,
+context and row. Nodes come with the package, not the project, so the section
+shows the same nodes in every project and a project filter never hides them.
+
+A card shows the node itself, drawn as the network editor draws it (colour,
+input and output dots, icon). Nodes whose icon is one of TumblePipe's
+illustrations show the illustration instead. A name shipped in two contexts
+gets two cards, e.g. **Cache (LOP)** and **Cache (SOP)**.
+
+To create one, drag the card onto a network editor, or pick **Create Node**
+on the card's right-click menu or the detail panel. See
+[Dragging into Houdini](#dragging-into-houdini) for where it lands. **Copy Node
+Type** puts the type name (`th::import_shot::1.0`) on the clipboard.
+
+Listed: the operators in [`hpm.toml`](../../hpm.toml) `[[operators]]` that are
+loaded in this session and not hidden from the TAB menu. The five `Data`
+config HDAs (`th_configure_*`) are left out; they are not placed in a network.
+
 The sidebar has no Todos section; an entity's tasks live on its card's
 **Tasks…** menu item and on the detail panel's **Tasks** tab.
 
@@ -101,6 +130,7 @@ Right-click menus on sidebar rows. Each starts with the creation options the
 | **Roots** header | **New Root...** | |
 | a Root | **New Asset...**, **New Shot...**, **New Recipe...**, **New Multi...**, **New Root...** | the Root card's menu, plus **Add selected to Root** and **Remove selected from Root** |
 | **Recipes** header, a context row | **New Recipe...** | |
+| **Nodes** header, a submenu row | none | |
 
 A Multi or Root row's menu is its card's menu, from **Open** to **Delete**,
 Root export actions included (see
@@ -356,6 +386,8 @@ Drop targets and what gets built
 | a Root card | a LOP network | a stock `sublayer` node whose file path is the Root's `entity:/scenes/…` URI, so it follows the Root's latest export |
 | a recipe card | any network editor | the recipe's nodes, wired and placed at the cursor; another context than the one it was saved in asks **Load Anyway** first. See [Recipes](recipes.md#using-a-recipe) |
 | department deck items or list rows | a LOP network | one `th::import_layer` per department, wired and flagged (TumbleTrove's default path) |
+| a node card (**Nodes** section) | a network of the node's context | the node at the cursor; dropped on an existing node, it is wired below it and takes its display flag. A SOP node dropped at object level gets a new Geometry node to live in. Another context is refused |
+| several node cards | a network of their context | one node per card, side by side, in one undo step; if any card's context does not fit, none is created |
 
 A single asset or shot card dropped into a LOP or SOP network also
 pins the entity's `thumbnail.png` above the new node in the network

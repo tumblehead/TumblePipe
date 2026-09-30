@@ -76,7 +76,7 @@ Content-Disposition: attachment; filename="hdaroot/output.def"
 Content-Type: text/plain
 
 comment ""
-position -1.73486 2.83966
+position -1.73486 1.70966
 connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -84,11 +84,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	set_metadata 1 1 "input1"
+0 	layout_assets 1 1 "input1"
 }
 inputs
 {
-0 	set_metadata 0 1
+0 	layout_assets 0 1
 }
 stat
 {
@@ -209,11 +209,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	layout_assets 1 1 "input1"
+0 	metadata_update 1 1 "input1"
 }
 inputs
 {
-0 	layout_assets 0 1
+0 	metadata_update 0 1
 }
 stat
 {
@@ -377,308 +377,13 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/dive/layout_assets.init"
-Content-Type: text/plain
-
-type = edit
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/dive/layout_assets.def"
-Content-Type: text/plain
-
-comment ""
-position 1.29876 3.97406
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-1 "output1"
-}
-inputsNamed3
-{
-0 	metadata_update 1 1 "input1"
-}
-inputs
-{
-0 	metadata_update 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@matthias-4070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/dive/layout_assets.chn"
-Content-Type: text/plain
-
-{
-    channel primpattern {
-      lefttype = extend
-      righttype = extend
-      defaultString = \"\"
-      flags = 0
-      segment { length = 0 expr = chs(\"../../primpattern\") }
-    }
-    channel physprimpattern {
-      lefttype = extend
-      righttype = extend
-      defaultString = \"\"
-      flags = 0
-      segment { length = 0 expr = chs(\"../../physprimpattern\") }
-    }
-    channel bypassprimpattern {
-      lefttype = extend
-      righttype = extend
-      defaultString = \"\"
-      flags = 0
-      segment { length = 0 expr = chs(\"../../bypassprimpattern\") }
-    }
-    channel xformdescription {
-      lefttype = extend
-      righttype = extend
-      defaultString = \"$OS\"
-      flags = 0
-      segment { length = 0 expr = chs(\"../../xformdescription\") }
-    }
-    channel localxform {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../localxform\") }
-    }
-    channel xformcommon {
-      lefttype = extend
-      righttype = extend
-      default = 1
-      flags = 0
-      segment { length = 0 value = 1 1 expr = ch(\"../../xformcommon\") }
-    }
-    channel applyparmxform {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../applyparmxform\") }
-    }
-    channel xOrd {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../xOrd\") }
-    }
-    channel rOrd {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../rOrd\") }
-    }
-    channel tx {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../tx\") }
-    }
-    channel ty {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../ty\") }
-    }
-    channel tz {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../tz\") }
-    }
-    channel rx {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../rx\") }
-    }
-    channel ry {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../ry\") }
-    }
-    channel rz {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../rz\") }
-    }
-    channel sx {
-      lefttype = extend
-      righttype = extend
-      default = 1
-      flags = 0
-      segment { length = 0 value = 1 1 expr = ch(\"../../sx\") }
-    }
-    channel sy {
-      lefttype = extend
-      righttype = extend
-      default = 1
-      flags = 0
-      segment { length = 0 value = 1 1 expr = ch(\"../../sy\") }
-    }
-    channel sz {
-      lefttype = extend
-      righttype = extend
-      default = 1
-      flags = 0
-      segment { length = 0 value = 1 1 expr = ch(\"../../sz\") }
-    }
-    channel shear1 {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../shear1\") }
-    }
-    channel shear2 {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../shear2\") }
-    }
-    channel shear3 {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../shear3\") }
-    }
-    channel scale {
-      lefttype = extend
-      righttype = extend
-      default = 1
-      flags = 0
-      segment { length = 0 value = 1 1 expr = ch(\"../../scale\") }
-    }
-    channel px {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../px\") }
-    }
-    channel py {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../py\") }
-    }
-    channel pz {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../pz\") }
-    }
-    channel prx {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../prx\") }
-    }
-    channel pry {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../pry\") }
-    }
-    channel prz {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../prz\") }
-    }
-    channel delta {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../delta\") }
-    }
-    channel viewerstatedelta {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../viewerstatedelta\") }
-    }
-    channel apply {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../apply\") }
-    }
-    channel reset {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../reset\") }
-    }
-    channel removeunusedtransforms {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = ch(\"../../removeunusedtransforms\") }
-    }
-  }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/dive/layout_assets.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-primpattern	[ 0	locks=0 ]	(	[ primpattern	"" ] 	)
-physprimpattern	[ 0	locks=0 ]	(	[ physprimpattern	"" ] 	)
-bypassprimpattern	[ 0	locks=0 ]	(	[ bypassprimpattern	"" ] 	)
-xformdescription	[ 0	locks=0 ]	(	[ xformdescription	$OS ] 	)
-localxform	[ 0	locks=0 ]	(	[ localxform	0 ] 	)
-xformcommon	[ 0	locks=0 ]	(	[ xformcommon	1 ] 	)
-applyparmxform	[ 0	locks=0 ]	(	[ applyparmxform	1 ] 	)
-xOrd	[ 0	locks=0 ]	(	[ xOrd	0 ] 	)
-rOrd	[ 0	locks=0 ]	(	[ rOrd	0 ] 	)
-t	[ 0	locks=0 ]	(	[ tx	0 ] 	[ ty	0 ] 	[ tz	0 ] 	)
-r	[ 0	locks=0 ]	(	[ rx	0 ] 	[ ry	0 ] 	[ rz	0 ] 	)
-s	[ 0	locks=0 ]	(	[ sx	1 ] 	[ sy	1 ] 	[ sz	1 ] 	)
-shear	[ 0	locks=0 ]	(	[ shear1	0 ] 	[ shear2	0 ] 	[ shear3	0 ] 	)
-scale	[ 0	locks=0 ]	(	[ scale	1 ] 	)
-parmgroup_pivotxform	[ 0	locks=0 ]	(	0	)
-p	[ 0	locks=0 ]	(	[ px	0 ] 	[ py	0 ] 	[ pz	0 ] 	)
-pr	[ 0	locks=0 ]	(	[ prx	0 ] 	[ pry	0 ] 	[ prz	0 ] 	)
-delta	[ 0	locks=0 ]	(	""	)
-viewerstatedelta	[ 0	locks=0 ]	(	""	)
-apply	[ 0	locks=0 ]	(	[ apply	0 ] 	)
-reset	[ 0	locks=0 ]	(	[ reset	0 ] 	)
-removeunusedtransforms	[ 0	locks=0 ]	(	[ removeunusedtransforms	0 ] 	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/dive/layout_assets.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/dive.order"
 Content-Type: text/plain
 
-4
+3
 output
 merge
 metadata_update
-layout_assets
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/dive.net"
@@ -944,15 +649,310 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/layout_assets.init"
+Content-Type: text/plain
+
+type = edit
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/layout_assets.def"
+Content-Type: text/plain
+
+comment ""
+position -1.73486 2.83966
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	set_metadata 1 1 "input1"
+}
+inputs
+{
+0 	set_metadata 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@matthias-4070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/layout_assets.chn"
+Content-Type: text/plain
+
+{
+    channel primpattern {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../primpattern\") }
+    }
+    channel physprimpattern {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../physprimpattern\") }
+    }
+    channel bypassprimpattern {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../bypassprimpattern\") }
+    }
+    channel xformdescription {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"$OS\"
+      flags = 0
+      segment { length = 0 expr = chs(\"../xformdescription\") }
+    }
+    channel localxform {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../localxform\") }
+    }
+    channel xformcommon {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../xformcommon\") }
+    }
+    channel applyparmxform {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../applyparmxform\") }
+    }
+    channel xOrd {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../xOrd\") }
+    }
+    channel rOrd {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../rOrd\") }
+    }
+    channel tx {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../tx\") }
+    }
+    channel ty {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../ty\") }
+    }
+    channel tz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../tz\") }
+    }
+    channel rx {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../rx\") }
+    }
+    channel ry {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../ry\") }
+    }
+    channel rz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../rz\") }
+    }
+    channel sx {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../sx\") }
+    }
+    channel sy {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../sy\") }
+    }
+    channel sz {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../sz\") }
+    }
+    channel shear1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../shear1\") }
+    }
+    channel shear2 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../shear2\") }
+    }
+    channel shear3 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../shear3\") }
+    }
+    channel scale {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = ch(\"../scale\") }
+    }
+    channel px {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../px\") }
+    }
+    channel py {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../py\") }
+    }
+    channel pz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../pz\") }
+    }
+    channel prx {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../prx\") }
+    }
+    channel pry {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../pry\") }
+    }
+    channel prz {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../prz\") }
+    }
+    channel delta {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../delta\") }
+    }
+    channel viewerstatedelta {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../viewerstatedelta\") }
+    }
+    channel apply {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../apply\") }
+    }
+    channel reset {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../reset\") }
+    }
+    channel removeunusedtransforms {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../removeunusedtransforms\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/layout_assets.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+primpattern	[ 0	locks=0 ]	(	[ primpattern	"" ] 	)
+physprimpattern	[ 0	locks=0 ]	(	[ physprimpattern	"" ] 	)
+bypassprimpattern	[ 0	locks=0 ]	(	[ bypassprimpattern	"" ] 	)
+xformdescription	[ 0	locks=0 ]	(	[ xformdescription	$OS ] 	)
+localxform	[ 0	locks=0 ]	(	[ localxform	0 ] 	)
+xformcommon	[ 0	locks=0 ]	(	[ xformcommon	1 ] 	)
+applyparmxform	[ 0	locks=0 ]	(	[ applyparmxform	1 ] 	)
+xOrd	[ 0	locks=0 ]	(	[ xOrd	0 ] 	)
+rOrd	[ 0	locks=0 ]	(	[ rOrd	0 ] 	)
+t	[ 0	locks=0 ]	(	[ tx	0 ] 	[ ty	0 ] 	[ tz	0 ] 	)
+r	[ 0	locks=0 ]	(	[ rx	0 ] 	[ ry	0 ] 	[ rz	0 ] 	)
+s	[ 0	locks=0 ]	(	[ sx	1 ] 	[ sy	1 ] 	[ sz	1 ] 	)
+shear	[ 0	locks=0 ]	(	[ shear1	0 ] 	[ shear2	0 ] 	[ shear3	0 ] 	)
+scale	[ 0	locks=0 ]	(	[ scale	1 ] 	)
+parmgroup_pivotxform	[ 0	locks=0 ]	(	0	)
+p	[ 0	locks=0 ]	(	[ px	0 ] 	[ py	0 ] 	[ pz	0 ] 	)
+pr	[ 0	locks=0 ]	(	[ prx	0 ] 	[ pry	0 ] 	[ prz	0 ] 	)
+delta	[ 0	locks=0 ]	(	""	)
+viewerstatedelta	[ 0	locks=0 ]	(	""	)
+apply	[ 0	locks=0 ]	(	[ apply	0 ] 	)
+reset	[ 0	locks=0 ]	(	[ reset	0 ] 	)
+removeunusedtransforms	[ 0	locks=0 ]	(	[ removeunusedtransforms	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/layout_assets.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.order"
 Content-Type: text/plain
 
-5
+6
 output
 dive
 layerbreak
 merge
 set_metadata
+layout_assets
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.net"

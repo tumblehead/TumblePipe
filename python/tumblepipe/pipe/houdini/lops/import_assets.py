@@ -418,9 +418,12 @@ class ImportAssets(EntityNode):
         for index in range(1, count + 1):
             self._update_labels(index)
 
-        # Clear scene. Preserve the persistent edit node (layout_assets):
-        # its promoted parms + stored deltas back the multi-asset transform
-        # handles, so it must survive the rebuild rather than be recreated.
+        # Clear scene. The persistent edit node (layout_assets) that backs the
+        # HDA's transform state lives at the HDA root, downstream of the
+        # layerbreak — inside the dive its layer sat above the break and every
+        # placement was stripped on export. An instance whose contents were
+        # unlocked before that move still carries it in the dive: preserve it
+        # there so its promoted parms + stored deltas survive the rebuild.
         context = self.native()
         dive_node = context.node('dive')
         output_node = dive_node.node('output')
@@ -543,10 +546,8 @@ class ImportAssets(EntityNode):
         )
         python_node.setInput(0, merge_node)
 
-        # Route the merged + metadata-updated assets through the persistent
-        # edit node so the HDA's promoted 'edit' state can transform all
-        # imported assets at once. Fall back to a direct connection only if
-        # the edit node is somehow missing (e.g. a legacy node).
+        # Legacy unlocked instances route through their in-dive edit node;
+        # current definitions apply the edit after the layerbreak instead.
         if edit_node is not None:
             edit_node.setInput(0, python_node)
             output_node.setInput(0, edit_node)

@@ -1,7 +1,10 @@
 # Pipeline nodes
 
 TumblePipe ships its Houdini tools as `th::` digital assets. They live in the
-**Tab menu under `_TumblePipe/…`**, one submenu per area of the pipeline. This
+**Tab menu under `_TumblePipe/…`**, one submenu per area of the pipeline, and
+in the Asset Browser's **Nodes** section, where you can search for one and
+drag it onto a network (see
+[Finding and creating nodes](../asset-browser/index.md#finding-and-creating-nodes)). This
 page lists every node and explains the handful of parms that all the
 entity-aware nodes share. The per-family pages describe each node's parms,
 buttons and gotchas:
@@ -24,7 +27,10 @@ it rather than repeating it.
 
 Grouped by Tab submenu, as declared in [`hpm.toml`](../../hpm.toml)
 (`[[operators]]`). *Category* is the Houdini network type the node is placed
-in.
+in. The same list feeds the Asset Browser's **Nodes** section, one sidebar
+row per submenu. A new `_TumblePipe/…` submenu also needs a row in
+`SECTIONS` in `python/tumblepipe/asset_browser/nodes.py`, or its nodes file
+under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 
 ### `_TumblePipe/pipeline`
 

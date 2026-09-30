@@ -6,9 +6,10 @@ never has to import ``task.py`` (which pulls in Deadline / tomli_w).
 
 A playblast task is monolithic: unlike render (which chunks frames across many
 tasks), the mp4 encode needs every frame, so a single task renders the whole
-range (Storm or Karma XPU, see ``engine``) and encodes the video. The
-config is therefore flat and worker-facing, mirroring the render/mp4 task
-configs rather than the job-level ``{entity, settings, tasks}`` shape.
+range with Karma XPU in a preview mode (see ``playblast.XPU_ARGS``) and
+encodes the video. The config is therefore flat and worker-facing, mirroring
+the render/mp4 task configs rather than the job-level
+``{entity, settings, tasks}`` shape.
 
 config = {
     'title': 'string',
@@ -20,16 +21,8 @@ config = {
     'fps': 'int',
     'res': ['int', 'int'],
     'input_path': 'string',        # collapsed staged USD, relative to job data
-    'output_paths': ['string'],    # versioned playblast mp4 + rolling daily mp4
-    'engine': 'string'             # optional, one of ENGINES; absent = 'storm'
+    'output_paths': ['string']     # versioned playblast mp4 + rolling daily mp4
 }
-
-``engine`` picks how the frames are drawn. 'storm' is the GL (Hydra Storm)
-delegate: close to the viewport and near-instant, but it needs a GL context,
-so only workers with a real display session can run it. 'xpu' is Karma XPU in
-a preview mode (scene materials and lights off, a camera headlight with
-ambient occlusion, few samples): it draws through CUDA/OptiX with no GL
-context or display at all.
 """
 
 from tumblepipe.farm._common import (
@@ -38,13 +31,6 @@ from tumblepipe.farm._common import (
     check_list,
     is_int,
 )
-
-ENGINES = ('storm', 'xpu')
-DEFAULT_ENGINE = 'storm'
-
-
-def get_engine(config):
-    return config.get('engine', DEFAULT_ENGINE)
 
 
 def is_valid_config(config):
@@ -64,5 +50,4 @@ def is_valid_config(config):
     if len(config['output_paths']) == 0: return False
     for path in config['output_paths']:
         if not isinstance(path, str): return False
-    if get_engine(config) not in ENGINES: return False
     return True

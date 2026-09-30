@@ -116,8 +116,8 @@ def project_root() -> "Uri":
 
 
 def export_scenes_root() -> "Uri":
-    """``export:/scenes/`` — base for resolving Root export folders."""
-    return _Uri().parse_unsafe("export:/scenes/")
+    """``export:/scenes`` — base for resolving Root export folders."""
+    return _Uri().parse_unsafe("export:/scenes")
 
 
 def export_for_entity(uri: "Uri") -> "Uri":

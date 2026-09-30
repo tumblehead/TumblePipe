@@ -119,13 +119,14 @@ so their versions interleave:
   [Farm Submit dialog](asset-browser/submit-jobs.md) (shots only; publish cells on
   the same row run first, and the playblast then shows what they publish)
   and each ticked shot gets one job:
-  a single task renders the shot's staged `default` stage with husk's
-  Hydra **Storm** (GL) delegate — through a `RenderSettings` prim the
+  a single task renders the shot's staged `default` stage with husk and
+  **Karma XPU** in a preview mode — through a `RenderSettings` prim the
   submitter authors on the collapsed stage at
   `/Render/tumblepipe_playblast`, aimed at the same render camera the
-  project's own settings name (Storm cannot fill the Karma LPE AOVs those
-  settings order, and husk finds a settings prim outside `/Render` only
-  when the root layer names it) — then encodes an MP4 and writes the
+  project's own settings name (one raw colour buffer instead of the Karma
+  LPE AOVs those settings order, and husk finds a settings prim outside
+  `/Render` only when the root layer names it) — then encodes an MP4 and
+  writes the
   versioned playblast
   **and** the daily, exactly like the render/composite MP4s above. The
   frame range (rolls included) and fps come from the shot config per
@@ -138,21 +139,18 @@ so their versions interleave:
   stack the same way a render's does — up to and including the one picked,
   see [Composition → The department cut](composition.md#the-department-cut).
 
-The two are not interchangeable look-wise: `husk` cannot load Houdini's
-own GL delegate, so a farm playblast is *Storm-shaded*, not a
-pixel-identical copy of the interactive viewport. That difference is
-exactly why the in-session node stays — playblast locally when the look
-must match the viewport, submit to the farm to offload a batch. The
-farm job's Deadline group is `playblast`, kept separate from `karma` so
-previews never contend with final-frame render slots; see
+The two do not look the same. The farm frames are a clay preview, not a
+viewport capture and not a final render: scene materials and lights are
+off, a headlight on the camera shades the stage with ambient occlusion,
+and the stage's display colours still show. That difference is exactly
+why the in-session node stays — playblast locally when the look must
+match the viewport, submit to the farm to offload a batch. The farm job's
+Deadline group is `karma`, the same GPU workers final renders use, see
 [Farm worker prerequisites](deadline.md#farm-worker-prerequisites).
 
-The playblast job can also render with **Karma XPU** instead of Storm (the
-job's `engine` setting, `xpu`; the dialog does not offer it yet). The frames
-are a preview, not a final render: scene materials and lights are off, a
-headlight on the camera shades the stage with ambient occlusion, and the
-stage's display colours still show. XPU needs no GL context, which Storm
-does. On a heavy shot Storm can also stall where XPU renders: on
-HideAndReek/030, Storm sat at 0% on the first frame for over 12 minutes, and
-XPU rendered that frame in 72 s, most of it loading the stage and building
-the scene on the GPU.
+Farm playblasts used to render with husk's Hydra **Storm** (GL) delegate,
+which is closer to the viewport. It never survived a real shot on the farm:
+HideAndReek/010 on maria-2060 and 030 on judas both sat at 0% on the first
+frame for over ten minutes, then husk crashed (`0xE06D7363`). XPU rendered
+030's first frame in 72 s, most of it loading the stage and building the
+scene on the GPU. Storm was removed rather than kept as an option.

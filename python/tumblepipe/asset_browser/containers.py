@@ -36,7 +36,7 @@ from tumbletrove.asset_browser.api.errors import TagQueryError
 from tumbletrove.asset_browser.api.types import Asset, AssetDetail, AssetPage, Collection
 
 from . import uris as uris
-from .types import latest_by_dept, version_code
+from .types import latest_by_dept, version_code, workfile_versions
 
 if TYPE_CHECKING:
     from tumblepipe.util.uri import Uri
@@ -714,15 +714,21 @@ class ContainerManager:
     def _get_group_department_workfile_info(
         self, group_tag: str,
     ) -> dict[str, list[str]]:
-        """Return ``{dept: [latest_version]}`` for a group's workfile
-        tree (depts whose hip stem doesn't carry a ``_vNNN`` suffix
-        are dropped)."""
+        """Return ``{dept: [versions]}`` (ascending) for a group's
+        workfile tree — every version in the dept folder, so the detail
+        panel's dropdown can pick an older one. The folder is the latest
+        hip's parent; the latest itself is always included, since the
+        context.json pointer can see a save a stale SMB listing misses.
+        Depts whose hip stem doesn't carry a ``_vNNN`` suffix are
+        dropped."""
         result: dict[str, list[str]] = {}
         for dept_name, hip in self._group_dept_latest_hips(
                 group_tag).items():
             version = _version_from_stem(hip.stem)
             if version:
-                result[dept_name] = [version]
+                versions = set(workfile_versions(hip.parent))
+                versions.add(version)
+                result[dept_name] = sorted(versions, key=version_code)
         return result
 
     def _group_dept_attribution(self, group_tag: str) -> dict:
@@ -1560,7 +1566,7 @@ class ContainerManager:
             return _bail(f"unknown project {ref.project_name!r}")
         try:
             self._catalog._activate_project(proj)
-            from tumblepipe import api as tp_api
+            from tumblepipe.api import api as tp_api
         except Exception:
             log.exception("open_container_location: imports failed")
             return _bail("tumblepipe imports failed")

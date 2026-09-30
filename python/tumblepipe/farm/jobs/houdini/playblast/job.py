@@ -1,4 +1,4 @@
-"""Playblast job family: a farm playblast (Storm or Karma XPU) of a shot's staged stage.
+"""Playblast job family: a farm playblast (Karma XPU) of a shot's staged stage.
 
 Mirrors the render family's public surface so the Submit Jobs dialog can drive
 it through ``batch_submit`` exactly like render and publish:
@@ -29,8 +29,7 @@ config = {
         'step_size': 'int',
         'fps': 'int',
         'res': ['int', 'int'],
-        'channel_name': 'string',   # Discord channel for the notify
-        'engine': 'string'          # optional: 'storm' (default) or 'xpu'
+        'channel_name': 'string'    # Discord channel for the notify
     }
 }
 """
@@ -56,7 +55,6 @@ from tumblepipe.pipe.paths import (
 from tumblepipe.farm.jobs.houdini import _common
 
 import tumblepipe.farm.tasks.playblast.task as playblast_task
-from tumblepipe.farm.tasks.playblast import _spec as playblast_spec
 import tumblepipe.farm.tasks.notify.task as notify_task
 
 
@@ -75,8 +73,6 @@ def _valid_settings(settings):
     if len(settings['res']) != 2: return False
     if not all(_common.is_int(value) for value in settings['res']): return False
     if not _common.check_str(settings, 'channel_name'): return False
-    if playblast_spec.get_engine(settings) not in playblast_spec.ENGINES:
-        return False
     return True
 
 
@@ -131,8 +127,7 @@ def build(
         output_paths = [
             path_str(to_windows_path(playblast_path)),
             path_str(to_windows_path(daily_path)),
-        ],
-        engine = playblast_spec.get_engine(settings)
+        ]
     ), paths, temp_path)
     jobs['playblast'] = playblast_job
     deps['playblast'] = list(depends_on)

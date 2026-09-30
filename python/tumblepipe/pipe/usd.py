@@ -557,12 +557,14 @@ _PLAYBLAST_SCOPE_NAME = 'TumblePipePlayblast'
 
 
 def _generate_playblast_settings_section(camera_prim_path: str) -> str:
-    """USDA text defining the RenderSettings a GL playblast renders through.
+    """USDA text defining the RenderSettings a farm playblast renders through.
 
-    A playblast cannot reuse the project's RenderSettings, because its
+    A playblast does not reuse the project's RenderSettings, whose
     RenderProduct orders Karma's LPE RenderVars (``beauty`` with
-    ``sourceName = "C.*[LO]"``, ``sourceType = "lpe"``). Hydra Storm cannot
-    produce those buffers, so husk logs
+    ``sourceName = "C.*[LO]"``, ``sourceType = "lpe"``) for a lit final
+    render. The playblast is a preview JPEG, one colour buffer. It was also
+    load-bearing while playblasts rendered with Hydra Storm (since removed),
+    which cannot produce LPE buffers at all, so husk logged
 
         Render delegate doesn't provide buffer for: beauty
         All AOVs bypassed or missing. Nothing to write to <path>
@@ -572,7 +574,7 @@ def _generate_playblast_settings_section(camera_prim_path: str) -> str:
     Verified against husk 22.0.429.
 
     So the playblast gets its own settings prim: one plain ``color`` RenderVar
-    Storm does provide, and the camera the project's own settings name (passed
+    every renderer provides, and the camera the project's own settings name (passed
     in, never guessed — see find_render_camera_prim_path). Resolution is left
     to the worker's ``--res``. ``driver:parameters:aov:name`` is not optional:
     without it husk refuses the RenderVar outright ("Missing
@@ -582,9 +584,8 @@ def _generate_playblast_settings_section(camera_prim_path: str) -> str:
     settings_name = PLAYBLAST_SETTINGS_PRIM_PATH.rsplit('/', 1)[-1]
     return '\n'.join([
         '',
-        '# GL playblast render settings, authored by the submitter. The',
-        "# project's own settings prim orders Karma LPE AOVs that Hydra Storm",
-        '# cannot fill, which leaves husk with nothing to write.',
+        '# Playblast render settings, authored by the submitter: one raw',
+        "# colour var instead of the project's Karma LPE AOVs.",
         'def Scope "Render"',
         '{',
         f'    def Scope "{_PLAYBLAST_SCOPE_NAME}"',
@@ -1156,8 +1157,8 @@ def collapse_latest_references(
         excluded_refs: Optional set of top-level sublayer refs to drop, from
                        excluded_staged_refs(). Used to render only part of
                        the department stack; None composes everything.
-        playblast: Collapse for a Hydra Storm playblast rather than a Karma
-                   render — authors a Storm-renderable RenderSettings and
+        playblast: Collapse for a playblast rather than a Karma render —
+                   authors a preview RenderSettings (one raw colour var) and
                    points the stage at it. See
                    _generate_playblast_settings_section.
 

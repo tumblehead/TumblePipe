@@ -184,8 +184,8 @@ def collapse_playblast_input(
     """Collapse the ``default`` staged stage for a playblast, cut at ``department``.
 
     Playblasts read the same stage husk renders but not through the project's
-    Karma settings: ``playblast=True`` authors a Storm-renderable
-    RenderSettings aimed at the camera the project's settings name. Returns
+    Karma settings: ``playblast=True`` authors a preview
+    RenderSettings (one raw colour var) aimed at the camera the project's settings name. Returns
     the relative input path and registers the file in ``paths``.
     """
     staged_path = get_latest_staged_file_path(entity_uri, 'default')

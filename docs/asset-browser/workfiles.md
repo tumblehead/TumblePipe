@@ -286,4 +286,6 @@ afterwards.
 At Home (no catalog selected on the rail) the detail panel's **Departments**
 tab shows a version dropdown per department, newest first. Pick one and
 press the play button, or right-click the row for **Open vNNNN**. The
-choice is remembered for the session only.
+choice is remembered for the session only. A Multi's detail panel works the
+same way: its dropdown lists every saved version of the Multi's workfile in
+that department.

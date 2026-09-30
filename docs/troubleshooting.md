@@ -283,6 +283,14 @@ browser, so every operation on one except creation silently no-oped. Update
 to 1.45.1 or later. See [Multis and Roots](asset-browser/multis-and-roots.md)
 and [Configuration → Multis](configuration.md#multis-multishot-workfiles).
 
+### A Multi's version dropdown only shows the latest version
+
+In TumblePipe 1.57.0 and earlier, a Multi's detail panel listed only the
+newest workfile per department, and the row's play button and its user and
+time stayed blank or did nothing. From 1.45.0 to 1.57.0, **Open Location** on
+a Multi or Root card also did nothing. Update to a later version. Older
+versions are still on disk, in `<project>/groups/<context>/<name>/<department>/`.
+
 ## Rendering and the farm
 
 ### An entity failed in the Farm submission window
@@ -396,40 +404,41 @@ husk exited 3 before rendering a frame, while Karma Renderer licenses were
 free. The playblast's husk used to run without
 `--check-licenses 'Karma Renderer'`, so it asked for a Houdini Engine / Core /
 FX seat first, and those seats are shared with artists. The playblast worker
-now passes the same flag as the render worker and takes a Karma license, for
-Storm too. Update the pipeline and resubmit. See
+now passes the same flag as the render worker and takes a Karma license.
+Update the pipeline and resubmit. See
 [Farm worker prerequisites](deadline.md#farm-worker-prerequisites).
 
-### The farm playblast hangs on its first frame
+### The farm playblast hangs on its first frame, then husk exits 3765269347
 
-If the task log stops at `ALF_PROGRESS 0%` right after `>>> Render`, and the
-worker's GPU sits idle while husk holds several GB of memory, Storm is
-stalled on the stage. That is not a missing GL context. It happened on
-HideAndReek/030 in an ordinary desktop session, and it matches the judas
-farm hang that ended in a husk crash (`0xE06D7363`). Render the shot with
-the `xpu` engine instead (see [Playblast](compositing.md#playblast)), and try
-it locally first:
-
-    hython scripts/debug_playblast.py --shot entity:/shots/<seq>/<shot> \
-        --husk --engine xpu
+If the task log says `Rendering playblast frames (storm)`, stops at
+`ALF_PROGRESS 0%` right after `>>> Render`, and ends minutes later with
+`husk exited 3765269347` (`0xE06D7363`, a crash), the job was submitted
+from a pipeline that still rendered playblasts with Hydra Storm. Storm hung
+like this on every real shot the farm tried (HideAndReek/010 on maria-2060,
+030 on judas, and 030 locally), which is why it was removed. Update the
+pipeline and resubmit; playblasts now render with Karma XPU. See
+[Playblast](compositing.md#playblast).
 
 ### Playblast frames are black or missing on the farm
 
-With the default `storm` engine, farm playblasts render with husk's Storm (GL)
-delegate, which needs a real GPU context. A headless worker produces nothing,
-and the task fails with `Playblast produced no frames`, a hint that the GL
-(Storm) delegate likely has no usable GPU/GL context. Assign only GL-capable
-workers to the `playblast` Deadline group, or render with the `xpu` engine,
-which needs no GL context. See [Playblast](compositing.md#playblast) and
-[Farm worker prerequisites](deadline.md#farm-worker-prerequisites).
+The task fails with `Playblast produced no frames`. Read the husk log above
+it:
 
-Before **1.52.2** that message was also what a *stage* problem looked like:
-the playblast inherited the project's `UsdRender.Settings`, whose
-`RenderProduct` orders Karma's LPE render vars (`beauty`, with
-`sourceName = "C.*[LO]"`). Storm cannot fill those, so husk logged `All AOVs
-bypassed or missing. Nothing to write` and wrote no image on a perfectly good
-GPU. The submitter now authors a Storm-renderable settings prim for the
-playblast instead — update and resubmit.
+- `No licenses could be found` — licensing, see above.
+- `Unable to load render plugin: BRAY_HdKarmaXPU`, or a CUDA/OptiX error —
+  the worker has no usable NVIDIA GPU for Karma XPU. Keep such workers out of
+  the `karma` Deadline group; see
+  [Farm worker prerequisites](deadline.md#farm-worker-prerequisites).
+- `All AOVs bypassed or missing. Nothing to write` — a *stage* problem, not a
+  machine one. Before **1.52.2** the playblast inherited the project's
+  `UsdRender.Settings`, whose `RenderProduct` orders Karma's LPE render vars
+  (`beauty`, with `sourceName = "C.*[LO]"`), which the then-default Storm
+  could not fill. The submitter now authors its own preview settings prim
+  (one raw colour var) — update and resubmit.
+
+To render one frame locally with the worker's own flags first:
+
+    hython scripts/debug_playblast.py --shot entity:/shots/<seq>/<shot> --husk
 
 ### The farm playblast renders the wrong view
 
@@ -453,8 +462,8 @@ To see what husk will resolve for a shot *without* submitting anything:
 It collapses the same staged stage the farm would, reports the settings prim,
 the camera and its focal length and world position, the cameras and lights on
 the stage, and which layers the department cut dropped; `--husk` renders one
-frame locally with the worker's own flags (`--engine xpu` for the Karma XPU
-engine; Storm by default). The collapsed `.usda` it writes is
+frame locally with the worker's own flags (Karma XPU). The collapsed `.usda`
+it writes is
 left behind and printed, so it can be opened in usdview.
 
 In a farm log, the lines that answer "which camera?" are husk's own — the
