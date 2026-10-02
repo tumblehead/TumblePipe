@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "name": "tumblepipe_blendshape",
+  "label": "Blendshape",
+  "key": "Shift+Space",
+  "context": "network.sop",
+  "when": {
+    "department": [
+      "blendshape"
+    ]
+  },
+  "flags": {
+    "latch": true,
+    "tap_release": false,
+    "keep_sub_open": false,
+    "activate_on_release": false
+  },
+  "ring": [
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/file",
+      "label_override": "File",
+      "icon_override": "SOP_file",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/sculpt",
+      "label_override": "Sculpt",
+      "icon_override": "SOP_sculpt",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/edit",
+      "label_override": "Edit",
+      "icon_override": "SOP_edit",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/th::mesh_blender::1.0",
+      "label_override": "Mesh Blender",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/blast",
+      "label_override": "Blast",
+      "icon_override": "SOP_blast",
+      "hidden": false,
+      "close_on_select": false
+    }
+  ],
+  "center": null,
+  "center_right": null,
+  "zones": {
+    "top": null,
+    "bottom": null,
+    "left": null,
+    "right": null,
+    "left2": null,
+    "right2": null
+  },
+  "drawer": [],
+  "menubar": [],
+  "submenus": {},
+  "release_action": "",
+  "press_action": "",
+  "mclick_action": ""
+}

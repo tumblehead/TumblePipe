@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "name": "tumblepipe_rig",
+  "label": "Rig",
+  "key": "Shift+Space",
+  "context": "network.sop",
+  "when": {
+    "department": [
+      "rig"
+    ]
+  },
+  "flags": {
+    "latch": true,
+    "tap_release": false,
+    "keep_sub_open": false,
+    "activate_on_release": false
+  },
+  "ring": [
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/th::import_model::1.0",
+      "label_override": "Import Model",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/skeleton",
+      "label_override": "Skeleton",
+      "icon_override": "SOP_skeleton",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/jointcapturebiharmonic",
+      "label_override": "Capture",
+      "icon_override": "SOP_jointcapturebiharmonic",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/packfolder",
+      "label_override": "Pack Folder",
+      "icon_override": "SOP_packfolder",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/rigdoctor",
+      "label_override": "Rig Doctor",
+      "icon_override": "SOP_rigdoctor",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/th::export_rig::1.0",
+      "label_override": "Export Rig",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    }
+  ],
+  "center": null,
+  "center_right": null,
+  "zones": {
+    "top": null,
+    "bottom": null,
+    "left": null,
+    "right": null,
+    "left2": null,
+    "right2": null
+  },
+  "drawer": [],
+  "menubar": [],
+  "submenus": {},
+  "release_action": "",
+  "press_action": "",
+  "mclick_action": ""
+}

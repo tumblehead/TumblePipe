@@ -12,6 +12,31 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.58.0 — 2026-09-30
+
+### Features
+- feat(asset_browser): Nodes section lists every pipeline HDA as a card (`beba24f`)
+
+### Fixes
+- fix(playblast): submit farm playblasts to the karma group (`370c373`)
+- fix(playblast): render farm playblasts with Karma XPU only (`28cea78`)
+- fix(asset_browser): Root Open Location URI (`12c7e50`)
+- fix(asset_browser): Multi version dropdown lists every version (`3164e57`)
+- fix(import_layer): stop authoring /_METADATA; shot validator ignores HoudiniLayerInfo (`6128bae`)
+- fix(import_assets): placements made with the edit state now publish (`f46c9d9`)
+
+### Documentation
+- docs: finding and creating nodes from the Asset Browser (`ef71859`)
+- docs: farm playblasts render with Karma XPU, Storm removed (`52b89d8`)
+- docs: Multi version dropdown and Open Location troubleshooting (`84107df`)
+- docs: shot_root_prims legacy /_METADATA warning and HoudiniLayerInfo (`61c4d85`)
+- docs: import_assets placements publish; moving a node inside an HDA (`ff9929e`)
+- docs: regenerate CHANGELOG.md for v1.57.0 (`ebf1136`)
+
+### Tests
+- test: Nodes section properties (`ce9b1d3`)
+- test: Multi version open and Multi/Root Open Location properties (`8d3833e`)
+
 ## v1.57.0 — 2026-09-29
 
 ### Features

@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "name": "tumblepipe_composite",
+  "label": "Composite",
+  "key": "Shift+Space",
+  "context": "network.cop",
+  "when": {
+    "department": [
+      "composite"
+    ]
+  },
+  "flags": {
+    "latch": true,
+    "tap_release": false,
+    "keep_sub_open": false,
+    "activate_on_release": false
+  },
+  "ring": [
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Cop/th::build_comp::1.0",
+      "label_override": "Build Comp",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Cop/th::lop_import::1.0",
+      "label_override": "LOP Import",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Cop/file",
+      "label_override": "File",
+      "icon_override": "COP_file",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Cop/th::depth_cull::1.0",
+      "label_override": "Depth Cull",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Cop/th::gradient_map::1.0",
+      "label_override": "Gradient Map",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Cop/th::a_b_slider::1.0",
+      "label_override": "A/B Slider",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    }
+  ],
+  "center": null,
+  "center_right": null,
+  "zones": {
+    "top": null,
+    "bottom": null,
+    "left": null,
+    "right": null,
+    "left2": null,
+    "right2": null
+  },
+  "drawer": [],
+  "menubar": [],
+  "submenus": {},
+  "release_action": "",
+  "press_action": "",
+  "mclick_action": ""
+}

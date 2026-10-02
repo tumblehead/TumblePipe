@@ -9,6 +9,7 @@ TumblePipe/
 ├── README.md                    # Short project overview
 ├── LICENSE                      # MIT License
 ├── radial_menus/                # Radial menus (shipped JSON + startup-generated)
+├── stock/radial_menus/          # Stock department radials (Shift+Space)
 ├── desktop/
 │   └── TumblePipe.desk          # Houdini desktop layout
 ├── otls/                        # Houdini Digital Assets (text format)
@@ -187,6 +188,18 @@ and never ship. The directory is registered via
 context menus are built in Python in `tumblepipe.startup` rather than as
 JSON, and bound with `radial.bind()` on Radial's own trigger key
 (Radial 0.4.0+).
+
+### `stock/`
+
+Files TumblePipe ships as the baseline of a TumbleTrove layer.
+`stock/radial_menus/<department>.json` is one radial per standard
+department, each with a `"when"` naming its department. They are not
+registered with Radial at startup. `tumblepipe.workfile_context` hands the
+folder to `tumbletrove.context` as its `stock_dir`, and Radial opens the one
+for the current department on Shift+Space. They live outside
+`radial_menus/` because TumbleTrove reads that folder as the package layer,
+where TumblePipe's rig menu would tie with TumbleRig's. See
+[Radial menus → Shift+Space](radial-menus.md#shiftspace-the-department-menu).
 
 ### Recipes
 

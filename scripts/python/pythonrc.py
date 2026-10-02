@@ -18,6 +18,10 @@ It also installs the scene-load callback that re-runs import nodes, so a
 scene opened by any route picks up newer publishes
 (``tumblepipe.asset_browser.load_hook``).
 
+And it tells TumbleTrove which department, asset or shot the open workfile
+belongs to, so NodePilot and Radial can follow it
+(``tumblepipe.workfile_context``).
+
 Best-effort and deferred: TumblePipe must load with or without TumbleTrove,
 and nothing here may gate a Houdini launch.
 """
@@ -43,6 +47,13 @@ if os.environ.get("TUMBLEPIPE_BOOTSTRAPPED") != "1":
         except Exception:
             import traceback
             print("[tumblepipe] scene-load import refresh not installed:")
+            traceback.print_exc()
+        try:
+            from tumblepipe.workfile_context import register
+            register()
+        except Exception:
+            import traceback
+            print("[tumblepipe] workfile context provider not registered:")
             traceback.print_exc()
 
     # `tumblepipe` lives under $TH_PIPELINE_PATH/python, which hpm sets.

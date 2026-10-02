@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "name": "tumblepipe_light",
+  "label": "Light",
+  "key": "Shift+Space",
+  "context": "network.lop",
+  "when": {
+    "department": [
+      "light"
+    ]
+  },
+  "flags": {
+    "latch": true,
+    "tap_release": false,
+    "keep_sub_open": false,
+    "activate_on_release": false
+  },
+  "ring": [
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/lightlinker",
+      "label_override": "Light Linker",
+      "icon_override": "LOP_lightlinker",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "lights",
+      "release_action": "",
+      "node_type": null,
+      "label_override": "Lights",
+      "icon_override": "OBJ_light_area",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "tumblepipe.recipe.th__th_configure_forest_gobo",
+      "submenu": "",
+      "release_action": "",
+      "node_type": null,
+      "label_override": "Light Gobo",
+      "icon_override": "VOP_kma_lfilter_gobo",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/lightmixer",
+      "label_override": "Light Mixer",
+      "icon_override": "LOP_lightmixer",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/th::light_blocker::1.0",
+      "label_override": "Light Blocker",
+      "icon_override": "SOP_maskbyfeature",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/th::karmafogbox::1.0",
+      "label_override": "Fog",
+      "icon_override": "LOP_karmafogbox",
+      "hidden": false,
+      "close_on_select": false
+    }
+  ],
+  "center": null,
+  "center_right": null,
+  "zones": {
+    "top": null,
+    "bottom": null,
+    "left": null,
+    "right": null,
+    "left2": null,
+    "right2": null
+  },
+  "drawer": [],
+  "menubar": [],
+  "submenus": {
+    "lights": {
+      "label": "Lights",
+      "items": [
+        {
+          "action": "",
+          "submenu": "",
+          "release_action": "",
+          "node_type": "Lop/light",
+          "label_override": "Rect Light",
+          "icon_override": "OBJ_light_area",
+          "hidden": false,
+          "close_on_select": false
+        },
+        {
+          "action": "",
+          "submenu": "",
+          "release_action": "",
+          "node_type": "Lop/distantlight",
+          "label_override": "Distant Light",
+          "icon_override": "OBJ_light_directional",
+          "hidden": false,
+          "close_on_select": false
+        },
+        {
+          "action": "",
+          "submenu": "",
+          "release_action": "",
+          "node_type": "Lop/domelight",
+          "label_override": "Dome Light",
+          "icon_override": "OBJ_light_environment",
+          "hidden": false,
+          "close_on_select": false
+        }
+      ]
+    }
+  },
+  "release_action": "",
+  "press_action": "",
+  "mclick_action": ""
+}

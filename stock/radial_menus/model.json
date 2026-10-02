@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "name": "tumblepipe_model",
+  "label": "Model",
+  "key": "Shift+Space",
+  "context": "network.sop",
+  "when": {
+    "department": [
+      "model"
+    ]
+  },
+  "flags": {
+    "latch": true,
+    "tap_release": false,
+    "keep_sub_open": false,
+    "activate_on_release": false
+  },
+  "ring": [
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/file",
+      "label_override": "File",
+      "icon_override": "SOP_file",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/color",
+      "label_override": "Color",
+      "icon_override": "SOP_color",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/blast",
+      "label_override": "Blast",
+      "icon_override": "SOP_blast",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/th::cache::1.0",
+      "label_override": "Cache",
+      "icon_override": "$TH_PIPELINE_PATH/resources/Cache.png",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/matchsize",
+      "label_override": "Match Size",
+      "icon_override": "SOP_matchsize",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/xform",
+      "label_override": "Transform",
+      "icon_override": "SOP_xform",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/groupcreate",
+      "label_override": "Group",
+      "icon_override": "SOP_groupcreate",
+      "hidden": false,
+      "close_on_select": false
+    }
+  ],
+  "center": null,
+  "center_right": null,
+  "zones": {
+    "top": null,
+    "bottom": null,
+    "left": null,
+    "right": null,
+    "left2": null,
+    "right2": null
+  },
+  "drawer": [],
+  "menubar": [],
+  "submenus": {},
+  "release_action": "",
+  "press_action": "",
+  "mclick_action": ""
+}

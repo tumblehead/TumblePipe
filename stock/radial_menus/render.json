@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "name": "tumblepipe_render",
+  "label": "Render",
+  "key": "Shift+Space",
+  "context": "network.lop",
+  "when": {
+    "department": [
+      "render"
+    ]
+  },
+  "flags": {
+    "latch": true,
+    "tap_release": false,
+    "keep_sub_open": false,
+    "activate_on_release": false
+  },
+  "ring": [
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/th::render_settings::1.0",
+      "label_override": "Render Settings",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/th::render_vars::1.1",
+      "label_override": "Render Vars",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/th::lpe_tags::1.0",
+      "label_override": "LPE Tags",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/th::puzzlemattes::4.0",
+      "label_override": "Puzzle Mattes",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/th::render_layer_setup::1.0",
+      "label_override": "Render Layer Setup",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "tumblepipe.recipe.th__th_configure_render_layer_matte",
+      "submenu": "",
+      "release_action": "",
+      "node_type": null,
+      "label_override": "Render Layer Matte",
+      "icon_override": "LOP_rendergeometrysettings",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/th::render_debug::1.0",
+      "label_override": "Render Debug",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    }
+  ],
+  "center": null,
+  "center_right": null,
+  "zones": {
+    "top": null,
+    "bottom": null,
+    "left": null,
+    "right": null,
+    "left2": null,
+    "right2": null
+  },
+  "drawer": [],
+  "menubar": [],
+  "submenus": {},
+  "release_action": "",
+  "press_action": "",
+  "mclick_action": ""
+}

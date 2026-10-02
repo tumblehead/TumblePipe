@@ -343,13 +343,17 @@ def _generate_recipes_radial(radial, menu_dir: Path, *, key: str = "Alt+R") -> N
     """Register one action per recipe in Recipes.hda and write a JSON radial
     menu listing them. Generated from the live HDA so the menu cannot drift
     from the recipes that actually exist.
+
+    Every recipe gets an action, not just the nine the ring has room for:
+    the stock department menus (``stock/radial_menus``) name recipes by
+    action key too.
     """
     import hou
     recipe_file = hou.text.expandString('$TH_PIPELINE_PATH/otls/Recipes.hda')
     definitions = hou.hda.definitionsInFile(recipe_file)
 
     ring_items: list[dict] = []
-    for definition in definitions[:9]:  # radial ring max
+    for definition in definitions:
         type_name = definition.nodeTypeName()
         # applyTabToolRecipe wants the unversioned recipe name.
         recipe_name = type_name.rsplit('::', 1)[0] if type_name.count('::') > 1 else type_name
@@ -379,7 +383,7 @@ def _generate_recipes_radial(radial, menu_dir: Path, *, key: str = "Alt+R") -> N
         return
 
     _write_menu_spec(menu_dir, name="tumblepipe_recipes",
-                     label="Recipes", key=key, ring=ring_items)
+                     label="Recipes", key=key, ring=ring_items[:9])  # ring max
 
 
 # ── Asset-favorites radial (generated from asset-browser favorites) ─────────

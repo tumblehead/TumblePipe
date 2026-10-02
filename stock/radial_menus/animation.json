@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "name": "tumblepipe_animation",
+  "label": "Animation",
+  "key": "Shift+Space",
+  "context": "network.sop",
+  "when": {
+    "department": [
+      "animation"
+    ]
+  },
+  "flags": {
+    "latch": true,
+    "tap_release": false,
+    "keep_sub_open": false,
+    "activate_on_release": false
+  },
+  "ring": [
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/th::import_rigs::2.0",
+      "label_override": "Import Rigs",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/apex::sceneanimate",
+      "label_override": "Scene Animate",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/apex::sceneinvoke",
+      "label_override": "Scene Invoke",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/th::playblast::2.0",
+      "label_override": "Playblast",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Sop/th::cache::1.0",
+      "label_override": "Cache",
+      "icon_override": "$TH_PIPELINE_PATH/resources/Cache.png",
+      "hidden": false,
+      "close_on_select": false
+    }
+  ],
+  "center": null,
+  "center_right": null,
+  "zones": {
+    "top": null,
+    "bottom": null,
+    "left": null,
+    "right": null,
+    "left2": null,
+    "right2": null
+  },
+  "drawer": [],
+  "menubar": [],
+  "submenus": {},
+  "release_action": "",
+  "press_action": "",
+  "mclick_action": ""
+}

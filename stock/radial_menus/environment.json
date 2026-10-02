@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "name": "tumblepipe_environment",
+  "label": "Environment",
+  "key": "Shift+Space",
+  "context": "network.lop",
+  "when": {
+    "department": [
+      "environment"
+    ]
+  },
+  "flags": {
+    "latch": true,
+    "tap_release": false,
+    "keep_sub_open": false,
+    "activate_on_release": false
+  },
+  "ring": [
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/th::import_assets::2.0",
+      "label_override": "Import Assets",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "tumblepipe.recipe.th__th_configure_grass",
+      "submenu": "",
+      "release_action": "",
+      "node_type": null,
+      "label_override": "Grass",
+      "icon_override": "SHELF_grass",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/instancer",
+      "label_override": "Instancer",
+      "icon_override": "LOP_instancer",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/edit",
+      "label_override": "Edit",
+      "icon_override": "LOP_edit",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/prune",
+      "label_override": "Prune",
+      "icon_override": "LOP_prune",
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Lop/th::export_layer::1.0",
+      "label_override": "Export Layer",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    }
+  ],
+  "center": null,
+  "center_right": null,
+  "zones": {
+    "top": null,
+    "bottom": null,
+    "left": null,
+    "right": null,
+    "left2": null,
+    "right2": null
+  },
+  "drawer": [],
+  "menubar": [],
+  "submenus": {},
+  "release_action": "",
+  "press_action": "",
+  "mclick_action": ""
+}

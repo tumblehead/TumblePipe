@@ -54,6 +54,26 @@ takes Alt+T, Alt+R, Alt+F and the COP/VOP menus down with it. Update
 TumblePipe. If only the COP/VOP menus are missing and the log says
 `tumbleradial predates bind() (Radial 0.4.0)`, update Radial instead.
 
+### Shift+Space does nothing, or opens the wrong department's menu
+
+The department menu needs a TumbleTrove with the workfile context and a
+Radial with department menus. With older versions, Shift+Space does nothing
+and nothing is logged. When both are installed:
+
+- **The scene isn't a workfile.** The department comes from the
+  `context.json` beside the open .hip, so an unsaved scene or one saved
+  outside the pipeline has none. Pick one under **TumbleTrove ›
+  Department**; the pick is saved in the .hip.
+- **A different menu opens.** A menu from a higher layer replaced
+  TumblePipe's stock one for that department: yours, the project's
+  (`_config/radial_menus/`), the organisation's or a package's, such as
+  TumbleRig's rig radial. See
+  [Radial menus → Shift+Space](radial-menus.md#shiftspace-the-department-menu).
+- **The cursor is over the wrong kind of network.** Each stock menu is made
+  for one network type: the model menu for SOPs, the light menu for LOPs,
+  and so on (the table on the Radial menus page). Open it over that kind of
+  network.
+
 ### The User column is blank
 
 `TH_USER` is empty. The package wires it to `TT_USER_NAME`, which only the
@@ -397,6 +417,28 @@ have a token and channels, but not this name.
 `scripts/audit_discord_config.py` grades every project on the drive, which
 separates the quiet projects from the ones a name is missing from. See
 [Job families](asset-browser/submit-jobs.md#job-families).
+
+### One worker fails every job with "No licenses could be found"
+
+Every task that lands on one worker fails within seconds with
+`No licenses could be found` (hython exits 3, or husk does), whatever the job,
+while other workers render the same jobs. A busy licence server would hit every
+worker; one worker failing everything means its own login has lapsed. Log in to
+the **SideFX Launcher** on that machine again.
+
+Deadline keeps counting those failures: jobs it touched can reach their error
+limit and show as failed, and Deadline marks the worker bad on them so it no
+longer gets those jobs even after the fix. Afterwards, resume the failed tasks
+and clear the worker's bad marks on the affected jobs (Deadline Monitor: job →
+right-click → *Modify Job Properties* → *Failure Detection*). Seen on
+jacob-5090 in 2026-09: 187 failed tasks in a day, every render and playblast it
+touched hit the error limit.
+
+When the failures are spread over several workers instead, the Core/FX seats
+are taken: hython tasks (`publish`, `collapse`, `stage`) need a Houdini Engine,
+Core or FX seat, and with no Engine licenses they compete with artists for the
+Core/FX ones. They succeed once a seat frees up. See
+[Farm worker prerequisites](deadline.md#farm-worker-prerequisites).
 
 ### The farm playblast fails with "No licenses could be found"
 

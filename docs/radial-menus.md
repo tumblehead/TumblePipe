@@ -79,6 +79,10 @@ The package currently ships five recipes: *th configure forest gobo*, *th
 configure grass*, *th configure lop import*, *th configure material
 override* and *th configure render layer matte*.
 
+Every recipe gets an action (`tumblepipe.recipe.<name>`), including any past
+the ninth, because the department menus place recipes through the same
+actions.
+
 A radial ring needs at least two filled slots, so when fewer than two
 recipes exist the menu is not written (and a stale file from an earlier
 session is deleted) — Alt+R then does nothing. (These HDA recipes are a
@@ -159,9 +163,59 @@ headless `hython` session has none. See
 - **VOP** — submenus **Image**, **Adjust**, **Generators** and **Utility**,
   each placing MaterialX / Karma VOP nodes. See [Tools](nodes/tools.md).
 
+## Shift+Space: the department menu
+
+TumblePipe ships one radial per department, the **stock** department menus,
+in `stock/radial_menus/<department>.json`. Each one carries
+`"when": {"department": ["<department>"]}`, so it applies only in that
+department's workfiles. These menus bring back the per-department radials TumblePipe had
+up to v1.20, before its menus moved from Houdini's native radial menus to
+Radial.
+
+| Department | Network | Ring |
+|---|---|---|
+| model | SOP | File, Color, Blast, Cache, Match Size, Transform, Group |
+| blendshape | SOP | File, Sculpt, Edit, Mesh Blender, Blast |
+| lookdev | LOP | Material, Material Assigner, Lookdev Studio, COP Material Library, Material Library, Assign Material, Export Layer |
+| rig | SOP | Import Model, Skeleton, Capture, Pack Folder, Rig Doctor, Export Rig |
+| layout | LOP | Import Assets, Edit, Transform, Camera, Prune, Export Layer |
+| environment | LOP | Import Assets, Grass (recipe), Instancer, Edit, Prune, Export Layer |
+| animation | SOP | Import Rigs, Scene Animate, Scene Invoke, Playblast, Cache |
+| crowd | SOP | Agent, Crowd Source, Agent Layer, File, Cache |
+| effects | SOP | File, Pyro Solver, RBD Solver, Vellum Solver, Cache |
+| cfx | SOP | File, Vellum Constraints, Vellum Solver, Vellum Drape, Cache |
+| light | LOP | Light Linker, Lights (Rect, Distant, Dome), Light Gobo (recipe), Light Mixer, Light Blocker, Fog |
+| render | LOP | Render Settings, Render Vars, LPE Tags, Puzzle Mattes, Render Layer Setup, Render Layer Matte (recipe), Render Debug |
+| composite | COP | Build Comp, LOP Import, File, Depth Cull, Gradient Map, A/B Slider |
+
+**Shift+Space** opens the menu for the workfile's department. Radial owns
+that key. The department comes from TumbleTrove: at startup TumblePipe
+registers as its workfile-context provider (`tumblepipe.workfile_context`),
+which reads the `context.json` beside the open .hip. TumbleTrove re-reads it
+when you open, save as or start a new scene.
+
+The stock menus are the lowest of five layers. A menu from a higher layer
+replaces the stock one for its department:
+
+1. yours
+2. the project's, saved by a lead into the project config
+   (`_config/radial_menus/`)
+3. the organisation's
+4. a package's, such as TumbleRig's rig radial
+5. TumblePipe's stock menus
+
+The stock menus are not in `radial_menus/`, because TumbleTrove reads a
+package's `radial_menus/` folder as that package's own layer.
+
+This needs a **TumbleTrove** that has the workfile context
+(RemYmeR/tumbletrove#24) and a **Radial** that has department menus
+(tumbletrove/radial#1). With older versions TumblePipe registers nothing
+and logs nothing, and Shift+Space does nothing.
+
 ## Keyboard shortcuts
 
 TumblePipe registers no Houdini hotkeys of its own. The only keys it claims
 are the three radial keys above (**Alt+T**, **Alt+R**, **Alt+F**), and only
-while `tumbleradial` is installed. The COP and VOP menus claim no key; they
+while `tumbleradial` is installed. **Shift+Space** belongs to Radial;
+TumblePipe only supplies the menus it opens. The COP and VOP menus claim no key; they
 use whichever key Radial's own menus open with.

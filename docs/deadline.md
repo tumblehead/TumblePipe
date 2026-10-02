@@ -69,9 +69,17 @@ Each worker needs the same environment as an artist workstation:
   `No valid Houdini version was found` — so when the studio moves to a new major,
   install it on the workers before submitting from it.
 - **Houdini licenses — for some tasks, not all.** The tasks that drive **hython**
-  (`stage`, `export`, `composite`, `publish`) check out a **Houdini Engine**
+  (`stage`, `export`, `composite`, `publish`, `collapse`) check out a **Houdini Engine**
   license, *falling back to Core/FX when no Engine seat is free* — so a busy farm
   can take seats artists are waiting for. Size the Engine pool with that in mind.
+  hython cannot use a Karma Renderer or Renderer license; the Karma and Renderer
+  licenses bundled with each Core/FX seat only serve husk and mantra.
+
+  Every worker must stay **logged in to the SideFX Launcher** (login licensing).
+  When that login lapses, the worker fails every hython *and* husk task a few
+  seconds in with `No licenses could be found`, while the other workers render
+  the same jobs fine. See
+  [One worker fails every job with "No licenses could be found"](troubleshooting.md#one-worker-fails-every-job-with-no-licenses-could-be-found).
 
   The tasks that drive **husk** (`render`, `playblast`) pass
   `--check-licenses 'Karma Renderer'`, so they take a **Karma Renderer**

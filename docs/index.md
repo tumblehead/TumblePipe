@@ -34,7 +34,7 @@ the other installed packages' documentation. The same pages are online at
   - [Lighting and rendering](nodes/lighting-and-rendering.md) — render settings, AOVs, LPE tags, lookdev studio, playblast
   - [Compositing nodes](nodes/comp.md) — build_comp and the COP toolkit
   - [Modelling and utility nodes](nodes/tools.md) — mesh tools, recipes, the VOP menu
-- [Radial menus and shortcuts](radial-menus.md) — Alt+T, Alt+R, Alt+F and the network context menus
+- [Radial menus and shortcuts](radial-menus.md) — Alt+T, Alt+R, Alt+F, the network context menus and the Shift+Space department menus
 - [Troubleshooting](troubleshooting.md) — symptoms, causes, fixes, and where the logs are
 
 ## Setting up a project
