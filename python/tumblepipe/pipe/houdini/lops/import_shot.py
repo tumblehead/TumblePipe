@@ -903,7 +903,6 @@ class ImportShot(ns.Node):
         context = self.native()
         import_node = context.node('import')
         metadata_node = context.node('metadata')
-        context.node('procedurals')
 
         # Get parameters
         shot_uri = self.get_shot_uri()

@@ -34,7 +34,7 @@ import tumblepipe.farm.tasks.composite.task as composite_job
 import tumblepipe.farm.tasks.slapcomp.task as slapcomp_job
 import tumblepipe.farm.tasks.mp4.task as mp4_job
 import tumblepipe.farm.tasks.notify.task as notify_job
-import tumblepipe.farm.tasks.edit.task as edit_task
+import tumblepipe.farm.tasks.sync.task as sync_task
 
 """
 config = {
@@ -354,16 +354,16 @@ def _should_sync_aov(aov_name: str) -> bool:
         return True
     return False
 
-def _build_edit_job(
+def _build_sync_job(
     config: dict,
     staging_path: Path
     ):
-    """Build single edit job that will resolve and sync all layer/AOV combinations at runtime.
+    """Build single sync job that will resolve and copy all layer/AOV combinations at runtime.
 
     The AOV resolution happens at task execution time (not submission time) so that newly
     rendered frames are included in the resolution.
     """
-    logging.debug('Creating edit task')
+    logging.debug('Creating sync task')
 
     # Config
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
@@ -375,11 +375,11 @@ def _build_edit_job(
 
     # Extract entity fields
     if entity_uri.segments[0] != 'shots':
-        assert False, f'Edit task only supports shot entities: {entity_uri}'
+        assert False, f'Sync task only supports shot entities: {entity_uri}'
 
-    # Create single edit task that will resolve AOVs at runtime
-    title = f'edit {entity_uri}'
-    task = edit_task.build(dict(
+    # Create single sync task that will resolve AOVs at runtime
+    title = f'sync {entity_uri}'
+    task = sync_task.build(dict(
         title = title,
         priority = 90,
         pool_name = pool_name,
@@ -850,10 +850,11 @@ def build(
             job_name = f'layer_mp4_{layer_name}'
             _add_job(job_name, layer_mp4_obj, ['full_composite'])
 
-        edit_job_obj = _build_edit_job(
-            config,
-            temp_path
-        )
+        # Sync job depends on the full composite (only if copy_to_edit is enabled)
+        if config['settings'].get('copy_to_edit', False):
+            sync_job_obj = _build_sync_job(config, temp_path)
+            _add_job('sync', sync_job_obj, ['full_composite'])
+
         slapcomp_result = _build_slapcomp_job(
             config,
             temp_path,
@@ -871,7 +872,6 @@ def build(
             temp_path,
             slapcomp_version_name
         )
-        _add_job('edit', edit_job_obj, ['full_composite'])
         _add_job('slapcomp', slapcomp_job_obj, ['full_composite'])
         _add_job('slapcomp_mp4', slapcomp_mp4_obj, ['slapcomp'])
         _add_job('slapcomp_notify', slapcomp_notify_obj, ['slapcomp_mp4'])

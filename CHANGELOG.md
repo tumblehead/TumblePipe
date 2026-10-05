@@ -12,6 +12,21 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.59.0 — 2026-10-02
+
+### Features
+- feat(context): tell TumbleTrove the workfile's department, ship stock department radials (`2bb4ac7`)
+
+### Documentation
+- docs: a worker whose SideFX login lapsed fails every job (`9615e53`)
+- docs: regenerate CHANGELOG.md for v1.58.0 (`2bd6661`)
+
+### Tests
+- test: one scratch root per run, deleted at exit (`20f227a`)
+
+### Other Changes
+- Merge branch 'feat/workfile-context-provider' (`f524dad`)
+
 ## v1.58.0 — 2026-09-30
 
 ### Features

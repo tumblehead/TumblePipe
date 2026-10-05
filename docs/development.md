@@ -179,7 +179,9 @@ every condition added here is another way for the gate to quietly not run.
 ## Preflight
 
 The release *tag* pipeline only builds and publishes (`.woodpecker/`) — it
-does not lint and does not test. So one command runs everything, and it is
+does not lint and does not test. It starts only for version tags
+(`ref: "refs/tags/v*"` in every workflow's `when:`), so another tag, such as
+an `archive/<branch>` tag kept when a branch is deleted, starts nothing. So one command runs everything, and it is
 what to run before tagging:
 
 ```bash
@@ -399,6 +401,16 @@ instance must anchor on definition *parm* names (never renamed) via
 under any project hython (e.g. TumbleTrove Desktop's run_hython with
 dev overrides); it drives the UI rebuild with synthetic layers and
 touches no project data.
+
+`scripts/verify_import_assets_usd_variant.py` pins th::import_assets'
+per-row **Variant** menu: the menu lists the row's composed variantSets,
+a choice applies live (no re-import), lands in the layer below the HDA's
+layerbreak (what the export keeps), reaches every instance copy and inline
+mode, and an unknown variant falls back to the published selection. By
+default it reads paleindia `Clash/goblin`; `TH_VERIFY_SYNTHETIC=1` patches
+the resolver to serve a temp staged layer with a `model` variantSet
+instead, so it runs under any project hython (name an asset the project
+has with `TH_VERIFY_ENTITY` / `TH_VERIFY_PRIM`) and touches no project data.
 
 ## HDA dive-target harness
 
@@ -736,7 +748,9 @@ breaking change (`refactor!: …`) and leads the release; `ci`, `build`
 and the `release` version-bump commit are excluded. Anything that
 doesn't parse still lands under *Other Changes* rather than being
 dropped, so a forgotten prefix can't lose a change — but it is worth
-writing the prefix.
+writing the prefix. A merge commit's `Merge branch …` subject lands there
+too, which is why history on `master` is kept linear: merge a feature branch
+with `git merge --ff-only` (rebase it first if needed), never `--no-ff`.
 
 **Ordering gotcha:** the script reads the *tags*, so a release's section
 can only be rendered once its tag exists. Regenerate and commit

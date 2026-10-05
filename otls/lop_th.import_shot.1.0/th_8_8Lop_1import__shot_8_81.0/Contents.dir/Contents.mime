@@ -243,10 +243,10 @@ Content-Disposition: attachment; filename="hdaroot/procedurals.inp"
 Content-Type: text/plain
 
 4
-0 0 6.3470999999999984 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
-1 3.9535999999999998 5.2175999999999982 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
-2 3.9535999999999998 6.3470999999999984 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
-3 6.2127999999999997 5.6694000179529169 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+0 -0.80000000000000004 7.7778000269293779 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+1 4.7535999999999996 5.2175999999999991 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+2 4.7535999999999996 6.3470999999999993 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
+3 7.0127999999999995 5.6694000179529178 2 0 __NO_OWNER_NETWORK_BOX__ "FROMOUTPUT"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/procedurals/output0.init"
@@ -268,11 +268,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	(0) "" 1 "input1"
+0 	enable 2 1 "input1"
 }
 inputs
 {
-0 	(0) 0 1
+0 	enable 0 1
 }
 stat
 {
@@ -306,6 +306,170 @@ Content-Type: text/plain
 		"value":"___EXTERNAL___"
 	}
 }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/procedurals/preview_procedurals.init"
+Content-Type: text/plain
+
+type = houdinipreviewprocedurals
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/procedurals/preview_procedurals.def"
+Content-Type: text/plain
+
+comment ""
+position 0.8 7.326
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+}
+inputs
+{
+0 	(0) 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/procedurals/preview_procedurals.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+primpattern	[ 0	locks=0 ]	(	%type(HoudiniProceduralAPI)	)
+alwaysmatchprocedurals	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/procedurals/preview_procedurals.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/procedurals/enable.init"
+Content-Type: text/plain
+
+type = switch
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/procedurals/enable.def"
+Content-Type: text/plain
+
+comment ""
+position 0 6.3471
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	(0) "" 1 "input1"
+1 	preview_procedurals 1 1 "input2"
+}
+inputs
+{
+0 	(0) 0 1
+1 	preview_procedurals 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 1 0.7 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/procedurals/enable.editableinputdata"
+Content-Type: text/plain
+
+[
+	{
+	},
+	{
+	}
+]
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/procedurals/enable.chn"
+Content-Type: text/plain
+
+{
+    channel input {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../../include_procedurals\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/procedurals/enable.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+chooseinputbyname	[ 0	locks=0 ]	(	"off"	)
+input	[ 0	locks=0 ]	(	[ input	0 ] 	)
+selectinputname	[ 0	locks=0 ]	(	""	)
+selectinputvalue	[ 0	locks=0 ]	(	""	)
+config_separator	[ 0	locks=0 ]	(	)
+badinput	[ 0	locks=0 ]	(	ignore	)
+fallback	[ 0	locks=0 ]	(	0	)
+selectfallbackname	[ 0	locks=0 ]	(	""	)
+inputname	[ 0	locks=0 ]	(	"`opinput(\".\", @input)`"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/procedurals/enable.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/procedurals.order"
+Content-Type: text/plain
+
+3
+output0
+preview_procedurals
+enable
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/procedurals.net"

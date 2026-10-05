@@ -20,7 +20,7 @@ from tumblepipe.config.timeline import BlockRange
 
 """
 config = {
-    'title': 'edit',
+    'title': 'sync',
     'priority': 50,
     'pool_name': 'general',
     'entity_uri': 'entity:/shots/sequence/shot',
@@ -45,7 +45,7 @@ def _is_valid_config(config):
     if not isinstance(config['last_frame'], int): return False
     return True
 
-SCRIPT_PATH = Path(__file__).parent / 'edit.py'
+SCRIPT_PATH = Path(__file__).parent / 'sync.py'
 def build(config, paths, staging_path):
 
     # Check if the config is valid
@@ -64,7 +64,7 @@ def build(config, paths, staging_path):
     )
 
     # Task context
-    task_path = staging_path / f'edit_{random_name(8)}'
+    task_path = staging_path / f'sync_{random_name(8)}'
     context_path = task_path / 'context.json'
     store_json(context_path, dict(
         entity_uri = config['entity_uri'],
@@ -78,7 +78,7 @@ def build(config, paths, staging_path):
     )
     task.name = title
     task.pool = pool_name
-    task.group = 'edit'
+    task.group = 'general'
     task.priority = priority
     task.start_frame = render_range.first_frame
     task.end_frame = render_range.last_frame

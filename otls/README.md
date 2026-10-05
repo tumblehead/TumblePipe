@@ -97,6 +97,16 @@ Editing rules learned the hard way:
     the `.hip`. Set them via `definition.setOptions()`.
   Verify by instantiating the *compiled* `.hda` in a fresh hython and
   driving it, not by reading the source you just wrote.
+- **`updateFromNode()` on an installed source directory writes the repo.**
+  `hou.hda.installFile(<otls/expanded dir>)` then
+  `definition.updateFromNode(node)` rewrites the expanded files in place,
+  with no `save()` call. That is a usable way to add inner nodes, but the
+  diff picks up noise that must be reverted by hand: `.OPdummydefs` /
+  `.OPfallbacks` files plus their `Contents.mime` parts (an embedded copy
+  of a *built-in* node type definition), the `hdaroot.def` position and
+  display/render flags, the `INDEX__SECTION` timestamp, the
+  `houdini_versions` value, and the `createtimes`/`modtimes` of nodes you
+  did not touch. Keep only the new nodes' sections and index entries.
 - **A stale `otls/<name>.hda` shadows your edit.** The compiled `.hda`
   files are gitignored build artifacts that sit *next to* the source
   directories, and Houdini scans them. Until you re-run compile-hdas

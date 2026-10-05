@@ -23,7 +23,7 @@ from tumblepipe.pipe.paths import (
 from tumblepipe.farm.jobs.houdini import _common, _render_build
 import tumblepipe.farm.tasks.render.task as render_job
 import tumblepipe.farm.tasks.mp4.task as mp4_job
-import tumblepipe.farm.tasks.edit.task as edit_task
+import tumblepipe.farm.tasks.sync.task as sync_task
 from tumblepipe.config.channels import (
     has_channel_names_key,
     read_channel_name,
@@ -170,16 +170,16 @@ def _should_sync_aov(aov_name: str) -> bool:
         return True
     return False
 
-def _build_edit_job(
+def _build_sync_job(
     config: dict,
     staging_path: Path
     ):
-    """Build single edit job that will resolve and sync all layer/AOV combinations at runtime.
+    """Build single sync job that will resolve and copy all layer/AOV combinations at runtime.
 
     The AOV resolution happens at task execution time (not submission time) so that newly
     rendered frames are included in the resolution.
     """
-    logging.debug('Creating edit task')
+    logging.debug('Creating sync task')
 
     # Config
     entity_uri = Uri.parse_unsafe(config['entity']['uri'])
@@ -191,11 +191,11 @@ def _build_edit_job(
 
     # Extract entity fields
     if entity_uri.segments[0] != 'shots':
-        assert False, f'Edit task only supports shot entities: {entity_uri}'
+        assert False, f'Sync task only supports shot entities: {entity_uri}'
 
-    # Create single edit task that will resolve AOVs at runtime
-    title = f'edit {entity_uri}'
-    task = edit_task.build(dict(
+    # Create single sync task that will resolve AOVs at runtime
+    title = f'sync {entity_uri}'
+    task = sync_task.build(dict(
         title = title,
         priority = 90,
         pool_name = pool_name,
@@ -518,10 +518,10 @@ def build(
             # Collect all denoise job names
             all_denoise_jobs = [f'full_denoise_{ln}' for ln in channel_names]
 
-            # Edit job depends on all denoise jobs (only if copy_to_edit is enabled)
+            # Sync job depends on all denoise jobs (only if copy_to_edit is enabled)
             if config['settings'].get('copy_to_edit', False):
-                edit_job_obj = _build_edit_job(config, temp_path)
-                _add_job('edit', edit_job_obj, all_denoise_jobs)
+                sync_job_obj = _build_sync_job(config, temp_path)
+                _add_job('sync', sync_job_obj, all_denoise_jobs)
 
             # Slapcomp depends on all denoise jobs
             # Use version from first layer (all should have same version number)
@@ -555,10 +555,10 @@ def build(
             # Collect all render job names
             all_render_jobs = [f'full_render_{ln}' for ln in channel_names]
 
-            # Edit job depends on all render jobs (only if copy_to_edit is enabled)
+            # Sync job depends on all render jobs (only if copy_to_edit is enabled)
             if config['settings'].get('copy_to_edit', False):
-                edit_job_obj = _build_edit_job(config, temp_path)
-                _add_job('edit', edit_job_obj, all_render_jobs)
+                sync_job_obj = _build_sync_job(config, temp_path)
+                _add_job('sync', sync_job_obj, all_render_jobs)
 
             # Slapcomp depends on all render jobs
             first_layer = channel_names[0]

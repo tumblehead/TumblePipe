@@ -175,6 +175,73 @@ def _inline_marker_script(prim_paths: list[str]) -> str:
 
     return '\n'.join(script_lines)
 
+def _row_node_name(asset_uri: Uri, channel: str) -> str:
+    """Name of the per-row import_asset node inside the dive."""
+    uri_name = '_'.join(asset_uri.segments[1:])
+    if channel == 'default':
+        return f'{uri_name}_import'
+    return f'{uri_name}_{channel}_import'
+
+def _parse_variant_choice(value: str) -> tuple[str, str] | None:
+    """Split a ``usd_variant#`` value (``<variantSet>=<variant>``)."""
+    set_name, sep, variant_name = value.partition('=')
+    if not sep or not set_name or not variant_name:
+        return None
+    return set_name, variant_name
+
+def _variant_selection_script(rows: dict[int, list[str]]) -> str:
+    """
+    Generate the script lines that apply each row's USD variant choice.
+
+    The choice is read live from the ``usd_variant#`` parms when the
+    set_metadata node cooks, not baked in here: switching variants then
+    recooks the node instead of needing another Import. Only the row ->
+    prim path mapping is baked, and that is what Import rebuilds anyway.
+    Runs downstream of the HDA's layerbreak so the selection is part of
+    the exported layer, exactly as a Set Variant LOP after the node was.
+    """
+    if not rows:
+        return ''
+    return '\n'.join([
+        '',
+        '# USD variant selections (see import_assets.apply_variant_selections)',
+        'from tumblepipe.pipe.houdini.lops import import_assets as _import_assets',
+        '_import_assets.apply_variant_selections(',
+        '    hou.pwd().parent(),',
+        '    hou.pwd().editableStage(),',
+        f'    {rows!r}',
+        ')',
+        '',
+    ])
+
+def apply_variant_selections(hda_node, stage, rows: dict[int, list[str]]):
+    """Author each row's chosen variant selection on its instance prims.
+
+    A choice naming a variantSet or variant the prim does not carry is
+    skipped rather than authored: a dangling selection composes to nothing
+    (an unselected variant hides its content), and a stale row mapping —
+    rows reordered without re-importing — must not land on another asset.
+    """
+    for index, prim_paths in rows.items():
+        parm = hda_node.parm(f'usd_variant{index}')
+        if parm is None:
+            continue
+        choice = _parse_variant_choice(parm.eval())
+        if choice is None:
+            continue
+        set_name, variant_name = choice
+        for prim_path in prim_paths:
+            prim = stage.GetPrimAtPath(prim_path)
+            if not prim.IsValid():
+                continue
+            variant_sets = prim.GetVariantSets()
+            if not variant_sets.HasVariantSet(set_name):
+                continue
+            variant_set = variant_sets.GetVariantSet(set_name)
+            if variant_name not in variant_set.GetVariantNames():
+                continue
+            variant_set.SetVariantSelection(variant_name)
+
 class ImportAssets(EntityNode):
     def __init__(self, native):
         super().__init__(native)
@@ -325,6 +392,43 @@ class ImportAssets(EntityNode):
         """Set version name for this index."""
         self.parm(f'version{index}').set(version_name)
 
+    def list_usd_variant_menu(self, index: int) -> list[str]:
+        """Menu items for the row's USD variant choice, read-only.
+
+        Lists the variantSets authored on the row's asset prim, read from
+        the row's import node inside the dive — so the menu fills after the
+        first Import, and lists what the asset actually composes rather
+        than what the config thinks it should. Empty token = leave the
+        published selection alone.
+        """
+        menu = ['', 'As published']
+        asset_uri = self.get_entity_uri(index)
+        if asset_uri is None:
+            return menu
+        dive_node = self.native().node('dive')
+        row_node = dive_node.node(
+            _row_node_name(asset_uri, self.get_channel_name(index))
+        )
+        if row_node is None:
+            return menu
+        try:
+            stage = row_node.stage()
+            prim = stage.GetPrimAtPath(uri_to_prim_path(asset_uri))
+        except (hou.Error, ValueError):
+            return menu
+        if not prim.IsValid():
+            return menu
+        variant_sets = prim.GetVariantSets()
+        set_names = variant_sets.GetNames()
+        for set_name in set_names:
+            for variant_name in variant_sets.GetVariantSet(set_name).GetVariantNames():
+                menu.append(f'{set_name}={variant_name}')
+                menu.append(
+                    variant_name if len(set_names) == 1
+                    else f'{set_name}: {variant_name}'
+                )
+        return menu
+
     def get_asset_imports(self) -> list[tuple[Uri, str, str, int]]:
         """Returns list of (asset_uri, channel, version, instances) for all asset imports.
 
@@ -454,13 +558,14 @@ class ImportAssets(EntityNode):
         # Build asset nodes
         script_args = []
         all_prim_paths = []
+        asset_prim_paths: dict[Uri, list[str]] = {}
         for asset_uri, channel, version, instances in asset_imports:
             if instances == 0: continue
             asset_prim_path = uri_to_prim_path(asset_uri)
 
             # Create node name from URI segments (include channel for uniqueness)
             uri_name = '_'.join(asset_uri.segments[1:])
-            node_name = f'{uri_name}_{channel}_import' if channel != 'default' else f'{uri_name}_import'
+            node_name = _row_node_name(asset_uri, channel)
 
             # Import the asset
             asset_node = import_asset.create(
@@ -483,6 +588,7 @@ class ImportAssets(EntityNode):
             # In the case of one instance
             if instances == 1:
                 all_prim_paths.append(asset_prim_path)
+                asset_prim_paths[asset_uri] = [asset_prim_path]
                 _connect(asset_node.native(), merge_node)
                 continue
 
@@ -525,11 +631,15 @@ class ImportAssets(EntityNode):
                 if index == 0:
                     instance_prim_names.append(prim_name)
                 for instance_prim_name in instance_prim_names:
+                    instance_prim_path = f'{asset_prim_base}/{instance_prim_name}'
                     script_args.append((
-                        f'{asset_prim_base}/{instance_prim_name}',
+                        instance_prim_path,
                         str(asset_uri),
                         instance_name
                     ))
+                    asset_prim_paths.setdefault(asset_uri, []).append(
+                        instance_prim_path
+                    )
 
         # Update the instances names in the metadata. In inline mode the
         # update script must not run: it would (re)create pipeline metadata
@@ -588,6 +698,15 @@ class ImportAssets(EntityNode):
                 shot_uri,
                 shot_department
             )
+
+        # USD variant choices, keyed by row. The asset is unique per row
+        # (list_entity_uris filters out the other rows' picks).
+        variant_rows = {}
+        for index in range(1, count + 1):
+            asset_uri = self.get_entity_uri(index)
+            if asset_uri in asset_prim_paths:
+                variant_rows[index] = asset_prim_paths[asset_uri]
+        metadata_script += _variant_selection_script(variant_rows)
         self.parm('set_metadata_python').set(metadata_script)
 
 def create(scene, name):

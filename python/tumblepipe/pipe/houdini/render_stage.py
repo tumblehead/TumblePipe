@@ -171,7 +171,6 @@ def build_render_stage_graph(
     shot_node.set_exclude_downstream_of(render_department_name)
     shot_node.set_channel_name(channel_name)
     shot_node.set_version_name('current')
-    shot_node.set_include_procedurals(True)
     shot_node.execute()
     prev_node = shot_node.native()
 

@@ -129,6 +129,23 @@
                 default { "" }
             }
             parm {
+                name    "usd_variant#"
+                label   "Variant"
+                type    string
+                nolabel
+                joinnext
+                default { "" }
+                menu {
+                    [ "from tumblepipe.pipe.houdini.lops import import_assets" ]
+                    [ "" ]
+                    [ "index = int(kwargs['parm'].name()[len('usd_variant'):])" ]
+                    [ "node = import_assets.ImportAssets(hou.pwd())" ]
+                    [ "return node.list_usd_variant_menu(index)" ]
+                    language python
+                }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
                 name    "instances#"
                 label   "Instances"
                 type    integer

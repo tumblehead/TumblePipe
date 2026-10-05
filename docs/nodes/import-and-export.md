@@ -84,6 +84,7 @@ Source: [`otls/lop_th.import_assets.2.0`](../../otls/lop_th.import_assets.2.0/th
 | *(Entity button)* + label | *(empty)* | The row's asset. There is no `from_context` row here — every row is a concrete asset. The picker hides assets already used on other rows |
 | Channel | `default` | Per row |
 | Version | `latest` | Per row |
+| Variant | *As published* | A USD variant for the row's asset prim — every variantSet/variant the imported asset carries, as `set: variant` when it has more than one set. Replaces a Set Variant LOP after the node. Applied to every copy, and published |
 | Instances | `1` | Copies of the asset (1–10). Copies are named `<Asset>0…N-1` |
 
 Node-wide: **Exclude departments** (lists the union of all rows' departments),
@@ -100,6 +101,14 @@ on export.)
 Gotchas:
 
 - Picking an entity on a row does *not* re-import; press **Import**.
+- The **Variant** menu lists what the row's import composed, so it is empty
+  (*As published* only) until the row has been imported once. Changing it
+  applies immediately, without re-importing. It is authored below the
+  internal layerbreak, like the Layout edit, so the export carries it as a
+  `variants = { … }` selection on the asset prim. A choice the asset no
+  longer has (a variant renamed or removed upstream) is skipped, falling
+  back to the published selection. One variantSet per row: for a second
+  set on the same asset, keep a Set Variant LOP downstream.
 - A row with an empty entity is filled with the first unused asset when you
   press Import.
 - Copies are instanceable unless the asset is marked `animatable` —
@@ -130,7 +139,7 @@ Source: [`otls/lop_th.import_shot.1.0`](../../otls/lop_th.import_shot.1.0/th_8_8
 | Exclude | This + Downstream | **This + Downstream** also leaves out every department after it in the shot's pipeline order, so you compose only what is upstream of your work. **This Department Only** keeps the later ones — the environment template uses it so environment sees the animation camera and characters. Changing it re-imports immediately |
 | Version | `latest` | `latest` / `current` / `v####` |
 | Exclude Asset Departments | *(none)* | Checkable list of asset departments (e.g. `lookdev`) to leave out of **every** asset in the shot, nested ones included; ticking re-imports immediately |
-| Include procedurals | off | Currently wired to nothing |
+| Preview Procedurals | off | Runs a *Preview Houdini Procedurals* LOP on the imported shot, so Houdini procedurals (e.g. hair) cook in the viewport. It sits above the node's layer break, so the result is never exported, and the farm render stage leaves it off (husk runs procedurals at render time) |
 | Load Payloads | on | Currently wired to nothing (payloads always load) |
 
 **Import** runs the node. It also sets the session's FPS and frame range

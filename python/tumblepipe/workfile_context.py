@@ -13,10 +13,11 @@ the one that knows the workfile, so it answers for it:
   project" lands in the project config beside ``db/``.
 - **stock_dir**: ``<package>/stock/<kind>``, the department radials
   TumblePipe ships. They are the lowest layer, below every package, so
-  TumbleRig's rig radial replaces the stock one. They live under
-  ``stock/`` and not ``radial_menus/`` because TumbleTrove reads a
-  package's ``<kind>/`` folder as the *package* layer, where the stock rig
-  menu would tie with TumbleRig's and inventory order would pick.
+  TumbleRig's rig radial replaces the stock one. They are handed over
+  here, and not declared as a package contribution
+  (``package.register(..., contributions=...)``), because contributions
+  are the *package* layer, where the stock rig menu would tie with
+  TumbleRig's and the package names' order would pick.
 
 Everything is best-effort. Without ``tumbletrove.context`` (TumbleTrove
 older than the release carrying #24) nothing registers, and a provider

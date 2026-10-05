@@ -13,8 +13,9 @@ falls back to its `default` export.
 This used to be called a *variant*, which collided head-on with USD's own
 `variantSet` — an unrelated mechanism, authored on a prim by Solaris' Add
 Variant / Set Variant and by our `th::create_asset_model` /
-`th::create_asset_lookdev` HDAs. In the UI, "variant" now means exactly the
-USD thing; the publish-tree fork is a channel.
+`th::create_asset_lookdev` HDAs, and selected per row by `th::import_assets`'
+Variant menu. In the UI, "variant" now means exactly the USD thing; the
+publish-tree fork is a channel.
 
 The rename changed vocabulary only. `variant` is still what every writer
 **emits** — the `?variant=` URI query parameter and the `_shared` sentinel,

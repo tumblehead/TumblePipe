@@ -156,9 +156,10 @@
         }
         parm {
             name    "include_procedurals"
-            label   "Include procedurals"
+            label   "Preview Procedurals"
             type    toggle
             default { "0" }
+            help    "Run a Preview Houdini Procedurals LOP on the imported shot, so Houdini procedurals (e.g. hair) are cooked for the viewport. The result sits above the layer break, so it is never exported."
             parmtag { "script_callback" "" }
             parmtag { "script_callback_language" "python" }
         }
