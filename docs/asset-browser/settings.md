@@ -1,18 +1,26 @@
 # Pipeline settings and files
 
-The Asset Browser's settings page for TumblePipe, the two department
-editors it reaches, and every file TumblePipe writes outside a project.
+The Asset Browser's settings page for TumblePipe, the department pool
+editor on it, the per-entity department editor, and every file TumblePipe
+writes outside a project.
 Sources: [`settings_widget.py`](../../python/tumblepipe/asset_browser/settings_widget.py),
 [`prefs.py`](../../python/tumblepipe/asset_browser/prefs.py),
-[`departments.py`](../../python/tumblepipe/asset_browser/departments.py).
+[`departments.py`](../../python/tumblepipe/asset_browser/departments.py),
+[`access.py`](../../python/tumblepipe/asset_browser/access.py).
 
 ## The Projects page
 
 Open TumbleTrove's settings (the gear icon in the Asset Browser) and pick
-the **Projects** page filed under TumblePipe. It manages the registered
-projects the browser merges into one grid, plus three behaviour toggles.
+the **Projects** page filed under TumblePipe. It has three sections, split
+by who a change reaches:
 
-### Project list
+| Section | Reaches | Holds |
+|---|---|---|
+| **Your projects** | you only | Which projects your browser lists and merges into one grid. |
+| **Behaviour** | you only | Three toggles. |
+| **Project defaults** | everyone on the selected project | Its [department pool](#the-department-pool-editor). Owners and admins only. |
+
+### Your projects
 
 | Control | What it does |
 |---|---|
@@ -21,12 +29,19 @@ projects the browser merges into one grid, plus three behaviour toggles.
 | **Name** | The project's registry name (placeholder `e.g. RND or growth`). |
 | **Project Path** + **Browse…** | The project root (placeholder `P:/RND`). Browsing (**Select Project Folder**) fills a blank Name from the folder name and a blank Config Path from `<project>/_config` when it exists. |
 | **Config Path** | Optional — where `_config` lives if not inside the project. |
-| **Departments…** | Opens the [department pool editor](#the-department-pool-editor) for the selected project. A project you just added must be applied first ("Apply this project first — the department pool lives in its config…"). |
 | **Apply Project Changes** | Validates (every entry needs a Name and a Project Path, names must be unique — `Fix these issues before applying: …`), writes the registry, drops the browser's discovery cache, and reports `Saved N project(s). The asset browser grid will repopulate on the next browse.` |
 
-Edits to the list only take effect on **Apply Project Changes**.
+Edits to the list only take effect on **Apply Project Changes**. The list
+is yours alone (`projects.json`, below): it never touches a project's files.
 
-### Behavior
+**The project TumbleTrove Desktop launched is locked.** Its Name, Project
+Path and Config Path are greyed, it cannot be removed, and the page says
+"TumbleTrove Desktop launched this project and sets its paths on every
+launch. Change them in the project's settings in Desktop." Desktop rewrites
+those paths at every launch, so an edit here would not have lasted. Other
+projects you added by hand stay editable.
+
+### Behaviour
 
 Each checkbox is saved the moment you click it — no Apply needed.
 
@@ -41,12 +56,41 @@ but keeps the checkbox as clicked.
 
 ## The department pool editor
 
-**Departments…** on the Projects page opens **Departments — `<project>`**.
+Under **Project defaults** on the Projects page, **Department pool —
+`<project>`** edits the selected project's pool: the departments its shots
+and assets can use. It sets up the pool only; which departments one shot or
+asset uses is [chosen on its card](#per-entity-departments). A project you
+just added must be applied first ("Apply this project first: its department
+pool lives in its config…").
+
 The pool is per project and per context; the combo at the top switches
 between **shots**, **assets** and **render** (the post-render stages). The
 list shows the pool in **pipeline order** — later departments layer over
 earlier ones in the staged build, and everything below a department is
 downstream of it. Disabled departments are greyed and suffixed `(disabled)`.
+
+### Who can edit it
+
+The pool is shared by everyone on the project, so only an organisation
+**owner** or **admin** can change it. TumbleTrove Desktop (0.55 or newer)
+says which you are when it launches Houdini (`TT_ORGANIZATION_ROLE`; a
+project cannot set it through its own env vars). Everyone else sees the pool
+read-only, with a line saying why:
+
+| You are | You see |
+|---|---|
+| An owner or admin of the project's organisation | The editor. |
+| A member | Read-only: only owners and admins can change project defaults. |
+| On a personal project | The editor: the project is yours. |
+| Looking at a project Desktop did not launch | Read-only: open that project from Desktop to change its defaults. |
+| Launched by a Desktop that was offline, or older than 0.55 | Read-only until you relaunch from an up-to-date Desktop. |
+| Running Houdini without Desktop | The editor, as before: nothing says who you are. |
+
+This guards against a slip, not a determined edit: the pool is a file in
+the project's `_config/db/`, and whoever can write that share can change
+it. Folder permissions on `_config` are what protect it.
+
+### Editing
 
 | Button | What it does |
 |---|---|
@@ -65,9 +109,11 @@ Flags for the selected department:
 | **Independent** | A publish upstream of it does not propagate into it. |
 | **Generated** | Produced by Python, not a Houdini workfile — hidden from the Houdini export menus. |
 
-**Apply** commits everything (adds, removals, flags, then the order) to the
-project's `departments` database and refreshes the browser; **Cancel**
-discards. Before committing it warns — and asks *Apply anyway?* — when you
+**Apply Department Changes** commits everything (adds, removals, flags,
+then the order) to the project's `departments` database and refreshes the
+browser; **Revert** drops what you changed since the last Apply. Both are
+greyed until something changed, and selecting another project with changes
+not applied asks first. Before committing it warns — and asks *Apply anyway?* — when you
 **reordered existing departments** ("Order is the pipeline order: this
 changes USD sublayer strength and what counts as downstream for every
 existing shot and asset in this project") or appended a new **renderable**
@@ -100,7 +146,7 @@ which departments the Multi's workfile overrides for its members. See
 
 | File | Written by | Contents |
 |---|---|---|
-| `$HOUDINI_USER_PREF_DIR/asset_browser/pipeline_prefs.json` (or `~/.config/asset_browser/pipeline_prefs.json` when the variable is unset) | the Behavior toggles | The three prefs above plus `prefs_version` (currently 2; a file older than that re-defaults `auto_refresh_on_open` to on once). |
+| `$HOUDINI_USER_PREF_DIR/asset_browser/pipeline_prefs.json` (or `~/.config/asset_browser/pipeline_prefs.json` when the variable is unset) | the Behaviour toggles | The three prefs above plus `prefs_version` (currently 2; a file older than that re-defaults `auto_refresh_on_open` to on once). |
 | `$HOUDINI_USER_PREF_DIR/asset_browser/projects.json` (same fallback) | Apply Project Changes | The registered projects: name, project path, config path. |
 | `<package root>/radial_menus/tumblepipe_recipes.json` and `tumblepipe_asset_favorites.json` | Houdini startup (`tumblepipe.startup.register_radial`, `$TH_PIPELINE_PATH` is the package root) | Generated radial rings (Alt+R recipes, Alt+F asset favourites) for the `tumbleradial` package; `tumblepipe_pipeline.json` there is static and shipped. Regenerated every launch; a ring with fewer than two entries is deleted rather than written. |
 | `$TH_PROJECT_PATH/export/other/logs/$TH_USER.log` | every session, on `import tumblepipe` | The pipeline log — rotating, 5 MB × 3 backups. Written into the **project** share, so it is only attached when `TH_PROJECT_PATH` exists; identity-less sessions share `pipeline.log`. This is the file the failure dialogs name. See [Where the logs are](../development.md#where-the-logs-are). |

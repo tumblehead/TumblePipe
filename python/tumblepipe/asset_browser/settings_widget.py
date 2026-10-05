@@ -1,4 +1,15 @@
-"""Pipeline catalog settings widget — multi-project management.
+"""Pipeline catalog settings widget — the Projects page.
+
+Three sections, split by who a change reaches:
+
+* **Your projects** — which projects this artist's asset browser lists.
+  Per artist (``projects.json``); nothing here touches a project's files.
+  The project TumbleTrove Desktop launched is locked: Desktop rewrites its
+  paths on every launch, so editing them here only looked like it worked.
+* **Behaviour** — this artist's toggles, saved as they are clicked.
+* **Project defaults** — the selected project's own configuration, shared
+  by everyone on it: today the department pool. Editing it needs an
+  organisation admin (:mod:`.access`); everyone else sees it read-only.
 
 Lives in its own module so the import cost (PySide6 widgets) is paid
 only when the user opens the gear-icon settings dialog.
@@ -9,16 +20,30 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QCheckBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
+    QCheckBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
     QVBoxLayout, QWidget,
 )
 
 from tumbletrove.asset_browser.core.projects import ProjectConfig
 from tumbletrove.asset_browser.core.theme import (
-    BORDER, BUTTON_GHOST_STYLE, BUTTON_PRIMARY_STYLE, FONT_FAMILY, FONT_SMALL,
-    TEXT_DIM, scaled,
+    ACCENT, BUTTON_PRIMARY_STYLE, FONT_FAMILY, FONT_SMALL,
+    TEXT_DIM, TEXT_PRIMARY, scaled,
 )
+from tumbletrove.settings.widgets import section_header
+
+from . import access
+from .departments import GHOST_STYLE, LIST_STYLE, DepartmentPoolEditor
+
+
+def _small_label(text: str, color: str) -> QLabel:
+    label = QLabel(text)
+    label.setWordWrap(True)
+    label.setStyleSheet(
+        f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; '
+        f"color: {color}; border: none; background: transparent;"
+    )
+    return label
 
 
 class PipelineSettingsWidget(QWidget):
@@ -49,16 +74,13 @@ class PipelineSettingsWidget(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(scaled(6))
 
-        hint = QLabel(
-            "Registered Tumblehead projects. Add as many as you like — "
-            "the asset browser merges all of them into one grid."
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet(
-            f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; '
-            f"color: {TEXT_DIM}; border: none; background: transparent;"
-        )
-        outer.addWidget(hint)
+        outer.addWidget(section_header(
+            "Your projects",
+            "The projects your asset browser lists, merged into one grid. "
+            "These are yours alone: changing them never touches a project's "
+            "files or anyone else's setup.",
+            self,
+        ))
 
         # ── Project list + add/remove buttons row ──
         list_row = QHBoxLayout()
@@ -66,14 +88,8 @@ class PipelineSettingsWidget(QWidget):
         list_row.setSpacing(scaled(6))
 
         self._list = QListWidget(self)
-        self._list.setStyleSheet(
-            f"QListWidget {{ background-color: transparent; "
-            f"border: 1px solid {BORDER}; "
-            f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; }} '
-            f"QListWidget::item {{ padding: 4px 8px; }} "
-            f"QListWidget::item:selected {{ background-color: rgba(255,255,255,16); }}"
-        )
-        self._list.setMinimumHeight(scaled(120))
+        self._list.setStyleSheet(LIST_STYLE)
+        self._list.setMinimumHeight(scaled(90))
         self._list.currentRowChanged.connect(self._on_row_changed)
         list_row.addWidget(self._list, stretch=1)
 
@@ -82,12 +98,12 @@ class PipelineSettingsWidget(QWidget):
         btn_col.setSpacing(scaled(4))
 
         self._add_btn = QPushButton("Add")
-        self._add_btn.setStyleSheet(BUTTON_GHOST_STYLE)
+        self._add_btn.setStyleSheet(GHOST_STYLE)
         self._add_btn.clicked.connect(self._on_add)
         btn_col.addWidget(self._add_btn)
 
         self._remove_btn = QPushButton("Remove")
-        self._remove_btn.setStyleSheet(BUTTON_GHOST_STYLE)
+        self._remove_btn.setStyleSheet(GHOST_STYLE)
         self._remove_btn.clicked.connect(self._on_remove)
         btn_col.addWidget(self._remove_btn)
 
@@ -113,10 +129,10 @@ class PipelineSettingsWidget(QWidget):
         self._project_edit.setPlaceholderText("P:/RND")
         self._project_edit.editingFinished.connect(self._sync_from_form)
         proj_row.addWidget(self._project_edit, stretch=1)
-        browse_btn = QPushButton("Browse…")
-        browse_btn.setStyleSheet(BUTTON_GHOST_STYLE)
-        browse_btn.clicked.connect(self._on_browse)
-        proj_row.addWidget(browse_btn)
+        self._browse_btn = QPushButton("Browse…")
+        self._browse_btn.setStyleSheet(GHOST_STYLE)
+        self._browse_btn.clicked.connect(self._on_browse)
+        proj_row.addWidget(self._browse_btn)
         form.addRow("Project Path", proj_row)
 
         self._config_edit = QLineEdit()
@@ -124,31 +140,26 @@ class PipelineSettingsWidget(QWidget):
         self._config_edit.editingFinished.connect(self._sync_from_form)
         form.addRow("Config Path", self._config_edit)
 
-        # The department pool is per-project, so it hangs off the selected
-        # project rather than the (global) behaviour toggles below.
-        self._departments_btn = QPushButton("Departments…")
-        self._departments_btn.setStyleSheet(BUTTON_GHOST_STYLE)
-        self._departments_btn.setToolTip(
-            "Add, retire, reorder and flag this project's departments. "
-            "Order is the pipeline order."
-        )
-        self._departments_btn.clicked.connect(self._on_departments)
-        form.addRow("Departments", self._departments_btn)
-
         outer.addWidget(self._form_holder)
 
-        # ── Behavior toggles (separator + section) ──
-        sep = QFrame(self)
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet(f"color: {BORDER}; background-color: {BORDER};")
-        outer.addWidget(sep)
+        # Why the launched project's fields are locked.
+        self._lock_note = _small_label("", ACCENT)
+        self._lock_note.hide()
+        outer.addWidget(self._lock_note)
 
-        behavior_label = QLabel("Behavior")
-        behavior_label.setStyleSheet(
-            f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; '
-            f"color: {TEXT_DIM}; border: none; background: transparent;"
-        )
-        outer.addWidget(behavior_label)
+        # ── Apply button (commits to disk + reinits clients) ──
+        apply_row = QHBoxLayout()
+        apply_row.setContentsMargins(0, 0, 0, 0)
+        apply_row.addStretch()
+        self._apply_btn = QPushButton("Apply Project Changes")
+        self._apply_btn.setStyleSheet(BUTTON_PRIMARY_STYLE)
+        self._apply_btn.clicked.connect(self._on_apply)
+        apply_row.addWidget(self._apply_btn)
+        outer.addLayout(apply_row)
+
+        # ── Behaviour toggles ──
+        outer.addWidget(section_header(
+            "Behaviour", "Yours alone, saved as you click.", self))
 
         self._autosave_checkbox = QCheckBox(
             "Autosave (version up) on scene change"
@@ -206,15 +217,27 @@ class PipelineSettingsWidget(QWidget):
         self._note_checkbox.toggled.connect(self._on_prompt_note_toggled)
         outer.addWidget(self._note_checkbox)
 
-        # ── Apply button (commits to disk + reinits clients) ──
-        apply_row = QHBoxLayout()
-        apply_row.setContentsMargins(0, 0, 0, 0)
-        apply_row.addStretch()
-        self._apply_btn = QPushButton("Apply Project Changes")
-        self._apply_btn.setStyleSheet(BUTTON_PRIMARY_STYLE)
-        self._apply_btn.clicked.connect(self._on_apply)
-        apply_row.addWidget(self._apply_btn)
-        outer.addLayout(apply_row)
+        # ── Project defaults: the selected project's shared configuration ──
+        outer.addWidget(section_header(
+            "Project defaults",
+            "The selected project's own settings, shared by everyone working "
+            "on it.",
+            self,
+        ))
+        self._defaults_title = QLabel("")
+        self._defaults_title.setStyleSheet(
+            f'font-family: "{FONT_FAMILY}"; font-weight: bold; '
+            f"color: {TEXT_PRIMARY}; border: none; background: transparent;"
+        )
+        outer.addWidget(self._defaults_title)
+        outer.addWidget(_small_label(
+            "The departments shots and assets can use in this project. This "
+            "sets up the pool; which departments a particular shot or asset "
+            "uses is chosen on its card, under Departments….",
+            TEXT_DIM,
+        ))
+        self._pool_editor = DepartmentPoolEditor(self._catalog, parent=self)
+        outer.addWidget(self._pool_editor)
 
         self._refresh_list()
 
@@ -293,12 +316,42 @@ class PipelineSettingsWidget(QWidget):
 
     def _update_form_enabled(self) -> None:
         has_sel = self._current_index is not None
+        locked = has_sel and self._is_launched(self._current_index)
         for w in (
             self._name_edit, self._project_edit, self._config_edit,
-            self._departments_btn,
+            self._browse_btn, self._remove_btn,
         ):
-            w.setEnabled(has_sel)
-        self._remove_btn.setEnabled(has_sel)
+            w.setEnabled(has_sel and not locked)
+        self._lock_note.setText(
+            "TumbleTrove Desktop launched this project and sets its paths on "
+            "every launch. Change them in the project's settings in Desktop."
+            if locked else "")
+        self._lock_note.setVisible(locked)
+
+    def _is_launched(self, index: int) -> bool:
+        """Whether entry *index* is the project Desktop launched."""
+        launched = access.launched_project_name()
+        return bool(launched) and self._working[index].name == launched
+
+    def _show_project_defaults(self) -> None:
+        """Point the Project defaults section at the selected project."""
+        if self._current_index is None:
+            self._defaults_title.setText("No project selected")
+            self._pool_editor.set_project(
+                None, editable=False, note="Select a project above.")
+            return
+        name = self._working[self._current_index].name
+        self._defaults_title.setText(f"Department pool — {name}")
+        project = self._catalog._registry.get(name)
+        if project is None:
+            self._pool_editor.set_project(
+                None, editable=False,
+                note="Apply this project first: its department pool lives in "
+                     "its config, which is read once the project is "
+                     "registered.")
+            return
+        allowed, reason = access.can_edit_project_defaults(project)
+        self._pool_editor.set_project(project, editable=allowed, note=reason)
 
     def _on_row_changed(self, row: int) -> None:
         if row < 0 or row >= len(self._working):
@@ -307,6 +360,14 @@ class PipelineSettingsWidget(QWidget):
             self._project_edit.setText("")
             self._config_edit.setText("")
             self._update_form_enabled()
+            self._show_project_defaults()
+            return
+        if (self._current_index is not None and row != self._current_index
+                and self._pool_editor.dirty()
+                and not self._confirm_drop_pool_changes()):
+            self._list.blockSignals(True)
+            self._list.setCurrentRow(self._current_index)
+            self._list.blockSignals(False)
             return
         self._current_index = row
         proj = self._working[row]
@@ -314,6 +375,14 @@ class PipelineSettingsWidget(QWidget):
         self._project_edit.setText(proj.project_path)
         self._config_edit.setText(proj.config_path)
         self._update_form_enabled()
+        self._show_project_defaults()
+
+    def _confirm_drop_pool_changes(self) -> bool:
+        """Ask before unapplied department changes are dropped."""
+        return QMessageBox.question(
+            self, "Department Pool",
+            "Drop the department changes you have not applied?",
+        ) == QMessageBox.Yes
 
     def _sync_from_form(self) -> None:
         """Push the form fields back into the working copy."""
@@ -370,27 +439,6 @@ class PipelineSettingsWidget(QWidget):
         else:
             self._on_row_changed(-1)
 
-    def _on_departments(self) -> None:
-        """Open the department pool editor for the selected project.
-
-        It edits the project's live config, so it works against the registered
-        project — not the unsaved working copy. A project that was just added
-        here has to be applied first.
-        """
-        if self._current_index is None:
-            return
-        working = self._working[self._current_index]
-        project = self._catalog._registry.get(working.name)
-        if project is None:
-            QMessageBox.information(
-                self, "Departments",
-                "Apply this project first — the department pool lives in its "
-                "config, which is only read once the project is registered.",
-            )
-            return
-        from .departments import DepartmentPoolDialog
-        DepartmentPoolDialog(self._catalog, project, parent=self).exec()
-
     def _on_browse(self) -> None:
         if self._current_index is None:
             return
@@ -441,6 +489,9 @@ class PipelineSettingsWidget(QWidget):
                 "Failed to apply project changes — see Houdini console.",
             )
             raise
+        # A project added here is registered now, so its department pool
+        # can be read: show it instead of "Apply this project first".
+        self._show_project_defaults()
         QMessageBox.information(
             self, "Project Settings",
             f"Saved {len(self._working)} project(s). "

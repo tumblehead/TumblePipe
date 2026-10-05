@@ -12,6 +12,25 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.60.0 — 2026-10-05
+
+### Features
+- feat(import-assets): per-row USD Variant menu (`87dd1bb`)
+- feat(import-shot): Preview Procedurals toggle runs houdinipreviewprocedurals (`12c9382`)
+
+### Fixes
+- fix(farm): rename copy-to-edit task to sync; composites honour copy_to_edit (`b2e188c`)
+
+### Documentation
+- docs(design): note the import_assets Variant menu against §4.2 (`8d67f83`)
+- docs(otls): updateFromNode on an installed source dir rewrites the repo (`bbc67da`)
+- docs(context): stock radials sit outside the package layer, now that contributions are declared (`977de21`)
+- docs: release CI runs on version tags only; keep master linear (`5da3fb3`)
+- docs: regenerate CHANGELOG.md for v1.59.0 (`5be67d9`)
+
+### Tests
+- test(import-assets): verify harness for the USD Variant menu (`6d471fe`)
+
 ## v1.59.0 — 2026-10-02
 
 ### Features

@@ -6,7 +6,7 @@ as long as it has existed — but nothing in the UI called them, so adding a
 department meant hand-editing JSON in the Database Editor. This is that
 front-end.
 
-The one thing this dialog must get right is **order**. A department's
+The one thing this editor must get right is **order**. A department's
 position in the pool is the pipeline order:
 
 * the staged build sublayers departments in ``reversed()`` pool order, so
@@ -17,10 +17,12 @@ position in the pool is the pipeline order:
 * AOV precedence ranks by pool index.
 
 So reordering an established pool restages composition for every existing
-entity, and the dialog says so before it commits.
+entity, and the editor says so before it commits.
 
-Lives in its own module so its PySide6 import cost is paid only when the
-user actually opens it.
+The pool editor sits inline on the Projects settings page; the per-entity
+assignment dialog (:class:`EntityDepartmentsDialog`) opens from a card. Both
+live in their own module so their PySide6 import cost is paid only when the
+settings page or a card's menu actually needs them.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
@@ -35,8 +38,8 @@ from PySide6.QtWidgets import (
 )
 
 from tumbletrove.asset_browser.core.theme import (
-    BORDER, BUTTON_GHOST_STYLE, BUTTON_PRIMARY_STYLE, FONT_FAMILY, FONT_SMALL,
-    TEXT_DIM, scaled,
+    ACCENT, BG_MID, BORDER, BUTTON_GHOST_STYLE, BUTTON_PRIMARY_STYLE,
+    COMBO_STYLE, FONT_FAMILY, FONT_SMALL, TEXT_DIM, TEXT_PRIMARY, scaled,
 )
 
 CONTEXTS = ("shots", "assets", "render")
@@ -55,31 +58,86 @@ class _Dept:
     is_new: bool = False
 
 
-class DepartmentPoolDialog(QDialog):
-    """Edit one project's department pool: order, membership, flags."""
+# Readable rows on the dark settings surface. Without an explicit colour the
+# items fell back to Houdini's palette, which drew them a dim brown that was
+# hard to read, selected or not.
+LIST_STYLE = (
+    f"QListWidget {{ background-color: transparent; color: {TEXT_PRIMARY}; "
+    f"border: 1px solid {BORDER}; "
+    f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; }} '
+    f"QListWidget::item {{ padding: 4px 8px; }} "
+    f"QListWidget::item:selected {{ background-color: {ACCENT}; color: white; }}"
+)
 
-    def __init__(self, catalog, project, parent=None) -> None:
+# The shared button styles have no disabled look, and a read-only pool's
+# Add…/Remove must not read as clickable.
+_DISABLED = (
+    f"QPushButton:disabled {{ color: {TEXT_DIM}; border-color: {BG_MID}; "
+    f"background-color: transparent; }}"
+)
+GHOST_STYLE = BUTTON_GHOST_STYLE + _DISABLED
+_PRIMARY = BUTTON_PRIMARY_STYLE + _DISABLED
+
+
+class DepartmentPoolEditor(QWidget):
+    """Edit one project's department pool: order, membership, flags.
+
+    Sits inline on the Projects settings page, under **Project defaults**,
+    rather than in a window of its own: the pool is a project default, and a
+    button that opened a separate dialog read as one more property of the
+    selected project. Changes are held until **Apply**; **Revert** drops
+    them.
+
+    The pool is shared by everyone on the project, so editing can be turned
+    off (:meth:`set_project` with ``editable=False``): the list stays
+    readable, the controls grey out, and the note says why.
+    """
+
+    def __init__(self, catalog, parent=None) -> None:
         super().__init__(parent)
         self._catalog = catalog
-        self._project = project
-        self.setWindowTitle(f"Departments — {project.name}")
-        self.setMinimumWidth(scaled(520))
-
-        # Every config read and write below has to resolve against this
-        # project, not whichever one happens to be active.
-        self._catalog._activate_project(project)
-
-        self._working: dict[str, list[_Dept]] = {
-            context: self._load(context) for context in CONTEXTS
-        }
-        self._original: dict[str, list[str]] = {
-            context: [d.name for d in depts]
-            for context, depts in self._working.items()
-        }
+        self._project = None
+        self._editable = False
+        self._working: dict[str, list[_Dept]] = {c: [] for c in CONTEXTS}
+        self._original: dict[str, list[str]] = {c: [] for c in CONTEXTS}
+        self._snapshot: dict[str, list[tuple]] = self._state()
         self._context = "shots"
         self._current: int | None = None
         self._build_ui()
         self._refresh_list()
+
+    # ── Project ───────────────────────────────────────
+
+    def set_project(self, project, *, editable: bool, note: str = "") -> None:
+        """Show *project*'s pool (``None``: nothing to show, *note* says why).
+
+        *editable* False shows the pool read-only. *note* is the line above
+        the controls: why editing is off, or why there is nothing to show.
+        """
+        self._project = project
+        self._editable = editable and project is not None
+        self._note.setText(note)
+        self._note.setVisible(bool(note))
+        self._current = None
+        if project is None:
+            self._working = {c: [] for c in CONTEXTS}
+        else:
+            # Every config read and write has to resolve against this
+            # project, not whichever one happens to be active.
+            self._catalog._activate_project(project)
+            self._working = {c: self._load(c) for c in CONTEXTS}
+        self._original = {c: [d.name for d in depts]
+                          for c, depts in self._working.items()}
+        self._snapshot = self._state()
+        self._refresh_list()
+
+    def dirty(self) -> bool:
+        """Whether there are changes Apply has not written yet."""
+        return self._state() != self._snapshot
+
+    def _state(self) -> dict[str, list[tuple]]:
+        return {c: [tuple(vars(d).values()) for d in depts]
+                for c, depts in self._working.items()}
 
     # ── Load ──────────────────────────────────────────
 
@@ -104,13 +162,13 @@ class DepartmentPoolDialog(QDialog):
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(scaled(6))
 
         hint = QLabel(
-            "The department pool for this project. <b>Order is the pipeline "
-            "order</b>: later departments layer over earlier ones in the "
-            "staged build, and everything below a department counts as "
-            "downstream of it."
+            "<b>Order is the pipeline order</b>: later departments layer over "
+            "earlier ones in the staged build, and everything below a "
+            "department counts as downstream of it."
         )
         hint.setWordWrap(True)
         hint.setTextFormat(Qt.RichText)
@@ -120,8 +178,21 @@ class DepartmentPoolDialog(QDialog):
         )
         outer.addWidget(hint)
 
+        # Why editing is off, or why there is nothing to show.
+        self._note = QLabel("")
+        self._note.setWordWrap(True)
+        self._note.setStyleSheet(
+            f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; '
+            f"color: {ACCENT}; border: none; background: transparent;"
+        )
+        self._note.hide()
+        outer.addWidget(self._note)
+
         self._context_combo = QComboBox()
         self._context_combo.addItems(CONTEXTS)
+        self._context_combo.setStyleSheet(COMBO_STYLE)
+        self._context_combo.setToolTip(
+            "Which pool: the shot, asset or render departments.")
         self._context_combo.currentTextChanged.connect(self._on_context_changed)
         outer.addWidget(self._context_combo)
 
@@ -129,19 +200,14 @@ class DepartmentPoolDialog(QDialog):
         row.setSpacing(scaled(6))
 
         self._list = QListWidget(self)
-        self._list.setStyleSheet(
-            f"QListWidget {{ background-color: transparent; "
-            f"border: 1px solid {BORDER}; "
-            f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; }} '
-            f"QListWidget::item {{ padding: 4px 8px; }} "
-            f"QListWidget::item:selected {{ background-color: rgba(255,255,255,16); }}"
-        )
-        self._list.setMinimumHeight(scaled(200))
+        self._list.setStyleSheet(LIST_STYLE)
+        self._list.setMinimumHeight(scaled(160))
         self._list.currentRowChanged.connect(self._on_row_changed)
         row.addWidget(self._list, stretch=1)
 
         buttons = QVBoxLayout()
         buttons.setSpacing(scaled(4))
+        self._edit_buttons: list[QPushButton] = []
         for label, slot in (
             ("Add…", self._on_add),
             ("Remove", self._on_remove),
@@ -149,9 +215,10 @@ class DepartmentPoolDialog(QDialog):
             ("Move Down", self._on_move_down),
         ):
             btn = QPushButton(label)
-            btn.setStyleSheet(BUTTON_GHOST_STYLE)
+            btn.setStyleSheet(GHOST_STYLE)
             btn.clicked.connect(slot)
             buttons.addWidget(btn)
+            self._edit_buttons.append(btn)
         buttons.addStretch()
         row.addLayout(buttons)
         outer.addLayout(row)
@@ -159,6 +226,7 @@ class DepartmentPoolDialog(QDialog):
         # ── Flags for the selected department ──
         self._form_holder = QWidget(self)
         form = QFormLayout(self._form_holder)
+        form.setContentsMargins(0, 0, 0, 0)
 
         self._short_edit = QLineEdit()
         self._short_edit.setPlaceholderText("e.g. mdl (optional)")
@@ -204,14 +272,16 @@ class DepartmentPoolDialog(QDialog):
 
         footer = QHBoxLayout()
         footer.addStretch()
-        cancel = QPushButton("Cancel")
-        cancel.setStyleSheet(BUTTON_GHOST_STYLE)
-        cancel.clicked.connect(self.reject)
-        footer.addWidget(cancel)
-        apply_btn = QPushButton("Apply")
-        apply_btn.setStyleSheet(BUTTON_PRIMARY_STYLE)
-        apply_btn.clicked.connect(self._on_apply)
-        footer.addWidget(apply_btn)
+        self._revert_btn = QPushButton("Revert")
+        self._revert_btn.setStyleSheet(GHOST_STYLE)
+        self._revert_btn.setToolTip(
+            "Drop the changes made here since the last Apply.")
+        self._revert_btn.clicked.connect(self._on_revert)
+        footer.addWidget(self._revert_btn)
+        self._apply_btn = QPushButton("Apply Department Changes")
+        self._apply_btn.setStyleSheet(_PRIMARY)
+        self._apply_btn.clicked.connect(self._on_apply)
+        footer.addWidget(self._apply_btn)
         outer.addLayout(footer)
 
     # ── List state ────────────────────────────────────
@@ -226,13 +296,26 @@ class DepartmentPoolDialog(QDialog):
             label = dept.name if dept.enabled else f"{dept.name}  (disabled)"
             item = QListWidgetItem(label, self._list)
             if not dept.enabled:
-                item.setForeground(Qt.gray)
+                item.setForeground(QColor(TEXT_DIM))
         self._list.blockSignals(False)
         if self._current is not None and 0 <= self._current < len(self._depts()):
             self._list.setCurrentRow(self._current)
         else:
             self._current = None
             self._on_row_changed(-1)
+        self._update_enabled()
+
+    def _update_enabled(self) -> None:
+        """Grey out what cannot be used: all but the list when read-only."""
+        has_project = self._project is not None
+        self._context_combo.setEnabled(has_project)
+        self._list.setEnabled(has_project)
+        for btn in self._edit_buttons:
+            btn.setEnabled(self._editable)
+        self._form_holder.setEnabled(self._editable and self._current is not None)
+        dirty = self._editable and self.dirty()
+        self._apply_btn.setEnabled(dirty)
+        self._revert_btn.setEnabled(dirty)
 
     def _on_context_changed(self, context: str) -> None:
         self._context = context
@@ -243,11 +326,11 @@ class DepartmentPoolDialog(QDialog):
         depts = self._depts()
         if row < 0 or row >= len(depts):
             self._current = None
-            self._form_holder.setEnabled(False)
+            self._update_enabled()
             return
         self._current = row
         dept = depts[row]
-        self._form_holder.setEnabled(True)
+        self._update_enabled()
         for widget, value in (
             (self._short_edit, dept.short),
             (self._enabled_cb, dept.enabled),
@@ -264,7 +347,7 @@ class DepartmentPoolDialog(QDialog):
             widget.blockSignals(False)
 
     def _sync_from_form(self) -> None:
-        if self._current is None:
+        if self._current is None or not self._editable:
             return
         dept = self._depts()[self._current]
         dept.short = self._short_edit.text().strip()
@@ -416,7 +499,14 @@ class DepartmentPoolDialog(QDialog):
 
         self._catalog.invalidate_cache()
         self._catalog._request_global_detail_refresh()
-        self.accept()
+        # Re-read what was written, so the editor shows the pool as it now is
+        # and Apply greys out until the next change.
+        self.set_project(self._project, editable=self._editable,
+                         note=self._note.text())
+
+    def _on_revert(self) -> None:
+        self.set_project(self._project, editable=self._editable,
+                         note=self._note.text())
 
     def _commit(self) -> None:
         from tumblepipe.config import department as dept_mod

@@ -51,8 +51,8 @@ titled **Projects**
 | Control | What it does |
 |---|---|
 | **Add** / **Remove** | Add or drop a project from the list. |
-| **Name**, **Project Path** (with **Browse…**), **Config Path** | The selected project's identity; Config Path is optional. |
-| **Departments…** | Opens the **Departments — *project*** pool editor; see [Configuration → Departments](../configuration.md#departments). |
+| **Name**, **Project Path** (with **Browse…**), **Config Path** | The selected project's identity; Config Path is optional. Locked for the project TumbleTrove Desktop launched. |
+| **Project defaults ▸ Department pool** | The selected project's department pool, shared by everyone on it; owners and admins edit, everyone else reads. See [The department pool editor](settings.md#the-department-pool-editor). |
 | **Autosave (version up) on scene change** | Off by default. See [Workfiles → Switching scenes with unsaved changes](workfiles.md#switching-scenes-with-unsaved-changes). |
 | **Auto-import latest on workfile open** | On by default. See [Composition → Picking up new versions on open](../composition.md#picking-up-new-versions-on-open). |
 | **Ask for a version note on save** | On by default. See [Workfiles → The version note](workfiles.md#the-version-note). |

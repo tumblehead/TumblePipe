@@ -167,8 +167,11 @@ cut), `independent` (a publish upstream of it does
 not propagate into it), `generated` (produced by Python, not a workfile) — plus
 `enabled` and an optional `short` label.
 
-Edit the pool from the Asset Browser's gear settings → **Departments…**, per
-project: add, remove, reorder, retire, and set the flags. `enabled` is the safe
+Edit the pool from the Asset Browser's gear settings, under **Project
+defaults ▸ Department pool** on the Projects page, per project: add, remove,
+reorder, retire, and set the flags. Organisation owners and admins can edit
+it; everyone else sees it read-only (see
+[Who can edit it](asset-browser/settings.md#who-can-edit-it)). `enabled` is the safe
 way to drop a department you no longer use — it disappears from every menu,
 deck and job graph while its workfiles and exports stay on disk.
 
