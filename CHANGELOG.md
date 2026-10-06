@@ -12,6 +12,14 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.61.0 — 2026-10-05
+
+### Features
+- feat(settings): split the Projects page by who a change reaches; pool for admins (`a16c577`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.60.0 (`685ca21`)
+
 ## v1.60.0 — 2026-10-05
 
 ### Features

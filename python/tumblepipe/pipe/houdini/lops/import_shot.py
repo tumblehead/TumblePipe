@@ -37,16 +37,20 @@ logger = logging.getLogger(__name__)
 # The 'exclude' parm: which shot department layers the node leaves out.
 EXCLUDE_DOWNSTREAM = 'downstream'  # own department and every later one
 EXCLUDE_SELF = 'self'              # own department only
-EXCLUDE_MODES = (EXCLUDE_DOWNSTREAM, EXCLUDE_SELF)
+EXCLUDE_NOTHING = 'none'           # every department, own included
+EXCLUDE_MODES = (EXCLUDE_DOWNSTREAM, EXCLUDE_SELF, EXCLUDE_NOTHING)
 
 
 def excluded_departments(department_name, downstream_departments, mode):
     """Shot departments an import leaves out, before any render cut.
 
-    The node's own department is always out — the workfile authors it.
-    Its downstream is out only in ``EXCLUDE_DOWNSTREAM`` mode.
+    The node's own department is out — the workfile authors it — unless
+    ``EXCLUDE_NOTHING`` asks for the whole shot (a check import below the
+    export, reviewing the publish). Its downstream is out only in
+    ``EXCLUDE_DOWNSTREAM`` mode.
     """
     excluded = set()
+    if mode == EXCLUDE_NOTHING: return excluded
     if mode == EXCLUDE_DOWNSTREAM:
         excluded.update(downstream_departments)
     if department_name is not None:
@@ -579,7 +583,8 @@ class ImportShot(ns.Node):
         return shot_department_names[shot_department_index + 1:]
 
     def get_exclude_mode(self) -> str:
-        """``'downstream'`` (own + later departments) or ``'self'`` (own only).
+        """``'downstream'`` (own + later departments), ``'self'`` (own only)
+        or ``'none'`` (nothing — the whole published shot).
 
         ``'self'`` lets an upstream department see what comes after it — the
         environment workfile seeing the animation camera. Safe for publishing:

@@ -135,8 +135,8 @@ Source: [`otls/lop_th.import_shot.1.0`](../../otls/lop_th.import_shot.1.0/th_8_8
 |---|---|---|
 | Entity | `from_context` | The shot (button opens *Select Shot*) |
 | Channel | `default` | Which channel's staged build |
-| Department | `from_context` | The department whose layer is left out — the workfile authors it. The reserved value `none` (type it; it is not in the menu) excludes nothing |
-| Exclude | This + Downstream | **This + Downstream** also leaves out every department after it in the shot's pipeline order, so you compose only what is upstream of your work. **This Department Only** keeps the later ones — the environment template uses it so environment sees the animation camera and characters. Changing it re-imports immediately |
+| Department | `from_context` | The department whose layer is left out — the workfile authors it. To leave nothing out, set **Exclude** to **Nothing** (the older way, typing the reserved value `none` here, still works) |
+| Exclude | This + Downstream | **This + Downstream** also leaves out every department after it in the shot's pipeline order, so you compose only what is upstream of your work. **This Department Only** keeps the later ones — the environment template uses it so environment sees the animation camera and characters. **Nothing** loads every department, your own included — use it on a check import below the export to review what you published. Changing it re-imports immediately |
 | Version | `latest` | `latest` / `current` / `v####` |
 | Exclude Asset Departments | *(none)* | Checkable list of asset departments (e.g. `lookdev`) to leave out of **every** asset in the shot, nested ones included; ticking re-imports immediately |
 | Preview Procedurals | off | Runs a *Preview Houdini Procedurals* LOP on the imported shot, so Houdini procedurals (e.g. hair) cook in the viewport. It sits above the node's layer break, so the result is never exported, and the farm render stage leaves it off (husk runs procedurals at render time) |

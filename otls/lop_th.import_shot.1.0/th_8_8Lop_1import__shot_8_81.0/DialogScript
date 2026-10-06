@@ -89,10 +89,11 @@
             label   "Exclude"
             type    string
             default { "downstream" }
-            help    "Which shot department layers to leave out. This + Downstream is the pipeline's authoring view. This Department Only also shows later departments (e.g. the animation camera in environment); their opinions still win over yours in the final shot."
+            help    "Which shot department layers to leave out. This + Downstream is the pipeline's authoring view. This Department Only also shows later departments (e.g. the animation camera in environment); their opinions still win over yours in the final shot. Nothing loads every department, your own included, e.g. to review your publish below the export."
             menu {
                 "downstream"    "This + Downstream"
                 "self"          "This Department Only"
+                "none"          "Nothing"
             }
             parmtag { "script_callback" "hou.phm().execute()" }
             parmtag { "script_callback_language" "python" }

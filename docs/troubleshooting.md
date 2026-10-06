@@ -254,6 +254,13 @@ live edits. Later releases resolve the Multi's department, so a node left on
 `from_context` now cuts as above — set Exclude if you relied on seeing the
 later departments.
 
+### My check import below the export doesn't show what I published
+
+A `th::import_shot` placed under the export to review the publish still
+leaves out its own department, so your animation (or whatever this workfile
+authors) is missing from it. Set that node's **Exclude** to **Nothing** to
+load every department, your own published layer included.
+
 ### An imported asset is empty
 
 Older publishes of `th::asset_payload` saved their payload to a bare
