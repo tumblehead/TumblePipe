@@ -183,11 +183,86 @@ pub fn load_json(path: &Path) -> Result<Value, String> {
 /// the Python `json.dump(data, fh, indent=4)` + `fh.write('\n')` output.
 pub fn to_json_string(value: &Value) -> String {
     let mut buf = Vec::new();
-    let formatter = serde_json::ser::PrettyFormatter::with_indent(b"    ");
+    let formatter = PythonFormatter(serde_json::ser::PrettyFormatter::with_indent(b"    "));
     let mut ser = serde_json::Serializer::with_formatter(&mut buf, formatter);
     value.serialize(&mut ser).expect("Value serialization");
     buf.push(b'\n');
     String::from_utf8(buf).expect("serde_json emits UTF-8")
+}
+
+/// `PrettyFormatter`, except that string contents are escaped the way
+/// Python's `json.dump` escapes them by default (`ensure_ascii=True`): every
+/// character outside printable ASCII as `\uXXXX` (DEL included), and
+/// anything past the BMP as a UTF-16 surrogate pair. `serde_json` writes raw UTF-8 instead, so without this
+/// every file a migration rewrote turned Python's `"Søren"` into
+/// `"Søren"` — a diff on every non-ASCII value, and bytes that a Python
+/// reader opening the file in the Windows locale code page decodes wrong.
+/// The escapes JSON itself requires (quote, backslash, controls) are left to
+/// `serde_json`, whose spellings already match Python's.
+struct PythonFormatter<'a>(serde_json::ser::PrettyFormatter<'a>);
+
+impl serde_json::ser::Formatter for PythonFormatter<'_> {
+    fn write_string_fragment<W: ?Sized + std::io::Write>(
+        &mut self,
+        writer: &mut W,
+        fragment: &str,
+    ) -> std::io::Result<()> {
+        let mut units = [0u16; 2];
+        for c in fragment.chars() {
+            if c.is_ascii() && c != '\x7f' {
+                writer.write_all(&[c as u8])?;
+            } else {
+                for unit in c.encode_utf16(&mut units) {
+                    write!(writer, "\\u{unit:04x}")?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn begin_array<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+        self.0.begin_array(w)
+    }
+
+    fn end_array<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+        self.0.end_array(w)
+    }
+
+    fn begin_array_value<W: ?Sized + std::io::Write>(
+        &mut self,
+        w: &mut W,
+        first: bool,
+    ) -> std::io::Result<()> {
+        self.0.begin_array_value(w, first)
+    }
+
+    fn end_array_value<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+        self.0.end_array_value(w)
+    }
+
+    fn begin_object<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+        self.0.begin_object(w)
+    }
+
+    fn end_object<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+        self.0.end_object(w)
+    }
+
+    fn begin_object_key<W: ?Sized + std::io::Write>(
+        &mut self,
+        w: &mut W,
+        first: bool,
+    ) -> std::io::Result<()> {
+        self.0.begin_object_key(w, first)
+    }
+
+    fn begin_object_value<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+        self.0.begin_object_value(w)
+    }
+
+    fn end_object_value<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+        self.0.end_object_value(w)
+    }
 }
 
 pub fn store_json(path: &Path, value: &Value) -> Result<(), String> {
@@ -247,6 +322,17 @@ mod tests {
         assert!(out.contains("\"overscan\": [\n                0.0,\n                0.0\n            ]"));
         assert!(out.contains("\"scale\": 0.5"));
         assert!(out.contains("1920"));
+    }
+
+    #[test]
+    fn non_ascii_is_escaped_like_python_json_dump() {
+        // Python's json.dump writes these escapes (ensure_ascii); serde_json
+        // alone writes raw UTF-8 and a raw DEL, which rewrote every non-ASCII
+        // value a migration touched. tests/test_wizard_json_parity.py checks
+        // the same against the Python interpreter over generated documents.
+        let src = "{\n    \"user\": \"S\\u00f8ren\",\n    \"dash\": \"a \\u2014 b\",\n    \"emoji\": \"\\ud83d\\ude00\",\n    \"del\": \"\\u007f\",\n    \"tab\": \"\\t\"\n}\n";
+        let v: Value = serde_json::from_str(src).unwrap();
+        assert_eq!(to_json_string(&v), src);
     }
 
     #[test]

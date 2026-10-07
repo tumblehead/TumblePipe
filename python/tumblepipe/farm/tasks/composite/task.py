@@ -14,6 +14,7 @@ from tumblepipe.api import (
     api
 )
 from tumblepipe.farm.tasks.env import get_base_env
+from tumblepipe.farm._common import is_int
 from tumblepipe.util.io import store_json
 from tumblepipe.naming import random_name
 from tumblepipe.farm.deadline import Task
@@ -61,26 +62,27 @@ def _is_valid_config(config):
             if not isinstance(output_path, str): return False
         return True
 
+    if not isinstance(config, dict): return False
     if 'entity' not in config: return False
     if not _is_valid_entity(config['entity']): return False
     if 'title' not in config: return False
     if not isinstance(config['title'], str): return False
     if 'priority' not in config: return False
-    if not isinstance(config['priority'], int): return False
+    if not is_int(config['priority']): return False
     if 'pool_name' not in config: return False
     if not isinstance(config['pool_name'], str): return False
     if 'first_frame' not in config: return False
-    if not isinstance(config['first_frame'], int): return False
+    if not is_int(config['first_frame']): return False
     if 'last_frame' not in config: return False
-    if not isinstance(config['last_frame'], int): return False
+    if not is_int(config['last_frame']): return False
     if 'frames' not in config: return False
     if not isinstance(config['frames'], list): return False
     for frame in config['frames']:
-        if not isinstance(frame, int): return False
+        if not is_int(frame): return False
     if 'step_size' not in config: return False
-    if not isinstance(config['step_size'], int): return False
+    if not is_int(config['step_size']): return False
     if 'batch_size' not in config: return False
-    if not isinstance(config['batch_size'], int): return False
+    if not is_int(config['batch_size']): return False
     if 'receipt_path' not in config: return False
     if not isinstance(config['receipt_path'], str): return False
     if 'input_path' not in config: return False

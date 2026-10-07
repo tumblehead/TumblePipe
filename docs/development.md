@@ -22,8 +22,8 @@ reporting a bug, include:
 
 ## Running the test harness
 
-`tests/` ships a property-based test harness for the Python config
-layer, using [minigun-soren-n](https://github.com/soren-n/minigun) for
+`tests/` ships a property-based test harness for the Python side of the
+pipeline, using [minigun-soren-n](https://github.com/soren-n/minigun) for
 QuickCheck-style generation and shrinking. It has its own uv-managed
 venv pinned to Python 3.12+ (Houdini's bundled 3.11 is too old for
 minigun) and is independent of `hpm.toml` and the package install. From
@@ -53,6 +53,16 @@ used to disagree, one saying `PYTHONIOENCODING=utf-8`.)
 
 `tests/README.md` covers writing new properties and the design of the
 project-fixture bootstrap (`_harness.py`).
+
+Two modules also need **cargo** on `PATH` (or in rustup's default
+`~/.cargo/bin`). `test_resolver_parity` checks that every path the Python
+writers publish to is the path the Rust resolver in `src/resolver` resolves
+the recorded URI to. `test_wizard_json_parity` checks that the `_config`
+migrator in `src/wizard` rewrites JSON byte for byte as `json.dump` wrote it.
+Each builds a small example from its crate on first use and drives it as a
+subprocess (`tests/_cargo.py`). Without cargo they fail rather than skip.
+The crates have their own tests, including the resolver's `proptest`
+properties: run `cargo test` in `src/resolver` and in `src/wizard`.
 
 The asset-browser catalog tests (`test_catalog*.py`) run the catalog
 against the **shipped TumbleTrove SDK**, not a stub: `tests/_catalog.py`
@@ -169,8 +179,10 @@ to a linted one. `git commit --no-verify` bypasses it for a single commit.
 A **pre-push hook** (`.githooks/pre-push`) runs the minigun property suite
 plus the binary-HDA check, and blocks the push on failure. Push is the
 boundary because it is the last moment before work leaves the machine, and
-the suite is time-budgeted (~30s) rather than growing with the test count —
-too slow per commit, cheap enough per push. `git push --no-verify` bypasses.
+the suite is time-budgeted rather than growing linearly with the test count
+(about two minutes for ~750 properties at `--time-budget 10`) — too slow per
+commit, cheap enough per push. It needs cargo as well as `uv` (see *Running
+the test harness*). `git push --no-verify` bypasses.
 
 Note it also fires on branch deletions and `--dry-run`, so
 `git push origin --delete <branch>` pays the full run. That is deliberate:

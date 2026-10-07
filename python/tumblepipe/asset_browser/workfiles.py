@@ -437,11 +437,14 @@ class WorkfileManager:
         days = hours // 24
         if days < 7:
             return f"{days}d ago"
+        # Each cut-over sits where the next unit reaches 1: weeks until
+        # day 30 (not 28) and months until day 365 (not 360), or days
+        # 28-29 read "0mo ago" and days 360-364 "0y ago".
         weeks = days // 7
-        if weeks < 4:
+        if days < 30:
             return f"{weeks}w ago"
         months = days // 30
-        if months < 12:
+        if days < 365:
             return f"{months}mo ago"
         years = days // 365
         return f"{years}y ago"

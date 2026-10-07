@@ -23,6 +23,7 @@ from tumblepipe.util.io import (
     store_json
 )
 from tumblepipe.config.timeline import BlockRange
+from tumblepipe.farm._common import is_int
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Husk, ITileStitch
 from tumblepipe.apps import exr
@@ -286,7 +287,7 @@ config = {
 def _is_valid_config(config):
     if not isinstance(config, dict): return False
     if 'tile_count' not in config: return False
-    if not isinstance(config['tile_count'], int): return False
+    if not is_int(config['tile_count']): return False
     if 'input_path' not in config: return False
     if not isinstance(config['input_path'], str): return False
     if 'receipt_path' not in config: return False

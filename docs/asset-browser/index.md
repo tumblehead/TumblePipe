@@ -340,14 +340,20 @@ registered.
 |---|---|---|
 | **New Asset** | **Name**; **Category** (dropdown of existing categories) | Started from a category row, the category is fixed. Refuses *Asset 'X' already exists in 'Y'.* |
 | **New Shot** | **Name**; **Sequence** (dropdown); **Frame Start** `1001`; **Frame End** `1100` | Started from a sequence row, the sequence is fixed. |
-| **New category** | **Category** (free text) | Creates an empty category. |
-| **New sequence** | **Sequence** (free text) | Creates an empty sequence. |
+| **New category** | **Category** (free text) | Creates an empty category. Refuses a name already used by a sequence. |
+| **New sequence** | **Sequence** (free text) | Creates an empty sequence. Refuses a name already used by a category. |
 | **New Multi** | **Name**; **Context** (`shots` or `assets`, default `shots`) | See [Multis and Roots](multis-and-roots.md#creating-a-multi). |
 | **New Root** | **Name** | See [Multis and Roots](multis-and-roots.md#creating-a-root). |
 | **New Recipe** | **Name**; **Description**; **Tags** | Saves the nodes selected in the network editor. See [Recipes](recipes.md#saving-a-recipe). |
 
 Names are written as typed; the new asset or shot is selected in the grid
-once it appears. A new shot stores its frame range on the shot entity; a new
+once it appears. A category and a sequence can never share a name, so every
+form that would create one (including a **New Shot** or **New Asset** whose
+sequence or category does not exist yet) refuses with *'X' is already a
+sequence; a category cannot share its name.* (or the reverse). A card's id
+does not say whether its middle part is a category or a sequence, so the
+browser works that out from the name; with both kinds sharing one, every
+shot in the sequence opened as an asset that does not exist. A new shot stores its frame range on the shot entity; a new
 asset stores only its name. Neither creates a workfile — that is the
 department row's **New from Template**.
 

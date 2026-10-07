@@ -13,6 +13,7 @@ from tumblepipe.api import (
     api
 )
 from tumblepipe.farm.tasks.env import get_base_env
+from tumblepipe.farm._common import is_int
 from tumblepipe.farm.tasks.notify import _spec
 from tumblepipe.util.io import store_json
 from tumblepipe.naming import random_name
@@ -46,7 +47,7 @@ def _is_valid_config(config):
     if 'title' not in config: return False
     if not isinstance(config['title'], str): return False
     if 'priority' not in config: return False
-    if not isinstance(config['priority'], int): return False
+    if not is_int(config['priority']): return False
     if 'pool_name' not in config: return False
     if not isinstance(config['pool_name'], str): return False
     if 'user_name' not in config: return False

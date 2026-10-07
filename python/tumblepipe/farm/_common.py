@@ -75,6 +75,26 @@ def valid_entity(entity) -> bool:
     return True
 
 
+def valid_channel_names(settings) -> bool:
+    """A channel list named under either spelling, holding channel names.
+
+    The readers (``config.channels.read_channel_name_list``) return
+    ``list(value)``, so a bare string read as one channel per letter --
+    ``'default'`` became seven one-letter renders -- and they raise rather
+    than answer on a ``None`` or on two spellings that disagree. A validator
+    must refuse all three instead.
+    """
+    # Imported here: this module stays import-light for the worker scripts.
+    from tumblepipe.config.channels import CHANNEL_NAMES_KEY, CHANNEL_NAMES_KEY_ALT
+    if not isinstance(settings, dict): return False
+    present = [settings[key] for key in (CHANNEL_NAMES_KEY, CHANNEL_NAMES_KEY_ALT) if key in settings]
+    if len(present) == 0: return False
+    for names in present:
+        if not isinstance(names, list): return False
+        if not all(isinstance(name, str) for name in names): return False
+    return all(names == present[0] for names in present)
+
+
 def run_task_cli(
     is_valid_config: Callable[[dict], bool],
     main: Callable[[dict], int]

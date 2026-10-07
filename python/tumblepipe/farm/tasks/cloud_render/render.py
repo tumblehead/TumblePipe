@@ -24,6 +24,7 @@ from tumblepipe.util.io import (
     store_json
 )
 from tumblepipe.config.timeline import BlockRange
+from tumblepipe.farm._common import is_int
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Husk, ITileStitch
 from tumblepipe.apps import exr
@@ -235,7 +236,7 @@ config = {
 def _is_valid_config(config):
     if not isinstance(config, dict): return False
     if 'tile_count' not in config: return False
-    if not isinstance(config['tile_count'], int): return False
+    if not is_int(config['tile_count']): return False
     if 'receipt_path' not in config: return False
     if not isinstance(config['receipt_path'], str): return False
     if 'archive_path' not in config: return False
@@ -244,6 +245,9 @@ def _is_valid_config(config):
     if not isinstance(config['input_path'], str): return False
     if 'output_paths' not in config: return False
     if not isinstance(config['output_paths'], dict): return False
+    # As in render: {} iterates zero times below, and the worker would
+    # render, write receipts of {}, and exit 0 having published nothing.
+    if len(config['output_paths']) == 0: return False
     for key, value in config['output_paths'].items():
         if not isinstance(key, str): return False
         if not isinstance(value, str): return False

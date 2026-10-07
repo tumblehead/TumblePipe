@@ -356,7 +356,9 @@ class JsonConfigStore(ConfigConvention):
                 f"'{existing}' (names may not differ only by case — "
                 "case-variant hierarchies split exports and sidecars)"
             )
-        _insert(data, properties, uri.segments)
+        # deepcopy so the caller cannot mutate the cached tree through the
+        # dict (or the lists inside it) it handed in -- see set_own_properties.
+        _insert(data, copy.deepcopy(properties), uri.segments)
         self.write_root(uri.purpose, data)
 
     def remove_entity(self, uri: Uri):

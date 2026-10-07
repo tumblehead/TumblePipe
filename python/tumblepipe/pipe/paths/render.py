@@ -181,23 +181,21 @@ class Render:
         current_version_name: str
         ) -> Optional[Layer]:
         if layer_name not in self.layers: return None
+        # Walk the stored names themselves. Rebuilding a name from its code
+        # is not the identity for every valid name (v00012 -> v0012), and
+        # the lookup then came back None and crashed on .is_complete().
         current_version_code = api.naming.get_version_code(current_version_name)
-        candidate_version_codes = list(filter(
-            lambda version_code: version_code > current_version_code,
-            map(
-                api.naming.get_version_code,
+        candidate_version_names = sorted(
+            filter(
+                lambda version_name: (
+                    api.naming.get_version_code(version_name) > current_version_code
+                ),
                 self.layers[layer_name].keys()
-            )
-        ))
-        if len(candidate_version_codes) == 0: return None
-        candidate_version_codes.sort()
-        for candidate_version_code in reversed(candidate_version_codes):
-            candidate_version_name = api.naming.get_version_name(
-                candidate_version_code
-            )
-            candidate_layer = self.layers[layer_name].get(
-                candidate_version_name
-            )
+            ),
+            key = api.naming.get_version_code
+        )
+        for candidate_version_name in reversed(candidate_version_names):
+            candidate_layer = self.layers[layer_name][candidate_version_name]
             if candidate_layer.is_complete(): return candidate_layer
         return None
 

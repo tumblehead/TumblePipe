@@ -20,7 +20,7 @@ def _value_tree(tree: JsonValue, value: JsonValue) -> JsonValue:
             return next_op
         match tree:
             case list():
-                stack.append(_result(False, [None] * len(tree)))
+                stack.append(_result(value, [None] * len(tree)))
                 worklist.append(
                     list(
                         reversed(
@@ -33,7 +33,7 @@ def _value_tree(tree: JsonValue, value: JsonValue) -> JsonValue:
                 )
                 return next_op
             case dict():
-                stack.append(_result(False, {key: None for key in tree.keys()}))
+                stack.append(_result(value, {key: None for key in tree.keys()}))
                 worklist.append(
                     list(
                         reversed(
@@ -97,11 +97,11 @@ def _diff_tree(from_value: JsonRoot, to_value: JsonRoot) -> JsonRoot:
             change |= result_value["change"]
             result.append(result_value)
 
-        # Visit the tail of the lists
-        for value in tail:
-            result_value = _visit(value, None)
-            change |= result_value["change"]
-            result.append(result_value)
+        # The tail exists on one side only: every item in it is a change,
+        # including a null (diffing it against None would call it equal)
+        for _ in tail:
+            change = True
+            result.append(dict(change=True, value=None))
 
         # Done
         return dict(change=change, value=result)

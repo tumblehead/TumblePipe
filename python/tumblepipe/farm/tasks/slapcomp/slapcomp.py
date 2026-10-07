@@ -19,6 +19,7 @@ from tumblepipe.util.io import (
     store_json
 )
 from tumblepipe.config.timeline import BlockRange
+from tumblepipe.farm._common import is_int
 from tumblepipe.apps import exr
 from tumblepipe.farm.tasks.env import print_env
 
@@ -315,12 +316,13 @@ def _is_valid_config(config):
             if not isinstance(aov_path, str): return False
         return True
 
+    if not isinstance(config, dict): return False
     if 'first_frame' not in config: return False
-    if not isinstance(config['first_frame'], int): return False
+    if not is_int(config['first_frame']): return False
     if 'last_frame' not in config: return False
-    if not isinstance(config['last_frame'], int): return False
+    if not is_int(config['last_frame']): return False
     if 'step_size' not in config: return False
-    if not isinstance(config['step_size'], int): return False
+    if not is_int(config['step_size']): return False
     if 'input_paths' not in config: return False
     if not isinstance(config['input_paths'], dict): return False
     for layer_name, layer in config['input_paths'].items():

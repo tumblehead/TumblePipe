@@ -35,7 +35,7 @@ from tumblepipe.farm._common import (  # noqa: F401
     error,
     is_str, is_int, is_bool, is_list,
     check, check_str, check_int, check_bool, check_list,
-    valid_entity,
+    valid_entity, valid_channel_names,
     configure_logging,
 )
 

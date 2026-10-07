@@ -38,7 +38,10 @@ src/resolver/
 │   ├── env.rs             # $TH_EXPORT_PATH + $TH_RESOLVER_LATEST_MODE
 │   └── error.rs
 ├── tests/
-│   └── resolve_integration.rs   # tempdir fixtures per flavor
+│   ├── resolve_integration.rs   # tempdir fixtures per flavor
+│   └── props.rs                 # proptest properties over generated input
+├── examples/
+│   └── resolve_lines.rs   # stdin→stdout resolver for tests/test_resolver_parity.py
 └── cpp/                   # ArResolver shim (URI-scheme resolver for entity://)
     ├── resolver.h
     ├── resolver.cpp
@@ -80,8 +83,25 @@ Env inputs:
 cargo test --release
 ```
 
-Runs the pure-Rust unit tests (URI parsing, version discovery) and the
-integration tests (filesystem fixtures). No USD / Houdini needed.
+Runs the pure-Rust unit tests (URI parsing, version discovery), the
+integration tests (filesystem fixtures) and the property tests in
+`tests/props.rs`. No USD / Houdini needed.
+
+The properties generate URIs and version trees instead of using fixed
+fixtures: the parser reads back exactly what a writer puts in the query (in
+any key order, in either channel spelling), unknown keys and disagreeing
+spellings are refused, "latest" is the numeric maximum, and latest mode
+overrides a pinned version for every flavor. They also pin that neither
+`EntityUri::parse` nor `resolve_uri` panics on any input. The release
+profile sets `panic = "abort"`, so `ffi_guard`'s `catch_unwind` cannot
+catch anything in the plugin Houdini loads, and a panic there would
+crash Houdini.
+
+Cross-language agreement is pinned from the Python side:
+`tests/test_resolver_parity.py` (the minigun suite) builds
+`examples/resolve_lines.rs` with cargo and checks that every path the
+Python writers publish to is the path this crate resolves the recorded URI
+to.
 
 ### Full plugin
 
@@ -182,5 +202,7 @@ void th_resolver_last_error(char* out_msg, size_t out_cap, size_t* out_len);
 
 Resolution rules are sole-sourced here. When you change a filename
 template or a path layout, update the integration tests in
-`tests/resolve_integration.rs` in the same PR — they're the only
-guardrail against pipeline-wide path mismatches, so keep them honest.
+`tests/resolve_integration.rs` in the same PR, and run
+`tests/test_resolver_parity.py` from the repo's minigun suite. It fails
+when the Python writers (`tumblepipe.pipe.paths`) and this crate disagree
+about where a layer lives.

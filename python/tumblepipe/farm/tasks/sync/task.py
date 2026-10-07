@@ -13,6 +13,7 @@ from tumblepipe.api import (
     api
 )
 from tumblepipe.farm.tasks.env import get_base_env
+from tumblepipe.farm._common import is_int
 from tumblepipe.util.io import store_json
 from tumblepipe.naming import random_name
 from tumblepipe.farm.deadline import Task
@@ -31,18 +32,19 @@ config = {
 """
 
 def _is_valid_config(config):
+    if not isinstance(config, dict): return False
     if 'title' not in config: return False
     if not isinstance(config['title'], str): return False
     if 'priority' not in config: return False
-    if not isinstance(config['priority'], int): return False
+    if not is_int(config['priority']): return False
     if 'pool_name' not in config: return False
     if not isinstance(config['pool_name'], str): return False
     if 'entity_uri' not in config: return False
     if not isinstance(config['entity_uri'], str): return False
     if 'first_frame' not in config: return False
-    if not isinstance(config['first_frame'], int): return False
+    if not is_int(config['first_frame']): return False
     if 'last_frame' not in config: return False
-    if not isinstance(config['last_frame'], int): return False
+    if not is_int(config['last_frame']): return False
     return True
 
 SCRIPT_PATH = Path(__file__).parent / 'sync.py'

@@ -17,40 +17,59 @@ def get_token() -> str | None:
     if len(token) == 0: return None
     return token
 
+def _children(kind: str) -> dict:
+    discord_data = api.config.root('config') or {}
+    discord_children = discord_data.get('children', {}).get('discord', {}).get('children', {})
+    return discord_children.get(kind, {}).get('children', {})
+
+def _lookup(kind: str, name: str) -> dict | None:
+    """Properties of the ``kind`` entry named ``name``, matched ignoring case.
+
+    The keys are typed by hand in the config editor and stored verbatim, so a
+    channel may be stored as ``Renders`` while callers ask for ``renders``
+    (or the other way round). Lowercasing the query alone made every
+    mixed-case key listed by ``list_channels`` unreachable. An exact match
+    wins; otherwise the stored spelling that matches case-insensitively.
+    A name that cannot be a config key at all (a user name with a space)
+    is simply not found.
+    """
+    stored = _children(kind)
+    key = name if name in stored else next(
+        (existing for existing in stored if existing.casefold() == name.casefold()),
+        None
+    )
+    if key is None: return None
+    try:
+        uri = DISCORD_URI / kind / key
+    except ValueError:
+        return None
+    return api.config.get_properties(uri)
+
 def get_user_discord_id(username: str) -> int | None:
     """Get the Discord user ID for a given username."""
-    user_uri = DISCORD_URI / 'users' / username.lower()
-    properties = api.config.get_properties(user_uri)
+    properties = _lookup('users', username)
     if properties is None: return None
     return properties.get('discord_id')
 
 def get_channel_id(channel_name: str) -> int | None:
     """Get the Discord channel ID for a given channel name."""
-    channel_uri = DISCORD_URI / 'channels' / channel_name.lower()
-    properties = api.config.get_properties(channel_uri)
+    properties = _lookup('channels', channel_name)
     if properties is None: return None
     return properties.get('channel_id')
 
 def get_channel_for_department(department: str) -> str | None:
     """Get the channel name for a given department."""
-    department_uri = DISCORD_URI / 'departments' / department.lower()
-    properties = api.config.get_properties(department_uri)
+    properties = _lookup('departments', department)
     if properties is None: return None
     return properties.get('channel')
 
 def list_users() -> list[str]:
     """List all registered Discord usernames."""
-    discord_data = api.config.root('config') or {}
-    discord_children = discord_data.get('children', {}).get('discord', {}).get('children', {})
-    users_children = discord_children.get('users', {}).get('children', {})
-    return list(users_children.keys())
+    return list(_children('users').keys())
 
 def list_channels() -> list[str]:
     """List all registered Discord channel names."""
-    discord_data = api.config.root('config') or {}
-    discord_children = discord_data.get('children', {}).get('discord', {}).get('children', {})
-    channels_children = discord_children.get('channels', {}).get('children', {})
-    return list(channels_children.keys())
+    return list(_children('channels').keys())
 
 def is_configured() -> bool:
     """Whether this project has a usable Discord setup at all.

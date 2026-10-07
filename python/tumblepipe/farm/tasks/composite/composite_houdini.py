@@ -17,6 +17,7 @@ from tumblepipe.util.io import (
 )
 from tumblepipe.config.channels import read_channel_names
 from tumblepipe.config.timeline import BlockRange, get_fps
+from tumblepipe.farm._common import is_int
 from tumblepipe.util.uri import Uri
 from tumblepipe.pipe.houdini import util
 from tumblepipe.apps.deadline import log_progress
@@ -214,16 +215,17 @@ def _is_valid_config(config):
             if not isinstance(output_path, str): return False
         return True
 
+    if not isinstance(config, dict): return False
     if 'entity' not in config: return False
     if not isinstance(config['entity'], dict): return False
     if 'first_frame' not in config: return False
-    if not isinstance(config['first_frame'], int): return False
+    if not is_int(config['first_frame']): return False
     if 'last_frame' not in config: return False
-    if not isinstance(config['last_frame'], int): return False
+    if not is_int(config['last_frame']): return False
     if 'frames' not in config: return False
     if not isinstance(config['frames'], list): return False
     for frame in config['frames']:
-        if not isinstance(frame, int): return False
+        if not is_int(frame): return False
     if 'receipt_path' not in config: return False
     if not isinstance(config['receipt_path'], str): return False
     if 'input_path' not in config: return False

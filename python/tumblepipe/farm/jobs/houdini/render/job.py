@@ -25,7 +25,6 @@ import tumblepipe.farm.tasks.render.task as render_job
 import tumblepipe.farm.tasks.mp4.task as mp4_job
 import tumblepipe.farm.tasks.sync.task as sync_task
 from tumblepipe.config.channels import (
-    has_channel_names_key,
     read_channel_name,
     read_channel_name_list,
 )
@@ -82,11 +81,7 @@ def _is_valid_config(config):
         if not _check_str(settings, 'user_name'): return False
         if not _check_str(settings, 'purpose'): return False
         if not _check_str(settings, 'pool_name'): return False
-        if not has_channel_names_key(settings): return False
-        if not isinstance(
-            read_channel_name_list(settings, where='render job settings'),
-            list,
-        ): return False
+        if not _common.valid_channel_names(settings): return False
         if not _check_str(settings, 'render_department_name'): return False
         if not _check_str(settings, 'render_settings_path'): return False
         # Accept either input_paths (per-channel dict) or input_path (legacy single path)

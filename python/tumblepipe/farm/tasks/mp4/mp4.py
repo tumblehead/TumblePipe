@@ -19,6 +19,7 @@ from tumblepipe.api import (
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import BlockRange, get_fps
+from tumblepipe.farm._common import is_int
 from tumblepipe.apps import exr, mp4
 from tumblepipe.farm.tasks.env import print_env
 
@@ -130,15 +131,18 @@ config = {
 def _is_valid_config(config):
     if not isinstance(config, dict): return False
     if 'first_frame' not in config: return False
-    if not isinstance(config['first_frame'], int): return False
+    if not is_int(config['first_frame']): return False
     if 'last_frame' not in config: return False
-    if not isinstance(config['last_frame'], int): return False
+    if not is_int(config['last_frame']): return False
     if 'step_size' not in config: return False
-    if not isinstance(config['step_size'], int): return False
+    if not is_int(config['step_size']): return False
     if 'input_path' not in config: return False
     if not isinstance(config['input_path'], str): return False
     if 'output_paths' not in config: return False
     if not isinstance(config['output_paths'], list): return False
+    # With no outputs the worker finds every output "already exists"
+    # and exits 0 having encoded nothing.
+    if len(config['output_paths']) == 0: return False
     for output_path in config['output_paths']:
         if not isinstance(output_path, str): return False
     return True

@@ -77,7 +77,11 @@ def build(config, paths, staging_path):
     task.start_frame = render_range.first_frame
     task.end_frame = render_range.last_frame
     task.step_size = 1
-    task.chunk_size = len(render_range)
+    # One Deadline task for the whole first..last span: the worker processes
+    # the configured range itself, so a second chunk is a second worker
+    # redoing the whole job. len(render_range) is the *stepped* frame count,
+    # which cut a step>1 range into several such tasks.
+    task.chunk_size = render_range.last_frame - render_range.first_frame + 1
     task.max_frame_time = 45
     task.paths.update(paths)
     task.paths[task_path] = task_path.relative_to(staging_path)

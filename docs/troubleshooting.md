@@ -281,6 +281,19 @@ Ask whoever maintains the project to run `scripts/verify_entity_casing.py`
 and, if needed, `scripts/fix_case_duplicate_category.py`. See
 [Entity casing audits](configuration.md#entity-casing-audits).
 
+### A shot opens as an asset, or "'X' is already a sequence"
+
+A category and a sequence with the same name break the browser's addressing:
+a card's id does not say which kind its middle part is, so the browser
+decides from the name, and every shot in such a sequence resolves to an
+asset that does not exist. **New Category**, **New Sequence**, **New Shot**
+and **New Asset** now refuse a name the other kind already uses. A project
+that already holds such a pair (created before the guard) still shows the
+symptom, and there is no automatic repair: entity names are also folder
+names under `export/` and the workfile tree, so renaming one side in the
+config database alone would orphan its published work. Ask whoever
+maintains the project.
+
 ### The column says "Channels" but paths and parms say "variant"
 
 Intended. A **channel** is the pipeline's publish-tree fork (`default`,
@@ -420,6 +433,14 @@ render and playblast batch. From 1.52.2 that case is quiet instead: the
 notify logs `Skipping discord notification: this project has no discord
 configuration` and succeeds, so the error above now means the project *does*
 have a token and channels, but not this name.
+
+**Up to 1.62.0** the error could also list the very name it failed on
+(`Channel not found in discord config: Renders (configured channels:
+Renders)`). Lookups lowercased the name they were asked for but matched the
+stored key exactly, so any channel or user typed with a capital letter was
+listed but unreachable. Names now match ignoring case, with an exact match
+preferred when a project holds both spellings, and the audit script reads
+them the same way.
 
 `scripts/audit_discord_config.py` grades every project on the drive, which
 separates the quiet projects from the ones a name is missing from. See

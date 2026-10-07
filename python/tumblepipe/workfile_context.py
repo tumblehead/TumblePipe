@@ -2,7 +2,7 @@
 
 NodePilot and Radial follow the department the artist is in, and the asset
 or shot. They read it through ``tumbletrove.context`` and never import
-TumblePipe (soren-n/TumblePipe#10, RemYmeR/tumbletrove#24). TumblePipe is
+TumblePipe (tumbletrove/TumblePipe#10, tumbletrove/asset-browser#24). TumblePipe is
 the one that knows the workfile, so it answers for it:
 
 - **context**: the ``context.json`` beside the open .hip

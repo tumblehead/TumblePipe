@@ -52,8 +52,8 @@ from tumblepipe.farm._common import (
     check_bool,
     check_list,
     is_int,
+    valid_channel_names,
 )
-from tumblepipe.config.channels import has_channel_names_key
 
 RENDER_TASK_KEYS = ('full_render', 'partial_render')
 
@@ -69,7 +69,7 @@ def _valid_settings(settings):
 def _valid_render(render):
     if not isinstance(render, dict): return False
     if not check_str(render, 'department'): return False
-    if not has_channel_names_key(render): return False
+    if not valid_channel_names(render): return False
     if not isinstance(render.get('overrides', {}), dict): return False
     if render.get('task_key') not in RENDER_TASK_KEYS: return False
     if not check_str(render, 'pool_name'): return False

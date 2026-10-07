@@ -14,6 +14,7 @@ from tumblepipe.api import (
     api
 )
 from tumblepipe.farm.tasks.env import get_base_env
+from tumblepipe.farm._common import is_int
 from tumblepipe.util.io import store_json
 from tumblepipe.naming import random_name
 from tumblepipe.farm.deadline import Task
@@ -51,18 +52,19 @@ def _is_valid_config(config):
             if not isinstance(aov_path, str): return False
         return True
 
+    if not isinstance(config, dict): return False
     if 'title' not in config: return False
     if not isinstance(config['title'], str): return False
     if 'priority' not in config: return False
-    if not isinstance(config['priority'], int): return False
+    if not is_int(config['priority']): return False
     if 'pool_name' not in config: return False
     if not isinstance(config['pool_name'], str): return False
     if 'first_frame' not in config: return False
-    if not isinstance(config['first_frame'], int): return False
+    if not is_int(config['first_frame']): return False
     if 'last_frame' not in config: return False
-    if not isinstance(config['last_frame'], int): return False
+    if not is_int(config['last_frame']): return False
     if 'step_size' not in config: return False
-    if not isinstance(config['step_size'], int): return False
+    if not is_int(config['step_size']): return False
     if 'input_paths' not in config: return False
     if not isinstance(config['input_paths'], dict): return False
     for layer_name, layer in config['input_paths'].items():
@@ -118,7 +120,11 @@ def build(config, paths, staging_path):
     task.start_frame = render_range.first_frame
     task.end_frame = render_range.last_frame
     task.step_size = 1
-    task.chunk_size = len(render_range)
+    # One Deadline task for the whole first..last span: the worker processes
+    # the configured range itself, so a second chunk is a second worker
+    # redoing the whole job. len(render_range) is the *stepped* frame count,
+    # which cut a step>1 range into several such tasks.
+    task.chunk_size = render_range.last_frame - render_range.first_frame + 1
     task.max_frame_time = 20
     task.paths.update(paths)
     task.paths[task_path] = task_path.relative_to(staging_path)

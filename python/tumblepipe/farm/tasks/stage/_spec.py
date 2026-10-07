@@ -56,6 +56,7 @@ def _valid_settings(settings):
     if not check_str(settings, 'purpose'): return False
     if not check_str(settings, 'pool_name'): return False
     if not check_list(settings, 'variant_names'): return False
+    if not all(isinstance(name, str) for name in settings['variant_names']): return False
     if not check_str(settings, 'render_department_name'): return False
     if not check_str(settings, 'render_settings_path'): return False
     if not check_int(settings, 'tile_count'): return False

@@ -163,17 +163,49 @@ def invalidate_entity(graph: Graph, entity_uri: Uri, department_name: Optional[s
     Returns: new Graph with entity removed
     """
     key = entity_key(entity_uri, department_name)
-    new_nodes = {k: v for k, v in graph.nodes.items() if k != key}
+    # Fresh nodes: re-pointing the edges of the shared Node objects stripped
+    # the entity out of the graph passed in as well, leaving that graph's
+    # dependencies and references no longer inverse to each other.
+    new_nodes = {
+        k: Node(entity_uri=v.entity_uri, department_name=v.department_name)
+        for k, v in graph.nodes.items() if k != key
+    }
 
-    # Remove references to this entity from other nodes
-    for node in new_nodes.values():
-        node.dependencies = [n for n in node.dependencies if entity_key(n.entity_uri, n.department_name) != key]
-        node.references = [n for n in node.references if entity_key(n.entity_uri, n.department_name) != key]
+    def _kept(nodes):
+        return [
+            new_nodes[k] for k in (entity_key(n.entity_uri, n.department_name) for n in nodes)
+            if k in new_nodes
+        ]
+
+    for k, node in new_nodes.items():
+        node.dependencies = _kept(graph.nodes[k].dependencies)
+        node.references = _kept(graph.nodes[k].references)
 
     return Graph(nodes=new_nodes, scanned=graph.scanned)
 
 
 # === Forward Queries ===
+
+def _closure(node: Node, edges) -> list[tuple[Uri, Optional[str]]]:
+    """Every node reachable from ``node`` along ``edges``, each once.
+
+    One ``seen`` set for the whole walk. The recursive version gave each
+    call its own, so a two-node cycle (A uses B, B uses A) recursed until
+    RecursionError, and a diamond listed the shared node twice.
+    """
+    result = []
+    seen = set()
+    worklist = list(edges(node))
+    while worklist:
+        current = worklist.pop(0)
+        current_key = entity_key(current.entity_uri, current.department_name)
+        if current_key in seen:
+            continue
+        seen.add(current_key)
+        result.append((current.entity_uri, current.department_name))
+        worklist.extend(edges(current))
+    return result
+
 
 def get_dependencies(graph: Graph, entity_uri: Uri, department_name: Optional[str], recursive: bool = False) -> list[tuple[Uri, Optional[str]]]:
     """
@@ -189,17 +221,9 @@ def get_dependencies(graph: Graph, entity_uri: Uri, department_name: Optional[st
         return []
 
     node = graph.nodes[key]
-    deps = [(dep.entity_uri, dep.department_name) for dep in node.dependencies]
-
-    if recursive:
-        seen = set([key])
-        for dep in node.dependencies:
-            dep_key = entity_key(dep.entity_uri, dep.department_name)
-            if dep_key not in seen:
-                seen.add(dep_key)
-                deps.extend(get_dependencies(graph, dep.entity_uri, dep.department_name, recursive=True))
-
-    return deps
+    if not recursive:
+        return [(dep.entity_uri, dep.department_name) for dep in node.dependencies]
+    return _closure(node, lambda n: n.dependencies)
 
 
 # === Reverse Queries ===
@@ -218,17 +242,9 @@ def get_references(graph: Graph, entity_uri: Uri, department_name: Optional[str]
         return []
 
     node = graph.nodes[key]
-    refs = [(ref.entity_uri, ref.department_name) for ref in node.references]
-
-    if recursive:
-        seen = set([key])
-        for ref in node.references:
-            ref_key = entity_key(ref.entity_uri, ref.department_name)
-            if ref_key not in seen:
-                seen.add(ref_key)
-                refs.extend(get_references(graph, ref.entity_uri, ref.department_name, recursive=True))
-
-    return refs
+    if not recursive:
+        return [(ref.entity_uri, ref.department_name) for ref in node.references]
+    return _closure(node, lambda n: n.references)
 
 
 def find_shots_referencing_asset(graph: Graph, asset_uri: Uri) -> list[Uri]:

@@ -158,6 +158,7 @@ def _is_valid_config(config):
             if not isinstance(aov_path, str): return False
         return True
 
+    if not isinstance(config, dict): return False
     if 'entity' not in config: return False
     if not isinstance(config['entity'], dict): return False
     if 'receipt_path' not in config: return False

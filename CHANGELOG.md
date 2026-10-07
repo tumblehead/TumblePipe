@@ -12,6 +12,14 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.62.0 — 2026-10-06
+
+### Features
+- feat(import_shot): Exclude "Nothing" mode loads every department (`a2e8fb5`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.61.0 (`88e42c2`)
+
 ## v1.61.0 — 2026-10-05
 
 ### Features

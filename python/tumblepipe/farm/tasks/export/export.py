@@ -174,7 +174,8 @@ def _is_valid_config(config):
         return isinstance(datum, str)
     
     def _is_int(datum):
-        return isinstance(datum, int)
+        # bool is an int subclass: True would pass as frame 1 (farm/_common.is_int)
+        return isinstance(datum, int) and not isinstance(datum, bool)
     
     def _is_bool(datum):
         return isinstance(datum, bool)

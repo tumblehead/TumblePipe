@@ -208,7 +208,7 @@ The stock menus are not in `radial_menus/`, because TumbleTrove reads a
 package's `radial_menus/` folder as that package's own layer.
 
 This needs a **TumbleTrove** that has the workfile context
-(RemYmeR/tumbletrove#24) and a **Radial** that has department menus
+(tumbletrove/asset-browser#24) and a **Radial** that has department menus
 (tumbletrove/radial#1). With older versions TumblePipe registers nothing
 and logs nothing, and Shift+Space does nothing.
 

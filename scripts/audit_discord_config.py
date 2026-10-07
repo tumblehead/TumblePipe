@@ -65,8 +65,10 @@ def summarise(node):
     token_set = isinstance(token, str) and len(token.strip()) != 0
     children = node.get('children') or {}
 
+    # Casefolded: tumblepipe.config.discord matches names ignoring case, so
+    # a channel stored as 'Renders' resolves and must not read as missing.
     def names(key):
-        return set((children.get(key) or {}).get('children') or {})
+        return {name.casefold() for name in (children.get(key) or {}).get('children') or {}}
 
     return token_set, names('channels'), names('users')
 

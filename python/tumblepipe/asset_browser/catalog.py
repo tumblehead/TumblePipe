@@ -2852,6 +2852,24 @@ class PipelineCatalog(Catalog):
             hou.ui.displayMessage(str(err))
             return None
 
+        # A bucket name belongs to one kind only. Card ids are
+        # ``PROJECT/BUCKET/NAME`` and the kind is read back from whether
+        # BUCKET is a category, so a sequence named like a category sends
+        # every shot in it to ``entity:/assets/...``.
+        def _bucket_of_other_kind(bucket: str, kind: str) -> bool:
+            other = (
+                self._list_sequences_for_project(proj_name) if kind == "category"
+                else self._list_categories_for_project(proj_name)
+            )
+            if bucket not in other:
+                return False
+            hou.ui.displayMessage(
+                f"'{bucket}' is already a "
+                f"{'sequence' if kind == 'category' else 'category'}; "
+                f"a {kind} cannot share its name."
+            )
+            return True
+
         # Parent-only entity creation: ``new_category`` and
         # ``new_sequence`` register a 2-segment URI (no asset/shot name)
         # so the bucket exists in the sidebar even with no children
@@ -2861,6 +2879,8 @@ class PipelineCatalog(Catalog):
             category = fields.get("category", "").strip()
             if not category:
                 hou.ui.displayMessage("Category is required.")
+                return None
+            if _bucket_of_other_kind(category, "category"):
                 return None
             cat_uri = uris.entity_category(category)
             if client.config.get_properties(cat_uri) is not None:
@@ -2876,6 +2896,8 @@ class PipelineCatalog(Catalog):
             sequence = fields.get("sequence", "").strip()
             if not sequence:
                 hou.ui.displayMessage("Sequence is required.")
+                return None
+            if _bucket_of_other_kind(sequence, "sequence"):
                 return None
             seq_uri = uris.entity_sequence(sequence)
             if client.config.get_properties(seq_uri) is not None:
@@ -2897,6 +2919,13 @@ class PipelineCatalog(Catalog):
             if not category:
                 hou.ui.displayMessage("Category is required.")
                 return None
+            # An existing category is fine; only creating one implicitly
+            # under a sequence's name is refused.
+            if (
+                category not in self._list_categories_for_project(proj_name)
+                and _bucket_of_other_kind(category, "category")
+            ):
+                return None
             entity_uri = uris.entity_asset(category, name)
             if client.config.get_properties(entity_uri) is not None:
                 hou.ui.displayMessage(
@@ -2911,6 +2940,8 @@ class PipelineCatalog(Catalog):
             sequence = fields.get("sequence", "").strip()
             if not sequence:
                 hou.ui.displayMessage("Sequence is required.")
+                return None
+            if _bucket_of_other_kind(sequence, "sequence"):
                 return None
             frame_start = int(fields.get("frame_start", "1001"))
             frame_end = int(fields.get("frame_end", "1100"))

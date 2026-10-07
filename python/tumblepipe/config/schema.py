@@ -1,3 +1,4 @@
+import copy
 from dataclasses import dataclass
 from typing import Any
 
@@ -81,9 +82,15 @@ def validate_properties(schema: Schema, properties: dict) -> list[str]:
 
 
 def apply_defaults(schema: Schema, properties: dict) -> dict:
-    """Apply schema defaults to properties."""
+    """Apply schema defaults to properties.
+
+    Defaults are deep-copied: a schema is shared (the store memoizes it, and
+    ``list_schemas`` builds it over the live cached tree), so handing out
+    its list/dict defaults would let a caller editing one row's value
+    rewrite the default for every later row.
+    """
     result = properties.copy()
     for field_name, field_def in schema.fields.items():
         if field_name not in result:
-            result[field_name] = field_def.default
+            result[field_name] = copy.deepcopy(field_def.default)
     return result
