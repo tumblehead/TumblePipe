@@ -12,6 +12,26 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.63.0 — 2026-10-07
+
+### Features
+- feat(browser): Duplicate an asset under a new name (`902d051`)
+
+### Fixes
+- fix(staging): never track a shot's assets as part of an asset (`266cd6c`)
+- fix(entities): archive a deleted entity's folders; refuse renaming one with files (`f177698`)
+- fix(export): bring library files and their dependencies into the publish (`683e27b`)
+- fix(build_comp): refuse to build an empty comp, and say where renders go (`de6848f`)
+- fix(farm): say "Deadline is not set up" instead of "%DEADLINE_PATH%" (`1667779`)
+- fix(import): bake Inline imports into the export instead of an absolute arc (`a34b182`)
+
+### Documentation
+- docs: asset exports and builds leave out assets seen through a shot layer (`b42f9c6`)
+- docs: troubleshooting and node pages for the library-publish, delete/duplicate, Deadline and build_comp changes (`70419ee`)
+- docs: Inline import mode flattens the import; _staged paths in the escaping-arc error (`e9c6c91`)
+- docs(import_shot): say where Preview Procedurals lives and what it needs (`311138b`)
+- docs: regenerate CHANGELOG.md for v1.62.1 (`8763fce`)
+
 ## v1.62.1 — 2026-10-07
 
 ### Fixes

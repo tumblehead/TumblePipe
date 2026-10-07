@@ -591,9 +591,10 @@ playblast worker runs it with `--verbose a2`:
 
 The submit dialog's render overrides are applied to the shot's
 `UsdRender.Settings` prim, and that prim's path is project-owned
-(`/scene/Render/rendersettings` in the current template, `/Render/rendersettings`
-in older projects). Releases up to and including 1.45.1 hardcoded the old
-path, so on a project using `/scene/Render/rendersettings` every override
+(`/Render/rendersettings` in the current template and most projects,
+`/scene/Render/rendersettings` in projects made from the template before
+2026-10-07). Releases up to and including 1.45.1 hardcoded `/Render/rendersettings`,
+so on a project using `/scene/Render/rendersettings` every override
 composed onto a prim that does not exist and the render was silently the
 project default. Later releases find the `UsdRender.Settings` prim on the
 stage and fail the submission when there is none or several. Update and

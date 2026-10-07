@@ -221,6 +221,14 @@ is described in [Compositing → Playblast](../compositing.md#playblast).
 
 There is no step field: farm renders always submit `step_size = 1`.
 
+Samples, Motion blur and DOF are the only render settings the dialog can
+override. Everything else — resolution, ray limits, camera, engine — comes
+from the shot's own stage: the project's `root_default_prims.usda`, overridden
+by any department layer that authors the render settings prim (typically a
+`render` department layer). The entity's `render.camera`, `render.resolution`,
+`render.overscan`, ray-limit and dicing properties are **not** read at submit;
+setting them in the config changes nothing on the farm.
+
 ## Submit
 
 Submit refuses with a message when nothing is ticked ("Tick at least one cell

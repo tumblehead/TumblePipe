@@ -46,7 +46,8 @@ def validate_shot_root_prims(root) -> ValidationResult:
     - /lights - Light sources
     - /cameras - Camera prims
     - /Render - Render settings hierarchy
-    - /scene - Scene layer overrides
+    - /scene - Cameras and render settings on projects made from the
+      template before 2026-10-07 (the template now keeps both at the root)
     Returns:
         ValidationResult with errors for any disallowed root prims
     """

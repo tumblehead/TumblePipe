@@ -158,8 +158,11 @@ def display_name(label: str) -> str:
 
     The 'th ' prefix every TumblePipe label wears is dropped; lowercase
     words are capitalised, words with their own capitals ('LPE') are kept.
+
+    The prefix match is case-sensitive: the prefix is always lowercase, and a
+    title whose first word is 'TH' or 'Th' must survive a second pass.
     """
-    name = re.sub(r"^th\s+", "", label.strip(), flags=re.IGNORECASE)
+    name = re.sub(r"^th\s+", "", label.strip())
     words = [w[:1].upper() + w[1:] if w.islower() else w for w in name.split()]
     return " ".join(words) or label
 

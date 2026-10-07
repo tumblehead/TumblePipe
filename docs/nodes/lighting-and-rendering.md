@@ -29,7 +29,7 @@ Source: [`otls/lop_th.render_settings.1.0`](../../otls/lop_th.render_settings.1.
 | Preset Name | `default` | Menu of `default` plus every `*.json` in the project's `_config/presets/houdini/lops/render_settings/` |
 | Load Preset | | Sets every parm on the node from the preset file; does nothing if the file does not exist (`default` has no file until you save one) |
 | Save Preset | | Writes **all** the node's parms (camera and resolution included) to `<Preset Name>.json`; disabled until the unlabelled toggle beside it is ticked, and re-locks after a load or save |
-| Camera | `/cameras/render_camera` | The render camera — the path the shot templates author and playblast and render read |
+| Camera | `/cameras/render_camera` | The render camera — the path the shot templates author and playblast and render read. Projects made from the template before 2026-10-07 keep it at `/scene/cameras/render_camera`; set this to match |
 | Width/Height-Pixels | `1920 1080` | Resolution |
 | Path Traced Samples | `64` | |
 | Diffuse / Reflection / Refraction / Volume / SSS Limit | `2 / 4 / 4 / 0 / 1` | Karma ray limits |

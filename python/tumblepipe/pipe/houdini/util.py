@@ -496,10 +496,10 @@ def list_cameras(prim):
     def _get_path(prim): return str(prim.GetPath())
     return list(map(_get_path, iter_scene(prim, is_camera)))
 
-# Where projects keep their cameras. Both spellings are live: the current
-# project template nests everything under /scene, older projects sit at the
-# root. Order is preference, not precedence — the first scope that holds a
-# camera wins.
+# Where projects keep their cameras. Both spellings are live: the project
+# template keeps them at the root, projects made from the template
+# before 2026-10-07 nest them under /scene. Order is preference, not precedence —
+# the first scope that holds a camera wins.
 CAMERA_SCOPE_PATHS = ('/cameras', '/scene/cameras')
 
 def list_stage_cameras(root):

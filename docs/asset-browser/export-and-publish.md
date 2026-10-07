@@ -240,8 +240,8 @@ Passed With Warnings**, or the issue list with a **Close** button.
 | `material_bindings` | Warning only: `Mesh has no material binding`. |
 | `shot_root_prims` | `Disallowed root prim '<name>'. Only asset categories, collections, lights, cameras, Render, and scene are allowed.` — reparent the content under an allowed root. Houdini's own `/HoudiniLayerInfo` is ignored. `/_METADATA` only warns (`Legacy root prim …`): it comes from upstream layers published before metadata moved to customData, and re-exporting that department clears it. |
 | `cameras` | `No Camera prims found in stage` (add one under `/cameras/`); `Render camera path not found in stage: <path>` (fix Camera Path on the Render Settings LOP). Warnings for bad clipping range, non-positive near clip, missing or non-positive `focalLength`. |
-| `render_settings` | `RenderSettings prim not found at /Render/rendersettings`; wrong prim type; `RenderSettings missing 'camera' relationship`, `… has no target`, `RenderSettings camera target does not exist: <path>`. Warnings when `products` is missing or empty. |
-| `render_products` | `No RenderProduct prims found under /Render/Products`; `RenderProduct missing 'camera' relationship` / `… has no target` / `RenderProduct camera target does not exist: <path>`. Warnings for a missing or empty `productName`. |
+| `render_settings` | `the stage carries no UsdRender.Settings prim …` (or several — exactly one is required); `RenderSettings missing 'camera' relationship`, `… has no target`, `RenderSettings camera target does not exist: <path>`. Warnings when `products` is missing or empty. |
+| `render_products` | `No RenderProduct prims found on the stage`; `RenderProduct renders through no camera, and the RenderSettings names none to inherit` / `RenderProduct camera target does not exist: <path>`. Warnings for a missing or empty `productName`. |
 | `render_var_names` | `Prim name '<prim>' does not match aov:name '<aov>'` — rename one to match. Warnings for a missing or empty `driver:parameters:aov:name`. |
 | `ordered_vars` | `orderedVars references non-existent RenderVar: <path>`; `RenderVar not in orderedVars: <path>`. Warnings when `orderedVars` is missing or empty. |
 
@@ -249,9 +249,11 @@ A validator name in a project's `validators.py` that is not registered is
 itself an error (`Unknown validator '<name>' - it is not registered, so it
 did not run`), never a silent pass.
 
-Note that `render_settings` and `cameras` still look for the prim at
-`/Render/rendersettings`; on projects whose settings live under `/scene`
-they mis-report — see [Where the render settings live](../composition.md#where-the-render-settings-live).
+`render_settings`, `render_products` and `cameras` find the settings prim by
+asking the stage, so they work whether a project keeps it at
+`/Render/rendersettings` (the template) or `/scene/Render/rendersettings`
+(projects made from the template before 2026-10-07) — see
+[Where the render settings live](../composition.md#where-the-render-settings-live).
 
 ## What can stop an export
 

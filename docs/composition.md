@@ -833,14 +833,15 @@ husk actually got for a given submission, inspect that job's
 
 Both paths above apply the submit dialog's render overrides, and both have to
 find the same prim to apply them to. **That prim path is project-owned, not a
-constant.** The current project template's
-`_config/usd/root_default_prims.usda` declares
+constant.** Up to 1.63.0 the project template's
+`_config/usd/root_default_prims.usda` declared
 
 ```
 renderSettingsPrimPath = "/scene/Render/rendersettings"
 ```
 
-and 7 of 13 live projects have it there (HideAndReek, OneCall, SideFXrig,
+(the template has had no `/scene` prim since 2026-10-07: cameras and
+`Render` both sit at the stage root), and 7 of 13 live projects had it there (HideAndReek, OneCall, SideFXrig,
 SideFXrig2, Test, chad, hotdog — surveyed 2026-09-22 with
 `grep renderSettingsPrimPath /p/*/_config/usd/root_default_prims.usda`),
 while the rest keep the older
