@@ -23,6 +23,7 @@ import tumblepipe.pipe.houdini.util as util
 from tumblepipe.pipe.paths import (
     get_render,
     get_render_context,
+    comp_input_problems,
     get_workfile_context,
     get_next_frame_path,
     load_entity_context
@@ -80,6 +81,26 @@ def _connect(output_node, output_index, input_node, input_index):
 def _is_valid_aov_node_name(name: str) -> bool:
     if '_' not in name: return False
     return len(name.split('_')) == 2
+
+def _report_unbuildable(shot_uri, render_department_names, problems):
+    render_root = path_str(api.storage.resolve(
+        Uri.parse_unsafe('render:/render') / shot_uri.segments
+    ))
+    departments = ' or '.join(reversed(render_department_names))
+    message = (
+        f'Cannot build the comp for {shot_uri}: '
+        + '; '.join(problems) + '.\n\n'
+        'build_comp reads finished renders from\n'
+        f'  {render_root}/<{departments}>/<channel>/v####/<aov>/\n'
+        'with a context.json (the frame range) in each v#### folder. A '
+        'version counts only when every frame in that range exists, and '
+        'each channel needs beauty and alpha AOVs. Farm renders write this '
+        'layout; see "Rendering without a farm" in the compositing docs.'
+    )
+    if hou.isUIAvailable():
+        hou.ui.displayMessage(message, severity=hou.severityType.Warning)
+        return
+    raise RuntimeError(message)
 
 def _aov_included(aov_name):
     name = aov_name.lower()
@@ -376,7 +397,9 @@ class BuildComp(ns.Node):
         source_name = self.get_source_name()
 
         # Build if not already built
-        if not self.parm('built').eval(): self._build()
+        if not self.parm('built').eval():
+            self._build()
+            if not self.parm('built').eval(): return
 
         # Check if source is render
         if source_name == Source.Render: return self._update()
@@ -1019,6 +1042,20 @@ class BuildComp(ns.Node):
             render_department_names
         )
         if aov_context is None: return
+
+        # Refuse to build from renders that cannot make a comp. Building empty
+        # used to set the built flag anyway, and Update never rebuilds, so the
+        # node stayed empty with no word of why.
+        problems = comp_input_problems(
+            {
+                channel_name: [aov.label for aov in aovs.values()]
+                for channel_name, aovs in aov_context.items()
+            },
+            channel_names,
+        )
+        if problems:
+            _report_unbuildable(shot_uri, render_department_names, problems)
+            return
 
         # Set FPS before the range so the range can't be shifted by a later
         # fps change (see util.set_fps; consistent with import_shot).

@@ -19,6 +19,11 @@ Source: [`submit_jobs_dialog.py`](../../python/tumblepipe/asset_browser/submit_j
 (what gets built and submitted). Farm prerequisites are in
 [Deadline and the render farm](../deadline.md).
 
+Every job here runs on a Deadline farm, and the machine you submit from
+needs the Deadline Client. Without it, **Submit** says *Deadline is not set
+up on this machine* and submits nothing. Working without a farm is covered in
+[Rendering without a farm](../compositing.md#rendering-without-a-farm).
+
 ## Opening it
 
 | From | Menu / button | Rows | Ticked |

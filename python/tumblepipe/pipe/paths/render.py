@@ -901,3 +901,34 @@ def get_render_context(
         if render is None: continue
         renders[department_name] = render
     return RenderContext(renders = renders)
+
+# The AOVs build_comp wires every channel's comp from: beauty feeds the grade
+# subnet and alpha is its last input.
+REQUIRED_COMP_AOVS = ('beauty', 'alpha')
+
+def comp_input_problems(
+    aov_labels: dict[str, list[str]],
+    channel_names: list[str],
+    ) -> list[str]:
+    """What stops a comp being built from these renders; empty when nothing does.
+
+    ``aov_labels`` maps a channel name to the AOV labels of its latest
+    complete render (what build_comp found); ``channel_names`` are the shot's
+    channels. A comp needs at least one channel rendered, and each rendered
+    channel needs every ``REQUIRED_COMP_AOVS`` label.
+    """
+    rendered = [
+        channel_name for channel_name in channel_names
+        if aov_labels.get(channel_name)
+    ]
+    if not rendered:
+        return ['no complete render was found for any channel']
+    problems = []
+    for channel_name in rendered:
+        labels = set(aov_labels[channel_name])
+        missing = [name for name in REQUIRED_COMP_AOVS if name not in labels]
+        if missing:
+            problems.append(
+                f'channel "{channel_name}" has no {" or ".join(missing)} AOV'
+            )
+    return problems

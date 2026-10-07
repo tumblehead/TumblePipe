@@ -6,6 +6,7 @@
 		"hdaroot/metadata.userdata":0,
 		"hdaroot/layerbreak.userdata":0,
 		"hdaroot/output.userdata":0,
-		"hdaroot/import.userdata":0
+		"hdaroot/import.userdata":0,
+		"hdaroot/inline_flatten.userdata":0
 	}
 }

@@ -28,6 +28,7 @@ from tumblepipe.pipe.paths import (
 )
 from tumblepipe.pipe.usd import add_sublayer
 from tumblepipe.pipe.context import save_layer_context
+from tumblepipe.pipe.build import sourced_from_shot
 from tumblepipe.apps.houdini import (
     stitch_usd_directories,
     calculate_chunks,
@@ -178,8 +179,17 @@ def _workfile_cache_storage_roots() -> list[Path]:
     node, so it also covers caches pulled from another workfile's folder.
     Fail-open to no roots.
     """
+    return _storage_roots(('project', 'proxy'))
+
+
+def _project_storage_roots() -> list[Path]:
+    """Shared project storage: asset paths under it are pinned, not copied."""
+    return _storage_roots(('project', 'proxy', 'export'))
+
+
+def _storage_roots(schemes) -> list[Path]:
     roots: list[Path] = []
-    for scheme in ('project', 'proxy'):
+    for scheme in schemes:
         try:
             base = api.storage.resolve(Uri.parse_unsafe(f'{scheme}:/'))
         except Exception:
@@ -369,93 +379,18 @@ def _absolutize_cache_arcs(layer_path: Path, cache_roots: list[Path]) -> None:
     logger.info("Pinned %d cache arc(s) absolute in %s", len(remap), layer_path)
 
 
-def _localize_external_sidecars(layer_path: Path, skip_roots: list[Path] = ()) -> None:
-    """Pull externally-anchored composition sidecars into the layer's folder.
+def _localize_external_sidecars(layer_path: Path, skip_roots: list[Path] = ()):
+    """Pull externally-anchored composition files into the layer's folder.
 
     The ``asset_payload`` HDA writes its geometry into a ``payload.usd``
-    sidecar whose *relative* save path anchors to ``$HIP`` — next to the
-    workfile, or a machine-local desktop dir for an unsaved scene — not the
-    export directory. The ROP's "Use Relative Paths" processor can't
-    relativise an arc to a file outside the output tree (and never across
-    drives on Windows), so the published layer keeps a payload arc pointing
-    outside the version folder, where it dangles on import.
-
-    Right after export the sidecar still exists at its anchored location, so
-    we copy every external, on-disk payload/reference file the layer points
-    at into the layer's own directory and rewrite the arc to the bare sibling
-    filename. The sidecar then travels into the version folder with the layer
-    and resolves portably — fixing both the saved-workfile and the
-    unsaved-desktop cases.
-
-    Files under ``skip_roots`` (versioned th::cache locations) are left
-    alone: they publish by reference and may be far too large to copy.
-
-    Fail-open: any analysis/copy error is logged and skipped, leaving the
-    layer untouched for the downstream dangling-path guard to catch.
+    sidecar anchored to ``$HIP``, and a Reference LOP can point at a library
+    file anywhere on disk; the ROP can't relativise either into the export
+    folder, so the arc would dangle after publish. See
+    ``pipe.localize.localize_external_arcs``: self-contained files land next
+    to the layer, files with dependencies come in with all of them.
     """
-    try:
-        from pxr import Sdf, UsdUtils
-    except Exception:
-        logger.warning("Sidecar localisation skipped; USD unavailable", exc_info=True)
-        return
-
-    from tumblepipe.pipe.usd import _looks_like_uri
-
-    layer = Sdf.Layer.FindOrOpen(str(layer_path))
-    if layer is None:
-        return
-
-    layer_dir = layer_path.parent
-    try:
-        used_names = {p.name for p in layer_dir.iterdir()}
-    except OSError:
-        used_names = set()
-
-    # Map each raw authored asset path we relocate -> its new sibling name.
-    remap: dict[str, str] = {}
-    stack = list(layer.rootPrims)
-    while stack:
-        prim = stack.pop()
-        for arc_list in (prim.referenceList, prim.payloadList):
-            for item in arc_list.GetAddedOrExplicitItems():
-                raw = str(getattr(item, 'assetPath', '') or '')
-                if not raw or raw in remap or _looks_like_uri(raw):
-                    continue
-                src = Path(raw)
-                abs_src = src if src.is_absolute() else (layer_dir / src)
-                try:
-                    if abs_src.resolve().parent == layer_dir.resolve():
-                        continue  # already a sibling — nothing to do
-                except OSError:
-                    pass
-                if _resolve_under_any(abs_src, skip_roots):
-                    continue  # versioned cache — published by reference
-                if not abs_src.is_file():
-                    continue  # missing — leave for the dangling-path guard
-                dest_name = abs_src.name
-                if dest_name in used_names:
-                    stem, suffix = abs_src.stem, abs_src.suffix
-                    n = 1
-                    while f"{stem}_{n}{suffix}" in used_names:
-                        n += 1
-                    dest_name = f"{stem}_{n}{suffix}"
-                try:
-                    shutil.copy(abs_src, layer_dir / dest_name)
-                except OSError:
-                    logger.warning("Could not localise sidecar %s", abs_src, exc_info=True)
-                    continue
-                used_names.add(dest_name)
-                remap[raw] = dest_name
-        stack.extend(prim.nameChildren.values())
-
-    if not remap:
-        return
-
-    UsdUtils.ModifyAssetPaths(layer, lambda p: remap.get(p, p))
-    layer.Save()
-    logger.info(
-        "Localised %d payload/reference sidecar(s) into %s", len(remap), layer_dir
-    )
+    from tumblepipe.pipe.localize import localize_external_arcs
+    return localize_external_arcs(layer_path, skip_roots=skip_roots)
 
 
 class ExportLayer(EntityNode):
@@ -748,6 +683,15 @@ class ExportLayer(EntityNode):
             asset_metadata = asset_info['metadata']
             asset_uri_str = asset_metadata['uri']
 
+            # An asset workfile can import a shot layer for context; the
+            # shot's characters and props on that stage are not the asset's.
+            if not is_shot_export and sourced_from_shot(asset_metadata.get('inputs')):
+                logger.info(
+                    "Not tracking %s at %s: it came in through a shot layer",
+                    asset_uri_str, prim_path,
+                )
+                continue
+
             # Add current shot department entry to inputs if exporting a shot
             if is_shot_export:
                 shot_dept_entry = {
@@ -981,9 +925,27 @@ class ExportLayer(EntityNode):
             report_progress("localizing sidecars")
             cache_roots = _versioned_cache_roots()
             _absolutize_cache_arcs(temp_path / layer_file_name, cache_roots)
-            _localize_external_sidecars(
+            arcs = _localize_external_sidecars(
                 temp_path / layer_file_name, skip_roots=cache_roots,
             )
+            if arcs.missing_layers:
+                bullets = "\n  - ".join(arcs.missing_layers)
+                raise ExportLayerError(
+                    "Export aborted: a file referenced from outside the "
+                    "project composes layers that do not exist, so it would "
+                    f"publish empty:\n  - {bullets}\n\n"
+                    "Re-download or repair the referenced asset and re-export."
+                )
+            # Textures and other asset paths on the exported prims: the ROP
+            # made them relative to this temp folder.
+            from tumblepipe.pipe.localize import localize_external_assets
+            assets = localize_external_assets(
+                temp_path / layer_file_name,
+                project_roots=_project_storage_roots(),
+                skip_roots=cache_roots,
+            )
+            for missing in arcs.missing_assets + assets.missing_assets:
+                logger.warning("Exported layer points at a missing file: %s", missing)
 
             # Refuse to publish a layer that composes geometry from a
             # missing file (e.g. a payload anchored to a machine-local

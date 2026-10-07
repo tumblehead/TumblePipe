@@ -198,7 +198,10 @@ offending paths or prims:
   (Houdini 22 turns it on for new SOP Create / SOP Import nodes, pointing at
   `$HIP/usd/`). Disable *Enable Layer Save Path* on the node(s) named and
   re-export. Caches belong in a `th::cache` node, whose versioned locations
-  are allowed by reference. See
+  are allowed by reference. If the paths listed are `export/assets/…/_staged/…`
+  layers, an import node is in *Import Mode* Inline on a TumblePipe older
+  than the fix that flattens inline imports: update the package, or switch
+  the node to Reference. See
   [Layer save paths and export portability](composition.md#layer-save-paths-and-export-portability).
 - `Export aborted: the exported layer composes geometry from path(s) that do
   not exist, so the published asset would import empty …` — a dangling arc,
@@ -271,6 +274,38 @@ now anchored to `$HIP`, keyed on the asset prim, and copied into the version
 folder. Re-export the asset with a current TumblePipe; a dangling or escaping
 payload is now refused at export (previous entry). See
 [Layer save paths and export portability](composition.md#layer-save-paths-and-export-portability).
+
+### Something I added from an asset library is empty or black in the next department
+
+A model referenced from a library folder outside the project (a plain
+Reference LOP) arrived as empty Xforms, or a dome light's HDRI went black,
+with no error. Exports up to TumblePipe 1.62.1 copied only the referenced
+file, not the geometry and textures it points at, and wrote textures
+relative to a temporary folder. Re-export the department with a current
+TumblePipe: library files now travel with the publish under `external/`.
+See [Layer save paths and export portability](composition.md#layer-save-paths-and-export-portability).
+
+### A set publishes with a shot's characters and props inside it
+
+A set's staged file sublayers assets that belong to a shot (HideAndReek's
+`SET/Park` picked up Ryan, Daughter, Toni, Koala and the PoliceCar). The set's
+lookdev workfile imported a shot's light layer for context with an
+`import_layer` node. That node tags the shot's assets on the stage, and up to
+TumblePipe 1.62.1 the asset export recorded them as the set's own and the
+asset build sublayered them. Exports and builds now ignore any tracked asset
+that reached the stage through a shot layer, so **Build USD** on the set
+again gives a clean staged file without re-exporting. Bypassing the shot
+import before exporting also avoids it on older versions.
+
+### A deleted or renamed asset came back with old work, or a renamed one is empty
+
+Up to TumblePipe 1.62.1, deleting an asset left its folders, so a new asset
+of the same name picked them up, and renaming one in the Database Editor
+left its work under the old name. Delete now moves the folders to
+`_deleted/<date-time>/`, renaming an asset with files is refused, and
+**Duplicate…** on the card makes a copy under a new name. To recover old
+work, move its folder back out of `_deleted/`. See
+[Delete](asset-browser/index.md) and [Duplicate](asset-browser/index.md#right-click-on-a-card).
 
 ### Two assets with the same name in different case
 
@@ -349,6 +384,15 @@ says `the submission process stopped early — see the log`, the background
 process itself broke: **Open log folder** shows `runner.log`, next to the
 `plan.json` of exactly what was sent. See
 [Submit](asset-browser/submit-jobs.md#submit).
+
+### Submit says "Deadline is not set up on this machine"
+
+The submitting machine has no Deadline Client, so there is no
+`DEADLINE_PATH` to submit through (older versions showed this as
+`Invalid Deadline installation path: "%DEADLINE_PATH%"`). Install the
+client and restart Houdini; see [Deadline and the render farm](deadline.md).
+With no farm at all, see
+[Rendering without a farm](compositing.md#rendering-without-a-farm).
 
 ### The Farm Submit button in TumbleTrove Desktop reports no Houdini
 

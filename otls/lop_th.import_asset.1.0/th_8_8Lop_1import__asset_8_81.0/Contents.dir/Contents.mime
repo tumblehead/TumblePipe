@@ -145,11 +145,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	import 1 1 "input1"
+0 	inline_flatten 1 1 "input1"
 }
 inputs
 {
-0 	import 0 1
+0 	inline_flatten 0 1
 }
 stat
 {
@@ -648,16 +648,468 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/inline_flatten.init"
+Content-Type: text/plain
+
+type = configurelayer
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/inline_flatten.def"
+Content-Type: text/plain
+
+comment "Inline mode: bake the imported file into an editable layer so the export writes its contents, not an arc to it"
+position -5.72374 4.43623
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	import 1 1 "input1"
+}
+inputs
+{
+0 	import 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/inline_flatten.spareparmdef"
+Content-Type: text/plain
+
+    parm {
+        name    "setsavepath"
+        baseparm
+        label   "Set Save Path"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "savepath"
+        baseparm
+        label   "Save Path"
+        export  none
+    }
+    parm {
+        name    "setdefaultprim"
+        baseparm
+        label   "Set Default Primitive"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "defaultprim"
+        baseparm
+        label   "Default Primitive"
+        export  none
+    }
+    parm {
+        name    "setcomment"
+        baseparm
+        label   "Set Comment"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "comment"
+        baseparm
+        label   "Comment"
+        export  none
+    }
+    parm {
+        name    "setstarttime"
+        baseparm
+        label   "Set Start Time"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "starttime"
+        baseparm
+        label   "Start Time"
+        export  none
+    }
+    parm {
+        name    "setendtime"
+        baseparm
+        label   "Set End Time"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "endtime"
+        baseparm
+        label   "End Time"
+        export  none
+    }
+    parm {
+        name    "settimepersecond"
+        baseparm
+        label   "Set Time Codes per Second"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "timepersecond"
+        baseparm
+        label   "Time Codes per Second"
+        export  none
+    }
+    parm {
+        name    "setframespersecond"
+        baseparm
+        label   "Set Frames per Second"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "framespersecond"
+        baseparm
+        label   "Frames per Second"
+        export  none
+    }
+    parm {
+        name    "separator_metrics"
+        baseparm
+        label   "separator_metrics"
+        export  none
+    }
+    parm {
+        name    "setupaxis"
+        baseparm
+        label   "Set Up Axis"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "upaxis"
+        baseparm
+        label   "Up Axis"
+        export  none
+    }
+    parm {
+        name    "setmetersperunit"
+        baseparm
+        label   "Set Meters per Unit"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "metersperunit"
+        baseparm
+        label   "Meters per Unit"
+        export  none
+    }
+    parm {
+        name    "separator_colorconfig"
+        baseparm
+        label   "separator_colorconfig"
+        export  none
+    }
+    parm {
+        name    "setcolorconfig"
+        baseparm
+        label   "Color Configuration"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "colorconfig"
+        baseparm
+        label   "Color Configuration"
+        export  none
+    }
+    parm {
+        name    "setcolormanagementsystem"
+        baseparm
+        label   "Color Management System"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "colormanagementsystem"
+        baseparm
+        label   "Color Management System"
+        export  none
+    }
+    parm {
+        name    "separator_rendersettings"
+        baseparm
+        label   "separator_rendersettings"
+        export  none
+    }
+    parm {
+        name    "setrendersettings"
+        baseparm
+        label   "Set Render Settings"
+        joinnext
+        export  none
+    }
+    parm {
+        name    "rendersettings"
+        baseparm
+        label   "Render Settings"
+        export  none
+    }
+    parm {
+        name    "separator_customdata"
+        baseparm
+        label   "separator_customdata"
+        export  none
+    }
+    multiparm {
+        name    "customdatacount"
+        label    "Custom Data Count"
+        baseparm
+        default 0
+
+        parm {
+            name    "customdataname#"
+            baseparm
+            label   "Custom Data Name"
+            export  none
+        }
+        parm {
+            name    "customdatatype#"
+            baseparm
+            label   "Custom Data Type"
+            export  none
+        }
+        parm {
+            name    "customdatastrvalue#"
+            baseparm
+            label   "Custom Data Value"
+            export  none
+        }
+        parm {
+            name    "customdatafloatvalue#"
+            baseparm
+            label   "Custom Data Value"
+            export  none
+        }
+        parm {
+            name    "customdataintvalue#"
+            baseparm
+            label   "Custom Data Value"
+            export  none
+        }
+        parm {
+            name    "customdataboolvalue#"
+            baseparm
+            label   "Custom Data Value is True"
+            export  none
+        }
+    }
+
+    parm {
+        name    "separator_stagevariables"
+        baseparm
+        label   "separator_stagevariables"
+        export  none
+    }
+    multiparm {
+        name    "stagevariablescount"
+        label    "Stage Variable Count"
+        baseparm
+        default 0
+
+        parm {
+            name    "stagevariablesname#"
+            baseparm
+            label   "Stage Variable Name"
+            export  none
+        }
+        parm {
+            name    "stagevariablestype#"
+            baseparm
+            label   "Stage Variable Type"
+            export  none
+        }
+        parm {
+            name    "stagevariablesstrvalue#"
+            baseparm
+            label   "Stage Variable Value"
+            export  none
+        }
+        parm {
+            name    "stagevariablesfloatvalue#"
+            baseparm
+            label   "Stage Variable Value"
+            export  none
+        }
+        parm {
+            name    "stagevariablesintvalue#"
+            baseparm
+            label   "Stage Variable Value"
+            export  none
+        }
+        parm {
+            name    "stagevariablesboolvalue#"
+            baseparm
+            label   "Stage Variable Value is True"
+            export  none
+        }
+    }
+
+    parm {
+        name    "separator_newlayer"
+        baseparm
+        label   "separator_newlayer"
+        export  none
+    }
+    parm {
+        name    "setstagemetadata"
+        baseparm
+        label   "Also Set Metadata on Stage Root Layer"
+        export  none
+    }
+    parm {
+        name    "flattenop"
+        baseparm
+        label   "Flatten Input"
+        export  none
+    }
+    parm {
+        name    "startnewlayer"
+        baseparm
+        label   "Start New Layer"
+        export  none
+    }
+    parm {
+        name    "setinputlayerexplicit"
+        baseparm
+        label   "Set Input Active Layer to Explicit"
+        export  none
+    }
+    parm {
+        name    "lop_activation"
+        label   "Activation"
+        type    toggle
+        default { "0" }
+    }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/inline_flatten.chn"
+Content-Type: text/plain
+
+{
+    channel starttime {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel endtime {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel timepersecond {
+      lefttype = extend
+      righttype = extend
+      default = 24
+      flags = 0
+      segment { length = 0 value = 24 24 expr = $FPS }
+    }
+    channel framespersecond {
+      lefttype = extend
+      righttype = extend
+      default = 24
+      flags = 0
+      segment { length = 0 value = 24 24 expr = $FPS }
+    }
+    channel lop_activation {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../import_mode\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/inline_flatten.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+setsavepath	[ 0	locks=0 ]	(	"off"	)
+savepath	[ 0	locks=0 ]	(	$HIP/usd/$OS.usd	)
+setdefaultprim	[ 0	locks=0 ]	(	"off"	)
+defaultprim	[ 0	locks=0 ]	(	""	)
+setcomment	[ 0	locks=0 ]	(	"off"	)
+comment	[ 0	locks=0 ]	(	""	)
+setstarttime	[ 0	locks=0 ]	(	"off"	)
+starttime	[ 0	locks=0 ]	(	[ starttime	1 ] 	)
+setendtime	[ 0	locks=0 ]	(	"off"	)
+endtime	[ 0	locks=0 ]	(	[ endtime	240 ] 	)
+settimepersecond	[ 0	locks=0 ]	(	"off"	)
+timepersecond	[ 0	locks=0 ]	(	[ timepersecond	24 ] 	)
+setframespersecond	[ 0	locks=0 ]	(	"off"	)
+framespersecond	[ 0	locks=0 ]	(	[ framespersecond	24 ] 	)
+separator_metrics	[ 0	locks=0 ]	(	)
+setupaxis	[ 0	locks=0 ]	(	"off"	)
+upaxis	[ 0	locks=0 ]	(	z	)
+setmetersperunit	[ 0	locks=0 ]	(	"off"	)
+metersperunit	[ 0	locks=0 ]	(	0.01	)
+separator_colorconfig	[ 0	locks=0 ]	(	)
+setcolorconfig	[ 0	locks=0 ]	(	"off"	)
+colorconfig	[ 0	locks=0 ]	(	""	)
+setcolormanagementsystem	[ 0	locks=0 ]	(	"off"	)
+colormanagementsystem	[ 0	locks=0 ]	(	OpenColorIO	)
+separator_rendersettings	[ 0	locks=0 ]	(	)
+setrendersettings	[ 0	locks=0 ]	(	"off"	)
+rendersettings	[ 0	locks=0 ]	(	""	)
+separator_customdata	[ 0	locks=0 ]	(	)
+customdatacount	[ 0	locks=0 ]	(	0	)
+separator_stagevariables	[ 0	locks=0 ]	(	)
+stagevariablescount	[ 0	locks=0 ]	(	0	)
+separator_newlayer	[ 0	locks=0 ]	(	)
+setstagemetadata	[ 0	locks=0 ]	(	"on"	)
+flattenop	[ 0	locks=0 ]	(	layer	)
+startnewlayer	[ 0	locks=0 ]	(	"off"	)
+setinputlayerexplicit	[ 0	locks=0 ]	(	"on"	)
+lop_activation	[ 0	locks=0 ]	(	[ lop_activation	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/inline_flatten.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.order"
 Content-Type: text/plain
 
-6
+7
 output
 layerbreak
 metadata
 import
 transform
 merge
+inline_flatten
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.net"

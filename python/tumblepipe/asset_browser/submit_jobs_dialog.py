@@ -1938,6 +1938,13 @@ class SubmitJobsDialog(QDialog):
                 "submitting.",
             )
             return
+        # Every job family ends in a Deadline submission; say so before the
+        # artist confirms anything, not as a per-row failure afterwards.
+        from tumblepipe.apps.deadline import deadline_setup_problem
+        problem = deadline_setup_problem()
+        if problem is not None:
+            QMessageBox.warning(self, "Farm Submit", problem)
+            return
 
         stale = {uri: self._stale_upstream(uri, s) for uri, s, _w in rows}
         stale = {uri: missing for uri, missing in stale.items() if missing}

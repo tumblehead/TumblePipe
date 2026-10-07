@@ -307,6 +307,7 @@ catalog contributes
 |---|---|
 | **Submit Jobs…** / **Submit Jobs for N selected…** | Opens the [Farm Submit](submit-jobs.md) dialog with this entity's **Render** cell ticked, or every selected card's of the same kind (shots with shots, assets with assets). |
 | **Generate Master…** | Merges each department's latest workfile into `<entity folder>/master/<name>_master.hip`, one network box per department, after a **Generate Master Scene** confirmation. Opens that scene. |
+| **Duplicate…** (assets) | Asks for a name (default `<name>_copy`) and creates that asset in the same category with the source's own properties. In a background hython it then copies each department's latest finished workfile to the new asset as its `v0001`, with the new asset's `context.json`. Nodes pinned to the source entity switch to `from_context`, and the source's prim path typed into string parms (`/CHAR/Pengo/mtl/`) becomes the copy's (`/CHAR/Pengo_copy/mtl/`). A department whose workfile belongs to a Multi is not copied. Nothing is published: publish the copy from its own workfiles. Your open scene is not touched. Use this instead of copying an asset's folder by hand, which leaves the copy pointing at the original. |
 | **Edit description…** | Edits the `description.txt` sidecar in the entity's folder (dialog **Edit Description**). Shown on the Info tab. |
 | **Tasks…** | Opens TumbleTrove's **Tasks — *name*** dialog for the entity's todo list. |
 | **Select thumbnail…** / **Capture thumbnail** | See [Cards](#cards). |
@@ -371,7 +372,12 @@ the entity.
 
 **Delete** removes the entity from the project configuration after a
 **Delete entity** confirmation (*Delete 'name'? This cannot be undone from
-the browser.*). It does not delete files on disk. **Delete category '…'…**
+the browser.*). Its folders — workfiles, exports, renders, playblasts —
+move to `_deleted/<date-time>/` under each storage root (for example
+`<project>/_deleted/20261007-111122/assets/CHAR/GREEN`), so a new entity of
+the same name starts empty and the old work can still be recovered by hand.
+If a folder can't be moved (a file open in another program), nothing is
+moved and nothing is deleted. **Delete category '…'…**
 and **Delete sequence '…'…** refuse while the bucket still holds entities
 (*Category 'X' still contains 3 assets.*) and confirm when it is empty.
 

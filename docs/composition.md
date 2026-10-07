@@ -81,6 +81,12 @@ Every publish writes a versioned layer under
 `context.json` sidecar. The sidecar's `parameters.assets` records every
 pipeline asset present on the exported stage (scraped from the
 `customData` metadata that import nodes author on asset root prims).
+An *asset* export leaves out any asset that reached its stage through a
+shot's layers: an asset workfile that imports a shot layer for context (a set
+lit by a shot's light) sees the shot's cast tagged on its stage, and those
+belong to the shot. They are recognised by metadata inputs naming a shot or
+a shot group (`pipe.build.sourced_from_shot`), and the staged build ignores
+such entries in older exports too.
 
 The *staged* file (`_staged/<variant>/v####/<Entity>_v####.usda`, one per
 channel) is what
@@ -265,6 +271,15 @@ templates pin it off explicitly; if an export still aborts with an
 "outside the export folder" error, disable *Enable Layer Save Path* on
 the named node and re-export.
 
+Disabling a layerbreak does not bake a loaded file in either. A Sublayer
+LOP keeps the file it loads as a *file layer*, and the USD ROP writes a
+file layer as an arc to its path, never as its contents. Inline import
+mode therefore flattens the import into an editable layer first
+(`inline_flatten`, a Configure Layer with *Flatten Input* = Flatten
+Layers) — see [Import Mode](nodes/index.md#import-mode). An "outside the
+export folder" error that lists `export/assets/…/_staged/…` layers means
+an import's file reached the export unflattened.
+
 Deliberate save paths are used by the asset HDAs themselves — but a *bare*
 relative path is not the sibling path it looks like. `th::asset_payload`
 saved to `payload.usd`, which USD resolves against the **process working
@@ -291,7 +306,28 @@ paths (so they survive the temp→version move) and the escaping-path
 guard lets them through; a cache version that has since been deleted
 still aborts the export as a dangling arc. Off-site consumers (e.g. a
 cloud render submit) must gather/inline these references, as they
-already must for textures.
+already must for project textures.
+
+**Files from outside the project** — an asset-library download dragged in
+through a plain Reference LOP, a dome light's HDRI, a texture from a
+downloads folder — are copied into the version folder at export
+(`pipe/localize.py`):
+
+- A referenced file that references more files (a library wrapper → its
+  geometry layer → `textures/`) comes in with everything it depends on,
+  under `external/<name>/`, keeping its folder layout; its own paths are
+  rewritten to the copies. Copying only the wrapper used to publish the
+  asset as empty Xforms. If one of its *layers* is missing the export
+  aborts; a missing texture is logged.
+- Asset paths on the exported prims (textures, HDRIs) outside the project
+  are copied to `external/`; `<UDIM>`/`<UVTILE>` paths copy every tile.
+  Paths into project storage (`project:`/`proxy:`/`export:`) are pinned
+  absolute instead. The USD ROP writes these paths relative to the temp
+  export folder, so before this they pointed nowhere once the layer moved
+  into its version folder (a dome light went black downstream).
+
+`scripts/verify_external_library_publish.py` drives both through layout →
+light → render.
 
 `th::cache` carries **Entity** and **Department** parms (both defaulting,
 like every entity-aware `th::` HDA, to `from_context`). Entity drives the

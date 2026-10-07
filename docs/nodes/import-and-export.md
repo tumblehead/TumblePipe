@@ -23,7 +23,7 @@ Source: [`otls/lop_th.import_asset.1.0`](../../otls/lop_th.import_asset.1.0/th_8
 | Channel | `default` | Which channel's staged build to load |
 | Version | `latest` | `latest` / `current` / `v####` of the staged build; the label beside it shows the version that resolved |
 | Exclude departments | *(none)* | Checkable list; ticking re-imports immediately |
-| Import Mode | Reference | Reference (metadata + layerbreak) or Inline (baked into your export) |
+| Import Mode | Reference | Reference (metadata + layerbreak) or Inline (the staged build is flattened and its geometry baked into your export — every shot that inlines it carries its own full copy) |
 | Translate / Rotate / Scale / Uniform Scale | identity | Placement of the asset prim; bound to the viewport transform handle |
 
 **Import** re-runs the node. It also runs automatically after picking an
@@ -139,7 +139,7 @@ Source: [`otls/lop_th.import_shot.1.0`](../../otls/lop_th.import_shot.1.0/th_8_8
 | Exclude | This + Downstream | **This + Downstream** also leaves out every department after it in the shot's pipeline order, so you compose only what is upstream of your work. **This Department Only** keeps the later ones — the environment template uses it so environment sees the animation camera and characters. **Nothing** loads every department, your own included — use it on a check import below the export to review what you published. Changing it re-imports immediately |
 | Version | `latest` | `latest` / `current` / `v####` |
 | Exclude Asset Departments | *(none)* | Checkable list of asset departments (e.g. `lookdev`) to leave out of **every** asset in the shot, nested ones included; ticking re-imports immediately |
-| Preview Procedurals | off | Runs a *Preview Houdini Procedurals* LOP on the imported shot, so Houdini procedurals (e.g. hair) cook in the viewport. It sits above the node's layer break, so the result is never exported, and the farm render stage leaves it off (husk runs procedurals at render time) |
+| Preview Procedurals | off | Runs a *Preview Houdini Procedurals* LOP on the imported shot, so Houdini procedurals (e.g. hair) cook in the viewport. It only acts on prims with a Houdini procedural applied (e.g. from a *Houdini Procedural: Hair* LOP); if the shot has none, or the hair is published as baked curves, it does nothing. The LOP lives inside the node's `procedurals` subnet. It sits above the node's layer break, so the result is never exported, and the farm render stage leaves it off (husk runs procedurals at render time) |
 | Load Payloads | on | Currently wired to nothing (payloads always load) |
 
 **Import** runs the node. It also sets the session's FPS and frame range
@@ -255,7 +255,8 @@ ROP outside the pipeline.
 
 What a local export writes: `export/<entity>/<channel>/<department>/v####/`
 with a `<entity>_<channel>_<department>_v####.usd` and a `context.json`
-recording every tracked asset on the stage —
+recording every tracked asset on the stage (for an asset export, except
+the ones that came in through an imported shot layer) —
 [Department exports and staged files](../composition.md#department-exports-and-staged-files).
 The node's comment then reads *last export: v#### / time / user*.
 
@@ -271,7 +272,8 @@ Aborts you can hit, in the order they are checked:
   [dropped-metadata guard](../composition.md#dropped-metadata-guard).
   Re-run the import node; or set it to Inline if baking was the intent.
 - *composes geometry from path(s) outside the export folder* — usually a LOP
-  with *Layer Save Path* enabled;
+  with *Layer Save Path* enabled, or (paths under `_staged/`) an Inline
+  import on a package without the inline flatten;
   [Layer save paths](../composition.md#layer-save-paths-and-export-portability).
 - *composes geometry from path(s) that do not exist* — a dangling payload
   or reference; same section.

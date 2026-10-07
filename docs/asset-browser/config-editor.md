@@ -83,12 +83,18 @@ anywhere else commits — exactly one change, persisted at once; **Escape**
 cancels; a label already used by a sibling is rejected. Renaming moves the
 entity's whole subtree to the new key.
 
+An entity that has workfiles or exports on disk can't be renamed: they live
+in folders named after it, and its published layers name it inside, so the
+renamed entity would come up empty. Use **Duplicate…** on its card in the
+Asset Browser instead, then delete the old one.
+
 ### Removing
 
 Right-click → **Remove Entity**, or select rows and press **Delete**. The
 confirmation names the entity — and how many children go with it — as
 **Remove Entity** / **Remove Entities**. Removal is written to disk
-immediately.
+immediately, and the entity's folders move to `_deleted/` exactly as the
+Asset Browser's **Delete** does.
 
 ### Reordering
 
@@ -155,7 +161,8 @@ removals.
 ## What it writes
 
 Only `_config/db/<purpose>.json` files — one rewrite of the whole file per
-save, add, remove, rename or reorder. It never touches workfiles, exports or
-the `_config/*.py` conventions, and a project's layout version
+save, add, remove, rename or reorder. Apart from moving a removed entity's
+folders to `_deleted/`, it never touches workfiles, exports or the
+`_config/*.py` conventions, and a project's layout version
 (`_config/version.json`) is untouched. Because the browser reads the same
 files coherently, an edit shows in the Asset Browser on its next refresh.

@@ -230,7 +230,7 @@ def cli():
 
     # Prepare
     try: deadline = Deadline()
-    except Exception: return _common.error('Could not connect to Deadline')
+    except Exception as e: return _common.error(f'Could not connect to Deadline: {e}')
 
     # Check department name
     department_name = args.department_name

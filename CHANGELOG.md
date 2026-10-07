@@ -12,6 +12,29 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.62.1 — 2026-10-07
+
+### Fixes
+- fix(csv_shot_import): count a repeated shot once in a dry run (`59bc8d1`)
+- fix(farm): close validator holes for bools, empty outputs and channel lists (`4af0021`)
+- fix(asset_browser): refuse category/sequence name clashes; fix "0mo ago" (`fbf97c1`)
+- fix(config_editor): flag added list items and empty containers as changes (`f2d0959`)
+- fix(paths): find newer complete layers by stored version name (`5d23661`)
+- fix(graph): terminate recursive queries on cycles; keep invalidate pure (`0cffa4e`)
+- fix(config): stop callers aliasing the cached config tree (`cc141e4`)
+- fix(discord): match channel and user names ignoring case (`9ffe330`)
+- fix(wizard): write JSON escapes the way Python's json.dump does (`c091d79`)
+
+### Documentation
+- docs: document the new property modules, cargo, and the fixed behaviours (`ddb8d87`)
+- docs: refer to issues under the repos' new owners (`77064ad`)
+- docs: regenerate CHANGELOG.md for v1.62.0 (`6bbf54c`)
+
+### Tests
+- test: make existing properties reach their checks (`2c26e24`)
+- test(stubs): give the headless hou applicationVersionString (`5bf5878`)
+- test(resolver): proptest properties and a Python writer parity check (`ce05e39`)
+
 ## v1.62.0 — 2026-10-06
 
 ### Features

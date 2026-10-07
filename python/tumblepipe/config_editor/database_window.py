@@ -1,6 +1,7 @@
+import shutil
 from copy import deepcopy
 
-from qtpy.QtCore import Qt, Signal
+from qtpy.QtCore import Qt, QTimer, Signal
 from qtpy.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
@@ -279,8 +280,19 @@ class DatabaseWindow(QMainWindow):
 
         if parent_data and 'children' in parent_data:
             if label in parent_data['children']:
+                # Same as the Asset Browser's Delete: the entity's folders go
+                # to _deleted/, or a new entity of this name inherits them.
+                from tumblepipe.pipe.entity_files import ArchiveError, archive_entity_folders
+                try:
+                    archived = archive_entity_folders(parent_uri / label)
+                except ArchiveError as exc:
+                    QMessageBox.warning(self, "Remove Entity", str(exc))
+                    return False
                 del parent_data['children'][label]
-                return self._save_with_conflict_handling(parent_uri, parent_data)
+                if self._save_with_conflict_handling(parent_uri, parent_data):
+                    return True
+                for source, dest in reversed(archived):
+                    shutil.move(str(dest), str(source))
         return False
 
     def _rename_entity(self, parent_uri: Uri, old_label: str, new_label: str) -> bool:
@@ -289,6 +301,24 @@ class DatabaseWindow(QMainWindow):
             parent_data = self._adapter.lookup(parent_uri)
         else:
             parent_data = self._adapter.lookup_root(parent_uri.purpose)
+
+        # Workfiles, exports and renders sit in folders named after the
+        # entity, and published layers name it inside: renaming the row
+        # would leave all of that under the old name.
+        from tumblepipe.pipe.entity_files import has_entity_files
+        if has_entity_files(parent_uri / old_label):
+            QMessageBox.warning(
+                self, "Rename Entity",
+                f"'{old_label}' has workfiles or exports on disk, so it can't "
+                "be renamed: they would stay under the old name and the "
+                "renamed entity would come up empty.\n\n"
+                "Use Duplicate… on its card in the Asset Browser to make a "
+                "copy under the new name, then delete the old one.",
+            )
+            # Put the old label back. Deferred: this runs inside the tree's
+            # own edit-commit signal.
+            QTimer.singleShot(0, self._reload_from_disk)
+            return False
 
         if parent_data and 'children' in parent_data:
             if old_label in parent_data['children']:

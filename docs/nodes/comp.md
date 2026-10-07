@@ -54,6 +54,11 @@ Gotchas:
   nothing. In a Multi's comp workfile it resolves nothing either — a
   composite is built for one shot, so set **Shot** to the member; Submit
   there says so rather than sending the farm the Multi.
+- The first Update refuses to build when no channel has a complete render,
+  or a rendered channel has no `beauty` or `alpha` AOV. It says which and
+  where it looked, and builds normally on the next Update once the renders
+  are there. Without a farm, see
+  [Rendering without a farm](../compositing.md#rendering-without-a-farm).
 - Update is the only thing that retargets versions. The Asset Browser's
   refresh-on-open deliberately skips this node, so a comp never silently
   picks up new renders — press Update when you want them.

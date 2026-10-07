@@ -5,6 +5,13 @@ to [Thinkbox Deadline](https://www.awsthinkbox.com/deadline), and custom
 Deadline plugins for running its Python farm tasks on workers with the same
 source and environment the job was submitted with.
 
+Every farm submission goes through `deadlinecommand` from the **Deadline
+Client** on the artist's machine, found through the `DEADLINE_PATH`
+environment variable its installer sets. Without it, Submit stops with
+"Deadline is not set up on this machine" before anything is submitted.
+Install the client, restart Houdini, and submit again. For working without a
+farm, see "Rendering without a farm" in `docs/compositing.md`.
+
 ## Plugins: HPM (default) and UV (legacy)
 
 Farm tasks live inside the TumblePipe package, which artists run via

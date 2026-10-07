@@ -336,6 +336,24 @@ def resolve_shot_build(
     )
 
 
+def sourced_from_shot(inputs) -> bool:
+    """True if a tracked asset reached the stage through a shot's layers.
+
+    An asset's metadata accumulates an input per shot department export it
+    passes through. An asset workfile that imports a shot layer for context
+    (a set lit by a shot's light layer) sees that shot's characters and
+    props tagged on its stage; they are the shot's, not the asset's. Asset
+    exports must not track them and asset builds must not sublayer them,
+    or the set publishes with the shot's cast inside it (HideAndReek's
+    SET/Park, 2026-10-07).
+    """
+    for entry in inputs or ():
+        uri = str(entry.get('uri', '')) if isinstance(entry, dict) else ''
+        if uri.startswith(('entity:/shots/', 'groups:/shots/')):
+            return True
+    return False
+
+
 def resolve_asset_build(
     graph: Graph,
     api,
@@ -414,6 +432,8 @@ def resolve_asset_build(
             tracked_uri = Uri.parse_unsafe(asset_datum['asset'])
             if tracked_uri == asset_uri:
                 continue  # self-import — never sublayer an asset into itself
+            if sourced_from_shot(asset_datum.get('inputs')):
+                continue  # a shot's asset seen through an imported shot layer
             if tracked_uri in asset_stamps and stamp <= asset_stamps[tracked_uri]:
                 continue
             asset_stamps[tracked_uri] = stamp

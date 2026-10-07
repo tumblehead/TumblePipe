@@ -63,7 +63,7 @@ def submit_batch(
 
     # Get deadline ready
     try: farm = Deadline()
-    except Exception: return error('Could not connect to Deadline')
+    except Exception as e: return error(f'Could not connect to Deadline: {e}')
 
     # Open temporary directory
     root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))

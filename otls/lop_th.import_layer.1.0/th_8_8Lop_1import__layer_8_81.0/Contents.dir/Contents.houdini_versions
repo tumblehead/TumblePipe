@@ -8,6 +8,7 @@
 		"hdaroot/IN_stage.userdata":0,
 		"hdaroot/output.userdata":0,
 		"hdaroot/merge.userdata":0,
-		"hdaroot/bypass.userdata":0
+		"hdaroot/bypass.userdata":0,
+		"hdaroot/inline_flatten.userdata":0
 	}
 }

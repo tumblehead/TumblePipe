@@ -1,6 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 import platform
+import os
 import logging
 import shutil
 import re
@@ -124,11 +125,43 @@ def _parse_pools(output):
         output.replace('\r\n', '\n').split('\n')
     ))
 
-def _get_deadline_path():
-    raw_path = app.call(['cmd.exe', '/c', 'echo', '%DEADLINE_PATH%']).splitlines()[-1]
-    assert raw_path is not None, 'Deadline path not found'
+class DeadlineNotInstalled(RuntimeError):
+    """This machine has no Deadline Client to submit through."""
+
+_NOT_INSTALLED_HINT = (
+    'Rendering, playblasts, compositing and farm publishes are submitted '
+    'to a Thinkbox Deadline render farm. Install the Deadline Client on '
+    'this machine (its installer sets DEADLINE_PATH) and restart Houdini. '
+    'Without a farm, see "Rendering without a farm" in the compositing docs.'
+)
+
+def deadline_setup_problem(environ = None):
+    """Why this machine cannot submit to Deadline, or None when it can.
+
+    Reads ``DEADLINE_PATH`` (set by the Deadline Client installer) instead of
+    asking ``cmd.exe`` to expand it: an unset variable echoes back as the
+    literal text ``%DEADLINE_PATH%``, which used to surface to artists as
+    ``Invalid Deadline installation path: "%DEADLINE_PATH%"``.
+    """
+    if environ is None:
+        environ = os.environ
+    raw_path = environ.get('DEADLINE_PATH', '').strip().strip('"')
+    if not raw_path:
+        return f'Deadline is not set up on this machine. {_NOT_INSTALLED_HINT}'
     bin_path = local_path(Path(raw_path.replace('\\', '/')))
-    assert bin_path.exists(), f'Invalid Deadline installation path: "{bin_path}"'
+    if not bin_path.exists():
+        return (
+            f'DEADLINE_PATH points at "{raw_path}", which does not exist. '
+            f'{_NOT_INSTALLED_HINT}'
+        )
+    return None
+
+def _get_deadline_path():
+    problem = deadline_setup_problem()
+    if problem is not None:
+        raise DeadlineNotInstalled(problem)
+    raw_path = os.environ['DEADLINE_PATH'].strip().strip('"')
+    bin_path = local_path(Path(raw_path.replace('\\', '/')))
     return bin_path / 'deadlinecommand.exe'
 
 def _get_repository_path(deadline_path):

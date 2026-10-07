@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import shutil
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -1119,6 +1120,11 @@ class PipelineCatalog(Catalog):
                 lambda aid=asset_id: self._open_database_editor(aid),
             ),
         ]
+        if "type:asset" in asset.tags and "type:group" not in (asset.tags or ()):
+            items.insert(2, (
+                "Duplicate…",
+                lambda aid=asset_id: self._duplicate_asset(aid),
+            ))
         # For shots, offer a "Clear scene" item when one is set directly
         # on the shot (not inherited from sequence).
         if "type:shot" in asset.tags and self._shot_has_direct_scene_ref(asset_id):
@@ -1740,6 +1746,137 @@ class PipelineCatalog(Catalog):
         # error to the user instead of failing silently.
         from tumblepipe.config_editor import open_database_editor
         open_database_editor(uri)
+
+    def _duplicate_asset(self, asset_id: str) -> None:
+        """Make a new asset from this one's latest workfiles.
+
+        Creates the entity (with the source's own properties) here, then
+        copies each department's latest workfile to it in a background
+        hython (``pipe.houdini.duplicate_workfiles``), so the open scene is
+        never touched. Nothing is published.
+        """
+        import copy
+        import json
+        import os
+        import subprocess
+        import tempfile
+        import threading
+
+        import hou
+        from PySide6.QtWidgets import QInputDialog
+
+        from tumblepipe.pipe import duplicate
+        from tumblepipe.pipe.entity_files import has_entity_files
+        from tumblepipe.pipe.houdini import duplicate_workfiles
+
+        from .houdini import session_nc_type
+        from .resolver import EntityNotRegistered
+
+        proj = self._resolver.project_for(asset_id)
+        if proj is None:
+            return
+        self._activate_project(proj)
+        try:
+            source_uri = self._resolver.registered_uri_for(asset_id)
+        except EntityNotRegistered as exc:
+            report_failure(f"Duplicate {asset_id}", exc)
+            return
+        if source_uri is None:
+            return
+        category, source_name = source_uri.segments[1], source_uri.segments[-1]
+        new_name, ok = QInputDialog.getText(
+            hou.qt.mainWindow(), "Duplicate asset",
+            f"Name for the copy of {source_name}:", text=f"{source_name}_copy",
+        )
+        new_name = new_name.strip() if ok else ""
+        if not new_name:
+            return
+        client = self._clients.get(proj.name)
+        target_uri = uris.entity_asset(category, new_name)
+        if client.config.get_properties(target_uri) is not None:
+            hou.ui.displayMessage(f"Asset '{new_name}' already exists in '{category}'.")
+            return
+        if has_entity_files(target_uri):
+            hou.ui.displayMessage(
+                f"Files for an asset named '{new_name}' are still on disk in "
+                f"'{category}'. Pick another name, or move them out of the way.",
+            )
+            return
+
+        plan = duplicate.plan_duplicate(
+            source_uri, self._list_entity_departments("assets"),
+        )
+        properties = copy.deepcopy(client.config.get_own_properties(source_uri) or {})
+        properties["name"] = new_name
+        try:
+            client.config.add_entity(target_uri, properties)
+        except Exception as exc:
+            report_failure(f"Duplicate {source_name}", exc)
+            return
+        self._cached_assets = None
+        new_id = f"{proj.name}/{category}/{new_name}"
+        if not plan:
+            hou.ui.setStatusMessage(
+                f"Created {new_name}; {source_name} has no workfiles to copy.",
+            )
+            self._request_card_refresh_for_id(new_id)
+            return
+
+        job_dir = Path(tempfile.mkdtemp(prefix="th_duplicate_"))
+        job_path = job_dir / "job.json"
+        job_path.write_text(json.dumps({
+            "source": str(source_uri),
+            "target": str(target_uri),
+            "nc_type": session_nc_type(),
+            "workfiles": [[dept, str(path)] for dept, path in plan],
+        }), encoding="utf-8")
+        hython = Path(os.environ["HFS"]) / "bin" / (
+            "hython.exe" if os.name == "nt" else "hython"
+        )
+        log_path = job_dir / "duplicate.log"
+        hou.ui.setStatusMessage(
+            f"Duplicating {source_name} to {new_name}: copying "
+            f"{len(plan)} workfile(s) in the background…",
+        )
+
+        def _finished(code: int, lines: list[str]) -> None:
+            self.invalidate_cache()
+            self._request_card_refresh_for_id(new_id)
+            results = []
+            for line in lines:
+                try:
+                    results.append(json.loads(line))
+                except ValueError:
+                    continue
+            failed = [r for r in results if "error" in r]
+            if code == 0 and not failed:
+                hou.ui.setStatusMessage(
+                    f"Duplicated {source_name} to {new_name} "
+                    f"({len(results)} workfile(s)); publish it from its own "
+                    "workfiles.",
+                )
+                return
+            detail = "\n".join(
+                f"{r['department']}: {r['error']}" for r in failed
+            ) or f"hython exited with {code}"
+            hou.ui.displayMessage(
+                f"Duplicating {source_name} to {new_name} did not finish:\n\n"
+                f"{detail}\n\nLog: {log_path}",
+                severity=hou.severityType.Warning,
+            )
+
+        def _run() -> None:
+            with open(log_path, "w", encoding="utf-8") as log_file:
+                process = subprocess.run(
+                    [str(hython), duplicate_workfiles.__file__, str(job_path)],
+                    stdout=subprocess.PIPE, stderr=log_file,
+                    text=True, env=os.environ.copy(), check=False,
+                )
+                log_file.write(process.stdout or "")
+            lines = (process.stdout or "").splitlines()
+            run_on_main_thread(_finished, process.returncode, lines)
+
+        threading.Thread(target=_run, name="th-duplicate", daemon=True).start()
 
     def _edit_description(self, asset_id: str) -> None:
         """Open a multiline text dialog to edit the description sidecar."""
@@ -3208,9 +3345,24 @@ class PipelineCatalog(Catalog):
             return False
         project_name = parts[0]
         client = self._clients.get(project_name)
+        # The entity's folders go to _deleted/ with it: left in place, a new
+        # entity of the same name would pick up all of the old work.
+        from tumblepipe.pipe.entity_files import ArchiveError, archive_entity_folders
+        proj = self._resolver.project_for(asset_id)
+        if proj is not None:
+            self._activate_project(proj)
+        try:
+            archived = archive_entity_folders(uri)
+        except ArchiveError as exc:
+            raise ConfigError(self.id, str(exc), cause=exc) from exc
         try:
             client.config.remove_entity(uri)
         except Exception as exc:
+            for source, dest in reversed(archived):
+                try:
+                    shutil.move(str(dest), str(source))
+                except OSError:
+                    log.exception("Could not restore %s to %s", dest, source)
             raise ConfigError(
                 self.id,
                 f"failed to remove entity {asset_id}: {exc}",

@@ -6,5 +6,6 @@
 	"hdaroot/bypass.def":1764848295,
 	"hdaroot.def":1765468404,
 	"hdaroot/import.def":1765276027,
-	"hdaroot/layerbreak.def":1764848295
+	"hdaroot/layerbreak.def":1764848295,
+	"hdaroot/inline_flatten.def":1791360312
 }

@@ -69,6 +69,42 @@ The **source** switch flips the whole network between farm renders and
 locally generated proxy frames; **Preview** renders the current frame in
 place.
 
+The first **Update** refuses to build when the renders cannot make a comp:
+no channel has a complete render, or a rendered channel is missing its
+`beauty` or `alpha` AOV. It says which, and names the folder it searched.
+Nothing is built and the node is not marked built, so the next **Update**
+after the renders land builds normally.
+
+## Rendering without a farm
+
+Submit Render Jobs, the composite chain, farm playblasts and farm publishes
+all submit to a Thinkbox **Deadline** farm. A machine without the Deadline
+Client (whose installer sets `DEADLINE_PATH`) is told so when it presses
+Submit; see `docs/deadline.md` for setting one up. Without a farm:
+
+- **Publish** — choose *Local* in the publish process dialog.
+- **Playblast** — the `th::playblast` node renders and publishes locally.
+- **Renders for comp** — render with Karma yourself and write the frames
+  where `build_comp` looks:
+
+  ```
+  render:/render/shots/<seq>/<shot>/render/<channel>/v0001/
+      context.json
+      beauty/<seq>_<shot>_<channel>_beauty_v0001.1001.exr
+      alpha/<seq>_<shot>_<channel>_alpha_v0001.1001.exr
+      <aov>/<seq>_<shot>_<channel>_<aov>_v0001.1001.exr
+  ```
+
+  `<channel>` is a shot channel (`default` unless the shot has more).
+  `context.json` holds the rendered range, e.g.
+  `{"first_frame": 1001, "last_frame": 1100, "step_size": 1}`. Every frame
+  in that range must exist for every AOV folder or the version is ignored.
+  Write one EXR per AOV per frame, with its layer named after the AOV (the
+  name Karma gives the AOV's subimage). `beauty` and `alpha` are required;
+  `beauty_*` light groups, `objid_*`, `holdout_*`, `albedo`, `normal`,
+  `depth`, `uv` and `position` are picked up when present. Use the next
+  free `v####` for each new render.
+
 ## The shot camera in comp
 
 `th::Cop/import_lop_camera` brings the shot's render camera into COPs, for

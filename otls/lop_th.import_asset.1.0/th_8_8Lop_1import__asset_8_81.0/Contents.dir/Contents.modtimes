@@ -4,5 +4,6 @@
 	"hdaroot.def":1780936762,
 	"hdaroot/metadata.def":1780936270,
 	"hdaroot/transform.def":1780936591,
-	"hdaroot/output.def":1780936271
+	"hdaroot/output.def":1780936271,
+	"hdaroot/inline_flatten.def":1791360248
 }

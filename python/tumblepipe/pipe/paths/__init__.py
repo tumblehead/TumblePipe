@@ -40,6 +40,7 @@ from tumblepipe.pipe.paths.render import (
     get_daily_path,
     get_render,
     get_render_context,
+    comp_input_problems,
 )
 from tumblepipe.pipe.paths.workspace import (
     HIP_EXTENSIONS,
@@ -116,6 +117,7 @@ __all__ = [
     'get_daily_path',
     'get_render',
     'get_render_context',
+    'comp_input_problems',
     # workspace
     'HIP_EXTENSIONS',
     'Context',

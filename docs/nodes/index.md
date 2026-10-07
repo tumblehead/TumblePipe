@@ -257,10 +257,19 @@ and [mid-session](../composition.md#picking-up-new-versions-mid-session).
 
 **Reference** (default) keeps the imported layer behind a layerbreak and tags
 the asset's root prim with pipeline metadata, so the export re-references it
-rather than baking it in. **Inline** drops the layerbreak and marks the prims
-as inlined, so the geometry is baked into your department's export. Use
-Inline deliberately; leaving a real asset untagged trips the
+rather than baking it in. **Inline** drops the layerbreak, flattens the
+imported staged build into an editable layer (an inner Configure Layer,
+`inline_flatten`) and marks the prims as inlined, so the geometry is baked
+into your department's export. Every export that inlines an asset carries its
+own full copy of it, so prefer Reference when you only need to place the
+asset. Use Inline deliberately; leaving a real asset untagged trips the
 [dropped-metadata guard](../composition.md#dropped-metadata-guard) on export.
+
+Before the flatten existed, Inline only dropped the layerbreak. The staged
+file then stayed a file layer, the export wrote an absolute arc to
+`export/assets/…/_staged/…` instead of its contents, and the
+[escaping-arc guard](../composition.md#layer-save-paths-and-export-portability)
+aborted the export.
 
 ### Exclude departments
 
