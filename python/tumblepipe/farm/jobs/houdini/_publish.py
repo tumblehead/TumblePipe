@@ -41,6 +41,26 @@ def is_out_of_date(entity_uri: Uri, channel_name: str, department_name: str) -> 
     return hip_path.stat().st_mtime > export_path.stat().st_mtime
 
 
+def bundle_workfile(workfile_path: Path, department_name: str, paths: dict) -> Path:
+    """Add a workfile and its context.json to a job bundle.
+
+    Returns the workfile's path inside the bundle. Each workfile gets a
+    folder of its own so its context.json travels with it: export nodes set
+    to 'from_context' resolve their entity through ``get_workfile_context``,
+    which reads the context.json next to the hip. The old layout put every
+    hip of a batch in one ``workfiles/`` folder with a single context.json,
+    so the last workfile bundled won and every other department resolved to
+    its entity and failed with "No export node found".
+    """
+    bundle_dir = Path('workfiles') / f'{department_name}_{workfile_path.stem}'
+    workfile_dest = bundle_dir / workfile_path.name
+    paths[workfile_path] = workfile_dest
+    context_path = workfile_path.parent / 'context.json'
+    if context_path.exists():
+        paths[context_path] = bundle_dir / 'context.json'
+    return workfile_dest
+
+
 def create_publish_job(
     entity_uri: Uri,
     department_name: str,
@@ -83,15 +103,7 @@ def create_publish_job(
         )
     render_range = frame_range.full_range()
 
-    # Add workfile to paths for bundling
-    workfile_dest = Path('workfiles') / f'{department_name}_{workfile_path.name}'
-    paths[workfile_path] = workfile_dest
-
-    # Bundle context.json alongside workfile (for group workfile detection)
-    context_path = workfile_path.parent / 'context.json'
-    if context_path.exists():
-        context_dest = Path('workfiles') / 'context.json'
-        paths[context_path] = context_dest
+    workfile_dest = bundle_workfile(workfile_path, department_name, paths)
 
     # Build config for publish_task.build()
     config = {

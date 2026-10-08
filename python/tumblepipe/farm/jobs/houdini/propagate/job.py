@@ -24,6 +24,7 @@ from tumblepipe.pipe.paths import (
 from tumblepipe.apps.deadline import Job
 from tumblepipe.pipe import graph
 from tumblepipe.farm.jobs.houdini import _common
+from tumblepipe.farm.jobs.houdini._publish import bundle_workfile
 
 import tumblepipe.farm.tasks.publish.task as publish_task
 import tumblepipe.farm.tasks.build.task as build_task
@@ -184,14 +185,7 @@ def build(
 
         logging.debug(f'Found workfile for {target_uri}: {workfile_path}')
 
-        workfile_dest = Path('workfiles') / f'{dept_name}_{workfile_path.name}'
-        paths[workfile_path] = workfile_dest
-
-        # Bundle context.json alongside workfile (for group workfile detection)
-        context_path = workfile_path.parent / 'context.json'
-        if context_path.exists():
-            context_dest = Path('workfiles') / 'context.json'
-            paths[context_path] = context_dest
+        workfile_dest = bundle_workfile(workfile_path, dept_name, paths)
 
         publish_config = {
             'entity': {'uri': str(target_uri), 'department': dept_name},

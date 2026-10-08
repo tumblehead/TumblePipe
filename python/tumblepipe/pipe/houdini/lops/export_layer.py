@@ -1066,8 +1066,9 @@ class ExportLayer(EntityNode):
         workfile_path = latest_hip_file_path(entity_uri, department_name)
         if not workfile_path.exists():
             raise ExportLayerError(f"No workfile found for {entity_uri} {department_name}")
-        workfile_dest = Path('workfiles') / workfile_path.name
-        paths = {workfile_path: workfile_dest}
+        from tumblepipe.farm.jobs.houdini._publish import bundle_workfile
+        paths = {}
+        workfile_dest = bundle_workfile(workfile_path, department_name, paths)
 
         config = {
             'entity': {

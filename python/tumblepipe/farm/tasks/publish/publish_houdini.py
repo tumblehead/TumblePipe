@@ -29,6 +29,54 @@ def _error(msg):
     print(f'ERROR: {msg}')
     return 1
 
+class NothingToPublish(Exception):
+    """The workfile has no export for this entity/department.
+
+    A warning, not a failure: the department is skipped and the task still
+    succeeds. Raised only when the workfile's export nodes all resolved and
+    none of them is meant for the entity — see :func:`_no_export_node`.
+    """
+
+def _no_export_node(entity_uri: Uri, department_name: str, group) -> Exception:
+    """Decide what a zero-match export search means.
+
+    ``NothingToPublish`` when the workfile genuinely has nothing for the
+    entity: a Multi workfile with no export node of the member's own (the
+    member never got a column), or a single-entity workfile with no export
+    node at all. Anything else — an export node whose entity does not
+    resolve, or export nodes for this entity that the matcher still rejected
+    — is a resolution problem, and publishing nothing would hide it, so it
+    stays a ``RuntimeError`` that names what the nodes resolved to.
+    """
+    nodes = list(map(
+        export_layer.ExportLayer,
+        ns.list_by_node_type('export_layer', 'Lop')
+    ))
+    resolved = [
+        (node.path(), node.get_entity_uri(), node.get_department_name())
+        for node in nodes
+    ]
+    unresolved = any(uri is None or dept is None for _, uri, dept in resolved)
+    targets_entity = any(uri == entity_uri for _, uri, _ in resolved)
+
+    if not nodes:
+        return NothingToPublish(
+            f'The workfile has no export nodes; nothing to publish for '
+            f'{entity_uri}/{department_name}'
+        )
+    if group is not None and not unresolved and not targets_entity:
+        return NothingToPublish(
+            f'The Multi workfile has no export node for {entity_uri}; '
+            f'nothing to publish for {entity_uri}/{department_name}'
+        )
+    found = ', '.join(
+        f'{path} -> {uri}/{dept}' for path, uri, dept in resolved
+    )
+    return RuntimeError(
+        f'No export node found for {entity_uri}/{department_name} — '
+        f'refusing to publish an empty version (export nodes: {found})'
+    )
+
 def _get_workfile_group():
     """Check if current workfile is a group workfile and return group if so."""
     file_path = Path(hou.hipFile.path())
@@ -124,14 +172,11 @@ def _publish(entity_uri: Uri, department_name: str):
             )
         ))
 
-        # Execute the export node. Zero matches means the matcher failed
-        # (wrong URI/department or an unresolved node context) — publishing
-        # anyway would save a new version with nothing exported.
+        # Execute the export node. Zero matches is either a workfile with
+        # nothing for this asset (skipped) or a matcher/context failure
+        # (raised) — see _no_export_node.
         if len(export_nodes) == 0:
-            raise RuntimeError(
-                f'No export node found for {asset_uri}/{department_name} — '
-                'refusing to publish an empty version'
-            )
+            raise _no_export_node(asset_uri, department_name, group)
 
         asset_export_node = export_nodes[0]
         asset_export_node.execute(force_local=True)
@@ -193,14 +238,11 @@ def _publish(entity_uri: Uri, department_name: str):
             )
         ))
 
-        # Execute the export node. Zero matches means the matcher failed
-        # (wrong URI/department or an unresolved node context) — publishing
-        # anyway would save a new version with nothing exported.
+        # Execute the export node. Zero matches is either a workfile with
+        # nothing for this shot (skipped) or a matcher/context failure
+        # (raised) — see _no_export_node.
         if len(shot_export_nodes) == 0:
-            raise RuntimeError(
-                f'No export node found for {shot_uri}/{department_name} — '
-                'refusing to publish an empty version'
-            )
+            raise _no_export_node(shot_uri, department_name, group)
 
         shot_export_node = shot_export_nodes[0]
         shot_export_node.execute(force_local=True)
@@ -213,20 +255,32 @@ def _publish(entity_uri: Uri, department_name: str):
         group = get_group(entity_uri)
         if group is None:
             raise RuntimeError(f'Group not found: {entity_uri}')
+        # A member with nothing to publish is skipped, not fatal: it must not
+        # stop the members after it from publishing.
+        skipped = []
         for member_uri in group.members:
-            if member_uri.segments[0] == 'shots':
-                _publish_shot(
-                    shot_uri = member_uri,
-                    department_name = department_name
-                )
-            elif member_uri.segments[0] == 'assets':
-                _publish_asset(
-                    asset_uri = member_uri,
-                    department_name = department_name
-                )
-            else:
-                raise RuntimeError(
-                    f'Group {entity_uri} member has unknown entity type: {member_uri}')
+            try:
+                if member_uri.segments[0] == 'shots':
+                    _publish_shot(
+                        shot_uri = member_uri,
+                        department_name = department_name
+                    )
+                elif member_uri.segments[0] == 'assets':
+                    _publish_asset(
+                        asset_uri = member_uri,
+                        department_name = department_name
+                    )
+                else:
+                    raise RuntimeError(
+                        f'Group {entity_uri} member has unknown entity type: {member_uri}')
+            except NothingToPublish as e:
+                print(f'WARNING: {e}')
+                skipped.append(member_uri)
+        if skipped and len(skipped) == len(group.members):
+            raise NothingToPublish(
+                f'No member of {entity_uri} has anything to publish for '
+                f'{department_name}'
+            )
     elif entity_uri.segments[0] == 'assets':
         _publish_asset(
             asset_uri = entity_uri,
@@ -311,6 +365,7 @@ def main(config) -> int:
     # Process all entities using the same code path
     _headline('Processing Entities')
     failures: list[tuple[str, str]] = []  # (department, error)
+    skipped: list[tuple[str, str]] = []  # (department, reason)
     for curr_entity_uri, curr_dept_name in downstream_entity_pairs:
         print(f'\nDepartment: {curr_dept_name}')
 
@@ -333,6 +388,11 @@ def main(config) -> int:
             _headline('Publishing')
             _publish(curr_entity_uri, curr_dept_name)
 
+        except NothingToPublish as e:
+            print(f'WARNING: {e} — skipping department {curr_dept_name}')
+            skipped.append((curr_dept_name, str(e)))
+            continue
+
         except Exception as e:
             import traceback
             print(f'Error processing department {curr_dept_name}: {e}')
@@ -342,6 +402,10 @@ def main(config) -> int:
 
     # Done
     _headline('Done')
+    if skipped:
+        print(f'WARNING: {len(skipped)} department(s) had nothing to publish:')
+        for dept_name, reason in skipped:
+            print(f'  - {dept_name}: {reason}')
     if failures:
         print(f'FAILED: {len(failures)} department(s) did not publish:')
         for dept_name, error in failures:

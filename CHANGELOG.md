@@ -12,6 +12,21 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.63.1 — 2026-10-07
+
+### Fixes
+- fix(catalog): display_name strips only the lowercase 'th ' prefix (`3de62b6`)
+- fix(template): drop the /scene prim from the root default layer (`fb37e8a`)
+- fix(staging): a set's shot-sourced entries no longer hide a shot's own asset refs (`3e99f21`)
+
+### Documentation
+- docs: render validators find the settings prim on the stage (`cdc9c1e`)
+- docs: list which render settings the submit dialog can override (`b729fd3`)
+- docs: regenerate CHANGELOG.md for v1.63.0 (`05fa3f8`)
+
+### Tests
+- test: upgrade the suite to minigun 6.1.0 (`1b37685`)
+
 ## v1.63.0 — 2026-10-07
 
 ### Features
