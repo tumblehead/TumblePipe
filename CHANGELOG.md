@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.63.2 — 2026-10-08
+
+### Fixes
+- fix(publish): skip a department with nothing to publish instead of failing (`a953d7d`)
+- fix(farm): bundle each workfile with its own context.json (`0ceb5c8`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.63.1 (`c419437`)
+
 ## v1.63.1 — 2026-10-07
 
 ### Fixes

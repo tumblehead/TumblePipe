@@ -19,7 +19,7 @@ from tumblepipe.util.io import (
     store_json
 )
 from tumblepipe.config.timeline import BlockRange
-from tumblepipe.farm._common import is_int
+from tumblepipe.farm._common import ensure_dir, is_int
 from tumblepipe.apps import exr
 from tumblepipe.farm.tasks.env import print_env
 
@@ -185,7 +185,7 @@ def _composite_frame(
         if len(layer_output_paths) == 1:
             # Only one layer, copy it directly
             _, layer_path, _ = layer_output_paths[0]
-            output_frame_path.parent.mkdir(parents=True, exist_ok=True)
+            ensure_dir(output_frame_path.parent)
             shutil.copyfile(local_path(layer_path), local_path(output_frame_path))
         else:
             # Multiple layers, composite them
@@ -213,7 +213,7 @@ def _composite_frame(
             print(f'    Composite order: {" --over ".join([name for name, _, _ in reversed(layer_output_paths)])}')
 
             # Write final output with proper colorspace metadata
-            output_frame_path.parent.mkdir(parents=True, exist_ok=True)
+            ensure_dir(output_frame_path.parent)
             oiiotool_cmd.extend([
                 *exr.ACESCG_ATTRIB_ARGS,
                 '-o', path_str(local_path(output_frame_path))

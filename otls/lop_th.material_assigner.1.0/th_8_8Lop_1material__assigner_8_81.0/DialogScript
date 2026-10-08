@@ -118,6 +118,17 @@
                     "preview"   "Preview"
                 }
             }
+            parm {
+                name    "bindstrength#"
+                label   "Strength"
+                type    ordinal
+                default { "0" }
+                menu {
+                    "fallback"  "Default"
+                    "strong"    "Stronger than Descendants"
+                    "weak"      "Weaker than Descendants"
+                }
+            }
         }
 
     }

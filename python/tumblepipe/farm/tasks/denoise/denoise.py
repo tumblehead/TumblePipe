@@ -9,8 +9,9 @@ take a seat an artist needed, and the graph cooked once per AOV per frame.
 license token, so the whole job runs here in plain python. Per frame:
 merge the per-AOV EXRs into one multi-plane file (idenoise reads its
 normal/albedo guides as planes *inside* the input), denoise every AOV in one
-call, then split the planes back out and DWAB-compress them to their published
-paths. See designs/denoise-without-hython.md.
+call, then split the planes back out and compress them to their published
+paths -- DWAB for colour AOVs, lossless ZIP for data passes (pipe/aovs.py).
+See designs/denoise-without-hython.md.
 """
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -37,7 +38,9 @@ from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import IDenoise
 from tumblepipe.apps.deadline import log_progress
 from tumblepipe.apps import exr
+from tumblepipe.farm._common import ensure_dir
 from tumblepipe.farm.tasks.env import print_env
+from tumblepipe.pipe.aovs import DATA_AOV_COMPRESSION, is_data_aov
 from tumblepipe.farm.tasks.denoise import _spec
 
 # The guide planes OIDN uses to preserve detail. idenoise resolves them by
@@ -181,8 +184,13 @@ def _denoise_frame(
             failed.add(aov_name)
             continue
         output_frame_path = _get_frame_path(output_paths[aov_name], frame_index)
-        local_path(output_frame_path).parent.mkdir(parents = True, exist_ok = True)
-        exr.dwab_encode(extracted_path, output_frame_path)
+        ensure_dir(local_path(output_frame_path).parent)
+        # Lossless for data passes (mattes, depth, normals...), DWAB for
+        # colour -- see pipe/aovs.py.
+        exr.encode(
+            extracted_path, output_frame_path,
+            DATA_AOV_COMPRESSION if is_data_aov(aov_name) else 'dwab:45'
+        )
         if not local_path(output_frame_path).exists():
             print(f'  ERROR: Frame not written: {output_frame_path}')
             failed.add(aov_name)

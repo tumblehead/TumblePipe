@@ -685,7 +685,11 @@ def build_partial_notify_job(
     first_frame = config['settings']['first_frame']
     last_frame = config['settings']['last_frame']
     step_size = config['settings']['step_size']
-    channel_name = config['tasks']['partial_render']['channel_name']
+    # The Discord channel to post in. Not the render channel above: reusing
+    # one name for both pointed the frame path at denoise/<discord channel>/
+    # (e.g. denoise/renders/...), so every partial notify failed with
+    # "First frame not found".
+    discord_channel_name = config['tasks']['partial_render']['channel_name']
 
     # Find middle frame
     frame_range = BlockRange(
@@ -723,7 +727,7 @@ def build_partial_notify_job(
         priority = priority,
         pool_name = pool_name,
         user_name = user_name,
-        channel_name = channel_name,
+        channel_name = discord_channel_name,
         message = message,
         command = dict(
             mode = 'partial',

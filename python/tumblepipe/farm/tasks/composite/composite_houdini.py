@@ -17,7 +17,7 @@ from tumblepipe.util.io import (
 )
 from tumblepipe.config.channels import read_channel_names
 from tumblepipe.config.timeline import BlockRange, get_fps
-from tumblepipe.farm._common import is_int
+from tumblepipe.farm._common import ensure_dir, is_int
 from tumblepipe.util.uri import Uri
 from tumblepipe.pipe.houdini import util
 from tumblepipe.apps.deadline import log_progress
@@ -167,7 +167,7 @@ def main(
         for frame_index, layer_paths in all_layer_aov_paths.items():
             for layer_name, (temp_path, output_path) in layer_paths.items():
                 print(f'Copying file: {output_path}')
-                output_path.parent.mkdir(parents=True, exist_ok=True)
+                ensure_dir(output_path.parent)
                 shutil.copyfile(temp_path, output_path)
 
         # Create the output receipts

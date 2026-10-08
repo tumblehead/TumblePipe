@@ -24,7 +24,7 @@ from tumblepipe.util.io import (
     store_json
 )
 from tumblepipe.config.timeline import BlockRange
-from tumblepipe.farm._common import is_int
+from tumblepipe.farm._common import ensure_dir, is_int
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Husk, ITileStitch
 from tumblepipe.apps import exr
@@ -203,7 +203,7 @@ def main(
             for temp_aov_path, output_aov_path in aov_paths.values():
                 print(f'Copying file: {output_aov_path}')
                 output_aov_path = local_path(output_aov_path)
-                output_aov_path.parent.mkdir(parents=True, exist_ok=True)
+                ensure_dir(output_aov_path.parent)
                 shutil.copyfile(temp_aov_path, output_aov_path)
         
         # Create the output receipts

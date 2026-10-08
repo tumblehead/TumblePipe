@@ -73,6 +73,11 @@ Every consumer sorts AOVs the same way (`aov.py`): `beauty` first, then the
 everything else — that is the order `build_comp` and the turntable read them
 in.
 
+Farm renders write the data AOVs here (`alpha`, `normal`, `depth`,
+`position`, `uv`, `samples`, the `*_mse` variances other than
+`beauty_mse`) with lossless ZIP and the colour ones with DWAB; see
+[Compositing → Compression](../compositing.md#compression).
+
 ## `th::lpe_tags` (LOP)
 
 Light groups: tag lights with an LPE tag and get one `beauty_<tag>` AOV per
@@ -122,6 +127,13 @@ Source: [`otls/lop_th.puzzlemattes.4.0`](../../otls/lop_th.puzzlemattes.4.0/th_8
 
 The node has a viewer state, but it is a stub: selecting prims in it does
 not fill the channels. Type the patterns.
+
+Farm renders write every `objid_*` matte with lossless ZIP, so its edges are
+exactly what Karma filtered; see
+[Compositing → Compression](../compositing.md#compression).
+
+Mattes are not special to the denoiser: the denoise job runs OIDN over every
+AOV except the `*_mse` variances, the mattes included.
 
 ## `th::render_layer_setup` (LOP)
 

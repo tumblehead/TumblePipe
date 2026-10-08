@@ -342,19 +342,26 @@ def extract_aov(input_path: Path, aov_name: str, output_path: Path) -> int:
         '-o', path_str(local_path(output_path))
     ])
 
-def dwab_encode(input_path, output_path):
+def encode(input_path, output_path, compression: str):
+    """Re-encode an EXR with ``compression`` (an oiiotool spelling, e.g.
+    ``'dwab:45'`` or ``'zip'``).
+
+    This is the publish step of the denoise chain, whose channel shuffles
+    dropped the colorspace metadata -- re-stamp it here.
+    """
 
     # Check if input path is an EXR file
     if input_path.suffix.lower() != '.exr': return None
 
-    # DWAB compress. This is the publish step of the denoise chain, whose
-    # channel shuffles dropped the colorspace metadata -- re-stamp it here.
     return _run([
         'oiiotool', path_str(local_path(input_path)),
         *ACESCG_ATTRIB_ARGS,
-        '--compression', 'dwab:45',
+        '--compression', compression,
         '-o', path_str(local_path(output_path))
     ])
+
+def dwab_encode(input_path, output_path):
+    return encode(input_path, output_path, 'dwab:45')
 
 def to_jpeg(input_path, output_path):
 

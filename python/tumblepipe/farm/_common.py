@@ -12,6 +12,7 @@ the copy-pasted parts:
 - ``valid_entity``         — the universal ``{uri, department}`` entity block
 - ``run_task_cli``         — argparse + load + validate + main
 - ``configure_logging``    — the ``__main__`` logging setup
+- ``ensure_dir``           — mkdir on the shared drive that survives a race
 
 ``farm/jobs/houdini/_common.py`` re-exports the primitives so the job modules
 keep their existing import surface. These modules run as standalone scripts on
@@ -26,6 +27,7 @@ from typing import Callable
 import argparse
 import logging
 import sys
+import time
 
 from tumblepipe.util.io import load_json
 
@@ -117,6 +119,29 @@ def run_task_cli(
 
     # Run main
     return main(config)
+
+
+def ensure_dir(path: Path, attempts: int = 5, delay: float = 0.2) -> None:
+    """``path.mkdir(parents=True, exist_ok=True)`` that survives a race on SMB.
+
+    Farm tasks running at once create the same output folders on the shared
+    drive. ``exist_ok`` only swallows the "already exists" error when the
+    folder then reads back as a directory, and on an SMB share a folder
+    another worker created a moment ago can still read as missing -- so the
+    second worker failed with ``FileExistsError`` for a folder that was
+    there (HideAndReek 070 denoise, 2026-10-08). Retry briefly until it is
+    visible; anything else, or a folder that never appears, still raises.
+    """
+    for attempt in range(attempts):
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            return
+        except FileExistsError:
+            if path.is_dir():
+                return
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
 
 
 def configure_logging() -> None:

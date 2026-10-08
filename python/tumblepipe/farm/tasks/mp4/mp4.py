@@ -19,7 +19,7 @@ from tumblepipe.api import (
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import BlockRange, get_fps
-from tumblepipe.farm._common import is_int
+from tumblepipe.farm._common import ensure_dir, is_int
 from tumblepipe.apps import exr, mp4
 from tumblepipe.farm.tasks.env import print_env
 
@@ -103,7 +103,7 @@ def main(
         # Copy to output paths
         for output_path in missing_output_paths:
             output_path = local_path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            ensure_dir(output_path.parent)
             shutil.copyfile(temp_output_path, output_path)
 
     # Check that all the missing outputs exists

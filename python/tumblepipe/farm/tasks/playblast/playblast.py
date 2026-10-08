@@ -22,6 +22,7 @@ from tumblepipe.config.timeline import BlockRange
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Husk
 from tumblepipe.apps import mp4
+from tumblepipe.farm._common import ensure_dir
 from tumblepipe.farm.tasks.env import get_base_env, print_env, job_data_dir
 from tumblepipe.farm.tasks.playblast import _spec
 
@@ -180,7 +181,7 @@ def main(
         for output_path in output_paths:
             output_path = local_path(output_path)
             print(f'Copying file: {output_path}')
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            ensure_dir(output_path.parent)
             shutil.copyfile(temp_mp4_path, output_path)
 
         # Verify copies landed

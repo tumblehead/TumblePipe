@@ -70,12 +70,16 @@ def _seed_variant_geo(model_node, variant_names: list):
 
         column = hou.Vector2(i * VARIANT_STRIDE, 0.0)
 
-        box_node = create_variants.createNode('box', 'box')
-        box_node.parm('type').set('polymesh')
-        box_node.parmTuple('divrate').set((2, 2, 2))
-        box_node.setPosition(BOX_POS + column)
+        # The HDA ships its first output with a box already wired in; only
+        # the variants _sync_variants added still need one.
+        box_node = out_node.input(0)
+        if box_node is None:
+            box_node = create_variants.createNode('box', 'box')
+            box_node.parm('type').set('polymesh')
+            box_node.parmTuple('divrate').set((2, 2, 2))
+            out_node.setInput(0, box_node)
 
-        out_node.setInput(0, box_node)
+        box_node.setPosition(BOX_POS + column)
         out_node.setPosition(OUT_POS + column)
 
         # createNode() moved the display/render flags onto the box; the

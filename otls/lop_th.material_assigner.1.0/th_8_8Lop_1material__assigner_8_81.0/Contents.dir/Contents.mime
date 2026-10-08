@@ -104,10 +104,11 @@ end
 Content-Disposition: attachment; filename="hdaroot/assignmaterials.multiparm"
 Content-Type: text/plain
 
-3
+4
 primpattern# ../primpattern#
 matspecpath# ../matspecpath#
 bindpurpose# ../bindpurpose#
+bindstrength# ../bindstrength#
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/assignmaterials.chn"
@@ -142,6 +143,12 @@ Content-Type: text/plain
       flags = 0
       segment { length = 0 expr = chs(\"../bindpurpose1\") }
     }
+    channel bindstrength1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../bindstrength1\") }
+    }
   }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -170,7 +177,7 @@ cvexbindings1	[ 0	locks=0 ]	(	0	)
 matbindingfolder1	[ 0	locks=0 ]	(	1	)
 geosubset1	[ 0	locks=0 ]	(	"off"	)
 bindpurpose1	[ 0	locks=0 ]	(	[ bindpurpose1	"" ] 	)
-bindstrength1	[ 0	locks=0 ]	(	"fallback"	)
+bindstrength1	[ 0	locks=0 ]	(	[ bindstrength1	0 ] 	)
 bindmethod1	[ 0	locks=0 ]	(	"direct"	)
 bindcollectionexpand1	[ 0	locks=0 ]	(	"off"	)
 bindpath1	[ 0	locks=0 ]	(	""	)

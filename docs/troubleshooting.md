@@ -455,6 +455,46 @@ The job used the legacy **UV** plugin, which bakes the submitter's absolute
 package path; it only works when every worker mirrors that path. Submit with
 the default **HPM** plugin. See [Deadline and the render farm](deadline.md).
 
+### Farm publish failed: `No export node found … refusing to publish an empty version`
+
+The workfile's export nodes did not resolve to the shot and department being
+published, so the job refused to save an empty version. The message lists what
+each export node resolved to (`/stage/export_shot -> entity:/shots/…/010/light`).
+A node showing `None` could not work out its shot from context. A node pointing
+at another shot or department is set to the wrong **Entity** or **Department**.
+
+**Up to 1.63.1** this hit healthy workfiles too. A submission that published
+several departments of a shot bundled all their workfiles into one folder with
+a single `context.json`, so every workfile but one read another department's
+context, and its `from_context` export node matched nothing. 1.63.2 gives each
+bundled workfile its own folder and context. Resubmit from a current
+TumblePipe.
+
+### A farm publish finished with "nothing to publish"
+
+`WARNING: The Multi workfile has no export node for entity:/shots/…/160;
+nothing to publish for …` and the task succeeds. The shot is a member of the
+Multi, but the Multi's workfile has no column (no export node) for it, so there
+is nothing to export. The other members still publish. Add the shot's column to
+the Multi workfile if that department should cover it. A single-shot workfile
+with no export nodes at all reports the same way. Up to 1.63.1 both cases
+failed the task instead.
+
+### Farm job failed: `First frame not found: …/denoise/renders/…`
+
+The **notify** job of a **First / Middle / Last** render. It looked for the
+denoised frames under `denoise/<Discord channel>/` (`renders`) instead of
+`denoise/<render channel>/` (`default`), so it failed on every attempt even
+though the render and denoise succeeded. Fixed after 1.63.2; the frames
+themselves are fine.
+
+### Denoise task failed: `FileExistsError: [WinError 183] … denoise\…`
+
+Two farm tasks created the same output folder on the shared drive at once,
+and the second one could not see the folder the first had just made. Deadline
+retries the task and it usually succeeds. After 1.63.2 the farm tasks wait for
+the folder to appear instead of failing.
+
 ### Farm job failed: `Channel not found in discord config: renders`
 
 Every job family ends in a **notify** job that posts to Discord, so a notify

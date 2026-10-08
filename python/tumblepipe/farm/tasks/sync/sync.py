@@ -15,6 +15,7 @@ from tumblepipe.config.department import list_departments
 from tumblepipe.util.io import load_json, store_json
 from tumblepipe.pipe.paths import get_render_context
 from tumblepipe.util.uri import Uri
+from tumblepipe.farm._common import ensure_dir
 from tumblepipe.farm.tasks.env import print_env
 
 def _should_sync_aov(aov_name: str) -> bool:
@@ -104,7 +105,7 @@ def _sync_aov_frames(shot_uri, layer_name, aov_name, aov, render_range):
         aov_name /
         f'{uri_name}.####.exr'
     )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_dir(output_path.parent)
 
     # Copy frames
     for frame_index in render_range:

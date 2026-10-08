@@ -35,11 +35,36 @@ stamps **both** (`exr.ACESCG_ATTRIB_ARGS`):
   look). We stamp the AP1 primaries + D60 white point.
 
 The stamp is applied at every publish boundary — `split_subimages` (raw
-render), `dwab_encode` (denoise), and slapcomp's composite writes — never in
+render), `exr.encode` (denoise), and slapcomp's composite writes — never in
 the render/COP nodes themselves, so frames Karma or COPs write directly (an
 interactive ROP, a `build_comp` preview) still lack `chromaticities` and read
 as Rec709 in RV. Set the input colour space manually there. When adding a new
 oiiotool publish step, splice `ACESCG_ATTRIB_ARGS` into its final write.
+
+## Compression
+
+Farm renders write **colour** AOVs with lossy DWAB (level 45) and **data**
+AOVs with lossless ZIP. Colour is `beauty`, its `beauty_<tag>` light groups,
+`albedo` and the LPE splits (`diffuse`, `specular`, `volume`, `emission`);
+everything else is data — the `objid_*` / `holdout_*` mattes, `depth`,
+`normal`, `alpha`, `position`, `uv`, and any AOV the list does not know.
+DWA's quantisation is invisible in a picture but shows up in a comp that
+reads the numbers: soft matte edges, banded depth.
+
+The split is decided in one place,
+[`pipe/aovs.py`](../python/tumblepipe/pipe/aovs.py) (`is_data_aov`), and
+applied twice:
+
+- **At render.** The project's RenderProduct asks husk for DWAB, and an AOV
+  without its own compression inherits it. The farm's collapsed stage
+  therefore sets `driver:parameters:aov:husk:OpenEXR:compression = "zip"` on
+  every data RenderVar, so husk writes those parts losslessly; the split into
+  per-AOV files keeps each part's compression.
+- **At denoise.** The denoise publish re-encodes each AOV, DWAB for colour and
+  ZIP for data.
+
+Up to 1.63.2 every AOV was DWAB, data passes included. Renders from the
+Houdini session itself (a Karma ROP) still use the project's own settings.
 
 ## The build_comp node
 

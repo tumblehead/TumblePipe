@@ -1,6 +1,7 @@
 {
 	"hdaroot/setvariant.def":1788510246,
 	"hdaroot/normalize_sopnet/FETCH_VARIANT.def":1788510256,
+	"hdaroot/variant_sopnet/create_variants/box.def":1791280167,
 	"hdaroot/variant_sopnet/create_variants/OUT_default.def":1788506102,
 	"hdaroot/add_model_variants2.def":1788510246,
 	"hdaroot/INIT_ASSET_PRIMITIVE.def":1788510246,
