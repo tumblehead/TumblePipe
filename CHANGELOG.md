@@ -12,6 +12,21 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.64.0 — 2026-10-08
+
+### Features
+- feat(hda): material_assigner exposes Strength per assignment (`0bc1d1d`)
+- feat(hda): create_asset_model ships a starter box and imports subset groups (`2346bd1`)
+
+### Fixes
+- fix(render): write data passes with lossless ZIP compression (`c65d192`)
+- fix(farm): survive the mkdir race when tasks share an output folder (`63820c1`)
+- fix(render): the partial notify looks for frames under the render channel (`0d934df`)
+
+### Documentation
+- docs: data-pass compression and today's farm failures (`7147506`)
+- docs: regenerate CHANGELOG.md for v1.63.2 (`9f71a50`)
+
 ## v1.63.2 — 2026-10-08
 
 ### Fixes

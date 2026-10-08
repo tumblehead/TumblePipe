@@ -13,7 +13,6 @@ from typing import Union
 
 from tumblepipe.api import path_str
 from tumblepipe.config.channels import read_channel
-from tumblepipe.pipe.aovs import DATA_AOV_COMPRESSION, is_data_aov
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 
@@ -481,12 +480,10 @@ def find_render_camera_prim_path(stage, settings_prim_path: str) -> str:
     return camera_path
 
 
-def _composed_render_targets(staged_file_path: Path) -> tuple[str, list[str]]:
-    """``(settings prim path, RenderVar prim paths)`` for *staged_file_path*.
+def _render_overrides_prim_path(staged_file_path: Path) -> str:
+    """Where the render overrides must be authored for *staged_file_path*.
 
-    The settings path is where the render overrides must be authored; the
-    RenderVar paths are where each AOV's EXR compression is. Composes the
-    staged build and asks it, rather than assuming a path — see
+    Composes the staged build and asks it, rather than assuming a path — see
     :func:`find_render_settings_prim_path`. Every failure raises: an override
     the artist set in the submit dialog that lands nowhere is the exact
     silent-wrong-result this call exists to prevent, so it must not be
@@ -516,12 +513,7 @@ def _composed_render_targets(staged_file_path: Path) -> tuple[str, list[str]]:
             f'could not compose {staged_file_path} to locate its render '
             'settings'
         )
-    render_var_paths = [
-        str(prim.GetPath())
-        for prim in stage.Traverse()
-        if prim.GetTypeName() == 'RenderVar'
-    ]
-    return find_render_settings_prim_path(stage), render_var_paths
+    return find_render_settings_prim_path(stage)
 
 
 def _composed_render_view(staged_file_path: Path) -> tuple[str, str]:
@@ -529,7 +521,7 @@ def _composed_render_view(staged_file_path: Path) -> tuple[str, str]:
 
     One compose for both answers, since a playblast needs the camera the
     settings prim names and the settings path to read it from. Same raising
-    contract as :func:`_composed_render_targets`.
+    contract as :func:`_render_overrides_prim_path`.
     """
     try:
         from pxr import Usd
@@ -626,72 +618,6 @@ def _generate_playblast_settings_section(camera_prim_path: str) -> str:
     ])
 
 
-def _usda_attribute_line(attr_name: str, value) -> str | None:
-    """One USDA attribute line, or None for a value type it cannot author."""
-    if isinstance(value, bool):
-        return f'bool {attr_name} = {"true" if value else "false"}'
-    if isinstance(value, int):
-        return f'int {attr_name} = {value}'
-    if isinstance(value, float):
-        return f'float {attr_name} = {value}'
-    if isinstance(value, str):
-        return f'string {attr_name} = {json.dumps(value)}'
-    return None
-
-
-def _generate_overs_section(attributes_by_prim: dict[str, dict]) -> str:
-    """USDA ``over`` text authoring attributes onto several prims at once.
-
-    One merged tree: prims that share a parent share its ``over``. Emitting a
-    separate chain per prim would repeat the top-level ``over "Render"``, and
-    two top-level specs of one name in a layer do not compose -- the layer
-    fails to open with "Duplicate prim".
-
-    Args:
-        attributes_by_prim: Absolute prim path -> {attribute name: value}.
-                   Each path gets one nested ``over`` per component -- an
-                   ``over`` chain that does not match the real prim composes
-                   onto nothing and drops every attribute in it.
-
-    Returns:
-        The USDA text, or an empty string when there is nothing to author.
-    """
-    tree: dict = {}
-    for prim_path, attributes in attributes_by_prim.items():
-        if not attributes:
-            continue
-        names = [name for name in prim_path.split('/') if name]
-        if not names:
-            raise RenderSettingsError(
-                f'not a usable prim path for an override: {prim_path!r}'
-            )
-        node = tree
-        for name in names:
-            node = node.setdefault(name, {'children': {}, 'attributes': {}})
-            leaf = node
-            node = node['children']
-        leaf['attributes'].update(attributes)
-    if not tree:
-        return ''
-
-    lines = ['']
-
-    def _emit(children: dict, depth: int):
-        indent = '    ' * depth
-        for name, node in children.items():
-            lines.append(f'{indent}over "{name}"')
-            lines.append(indent + '{')
-            for attr_name, value in node['attributes'].items():
-                line = _usda_attribute_line(attr_name, value)
-                if line is not None:
-                    lines.append(f'{indent}    {line}')
-            _emit(node['children'], depth + 1)
-            lines.append(indent + '}')
-
-    _emit(tree, 0)
-    return '\n'.join(lines)
-
-
 def _generate_render_overrides_section(
     overrides: dict,
     settings_prim_path: str,
@@ -703,40 +629,43 @@ def _generate_render_overrides_section(
         overrides: Dict mapping Karma attribute names to values
                    e.g. {'karma:global:pathtracedsamples': 128}
         settings_prim_path: Absolute prim path of the stage's RenderSettings,
-                   from find_render_settings_prim_path.
+                   from find_render_settings_prim_path. One nested `over` per
+                   path component — an `over` chain that does not match the
+                   real prim composes onto nothing and drops every override.
 
     Returns:
         USDA text defining render settings overrides, or empty string if no overrides
     """
     if not overrides:
         return ''
-    if not [name for name in settings_prim_path.split('/') if name]:
+
+    names = [name for name in settings_prim_path.split('/') if name]
+    if not names:
         raise RenderSettingsError(
             f'render settings prim path is not a usable prim path: '
             f'{settings_prim_path!r}'
         )
-    return _generate_overs_section({settings_prim_path: overrides})
 
+    lines = ['']
+    for depth, name in enumerate(names):
+        indent = '    ' * depth
+        lines.append(f'{indent}over "{name}"')
+        lines.append(indent + '{')
 
-# Where husk reads one AOV's EXR compression: the RenderVar's own setting,
-# which wins over the RenderProduct's for that part of the file.
-AOV_COMPRESSION_ATTRIBUTE = 'driver:parameters:aov:husk:OpenEXR:compression'
+    body_indent = '    ' * len(names)
+    for attr_name, value in overrides.items():
+        if isinstance(value, bool):
+            val_str = 'true' if value else 'false'
+            lines.append(f'{body_indent}bool {attr_name} = {val_str}')
+        elif isinstance(value, int):
+            lines.append(f'{body_indent}int {attr_name} = {value}')
+        elif isinstance(value, float):
+            lines.append(f'{body_indent}float {attr_name} = {value}')
 
+    for depth in reversed(range(len(names))):
+        lines.append('    ' * depth + '}')
 
-def data_aov_compression_overrides(render_var_paths: list[str]) -> dict[str, dict]:
-    """Lossless compression for every data RenderVar, as override attributes.
-
-    The project's RenderProduct asks for DWAB, which is right for the beauty
-    and wrong for mattes and depth (see ``pipe/aovs.py``). An AOV the project
-    or a node authored without its own compression falls back to the
-    product's, so the data passes are set here on the farm's collapsed stage
-    rather than trusted to every project and HDA.
-    """
-    return {
-        path: {AOV_COMPRESSION_ATTRIBUTE: DATA_AOV_COMPRESSION}
-        for path in render_var_paths
-        if is_data_aov(path.rsplit('/', 1)[-1])
-    }
+    return '\n'.join(lines)
 
 
 def _generate_instance_prim_definitions(
@@ -1285,7 +1214,6 @@ def collapse_latest_references(
     # camera. With neither, omitting the metadatum leaves husk exactly where
     # it was, whereas raising would refuse submissions that render today.
     playblast_section = None
-    render_var_paths = []
     try:
         if playblast:
             settings_prim_path, camera_prim_path = _composed_render_view(
@@ -1298,9 +1226,7 @@ def collapse_latest_references(
             # the project's Karma ones.
             settings_prim_path = PLAYBLAST_SETTINGS_PRIM_PATH
         else:
-            settings_prim_path, render_var_paths = _composed_render_targets(
-                staged_file_path
-            )
+            settings_prim_path = _render_overrides_prim_path(staged_file_path)
     except RenderSettingsError as error:
         if render_overrides or playblast:
             raise
@@ -1337,27 +1263,19 @@ def collapse_latest_references(
     if playblast_section:
         usda_content = usda_content + '\n' + playblast_section
 
-    # Generate render settings overrides and the data passes' lossless
-    # compression, as ONE section: both live under the same /Render scope, and
-    # two top-level `over "Render"` specs in one layer fail to open. The
-    # settings path comes from the composed stage, never a constant: the
-    # project decides where its RenderSettings lives, and an `over` chain
-    # aimed at the wrong path drops every override in silence.
-    attributes_by_prim = data_aov_compression_overrides(render_var_paths)
+    # Generate render settings overrides. The prim path comes from the
+    # composed stage, never a constant: the project decides where its
+    # RenderSettings lives, and an `over` chain aimed at the wrong path drops
+    # every override in silence. Only the submit dialog's own overrides go
+    # here: settings the render department's nodes author (per-AOV EXR
+    # compression on th::render_vars, ...) reach the farm through its publish
+    # and are never rewritten on the way.
     if render_overrides:
-        if not settings_prim_path or not [
-            name for name in settings_prim_path.split('/') if name
-        ]:
-            raise RenderSettingsError(
-                f'render settings prim path is not a usable prim path: '
-                f'{settings_prim_path!r}'
-            )
-        attributes_by_prim.setdefault(settings_prim_path, {}).update(
-            render_overrides
+        overrides_section = _generate_render_overrides_section(
+            render_overrides, settings_prim_path
         )
-    overrides_section = _generate_overs_section(attributes_by_prim)
-    if overrides_section:
-        usda_content = usda_content + '\n' + overrides_section
+        if overrides_section:
+            usda_content = usda_content + '\n' + overrides_section
 
     return usda_content
 

@@ -11,7 +11,8 @@
 	"hdaroot/red/sopnet/modify.def":1556948922,
 	"hdaroot/update_denoiser_settings.def":1734598037,
 	"hdaroot/green.def":1758792127,
-	"hdaroot.def":1759325822,
+	"hdaroot.def":1791464897,
+	"hdaroot/set_compression.def":1791464898,
 	"hdaroot/green/sopnet/modify/from_lops.def":1556949674,
 	"hdaroot/green/sopnet/modify.def":1556948922
 }

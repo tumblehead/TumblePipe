@@ -43,28 +43,29 @@ oiiotool publish step, splice `ACESCG_ATTRIB_ARGS` into its final write.
 
 ## Compression
 
-Farm renders write **colour** AOVs with lossy DWAB (level 45) and **data**
-AOVs with lossless ZIP. Colour is `beauty`, its `beauty_<tag>` light groups,
-`albedo` and the LPE splits (`diffuse`, `specular`, `volume`, `emission`);
-everything else is data — the `objid_*` / `holdout_*` mattes, `depth`,
-`normal`, `alpha`, `position`, `uv`, and any AOV the list does not know.
-DWA's quantisation is invisible in a picture but shows up in a comp that
-reads the numbers: soft matte edges, banded depth.
+Each AOV's EXR compression is set **on the node that adds it**, in the render
+department: every AOV of [`th::render_vars`](nodes/lighting-and-rendering.md#thrender_vars-lop)
+and every [`th::puzzlemattes`](nodes/lighting-and-rendering.md#thpuzzlemattes-lop)
+matte has a **Compression** menu. They default to lossless **ZIP** for data
+and lossy **DWAB** for colour. Colour is `beauty`, its `beauty_<tag>` light
+groups and their variance, `albedo` and the LPE splits (`diffuse`, `specular`,
+`volume`, `emission`); everything else is data — the `objid_*` / `holdout_*`
+mattes, `depth`, `normal`, `alpha`, `position`, `uv`, `samples`, the other
+variances. DWA's quantisation is invisible in a picture but shows up in a
+comp that reads the numbers: soft matte edges, banded depth. The rule the
+defaults follow lives in [`pipe/aovs.py`](../python/tumblepipe/pipe/aovs.py).
 
-The split is decided in one place,
-[`pipe/aovs.py`](../python/tumblepipe/pipe/aovs.py) (`is_data_aov`), and
-applied twice:
+The farm writes what the render department published and changes nothing on
+the way: husk writes each AOV with its node's setting, the split into per-AOV
+files keeps it, and the denoise publish re-encodes each AOV with the
+compression its render input had. To change a pass's compression, change the
+menu and re-publish the render department.
 
-- **At render.** The project's RenderProduct asks husk for DWAB, and an AOV
-  without its own compression inherits it. The farm's collapsed stage
-  therefore sets `driver:parameters:aov:husk:OpenEXR:compression = "zip"` on
-  every data RenderVar, so husk writes those parts losslessly; the split into
-  per-AOV files keeps each part's compression.
-- **At denoise.** The denoise publish re-encodes each AOV, DWAB for colour and
-  ZIP for data.
-
-Up to 1.63.2 every AOV was DWAB, data passes included. Renders from the
-Houdini session itself (a Karma ROP) still use the project's own settings.
+An AOV no node sets falls back to the project's RenderProduct, which asks for
+DWAB. Up to 1.64.0 `th::render_vars` set every AOV to DWAB and
+`th::puzzlemattes` set none, so mattes and depth were lossy; 1.64.0 overrode
+data passes to ZIP on the farm instead, which the next release replaced with
+the menus.
 
 ## The build_comp node
 

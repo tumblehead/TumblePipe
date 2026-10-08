@@ -337,3 +337,51 @@ def summary(
         for kind in KINDS if counts[kind]
     ]
     return f"{' · '.join(parts)} — {rows} {noun[rows != 1]}"
+
+
+# ── context tabs ──────────────────────────────────────────
+
+# The dialog's tabs, in the order they are shown. One grid per context: the
+# department columns (and Playblast) differ between them, so they never share
+# a grid, and Submit sends only the tab in front.
+CONTEXTS = ('assets', 'shots')
+
+
+def context_noun(context: str) -> tuple[str, str]:
+    """``('shot', 'shots')`` or ``('asset', 'assets')`` for counts and headers."""
+    return ('shot', 'shots') if context == 'shots' else ('asset', 'assets')
+
+
+def tab_seed(
+    context: str,
+    opened_context: str,
+    uris: Sequence,
+    department: str | None,
+    kinds: Sequence[str],
+) -> tuple[list, str | None, tuple[str, ...]]:
+    """What the ``context`` tab's grid opens with: ``(uris, department, kinds)``.
+
+    Only the tab the dialog was opened for is seeded. The other tab starts
+    clean — nothing ticked and no department pinned — because the opened
+    entities and the workfile's department belong to the opened context: an
+    asset workfile's ``model`` says nothing about which shots to submit or
+    how far to render them.
+    """
+    if context == opened_context:
+        return list(uris), department, tuple(kinds)
+    return [], None, ()
+
+
+def ticked_rows(ticks: Iterable[CellKey]) -> int:
+    """How many entities have at least one ticked cell."""
+    return len({uri for uri, _key in ticks})
+
+
+def tab_label(context: str, rows: int) -> str:
+    """``Shots``, or ``Shots (3)`` while three shots have a ticked cell.
+
+    The count is what shows that a tab you are not looking at still holds
+    ticks, which Submit on the other tab leaves alone.
+    """
+    name = context.capitalize()
+    return f"{name} ({rows})" if rows else name

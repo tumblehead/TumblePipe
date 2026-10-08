@@ -266,6 +266,39 @@ def get_channel_counts(input_paths: dict[str, Path]) -> dict[str, int]:
         result[aov_name] = len(channels)
     return result
 
+def compression_spec(compression: Optional[str], level: Optional[int]) -> Optional[str]:
+    """An EXR's compression as oiiotool's ``--compression`` spells it.
+
+    ``('dwab', 45)`` -> ``'dwab:45'``; ``('zip', None)`` -> ``'zip'``; no
+    compression read -> None.
+    """
+    if not compression:
+        return None
+    name = compression.lower()
+    if name in ('dwaa', 'dwab') and level:
+        return f'{name}:{level}'
+    return name
+
+def get_compressions(input_paths: dict[str, Path]) -> dict[str, str]:
+    """Compression of each per-AOV EXR, keyed by AOV name, in oiiotool spelling.
+
+    The render department decides each AOV's compression (``th::render_vars``
+    and friends author it per RenderVar), so a step that re-encodes a published
+    AOV keeps it rather than imposing its own. Same probing contract as
+    :func:`get_channel_counts`: concrete frame paths, probed once per task. An
+    AOV whose compression can't be read is left out.
+    """
+    result = dict()
+    for aov_name, aov_path in input_paths.items():
+        image_infos = get_image_info(local_path(aov_path))
+        if not image_infos: continue
+        spec = compression_spec(
+            image_infos[0].compression, image_infos[0].compression_level
+        )
+        if spec is None: continue
+        result[aov_name] = spec
+    return result
+
 def _channel_selector(channel_count: int) -> Optional[str]:
     """oiiotool `--ch` selection normalizing an AOV to 3 channels.
 

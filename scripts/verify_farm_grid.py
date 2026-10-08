@@ -44,6 +44,9 @@ Checks:
     stale, unticked departments lists them, and "Tick those publishes" ticks
     exactly those and returns to the grid without submitting; Back submits
     nothing.
+17. Opened from an asset, the dialog sits on the Assets tab; the Shots tab
+    lists every shot with nothing ticked and no cut pinned, the Assets tab
+    keeps its ticks while hidden, and Submit sends only the tab in front.
 """
 
 from __future__ import annotations
@@ -113,7 +116,10 @@ def main() -> int:
     started = time.monotonic()
     renderable = mod._list_dept_names("shots", only_publishable=False, only_renderable=True)
     open_dept = renderable[-1] if renderable else None
-    dlg = mod.SubmitJobsDialog([shot], [shot.segments[-1]], "shots", department=open_dept)
+    # The grid internals live on the tab's pane; showing, sizing and closing
+    # are the dialog's.
+    win = mod.SubmitJobsDialog([shot], [shot.segments[-1]], "shots", department=open_dept)
+    dlg = win._panes["shots"]
     uris = dlg._uris
     check("1. rows are the context's terminal entities",
           set(uris) >= {str(u) for u in shots}, f"{len(uris)} rows")
@@ -151,7 +157,7 @@ def main() -> int:
                          QPoint(x, header.height() - 12))
         app.processEvents()
 
-    dlg.show()
+    win.show()
     app.processEvents()
     dlg._clear_ticks()
     render_col = next(i for i, c in enumerate(dlg._columns, 1) if c.kind == grid.RENDER)
@@ -166,7 +172,7 @@ def main() -> int:
     check("4. ...and a click on a partly ticked column fills it",
           dlg._ticks == tickable, f"{len(dlg._ticks)} cells")
     dlg._clear_ticks()
-    dlg.hide()
+    win.hide()
 
     group = dlg._group_key(str(shot))
     dlg._toggle(dlg._group_keys(group))
@@ -273,8 +279,8 @@ def main() -> int:
         )
         app.sendEvent(widget, event)
 
-    dlg.resize(1400, 600)  # short enough that the settings panel scrolls
-    dlg.show()
+    win.resize(1400, 600)  # short enough that the settings panel scrolls
+    win.show()
     app.processEvents()
     spin, entry = dlg._rnd_samples, dlg._fields["samples"]
     bar = dlg._forms_scroll.verticalScrollBar()
@@ -285,35 +291,37 @@ def main() -> int:
     check("11. the wheel over an unfocused spin box scrolls instead of editing",
           spin.value() == value and not entry.pinned and bar.value() > 0,
           f"value {value}->{spin.value()}, pinned {entry.pinned}, scroll {bar.value()}")
-    dlg.hide()
+    win.hide()
 
     shot_path = os.environ.get("FARM_VERIFY_SCREENSHOT")
     if shot_path:
         dlg._select_stale()
         dlg._refresh()
-        dlg.resize(1400, 820)
-        dlg.show()
+        win.resize(1400, 820)
+        win.show()
         app.processEvents()
-        dlg.grab().save(shot_path)
+        win.grab().save(shot_path)
         print(f"screenshot: {shot_path}")
-    dlg.reject()
+    win.reject()
 
     # ── 13: how the Farm Submit quick action opens it ────
     farm_dept = publish[-1]
-    farm = mod.SubmitJobsDialog(
+    farm_win = mod.SubmitJobsDialog(
         [shot], [shot.segments[-1]], "shots",
         department=farm_dept, tick_kinds=(grid.PUBLISH,),
     )
+    farm = farm_win._panes["shots"]
     check("13. from a workfile only its department's publish cell is ticked",
           farm._ticks == {(str(shot), grid.publish_key(farm_dept))}
           and [k for k, b in farm._sections.items() if not b.isHidden()] == [grid.PUBLISH],
           f"{sorted(farm._ticks)}")
-    farm.reject()
-    bare = mod.SubmitJobsDialog([], [], "shots", tick_kinds=(grid.PUBLISH,))
+    farm_win.reject()
+    bare_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=(grid.PUBLISH,))
+    bare = bare_win._panes["shots"]
     check("13. with no workfile every row is listed and nothing ticked",
           not bare._ticks and set(bare._uris) >= {str(u) for u in shots},
           f"{len(bare._uris)} rows")
-    bare.reject()
+    bare_win.reject()
 
     # ── 15: closing deletes the dialog ────────────────────
     from PySide6.QtCore import QEvent
@@ -330,7 +338,8 @@ def main() -> int:
     main_window.deleteLater()
 
     # ── 16: the submit confirmation ───────────────────────
-    confirm_dlg = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    confirm_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    confirm_dlg = confirm_win._panes["shots"]
     wait_for_scan(confirm_dlg)
     preview_shot = next(
         (u for u in confirm_dlg._uris
@@ -364,10 +373,10 @@ def main() -> int:
             settings = confirm_dlg._resolved_rows()[0][1]
             missing = confirm_dlg._stale_upstream(preview_shot, settings)
             mod._ConfirmSubmit.exec = fake_exec(0)
-            confirm_dlg._on_submit()
+            confirm_dlg.submit()
             back_ok = not submitted and confirm_dlg._ticks == {(preview_shot, grid.PLAYBLAST)}
             mod._ConfirmSubmit.exec = fake_exec(mod._ConfirmSubmit.TICK_STALE)
-            confirm_dlg._on_submit()
+            confirm_dlg.submit()
             added = confirm_dlg._ticks - {(preview_shot, grid.PLAYBLAST)}
         finally:
             mod._ConfirmSubmit.exec, mod.start_submission = real_exec, real_start
@@ -380,7 +389,80 @@ def main() -> int:
               missing and not submitted
               and added == {(preview_shot, grid.publish_key(d)) for d in missing},
               f"{preview_shot.split('/')[-1]}: {missing}")
-    confirm_dlg.reject()
+    confirm_win.reject()
+
+    # ── 17: Assets and Shots tabs ─────────────────────────
+    assets = sorted(
+        (u for u in config.list_entity_uris(Uri.parse_unsafe("entity:/assets"), closure=True)
+         if is_terminal_entity(config, u)),
+        key=str,
+    )
+    if not assets:
+        print("SKIP: 17. the project has no assets")
+    else:
+        asset = assets[0]
+        asset_renderable = mod._list_dept_names("assets", only_publishable=False, only_renderable=True)
+        asset_dept = asset_renderable[-1] if asset_renderable else None
+        tabs_win = mod.SubmitJobsDialog(
+            [asset], [asset.segments[-1]], "assets", department=asset_dept,
+        )
+        check("17. opened from an asset, the dialog is on the Assets tab and builds only it",
+              tabs_win.current_context() == "assets" and list(tabs_win._panes) == ["assets"]
+              and tabs_win._panes["assets"]._ticks == {(str(asset), grid.RENDER)},
+              f"{tabs_win.current_context()}, panes {list(tabs_win._panes)}")
+        tabs_win._tabs.setCurrentIndex(grid.CONTEXTS.index("shots"))
+        app.processEvents()
+        shots_pane = tabs_win._panes.get("shots")
+        check("17. the Shots tab lists every shot, nothing ticked, no cut pinned, with Playblast",
+              shots_pane is not None
+              and tabs_win._stack.currentWidget() is shots_pane
+              and set(shots_pane._uris) >= {str(u) for u in shots}
+              and not shots_pane._ticks
+              and not any(e.pinned for e in shots_pane._fields.values())
+              and any(c.kind == grid.PLAYBLAST for c in shots_pane._columns),
+              f"{len(shots_pane._uris) if shots_pane else 0} rows")
+        check("17. the Assets tab keeps its ticks and says so in its label",
+              tabs_win._panes["assets"]._ticks == {(str(asset), grid.RENDER)}
+              and tabs_win._tabs.tabText(0) == "Assets (1)",
+              tabs_win._tabs.tabText(0))
+        wait_for_scan(shots_pane)
+        target_shot = next(
+            (u for u in shots_pane._uris if shots_pane._tickable(u, grid.RENDER)), None,
+        )
+        sent: list = []
+
+        class _Window:
+            def show(self):
+                pass
+
+        def capture(configs, parent=None):
+            sent.extend(configs)
+            return _Window()
+
+        import tumblepipe.apps.deadline as deadline_mod
+        real_start, real_exec = mod.start_submission, mod._ConfirmSubmit.exec
+        real_problem = deadline_mod.deadline_setup_problem
+        real_warning = mod.QMessageBox.warning
+        refused: list = []
+        mod.start_submission = capture
+        mod._ConfirmSubmit.exec = lambda self: mod._ConfirmSubmit.SUBMIT
+        deadline_mod.deadline_setup_problem = lambda environ=None: None
+        # A refusal would open a modal box nobody can close here.
+        mod.QMessageBox.warning = staticmethod(lambda *a, **k: refused.append(a[2]))
+        try:
+            shots_pane._ticks = {(target_shot, grid.RENDER)}
+            shots_pane._refresh()
+            shots_pane._rnd_channels.set_checked(shots_pane._rnd_channels.options())
+            tabs_win._on_submit()
+        finally:
+            mod.start_submission, mod._ConfirmSubmit.exec = real_start, real_exec
+            deadline_mod.deadline_setup_problem = real_problem
+            mod.QMessageBox.warning = real_warning
+        check("17. Submit on the Shots tab sends only its shots, as shots",
+              [c["entity"]["uri"] for c in sent] == [target_shot]
+              and all(c["entity"]["context"] == "shots" for c in sent),
+              f"{[(c['entity']['name'], c['entity']['context']) for c in sent]} {refused}")
+        tabs_win.reject()
 
     # ── 9: a real snapshot in this interpreter ────────────
     staged = next(

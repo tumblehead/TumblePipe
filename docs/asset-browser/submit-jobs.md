@@ -1,8 +1,9 @@
 # Submitting to the farm
 
 The **Farm Submit** dialog sends publish, playblast and render jobs for any number
-of shots or assets to Deadline. It shows every entity of a context as a row
-and every pipeline step as a column, so you can see what is out of date and
+of shots or assets to Deadline. Its **Assets** and **Shots** tabs each show
+every entity of that context as a row and every pipeline step as a column,
+so you can see what is out of date and
 tick what should run, from one cell up to the whole project. Submitting hands
 the work to a separate process, so Houdini is usable again within seconds.
 Farm Submit arrived in TumblePipe **1.54.1**; it replaced the Submit Jobs
@@ -26,25 +27,40 @@ up on this machine* and submits nothing. Working without a farm is covered in
 
 ## Opening it
 
-| From | Menu / button | Rows | Ticked |
+| From | Menu / button | Opens on | Ticked |
 |---|---|---|---|
-| The toolbar | **Farm Submit** quick action | Every shot (every asset when the loaded scene is an asset's) | The loaded workfile's entity's publish cell for the workfile's department — or, in a [Multi](multis-and-roots.md#multis) workfile, every member's. Nothing with no workfile loaded. |
-| The toolbar | **Render** quick action | Every entity of the scene's context (every shot with no workfile loaded) | The loaded scene's entity's **Render** cell — or, in a Multi workfile, every member's. Nothing with no workfile loaded. |
-| A card's right-click menu | **Submit Jobs…** | Every entity of the card's context | That entity's **Render** cell |
-| A multi-selection's right-click menu | **Submit Jobs for N selected…** | Every entity of the context | Each selected card's **Render** cell |
-| TumbleTrove Desktop, outside Houdini | the project's Scripts panel → **Farm Submit** | Every shot | Nothing — see [From TumbleTrove Desktop](#from-tumbletrove-desktop) |
+| The toolbar | **Farm Submit** quick action | **Shots** (**Assets** when the loaded scene is an asset's) | The loaded workfile's entity's publish cell for the workfile's department — or, in a [Multi](multis-and-roots.md#multis) workfile, every member's. Nothing with no workfile loaded. |
+| The toolbar | **Render** quick action | The scene's context (**Shots** with no workfile loaded) | The loaded scene's entity's **Render** cell — or, in a Multi workfile, every member's. Nothing with no workfile loaded. |
+| A card's right-click menu | **Submit Jobs…** | The card's context | That entity's **Render** cell |
+| A multi-selection's right-click menu | **Submit Jobs for N selected…** | The cards' context | Each selected card's **Render** cell |
+| TumbleTrove Desktop, outside Houdini | the project's Scripts panel → **Farm Submit** | **Shots** | Nothing — see [From TumbleTrove Desktop](#from-tumbletrove-desktop) |
 
-Neither needs a pipeline workfile: the rows are always every entity of the
-context, and the ticks are only a starting point — tick or untick any cell,
-on any entity, before submitting.
+None of these needs a pipeline workfile: the rows are always every entity of
+the tab's context, and the ticks are only a starting point — tick or untick
+any cell, on any entity, before submitting.
 
 When the dialog is opened from a workfile, that workfile's department pins
 the **Up to** department of Playblast and Render (when it is renderable), so
 submitting from a lighting workfile previews up to lighting.
 
-The dialog is non-modal: Houdini stays usable while it is open. It shows one
-context at a time — shots, or assets — because the department columns differ
-between them.
+The dialog is non-modal: Houdini stays usable while it is open.
+
+### Assets and Shots tabs
+
+The tabs above the grid switch between assets and shots, whatever workfile
+is open — so from an asset workfile you can still submit shots. Each tab has
+its own grid and settings, because the department columns (and Playblast,
+which is shots only) differ between them.
+
+- The dialog opens on the tab in **Opens on** above. Only that tab starts
+  with ticks and with the workfile's department pinned; the other tab lists
+  every entity of its context with nothing ticked and nothing pinned.
+- Each tab keeps its ticks, filter and settings while the dialog is open, so
+  you can switch away and back. A tab holding ticks shows how many entities
+  it has ticked, as in **Assets (2)**.
+- **Submit** sends the tab in front only, and closes the dialog. Ticks on
+  the other tab are not submitted: to send both, submit one tab, then open
+  the dialog again for the other.
 
 A Multi is never a farm target itself: it has no staged stage, frame range or
 channels of its own. Opened from a Multi, the dialog ticks the Multi's

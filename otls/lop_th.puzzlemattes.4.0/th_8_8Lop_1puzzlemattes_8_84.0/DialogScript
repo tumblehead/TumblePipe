@@ -24,14 +24,13 @@
     groupsimple {
         name    "channels_"
         label   "Channels"
+        grouptag { "group_type" "simple" }
 
         parm {
             name    "red"
             label   "Red"
             type    string
             default { "" }
-            menutoggle {
-            }
             parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
             parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane. Ctrl-click to select using the primitive picker dialog." }
             parmtag { "script_action_icon" "BUTTONS_reselect" }
@@ -42,8 +41,6 @@
             label   "Green"
             type    string
             default { "" }
-            menutoggle {
-            }
             parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
             parmtag { "script_action_icon" "BUTTONS_reselect" }
         }
@@ -52,11 +49,28 @@
             label   "Blue"
             type    string
             default { "" }
-            menutoggle {
-            }
             parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
             parmtag { "script_action_icon" "BUTTONS_reselect" }
         }
     }
 
+    parm {
+        name    "compression"
+        label   "Compression"
+        type    ordinal
+        default { "6" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
 }

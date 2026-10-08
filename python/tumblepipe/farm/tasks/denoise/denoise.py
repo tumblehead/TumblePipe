@@ -9,9 +9,9 @@ take a seat an artist needed, and the graph cooked once per AOV per frame.
 license token, so the whole job runs here in plain python. Per frame:
 merge the per-AOV EXRs into one multi-plane file (idenoise reads its
 normal/albedo guides as planes *inside* the input), denoise every AOV in one
-call, then split the planes back out and compress them to their published
-paths -- DWAB for colour AOVs, lossless ZIP for data passes (pipe/aovs.py).
-See designs/denoise-without-hython.md.
+call, then split the planes back out and write them to their published paths
+with the compression each AOV's render input had -- the render department's
+nodes choose it, the denoise keeps it. See designs/denoise-without-hython.md.
 """
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -40,8 +40,11 @@ from tumblepipe.apps.deadline import log_progress
 from tumblepipe.apps import exr
 from tumblepipe.farm._common import ensure_dir
 from tumblepipe.farm.tasks.env import print_env
-from tumblepipe.pipe.aovs import DATA_AOV_COMPRESSION, is_data_aov
 from tumblepipe.farm.tasks.denoise import _spec
+
+# What a denoised AOV is written with when its source's compression can't be
+# read -- the denoise publish's encoding before it learned to keep the source's.
+FALLBACK_COMPRESSION = 'dwab:45'
 
 # The guide planes OIDN uses to preserve detail. idenoise resolves them by
 # plane name inside the merged frame, and they are denoised in their own right
@@ -117,6 +120,7 @@ def _denoise_frame(
     input_paths: dict[str, Path],
     output_paths: dict[str, Path],
     channel_counts: dict[str, int],
+    compressions: dict[str, str],
     force_cpu: bool
     ) -> tuple[dict[str, Path], set[str]]:
     """Denoise every target AOV of one frame.
@@ -185,11 +189,12 @@ def _denoise_frame(
             continue
         output_frame_path = _get_frame_path(output_paths[aov_name], frame_index)
         ensure_dir(local_path(output_frame_path).parent)
-        # Lossless for data passes (mattes, depth, normals...), DWAB for
-        # colour -- see pipe/aovs.py.
+        # Keep the compression the render wrote this AOV with: the render
+        # department's nodes choose it (lossless for mattes and depth), and
+        # the denoise must not override that.
         exr.encode(
             extracted_path, output_frame_path,
-            DATA_AOV_COMPRESSION if is_data_aov(aov_name) else 'dwab:45'
+            compressions.get(aov_name, FALLBACK_COMPRESSION)
         )
         if not local_path(output_frame_path).exists():
             print(f'  ERROR: Frame not written: {output_frame_path}')
@@ -268,6 +273,7 @@ def main(
     # one real frame once instead of once per AOV per frame. The paths above are
     # frame *patterns*; the probe needs the concrete frame checked for existence.
     channel_counts = exr.get_channel_counts(probe_frame_paths)
+    compressions = exr.get_compressions(probe_frame_paths)
 
     idenoise = IDenoise()
     failed_aovs = set()
@@ -291,6 +297,7 @@ def main(
                 target_aov_paths,
                 output_paths,
                 channel_counts,
+                compressions,
                 force_cpu
             )
             output_frame_paths[frame_index] = written

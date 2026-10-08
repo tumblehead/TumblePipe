@@ -73,9 +73,11 @@ Every consumer sorts AOVs the same way (`aov.py`): `beauty` first, then the
 everything else — that is the order `build_comp` and the turntable read them
 in.
 
-Farm renders write the data AOVs here (`alpha`, `normal`, `depth`,
-`position`, `uv`, `samples`, the `*_mse` variances other than
-`beauty_mse`) with lossless ZIP and the colour ones with DWAB; see
+**Compression** (a collapsible folder) holds one menu per AOV: the EXR
+compression that AOV is written with, greyed out while its toggle is off.
+Data AOVs (`alpha`, `normal`, `depth`, `position`, `uv`, `samples`, the
+`*_mse` variances other than `beauty_mse`) default to lossless **ZIP**, colour
+AOVs to **DWAB**. The farm writes exactly what is set here; see
 [Compositing → Compression](../compositing.md#compression).
 
 ## `th::lpe_tags` (LOP)
@@ -124,13 +126,10 @@ Source: [`otls/lop_th.puzzlemattes.4.0`](../../otls/lop_th.puzzlemattes.4.0/th_8
 |---|---|---|
 | Name | `$OS` | AOV name suffix: the AOV is `objid_<Name>` |
 | Channels › Red / Green / Blue | *(empty)* | Prim pattern per channel (the action button opens the prim picker) |
+| Compression | ZIP | EXR compression of the matte. Keep it lossless: DWA softens the matte's edges |
 
 The node has a viewer state, but it is a stub: selecting prims in it does
 not fill the channels. Type the patterns.
-
-Farm renders write every `objid_*` matte with lossless ZIP, so its edges are
-exactly what Karma filtered; see
-[Compositing → Compression](../compositing.md#compression).
 
 Mattes are not special to the denoiser: the denoise job runs OIDN over every
 AOV except the `*_mse` variances, the mattes included.

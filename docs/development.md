@@ -896,6 +896,19 @@ beside it is a gitignored build artifact.
   the whole definition and would clobber an interface edit made before it.
   (For inserting *spare* UI into an instance, see *HDA spare-parm UI harness*
   above — a different hazard with the same call.)
+- **A locked instance hides its contents in hython.** `children()` on a fresh
+  instance of a locked HDA can come back empty; call
+  `allowEditingOfContents()` first, then edit and `updateFromNode()`.
+- **Install the repo copy *after* loading a workfile.** Placed nodes bind to
+  whichever definition is preferred when the hip loads, and the installed
+  package's `.hda` wins at load. To check a repo edit against a real workfile,
+  `hou.hipFile.load(...)` first, then `hou.hda.installFile(<repo dir>)` and
+  `definitionsInFile(<repo dir>)[0].setIsPreferred(True)`; the placed nodes
+  re-bind.
+- **Expect a little re-serialisation noise.** `setParmTemplateGroup()`
+  rewrites the whole DialogScript, so unrelated parms can shift cosmetically
+  (a separator's label, a toggle's dropped `range`). Read the diff, but these
+  are harmless.
 - **Nested `folder.parmTemplates()` returns copies.** Mutating one changes
   nothing until you `folder.setParmTemplates(...)` and then
   `group.replace(group.find('<folder>'), folder)`.

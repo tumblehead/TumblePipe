@@ -26,6 +26,14 @@ cells ticked; from the **Farm Submit** quick action, the open workfile's
 entities have their department's publish cell ticked. With no pipeline
 workfile open, both open with nothing ticked. The settings panel shows only
 the sections of the step kinds that have a ticked cell.
+
+**Assets** and **Shots** tabs switch the context. The dialog opens on the
+context it was opened for (the open workfile's, or the card's), but an
+artist in an asset workfile can still submit shots: each tab is its own
+grid and settings form (``_ContextPane``), built the first time it is shown
+and kept, ticks and pins included, while the dialog is open. Only the opened
+tab is seeded with ticks and the workfile's department (``grid.tab_seed``);
+Submit sends the tab in front and nothing from the other.
 """
 
 from __future__ import annotations
@@ -43,7 +51,8 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QComboBox,
     QDialog, QFormLayout, QGridLayout,
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
-    QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStyledItemDelegate, QToolTip,
+    QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStackedWidget,
+    QStyledItemDelegate, QTabBar, QToolTip,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -218,6 +227,24 @@ QTreeWidget {{
     outline: none;
 }}
 QScrollArea {{ border: none; background: transparent; }}
+QTabBar::tab {{
+    background-color: {BG_DARK};
+    color: {TEXT_SECONDARY};
+    border: 1px solid {BORDER};
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    padding: 5px 18px;
+    margin-right: 2px;
+    font-family: "{FONT_FAMILY}";
+    font-size: {FONT_BODY}px;
+}}
+QTabBar::tab:selected {{
+    background-color: {BG_DARKEST};
+    color: {TEXT_PRIMARY};
+    border-color: {ACCENT};
+}}
+QTabBar::tab:hover {{ color: {TEXT_PRIMARY}; }}
 """ + VISIBLE_SCROLLBARS
 
 
@@ -583,7 +610,7 @@ class _GridDelegate(QStyledItemDelegate):
     """Paints every grid cell from the dialog's state; the items hold no data
     beyond which row they are, so a tick is a repaint, not a model write."""
 
-    def __init__(self, dialog: "SubmitJobsDialog") -> None:
+    def __init__(self, dialog: "_ContextPane") -> None:
         super().__init__(dialog)
         self._dialog = dialog
 
@@ -619,7 +646,7 @@ class _GridDelegate(QStyledItemDelegate):
 class _CheckHeader(QHeaderView):
     """Column headers with a tri-state checkbox under each step's label."""
 
-    def __init__(self, dialog: "SubmitJobsDialog") -> None:
+    def __init__(self, dialog: "_ContextPane") -> None:
         super().__init__(Qt.Horizontal, dialog)
         self._dialog = dialog
         # Clickable is set by _build_grid: QTreeView.setHeader() resets it.
@@ -805,50 +832,36 @@ class _ConfirmSubmit(QDialog):
         return panel
 
 
-# ── Dialog ────────────────────────────────────────────────
+# ── Context pane ──────────────────────────────────────────
 
-class SubmitJobsDialog(QDialog):
-    """The Farm Submit grid for one context's entities.
+class _ContextPane(QWidget):
+    """One context's grid and settings form: a tab of :class:`SubmitJobsDialog`.
+
+    Everything that depends on the context lives here — rows, department
+    columns, the Playblast section (shots only), fallbacks, pins, ticks and
+    the status scan — so the Assets and Shots tabs cannot leak into each
+    other: each is its own pane, and Submit sends only the one in front.
 
     Args:
-        entity_uris: Entities to start with ticked (``tick_kinds`` on each).
-            May be empty — the Farm Submit quick action opens with nothing ticked.
-            A Multi (``groups:`` URI) stands for its members.
-        entity_names: Display names parallel to ``entity_uris``.
+        dialog: The owning dialog; the footer and accept/close are its.
+        entity_uris: Entities to start with ticked, Multis already expanded.
         context: ``'shots'`` or ``'assets'``.
-        parent: Parent widget. Pass ``hou.qt.mainWindow()`` from Houdini.
-        department: Department the dialog was opened *from* — the loaded
-            workfile's. Pins the Render (and Playblast) cut, so submitting
-            from a lighting workfile previews up to lighting. ``None`` falls
-            back to each entity's ``submission.render.department``.
-        tick_kinds: Step kinds to tick for ``entity_uris`` —
-            ``grid.RENDER`` by default, what the Render quick action and
-            **Submit Jobs…** have always meant; ``grid.PUBLISH`` from the
-            Farm Submit quick action, narrowed to ``department``'s column.
+        department: Department to pin the preview cuts to, or ``None``.
+        tick_kinds: Step kinds to tick for ``entity_uris``.
     """
 
     def __init__(
         self,
+        dialog: "SubmitJobsDialog",
         entity_uris: Sequence,
-        entity_names: Sequence[str],
         context: str,
-        parent: QWidget | None = None,
         department: str | None = None,
         tick_kinds: Sequence[str] = (grid.RENDER,),
     ) -> None:
-        super().__init__(parent)
-        if context not in ("shots", "assets"):
-            raise ValueError(f"context must be 'shots' or 'assets', got {context!r}")
-        # A Multi is never submitted itself: its member entities are.
-        if any(resolve.is_group_target(uri) for uri in entity_uris):
-            entity_uris = resolve.expand_targets(entity_uris, _group_members)
-            if not entity_uris:
-                raise ValueError(
-                    "This Multi has no member entities to submit. Add "
-                    "members to it in the browser first."
-                )
+        super().__init__(dialog)
+        self._dialog = dialog
         self._context = context
-        self._noun = ('shot', 'shots') if context == 'shots' else ('asset', 'assets')
+        self._noun = grid.context_noun(context)
         # Department the dialog was opened from (a loaded workfile), or None.
         self._open_department = department or None
 
@@ -914,18 +927,8 @@ class SubmitJobsDialog(QDialog):
         self._refresh_timer.setInterval(0)
         self._refresh_timer.timeout.connect(self._refresh)
 
-        # Parented to Houdini's main window, a closed dialog would otherwise
-        # live on hidden, rows and all, until Houdini exits: one per open.
-        self.setAttribute(Qt.WA_DeleteOnClose)
-        self.setWindowTitle("Farm Submit")
-        self.setMinimumSize(1100, 640)
-        # Opens wide enough for every column and the settings beside them;
-        # the grid scrolls sideways below that.
-        self.resize(1560, 820)
-        self.setStyleSheet(_DIALOG_STYLE)
-
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(10)
         root.addLayout(self._build_toolbar())
 
@@ -934,19 +937,6 @@ class SubmitJobsDialog(QDialog):
         root.addLayout(body, 1)
         body.addWidget(self._build_grid(), 1)
         body.addWidget(self._build_forms())
-
-        footer = QHBoxLayout()
-        self._summary = QLabel()
-        self._summary.setStyleSheet(f"color: {TEXT_PRIMARY};")
-        footer.addWidget(self._summary, 1)
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.reject)
-        self._submit_btn = QPushButton("Submit")
-        self._submit_btn.setDefault(True)
-        self._submit_btn.clicked.connect(self._on_submit)
-        footer.addWidget(close_btn)
-        footer.addWidget(self._submit_btn)
-        root.addLayout(footer)
 
         self._apply_open_department()
         # Seed the tick state from the entities the dialog was opened for;
@@ -958,6 +948,23 @@ class SubmitJobsDialog(QDialog):
         self._show_active_sections()
         self._reseed_form(initial=True)
         self._start_scan()
+
+    @property
+    def context(self) -> str:
+        return self._context
+
+    def summary_text(self) -> str:
+        """The footer line for this tab: what Submit would send."""
+        return grid.summary(self._uris, self._columns, self._ticks, self._noun)
+
+    def ticked_row_count(self) -> int:
+        return grid.ticked_rows(self._ticks)
+
+    def shutdown(self) -> None:
+        """Stop the status scan; the dialog is closing."""
+        self._poll.stop()
+        self._refresh_timer.stop()
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     # ── Toolbar ───────────────────────────────────────────
 
@@ -1220,9 +1227,7 @@ class SubmitJobsDialog(QDialog):
         self._show_active_sections()
         self._reseed_form()
         self._recompute_warnings()
-        self._summary.setText(
-            grid.summary(self._uris, self._columns, self._ticks, self._noun)
-        )
+        self._dialog._pane_changed(self)
         self._tree.viewport().update()
 
     # ── Painting ──────────────────────────────────────────
@@ -1924,7 +1929,8 @@ class SubmitJobsDialog(QDialog):
 
     # ── Submit ────────────────────────────────────────────
 
-    def _on_submit(self) -> None:
+    def submit(self) -> None:
+        """Submit this tab's ticked cells; closes the dialog once sent."""
         rows = self._resolved_rows()
         if not rows:
             QMessageBox.warning(
@@ -1988,7 +1994,7 @@ class SubmitJobsDialog(QDialog):
             for uri, settings, _w in rows
         ]
         try:
-            window = start_submission(configs, parent=self.parentWidget())
+            window = start_submission(configs, parent=self._dialog.parentWidget())
         except Exception as error:
             log.exception("Could not start the background submission")
             QMessageBox.critical(
@@ -1998,11 +2004,166 @@ class SubmitJobsDialog(QDialog):
             )
             return
         window.show()
-        self.accept()
+        self._dialog.accept()
+
+
+# ── Dialog ────────────────────────────────────────────────
+
+class SubmitJobsDialog(QDialog):
+    """The Farm Submit grid, one tab per context (Assets, Shots).
+
+    Args:
+        entity_uris: Entities to start with ticked (``tick_kinds`` on each).
+            May be empty — the Farm Submit quick action opens with nothing ticked.
+            A Multi (``groups:`` URI) stands for its members.
+        entity_names: Display names parallel to ``entity_uris``.
+        context: ``'shots'`` or ``'assets'`` — the tab the dialog opens on,
+            and the only one ``entity_uris``, ``department`` and
+            ``tick_kinds`` seed. The other tab lists every entity of its
+            context with nothing ticked.
+        parent: Parent widget. Pass ``hou.qt.mainWindow()`` from Houdini.
+        department: Department the dialog was opened *from* — the loaded
+            workfile's. Pins the Render (and Playblast) cut, so submitting
+            from a lighting workfile previews up to lighting. ``None`` falls
+            back to each entity's ``submission.render.department``.
+        tick_kinds: Step kinds to tick for ``entity_uris`` —
+            ``grid.RENDER`` by default, what the Render quick action and
+            **Submit Jobs…** have always meant; ``grid.PUBLISH`` from the
+            Farm Submit quick action, narrowed to ``department``'s column.
+    """
+
+    def __init__(
+        self,
+        entity_uris: Sequence,
+        entity_names: Sequence[str],
+        context: str,
+        parent: QWidget | None = None,
+        department: str | None = None,
+        tick_kinds: Sequence[str] = (grid.RENDER,),
+    ) -> None:
+        super().__init__(parent)
+        if context not in grid.CONTEXTS:
+            raise ValueError(f"context must be 'shots' or 'assets', got {context!r}")
+        # A Multi is never submitted itself: its member entities are.
+        if any(resolve.is_group_target(uri) for uri in entity_uris):
+            entity_uris = resolve.expand_targets(entity_uris, _group_members)
+            if not entity_uris:
+                raise ValueError(
+                    "This Multi has no member entities to submit. Add "
+                    "members to it in the browser first."
+                )
+        self._opened = (context, list(entity_uris), department, tuple(tick_kinds))
+        # One pane per context, built the first time its tab is shown and
+        # kept until the dialog closes, so switching back finds its ticks.
+        self._panes: dict[str, _ContextPane] = {}
+
+        # Parented to Houdini's main window, a closed dialog would otherwise
+        # live on hidden, rows and all, until Houdini exits: one per open.
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setWindowTitle("Farm Submit")
+        self.setMinimumSize(1100, 640)
+        # Opens wide enough for every column and the settings beside them;
+        # the grid scrolls sideways below that.
+        self.resize(1560, 820)
+        self.setStyleSheet(_DIALOG_STYLE)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
+
+        self._tabs = QTabBar()
+        self._tabs.setDrawBase(False)
+        self._tabs.setExpanding(False)
+        for name in grid.CONTEXTS:
+            index = self._tabs.addTab(grid.tab_label(name, 0))
+            self._tabs.setTabData(index, name)
+            self._tabs.setTabToolTip(
+                index,
+                f"Submit {name}. Each tab keeps its own ticks and settings; "
+                f"Submit sends only the tab in front.",
+            )
+        root.addWidget(self._tabs)
+        self._stack = QStackedWidget()
+        root.addWidget(self._stack, 1)
+
+        footer = QHBoxLayout()
+        self._summary = QLabel()
+        self._summary.setStyleSheet(f"color: {TEXT_PRIMARY};")
+        footer.addWidget(self._summary, 1)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.reject)
+        self._submit_btn = QPushButton("Submit")
+        self._submit_btn.setDefault(True)
+        self._submit_btn.clicked.connect(self._on_submit)
+        footer.addWidget(close_btn)
+        footer.addWidget(self._submit_btn)
+        root.addLayout(footer)
+
+        # The opened context's pane is built here, so a failure to build it
+        # still reaches the caller as an exception, as it always has.
+        self._show_context(context)
+        self._tabs.setCurrentIndex(grid.CONTEXTS.index(context))
+        self._tabs.currentChanged.connect(self._on_tab_changed)
+
+    # ── Tabs ──────────────────────────────────────────────
+
+    def current_context(self) -> str:
+        return self._tabs.tabData(self._tabs.currentIndex())
+
+    def _pane(self, context: str) -> _ContextPane:
+        pane = self._panes.get(context)
+        if pane is None:
+            opened_context, uris, department, kinds = self._opened
+            uris, department, kinds = grid.tab_seed(
+                context, opened_context, uris, department, kinds,
+            )
+            pane = _ContextPane(
+                self, uris, context, department=department, tick_kinds=kinds,
+            )
+            self._panes[context] = pane
+            self._stack.addWidget(pane)
+        return pane
+
+    def _show_context(self, context: str) -> None:
+        pane = self._pane(context)
+        self._stack.setCurrentWidget(pane)
+        self._pane_changed(pane)
+
+    def _on_tab_changed(self, index: int) -> None:
+        context = self._tabs.tabData(index)
+        try:
+            self._show_context(context)
+        except Exception as error:
+            log.exception("Could not open the %s tab", context)
+            # Back to the tab still on screen, so the bar and grid agree.
+            shown = self._stack.currentWidget()
+            if isinstance(shown, _ContextPane):
+                self._tabs.blockSignals(True)
+                self._tabs.setCurrentIndex(grid.CONTEXTS.index(shown.context))
+                self._tabs.blockSignals(False)
+            QMessageBox.warning(
+                self, "Farm Submit", f"Could not list the {context}:\n\n{error}",
+            )
+
+    def _pane_changed(self, pane: _ContextPane) -> None:
+        """A pane's ticks changed: relabel its tab, and the footer if it is in front."""
+        index = grid.CONTEXTS.index(pane.context)
+        self._tabs.setTabText(
+            index, grid.tab_label(pane.context, pane.ticked_row_count()),
+        )
+        if self._stack.currentWidget() is pane:
+            self._summary.setText(pane.summary_text())
+
+    # ── Submit ────────────────────────────────────────────
+
+    def _on_submit(self) -> None:
+        pane = self._stack.currentWidget()
+        if isinstance(pane, _ContextPane):
+            pane.submit()
 
     def done(self, result: int) -> None:
-        self._poll.stop()
-        self._executor.shutdown(wait=False, cancel_futures=True)
+        for pane in self._panes.values():
+            pane.shutdown()
         super().done(result)
 
 

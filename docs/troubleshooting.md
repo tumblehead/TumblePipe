@@ -485,14 +485,14 @@ failed the task instead.
 The **notify** job of a **First / Middle / Last** render. It looked for the
 denoised frames under `denoise/<Discord channel>/` (`renders`) instead of
 `denoise/<render channel>/` (`default`), so it failed on every attempt even
-though the render and denoise succeeded. Fixed after 1.63.2; the frames
+though the render and denoise succeeded. Fixed in 1.64.0; the frames
 themselves are fine.
 
 ### Denoise task failed: `FileExistsError: [WinError 183] … denoise\…`
 
 Two farm tasks created the same output folder on the shared drive at once,
 and the second one could not see the folder the first had just made. Deadline
-retries the task and it usually succeeds. After 1.63.2 the farm tasks wait for
+retries the task and it usually succeeds. From 1.64.0 the farm tasks wait for
 the folder to appear instead of failing.
 
 ### Farm job failed: `Channel not found in discord config: renders`

@@ -3,17 +3,20 @@
 A colour AOV (beauty, its light groups, albedo, the LPE splits) is an image a
 person looks at, so lossy DWA compression is fine for it. Everything else is
 data a comp reads numerically -- mattes, depth, normals, alpha, position --
-and DWA's quantisation shows up there as soft matte edges and banded depth, so
-those passes are written with lossless ZIP compression instead
-(``DATA_AOV_COMPRESSION``). Unknown AOVs count as data: an unnecessarily
-lossless colour pass costs disk, a lossy data pass costs a comp.
+and DWA's quantisation shows up there as soft matte edges and banded depth.
 
-Hou-free and import-light on purpose: the plain-python farm tasks (denoise)
-and ``pipe/usd.py`` both read it.
+This is the rule the render department's nodes ship their per-AOV
+compression defaults by (``th::render_vars``, ``th::puzzlemattes``): ZIP for
+data, DWAB for colour. The nodes own the setting -- an artist can change it
+on the node, and nothing downstream rewrites it. Unknown AOVs count as data:
+an unnecessarily lossless colour pass costs disk, a lossy data pass costs a
+comp.
 """
 
-# Lossless EXR compression for data passes, as husk and oiiotool spell it.
+# The compression defaults the render department's nodes ship with, in the
+# spelling of their Compression menus (husk's OpenEXR compression tokens).
 DATA_AOV_COMPRESSION = 'zip'
+COLOR_AOV_COMPRESSION = 'dwab'
 
 COLOR_AOV_NAMES = frozenset({
     'beauty',
@@ -34,3 +37,8 @@ def is_data_aov(aov_name: str) -> bool:
     if name.startswith(COLOR_AOV_PREFIXES):
         return False
     return True
+
+
+def default_compression(aov_name: str) -> str:
+    """The compression a node defaults ``aov_name`` to."""
+    return DATA_AOV_COMPRESSION if is_data_aov(aov_name) else COLOR_AOV_COMPRESSION
