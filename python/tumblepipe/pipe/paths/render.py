@@ -903,8 +903,11 @@ def get_render_context(
     return RenderContext(renders = renders)
 
 # The AOVs build_comp wires every channel's comp from: beauty feeds the grade
-# subnet and alpha is its last input.
-REQUIRED_COMP_AOVS = ('beauty', 'alpha')
+# subnet. The beauty is RGBA and its A is the grade subnet's alpha input; a
+# render from before beauty went RGBA brings a separate `alpha` AOV for it
+# instead (see pipe.aovs.comp_alpha_source), and an RGB beauty with neither
+# comps opaque -- so alpha is never required.
+REQUIRED_COMP_AOVS = ('beauty',)
 
 def comp_input_problems(
     aov_labels: dict[str, list[str]],

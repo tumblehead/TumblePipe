@@ -2,7 +2,7 @@
 
 A colour AOV (beauty, its light groups, albedo, the LPE splits) is an image a
 person looks at, so lossy DWA compression is fine for it. Everything else is
-data a comp reads numerically -- mattes, depth, normals, alpha, position --
+data a comp reads numerically -- mattes, depth, normals, position --
 and DWA's quantisation shows up there as soft matte edges and banded depth.
 
 This is the rule the render department's nodes ship their per-AOV
@@ -78,3 +78,32 @@ def mask_output_labels(aov_name: str, channel_count) -> list[str]:
     if channel_count == 1:
         return [aov_name]
     return ['R', 'G', 'B']
+
+
+# Where a comp takes a channel's alpha from. The beauty is rendered RGBA
+# (th::render_vars authors it color4f): its alpha is the render's own
+# coverage and honours holdouts. The separate `alpha` AOV it replaced was
+# sourced from `ray:hit`, a utility AOV Karma's holdouts do not touch, so in
+# a render layer with the set held out it still counted the set as solid.
+# Renders made before the change still carry an RGB beauty and an `alpha`
+# AOV, and keep working: their alpha comes from that AOV.
+ALPHA_FROM_BEAUTY = 'beauty'
+ALPHA_FROM_AOV = 'alpha'
+LEGACY_ALPHA_AOV = 'alpha'
+
+
+def comp_alpha_source(beauty_alpha_index, aov_names):
+    """Where a comp reads a channel's alpha from, or None when nowhere.
+
+    ``beauty_alpha_index`` is the index of the beauty EXR's alpha channel
+    (``apps.exr.alpha_channel_index``), None when it has none or could not be
+    read; ``aov_names`` the AOVs the channel rendered. An RGBA beauty is used
+    whenever there is one -- even next to a legacy ``alpha`` AOV, which
+    ignores holdouts. Otherwise a legacy render's ``alpha`` AOV, else nothing
+    (the comp treats the channel as opaque).
+    """
+    if beauty_alpha_index is not None:
+        return ALPHA_FROM_BEAUTY
+    if LEGACY_ALPHA_AOV in set(aov_names):
+        return ALPHA_FROM_AOV
+    return None

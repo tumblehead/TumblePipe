@@ -22,6 +22,12 @@ from tumblepipe.config.timeline import BlockRange
 from tumblepipe.farm._common import ensure_dir, is_int
 from tumblepipe.apps import exr
 from tumblepipe.farm.tasks.env import print_env
+from tumblepipe.pipe.aovs import (
+    comp_alpha_source,
+    ALPHA_FROM_BEAUTY,
+    ALPHA_FROM_AOV,
+    LEGACY_ALPHA_AOV
+)
 
 
 def _get_ocio_env():
@@ -49,23 +55,59 @@ def _get_frame_path(framestack_path, frame_index):
         framestack_path.name.replace('*', frame_name)
     )
 
-def _merge_rgba(
+def rgba_command(
+    rgb_path: Path,
+    alpha_source,
     beauty_path: Path,
-    alpha_path: Path,
-    output_path: Path
-    ) -> int:
-    """Merge RGB beauty with single-channel alpha using oiiotool --chappend"""
-    oiiotool_cmd = [
-        'oiiotool',
-        path_str(local_path(beauty_path)),
-        path_str(local_path(alpha_path)),
-        '--chappend',
+    alpha_path,
+    output_path: Path,
+    beauty_alpha_index: int = 3
+    ) -> list[str]:
+    """The oiiotool command that makes one layer's RGBA for the slapcomp.
+
+    ``alpha_source`` is :func:`tumblepipe.pipe.aovs.comp_alpha_source`'s
+    answer: the RGBA beauty's own alpha (its channel ``beauty_alpha_index``,
+    in oiiotool's order), a legacy render's separate ``alpha`` AOV, or None
+    for a constant 1. Channels are selected by position, never by name:
+    per-AOV files carry `<aov>.R`-style names and a by-name `--ch` silently
+    zero-fills what it can't find (solid black).
+    """
+    command = ['oiiotool', path_str(local_path(rgb_path)), '--ch', '0,1,2']
+    if alpha_source == ALPHA_FROM_BEAUTY:
+        command += [
+            path_str(local_path(beauty_path)),
+            '--ch', str(beauty_alpha_index), '--chappend'
+        ]
+    elif alpha_source == ALPHA_FROM_AOV:
+        command += [
+            path_str(local_path(alpha_path)), '--ch', '0', '--chappend'
+        ]
+    else:
+        command += ['--ch', '0,1,2,A=1.0']
+    command += [
         '--chnames', 'R,G,B,A',
         *exr.ACESCG_ATTRIB_ARGS,
         '-o', path_str(local_path(output_path))
     ]
-    print('    Merging RGBA: beauty + alpha -> temp')
-    return exr._run(oiiotool_cmd, env=_get_ocio_env())
+    return command
+
+# Beauty frame pattern -> index of its alpha channel (None: no alpha). Every
+# frame of a render shares one layout, so one oiiotool probe per beauty.
+_BEAUTY_ALPHA_INDEX = dict()
+
+def _beauty_alpha_index(beauty_pattern: Path, beauty_path: Path):
+    """Index of the beauty's alpha channel in oiiotool's channel order.
+
+    oiiotool's order, not the EXR header's: the header lists channels
+    alphabetically (`A,B,G,R`) while oiiotool, whose `--ch` takes the index,
+    puts them `R,G,B,A`.
+    """
+    key = str(beauty_pattern)
+    if key not in _BEAUTY_ALPHA_INDEX:
+        image_infos = exr.get_image_info(local_path(beauty_path))
+        channels = image_infos[0].channels if image_infos else []
+        _BEAUTY_ALPHA_INDEX[key] = exr.alpha_channel_index(channels or [])
+    return _BEAUTY_ALPHA_INDEX[key]
 
 def _composite_frame(
     frame_index: int,
@@ -100,13 +142,17 @@ def _composite_frame(
                 print(f'  Warning: Beauty AOV not found at {beauty_path}, skipping')
                 continue
 
-            # Check if we need to merge alpha channel
-            needs_alpha_merge = 'alpha' in layer_aovs
-            if needs_alpha_merge:
-                alpha_path = _get_frame_path(layer_aovs['alpha'], frame_index)
+            # Where the layer's alpha comes from: the RGBA beauty, or the
+            # separate alpha AOV of a render made before beauty went RGBA
+            alpha_path = None
+            available_aovs = set(layer_aovs.keys())
+            if LEGACY_ALPHA_AOV in layer_aovs:
+                alpha_path = _get_frame_path(layer_aovs[LEGACY_ALPHA_AOV], frame_index)
                 if not local_path(alpha_path).exists():
                     print(f'  Warning: Alpha AOV specified but not found at {alpha_path}')
-                    needs_alpha_merge = False
+                    available_aovs.discard(LEGACY_ALPHA_AOV)
+            beauty_alpha_index = _beauty_alpha_index(layer_aovs['beauty'], beauty_path)
+            alpha_source = comp_alpha_source(beauty_alpha_index, available_aovs)
 
             # Find all LPE AOVs (beauty_*)
             lpe_aovs = {
@@ -150,33 +196,25 @@ def _composite_frame(
                 print(f'  Layer {layer_name}: Using beauty AOV directly')
                 rgb_source_path = beauty_path
 
-            # Merge alpha if needed
-            if needs_alpha_merge:
-                print(f'  Layer {layer_name}: Merging alpha channel')
-                layer_rgba_path = temp_path / f'layer_{layer_index}_rgba.exr'
-                result = _merge_rgba(rgb_source_path, alpha_path, layer_rgba_path)
-                if result != 0:
-                    return _error(f'Failed to merge RGBA for layer {layer_name}')
-                layer_output_paths.append((layer_name, layer_rgba_path, beauty_path))
+            # Make the layer RGBA
+            if alpha_source == ALPHA_FROM_BEAUTY:
+                print(f'  Layer {layer_name}: Alpha from the RGBA beauty')
+            elif alpha_source == ALPHA_FROM_AOV:
+                print(f'  Layer {layer_name}: Alpha from the alpha AOV')
             else:
-                # No alpha, add constant alpha=1.0 to make RGBA
                 print(f'  Layer {layer_name}: Adding constant alpha=1.0')
-                layer_rgba_path = temp_path / f'layer_{layer_index}_rgba.exr'
-                # Select channels by position, not name: raw render AOVs carry
-                # AOV-prefixed channel names (beauty.R, ...) and a by-name --ch
-                # silently zero-fills missing R,G,B — solid black output.
-                add_alpha_cmd = [
-                    'oiiotool',
-                    path_str(local_path(rgb_source_path)),
-                    '--ch', '0,1,2,A=1.0',
-                    '--chnames', 'R,G,B,A',
-                    *exr.ACESCG_ATTRIB_ARGS,
-                    '-o', path_str(local_path(layer_rgba_path))
-                ]
-                result = exr._run(add_alpha_cmd, env=_get_ocio_env())
-                if result != 0:
-                    return _error(f'Failed to add constant alpha for layer {layer_name}')
-                layer_output_paths.append((layer_name, layer_rgba_path, beauty_path))
+            layer_rgba_path = temp_path / f'layer_{layer_index}_rgba.exr'
+            result = exr._run(
+                rgba_command(
+                    rgb_source_path, alpha_source,
+                    beauty_path, alpha_path, layer_rgba_path,
+                    beauty_alpha_index if beauty_alpha_index is not None else 3
+                ),
+                env=_get_ocio_env()
+            )
+            if result != 0:
+                return _error(f'Failed to make RGBA for layer {layer_name}')
+            layer_output_paths.append((layer_name, layer_rgba_path, beauty_path))
 
         # Composite all layers together using "over" operation
         if not layer_output_paths:

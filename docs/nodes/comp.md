@@ -55,7 +55,7 @@ Gotchas:
   composite is built for one shot, so set **Shot** to the member; Submit
   there says so rather than sending the farm the Multi.
 - The first Update refuses to build when no channel has a complete render,
-  or a rendered channel has no `beauty` or `alpha` AOV. It says which and
+  or a rendered channel has no `beauty` AOV. It says which and
   where it looked, and builds normally on the next Update once the renders
   are there. Without a farm, see
   [Rendering without a farm](../compositing.md#rendering-without-a-farm).

@@ -12,6 +12,18 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.67.0 — 2026-10-09
+
+### Breaking Changes
+- feat!: remove th::render_layer_setup and the render layer matte recipe (`1fcc474`)
+
+### Fixes
+- fix(publish): the Channel column names every channel a row covers (`ebde828`)
+
+### Documentation
+- docs: publish dialog Channel column; link config to render layers (`c0f1287`)
+- docs: regenerate CHANGELOG.md for v1.66.0 (`0fe31e7`)
+
 ## v1.66.0 — 2026-10-09
 
 ### Features

@@ -6186,7 +6186,7 @@ Content-Type: text/plain
 Content-Disposition: attachment; filename="hdaroot/render_vars.init"
 Content-Type: text/plain
 
-type = th::render_vars::1.0
+type = th::render_vars::1.1
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -6229,8 +6229,7 @@ Content-Type: text/plain
         name    "lop_activation"
         label   "Activation"
         type    toggle
-        default { "0" }
-        parmtag { "script_callback_language" "python" }
+        default { "1" }
     }
     parm {
         name    "beauty"
@@ -6250,12 +6249,6 @@ Content-Type: text/plain
         name    "sample_count"
         baseparm
         label   "samples"
-        export  none
-    }
-    parm {
-        name    "alpha"
-        baseparm
-        label   "alpha"
         export  none
     }
     parm {
@@ -6287,7 +6280,7 @@ Content-Type: text/plain
     parm {
         name    "sepparm"
         baseparm
-        label   "Separator"
+        label   "sepparm"
         export  none
     }
     parm {
@@ -6332,6 +6325,97 @@ Content-Type: text/plain
         label   "emission"
         export  none
     }
+    groupcollapsible {
+        name    "compression_folder2"
+        label   "Compression"
+        grouptag { "group_type" "collapsible" }
+
+        parm {
+            name    "albedo_compression"
+            baseparm
+            label   "albedo"
+            export  none
+        }
+        parm {
+            name    "diffuse_compression"
+            baseparm
+            label   "diffuse"
+            export  none
+        }
+        parm {
+            name    "normal_compression"
+            baseparm
+            label   "normal"
+            export  none
+        }
+        parm {
+            name    "specular_compression"
+            baseparm
+            label   "specular"
+            export  none
+        }
+        parm {
+            name    "depth_compression"
+            baseparm
+            label   "depth"
+            export  none
+        }
+        parm {
+            name    "emission_compression"
+            baseparm
+            label   "emission"
+            export  none
+        }
+        parm {
+            name    "volume_compression"
+            baseparm
+            label   "volume"
+            export  none
+        }
+        parm {
+            name    "position_compression"
+            baseparm
+            label   "position"
+            export  none
+        }
+        parm {
+            name    "uv_compression"
+            baseparm
+            label   "uv"
+            export  none
+        }
+        parm {
+            name    "beauty_compression"
+            baseparm
+            label   "beauty"
+            export  none
+        }
+        parm {
+            name    "albedo_mse_compression"
+            baseparm
+            label   "albedo_mse"
+            export  none
+        }
+        parm {
+            name    "normal_mse_compression"
+            baseparm
+            label   "normal_mse"
+            export  none
+        }
+        parm {
+            name    "samples_compression"
+            baseparm
+            label   "samples"
+            export  none
+        }
+        parm {
+            name    "beauty_mse_compression"
+            baseparm
+            label   "beauty_mse"
+            export  none
+        }
+    }
+
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/render_vars.chn"
@@ -6341,8 +6425,11 @@ Content-Type: text/plain
     channel lop_activation {
       lefttype = extend
       righttype = extend
+      default = 1
       flags = 0
-      segment { length = 0 expr = "import hou
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "import hou
 
 def _already_has_render_vars(root):
     vars_prim = root.GetPrimAtPath('/Render/Products/Vars/beauty')
@@ -6365,7 +6452,6 @@ version 0.8
 beauty	[ 0	locks=0 ]	(	"on"	)
 beauty_mse	[ 0	locks=0 ]	(	"off"	)
 sample_count	[ 0	locks=0 ]	(	"off"	)
-alpha	[ 0	locks=0 ]	(	"off"	)
 albedo	[ 0	locks=0 ]	(	"off"	)
 albedo_mse	[ 0	locks=0 ]	(	"off"	)
 normal	[ 0	locks=0 ]	(	"off"	)
@@ -6378,7 +6464,23 @@ specular	[ 0	locks=0 ]	(	"off"	)
 depth	[ 0	locks=0 ]	(	"off"	)
 volume	[ 0	locks=0 ]	(	"off"	)
 emission	[ 0	locks=0 ]	(	"off"	)
-lop_activation	[ 0	locks=0 ]	(	[ lop_activation	0 ] 	)
+compression_folder	[ 0	locks=0 ]	(	0	)
+albedo_compression	[ 0	locks=0 ]	(	"dwab"	)
+diffuse_compression	[ 0	locks=0 ]	(	"dwab"	)
+normal_compression	[ 0	locks=0 ]	(	"zip"	)
+specular_compression	[ 0	locks=0 ]	(	"dwab"	)
+depth_compression	[ 0	locks=0 ]	(	"zip"	)
+emission_compression	[ 0	locks=0 ]	(	"dwab"	)
+volume_compression	[ 0	locks=0 ]	(	"dwab"	)
+position_compression	[ 0	locks=0 ]	(	"zip"	)
+uv_compression	[ 0	locks=0 ]	(	"zip"	)
+beauty_compression	[ 0	locks=0 ]	(	"dwab"	)
+albedo_mse_compression	[ 0	locks=0 ]	(	"zip"	)
+normal_mse_compression	[ 0	locks=0 ]	(	"zip"	)
+samples_compression	[ 0	locks=0 ]	(	"zip"	)
+beauty_mse_compression	[ 0	locks=0 ]	(	"dwab"	)
+lop_activation	[ 0	locks=0 ]	(	[ lop_activation	1 ] 	)
+compression_folder2	[ 0	locks=0 ]	(	0	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY

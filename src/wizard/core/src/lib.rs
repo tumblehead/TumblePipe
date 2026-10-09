@@ -3,6 +3,7 @@
 //! so the byte-for-byte JSON parity with the old Python wizard can be pinned
 //! by unit tests without spinning up a window.
 
+pub mod beauty_alpha;
 pub mod migration;
 
 use std::path::{Path, PathBuf};

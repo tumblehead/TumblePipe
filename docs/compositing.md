@@ -52,7 +52,7 @@ matte has a **Compression** menu. They default to lossless **ZIP** for data
 and lossy **DWAB** for colour. Colour is `beauty`, its `beauty_<tag>` light
 groups and their variance, `albedo` and the LPE splits (`diffuse`, `specular`,
 `volume`, `emission`); everything else is data — the `objid_*` / `holdout_*`
-mattes, `depth`, `normal`, `alpha`, `position`, `uv`, `samples`, the other
+mattes, `depth`, `normal`, `position`, `uv`, `samples`, the other
 variances. DWA's quantisation is invisible in a picture but shows up in a
 comp that reads the numbers: soft matte edges, banded depth. The rule the
 defaults follow lives in [`pipe/aovs.py`](../python/tumblepipe/pipe/aovs.py).
@@ -65,6 +65,43 @@ distance ramps (`ramp_*`) are not denoised at all: OIDN would soften their
 edges, so the denoise publishes them as byte copies of the render input —
 same pixels, same compression. To change a pass's compression, change the
 menu and re-publish the render department.
+
+## Alpha lives in the beauty
+
+The `beauty` is rendered **RGBA** (`color4f`), and its A is the alpha every
+comp uses. There is no separate `alpha` AOV any more. The one there was came
+from Karma's `ray:hit`, a *utility* AOV, and Karma's holdouts do not touch
+utility AOVs (Render Geometry Settings › Holdout Mode: "Holdout Mode does not
+affect the utility AOVs such as ray:hitP"). So in a render layer with the set
+held out (Matte), that alpha still counted the set as solid — HideAndReek
+070's `characters` channel showed the tree canopy through it. The beauty's
+own alpha honours holdouts: 0 over a held-out object, 1 over what is seen.
+
+- **Denoise** runs OIDN over the beauty's RGB only. Its alpha is not
+  denoised: it goes around the denoise straight from the render input and
+  is published back onto the denoised RGB, so the published beauty is RGBA
+  with the render's own coverage, in the beauty's compression.
+- **slapcomp** and **`build_comp`** take each channel's alpha from the
+  beauty whenever it has four channels. A render from before the change has
+  an RGB beauty and an `alpha` AOV, and keeps working off that AOV. The
+  beauty wins even when an `alpha` AOV sits beside it — the latest beauty
+  and the latest alpha can come from different departments or versions, and
+  the old alpha ignores holdouts. An RGB beauty with no `alpha` AOV comps
+  opaque.
+- The decision is made from the beauty file itself -- whether it has an
+  `A` channel -- never from which AOV folders exist. slapcomp takes that
+  channel by its index in oiiotool's order (`R,G,B,A`), not the EXR
+  header's, which lists channels alphabetically (`A,B,G,R`).
+- **The edit gets the alpha too.** *Copy to edit* copies the RGBA beauty,
+  and DaVinci Resolve can honour its alpha: the sky (alpha 0) and
+  motion-blur/DOF edges turn transparent and show whatever track is below.
+  On a timeline where a render should read as a solid picture, set the
+  clip's **Alpha Mode** to *None*; use *Premultiplied* only where layers are
+  meant to stack (a characters channel over a background channel).
+
+The light groups (`beauty_<tag>`, from `th::lpe_tags`) stay RGB: they are
+summed back into a beauty, and an alpha in each would be added once per
+group. A comp that re-sums them takes A from the beauty, as above.
 
 An AOV no node sets falls back to the project's RenderProduct, which asks for
 DWAB. Up to 1.64.0 `th::render_vars` set every AOV to DWAB and
@@ -82,14 +119,26 @@ it resolves the shot from the workfile's `context.json` sidecar.
 
 - one subnet per shot channel, containing a typed `file` COP per AOV —
   LPE passes (`beauty`, `beauty_*`), masks (`objid_*`), mono passes
-  (`alpha`, `holdout_*`, the `ramp_*` distance ramps), and utility passes
+  (`holdout_*`, the `ramp_*` distance ramps), and utility passes
   (`depth`, `normal`, `albedo`, …),
+- an `alpha` subnet per channel feeding the grade subnet's `alpha` input:
+  the RGBA beauty's A (read RGBA and split), or for a render from before
+  beauty went RGBA its `alpha` AOV. Update re-points it when a channel's
+  newest render switches from one to the other, and removes it when the
+  newest render has neither (the channel then comps opaque); a comp that
+  never had one gets one on Update, at the comp's proxy scale,
 - a mask's outputs follow its channel count, read from the header of the
   AOV's first rendered frame: a 3-channel `th::puzzlemattes` matte is split
   into R, G and B outputs, a 1-channel `th::mattes` matte is one output named
   after the AOV. A header that can't be read is treated as 3-channel,
 - each import pinned to the **latest complete version** of that channel's
   AOV, searching render departments up to the node's selected department,
+- each `file` COP asks for the plane its file actually has: a raw render
+  split names its channels `<aov>.R…`, found by the AOV's name, while the
+  denoise publishes bare `R,G,B(,A)`, which the File COP only finds as `C`
+  (asked for `beauty`, it loads nothing). The header of the first frame
+  decides, on Build and again on every Update, so a comp built on a raw
+  render follows its channels to the denoised publish,
 - a grade subnet per channel with the LPE passes re-summed to a graded
   beauty,
 - channels over-merged back-to-front in shot channel order.
@@ -106,7 +155,7 @@ place.
 
 The first **Update** refuses to build when the renders cannot make a comp:
 no channel has a complete render, or a rendered channel is missing its
-`beauty` or `alpha` AOV. It says which, and names the folder it searched.
+`beauty` AOV. It says which, and names the folder it searched.
 Nothing is built and the node is not marked built, so the next **Update**
 after the renders land builds normally.
 
@@ -126,7 +175,6 @@ Submit; see `docs/deadline.md` for setting one up. Without a farm:
   render:/render/shots/<seq>/<shot>/render/<channel>/v0001/
       context.json
       beauty/<seq>_<shot>_<channel>_beauty_v0001.1001.exr
-      alpha/<seq>_<shot>_<channel>_alpha_v0001.1001.exr
       <aov>/<seq>_<shot>_<channel>_<aov>_v0001.1001.exr
   ```
 
@@ -135,7 +183,8 @@ Submit; see `docs/deadline.md` for setting one up. Without a farm:
   `{"first_frame": 1001, "last_frame": 1100, "step_size": 1}`. Every frame
   in that range must exist for every AOV folder or the version is ignored.
   Write one EXR per AOV per frame, with its layer named after the AOV (the
-  name Karma gives the AOV's subimage). `beauty` and `alpha` are required;
+  name Karma gives the AOV's subimage). `beauty` is required, and should
+  be RGBA — its A is the comp's alpha (an RGB beauty comps opaque);
   `beauty_*` light groups, `objid_*`, `holdout_*`, `ramp_*`, `albedo`, `normal`,
   `depth`, `uv` and `position` are picked up when present. Use the next
   free `v####` for each new render.
@@ -171,7 +220,8 @@ default and can be overridden on the node.
 
 Independent of comp, every full **render** job also auto-chains a
 *slapcomp* — a headless oiiotool over-composite of the latest complete
-beauty/alpha across departments — followed by its own MP4 and Discord
+RGBA beauty across departments (or, for older renders, RGB beauty plus
+`alpha` AOV) — followed by its own MP4 and Discord
 notify. That quick-comp is what makes fresh renders reviewable before
 any composite workfile exists.
 

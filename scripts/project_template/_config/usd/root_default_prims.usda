@@ -47,9 +47,9 @@ def Scope "Render"
                 apiSchemas = ["KarmaRenderVarAPI", "HuskRenderVarAPI"]
             )
             {
-                uniform token dataType = "color3f"
+                uniform token dataType = "color4f"
                 custom int driver:parameters:aov:clearValue = 0
-                custom token driver:parameters:aov:format = "color3f"
+                custom token driver:parameters:aov:format = "color4f"
                 bool driver:parameters:aov:husk:channel_lower_rgb = 1
                 string driver:parameters:aov:husk:OpenEXR:compression = "dwab"
                 int driver:parameters:aov:husk:OpenEXR:dwa_compression = 45
@@ -61,26 +61,6 @@ def Scope "Render"
                 custom string driver:parameters:aov:name = "beauty"
                 uniform string sourceName = "C.*[LO]"
                 uniform token sourceType = "lpe"
-            }
-
-            def RenderVar "alpha" (
-                apiSchemas = ["KarmaRenderVarAPI", "HuskRenderVarAPI"]
-            )
-            {
-                uniform token dataType = "float"
-                custom int driver:parameters:aov:clearValue = 0
-                custom token driver:parameters:aov:format = "half"
-                bool driver:parameters:aov:husk:channel_lower_rgb = 1
-                string driver:parameters:aov:husk:OpenEXR:compression = "dwab"
-                int driver:parameters:aov:husk:OpenEXR:dwa_compression = 45
-                bool driver:parameters:aov:karma:cryptomatte = 0
-                float driver:parameters:aov:karma:defaultvalue = 0
-                float driver:parameters:aov:karma:dither = 1
-                string driver:parameters:aov:karma:filter = '["ubox",{}]'
-                custom bool driver:parameters:aov:multiSampled = 0
-                custom string driver:parameters:aov:name = "alpha"
-                uniform string sourceName = "ray:noholdouts;hit"
-                uniform token sourceType = "raw"
             }
 
             def RenderVar "albedo" (
@@ -135,7 +115,6 @@ def Scope "Render"
             int driver:parameters:husk:OpenEXR:dwa_compression = 45
             rel orderedVars = [
                 </Render/Products/Vars/beauty>,
-                </Render/Products/Vars/alpha>,
                 </Render/Products/Vars/albedo>,
                 </Render/Products/Vars/normal>,
             ]

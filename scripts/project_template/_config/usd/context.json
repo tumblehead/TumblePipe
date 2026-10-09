@@ -2,7 +2,7 @@
     "outputs": [{
         "uri": "config:/usd/root_default_prims",
         "parameters": {
-            "aov_names": ["beauty", "alpha", "albedo", "normal"]
+            "aov_names": ["beauty", "albedo", "normal"]
         }
     }]
 }

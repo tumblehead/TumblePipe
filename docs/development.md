@@ -822,6 +822,26 @@ It builds its stage in memory and touches no project data, but it drives real
 nodes, so it needs Houdini with `otls/` on `HOUDINI_OTLSCAN_PATH` and `python/`
 on `PYTHONPATH` (e.g. TumbleTrove Desktop's `run_hython`).
 
+## build_comp alpha harness
+
+`scripts/verify_build_comp_alpha.py` drives the real `th::build_comp` node's
+Build and Update over EXR fixtures and checks the alpha wiring *and* the
+cooked pixels (see
+[Compositing → Alpha lives in the beauty](compositing.md#alpha-lives-in-the-beauty)):
+a comp built from a legacy render (RGB `beauty.R/G/B` + `alpha.Z`) reads the
+alpha AOV; Updated to the denoise's RGBA publish (bare `R,G,B,A`) its alpha
+subnet reads the beauty and splits output 3 out, and every File COP asks for
+plane `C` (a File COP asked for `beauty` on bare channels loads nothing);
+Updated to an RGB beauty with no alpha the subnet goes and the channel comps
+opaque; and a comp that never had an alpha subnet gets one on Update at the
+comp's proxy scale.
+
+It answers build_comp's project lookups itself (a subclass plus module-level
+stand-ins, installed *after* the nodes are created, because the HDA's
+OnCreated reloads `build_comp`), writes its fixtures with the install's
+`hoiiotool` to a temp dir, and puts this checkout's `python/` first on
+`sys.path`. Run it with hython (e.g. TumbleTrove Desktop's `run_hython`).
+
 ## Renaming across the wire boundary
 
 `channel` (the publish-tree fork, once called a *variant*) is the worked

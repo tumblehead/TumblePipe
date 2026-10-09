@@ -18,7 +18,9 @@ Karma render settings for the shot, with named presets. Tab menu
 `_TumblePipe/pipeline`; drop it in the shot's `/stage` after the lights.
 Inside it is a Karma Render Properties node driven by the parms below, plus
 an embedded `th::render_vars` that has **only `beauty` ticked** and is not
-on the interface — every other AOV comes from a separate
+on the interface. It only switches on when nothing upstream has authored a
+`beauty` RenderVar, so a shot always renders at least the RGBA beauty —
+every other AOV comes from a separate
 [`th::render_vars`](#thrender_vars-lop), [`th::lpe_tags`](#thlpe_tags-lop)
 or [`th::puzzlemattes`](#thpuzzlemattes-lop) downstream.
 Source: [`otls/lop_th.render_settings.1.0`](../../otls/lop_th.render_settings.1.0/th_8_8Lop_1render__settings_8_81.0/DialogScript),
@@ -57,16 +59,27 @@ Source: [`otls/lop_th.render_vars.1.1`](../../otls/lop_th.render_vars.1.1/th_8_8
 
 | Toggle | AOV | What it contains |
 |---|---|---|
-| beauty | `beauty` | Full beauty (`C.*[LO]`) |
+| beauty | `beauty` | Full beauty (`C.*[LO]`), **RGBA** (`color4f`): its A is the alpha every comp uses |
 | variance (after beauty) | `beauty_mse` | Beauty variance, for the denoiser |
 | samples | `samples` | Pixel sample count |
-| alpha | `alpha` | |
 | albedo, variance | `albedo`, `albedo_mse` | Base colour and its variance |
 | normal, variance | `normal`, `normal_mse` | Hit normal and its variance |
 | uv | `uv` | `st` |
 | position | `position` | Hit position |
 | diffuse / specular / volume / emission | `diffuse`, `specular`, `volume`, `emission` | LPE splits (`C<RD>.*L`, `C<RG>.*L`, `CV.*L`, `C.*O`) |
 | depth | `depth` | Hit depth (`ray:hitPz`) |
+
+There is no alpha toggle: the alpha is the beauty's A. The separate `alpha`
+AOV this node used to write came from `ray:hit`, which Karma's holdouts do not
+affect, so it counted held-out objects as solid; see
+[Compositing → Alpha lives in the beauty](../compositing.md#alpha-lives-in-the-beauty).
+Its `alpha` and `alpha_compression` parms are still on the node, hidden and
+inert, so render templates and saved scenes that set them load cleanly.
+Placed nodes picked up the change in place (same 1.1 version) — re-publish
+the render department to render with it. A project's own
+`root_default_prims.usda` also authors the default render vars; migration
+v10 drops its `alpha` there too (see
+[Configuration](../configuration.md)).
 
 Every consumer sorts AOVs the same way (`aov.py`): `beauty` first, then the
 `beauty_<tag>` light groups, then the `objid_*` / `holdout_*` mattes, then
@@ -75,7 +88,7 @@ in.
 
 **Compression** (a collapsible folder) holds one menu per AOV: the EXR
 compression that AOV is written with, greyed out while its toggle is off.
-Data AOVs (`alpha`, `normal`, `depth`, `position`, `uv`, `samples`, the
+Data AOVs (`normal`, `depth`, `position`, `uv`, `samples`, the
 `*_mse` variances other than `beauty_mse`) default to lossless **ZIP**, colour
 AOVs to **DWAB**. The farm writes exactly what is set here; see
 [Compositing → Compression](../compositing.md#compression).

@@ -364,14 +364,32 @@ def read_channel_names(input_path: Path) -> Optional[list[str]]:
     except OSError:
         return None
 
+# The plane name the Copernicus File COP gives an EXR's unprefixed R,G,B(,A)
+# channels. A raw render split names its channels `<aov>.R`, and the File COP
+# finds that plane by the AOV's name; the denoise publishes plain `R,G,B(,A)`,
+# which the File COP only answers to as `C` (asking it for `beauty` comes back
+# empty with "AOV beauty could not be found").
+UNPREFIXED_PLANE_NAME = 'C'
+
+def cop_plane_name(channel_names: Optional[list[str]], aov_name: str) -> str:
+    """The name a File COP finds an AOV file's channels under.
+
+    ``aov_name`` when the channels are `<aov>.`-prefixed (or can't be read --
+    what build_comp always asked for), ``C`` when they are bare.
+    """
+    if not channel_names: return aov_name
+    if any('.' in channel for channel in channel_names): return aov_name
+    return UNPREFIXED_PLANE_NAME
+
 def _channel_selector(channel_count: int) -> Optional[str]:
     """oiiotool `--ch` selection normalizing an AOV to 3 channels.
 
     The COPs path this replaces fed every AOV through `rop_image` as RGB, so a
-    1-channel AOV (`alpha.Z`) was broadcast to 3 and each channel then denoised
+    1-channel AOV (`depth.Z`) was broadcast to 3 and each channel then denoised
     independently. Reproduce that shape here, before the denoise, so the result
-    matches: doing it afterwards would denoise alpha as a single channel and
-    give different values.
+    matches: doing it afterwards would denoise it as a single channel and give
+    different values. A 4-channel AOV (the RGBA beauty) gives OIDN its RGB;
+    its alpha is carried around the denoise, see :func:`extract_aov`.
     """
     if channel_count >= 3: return '0,1,2'
     if channel_count == 1: return '0,0,0'
@@ -423,7 +441,43 @@ def combine_aovs(
     if not local_path(output_path).exists(): return None
     return included
 
-def extract_aov(input_path: Path, aov_name: str, output_path: Path) -> int:
+def alpha_channel_index(channels: list[str]) -> Optional[int]:
+    """Index of the alpha channel in an AOV's channel list, None without one.
+
+    Only an AOV of 4 or more channels has one: a 1-channel AOV's lone channel
+    is data (`depth.Z`), not coverage. The alpha is the channel named `A`
+    (any case), bare or as the suffix of an `<aov>.A` name. Indexes follow
+    oiiotool's channel order (what :func:`get_image_info` lists), so the
+    result is a positional `--ch` selector.
+    """
+    if len(channels) < 4: return None
+    for index, channel in enumerate(channels):
+        if channel.rsplit('.', 1)[-1].lower() == 'a':
+            return index
+    return None
+
+def get_alpha_channels(input_paths: dict[str, Path]) -> dict[str, int]:
+    """The alpha channel index of each per-AOV EXR that has one.
+
+    The beauty is rendered RGBA; the denoise denoises its RGB and carries this
+    channel through untouched. Same probing contract as
+    :func:`get_channel_counts`: concrete frame paths, probed once per task.
+    """
+    result = dict()
+    for aov_name, aov_path in input_paths.items():
+        image_infos = get_image_info(local_path(aov_path))
+        if not image_infos: continue
+        index = alpha_channel_index(image_infos[0].channels or [])
+        if index is None: continue
+        result[aov_name] = index
+    return result
+
+def extract_aov(
+    input_path: Path,
+    aov_name: str,
+    output_path: Path,
+    alpha: Optional[tuple[Path, int]] = None
+    ) -> int:
     """Pull one denoised plane out of an idenoise result.
 
     idenoise keeps its input's channel names, so the plane comes back as
@@ -431,14 +485,28 @@ def extract_aov(input_path: Path, aov_name: str, output_path: Path) -> int:
     `R,G,B` (the subimage name is what identifies the AOV). Rename to match --
     consumers index positionally, so the names are cosmetic, but the shape is
     not something to change by accident.
+
+    ``alpha`` is ``(source_path, channel_index)``: the AOV's render input and
+    the index of its alpha channel there. That channel is appended as `A`,
+    straight from the source -- the RGBA beauty publishes RGBA, with the
+    render's own (undenoised) coverage, which is what honours holdouts.
     """
-    return _run([
+    command = [
         'oiiotool',
         path_str(local_path(input_path)),
         '--subimage', aov_name,
         '--chnames', 'R,G,B',
-        '-o', path_str(local_path(output_path))
-    ])
+    ]
+    if alpha is not None:
+        alpha_source_path, alpha_index = alpha
+        command += [
+            path_str(local_path(alpha_source_path)),
+            '--ch', str(alpha_index),
+            '--chnames', 'A',
+            '--chappend',
+        ]
+    command += ['-o', path_str(local_path(output_path))]
+    return _run(command)
 
 def encode(input_path, output_path, compression: str):
     """Re-encode an EXR with ``compression`` (an oiiotool spelling, e.g.

@@ -32,6 +32,7 @@ from tumblepipe.pipe.paths import (
 from tumblepipe.farm.jobs.houdini import _common
 import tumblepipe.farm.tasks.composite.task as composite_job
 import tumblepipe.farm.tasks.slapcomp.task as slapcomp_job
+from tumblepipe.pipe.aovs import LEGACY_ALPHA_AOV
 import tumblepipe.farm.tasks.mp4.task as mp4_job
 import tumblepipe.farm.tasks.notify.task as notify_job
 import tumblepipe.farm.tasks.sync.task as sync_task
@@ -50,7 +51,7 @@ config = {
         'input_path': 'string',
         'node_path': 'string',
         'layer_names': ['main', 'mirror'],
-        'aov_names': ['beauty', 'alpha'],
+        'aov_names': ['beauty'],
         'first_frame': 'int',
         'last_frame': 'int',
         'step_size': 'int',
@@ -420,14 +421,17 @@ def _build_slapcomp_job(
     shot_departments = [d.name for d in list_departments('shots')]
     render_departments = [d.name for d in list_departments('render')]
 
-    # Resolve latest beauty and alpha AOVs across all departments
+    # Resolve latest beauty AOVs across all departments
     # This will find the best available version of each AOV (prioritizing higher departments)
+    # The beauty is RGBA. `alpha` is still resolved for renders from before
+    # that: the slapcomp uses it only when the beauty it gets has no A, so a
+    # stale alpha resolved beside a new RGBA beauty is ignored.
     latest_aovs = render_context.resolve_latest_aovs(
         shot_departments,
         render_departments,
         min_shot_department=None,
         min_render_department=None,
-        aov_filter=lambda aov_name: aov_name in ['beauty', 'alpha']
+        aov_filter=lambda aov_name: aov_name in ['beauty', LEGACY_ALPHA_AOV]
     )
 
     # Build input_paths from resolved AOVs in correct layer order

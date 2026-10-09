@@ -23,7 +23,8 @@ EXPORT_POS = hou.Vector2(0.0, -3.38)
 COLUMN_STRIDE = 5.0
 
 # The render vars the shot always ships with; everything else is opt-in.
-RENDER_VARS_ENABLED = ('beauty', 'alpha')
+# The beauty is RGBA and carries the alpha (no separate alpha AOV).
+RENDER_VARS_ENABLED = ('beauty',)
 
 # Author the per-prim render visibility primvar so the shot can hide geometry
 # from specific ray types. 'set' switches the property on; it defaults to

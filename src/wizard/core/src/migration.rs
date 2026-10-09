@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::beauty_alpha::{self, Edit};
 use crate::load_json;
 
 /// Where a project records the `_config` layout version it is at.
@@ -49,6 +50,9 @@ pub enum Step {
     TempToLocalScratch,
     /// v9 — refresh `_config/templates` again, for the scaffold changes since v2.
     RefreshTemplatesAgain,
+    /// v10 — drop the separate `alpha` AOV from the project's default render
+    /// vars and render the beauty RGBA.
+    BeautyCarriesAlpha,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -92,7 +96,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 9] = [
+pub const STEPS: [Step; 10] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -102,6 +106,7 @@ pub const STEPS: [Step; 9] = [
     Step::FixConventionImports,
     Step::TempToLocalScratch,
     Step::RefreshTemplatesAgain,
+    Step::BeautyCarriesAlpha,
 ];
 
 impl Step {
@@ -117,6 +122,7 @@ impl Step {
             Step::FixConventionImports => 7,
             Step::TempToLocalScratch => 8,
             Step::RefreshTemplatesAgain => 9,
+            Step::BeautyCarriesAlpha => 10,
         }
     }
 
@@ -143,6 +149,9 @@ impl Step {
             }
             Step::RefreshTemplatesAgain => {
                 "refresh _config/templates from the packaged scaffold again"
+            }
+            Step::BeautyCarriesAlpha => {
+                "drop the separate alpha AOV and render the beauty RGBA"
             }
         }
     }
@@ -293,6 +302,14 @@ impl Step {
             // and leaves the rest alone. The helper it points at ships in the
             // same package as this migrator, so it cannot be missing.
             Step::TempToLocalScratch => Readiness::Ready,
+            // Blocked when either file has a shape the edit does not
+            // recognise: it is refused rather than guessed at, and the user
+            // is told what to fix by hand. A project without the files, or
+            // already through, is Ready (and a no-op).
+            Step::BeautyCarriesAlpha => match v10_edits(&cfg) {
+                Ok(_) => Readiness::Ready,
+                Err(why) => Readiness::Blocked(why),
+            },
         }
     }
 }
@@ -716,8 +733,51 @@ impl Step {
                 }
                 write_preserving(&path, &lines.join("\n"))
             }
+            Step::BeautyCarriesAlpha => {
+                // Both edits are worked out before either is written, so a
+                // refusal leaves the project exactly as it was. Own backup
+                // suffix: a `.bak` from an earlier edit stays the original.
+                for (path, text) in v10_edits(&cfg)? {
+                    let style = newlines::style_of_file(&path);
+                    write_preserving_as(&path, &newlines::apply(&text, style), "v10.bak")?;
+                }
+                Ok(())
+            }
         }
     }
+}
+
+/// v10's edits to a project, as `(file, new LF text)`: empty when there is
+/// nothing to do, an error naming the file and the reason when either file
+/// has a shape the edit refuses (see [`beauty_alpha`]).
+fn v10_edits(cfg: &Path) -> Result<Vec<(PathBuf, String)>, String> {
+    let usd_dir = cfg.join("usd");
+    let mut out = Vec::new();
+    // The render vars every shot starts from, and the AOV list a farm job
+    // falls back to when an export context names none
+    let files: [(&str, fn(&str) -> Edit); 2] = [
+        ("root_default_prims.usda", beauty_alpha::root_defaults_edit),
+        ("context.json", beauty_alpha::context_json_edit),
+    ];
+    for (name, edit) in files {
+        let path = usd_dir.join(name);
+        let Ok(current) = std::fs::read_to_string(&path) else {
+            continue; // the project has no such file
+        };
+        match edit(&newlines::normalize(&current)) {
+            Edit::Unchanged => {}
+            Edit::Changed(text) => out.push((path, text)),
+            Edit::Refused(why) => {
+                return Err(format!(
+                    "{} was left alone: {why}. Remove the `alpha` RenderVar (and its \
+                     orderedVars target) and make the beauty RenderVar color4f by hand, \
+                     then launch again",
+                    path.display()
+                ))
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Copy every packaged `template.py` over the project's, backing up any that
@@ -1418,7 +1478,7 @@ mod tests {
 
         let report = migrate(dir.path(), template.path());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.to, 9);
+        assert_eq!(report.to, latest_version());
         assert_eq!(std::fs::read_to_string(&dst).unwrap(), "# packaged\r\n");
         assert_eq!(
             std::fs::read_to_string(dst.with_file_name("template.py.bak")).unwrap(),
@@ -1463,6 +1523,218 @@ mod tests {
             !dst.with_file_name("template.py.bak").exists(),
             "an identical template must not be rewritten or backed up"
         );
+    }
+
+    /// The render vars section of a project's `root_default_prims.usda` as
+    /// the scaffold shipped it before v10 (trimmed to the parts v10 reads).
+    const ROOT_DEFAULTS_WITH_ALPHA: &str = concat!(
+        "def Scope \"Render\"\n",
+        "{\n",
+        "    def Scope \"Products\"\n",
+        "    {\n",
+        "        def Scope \"Vars\"\n",
+        "        {\n",
+        "            def RenderVar \"beauty\" (\n",
+        "                apiSchemas = [\"KarmaRenderVarAPI\", \"HuskRenderVarAPI\"]\n",
+        "            )\n",
+        "            {\n",
+        "                uniform token dataType = \"color3f\"\n",
+        "                custom token driver:parameters:aov:format = \"color3f\"\n",
+        "                string driver:parameters:aov:karma:filter = '[\"ubox\",{}]'\n",
+        "                custom string driver:parameters:aov:name = \"beauty\"\n",
+        "                uniform string sourceName = \"C.*[LO]\"\n",
+        "            }\n",
+        "\n",
+        "            def RenderVar \"alpha\" (\n",
+        "                apiSchemas = [\"KarmaRenderVarAPI\", \"HuskRenderVarAPI\"]\n",
+        "            )\n",
+        "            {\n",
+        "                uniform token dataType = \"float\"\n",
+        "                string driver:parameters:aov:karma:filter = '[\"ubox\",{}]'\n",
+        "                uniform string sourceName = \"ray:noholdouts;hit\"\n",
+        "            }\n",
+        "\n",
+        "            def RenderVar \"albedo\" (\n",
+        "                apiSchemas = [\"KarmaRenderVarAPI\", \"HuskRenderVarAPI\"]\n",
+        "            )\n",
+        "            {\n",
+        "                uniform token dataType = \"color3f\"\n",
+        "                custom token driver:parameters:aov:format = \"color3h\"\n",
+        "            }\n",
+        "        }\n",
+        "\n",
+        "        def RenderProduct \"renderproduct\"\n",
+        "        {\n",
+        "            rel orderedVars = [\n",
+        "                </Render/Products/Vars/beauty>,\n",
+        "                </Render/Products/Vars/alpha>,\n",
+        "                </Render/Products/Vars/albedo>,\n",
+        "            ]\n",
+        "        }\n",
+        "    }\n",
+        "}\n",
+    );
+
+    const ROOT_DEFAULTS_RGBA: &str = concat!(
+        "def Scope \"Render\"\n",
+        "{\n",
+        "    def Scope \"Products\"\n",
+        "    {\n",
+        "        def Scope \"Vars\"\n",
+        "        {\n",
+        "            def RenderVar \"beauty\" (\n",
+        "                apiSchemas = [\"KarmaRenderVarAPI\", \"HuskRenderVarAPI\"]\n",
+        "            )\n",
+        "            {\n",
+        "                uniform token dataType = \"color4f\"\n",
+        "                custom token driver:parameters:aov:format = \"color4f\"\n",
+        "                string driver:parameters:aov:karma:filter = '[\"ubox\",{}]'\n",
+        "                custom string driver:parameters:aov:name = \"beauty\"\n",
+        "                uniform string sourceName = \"C.*[LO]\"\n",
+        "            }\n",
+        "\n",
+        "            def RenderVar \"albedo\" (\n",
+        "                apiSchemas = [\"KarmaRenderVarAPI\", \"HuskRenderVarAPI\"]\n",
+        "            )\n",
+        "            {\n",
+        "                uniform token dataType = \"color3f\"\n",
+        "                custom token driver:parameters:aov:format = \"color3h\"\n",
+        "            }\n",
+        "        }\n",
+        "\n",
+        "        def RenderProduct \"renderproduct\"\n",
+        "        {\n",
+        "            rel orderedVars = [\n",
+        "                </Render/Products/Vars/beauty>,\n",
+        "                </Render/Products/Vars/albedo>,\n",
+        "            ]\n",
+        "        }\n",
+        "    }\n",
+        "}\n",
+    );
+
+    #[test]
+    fn v10_drops_the_alpha_var_and_makes_the_beauty_rgba() {
+        assert_eq!(
+            beauty_alpha::root_defaults_edit(ROOT_DEFAULTS_WITH_ALPHA),
+            Edit::Changed(ROOT_DEFAULTS_RGBA.to_string())
+        );
+        // Idempotent: a project already through it is left as it is
+        assert_eq!(beauty_alpha::root_defaults_edit(ROOT_DEFAULTS_RGBA), Edit::Unchanged);
+    }
+
+    /// A file v10 does not recognise blocks the run up front and is never
+    /// written -- here a beauty that is not named `beauty`, which would
+    /// otherwise lose the project its alpha with nothing RGBA to replace it.
+    #[test]
+    fn v10_refuses_an_unrecognised_file_and_writes_nothing() {
+        let dir = database_project();
+        let template = scaffold();
+        let usd = dir.path().join("_config").join("usd");
+        std::fs::create_dir_all(&usd).unwrap();
+        let odd = ROOT_DEFAULTS_WITH_ALPHA.replace("RenderVar \"beauty\"", "RenderVar \"C\"");
+        std::fs::write(usd.join("root_default_prims.usda"), &odd).unwrap();
+        write_version(&dir.path().join("_config"), 9).unwrap();
+
+        let (step, why) = first_blocker(dir.path(), template.path()).expect("must be blocked");
+        assert_eq!(step, Step::BeautyCarriesAlpha);
+        assert!(why.contains("root_default_prims.usda"), "{why}");
+        let report = migrate(dir.path(), template.path());
+        assert!(!report.is_ok());
+        assert_eq!(current_version(dir.path()), 9);
+        assert_eq!(std::fs::read_to_string(usd.join("root_default_prims.usda")).unwrap(), odd);
+        assert!(!usd.join("root_default_prims.usda.v10.bak").exists());
+    }
+
+    /// The packaged scaffold is already what v10 produces, so a new project
+    /// and a migrated one agree.
+    #[test]
+    fn v10_leaves_the_packaged_scaffold_unchanged() {
+        let scaffold = include_str!(
+            "../../../../scripts/project_template/_config/usd/root_default_prims.usda"
+        );
+        assert_eq!(beauty_alpha::root_defaults_edit(scaffold), Edit::Unchanged);
+        assert!(scaffold.contains("uniform token dataType = \"color4f\""));
+        assert!(!scaffold.contains("\"alpha\""));
+    }
+
+    /// One-off, read-only check against real project files: set
+    /// `TH_V10_SAMPLES=<dir>` holding one folder per project with copies of
+    /// its `root_default_prims.usda` / `context.json`, and run with
+    /// `--ignored --nocapture`. Each result is written beside the copy as
+    /// `*.v10` for review; nothing else is touched.
+    #[test]
+    #[ignore]
+    fn v10_on_sample_files() {
+        let root = std::path::PathBuf::from(std::env::var("TH_V10_SAMPLES").expect("set TH_V10_SAMPLES"));
+        let mut dirs: Vec<_> = std::fs::read_dir(&root).unwrap().filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        dirs.sort();
+        for dir in dirs {
+            for (name, edit) in [
+                ("root_default_prims.usda", beauty_alpha::root_defaults_edit as fn(&str) -> Edit),
+                ("context.json", beauty_alpha::context_json_edit),
+            ] {
+                let path = dir.join(name);
+                let Ok(text) = std::fs::read_to_string(&path) else { continue };
+                let verdict = match edit(&newlines::normalize(&text)) {
+                    Edit::Unchanged => "unchanged".to_string(),
+                    Edit::Changed(out) => {
+                        std::fs::write(path.with_extension(format!("{}.v10", path.extension().unwrap().to_str().unwrap())), out).unwrap();
+                        "migrated".to_string()
+                    }
+                    Edit::Refused(why) => format!("REFUSED: {why}"),
+                };
+                println!("V10 {} {name}: {verdict}", dir.file_name().unwrap().to_str().unwrap());
+            }
+        }
+    }
+
+    #[test]
+    fn v10_edits_a_project_and_keeps_its_line_endings_and_a_backup() {
+        let dir = database_project();
+        let template = scaffold();
+        let usd = dir.path().join("_config").join("usd");
+        std::fs::create_dir_all(&usd).unwrap();
+        let crlf = ROOT_DEFAULTS_WITH_ALPHA.replace('\n', "\r\n");
+        std::fs::write(usd.join("root_default_prims.usda"), &crlf).unwrap();
+        std::fs::write(
+            usd.join("context.json"),
+            "{\n    \"outputs\": [{\n        \"uri\": \"config:/usd/root_default_prims\",\n        \"parameters\": {\n            \"aov_names\": [\"beauty\", \"alpha\", \"albedo\", \"normal\"]\n        }\n    }]\n}\n",
+        )
+        .unwrap();
+        write_version(&dir.path().join("_config"), 9).unwrap();
+
+        let report = migrate(dir.path(), template.path());
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.to, 10);
+        assert_eq!(
+            std::fs::read_to_string(usd.join("root_default_prims.usda")).unwrap(),
+            ROOT_DEFAULTS_RGBA.replace('\n', "\r\n")
+        );
+        assert_eq!(
+            std::fs::read_to_string(usd.join("root_default_prims.usda.v10.bak")).unwrap(),
+            crlf
+        );
+        let context = load_json(&usd.join("context.json")).unwrap();
+        assert_eq!(
+            context["outputs"][0]["parameters"]["aov_names"],
+            serde_json::json!(["beauty", "albedo", "normal"])
+        );
+        // A text edit: the file keeps its own (non-serde) layout
+        assert!(std::fs::read_to_string(usd.join("context.json"))
+            .unwrap()
+            .contains("\"outputs\": [{\n"));
+        assert!(usd.join("context.json.v10.bak").is_file());
+    }
+
+    #[test]
+    fn v10_leaves_a_project_without_render_defaults_alone() {
+        let dir = database_project();
+        let template = scaffold();
+        write_version(&dir.path().join("_config"), 9).unwrap();
+        let report = migrate(dir.path(), template.path());
+        assert!(report.is_ok(), "{report:?}");
+        assert!(!dir.path().join("_config").join("usd").exists());
     }
 
     #[test]

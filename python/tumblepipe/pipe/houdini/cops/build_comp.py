@@ -19,7 +19,14 @@ from tumblepipe.config.farm import list_pools
 from tumblepipe.util.io import store_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps import exr
-from tumblepipe.pipe.aovs import is_ramp_aov, mask_output_labels
+from tumblepipe.pipe.aovs import (
+    is_ramp_aov,
+    mask_output_labels,
+    comp_alpha_source,
+    ALPHA_FROM_BEAUTY,
+    ALPHA_FROM_AOV,
+    LEGACY_ALPHA_AOV
+)
 import tumblepipe.pipe.houdini.nodes as ns
 import tumblepipe.pipe.houdini.util as util
 from tumblepipe.pipe.paths import (
@@ -96,7 +103,7 @@ def _report_unbuildable(shot_uri, render_department_names, problems):
         f'  {render_root}/<{departments}>/<channel>/v####/<aov>/\n'
         'with a context.json (the frame range) in each v#### folder. A '
         'version counts only when every frame in that range exists, and '
-        'each channel needs beauty and alpha AOVs. Farm renders write this '
+        'each channel needs a beauty AOV. Farm renders write this '
         'layout; see "Rendering without a farm" in the compositing docs.'
     )
     if hou.isUIAvailable():
@@ -138,20 +145,97 @@ def _get_frame_path(framestack_path, frame_index):
     frame_name = str(frame_index).zfill(4)
     return framestack_path.with_name(framestack_path.name.replace('$F4', frame_name))
 
-def _aov_channel_count(aov):
-    """Channel count of a rendered AOV, from its first frame's EXR header.
+# (frame path, mtime) -> channel names. A build reads each AOV's header
+# several times (alpha source, plane name, mask outputs), on a network share.
+_CHANNEL_NAMES_CACHE = dict()
 
-    The AOV records only carry names, and an `objid_*` can be a 3-channel
-    puzzle matte or a 1-channel th::mattes matte, so the published file is
-    asked. Every frame of a render shares one layout, so one header is
-    enough. None when it can't be read.
+def _aov_channel_names(aov):
+    """Channel names of a rendered AOV, from its first frame's EXR header.
+
+    Every frame of a render shares one layout, so one header is enough. None
+    when it can't be read. Cached per file and modification time.
     """
     render_range = aov.get_frame_range()
     if render_range is None: return None
     frame_path = aov.get_aov_frame_path(str(render_range.first_frame).zfill(4))
-    channel_names = exr.read_channel_names(frame_path)
-    if not channel_names: return None
+    if frame_path is None: return None
+    try:
+        mtime = local_path(frame_path).stat().st_mtime_ns
+    except OSError:
+        return None
+    key = (path_str(frame_path), mtime)
+    if key not in _CHANNEL_NAMES_CACHE:
+        _CHANNEL_NAMES_CACHE[key] = exr.read_channel_names(frame_path) or None
+    return _CHANNEL_NAMES_CACHE[key]
+
+def _aov_channel_count(aov):
+    """Channel count of a rendered AOV, from its first frame's EXR header.
+
+    The AOV records only carry names, and an `objid_*` can be a 3-channel
+    puzzle matte or a 1-channel th::mattes matte, and a beauty is RGBA (or
+    RGB, from before beauty went RGBA), so the published file is asked.
+    None when it can't be read.
+    """
+    channel_names = _aov_channel_names(aov)
+    if channel_names is None: return None
     return len(channel_names)
+
+def _aov_plane_name(aov):
+    """The plane name a File COP finds this AOV's channels under."""
+    return exr.cop_plane_name(_aov_channel_names(aov), aov.label)
+
+def _channel_alpha(channel_aovs):
+    """``(source, aov)`` a channel's comp alpha is read from, or (None, None).
+
+    ``channel_aovs`` maps AOV label to AOV. An RGBA beauty is the alpha
+    whenever there is one -- a legacy ``alpha`` AOV beside it (from another
+    department or version) is ignored, since ``ray:hit`` ignores holdouts.
+    Renders from before beauty went RGBA bring an ``alpha`` AOV instead.
+    """
+    beauty = channel_aovs.get('beauty')
+    beauty_channel_names = None if beauty is None else _aov_channel_names(beauty)
+    # Only whether the beauty has an A matters here (the File COP reads it
+    # RGBA and the split's output 3 is A), so the header's own channel order
+    # is fine
+    beauty_alpha_index = exr.alpha_channel_index(beauty_channel_names or [])
+    source = comp_alpha_source(beauty_alpha_index, channel_aovs.keys())
+    if source == ALPHA_FROM_BEAUTY: return source, beauty
+    if source == ALPHA_FROM_AOV: return source, channel_aovs[LEGACY_ALPHA_AOV]
+    return None, None
+
+def _configure_alpha_import(aov_subnet, aov_import_node, aov_resample_node, source, aov):
+    """Point a channel's `alpha` subnet at its alpha source.
+
+    The subnet always outputs one mono `alpha` (the grade subnet's last
+    input). From an RGBA beauty it reads the beauty as RGBA and splits off A;
+    from a legacy `alpha` AOV it reads that one channel. Run on every build
+    and update, so a comp built from an old render follows its channel to a
+    new RGBA-beauty render.
+    """
+    render_range = aov.get_frame_range()
+    aov_frame_path = aov.get_aov_frame_path('$F4')
+    assert aov_frame_path is not None, f'Could not find aov frame path for {aov.label}'
+    aov_import_node.parm('filename').set(path_str(aov_frame_path))
+    aov_import_node.parm('videoframestart').deleteAllKeyframes()
+    if render_range is not None:
+        aov_import_node.parm('videoframestart').set(render_range.first_frame)
+    aov_import_node.parm('missingdata').set(1)
+    aov_import_node.parm('missingcolora').set(0)
+    aov_import_node.parm('colorspace').set(1)
+    aov_import_node.parm('aovs').set(1)
+    aov_import_node.parm('aov1').set(_aov_plane_name(aov))
+    aov_subnet_outputs = aov_subnet.node('outputs')
+    if source == ALPHA_FROM_BEAUTY:
+        aov_import_node.parm('type1').set(3)  # RGBA
+        aov_split_node = _ensure_node(aov_subnet, 'channelsplit', 'split')
+        _connect(aov_resample_node, 0, aov_split_node, 0)
+        _connect(aov_split_node, 3, aov_subnet_outputs, 0)
+    else:
+        aov_import_node.parm('type1').set(_aov_output_type(LEGACY_ALPHA_AOV))
+        leftover_split_node = aov_subnet.node('split')
+        if leftover_split_node is not None: leftover_split_node.destroy()
+        _connect(aov_resample_node, 0, aov_subnet_outputs, 0)
+    aov_subnet.layoutChildren()
 
 def _get_connected_output(node, index):
     connections = node.outputConnections()
@@ -558,7 +642,7 @@ class BuildComp(ns.Node):
         aov_import_node.parm('missingcolora').set(0)
         aov_import_node.parm('colorspace').set(0)
         aov_import_node.parm('aovs').set(1)
-        aov_import_node.parm('aov1').set(aov.label)
+        aov_import_node.parm('aov1').set(_aov_plane_name(aov))
         aov_import_node.parm('type1').set(_aov_output_type(aov.label))
 
         # Create the resample node
@@ -614,7 +698,7 @@ class BuildComp(ns.Node):
         aov_import_node.parm('missingcolora').set(0)
         aov_import_node.parm('colorspace').set(1)
         aov_import_node.parm('aovs').set(1)
-        aov_import_node.parm('aov1').set(aov.label)
+        aov_import_node.parm('aov1').set(_aov_plane_name(aov))
         aov_import_node.parm('type1').set(
             0 if is_single else _aov_output_type(aov.label)
         )
@@ -681,7 +765,7 @@ class BuildComp(ns.Node):
         aov_import_node.parm('missingcolora').set(0)
         aov_import_node.parm('colorspace').set(1)
         aov_import_node.parm('aovs').set(1)
-        aov_import_node.parm('aov1').set(aov.label)
+        aov_import_node.parm('aov1').set(_aov_plane_name(aov))
         aov_import_node.parm('type1').set(_aov_output_type(aov.label))
 
         # Create the resample node
@@ -731,7 +815,7 @@ class BuildComp(ns.Node):
         aov_import_node.parm('missingcolora').set(0)
         aov_import_node.parm('colorspace').set(1)
         aov_import_node.parm('aovs').set(1)
-        aov_import_node.parm('aov1').set(aov.label)
+        aov_import_node.parm('aov1').set(_aov_plane_name(aov))
         aov_import_node.parm('type1').set(_aov_output_type(aov.label))
 
         # Create the resample node
@@ -749,13 +833,46 @@ class BuildComp(ns.Node):
         # Return aov subnet
         return aov_subnet
     
+    def _build_alpha(self, parent_node, channel_name, source, aov, scale=1):
+        """The channel's `alpha` subnet: one mono output, read from ``aov``
+        (the RGBA beauty or a legacy alpha AOV) per ``source``, resampled by
+        ``scale`` like the channel's other imports."""
+
+        # Create aov subnet
+        aov_subnet = _ensure_node(parent_node, 'subnet', LEGACY_ALPHA_AOV)
+        aov_subnet.parm('inputs').set(0)
+        aov_subnet.parm('outputs').set(1)
+        aov_subnet.parm('outputlabel1').set('alpha')
+        aov_subnet.parm('outputtype1').set(1)
+        aov_subnet.setColor(hou.Color((0.5, 0.5, 0.5)))
+        aov_subnet.node('inputs').setColor(hou.Color((1, 1, 1)))
+        aov_subnet.node('outputs').setColor(hou.Color((0, 0, 0)))
+
+        # Import + resample, named like every other AOV import so Update
+        # finds them
+        aov_import_node = _ensure_node(
+            aov_subnet, 'file', f'{channel_name}_{LEGACY_ALPHA_AOV}'
+        )
+        aov_render_range = aov.get_frame_range()
+        if aov_render_range is not None:
+            hou.setFrame(aov_render_range.first_frame)
+        aov_resample_node = _ensure_node(aov_subnet, 'resample', 'resample')
+        aov_resample_node.parm('scale').set(scale)
+        aov_resample_node.parm('filter').set('point')
+        _connect(aov_import_node, 0, aov_resample_node, 0)
+        _configure_alpha_import(
+            aov_subnet, aov_import_node, aov_resample_node, source, aov
+        )
+        return aov_subnet
+
     def _update_grade_subnet(self, grade_subnet, channel_subnet, channel_name, lpe_names, aov_nodes):
 
         # Get or create grade subnet
         lpe_subnet_inputs = grade_subnet.node('inputs')
         lpe_subnet_outputs = grade_subnet.node('outputs')
 
-        # Set up inputs - include all LPEs (including beauty) plus alpha
+        # Set up inputs - include all LPEs (including beauty) plus alpha (the
+        # RGBA beauty's A, or a legacy render's alpha AOV)
         num_lpes = len(lpe_names)
         grade_subnet.parm('inputs').set(num_lpes + 1)
         for lpe_index, lpe_name in enumerate(lpe_names):
@@ -938,20 +1055,50 @@ class BuildComp(ns.Node):
             # Store aov import node
             _set(aov_import_nodes, (aov_import_node, aov_resample_node), channel_name, aov_name)
         
-        # Update file node paths and resample scales
+        # Update file node paths, planes and resample scales
+        stale_alpha_subnets = []
         for channel_name, aov_nodes in aov_import_nodes.items():
             for aov_name, (aov_import_node, aov_resample_node) in aov_nodes.items():
+                if aov_name == LEGACY_ALPHA_AOV:
+                    # The alpha follows its source, which can change between
+                    # renders (legacy alpha AOV -> RGBA beauty). With none
+                    # left (an RGB beauty and no alpha AOV) the subnet goes,
+                    # so the channel comps opaque rather than off a stale file
+                    if channel_name not in aov_context: continue
+                    source, aov = _channel_alpha(aov_context[channel_name])
+                    if source is None:
+                        stale_alpha_subnets.append(aov_import_node.parent())
+                        continue
+                    _configure_alpha_import(
+                        aov_import_node.parent(), aov_import_node,
+                        aov_resample_node, source, aov
+                    )
+                    aov_resample_node.parm('scale').set(scale)
+                    continue
                 aov = _get(aov_context, channel_name, aov_name)
                 if aov is None: continue
                 aov_frame_path = aov.get_aov_frame_path('$F4')
                 if aov_frame_path is None: continue
                 aov_import_node.parm('filename').set(path_str(aov_frame_path))
+                # The new version may name its channels differently (a raw
+                # render's `beauty.R` vs the denoise publish's bare `R`)
+                aov_import_node.parm('aov1').set(_aov_plane_name(aov))
+                aov_render_range = aov.get_frame_range()
+                if aov_render_range is not None:
+                    aov_import_node.parm('videoframestart').deleteAllKeyframes()
+                    aov_import_node.parm('videoframestart').set(aov_render_range.first_frame)
                 aov_resample_node.parm('scale').set(scale)
+        for stale_alpha_subnet in stale_alpha_subnets:
+            if stale_alpha_subnet.name() == LEGACY_ALPHA_AOV:
+                stale_alpha_subnet.destroy()
 
         # Find new aovs that do not have a file node
         for channel_name, aovs in aov_context.items():
             for aov in aovs.values():
                 if _contains(aov_import_nodes, channel_name, aov.label): continue
+
+                # The alpha subnet is built from its source below
+                if aov.label == LEGACY_ALPHA_AOV: continue
 
                 # Check if aov is included in comp
                 if not _aov_included(aov.label): continue
@@ -1035,10 +1182,20 @@ class BuildComp(ns.Node):
                     aov_nodes_by_type
                 )
                 
-                # Connect alpha to grade subnet
-                if 'alpha' in aov_nodes_by_type[AOVType.Mono]:
-                    alpha_node = aov_nodes_by_type[AOVType.Mono]['alpha']
+                # Connect alpha to grade subnet, building it first for a
+                # comp that never had one; with no alpha source the input is
+                # left empty and the channel comps opaque
+                alpha_node = channel_subnet.node(LEGACY_ALPHA_AOV)
+                if alpha_node is None:
+                    source, alpha_aov = _channel_alpha(aovs)
+                    if source is not None:
+                        alpha_node = self._build_alpha(
+                            channel_subnet, channel_name, source, alpha_aov, scale
+                        )
+                if alpha_node is not None:
                     _connect(alpha_node, 0, grade_subnet, len(lpe_names))
+                else:
+                    grade_subnet.setInput(len(lpe_names), None)
 
     def _build(self):
 
@@ -1132,6 +1289,9 @@ class BuildComp(ns.Node):
             }
             for aov in aovs.values():
 
+                # The alpha subnet is built from its source below
+                if aov.label == LEGACY_ALPHA_AOV: continue
+
                 # Check if aov is included in comp
                 if not _aov_included(aov.label): continue
 
@@ -1168,6 +1328,14 @@ class BuildComp(ns.Node):
                 # Store import node
                 aov_nodes[aov_type][aov.label] = aov_subnet
 
+            # The channel's alpha: the RGBA beauty's own, or a legacy
+            # render's alpha AOV
+            alpha_source, alpha_aov = _channel_alpha(aovs)
+            if alpha_source is not None:
+                aov_nodes[AOVType.Mono][LEGACY_ALPHA_AOV] = self._build_alpha(
+                    channel_subnet, channel_name, alpha_source, alpha_aov
+                )
+
             # Prepare grade subnet
             assert 'beauty' in aov_nodes[AOVType.LPE], (
                 'Missing beauty aov in '
@@ -1188,8 +1356,9 @@ class BuildComp(ns.Node):
             )
             
             # Create the render layer subnet output node
-            channel_alpha_node = aov_nodes[AOVType.Mono]['alpha']
-            _connect(channel_alpha_node, 0, grade_subnet, len(lpe_names))
+            channel_alpha_node = aov_nodes[AOVType.Mono].get(LEGACY_ALPHA_AOV)
+            if channel_alpha_node is not None:
+                _connect(channel_alpha_node, 0, grade_subnet, len(lpe_names))
             _connect(grade_subnet, 0, channel_subnet_outputs, 0)
             
             # Layout render layer subnet nodes

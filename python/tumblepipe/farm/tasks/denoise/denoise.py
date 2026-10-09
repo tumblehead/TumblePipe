@@ -19,6 +19,11 @@ noisy to begin with. They are published to the denoise output as byte copies
 of their render input -- same pixels, same compression, same ACEScg stamp --
 and never enter the combined file, so they cannot change how the other AOVs
 are denoised.
+
+The beauty is rendered RGBA. OIDN denoises its RGB; its alpha is the render's
+own coverage (the part that honours holdouts, which the old separate `alpha`
+AOV did not), so it is carried around the denoise untouched and published
+back onto the denoised RGB.
 """
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -169,9 +174,14 @@ def _denoise_frame(
     output_paths: dict[str, Path],
     channel_counts: dict[str, int],
     compressions: dict[str, str],
-    force_cpu: bool
+    force_cpu: bool,
+    alpha_channels: dict[str, int] = None
     ) -> tuple[dict[str, Path], set[str]]:
     """Denoise every target AOV of one frame.
+
+    ``alpha_channels`` names the AOVs with an alpha channel (the RGBA beauty)
+    and its index in their render input: that channel is published as is,
+    after the denoised RGB.
 
     Returns ``(written, failed)``: the AOVs published for this frame, and the
     AOVs that could not be. A failed AOV does not sink the frame -- only the
@@ -228,10 +238,14 @@ def _denoise_frame(
             source_paths[aov_name] = aov_denoised_path
 
     # Split the denoised planes back out to their published paths
+    alpha_channels = alpha_channels or dict()
     written = dict()
     for aov_name, source_path in source_paths.items():
         extracted_path = frame_temp_path / f'{aov_name}.exr'
-        if exr.extract_aov(source_path, aov_name, extracted_path) != 0:
+        alpha = None
+        if aov_name in alpha_channels:
+            alpha = (frame_input_paths[aov_name], alpha_channels[aov_name])
+        if exr.extract_aov(source_path, aov_name, extracted_path, alpha) != 0:
             print(f'  ERROR: Failed to extract AOV {aov_name}')
             failed.add(aov_name)
             continue
@@ -340,6 +354,7 @@ def main(
     # frame *patterns*; the probe needs the concrete frame checked for existence.
     channel_counts = exr.get_channel_counts(probe_frame_paths)
     compressions = exr.get_compressions(probe_frame_paths)
+    alpha_channels = exr.get_alpha_channels(probe_frame_paths)
 
     idenoise = IDenoise()
     failed_aovs = set()
@@ -364,7 +379,8 @@ def main(
                 output_paths,
                 channel_counts,
                 compressions,
-                force_cpu
+                force_cpu,
+                alpha_channels
             )
             passed, passed_failed = _pass_through_frame(
                 frame_index,

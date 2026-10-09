@@ -20,6 +20,7 @@
         type    toggle
         joinnext
         default { "0" }
+        help    "The beauty, written RGBA: its alpha is the render's own coverage and honours holdouts (a separate alpha AOV from ray:hit would not)."
         parmtag { "script_callback_language" "python" }
     }
     parm {
@@ -39,10 +40,11 @@
     }
     parm {
         name    "alpha"
-        label   "alpha"
+        label   "alpha (retired)"
         type    toggle
+        invisible
         default { "0" }
-        parmtag { "script_callback_language" "python" }
+        help    "Retired: the beauty is RGBA and carries the alpha (the separate alpha AOV ignored holdouts). Kept hidden so scenes and render templates that still set it load cleanly; it does nothing."
     }
     parm {
         name    "albedo"
@@ -136,14 +138,15 @@
     groupcollapsible {
         name    "compression_folder"
         label   "Compression"
+        grouptag { "group_type" "collapsible" }
 
         parm {
             name    "alpha_compression"
-            label   "alpha"
+            label   "alpha (retired)"
             type    ordinal
+            invisible
             default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ alpha == 0 }"
+            help    "Retired: the beauty is RGBA and carries the alpha (the separate alpha AOV ignored holdouts). Kept hidden so scenes and render templates that still set it load cleanly; it does nothing."
             menu {
                 "none"  "No compression"
                 "dwab"  "DWA-B (lossy)"
@@ -162,7 +165,7 @@
             label   "albedo"
             type    ordinal
             default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ albedo == 0 }"
             menu {
                 "none"  "No compression"
@@ -182,7 +185,7 @@
             label   "diffuse"
             type    ordinal
             default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ diffuse == 0 }"
             menu {
                 "none"  "No compression"
@@ -202,7 +205,7 @@
             label   "normal"
             type    ordinal
             default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ normal == 0 }"
             menu {
                 "none"  "No compression"
@@ -222,7 +225,7 @@
             label   "specular"
             type    ordinal
             default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ specular == 0 }"
             menu {
                 "none"  "No compression"
@@ -242,7 +245,7 @@
             label   "depth"
             type    ordinal
             default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ depth == 0 }"
             menu {
                 "none"  "No compression"
@@ -262,7 +265,7 @@
             label   "emission"
             type    ordinal
             default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ emission == 0 }"
             menu {
                 "none"  "No compression"
@@ -282,7 +285,7 @@
             label   "volume"
             type    ordinal
             default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ volume == 0 }"
             menu {
                 "none"  "No compression"
@@ -302,7 +305,7 @@
             label   "position"
             type    ordinal
             default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ position == 0 }"
             menu {
                 "none"  "No compression"
@@ -322,7 +325,7 @@
             label   "uv"
             type    ordinal
             default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ uv == 0 }"
             menu {
                 "none"  "No compression"
@@ -342,7 +345,7 @@
             label   "beauty"
             type    ordinal
             default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ beauty == 0 }"
             menu {
                 "none"  "No compression"
@@ -362,7 +365,7 @@
             label   "albedo_mse"
             type    ordinal
             default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ albedo_mse == 0 }"
             menu {
                 "none"  "No compression"
@@ -382,7 +385,7 @@
             label   "normal_mse"
             type    ordinal
             default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ normal_mse == 0 }"
             menu {
                 "none"  "No compression"
@@ -402,7 +405,7 @@
             label   "samples"
             type    ordinal
             default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ sample_count == 0 }"
             menu {
                 "none"  "No compression"
@@ -422,7 +425,7 @@
             label   "beauty_mse"
             type    ordinal
             default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, alpha...) default to lossless ZIP, colour passes to DWAB."
+            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
             disablewhen "{ beauty_mse == 0 }"
             menu {
                 "none"  "No compression"

@@ -451,6 +451,36 @@ the two it does depends on how load-bearing the file is:
   overwritten. Existing workfiles are not touched; only new ones pick up the
   change.
 
+- **The separate alpha AOV goes; the beauty renders RGBA (v10).**
+  `_config/usd/root_default_prims.usda` is every shot's weakest sublayer and
+  every RenderVar in it renders, so its `alpha` RenderVar (Karma `ray:hit`,
+  which holdouts do not affect) kept rendering whatever the render nodes
+  said. The step removes that RenderVar and its `orderedVars` target and
+  turns the `beauty` RenderVar's `dataType` and
+  `driver:parameters:aov:format` from `color3f` to `color4f` (`color3h` to
+  `color4h`). It reads the file's structure -- strings, comments, `( … )`
+  metadata, `{ … }` bodies -- rather than matching lines, and edits only
+  those spans, so a project's own settings path (`/Render` or
+  `/scene/Render`) and everything else stay byte for byte.
+  `_config/usd/context.json` loses `alpha` from its `aov_names`, also as a
+  text edit, so the file keeps its layout. Originals are kept as
+  `*.v10.bak`; a project without the files, or already through, is left
+  alone. Templates are not refreshed: a render template still listing
+  `alpha` in `RENDER_VARS_ENABLED` sets a hidden, inert parm. See
+  [Compositing → Alpha lives in the beauty](compositing.md#alpha-lives-in-the-beauty).
+
+  It **refuses rather than guesses**, and a refusal blocks the launch's
+  migration run with a message naming the file and the reason (nothing is
+  written). It refuses when there is no `def RenderVar "beauty"` to carry
+  the alpha (removing the alpha would make every comp opaque), when the
+  beauty's `dataType` is unauthored or not a colour it knows, when more than
+  one prim is named `alpha` or it is not a `def RenderVar`, when an
+  `orderedVars` target names the alpha by a path that is not the alpha's own
+  (a product pointing at `/scene/Render/...` while the vars live at
+  `/Render/...`), or when removing it would leave the product with no target.
+  Fix the file by hand -- remove the `alpha` RenderVar and its `orderedVars`
+  target, make the beauty RenderVar `color4f` -- and launch again.
+
 ### Migrating at launch
 
 You do not have to remember to run the command above. The `tt_prepare` package
