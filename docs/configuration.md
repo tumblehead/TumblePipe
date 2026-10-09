@@ -155,7 +155,8 @@ Python module. A shot's render layers are its **channels**, stored in the
 (`variants` is the key writers emit, and readers take `channels` too; the
 concept is called a channel
 everywhere it is shown. There is no separate `render_layers` property;
-that name is retired.)
+that name is retired.) How a render workfile produces each layer is in
+[Render layers (channels)](nodes/lighting-and-rendering.md#render-layers-channels).
 
 ### Departments
 

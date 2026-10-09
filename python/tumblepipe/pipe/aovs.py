@@ -49,7 +49,7 @@ def default_compression(aov_name: str) -> str:
 
 # Mattes: masks a comp reads edge for edge. `objid_*` comes from
 # th::puzzlemattes (three channels, R/G/B each a mask) and th::mattes (one
-# channel); `holdout_*` from the render layer setup.
+# channel); `holdout_*` from a render layer's holdout setup.
 MATTE_AOV_PREFIXES = ('objid_', 'holdout_')
 
 # Distance ramps from th::mattes: one channel, 0 at the camera to 1 at the

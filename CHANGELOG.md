@@ -12,6 +12,22 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.66.0 — 2026-10-09
+
+### Features
+- feat(hda): th::mattes, single-channel mattes and distance ramps for grading (`5503038`)
+
+### Fixes
+- fix(sync): copy ramp_* distance ramps to the edit (`b626671`)
+- fix(hpm): index th::mattes and th::material; test the operator index (`39df584`)
+- fix(denoise,comp): pass mattes and ramps through; single-channel objid_ masks (`a92153b`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.65.0 (`73d5ac7`)
+
+### Tests
+- test(mattes): name rule, multiparm rows, downstream contract, radial nodes (`5bee94c`)
+
 ## v1.65.0 — 2026-10-08
 
 ### Features

@@ -75,9 +75,9 @@ slot per recipe, in the HDA's order, up to the ring's maximum of **9**. Each
 slot's label is the recipe's own label and its icon the recipe's icon; picking
 one places that recipe in the network editor and closes the radial.
 
-The package currently ships five recipes: *th configure forest gobo*, *th
-configure grass*, *th configure lop import*, *th configure material
-override* and *th configure render layer matte*.
+The package currently ships four recipes: *th configure forest gobo*, *th
+configure grass*, *th configure lop import* and *th configure material
+override*.
 
 Every recipe gets an action (`tumblepipe.recipe.<name>`), including any past
 the ninth, because the department menus place recipes through the same
@@ -185,7 +185,7 @@ Radial.
 | effects | SOP | File, Pyro Solver, RBD Solver, Vellum Solver, Cache |
 | cfx | SOP | File, Vellum Constraints, Vellum Solver, Vellum Drape, Cache |
 | light | LOP | Light Linker, Lights (Rect, Distant, Dome), Light Gobo (recipe), Light Mixer, Light Blocker, Fog |
-| render | LOP | Render Settings, Render Vars, LPE Tags, Mattes, Render Layer Setup, Render Layer Matte (recipe), Render Debug |
+| render | LOP | Render Settings, Render Vars, LPE Tags, Mattes, Render Debug |
 | composite | COP | Build Comp, LOP Import, File, Depth Cull, Gradient Map, A/B Slider |
 
 **Shift+Space** opens the menu for the workfile's department. Radial owns

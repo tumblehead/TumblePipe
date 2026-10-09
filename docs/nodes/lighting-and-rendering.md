@@ -187,29 +187,31 @@ The denoise job leaves mattes alone: it runs OIDN over every AOV except the
 distance ramps, which it publishes as byte copies of the render — denoising
 would soften their edges.
 
-## `th::render_layer_setup` (LOP)
+## Render layers (channels)
 
-Per-render-layer visibility, holdout and material overrides. Tab menu
-`_TumblePipe/lighting`. Three toggles at the top — **Geometry Overwrite**,
-**Material Overwrite**, **Overwrite settings** — enable the three kinds of
-override; the last one also reveals its folder.
-Source: [`otls/lop_th.render_layer_setup.1.0`](../../otls/lop_th.render_layer_setup.1.0/th_8_8Lop_1render__layer__setup_8_81.0/DialogScript).
-
-| Label | Default | What it does |
-|---|---|---|
-| Render Settings Overwrites › Deactive Materials | off | Deactivate the materials |
-| Render Settings Overwrites › Disable Lighting | on | Karma's global *disable lighting* |
-| Overwrites › Layer # › Geometry Overwrites › Include › Primitives | *(empty)* | Prims this row applies to |
-| … › Include › Render Visibility | Invisible to primary rays (Phantom) | Menu: visible to all, primary only, primary and shadow, phantom, no diffuse, no secondary, no shadow, unrenderable |
-| … › Include › Holdout Mode | None | None / Matte / Background |
-| … › Exclude › Render Visibility | Invisible to secondary rays | Applied to everything the Include pattern does not match |
-| … › Exclude › Holdout Mode | None | |
-| Overwrites › Layer # › Material Overwrites › Material Path, Primitives | *(empty)* | Assign a stage material to a prim pattern for this layer |
-
-The multiparm builds one **Layer #** per render layer, each with as many
-geometry rows as you add. What a render layer is in this pipeline — a
-channel, not a USD variant — is in
+A render layer is a **channel** of the shot, not a node: add the channel to
+the shot (the entity's `variants` property, via `config/channels.py` or the
+Asset Browser), then in the render workfile branch the shot's chain once per
+channel and end each branch in its own
+[`th::export_layer`](import-and-export.md#thexport_layer-lop) with **Channel**
+set to that channel. Downstream, `th::import_layer` / `th::import_shot` with the
+same Channel load it, and the farm renders one job per checked channel. What a
+channel is, and why it is not a USD variant, is in
 [Channels](../composition.md#channels-and-why-they-are-not-usd-variants).
+
+What makes the layers differ is ordinary Solaris, placed in the branch before
+its export — typically a **Render Geometry Settings** LOP per layer:
+
+- **background**: the characters (`/CHAR/*`) *Invisible to primary rays*, so
+  they still shadow and reflect into the set;
+- **characters**: the set and props (`/SET/* /PROP/*`) as **Holdout: Matte**,
+  so the set cuts the characters out;
+- any further layer (e.g. **feathers**) holds out everything else the same way.
+
+Put `th::mattes` upstream of the branch so every layer carries the same matte
+and ramp AOVs. `th::render_layer_setup` and the *th configure render layer
+matte* recipe were removed in 1.67.0: neither applied its overrides (the HDA's
+internal references pointed at parameters that did not exist).
 
 ## `th::render_debug` (LOP)
 
@@ -480,12 +482,6 @@ small pre-wired network you then retarget:
 - **th configure material override** (LOP) — unassign every material,
   assign one unlit override material (`/scene/mat/override_MAT`) and prune
   the lights: a flat-shaded pass.
-- **th configure render layer matte** (LOP) — render geometry settings that
-  matte everything `%type:Boundable`, un-matte `/CHAR/**`, edit
-  `/Render/rendersettings`, and end in a `th::export_render_layer` node on
-  department `light`. **That node type is not shipped** (it is not in
-  [`hpm.toml`](../../hpm.toml)), so the last node of the recipe lands as a
-  missing type; replace it with `th::export_layer`.
 
 The recipes were saved in Houdini 20.5; re-save any that misbehave on a
 newer major. They are distinct from the asset browser's project recipes

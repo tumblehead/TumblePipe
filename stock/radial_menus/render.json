@@ -60,26 +60,6 @@
       "action": "",
       "submenu": "",
       "release_action": "",
-      "node_type": "Lop/th::render_layer_setup::1.0",
-      "label_override": "Render Layer Setup",
-      "icon_override": null,
-      "hidden": false,
-      "close_on_select": false
-    },
-    {
-      "action": "tumblepipe.recipe.th__th_configure_render_layer_matte",
-      "submenu": "",
-      "release_action": "",
-      "node_type": null,
-      "label_override": "Render Layer Matte",
-      "icon_override": "LOP_rendergeometrysettings",
-      "hidden": false,
-      "close_on_select": false
-    },
-    {
-      "action": "",
-      "submenu": "",
-      "release_action": "",
       "node_type": "Lop/th::render_debug::1.0",
       "label_override": "Render Debug",
       "icon_override": null,

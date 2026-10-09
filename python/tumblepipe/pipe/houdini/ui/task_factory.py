@@ -84,7 +84,7 @@ def _create_validation_task(
     entity_uri: Uri,
     department: str,
     export_nodes: list,
-    channel: str = 'default'
+    channel: str | None = None
 ) -> ProcessTask:
     """Create a validation task for export nodes.
 
@@ -98,10 +98,12 @@ def _create_validation_task(
         entity_uri: The entity URI
         department: Department name
         export_nodes: List of export nodes to validate
-        channel: Channel name
+        channel: Channel name, when the task validates a single channel
 
     Returns:
-        ProcessTask for validation
+        ProcessTask for validation. Without ``channel`` it records the channels
+        of ``export_nodes`` in ``channels``: one validation covers every
+        channel's export of the department.
     """
     entity_context = _entity_context_from_uri(entity_uri)
     validation_ctx = {'entity_uri': str(entity_uri)} if entity_uri is not None else {}
@@ -199,6 +201,10 @@ def _create_validation_task(
         execute_local=validate_local_fn,
         execute_farm=validate_farm_fn,
         channel=channel,
+        channels=None if channel else [
+            node.get_channel_name() for node in export_nodes
+            if hasattr(node, 'get_channel_name')
+        ],
         status=TaskStatus.PENDING,
         # Default OFF for publishes until validator conventions and the
         # warning/error severity balance are settled — the current output

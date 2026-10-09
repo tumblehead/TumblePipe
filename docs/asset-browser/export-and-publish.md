@@ -61,7 +61,15 @@ in pool order — for a Multi workfile that is the whole pool after its
 department; up to TumblePipe 1.47.1 a Multi workfile listed only its own
 department. Columns: **Task, Department, Channel, Version, First, Last,
 Status**. *Version* shows the version currently on disk and is replaced by
-the version a task wrote once it completes.
+the version a task wrote once it completes. *Channel* shows a task's own
+channel; a row that covers several (the `Validate`, `Export (<dept>)` and
+`Build USD` rows) lists them all, `default` first, so a collapsed entity
+still shows every channel it publishes. Up to 1.66.0 those rows read `-` and
+`default`, and a multi-channel publish looked default-only.
+
+Clicking **Publish** on one export node ticks only that node's row, its
+channel's Build USD and its upstream exports. The other channels are listed
+but left unchecked; tick them to publish them in the same run.
 
 | Task row | Comes from | Notes |
 |---|---|---|

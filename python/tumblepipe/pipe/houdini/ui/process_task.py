@@ -39,6 +39,7 @@ class ProcessTask:
     current_version: str | None = None              # Current export version (if known)
     exported_version: str | None = None             # Version this run wrote (set on completion)
     channel: str | None = None                      # Publish channel name (for build tasks)
+    channels: list[str] | None = None               # Channels a channel-less task covers (validation)
     first_frame: int | None = None                  # First frame (with roll)
     last_frame: int | None = None                   # Last frame (with roll)
     # Hierarchy support for grouped tasks
@@ -46,6 +47,30 @@ class ProcessTask:
     parent_id: str | None = None                    # Reference to parent task ID
     node_path: str | None = None                    # Houdini node path (for display)
     depends_on: list[str] = field(default_factory=list)  # List of task IDs this task depends on
+
+
+def _ordered_channels(names) -> list[str]:
+    """Unique channel names, ``default`` first and the rest alphabetical."""
+    unique = {name for name in names if name}
+    return sorted(unique, key=lambda name: (name != 'default', name))
+
+
+def channel_label(task: ProcessTask) -> str:
+    """The Channel column's text for ``task``.
+
+    A task with a channel shows it. A group task shows the channels of its
+    children and a validation task the channels it covers, so a shot whose
+    render publishes default, background and characters does not read as
+    default-only while its group rows are collapsed.
+    """
+    if task.channel:
+        return task.channel
+    names = list(task.channels or [])
+    for child in task.children or []:
+        names.append(child.channel)
+        names.extend(child.channels or [])
+    ordered = _ordered_channels(names)
+    return ', '.join(ordered) if ordered else '-'
 
 
 class ProcessTaskTreeModel(QStandardItemModel):
@@ -183,7 +208,7 @@ class ProcessTaskTreeModel(QStandardItemModel):
         dept_item.setEditable(False)
 
         # Channel column
-        channel_item = QStandardItem(task.channel or '-')
+        channel_item = QStandardItem(channel_label(task))
         channel_item.setEditable(False)
 
         # Version column

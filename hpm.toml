@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.66.0"
+version = "1.67.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -474,13 +474,6 @@ source = "otls/Recipes.hda"
 
 [[operators]]
 kind = "hda"
-type_name = "th::th_configure_render_layer_matte"
-label = "th configure render layer matte"
-category = "Data"
-source = "otls/Recipes.hda"
-
-[[operators]]
-kind = "hda"
 type_name = "th::animate::2.0"
 label = "th animate"
 category = "Lop"
@@ -734,14 +727,6 @@ label = "th render debug"
 category = "Lop"
 tab_submenu = "_TumblePipe/debug"
 source = "otls/lop_th.render_debug.1.0.hda"
-
-[[operators]]
-kind = "hda"
-type_name = "th::render_layer_setup::1.0"
-label = "th render layer setup"
-category = "Lop"
-tab_submenu = "_TumblePipe/lighting"
-source = "otls/lop_th.render_layer_setup.1.0.hda"
 
 [[operators]]
 kind = "hda"

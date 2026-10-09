@@ -97,7 +97,6 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 | `th::karmafogbox` | LOP | Karma fog volume box |
 | `th::light_blocker` | LOP | Translucent light-blocking card |
 | `th::light_streaks` | LOP | Emissive streak geometry |
-| `th::render_layer_setup` | LOP | Per-layer visibility, holdout and lighting overrides |
 
 ### `_TumblePipe/rendering`
 
@@ -138,11 +137,10 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 
 ### No submenu (recipes)
 
-Five Data recipes ship in [`otls/Recipes.hda`](../../otls/Recipes.hda) and
+Four Data recipes ship in [`otls/Recipes.hda`](../../otls/Recipes.hda) and
 are reached through the recipes radial menu rather than the Tab menu:
 `th::th_configure_forest_gobo`, `th::th_configure_grass`,
-`th::th_configure_lop_import`, `th::th_configure_material_override`,
-`th::th_configure_render_layer_matte`.
+`th::th_configure_lop_import`, `th::th_configure_material_override`.
 
 ### Radial menus
 
