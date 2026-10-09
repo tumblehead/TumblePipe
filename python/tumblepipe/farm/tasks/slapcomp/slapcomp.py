@@ -129,7 +129,9 @@ def _composite_frame(
         temp_path = Path(temp_dir)
         layer_output_paths = []
 
-        # Process each render layer
+        # Process each render layer, bottom of the stack first: the channels
+        # in the render's channel order (``default`` first, as every channel
+        # list starts with it)
         for layer_index, (layer_name, layer_aovs) in enumerate(input_paths.items()):
 
             # Get beauty AOV path for this layer
@@ -233,22 +235,24 @@ def _composite_frame(
             for i, (layer_name, _, _) in enumerate(layer_output_paths):
                 print(f'    Layer {i}: {layer_name}')
 
-            # Build oiiotool command to composite layers
-            # NOTE: oiiotool "A B --over" means "B over A", so we need to
-            # process layers from back to front to get correct layering
+            # Build oiiotool command to composite layers. The stack is
+            # bottom-up: layer 0 (`default`) at the bottom, the last layer on
+            # top. oiiotool's "A B --over" is A over B
+            # (the first operand is the foreground), so start from the top
+            # layer and composite it over each layer below in turn:
+            # top L1 --over L0 --over == top over L1 over L0.
             oiiotool_cmd = ['oiiotool']
 
-            # Start with the LAST layer (bottom/background)
+            # Start with the LAST layer (the top)
             _, last_layer_path, _ = layer_output_paths[-1]
             oiiotool_cmd.append(path_str(local_path(last_layer_path)))
 
-            # Composite each layer from second-to-last to first (back to front)
-            # This way: background ... middle --over foreground --over
+            # Composite the result over each lower layer, top to bottom
             for layer_name, layer_path, beauty_path in reversed(layer_output_paths[:-1]):
                 oiiotool_cmd.append(path_str(local_path(layer_path)))
                 oiiotool_cmd.append('--over')
 
-            print(f'    Composite order: {" --over ".join([name for name, _, _ in reversed(layer_output_paths)])}')
+            print(f'    Composite order (top first): {" over ".join([name for name, _, _ in reversed(layer_output_paths)])}')
 
             # Write final output with proper colorspace metadata
             ensure_dir(output_frame_path.parent)

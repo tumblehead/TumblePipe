@@ -223,7 +223,10 @@ Independent of comp, every full **render** job also auto-chains a
 RGBA beauty across departments (or, for older renders, RGB beauty plus
 `alpha` AOV) — followed by its own MP4 and Discord
 notify. That quick-comp is what makes fresh renders reviewable before
-any composite workfile exists.
+any composite workfile exists. When a render has several channels, the
+slapcomp stacks them bottom-up in the shot's channel order: the first
+(`default`, which every channel list starts with) at the bottom, the last on
+top — so list `background` before `characters` before `feathers`.
 
 ## Playblast
 

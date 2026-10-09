@@ -212,6 +212,12 @@ same Channel load it, and the farm renders one job per checked channel. What a
 channel is, and why it is not a USD variant, is in
 [Channels](../composition.md#channels-and-why-they-are-not-usd-variants).
 
+**Add channels bottom to top.** The render's slapcomp daily stacks the
+channels in the shot's channel order, the first (`default`) at the bottom
+and the last on top. Add `background` before `characters`
+before an overlay such as `feathers` (see
+[the slapcomp](../compositing.md#farm-submission-and-mp4s)).
+
 What makes the layers differ is ordinary Solaris, placed in the branch before
 its export — typically a **Render Geometry Settings** LOP per layer:
 

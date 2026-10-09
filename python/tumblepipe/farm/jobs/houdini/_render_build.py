@@ -507,10 +507,18 @@ def build_slapcomp_job(
     config: dict,
     staging_path: Path,
     render_department_name: str,
-    version_name: str,
+    version_name: 'str | dict[str, str]',
     *,
     priority: int
     ):
+    """The slapcomp of a render's channels.
+
+    ``version_name`` is the version each channel's frames are under: one
+    name for all (a composite writes every layer at one version), or a
+    ``{channel: version}`` map (a render job renders and denoises each
+    channel separately, and each channel keeps its own version counter —
+    HideAndReek 080: default at v0008, background and characters at v0001).
+    """
     logging.debug('Creating slapcomp task')
 
     # Config
@@ -534,6 +542,11 @@ def build_slapcomp_job(
     )
     aov_names = render_settings['aov_names']
 
+    def _channel_version(channel_name):
+        if isinstance(version_name, dict):
+            return version_name[channel_name]
+        return version_name
+
     # Paramaters
     input_paths = {
         channel_name: {
@@ -541,7 +554,7 @@ def build_slapcomp_job(
                 entity_uri,
                 render_department_name,
                 channel_name,
-                version_name,
+                _channel_version(channel_name),
                 aov_name,
                 '####',
                 'exr',

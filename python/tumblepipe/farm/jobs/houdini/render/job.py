@@ -231,7 +231,7 @@ def _build_slapcomp_job(
     config: dict,
     staging_path: Path,
     render_department_name: str,
-    version_name: str
+    version_name: 'str | dict[str, str]'
     ):
     return _render_build.build_slapcomp_job(
         config, staging_path, render_department_name, version_name,
@@ -520,14 +520,14 @@ def build(
                 sync_job_obj = _build_sync_job(config, temp_path)
                 _add_job('sync', sync_job_obj, all_denoise_jobs)
 
-            # Slapcomp depends on all denoise jobs
-            # Use version from first layer (all should have same version number)
-            first_layer = channel_names[0]
+            # Slapcomp depends on all denoise jobs. Each channel keeps its
+            # own version counter, so pass every channel's version, not the
+            # first channel's for all.
             slapcomp_result = _build_slapcomp_job(
                 config,
                 temp_path,
                 'denoise',
-                denoise_version_names[first_layer]
+                dict(denoise_version_names)
             )
             slapcomp_job_obj, slapcomp_version = slapcomp_result
             _add_job('slapcomp', slapcomp_job_obj, all_denoise_jobs)
@@ -557,13 +557,13 @@ def build(
                 sync_job_obj = _build_sync_job(config, temp_path)
                 _add_job('sync', sync_job_obj, all_render_jobs)
 
-            # Slapcomp depends on all render jobs
-            first_layer = channel_names[0]
+            # Slapcomp depends on all render jobs (each channel at its own
+            # version)
             slapcomp_result = _build_slapcomp_job(
                 config,
                 temp_path,
                 render_department_name,
-                render_version_names[first_layer]
+                dict(render_version_names)
             )
             slapcomp_job_obj, slapcomp_version = slapcomp_result
             _add_job('slapcomp', slapcomp_job_obj, all_render_jobs)

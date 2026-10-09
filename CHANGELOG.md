@@ -12,6 +12,23 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.68.0 — 2026-10-09
+
+### Breaking Changes
+- feat(render)!: the beauty is RGBA; drop the separate alpha AOV (`a4cba6b`)
+
+### Features
+- feat(farm,comp): take the alpha from the RGBA beauty, keep old renders working (`5c65c4e`)
+
+### Fixes
+- fix(comp): Update re-points planes and the alpha; slapcomp finds A by name (`86e8af3`)
+- fix(config): migration v10 reads USDA structure and refuses what it doesn't know (`3aa6245`)
+
+### Documentation
+- docs: Resolve can honour the RGBA beauty's alpha (`4997a15`)
+- docs: alpha lives in the RGBA beauty (`1971923`)
+- docs: regenerate CHANGELOG.md for v1.67.0 (`04867ad`)
+
 ## v1.67.0 — 2026-10-09
 
 ### Breaking Changes
