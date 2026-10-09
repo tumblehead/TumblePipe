@@ -1,7 +1,7 @@
 # Lighting and rendering
 
 The nodes a lighter and a render TD touch: Karma settings and presets, the
-AOV set, light-group and puzzle mattes, per-layer overrides, the turntable
+AOV set, light groups, mattes and distance ramps, per-layer overrides, the turntable
 studio, a handful of light and card helpers, playblasts, and the recipes.
 Entity, Department and Channel behave as described in
 [Pipeline nodes → Shared concepts](index.md#shared-concepts). How a
@@ -112,13 +112,64 @@ Gotchas:
   whose settings live under `/scene` see
   [Where the render settings live](../composition.md#where-the-render-settings-live).
 
+## `th::mattes` (LOP)
+
+Single-channel grading passes, as many as you need from one node: object
+**mattes** and camera **distance ramps**, one row each (click **+** on the
+multiparm to add one). Tab menu `_TumblePipe/rendering`; place it in the
+render workfile **before** `th::render_settings`, which collects the AOVs
+into its product. For new work use this instead of
+[`th::puzzlemattes`](#thpuzzlemattes-lop): one matte per AOV instead of
+three packed into R, G and B.
+Source: [`otls/lop_th.mattes.1.0`](../../otls/lop_th.mattes.1.0/th_8_8Lop_1mattes_8_81.0/DialogScript),
+[`lops/mattes.py`](../../python/tumblepipe/pipe/houdini/lops/mattes.py),
+[`pipe/mattes.py`](../../python/tumblepipe/pipe/mattes.py).
+
+- **Matte** → AOV `objid_<Name>`: 1 on the matched prims and everything
+  under them, 0 elsewhere. A constant float primvar `objid_<Name>` on the
+  prims, read by a primvar RenderVar (the `th::puzzlemattes` mechanism, one
+  channel).
+- **Distance ramp** → AOV `ramp_<Name>`: 0 at **Near**, rising linearly to 1
+  at **Far**, clamped; the sky reads 1. For grading (a depth-cue or
+  atmosphere key in Resolve), not for a compositing depth pass — `depth`
+  from `th::render_vars` holds true distances.
+
+| Label | Default | What it does |
+|---|---|---|
+| Render Settings | `/Render/rendersettings` | Settings prim the ramps' global AOV material is set on; change it only on a project whose settings live elsewhere |
+| Mattes › Name | *(empty)* | AOV is `objid_<Name>`. A row without a name is skipped |
+| Mattes › Primitives | *(empty)* | Prim pattern (the action button opens the prim picker) |
+| Mattes › Compression | ZIP | Keep it lossless: DWA softens the matte's edges |
+| Distance Ramps › Name | *(empty)* | AOV is `ramp_<Name>`. A row without a name is skipped |
+| Distance Ramps › Near / Far | 0 / 10 | Scene units from the camera where the ramp reads 0 and 1 |
+| Distance Ramps › Measure | Distance from camera | *Distance from camera* is the ray length (round falloff); *Depth along view axis* is planar (`ray:hitPz`) |
+| Distance Ramps › Compression | ZIP | Lossless keeps the ramp smooth under a strong grade |
+
+Names use letters, digits and `_`, not starting with a digit. A bad name,
+the same AOV twice, or Far not above Near is a node error.
+
+How the ramp works: Karma evaluates it through a *global AOV material*
+(`karma:global:globalaovmaterial` on the render settings), which the node
+authors at `/Render/tumblepipe/mattes_aov_material` — a Karma Ray Import of
+`ray:hitdist` or `ray:hitPz` through a MaterialX range node into an `aov:`
+input of an unlit surface. It works on Karma XPU (GPU and CPU) and CPU.
+Rays that miss run no shader, so the sky gets the RenderVar's default value,
+set to 1. A render has **one** global AOV material: if something upstream
+already set a different one, the node errors rather than replace it.
+
+The farm's denoise passes mattes and ramps through untouched, and
+`build_comp` imports a 1-channel `objid_*` as a single mask and `ramp_*` as a
+mono pass.
+
 ## `th::puzzlemattes` (LOP)
 
-One RGB matte AOV from three prim patterns. Tab menu
+One RGB matte AOV from three prim patterns. Kept for existing workfiles;
+new work uses [`th::mattes`](#thmattes-lop). Tab menu
 `_TumblePipe/rendering`. The node adds a `color3f` RenderVar named
 `objid_<Name>` sourced from a primvar it sets on the matched prims, so the
 red, green and blue channels of the AOV each mask one pattern. `build_comp`
-picks every `objid_*` up as a mask and splits it into R, G and B outputs.
+picks every `objid_*` up as a mask and splits a 3-channel one like this into
+R, G and B outputs (a 1-channel `objid_*` becomes a single mask output).
 Source: [`otls/lop_th.puzzlemattes.4.0`](../../otls/lop_th.puzzlemattes.4.0/th_8_8Lop_1puzzlemattes_8_84.0/DialogScript),
 [`lops/puzzle_mattes.py`](../../python/tumblepipe/pipe/houdini/lops/puzzle_mattes.py).
 
@@ -131,8 +182,10 @@ Source: [`otls/lop_th.puzzlemattes.4.0`](../../otls/lop_th.puzzlemattes.4.0/th_8
 The node has a viewer state, but it is a stub: selecting prims in it does
 not fill the channels. Type the patterns.
 
-Mattes are not special to the denoiser: the denoise job runs OIDN over every
-AOV except the `*_mse` variances, the mattes included.
+The denoise job leaves mattes alone: it runs OIDN over every AOV except the
+`*_mse` variances and the `objid_*` / `holdout_*` mattes and `ramp_*`
+distance ramps, which it publishes as byte copies of the render — denoising
+would soften their edges.
 
 ## `th::render_layer_setup` (LOP)
 

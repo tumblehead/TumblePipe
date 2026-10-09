@@ -18,6 +18,8 @@ from tumblepipe.config.channels import list_channels
 from tumblepipe.config.farm import list_pools
 from tumblepipe.util.io import store_json
 from tumblepipe.util.uri import Uri
+from tumblepipe.apps import exr
+from tumblepipe.pipe.aovs import is_ramp_aov, mask_output_labels
 import tumblepipe.pipe.houdini.nodes as ns
 import tumblepipe.pipe.houdini.util as util
 from tumblepipe.pipe.paths import (
@@ -107,6 +109,7 @@ def _aov_included(aov_name):
     if name.startswith('beauty_'): return True
     if name.startswith('objid_'): return True
     if name.startswith('holdout_'): return True
+    if is_ramp_aov(name): return True
     if name == 'beauty': return True
     if name == 'alpha': return True
     if name == 'albedo': return True
@@ -121,6 +124,7 @@ def _aov_output_type(aov_name):
     if name.startswith('beauty_'): return 2
     if name.startswith('objid_'): return 2
     if name.startswith('holdout_'): return 0
+    if is_ramp_aov(name): return 0
     if name == 'beauty': return 2
     if name == 'alpha': return 0
     if name == 'albedo': return 2
@@ -133,6 +137,21 @@ def _aov_output_type(aov_name):
 def _get_frame_path(framestack_path, frame_index):
     frame_name = str(frame_index).zfill(4)
     return framestack_path.with_name(framestack_path.name.replace('$F4', frame_name))
+
+def _aov_channel_count(aov):
+    """Channel count of a rendered AOV, from its first frame's EXR header.
+
+    The AOV records only carry names, and an `objid_*` can be a 3-channel
+    puzzle matte or a 1-channel th::mattes matte, so the published file is
+    asked. Every frame of a render shares one layout, so one header is
+    enough. None when it can't be read.
+    """
+    render_range = aov.get_frame_range()
+    if render_range is None: return None
+    frame_path = aov.get_aov_frame_path(str(render_range.first_frame).zfill(4))
+    channel_names = exr.read_channel_names(frame_path)
+    if not channel_names: return None
+    return len(channel_names)
 
 def _get_connected_output(node, index):
     connections = node.outputConnections()
@@ -457,8 +476,8 @@ class BuildComp(ns.Node):
             mono_names = list()
             if 'alpha' in aov_names: mono_names.append('alpha')
             for aov_name in aov_names:
-                if not aov_name.startswith('holdout_'): continue
-                mono_names.append(aov_name)
+                if aov_name.startswith('holdout_') or is_ramp_aov(aov_name):
+                    mono_names.append(aov_name)
 
             # The rest is util names
             util_names = list(
@@ -561,17 +580,19 @@ class BuildComp(ns.Node):
 
         # Parameters
         render_range = aov.get_frame_range()
-        
+
+        # A puzzle matte packs three masks into R, G and B; a th::mattes
+        # matte is one mask in one channel
+        output_labels = mask_output_labels(aov.label, _aov_channel_count(aov))
+        is_single = len(output_labels) == 1
+
         # Create aov subnet
         aov_subnet = _ensure_node(parent_node, 'subnet', aov.label)
         aov_subnet.parm('inputs').set(0)
-        aov_subnet.parm('outputs').set(3)
-        aov_subnet.parm('outputlabel1').set('R')
-        aov_subnet.parm('outputtype1').set(1)
-        aov_subnet.parm('outputlabel2').set('G')
-        aov_subnet.parm('outputtype2').set(1)
-        aov_subnet.parm('outputlabel3').set('B')
-        aov_subnet.parm('outputtype3').set(1)
+        aov_subnet.parm('outputs').set(len(output_labels))
+        for output_index, output_label in enumerate(output_labels, 1):
+            aov_subnet.parm(f'outputlabel{output_index}').set(output_label)
+            aov_subnet.parm(f'outputtype{output_index}').set(1)
         aov_subnet_inputs = aov_subnet.node('inputs')
         aov_subnet_outputs = aov_subnet.node('outputs')
         aov_subnet.setColor(hou.Color((0, 1, 0)))
@@ -594,13 +615,24 @@ class BuildComp(ns.Node):
         aov_import_node.parm('colorspace').set(1)
         aov_import_node.parm('aovs').set(1)
         aov_import_node.parm('aov1').set(aov.label)
-        aov_import_node.parm('type1').set(_aov_output_type(aov.label))
+        aov_import_node.parm('type1').set(
+            0 if is_single else _aov_output_type(aov.label)
+        )
 
         # Create the resample node
         aov_resample_node = _ensure_node(aov_subnet, 'resample', 'resample')
         aov_resample_node.parm('scale').set(1)
         aov_resample_node.parm('filter').set('point')
         _connect(aov_import_node, 0, aov_resample_node, 0)
+
+        # A single mask goes straight out; a split left over from a rebuild
+        # of what was a puzzle matte goes
+        if is_single:
+            leftover_split_node = aov_subnet.node('split')
+            if leftover_split_node is not None: leftover_split_node.destroy()
+            _connect(aov_resample_node, 0, aov_subnet_outputs, 0)
+            aov_subnet.layoutChildren()
+            return aov_subnet
 
         # Create a channel split node
         aov_split_node = _ensure_node(aov_subnet, 'channelsplit', 'split')

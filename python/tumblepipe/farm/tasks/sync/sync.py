@@ -26,6 +26,8 @@ def _should_sync_aov(aov_name: str) -> bool:
         return True
     if aov_name.startswith('holdout_'):
         return True
+    if aov_name.startswith('ramp_'):
+        return True
     return False
 
 def _error(msg):

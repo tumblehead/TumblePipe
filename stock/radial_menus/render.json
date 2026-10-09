@@ -50,8 +50,8 @@
       "action": "",
       "submenu": "",
       "release_action": "",
-      "node_type": "Lop/th::puzzlemattes::4.0",
-      "label_override": "Puzzle Mattes",
+      "node_type": "Lop/th::mattes::1.0",
+      "label_override": "Mattes",
       "icon_override": null,
       "hidden": false,
       "close_on_select": false

@@ -103,7 +103,8 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 
 | Node | Category | Purpose |
 |---|---|---|
-| `th::puzzlemattes` | LOP | Puzzle-matte AOVs from prim patterns |
+| `th::mattes` | LOP | Single-channel matte and distance-ramp AOVs for grading |
+| `th::puzzlemattes` | LOP | Puzzle-matte AOVs from prim patterns (legacy; use `th::mattes`) |
 | `th::render_vars` | LOP | Toggle the standard AOV set |
 
 ### `_TumblePipe/comp`

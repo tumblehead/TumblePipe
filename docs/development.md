@@ -922,6 +922,18 @@ beside it is a gitignored build artifact.
   though `hou.pwd().parm(...)` works. Compute the value on an internal node,
   where relative paths like `hou.node('../define_lpetags')` behave, and read it
   out from the interface with `chs("<child>/<parm>")`.
+- **A new HDA needs an operator index entry.** `hpm.toml`'s `[[operators]]`
+  block is generated, not hand-written: run `python .ci/gen_operators.py`
+  and replace everything from `# Operator index.` to the end of the file with
+  its output. On Windows, strip the CRs afterwards. The catalog's Nodes
+  section reads this index, and `tests/test_operator_index.py` fails while it
+  is stale. To build a new HDA from hython (`th::mattes` was made this way):
+  - make a `subnet`, put the logic in an internal Python Script LOP that
+    calls into `python/`, and run `createDigitalAsset()` on it;
+  - set the interface with `definition.setParmTemplateGroup()`;
+  - add `OnCreated` (set `ExtraFileOptions` `OnCreated/IsPython`) and a
+    `Tools.shelf` copied from a sibling HDA, then `save()`;
+  - expand the result into `otls/` with `hotl -t`.
 
 ## Export cache-reference harness
 

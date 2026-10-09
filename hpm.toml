@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.65.0"
+version = "1.66.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -673,11 +673,27 @@ source = "otls/lop_th.lpe_tags.1.0.hda"
 
 [[operators]]
 kind = "hda"
+type_name = "th::material::1.0"
+label = "th material"
+category = "Lop"
+tab_submenu = "_TumblePipe/lookdev"
+source = "otls/lop_th.material.1.0.hda"
+
+[[operators]]
+kind = "hda"
 type_name = "th::material_assigner::1.0"
 label = "th material assigner"
 category = "Lop"
 tab_submenu = "_TumblePipe/lookdev"
 source = "otls/lop_th.material_assigner.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::mattes::1.0"
+label = "th mattes"
+category = "Lop"
+tab_submenu = "_TumblePipe/rendering"
+source = "otls/lop_th.mattes.1.0.hda"
 
 [[operators]]
 kind = "hda"

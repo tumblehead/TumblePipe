@@ -97,7 +97,7 @@
       "label": "Render",
       "items": [
         {
-          "node_type": "Lop/th::puzzlemattes::4.0",
+          "node_type": "Lop/th::mattes::1.0",
           "label_override": "Mattes",
           "icon_override": null,
           "hidden": false,

@@ -1,0 +1,14 @@
+Operator:     th::mattes::1.0
+Label:        th mattes
+Path:         oplib:/th::Lop/mattes::1.0?th::Lop/mattes::1.0
+Icon:         LOP_subnet
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Thu Oct  8 16:22:57 2026
+

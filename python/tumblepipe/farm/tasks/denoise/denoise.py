@@ -12,10 +12,18 @@ normal/albedo guides as planes *inside* the input), denoise every AOV in one
 call, then split the planes back out and write them to their published paths
 with the compression each AOV's render input had -- the render department's
 nodes choose it, the denoise keeps it. See designs/denoise-without-hython.md.
+
+Mattes (`objid_*`, `holdout_*`) and distance ramps (`ramp_*`) are not
+denoised: OIDN softens a matte's hard edges and smears a ramp, and neither is
+noisy to begin with. They are published to the denoise output as byte copies
+of their render input -- same pixels, same compression, same ACEScg stamp --
+and never enter the combined file, so they cannot change how the other AOVs
+are denoised.
 """
 from tempfile import TemporaryDirectory
 from pathlib import Path
 import logging
+import shutil
 import sys
 import os
 
@@ -41,6 +49,7 @@ from tumblepipe.apps import exr
 from tumblepipe.farm._common import ensure_dir
 from tumblepipe.farm.tasks.env import print_env
 from tumblepipe.farm.tasks.denoise import _spec
+from tumblepipe.pipe.aovs import is_matte_aov, is_ramp_aov
 
 # What a denoised AOV is written with when its source's compression can't be
 # read -- the denoise publish's encoding before it learned to keep the source's.
@@ -80,10 +89,17 @@ def _get_frame_path(frame_path, frame_index):
 def _get_frame_index(frame_path):
     return int(frame_path.stem.rsplit('.', 1)[-1])
 
+def _should_pass_through_aov(aov_name):
+    """AOVs published unchanged: the mattes and the distance ramps."""
+    if is_matte_aov(aov_name): return True
+    if is_ramp_aov(aov_name): return True
+    return False
+
 def _should_denoise_aov(aov_name):
-    """Denoise all AOVs except variance/MSE passes."""
+    """Denoise all AOVs except variance/MSE passes and the pass-through ones."""
     name = aov_name.lower()
     if name.endswith('_mse'): return False
+    if _should_pass_through_aov(aov_name): return False
     return True
 
 def _is_critical_aov(aov_name):
@@ -112,6 +128,38 @@ def _run_idenoise(idenoise, input_path, output_path, aov_names, force_cpu) -> in
         print('  ERROR: idenoise could not resolve a requested AOV/guide plane')
         return 1
     return exit_code
+
+def _pass_through_frame(
+    frame_index: int,
+    input_paths: dict[str, Path],
+    output_paths: dict[str, Path]
+    ) -> tuple[dict[str, Path], set[str]]:
+    """Publish the pass-through AOVs of one frame unchanged.
+
+    A byte copy, not an oiiotool re-encode: re-encoding a DWA-compressed
+    input would quantise it a second time, and the copy keeps the input's
+    compression and its ACEScg stamp (applied when the render was split into
+    per-AOV files, see exr.split_subimages) as they are -- 1- and 3-channel
+    mattes alike. Same ``(written, failed)`` contract as ``_denoise_frame``.
+    """
+    written = dict()
+    failed = set()
+    for aov_name, aov_path in input_paths.items():
+        frame_path = _get_frame_path(aov_path, frame_index)
+        if not local_path(frame_path).exists():
+            print(f'  WARNING: Source file missing: {frame_path}')
+            failed.add(aov_name)
+            continue
+        output_frame_path = _get_frame_path(output_paths[aov_name], frame_index)
+        ensure_dir(local_path(output_frame_path).parent)
+        try:
+            shutil.copyfile(local_path(frame_path), local_path(output_frame_path))
+        except OSError as error:
+            print(f'  ERROR: Failed to publish AOV {aov_name}: {error}')
+            failed.add(aov_name)
+            continue
+        written[aov_name] = output_frame_path
+    return written, failed
 
 def _denoise_frame(
     idenoise,
@@ -244,11 +292,12 @@ def main(
         if guide_name in input_paths: continue
         return _error(f'{guide_name.capitalize()} AOV not found')
 
-    # Find the AOVs to denoise
+    # Find the AOVs to publish: denoised, or passed through unchanged
     target_aov_paths = {
         aov_name: aov_path
         for aov_name, aov_path in input_paths.items()
         if _should_denoise_aov(aov_name)
+        or _should_pass_through_aov(aov_name)
     }
 
     # Filter to only AOVs that have source files on disk
@@ -268,6 +317,23 @@ def main(
     for aov_name in target_aov_paths.keys():
         if aov_name in output_paths: continue
         return _error(f'No output path given for {aov_name}')
+
+    # Set the pass-through AOVs aside: they never reach idenoise
+    passthrough_aov_paths = {
+        aov_name: aov_path
+        for aov_name, aov_path in target_aov_paths.items()
+        if _should_pass_through_aov(aov_name)
+    }
+    target_aov_paths = {
+        aov_name: aov_path
+        for aov_name, aov_path in target_aov_paths.items()
+        if aov_name not in passthrough_aov_paths
+    }
+    probe_frame_paths = {
+        aov_name: probe_frame_path
+        for aov_name, probe_frame_path in probe_frame_paths.items()
+        if aov_name in target_aov_paths
+    }
 
     # The channel layout is a property of the render, not of a frame, so probe
     # one real frame once instead of once per AOV per frame. The paths above are
@@ -300,8 +366,13 @@ def main(
                 compressions,
                 force_cpu
             )
-            output_frame_paths[frame_index] = written
-            failed_aovs |= failed
+            passed, passed_failed = _pass_through_frame(
+                frame_index,
+                passthrough_aov_paths,
+                output_paths
+            )
+            output_frame_paths[frame_index] = {**written, **passed}
+            failed_aovs |= failed | passed_failed
 
     # Report failed AOVs
     if failed_aovs:

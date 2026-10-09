@@ -12,6 +12,19 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.65.0 — 2026-10-08
+
+### Features
+- feat(hda): per-AOV Compression menus on th::render_vars and th::puzzlemattes (`e1b9e4b`)
+- feat(submit): Assets and Shots tabs in the Farm Submit dialog (`16a64f4`)
+
+### Fixes
+- fix(render): the farm stops overriding per-AOV compression (`94023ae`)
+
+### Documentation
+- docs: compression is set on the nodes; HDA editing notes (`65fc1d8`)
+- docs: regenerate CHANGELOG.md for v1.64.0 (`2628644`)
+
 ## v1.64.0 — 2026-10-08
 
 ### Features

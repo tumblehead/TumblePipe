@@ -56,7 +56,7 @@ network:
 
 | Entry | Node |
 |---|---|
-| Mattes | `th::puzzlemattes::4.0` |
+| Mattes | `th::mattes::1.0` |
 | LPE Tags | `th::lpe_tags::1.0` |
 | Render Settings | `th::render_settings::1.0` |
 | Render Vars | `th::render_vars::1.1` |
@@ -185,7 +185,7 @@ Radial.
 | effects | SOP | File, Pyro Solver, RBD Solver, Vellum Solver, Cache |
 | cfx | SOP | File, Vellum Constraints, Vellum Solver, Vellum Drape, Cache |
 | light | LOP | Light Linker, Lights (Rect, Distant, Dome), Light Gobo (recipe), Light Mixer, Light Blocker, Fog |
-| render | LOP | Render Settings, Render Vars, LPE Tags, Puzzle Mattes, Render Layer Setup, Render Layer Matte (recipe), Render Debug |
+| render | LOP | Render Settings, Render Vars, LPE Tags, Mattes, Render Layer Setup, Render Layer Matte (recipe), Render Debug |
 | composite | COP | Build Comp, LOP Import, File, Depth Cull, Gradient Map, A/B Slider |
 
 **Shift+Space** opens the menu for the workfile's department. Radial owns

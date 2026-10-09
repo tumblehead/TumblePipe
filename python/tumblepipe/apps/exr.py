@@ -299,6 +299,71 @@ def get_compressions(input_paths: dict[str, Path]) -> dict[str, str]:
         result[aov_name] = spec
     return result
 
+# The four bytes every OpenEXR file starts with (the int 20000630, little-endian).
+EXR_MAGIC = b'\x76\x2f\x31\x01'
+
+# OpenEXR caps attribute names and types at 255 bytes (with long names on).
+_EXR_MAX_NAME = 256
+
+def _read_cstr(stream) -> Optional[bytes]:
+    """One NUL-terminated header string; None when the header is truncated."""
+    result = bytearray()
+    while len(result) < _EXR_MAX_NAME:
+        byte = stream.read(1)
+        if len(byte) == 0: return None
+        if byte == b'\0': return bytes(result)
+        result += byte
+    return None
+
+def _parse_chlist(value: bytes) -> Optional[list[str]]:
+    # Each entry: name\0, int32 pixel type, uint8 pLinear, 3 reserved bytes,
+    # int32 x and y sampling -- 16 bytes after the name. An empty name ends it.
+    names = []
+    index = 0
+    while True:
+        end = value.find(b'\0', index)
+        if end < 0: return None
+        if end == index: return names
+        names.append(value[index:end].decode('utf-8', errors='replace'))
+        index = end + 1 + 16
+        if index > len(value): return None
+
+def read_channel_names_from(stream) -> Optional[list[str]]:
+    """Channel names of the first part of an EXR read from ``stream``.
+
+    Parses the header directly instead of asking oiiotool, so it runs where
+    oiiotool may not (inside a Houdini session building a comp) and costs a
+    few hundred bytes of IO. Only the first header is read: split per-AOV
+    files hold one part. None for anything that is not a readable EXR header.
+    """
+    if stream.read(4) != EXR_MAGIC: return None
+    if len(stream.read(4)) != 4: return None
+    while True:
+        name = _read_cstr(stream)
+        if name is None: return None
+        if len(name) == 0: return None  # end of the header, no channel list
+        type_name = _read_cstr(stream)
+        if type_name is None: return None
+        size_raw = stream.read(4)
+        if len(size_raw) != 4: return None
+        size = int.from_bytes(size_raw, 'little', signed = True)
+        if size < 0: return None
+        value = stream.read(size)
+        if len(value) != size: return None
+        if name == b'channels' and type_name == b'chlist':
+            return _parse_chlist(value)
+
+def read_channel_names(input_path: Path) -> Optional[list[str]]:
+    """Channel names of an EXR file; None if it can't be read as one.
+
+    Takes a CONCRETE frame path, like :func:`get_channel_counts`.
+    """
+    try:
+        with open(local_path(input_path), 'rb') as stream:
+            return read_channel_names_from(stream)
+    except OSError:
+        return None
+
 def _channel_selector(channel_count: int) -> Optional[str]:
     """oiiotool `--ch` selection normalizing an AOV to 3 channels.
 

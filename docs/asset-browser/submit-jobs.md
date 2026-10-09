@@ -233,7 +233,7 @@ is described in [Compositing → Playblast](../compositing.md#playblast).
 | **Motion blur** | `render.enablemblur` | on | Override `karma:object:mblur`. |
 | **DOF** | `render.enabledof` | on | Override `karma:global:enable_dof`. |
 | **Standalone** | — | off | Off = direct render of the collapsed staged file. On = a farm **stage** job builds the render stage first. See [Render staging](../composition.md#render-staging). |
-| **Copy to edit** | — | off | Adds an *edit* job that syncs the finished AOVs to the edit location. |
+| **Copy to edit** | — | off | Adds an *edit* job that copies the finished `beauty`, the `objid_*` / `holdout_*` mattes and the `ramp_*` distance ramps to the edit location (the other AOVs stay with the render). |
 
 There is no step field: farm renders always submit `step_size = 1`.
 

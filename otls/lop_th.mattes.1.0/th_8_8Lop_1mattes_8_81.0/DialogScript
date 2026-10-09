@@ -1,0 +1,129 @@
+# Dialog script for th::mattes::1.0 automatically generated
+
+{
+    name	th::mattes::1.0
+    script	th::mattes::1.0
+    label	"th mattes"
+
+    help {
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "settings_path"
+        label   "Render Settings"
+        type    string
+        default { "/Render/rendersettings" }
+        help    "The render settings prim the distance ramps' global AOV material is set on. Place this node before th::render_settings; it collects the AOVs."
+    }
+    multiparm {
+        name    "mattes"
+        label    "Mattes"
+        default 0
+        parmtag { "multistartoffset" "1" }
+
+        parm {
+            name    "matte_name#"
+            label   "Name"
+            type    string
+            default { "" }
+            help    "The AOV is called objid_<name>. Rows without a name are skipped."
+        }
+        parm {
+            name    "matte_prims#"
+            label   "Primitives"
+            type    string
+            default { "" }
+            help    "Prim pattern; the matte covers each matched prim and its descendants."
+            parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }
+            parmtag { "script_action_help" "Select primitives in the Scene Viewer or Scene Graph Tree pane. Ctrl-click to select using the primitive picker dialog." }
+            parmtag { "script_action_icon" "BUTTONS_reselect" }
+            parmtag { "sidefx::usdpathtype" "primslist" }
+        }
+        parm {
+            name    "matte_compression#"
+            label   "Compression"
+            type    ordinal
+            default { "6" }
+            help    "EXR compression this AOV is written with. Mattes and ramps are data: keep a lossless one (ZIP)."
+            menu {
+                "none"  "No compression"
+                "dwab"  "DWA-B (lossy)"
+                "dwaa"  "DWA-A (lossy)"
+                "piz"   "PIZ (lossless)"
+                "rle"   "RLE (lossless)"
+                "zips"  "ZIP, single scanline (lossless)"
+                "zip"   "ZIP (lossless)"
+                "pix"   "PXR24 (lossy for 32-bit)"
+                "b44"   "B44 (lossy)"
+                "b44a"  "B44A (lossy)"
+            }
+        }
+    }
+
+    multiparm {
+        name    "ramps"
+        label    "Distance Ramps"
+        default 0
+        parmtag { "multistartoffset" "1" }
+
+        parm {
+            name    "ramp_name#"
+            label   "Name"
+            type    string
+            default { "" }
+            help    "The AOV is called ramp_<name>. Rows without a name are skipped."
+        }
+        parm {
+            name    "ramp_near#"
+            label   "Near"
+            type    float
+            default { "0" }
+            help    "Distance from the camera, in scene units, where the ramp reads 0."
+            range   { 0! 100 }
+        }
+        parm {
+            name    "ramp_far#"
+            label   "Far"
+            type    float
+            default { "10" }
+            help    "Distance from the camera, in scene units, where the ramp reaches 1. Beyond it, and on the sky, it stays 1."
+            range   { 0! 100 }
+        }
+        parm {
+            name    "ramp_measure#"
+            label   "Measure"
+            type    ordinal
+            default { "0" }
+            help    "Distance from camera is round (ray length); depth is flat (planes parallel to the image)."
+            menu {
+                "distance"  "Distance from camera"
+                "depth"     "Depth along view axis"
+            }
+        }
+        parm {
+            name    "ramp_compression#"
+            label   "Compression"
+            type    ordinal
+            default { "6" }
+            help    "EXR compression this AOV is written with. Mattes and ramps are data: keep a lossless one (ZIP)."
+            menu {
+                "none"  "No compression"
+                "dwab"  "DWA-B (lossy)"
+                "dwaa"  "DWA-A (lossy)"
+                "piz"   "PIZ (lossless)"
+                "rle"   "RLE (lossless)"
+                "zips"  "ZIP, single scanline (lossless)"
+                "zip"   "ZIP (lossless)"
+                "pix"   "PXR24 (lossy for 32-bit)"
+                "b44"   "B44 (lossy)"
+                "b44a"  "B44A (lossy)"
+            }
+        }
+    }
+
+}

@@ -35,7 +35,8 @@ stamps **both** (`exr.ACESCG_ATTRIB_ARGS`):
   look). We stamp the AP1 primaries + D60 white point.
 
 The stamp is applied at every publish boundary — `split_subimages` (raw
-render), `exr.encode` (denoise), and slapcomp's composite writes — never in
+render), `exr.encode` (denoise; the mattes and ramps it passes through are
+byte copies that keep the split's stamp), and slapcomp's composite writes — never in
 the render/COP nodes themselves, so frames Karma or COPs write directly (an
 interactive ROP, a `build_comp` preview) still lack `chromaticities` and read
 as Rec709 in RV. Set the input colour space manually there. When adding a new
@@ -45,7 +46,8 @@ oiiotool publish step, splice `ACESCG_ATTRIB_ARGS` into its final write.
 
 Each AOV's EXR compression is set **on the node that adds it**, in the render
 department: every AOV of [`th::render_vars`](nodes/lighting-and-rendering.md#thrender_vars-lop)
-and every [`th::puzzlemattes`](nodes/lighting-and-rendering.md#thpuzzlemattes-lop)
+and every [`th::mattes`](nodes/lighting-and-rendering.md#thmattes-lop) row and
+[`th::puzzlemattes`](nodes/lighting-and-rendering.md#thpuzzlemattes-lop)
 matte has a **Compression** menu. They default to lossless **ZIP** for data
 and lossy **DWAB** for colour. Colour is `beauty`, its `beauty_<tag>` light
 groups and their variance, `albedo` and the LPE splits (`diffuse`, `specular`,
@@ -57,8 +59,11 @@ defaults follow lives in [`pipe/aovs.py`](../python/tumblepipe/pipe/aovs.py).
 
 The farm writes what the render department published and changes nothing on
 the way: husk writes each AOV with its node's setting, the split into per-AOV
-files keeps it, and the denoise publish re-encodes each AOV with the
-compression its render input had. To change a pass's compression, change the
+files keeps it, and the denoise publish re-encodes each denoised AOV with
+the compression its render input had. Mattes (`objid_*`, `holdout_*`) and
+distance ramps (`ramp_*`) are not denoised at all: OIDN would soften their
+edges, so the denoise publishes them as byte copies of the render input —
+same pixels, same compression. To change a pass's compression, change the
 menu and re-publish the render department.
 
 An AOV no node sets falls back to the project's RenderProduct, which asks for
@@ -77,8 +82,12 @@ it resolves the shot from the workfile's `context.json` sidecar.
 
 - one subnet per shot channel, containing a typed `file` COP per AOV —
   LPE passes (`beauty`, `beauty_*`), masks (`objid_*`), mono passes
-  (`alpha`, `holdout_*`), and utility passes (`depth`, `normal`,
-  `albedo`, …),
+  (`alpha`, `holdout_*`, the `ramp_*` distance ramps), and utility passes
+  (`depth`, `normal`, `albedo`, …),
+- a mask's outputs follow its channel count, read from the header of the
+  AOV's first rendered frame: a 3-channel `th::puzzlemattes` matte is split
+  into R, G and B outputs, a 1-channel `th::mattes` matte is one output named
+  after the AOV. A header that can't be read is treated as 3-channel,
 - each import pinned to the **latest complete version** of that channel's
   AOV, searching render departments up to the node's selected department,
 - a grade subnet per channel with the LPE passes re-summed to a graded
@@ -127,7 +136,7 @@ Submit; see `docs/deadline.md` for setting one up. Without a farm:
   in that range must exist for every AOV folder or the version is ignored.
   Write one EXR per AOV per frame, with its layer named after the AOV (the
   name Karma gives the AOV's subimage). `beauty` and `alpha` are required;
-  `beauty_*` light groups, `objid_*`, `holdout_*`, `albedo`, `normal`,
+  `beauty_*` light groups, `objid_*`, `holdout_*`, `ramp_*`, `albedo`, `normal`,
   `depth`, `uv` and `position` are picked up when present. Use the next
   free `v####` for each new render.
 
