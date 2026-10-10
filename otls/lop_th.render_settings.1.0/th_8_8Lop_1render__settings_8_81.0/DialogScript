@@ -114,6 +114,18 @@
             parmtag { "usdvaluetype" "int" }
         }
         parm {
+            name    "light_sampling_quality"
+            label   "Light Sampling Quality"
+            type    float
+            default { "1" }
+            help    "Scales every light's sampling quality (karma:global:light_sampling_quality). Below 1 sends fewer shadow rays: HideAndReek measured 0.5 as ~15% faster with no extra noise, time better spent on Path Traced Samples."
+            range   { 0! 2 }
+            parmtag { "autoscope" "0000000000000000" }
+            parmtag { "spare_category" "Sampling" }
+            parmtag { "uiscope" "viewport" }
+            parmtag { "usdvaluetype" "float" }
+        }
+        parm {
             name    "diffuselimit"
             label   "Diffuse Limit"
             type    float

@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.70.0 — 2026-10-10
+
+### Features
+- feat(mattes): matte a GeomSubset's faces with th::mattes (`853bcbeb`)
+
+### Documentation
+- docs: th::mattes takes GeomSubset paths for part of a mesh (`74d444c5`)
+- docs: regenerate CHANGELOG.md for v1.69.1 (`2a4e99e6`)
+
 ## v1.69.1 — 2026-10-10
 
 ### Fixes

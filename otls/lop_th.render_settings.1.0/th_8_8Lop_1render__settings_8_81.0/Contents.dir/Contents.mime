@@ -346,6 +346,13 @@ Content-Type: text/plain
       flags = 0
       segment { length = 0 value = 128 128 expr = hou.pwd().parm('../pathtracedsamples').eval() language = python }
     }
+    channel light_sampling_quality {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = hou.pwd().parm('../light_sampling_quality').eval() language = python }
+    }
     channel usedicingcamera {
       lefttype = extend
       righttype = extend
@@ -472,7 +479,7 @@ volumequality	[ 0	locks=0 ]	(	1	)
 sssquality	[ 0	locks=0 ]	(	1	)
 folder13	[ 0	locks=0 ]	(	1	)
 light_sampling_mode	[ 0	locks=0 ]	(	"Light Tree"	)
-light_sampling_quality	[ 0	locks=0 ]	(	1	)
+light_sampling_quality	[ 0	locks=0 ]	(	[ light_sampling_quality	1 ] 	)
 folder15	[ 0	locks=0 ]	(	1	)
 screendoorlimit	[ 0	locks=0 ]	(	4	)
 volumesteprate	[ 0	locks=0 ]	(	0.25	)

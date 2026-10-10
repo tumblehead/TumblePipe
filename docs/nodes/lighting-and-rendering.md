@@ -34,6 +34,7 @@ Source: [`otls/lop_th.render_settings.1.0`](../../otls/lop_th.render_settings.1.
 | Camera | `/cameras/render_camera` | The render camera — the path the shot templates author and playblast and render read. Projects made from the template before 2026-10-07 keep it at `/scene/cameras/render_camera`; set this to match |
 | Width/Height-Pixels | `1920 1080` | Resolution |
 | Path Traced Samples | `64` | |
+| Light Sampling Quality | `1` | Scales every light's sampling quality. Below 1 sends fewer shadow rays; 0.5 measured ~15% faster with no extra noise on HideAndReek, time better spent on Path Traced Samples |
 | Diffuse / Reflection / Refraction / Volume / SSS Limit | `2 / 4 / 4 / 0 / 1` | Karma ray limits |
 | Enable Depth of Field, Enable Motion Blur | on, on | |
 | Dicing Camera | off | Dice displacement from a copy of the camera at **Source Frame** (`1001`), optionally with **Add Focal Length**; **Quality Scale** `0.5` |
