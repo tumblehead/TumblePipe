@@ -23,8 +23,12 @@ Files, both in one per-submission folder under ``temp:/farm_submissions/``::
                     {'event': 'row', 'uri': ..., 'status': 'running'}
                     {'event': 'row', 'uri': ..., 'status': 'done', 'jobs': N}
                     {'event': 'row', 'uri': ..., 'status': 'failed', 'error': '...'}
-                    {'event': 'end', 'done': N, 'failed': N}
+                    {'event': 'row', 'uri': ..., 'status': 'cancelled'}
+                    {'event': 'end', 'done': N, 'failed': N, 'cancelled': N}
     runner.log      the process's stdout and stderr
+    cancel          written by the status window to stop the run; the runner
+                    checks for it between entities, so the entity being
+                    submitted finishes and none is left half-submitted
 
 Each plan row is exactly the config ``batch_submit.submit_entity_batch``
 takes: ``{'entity': {'uri', 'name', 'context'}, 'settings': {...}}``.
@@ -43,6 +47,7 @@ PLAN_VERSION = 1
 PLAN_NAME = 'plan.json'
 PROGRESS_NAME = 'progress.jsonl'
 LOG_NAME = 'runner.log'
+CANCEL_NAME = 'cancel'
 
 # The project the plan was made in. The runner re-applies these before
 # importing the pipeline, so a project switch in the launching session
@@ -115,6 +120,11 @@ def read_events(progress_path: Path, offset: int = 0) -> tuple[list[dict], int]:
         except ValueError:
             continue
     return events, offset + consumed
+
+
+def request_cancel(plan_path: Path) -> None:
+    """Ask the runner of ``plan_path`` to stop before its next entity."""
+    (Path(plan_path).parent / CANCEL_NAME).write_text('', encoding='utf-8')
 
 
 def fold_events(events: list[dict], state: dict | None = None) -> dict:
@@ -243,15 +253,24 @@ def run(plan_path: Path) -> int:
         for row in rows:
             emit(progress_path, event='row', uri=row['entity']['uri'],
                  status='failed', error=f'Could not load the submitter: {error}')
-        emit(progress_path, event='end', done=0, failed=len(rows))
+        emit(progress_path, event='end', done=0, failed=len(rows), cancelled=0)
         return 1
+    return run_rows(rows, progress_path, plan_path.parent / CANCEL_NAME, submit_entity_batch)
 
-    done = failed = 0
-    for row in rows:
+
+def run_rows(rows: list[dict], progress_path: Path, cancel_path: Path, submit) -> int:
+    """Submit ``rows`` one by one with ``submit``, stopping once ``cancel_path`` exists."""
+    done = failed = cancelled = 0
+    for index, row in enumerate(rows):
+        if cancel_path.exists():
+            for rest in rows[index:]:
+                emit(progress_path, event='row', uri=rest['entity']['uri'], status='cancelled')
+            cancelled = len(rows) - index
+            break
         uri = row['entity']['uri']
         emit(progress_path, event='row', uri=uri, status='running')
         try:
-            job_ids = submit_entity_batch(row)
+            job_ids = submit(row)
         except Exception as error:
             failed += 1
             print(f'{uri}: {error}', flush=True)
@@ -259,7 +278,7 @@ def run(plan_path: Path) -> int:
             continue
         done += 1
         emit(progress_path, event='row', uri=uri, status='done', jobs=len(job_ids or []))
-    emit(progress_path, event='end', done=done, failed=failed)
+    emit(progress_path, event='end', done=done, failed=failed, cancelled=cancelled)
     return 1 if failed else 0
 
 

@@ -36,12 +36,12 @@ import tumblepipe.farm.jobs.houdini.render.job as render_job
 import tumblepipe.farm.jobs.houdini.playblast.job as playblast_job
 from tumblepipe.farm.jobs.houdini import _preview, _publish
 
-# Mapping from column keys to Karma/USD render setting attribute paths
-# These are used to build overrides for render_settings.json
-# Supports both column keys (samples, mblur) and property paths (render.pathtracedsamples)
+# Mapping from submit-dialog settings keys to Karma/USD render setting
+# attribute paths, used to build overrides for render_settings.json. A key
+# reaches here only when the artist set it in the dialog: unset, the scene's
+# own render settings render (submit_jobs_resolve.Field.override).
 # Attribute names are from the Karma schema (P:/buzz2/_config/usd/root_default_prims.usda)
 RENDER_OVERRIDE_MAP = {
-    # Column keys (from job submission dialog)
     'samples': 'karma:global:pathtracedsamples',       # int
     'mblur': 'karma:object:mblur',                     # bool (object namespace)
     'dof': 'karma:global:enable_dof',                  # bool (note underscore)
@@ -51,16 +51,6 @@ RENDER_OVERRIDE_MAP = {
     'refraction_limit': 'karma:object:refractlimit',   # float (note: "refract" not "refraction")
     'volume_limit': 'karma:object:volumelimit',        # float (object namespace)
     'sss_limit': 'karma:object:ssslimit',              # float (object namespace)
-    # Property paths (for backward compatibility)
-    'render.pathtracedsamples': 'karma:global:pathtracedsamples',
-    'render.enablemblur': 'karma:object:mblur',
-    'render.enabledof': 'karma:global:enable_dof',
-    'render.enabledenoising': None,
-    'render.diffuselimit': 'karma:object:diffuselimit',
-    'render.reflectionlimit': 'karma:object:reflectlimit',
-    'render.refractionlimit': 'karma:object:refractlimit',
-    'render.volumelimit': 'karma:object:volumelimit',
-    'render.ssslimit': 'karma:object:ssslimit',
 }
 
 # Attributes that need float type conversion (stored as int in settings but float in Karma schema)

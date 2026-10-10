@@ -12,6 +12,18 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.68.2 — 2026-10-10
+
+### Fixes
+- fix(submit): each entity renders only the checked channels it defines (`791409e`)
+- fix(farm): run the publish chain's builds and collapse at publish priority (`e7a0452`)
+- fix(farm): refuse a render channel the entity does not define (`e3f08bc`)
+- fix(build): fail a channel build when no department exported the channel (`83d0034`)
+
+### Documentation
+- docs: render channels are narrowed per entity; the farm refuses the rest (`0c50c4e`)
+- docs: regenerate CHANGELOG.md for v1.68.1 (`cfbf9a4`)
+
 ## v1.68.1 — 2026-10-09
 
 ### Fixes

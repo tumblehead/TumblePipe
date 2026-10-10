@@ -831,7 +831,9 @@ husk actually got for a given submission, inspect that job's
 
 ### Where the render settings live
 
-Both paths above apply the submit dialog's render overrides, and both have to
+Both paths above apply the submit dialog's render overrides (only the ones
+the artist set — unset, nothing is authored and the scene's values render),
+and both have to
 find the same prim to apply them to. **That prim path is project-owned, not a
 constant.** Up to 1.63.0 the project template's
 `_config/usd/root_default_prims.usda` declared

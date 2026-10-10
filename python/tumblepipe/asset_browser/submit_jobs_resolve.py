@@ -96,6 +96,12 @@ class Field:
         preflight: Show this field as a column in the pre-flight table.
             Only the ones that meaningfully vary per entity are worth a
             column; the rest are visible in the form.
+        override: A farm-time override of a value the scene's own nodes
+            author (samples, motion blur, DOF on th::render_settings). It
+            has no entity source and no default: left unpinned it is not
+            sent at all, so the render uses what the scene says. Sending a
+            seeded default here is what rendered motion blur for a scene
+            whose render settings turned it off.
     """
 
     key: str
@@ -105,6 +111,7 @@ class Field:
     default: Any = None
     kind: str = 'str'
     preflight: bool = False
+    override: bool = False
 
 
 # The field table. Property paths and defaults match what the dialog and
@@ -149,14 +156,14 @@ FIELDS: tuple[Field, ...] = (
           kind='int'),
     Field('batch_size', 'render', 'Batch', prop='farm.batch_size', default=10,
           kind='int'),
-    Field('samples', 'render', 'Samples', prop='render.pathtracedsamples',
-          default=64, kind='int'),
+    # Overrides of the scene's render settings: sent only when pinned.
+    Field('samples', 'render', 'Samples', kind='int', override=True),
+    # Denoise is a farm post-process, not a scene setting, so it stays an
+    # entity field.
     Field('denoise', 'render', 'Denoise', prop='render.enabledenoising',
           default=True, kind='bool'),
-    Field('mblur', 'render', 'Motion blur', prop='render.enablemblur',
-          default=True, kind='bool'),
-    Field('dof', 'render', 'DOF', prop='render.enabledof', default=True,
-          kind='bool'),
+    Field('mblur', 'render', 'Motion blur', kind='bool', override=True),
+    Field('dof', 'render', 'DOF', kind='bool', override=True),
 
     # ── Playblast (shots only) ────────────────────────────
     # The playblast cut mirrors the render cut, so it reads the same
@@ -319,6 +326,10 @@ def resolve_settings(
             value = coerce(
                 exception[field.key], field.kind, field.default,
             )
+        elif field.override and (
+            field.key not in pins or form.get(field.key, MIXED) is MIXED
+        ):
+            continue  # not overridden — the scene's own value renders
         elif field.prop is None or field.key in pins:
             # Batch field, or one the artist pinned: the form speaks for
             # every entity. A form value that is itself MIXED means the
@@ -338,6 +349,8 @@ def resolve_settings(
 
         if value is REQUIRED:
             continue  # omit — batch_submit raises rather than guessing
+        if field.override and value is None:
+            continue  # an unreadable override is no override
         out[field.key] = value
 
     return _finish(out, sections)
@@ -375,6 +388,10 @@ def field_agreement(
     yields the field's default, so a dialog with nothing checked still shows
     a sane form.
     """
+    if field.override:
+        # Nothing to show but "the scene decides": the dialog cannot know
+        # the node's value, so it must not display (or send) a guess.
+        return MIXED
     if field.prop is None:
         # Batch fields have no per-entity source, so they always agree.
         return coerce(field.default, field.kind, field.default)

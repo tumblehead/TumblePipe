@@ -2,7 +2,8 @@
 
 The submission itself runs in a separate process (``tumblepipe.farm.submit_plan``);
 this window only reads the progress file it appends to, so nothing here can
-block Houdini. Closing the window (or Houdini) does not stop the submission.
+block Houdini. Closing the window (or Houdini) does not stop the submission;
+**Cancel** does, between entities (``submit_plan.request_cancel``).
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ log = logging.getLogger(__name__)
 DONE_COLOUR = "#2bae86"
 FAILED_COLOUR = "#f0a030"
 RUNNING_COLOUR = "#7fb2f0"
+CANCELLED_COLOUR = "#8a8a8a"
 
 _STYLE = f"""
 QWidget {{
@@ -98,7 +100,8 @@ class FarmSubmissionWindow(QWidget):
     Args:
         plan_path: The submission's ``plan.json``; progress is read beside it.
         process: The runner, to notice it dying without finishing.
-        configs: The plan's rows, for names and **Retry failed**.
+        configs: The plan's rows, for names and for resubmitting the failed
+            or cancelled ones.
     """
 
     def __init__(
@@ -117,6 +120,7 @@ class FarmSubmissionWindow(QWidget):
         self._offset = 0
         self._state = submit_plan.fold_events([])
         self._items: dict[str, QTreeWidgetItem] = {}
+        self._cancelling = False
 
         self.setWindowTitle("Farm submission")
         self.setMinimumSize(560, 420)
@@ -153,7 +157,7 @@ class FarmSubmissionWindow(QWidget):
 
         self._note = QLabel(
             "Runs in its own process: keep working, or close this window. "
-            "Closing it does not stop the submission."
+            "Closing it does not stop the submission; Cancel does."
         )
         self._note.setWordWrap(True)
         self._note.setStyleSheet(f"color: {TEXT_SECONDARY};")
@@ -168,8 +172,13 @@ class FarmSubmissionWindow(QWidget):
         # Shown only once a finished run has failures: a greyed-out retry
         # beside a clean run read as if something had gone wrong.
         self._retry.setVisible(False)
-        self._retry.clicked.connect(self._retry_failed)
+        self._retry.clicked.connect(self._retry_unfinished)
         buttons.addWidget(self._retry)
+        # Stops between entities: the one being submitted finishes, so no
+        # entity is left with half its jobs on the farm.
+        self._cancel = QPushButton("Cancel")
+        self._cancel.clicked.connect(self._cancel_submission)
+        buttons.addWidget(self._cancel)
         # "Hide" while the submission runs (closing does not stop it);
         # "Close" once it is over — green when nothing failed.
         self._close = QPushButton("Hide")
@@ -194,12 +203,14 @@ class FarmSubmissionWindow(QWidget):
                     self._show_row(event)
         if not self._state['finished'] and self._runner_died():
             self._state['finished'] = True
-            for uri, item in self._items.items():
+            for uri in self._items:
                 if uri not in self._state['rows'] or self._state['rows'][uri].get('status') == 'running':
-                    self._show_row({
+                    event = {
                         'uri': uri, 'status': 'failed',
                         'error': "the submission process stopped early — see the log",
-                    })
+                    }
+                    self._state['rows'][uri] = event
+                    self._show_row(event)
         self._update_summary()
         if self._state['finished']:
             self._timer.stop()
@@ -229,29 +240,39 @@ class FarmSubmissionWindow(QWidget):
                 child.setForeground(0, QColor(FAILED_COLOUR))
                 child.setFirstColumnSpanned(True)
             item.setExpanded(True)
+        elif status == 'cancelled':
+            item.setText(1, "cancelled")
+            item.setForeground(1, QColor(CANCELLED_COLOUR))
 
-    def _counts(self) -> tuple[int, int]:
+    def _counts(self) -> tuple[int, int, int]:
         rows = self._state['rows'].values()
         done = sum(1 for r in rows if r.get('status') == 'done')
         failed = sum(1 for r in rows if r.get('status') == 'failed')
-        return done, failed
+        cancelled = sum(1 for r in rows if r.get('status') == 'cancelled')
+        return done, failed, cancelled
 
     def _update_summary(self) -> None:
-        done, failed = self._counts()
+        done, failed, cancelled = self._counts()
         total = len(self._configs)
-        self._bar.setValue(done + failed)
+        self._bar.setValue(done + failed + cancelled)
         if self._state['finished']:
             text = f"Submitted {done} of {total}"
+        elif self._cancelling:
+            text = f"Cancelling… {done + failed} of {total}"
         else:
             text = f"Submitting… {done + failed} of {total}"
         if failed:
             text += f" · {failed} failed"
+        if cancelled:
+            text += f" · {cancelled} cancelled"
         # QProgressBar's format expands %p/%v/%m; a literal % must be doubled.
         self._bar.setFormat(text.replace('%', '%%'))
         # The fill says how it is going: accent while running, green for a
         # clean finish, amber once anything failed.
         if failed:
             colour = FAILED_COLOUR
+        elif cancelled and self._state['finished']:
+            colour = CANCELLED_COLOUR
         elif self._state['finished']:
             colour = DONE_COLOUR
         else:
@@ -261,34 +282,55 @@ class FarmSubmissionWindow(QWidget):
             self._bar.setStyleSheet(
                 f"QProgressBar::chunk {{ background-color: {colour}; border-radius: 3px; }}"
             )
-        self._retry.setVisible(bool(failed) and self._state['finished'])
+        # Cancelled entities were never tried: retrying picks them up too.
+        self._retry.setVisible(bool(failed or cancelled) and self._state['finished'])
+        self._retry.setText("Retry failed" if not cancelled else "Submit the rest")
         if self._state['finished']:
             # "Closing it does not stop the submission" is moot once it has
             # stopped by itself.
             self._note.hide()
+            self._cancel.hide()
             self._close.setText("Close")
-            # Green only for a clean run: after failures Retry failed is the
-            # next step, and a filled Close would compete with it.
-            self._close.setStyleSheet(_DONE_BUTTON_STYLE if not failed else "")
+            # Green only for a clean run: otherwise Retry failed / Submit the
+            # rest is the next step, and a filled Close would compete with it.
+            self._close.setStyleSheet(
+                _DONE_BUTTON_STYLE if not (failed or cancelled) else ""
+            )
 
     # ── actions ───────────────────────────────────────────
 
     def _open_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._plan_path.parent)))
 
-    def _retry_failed(self) -> None:
-        failed = {
+    def _cancel_submission(self) -> None:
+        try:
+            submit_plan.request_cancel(self._plan_path)
+        except OSError as error:
+            log.exception("Could not cancel the submission")
+            QMessageBox.critical(self, "Farm Submit", f"Could not cancel:\n\n{error}")
+            return
+        self._cancelling = True
+        self._cancel.setEnabled(False)
+        self._cancel.setText("Cancelling…")
+        self._note.setText(
+            "Stopping once the entity being submitted finishes; "
+            "the rest are not sent to the farm."
+        )
+        self._update_summary()
+
+    def _retry_unfinished(self) -> None:
+        unfinished = {
             uri for uri, row in self._state['rows'].items()
-            if row.get('status') == 'failed'
+            if row.get('status') in ('failed', 'cancelled')
         }
-        configs = [c for c in self._configs if c['entity']['uri'] in failed]
+        configs = [c for c in self._configs if c['entity']['uri'] in unfinished]
         if not configs:
             return
         from .submit_jobs_dialog import start_submission
         try:
             window = start_submission(configs, parent=self.parentWidget())
         except Exception as error:
-            log.exception("Could not retry the failed entities")
+            log.exception("Could not resubmit the unfinished entities")
             QMessageBox.critical(self, "Farm Submit", f"Could not retry:\n\n{error}")
             return
         window.show()

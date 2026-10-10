@@ -234,6 +234,7 @@ is described in [Compositing → Playblast](../compositing.md#playblast).
 | Field | Per-entity source | Default when unset | Notes |
 |---|---|---|---|
 | **Up to** | `submission.render.department` | last renderable department (the whole shot) | Renders every department up to and including this one; departments after it are left out. Also names the render output. |
+| **Camera** | — | read-only | The camera the render looks through: the `camera` of the RenderSettings prim in the latest published layer of the strongest department in the **Up to** cut that sets one, else the project's `root_default_prims.usda`. Read from the first checked channel; the tooltip names the department per entity, and `⟨per entity⟩` means the ticked entities disagree. A preview — the farm still asks the composed stage. |
 | **Channels** | — | the entities' own channel lists | A checkable menu (`(none — check at least one)` when empty) with **All**. Lists the *union* of the rendering entities' channels, `default` first; opens with the *intersection* checked. Channels arriving with a later-ticked entity start unchecked. **All** checks every channel in the batch. The checks apply to the whole batch, but each entity renders only the checked channels **it defines** — one render per such channel — and the Warnings column and the confirm dialog list what each entity skips. See [Channels the farm refuses](#channels-the-farm-refuses). |
 | **Range** | — | `Full range` | `Full range` renders everything and chains slapcomp + MP4; `First / Middle / Last` renders three check frames and notifies. |
 | **Frames** (first → last) | `frame_start` / `frame_end` | *required* — omitted, and the entity fails with "no frame range configured" | |
@@ -241,21 +242,26 @@ is described in [Compositing → Playblast](../compositing.md#playblast).
 | **Pool** | `farm.default_pool` | `general` | |
 | **Pri / Tiles** | `farm.priority` / `farm.tile_count` | 50 / 4 | |
 | **Batch** | `farm.batch_size` | 10 | Frames per farm task. |
-| **Samples** | `render.pathtracedsamples` | 64 | Applied as a Karma override (`karma:global:pathtracedsamples`). |
+| **Samples** | — | `⟨from scene⟩` — not sent | Set a value to override `karma:global:pathtracedsamples`; ↺ goes back to the scene's. |
 | **Denoise** | `render.enabledenoising` | on | Adds denoise jobs after each render. |
-| **Motion blur** | `render.enablemblur` | on | Override `karma:object:mblur`. |
-| **DOF** | `render.enabledof` | on | Override `karma:global:enable_dof`. |
+| **Motion blur** | — | partly checked — not sent | Checked / unchecked overrides `karma:object:mblur`. |
+| **DOF** | — | partly checked — not sent | Checked / unchecked overrides `karma:global:enable_dof`. |
 | **Standalone** | — | off | Off = direct render of the collapsed staged file. On = a farm **stage** job builds the render stage first. See [Render staging](../composition.md#render-staging). |
 | **Copy to edit** | — | off | Adds an *edit* job that copies the finished `beauty` (RGBA — the alpha is its A), the `objid_*` / `holdout_*` mattes and the `ramp_*` distance ramps to the edit location (the other AOVs stay with the render). |
 
 There is no step field: farm renders always submit `step_size = 1`.
 
 Samples, Motion blur and DOF are the only render settings the dialog can
-override. Everything else — resolution, ray limits, camera, engine — comes
+override, and only when you set them: left alone they send nothing, and the
+render uses what the scene's render settings (th::render_settings) author.
+Up to TumblePipe 1.68.2 they were seeded from the entity's `render.*`
+properties (on, 64) and always sent, so turning motion blur off on the node
+still rendered with motion blur. Everything else — resolution, ray limits, camera, engine — comes
 from the shot's own stage: the project's `root_default_prims.usda`, overridden
 by any department layer that authors the render settings prim (typically a
 `render` department layer). The entity's `render.camera`, `render.resolution`,
-`render.overscan`, ray-limit and dicing properties are **not** read at submit;
+`render.overscan`, `render.pathtracedsamples`, `render.enablemblur`,
+`render.enabledof`, ray-limit and dicing properties are **not** read at submit;
 setting them in the config changes nothing on the farm.
 
 #### Channels the farm refuses
@@ -292,20 +298,32 @@ submission, however many shots it covers. The process keeps going if Houdini
 is closed or crashes afterwards.
 
 A small non-modal **Farm submission** window follows it: one row per entity
-(`queued`, `submitting…`, `submitted · N jobs`, or `failed` with the error
-underneath), a progress bar below the rows carrying the summary
-(`Submitting… 3 of 20`, then `Submitted 20 of 20`, with `· N failed` when
-any did; green once done cleanly, amber if anything failed), **Open log
-folder** and **Hide**. Once the submission is over, **Hide** becomes
-**Close** — green after a clean run.
+(`queued`, `submitting…`, `submitted · N jobs`, `failed` with the error
+underneath, or `cancelled`), a progress bar below the rows carrying the
+summary (`Submitting… 3 of 20`, then `Submitted 20 of 20`, with `· N failed`
+or `· N cancelled` when any were; green once done cleanly, amber if anything
+failed, grey if cancelled), **Open log folder**, **Cancel** and **Hide**.
+Once the submission is over, **Hide** becomes **Close** — green after a clean
+run.
+
+**Cancel** stops the submission between entities: the entity being submitted
+when you click it finishes (so no entity is left with only some of its jobs on
+the farm), and every entity after it is marked `cancelled` and never reaches
+Deadline. Jobs already submitted stay on the farm; remove them in Deadline
+Monitor if you no longer want them. Closing or hiding the window does not stop
+the submission — only **Cancel** does.
+
 When a finished submission has failures, **Retry failed** appears beside them:
-it submits just the failed entities again, as a new submission. Closing the
-window does not stop the submission.
+it submits just the failed entities again, as a new submission. After a
+cancel the same button reads **Submit the rest** and also picks up the
+cancelled entities.
 
 Each submission keeps its files in its own folder under
 `temp:/farm_submissions/` (machine-local): `plan.json` (the settings sent for
-every entity), `progress.jsonl` (what the window reads) and `runner.log` (the
-process's output — the first place to look when an entity fails).
+every entity), `progress.jsonl` (what the window reads), `runner.log` (the
+process's output — the first place to look when an entity fails) and, once
+**Cancel** was clicked, an empty `cancel` file the process checks for before
+each entity.
 
 ## From TumbleTrove Desktop
 
@@ -360,8 +378,8 @@ so a broken stage fails in the submission window rather than on the farm:
 
 - *Render*, direct (Standalone off): each checked channel's latest staged
   file is collapsed into `collapsed_stage_<channel>.usda` with the cut
-  applied and the Samples / Motion blur / DOF overrides baked onto the stage's
-  render-settings prim; husk renders that. `No staged file found for <entity>
+  applied and any Samples / Motion blur / DOF overrides you set baked onto the
+  stage's render-settings prim; husk renders that. `No staged file found for <entity>
   channel '<x>' … Publish the entity first to create staged files.` and
   `Cannot collapse the staged stage …` (a layer the build records is missing
   on disk) fail that entity alone.

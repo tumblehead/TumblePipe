@@ -12,7 +12,10 @@ status scan is ``farm_status``.
 The settings stay the per-entity tri-state form it has been since the
 multi-entity rework: left alone a field is *unpinned* and every entity uses
 its own configured value (``⟨per entity⟩`` when they disagree); touching it
-*pins* it for the whole submission. Resolution order and the rules live in
+*pins* it for the whole submission. Samples, Motion blur and DOF are the
+exception: they override the scene's render settings, so unpinned they show
+``⟨from scene⟩`` and send nothing. The read-only Camera row is looked up by
+``render_camera``. Resolution order and the rules live in
 ``submit_jobs_resolve``. The grid chooses the *steps*; the form never did.
 
 Submit writes a plan and hands it to a separate process
@@ -63,6 +66,7 @@ from tumbletrove.asset_browser.core.theme import (
 
 from . import farm_grid as grid
 from . import farm_status
+from . import render_camera
 from . import submit_jobs_resolve as resolve
 
 log = logging.getLogger(__name__)
@@ -71,6 +75,10 @@ log = logging.getLogger(__name__)
 # brackets keep it from reading as a department or pool literally named
 # "per entity".
 PER_ENTITY_TEXT = "⟨per entity⟩"
+
+# Shown by an unpinned override field (samples, motion blur, DOF): nothing is
+# sent, so the render uses whatever the scene's render settings author.
+FROM_SCENE_TEXT = "⟨from scene⟩"
 
 # Cell colours. The theme's own tokens where it has one; amber and green for
 # the two states that must be told apart at a glance (they also differ in
@@ -941,6 +949,12 @@ class _ContextPane(QWidget):
         self._poll = QTimer(self)
         self._poll.setInterval(120)
         self._poll.timeout.connect(self._drain_scans)
+        # Render camera lookups, keyed (uri, channel, department).
+        self._cameras: dict[tuple, render_camera.RenderCamera] = {}
+        self._camera_pending: dict = {}
+        self._camera_poll = QTimer(self)
+        self._camera_poll.setInterval(120)
+        self._camera_poll.timeout.connect(self._drain_cameras)
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.setInterval(0)
@@ -982,6 +996,7 @@ class _ContextPane(QWidget):
     def shutdown(self) -> None:
         """Stop the status scan; the dialog is closing."""
         self._poll.stop()
+        self._camera_poll.stop()
         self._refresh_timer.stop()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
@@ -1039,6 +1054,7 @@ class _ContextPane(QWidget):
         refresh_btn = QPushButton("Refresh")
         refresh_btn.setToolTip("Read every cell's status from disk again")
         refresh_btn.clicked.connect(self._start_scan)
+        refresh_btn.clicked.connect(self._refresh_cameras)
         row.addWidget(refresh_btn)
         return row
 
@@ -1245,6 +1261,7 @@ class _ContextPane(QWidget):
     def _refresh(self) -> None:
         self._show_active_sections()
         self._reseed_form()
+        self._update_camera()
         self._recompute_warnings()
         self._dialog._pane_changed(self)
         self._tree.viewport().update()
@@ -1598,7 +1615,9 @@ class _ContextPane(QWidget):
             widget.textEdited.connect(lambda *_a, e=entry: e.pin())
         return widget
 
-    def _spin(self, key: str, low: int, high: int) -> QSpinBox:
+    def _spin(
+        self, key: str, low: int, high: int, *, override: bool = False,
+    ) -> QSpinBox:
         """An integer field that can park on ``⟨per entity⟩``.
 
         The range is widened by exactly one step below ``low`` and that step
@@ -1609,18 +1628,30 @@ class _ContextPane(QWidget):
         """
         box = QSpinBox()
         box.setRange(low - 1, high)
-        box.setSpecialValueText(PER_ENTITY_TEXT)
-        box.setToolTip(
-            "Leave on ⟨per entity⟩ to let each entity use its own "
-            "configured value."
-        )
+        if override:
+            box.setSpecialValueText(FROM_SCENE_TEXT)
+            box.setToolTip(
+                "Leave on ⟨from scene⟩ to render with the scene's own render "
+                "settings; a value here overrides them on the farm."
+            )
+        else:
+            box.setSpecialValueText(PER_ENTITY_TEXT)
+            box.setToolTip(
+                "Leave on ⟨per entity⟩ to let each entity use its own "
+                "configured value."
+            )
         self._register(key, box, 'spin')
         return box
 
-    def _check(self, key: str, label: str) -> QCheckBox:
+    def _check(
+        self, key: str, label: str, *, override: bool = False,
+    ) -> QCheckBox:
         box = QCheckBox(label)
         box.setTristate(True)
         box.setToolTip(
+            "Partially checked = use the scene's own render settings; "
+            "checked or unchecked overrides them on the farm."
+            if override else
             "Partially checked = each entity keeps its own configured value."
         )
         self._register(key, box, 'check')
@@ -1729,6 +1760,15 @@ class _ContextPane(QWidget):
         self._rnd_dept.activated.connect(lambda *_a: self._on_cut_changed())
         form.addRow("Up to:", self._rnd_dept)
 
+        # Read-only: the camera the published layers in the cut name.
+        self._rnd_camera = QLabel("")
+        self._rnd_camera.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # A long path must not widen the fixed-width panel; the tooltip
+        # carries it in full.
+        self._rnd_camera.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self._rnd_camera.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        form.addRow("Camera:", self._rnd_camera)
+
         # Channels — a checkable menu of the channels the ticked entities
         # actually define. The menu spans the submission and the checks are
         # a batch choice, but each entity submits only the checked channels
@@ -1779,11 +1819,11 @@ class _ContextPane(QWidget):
             revert=('render_priority', 'tile_count'),
         ))
         form.addRow("Batch:", self._row(self._rnd_batch, revert=('batch_size',)))
-        self._rnd_samples = self._spin('samples', 1, 4096)
+        self._rnd_samples = self._spin('samples', 1, 4096, override=True)
         form.addRow("Samples:", self._row(self._rnd_samples, revert=('samples',)))
         self._rnd_denoise = self._check('denoise', "Denoise")
-        self._rnd_mblur = self._check('mblur', "Motion blur")
-        self._rnd_dof = self._check('dof', "DOF")
+        self._rnd_mblur = self._check('mblur', "Motion blur", override=True)
+        self._rnd_dof = self._check('dof', "DOF", override=True)
         form.addRow("", self._row(
             self._rnd_denoise, self._rnd_mblur, self._rnd_dof,
             revert=('denoise', 'mblur', 'dof'),
@@ -1792,6 +1832,111 @@ class _ContextPane(QWidget):
         self._rnd_copy_edit = QCheckBox("Copy to edit")
         form.addRow("", self._row(self._rnd_standalone, self._rnd_copy_edit))
         return box
+
+    # ── Render camera ─────────────────────────────────────
+
+    def _camera_keys(self) -> list[tuple[str, str, str]]:
+        """``(uri, channel, department)`` for every row the render speaks for.
+
+        The channel is the first checked one the entity defines; the camera
+        is read from that channel's exports.
+        """
+        rows = [
+            uri for uri in self._uris if (uri, grid.RENDER) in self._ticks
+        ] or self._batch()
+        checked = self._rnd_channels.checked_items()
+        keys = []
+        for uri in rows:
+            department = self._cut(uri, 'render_department')
+            if not department:
+                continue
+            channels = resolve.entity_channels(checked, self._props.get(uri, {}))
+            keys.append((uri, channels[0] if channels else resolve.DEFAULT_CHANNEL, department))
+        return keys
+
+    def _refresh_cameras(self) -> None:
+        """Refresh: forget every looked-up camera and read them again."""
+        self._cameras = {}
+        self._camera_pending = {}
+        self._update_camera()
+
+    def _update_camera(self) -> None:
+        """Start lookups for unseen rows and show what is known."""
+        if grid.RENDER not in grid.ticked_kinds(self._columns, self._ticks):
+            return  # the Render section is hidden; nothing to show
+        keys = self._camera_keys()
+        waiting = set(self._camera_pending.values())
+        missing = [k for k in keys if k not in self._cameras and k not in waiting]
+        if missing:
+            try:
+                from tumblepipe.api import default_client
+                with default_client().config.coherent():
+                    for key in missing:
+                        uri, channel, department = key
+                        probe = render_camera.plan_probe(
+                            self._uri_objects[uri], channel, department,
+                        )
+                        future = self._executor.submit(render_camera.read_camera, probe)
+                        self._camera_pending[future] = key
+            except Exception as error:
+                log.exception("Could not resolve render camera folders")
+                for key in missing:
+                    self._cameras[key] = render_camera.RenderCamera(
+                        key[0], None, error=str(error),
+                    )
+            if self._camera_pending:
+                self._camera_poll.start()
+        self._show_camera(keys)
+
+    def _drain_cameras(self) -> None:
+        finished = [f for f in self._camera_pending if f.done()]
+        for future in finished:
+            key = self._camera_pending.pop(future)
+            try:
+                self._cameras[key] = future.result()
+            except Exception as error:
+                self._cameras[key] = render_camera.RenderCamera(
+                    key[0], None, error=str(error),
+                )
+        if not self._camera_pending:
+            self._camera_poll.stop()
+        if finished:
+            self._show_camera(self._camera_keys())
+
+    def _show_camera(self, keys: list[tuple[str, str, str]]) -> None:
+        label = self._rnd_camera
+        if not keys:
+            label.setText("—")
+            label.setToolTip("")
+            return
+        known = [self._cameras[k] for k in keys if k in self._cameras]
+        if len(known) < len(keys):
+            label.setText("Reading…")
+            label.setToolTip("")
+            return
+        lines = []
+        for key, found in zip(keys, known):
+            name = self._uri_objects[key[0]].segments[-1]
+            if found.camera:
+                lines.append(f"{name}: {found.camera}  ({found.source}, {key[1]})")
+            else:
+                lines.append(f"{name}: not found  {found.error or ''}".rstrip())
+        cameras = {found.camera for found in known}
+        if len(cameras) == 1 and None not in cameras:
+            label.setText(known[0].camera)
+            label.setStyleSheet(f"color: {TEXT_PRIMARY};")
+        elif cameras == {None}:
+            label.setText("not found")
+            label.setStyleSheet(f"color: {STALE_COLOUR};")
+        else:
+            label.setText(PER_ENTITY_TEXT)
+            label.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        label.setToolTip(
+            "The RenderSettings camera the latest published layers in the "
+            "render cut name (strongest department first, then the project "
+            "default). The farm renders through the composed stage's "
+            "camera.\n\n" + "\n".join(lines)
+        )
 
     def _on_cut_changed(self) -> None:
         """A preview cut changed: its cells' staleness depends on it.
@@ -2202,7 +2347,8 @@ class SubmitJobsDialog(QDialog):
 def start_submission(configs: list[dict], parent: QWidget | None = None):
     """Write ``configs`` as a plan, launch the runner, return its status window.
 
-    Shared by the dialog and the status window's **Retry failed**.
+    Shared by the dialog and the status window's **Retry failed** /
+    **Submit the rest**.
     """
     import datetime as dt
     import os

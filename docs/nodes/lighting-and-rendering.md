@@ -40,6 +40,10 @@ Source: [`otls/lop_th.render_settings.1.0`](../../otls/lop_th.render_settings.1.
 
 Gotchas:
 
+- These values are what the farm renders. The Farm Submit dialog's Samples,
+  Motion blur and DOF send nothing unless you set them there, and its
+  **Camera** row shows the camera this node's published layer names — see
+  [Submit Jobs → Render](../asset-browser/submit-jobs.md#render).
 - The prim these settings are written to is project-owned (`/Render/…` or
   `/scene/Render/…`); the submit dialog's overrides find it by asking the
   stage — see
