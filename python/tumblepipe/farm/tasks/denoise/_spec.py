@@ -20,7 +20,7 @@ config = {
     'frames': ['int'],          # empty => the whole first..last range
     'step_size': 'int',
     'batch_size': 'int',
-    'force_cpu': 'bool',        # optional; force OIDN onto a CPU device
+    'force_cpu': 'bool',        # optional; OIDN on a CPU device (default: DEFAULT_FORCE_CPU)
     'receipt_path': 'string',   # '.####.json' frame pattern
     'input_paths': {'aov': 'string'},   # per-AOV '.####.exr' patterns
     'output_paths': {'aov': 'string'}
@@ -34,6 +34,14 @@ from tumblepipe.farm._common import (
     is_bool,
     is_int,
 )
+
+
+# OIDN runs on the CPU unless a config says otherwise. Its CUDA device
+# quantizes every denoised AOV to a couple of hundred values per stop (seen
+# with Houdini 22.0.368's bundled OIDN 2.3.3 and Intel's own oidnDenoise 2.5.1;
+# the CPU device keeps the full float precision), which shows as banding the
+# moment a grade pushes the image. The CPU costs a few seconds a frame.
+DEFAULT_FORCE_CPU = True
 
 
 def is_valid_layer(layer) -> bool:
@@ -53,7 +61,7 @@ def is_valid_context(config) -> bool:
     if not is_valid_layer(config['input_paths']): return False
     if 'output_paths' not in config: return False
     if not is_valid_layer(config['output_paths']): return False
-    # Optional: absent means "let OIDN pick its own device".
+    # Optional: absent means DEFAULT_FORCE_CPU.
     if 'force_cpu' in config and not is_bool(config['force_cpu']): return False
     return True
 

@@ -101,6 +101,11 @@ Each worker needs the same environment as an artist workstation:
   still needs a Houdini *install* — that is where `idenoise` lives — but the
   `denoise` group never contends for seats. See
   `designs/denoise-without-hython.md`.
+
+  It also runs OIDN on the **CPU**, so `denoise` workers need no GPU. OIDN's
+  CUDA device quantizes what it writes to a couple of hundred values per stop,
+  which bands as soon as a grade pushes the image; the CPU keeps full float
+  precision at a few seconds a frame.
 - **Drive mappings** — workers must map the project drives to the same letters
   the workstations use, so jobs that reference `P:\...` resolve identically.
   Without matching drive letters, the job will fail to read project files.

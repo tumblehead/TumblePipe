@@ -476,7 +476,7 @@ def cli():
         receipt_path,
         input_paths,
         output_paths,
-        config.get('force_cpu', False)
+        config.get('force_cpu', _spec.DEFAULT_FORCE_CPU)
     )
 
 if __name__ == '__main__':

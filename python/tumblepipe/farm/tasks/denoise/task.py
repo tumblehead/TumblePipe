@@ -51,9 +51,9 @@ def build(config, paths, staging_path):
         receipt_path = config['receipt_path'],
         input_paths = config['input_paths'],
         output_paths = config['output_paths'],
-        # Off by default: OIDN picks its own device, using the CUDA backend
-        # Houdini bundles when the worker has a usable GPU.
-        force_cpu = config.get('force_cpu', False)
+        # CPU unless the config says otherwise: see _spec.DEFAULT_FORCE_CPU
+        # for why the GPU is not used.
+        force_cpu = config.get('force_cpu', _spec.DEFAULT_FORCE_CPU)
     ))
 
     # Create the task
