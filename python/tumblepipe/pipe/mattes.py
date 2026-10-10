@@ -6,7 +6,8 @@ Two kinds of single-channel AOV, both for grading:
   float primvar ``objid_<name>`` is set on each matched prim (primvars
   inherit, so a prim's descendants carry it too) and a primvar RenderVar
   reads it -- the mechanism ``th::puzzlemattes`` already uses, one channel
-  instead of three.
+  instead of three. A matched GeomSubset (one material's faces, e.g. a
+  bench's planks) gets a per-face ``uniform`` primvar on its mesh instead.
 - **Distance ramp** ``ramp_<name>``: 0 at ``near``, 1 at ``far``, clamped;
   the sky reads 1. Karma evaluates it through a *global AOV material*
   (``karma:global:globalaovmaterial``): a Karma Ray Import of
@@ -157,6 +158,38 @@ def _author_ramp_material(stage: Usd.Stage, ramps: list[Ramp]) -> None:
         material.CreateOutput(ramp.aov, Sdf.ValueTypeNames.Float).ConnectToSource(rng_out)
 
 
+def _author_subset_mattes(aov: str, subsets: list) -> None:
+    """Matte the faces of GeomSubsets: a per-face primvar on each parent mesh.
+
+    A GeomSubset is not renderable, so a primvar on it reaches no AOV. Its
+    mesh gets a uniform ``aov`` primvar instead: 1 on the faces the subsets
+    list, 0 on the rest (the planks of a bench mesh whose legs and nails are
+    other subsets). Several subsets of one mesh merge into one array. A mesh
+    the matte already covers whole keeps its constant 1.
+    """
+    faces_by_mesh = {}
+    for subset in subsets:
+        mesh_prim = subset.GetPrim().GetParent()
+        if not mesh_prim.IsA(UsdGeom.Mesh):
+            continue
+        if subset.GetElementTypeAttr().Get() != UsdGeom.Tokens.face:
+            continue
+        faces_by_mesh.setdefault(mesh_prim.GetPath(), (mesh_prim, set()))[1].update(
+            int(index) for index in (subset.GetIndicesAttr().Get() or []))
+    for mesh_prim, faces in faces_by_mesh.values():
+        primvars = UsdGeom.PrimvarsAPI(mesh_prim)
+        existing = primvars.GetPrimvar(aov)
+        if existing and existing.GetInterpolation() == UsdGeom.Tokens.constant:
+            continue
+        face_count = len(UsdGeom.Mesh(mesh_prim).GetFaceVertexCountsAttr().Get() or [])
+        values = [0.0] * face_count
+        for index in faces:
+            if 0 <= index < face_count:
+                values[index] = 1.0
+        primvar = primvars.CreatePrimvar(aov, Sdf.ValueTypeNames.FloatArray, UsdGeom.Tokens.uniform)
+        primvar.Set(values)
+
+
 def author(stage: Usd.Stage, mattes: list[Matte], ramps: list[Ramp], settings_path: str) -> list[str]:
     """Author every matte and ramp; return the RenderVar paths added.
 
@@ -169,13 +202,18 @@ def author(stage: Usd.Stage, mattes: list[Matte], ramps: list[Ramp], settings_pa
     var_paths = []
 
     for matte in mattes:
+        subsets = []
         for prim_path in matte.prim_paths:
             prim = stage.GetPrimAtPath(prim_path)
             if not prim:
                 continue
+            if prim.IsA(UsdGeom.Subset):
+                subsets.append(UsdGeom.Subset(prim))
+                continue
             primvar = UsdGeom.PrimvarsAPI(prim).CreatePrimvar(
                 matte.aov, Sdf.ValueTypeNames.Float, UsdGeom.Tokens.constant)
             primvar.Set(1.0)
+        _author_subset_mattes(matte.aov, subsets)
         var = _render_var(stage, matte.aov, matte.aov, 'primvar', 'half',
                           matte.compression, background=None)
         var_paths.append(str(var.GetPath()))

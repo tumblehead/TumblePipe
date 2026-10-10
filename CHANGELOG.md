@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.69.1 — 2026-10-10
+
+### Fixes
+- fix(farm): denoise on the CPU so denoised AOVs keep their precision (`9ff5021a`)
+
+### Documentation
+- docs: the denoise runs OIDN on the CPU (`4296c85c`)
+- docs: regenerate CHANGELOG.md for v1.69.0 (`584fcf4e`)
+
 ## v1.69.0 — 2026-10-10
 
 ### Features

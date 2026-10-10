@@ -145,7 +145,10 @@ Source: [`otls/lop_th.mattes.1.0`](../../otls/lop_th.mattes.1.0/th_8_8Lop_1matte
 - **Matte** → AOV `objid_<Name>`: 1 on the matched prims and everything
   under them, 0 elsewhere. A constant float primvar `objid_<Name>` on the
   prims, read by a primvar RenderVar (the `th::puzzlemattes` mechanism, one
-  channel).
+  channel). To matte part of a mesh, give the path of a **GeomSubset**, for
+  example `/SET/Park/geo/bench/planks` for the wood of a bench whose legs and
+  nails are other subsets of the same mesh: the mesh gets a per-face primvar,
+  1 on the subset's faces and 0 on the rest.
 - **Distance ramp** → AOV `ramp_<Name>`: 0 at **Near**, rising linearly to 1
   at **Far**, clamped; the sky reads 1. For grading (a depth-cue or
   atmosphere key in Resolve), not for a compositing depth pass — `depth`
