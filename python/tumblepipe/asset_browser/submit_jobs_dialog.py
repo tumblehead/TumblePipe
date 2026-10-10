@@ -84,6 +84,7 @@ RULE_COLOUR = "#3a3a3a"
 ZEBRA_COLOUR = "#1f1f1f"
 BAND_COLOUR = "#262626"
 WARNING_COLOUR = STALE_COLOUR
+ERROR_COLOUR = "#e05a4f"
 
 GLYPHS = {
     grid.NONE: "·", grid.NEVER: "○", grid.UNCLAIMED: "○", grid.STALE: "●",
@@ -689,7 +690,9 @@ class _ConfirmSubmit(QDialog):
     button in the accent colour, so Cancel looked like the action. Here
     **Submit** is the one filled button. A preview that would show stale,
     unticked departments gets its own section and a **Tick those
-    publishes** button that adds them and returns to the grid.
+    publishes** button that adds them and returns to the grid. Rows with a
+    blocking error (``resolve.entity_errors``) get a red section, and Submit
+    is disabled until they are fixed.
 
     ``exec()`` returns :attr:`SUBMIT`, :attr:`TICK_STALE`, or 0 for Back.
     """
@@ -707,6 +710,7 @@ class _ConfirmSubmit(QDialog):
         *,
         stale: dict[str, list[str]],
         other: dict[str, list[str]],
+        blocked: dict[str, list[str]] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Farm Submit")
@@ -746,6 +750,14 @@ class _ConfirmSubmit(QDialog):
         across.setStyleSheet(f"color: {TEXT_SECONDARY};")
         root.addWidget(across)
 
+        if blocked:
+            count = len(blocked)
+            root.addWidget(self._panel(
+                ERROR_COLOUR,
+                f"✕  {count} {noun[count != 1]} can't be submitted",
+                "Fix these, or untick them, before submitting:",
+                {name: "; ".join(errors) for name, errors in blocked.items()},
+            ))
         if stale:
             count = len(stale)
             root.addWidget(self._panel(
@@ -787,6 +799,13 @@ class _ConfirmSubmit(QDialog):
         submit = QPushButton(f"Submit {steps} step{'s' if steps != 1 else ''}")
         submit.setDefault(True)
         submit.clicked.connect(lambda: self.done(self.SUBMIT))
+        if blocked:
+            # Not default either: the stylesheet fills the default button,
+            # and a filled Submit reads as clickable.
+            submit.setDefault(False)
+            submit.setEnabled(False)
+            submit.setToolTip("Some rows can't be submitted — see above")
+            back.setDefault(True)
         buttons.addWidget(submit)
         root.addLayout(buttons)
         self._submit = submit
@@ -1711,16 +1730,20 @@ class _ContextPane(QWidget):
         form.addRow("Up to:", self._rnd_dept)
 
         # Channels — a checkable menu of the channels the ticked entities
-        # actually define. A batch field by contract: the menu spans the
-        # submission and submits exactly what is checked, so a channel a
-        # given entity lacks still fails visibly on the farm rather than
-        # being quietly dropped. The Warnings column says so up front.
+        # actually define. The menu spans the submission and the checks are
+        # a batch choice, but each entity submits only the checked channels
+        # it defines (resolve.entity_channels). The Warnings column names
+        # what each entity skips, and one left with none blocks the submit.
         self._rnd_channels = _CheckableComboBox(
             empty_text="(none — check at least one)",
             hint="Channels to render — one render per checked channel.",
         )
         all_channels = QPushButton("All")
         all_channels.setStyleSheet("padding: 3px 8px;")
+        all_channels.setToolTip(
+            "Check every channel in the batch. Each entity still renders "
+            "only the checked channels it defines."
+        )
         all_channels.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self._rnd_channels.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         all_channels.clicked.connect(
@@ -1884,12 +1907,12 @@ class _ContextPane(QWidget):
     def _pinned_keys(self) -> list[str]:
         return [key for key, entry in self._fields.items() if entry.pinned]
 
-    def _resolved_rows(self) -> list[tuple[str, dict, list[str]]]:
-        """``(uri, settings, warnings)`` for every ticked row, in grid order.
+    def _resolved_rows(self) -> list[tuple[str, dict, list[str], list[str]]]:
+        """``(uri, settings, warnings, errors)`` for every ticked row, in grid order.
 
         The single source of truth for the Warnings column and the submit,
         so what the grid warns about is by construction what gets
-        submitted.
+        submitted. ``errors`` are the blocking ones (``entity_errors``).
         """
         form = self._form_values()
         pinned = self._pinned_keys()
@@ -1907,11 +1930,15 @@ class _ContextPane(QWidget):
                 grid.row_publish_departments(uri, self._columns, self._ticks),
             )
             assigned = list(properties.get('departments') or []) or None
-            warnings = resolve.entity_warnings(properties, settings, departments=assigned)
+            requested = form['variants']
+            warnings = resolve.entity_warnings(
+                properties, settings, departments=assigned, requested=requested,
+            )
+            errors = resolve.entity_errors(properties, settings, requested=requested)
             missing = self._stale_upstream(uri, settings)
             if missing:
                 warnings.insert(0, f"{', '.join(missing)} stale and not ticked")
-            rows.append((uri, settings, warnings))
+            rows.append((uri, settings, warnings, errors))
         return rows
 
     def _stale_upstream(self, uri: str, settings: dict) -> list[str]:
@@ -1925,7 +1952,10 @@ class _ContextPane(QWidget):
         )
 
     def _recompute_warnings(self) -> None:
-        self._warnings = {uri: w for uri, _s, w in self._resolved_rows() if w}
+        # Blocking errors first, so an elided cell still shows them.
+        self._warnings = {
+            uri: e + w for uri, _s, w, e in self._resolved_rows() if e or w
+        }
 
     # ── Submit ────────────────────────────────────────────
 
@@ -1937,7 +1967,7 @@ class _ContextPane(QWidget):
                 self, "Farm Submit", "Tick at least one cell before submitting.",
             )
             return
-        if any(s.get('render') for _u, s, _w in rows) and not self._rnd_channels.checked_items():
+        if any(s.get('render') for _u, s, _w, _e in rows) and not self._rnd_channels.checked_items():
             QMessageBox.warning(
                 self, "Farm Submit",
                 "Check at least one channel in the Render settings before "
@@ -1952,15 +1982,16 @@ class _ContextPane(QWidget):
             QMessageBox.warning(self, "Farm Submit", problem)
             return
 
-        stale = {uri: self._stale_upstream(uri, s) for uri, s, _w in rows}
+        stale = {uri: self._stale_upstream(uri, s) for uri, s, _w, _e in rows}
         stale = {uri: missing for uri, missing in stale.items() if missing}
         # _resolved_rows puts the stale-upstream warning first, when it has one.
         other = {
             uri: warnings[1:] if uri in stale else warnings
-            for uri, _s, warnings in rows
+            for uri, _s, warnings, _e in rows
         }
         other = {uri: w for uri, w in other.items() if w}
-        if len(rows) > 1 or stale or other:
+        blocked = {uri: errors for uri, _s, _w, errors in rows if errors}
+        if len(rows) > 1 or stale or other or blocked:
             kinds, departments, row_count = grid.breakdown(
                 self._uris, self._columns, self._ticks,
             )
@@ -1968,6 +1999,7 @@ class _ContextPane(QWidget):
                 self, kinds, departments, row_count, self._noun,
                 stale={self._uri_objects[u].segments[-1]: m for u, m in stale.items()},
                 other={self._uri_objects[u].segments[-1]: w for u, w in other.items()},
+                blocked={self._uri_objects[u].segments[-1]: e for u, e in blocked.items()},
             )
             choice = confirm.exec()
             if choice == _ConfirmSubmit.TICK_STALE:
@@ -1991,7 +2023,7 @@ class _ContextPane(QWidget):
                 },
                 'settings': settings,
             }
-            for uri, settings, _w in rows
+            for uri, settings, _w, _e in rows
         ]
         try:
             window = start_submission(configs, parent=self._dialog.parentWidget())

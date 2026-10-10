@@ -35,15 +35,23 @@ Standalone, Copy to edit and the channel list are choices *about the
 submission*, not properties *of the entity*. They always come from the
 form and can never read ``⟨per entity⟩``.
 
-``variants`` (the frozen wire key for what the UI calls channels) is
-deliberately a batch field even though entities do carry a ``variants``
-property. The channel menu lists the union over the batch and submits
-exactly what is checked; a channel a given entity does not define still
-reaches ``submit_entity_batch`` and still raises ``BatchSubmitError`` for
-that entity. That visible failure is the contract — a union pick that
-doesn't apply must not silently degrade to ``default``, and per-entity
-resolution must not quietly turn it into a skip. :func:`entity_warnings`
-surfaces it *before* the submit instead.
+``variants`` (the frozen wire key for what the UI calls channels) is a batch
+*choice* resolved per entity. The channel menu lists the union over the
+batch and the checks apply to the whole batch, but each entity submits only
+the checked channels it defines (:func:`entity_channels`, in menu order, so
+``default`` stays first). Sending every checked channel to every entity is
+what doubled farm time on 2026-10-09: an "All" pick across 19 shots sent
+``feathers`` to 18 shots that never defined it, and each built a
+``feathers`` stage out of default layers and rendered the default scene
+again under that name.
+
+A skip is never silent. :func:`entity_warnings` names every checked channel
+an entity will skip, and an entity whose intersection is *empty* — render
+on, but none of the checked channels defined — gets a blocking
+:func:`entity_errors` entry rather than a submit that renders nothing (or,
+worse, a fallback to ``default`` nobody asked for). A per-entity exception
+is taken as given; ``submit_entity_batch`` refuses any channel the entity
+does not define, so that path still fails loudly on the farm side.
 """
 
 from __future__ import annotations
@@ -321,6 +329,10 @@ def resolve_settings(
                 value = entity_value(field, properties, fallbacks)
             else:
                 value = coerce(value, field.kind, field.default)
+            if field.key == 'variants':
+                # A batch choice, but each entity renders only the checked
+                # channels it defines. May be empty: entity_errors blocks it.
+                value = entity_channels(value, properties)
         else:
             value = entity_value(field, properties, fallbacks)
 
@@ -489,6 +501,32 @@ def channel_union(properties_list: Sequence[dict]) -> list[str]:
     return names
 
 
+def entity_channels(checked: Sequence[str], properties: dict) -> list[str]:
+    """The checked channels this entity defines, in checked (menu) order.
+
+    What one entity actually submits. Can be empty — when ``default`` is
+    unchecked and the entity defines none of the rest — and the caller must
+    treat that as a block (:func:`entity_errors`), never as "render default".
+    """
+    defined = set(channel_names(properties))
+    return [name for name in checked if name in defined]
+
+
+def skipped_channels(checked: Sequence[str], properties: dict) -> list[str]:
+    """The checked channels this entity does not define, so will not render."""
+    defined = set(channel_names(properties))
+    return [name for name in checked if name not in defined]
+
+
+def _channel_list_text(names: Sequence[str]) -> str:
+    # Elide: a union pick across a wide batch can name twenty, and this
+    # lands in a table cell.
+    shown = ', '.join(names[:4])
+    if len(names) > 4:
+        shown += f", +{len(names) - 4} more"
+    return shown
+
+
 def channel_intersection(properties_list: Sequence[dict]) -> list[str]:
     """Channels *every* entity in the batch defines, ``default`` first.
 
@@ -516,12 +554,14 @@ def entity_warnings(
     resolved: dict,
     *,
     departments: Sequence[str] | None = None,
+    requested: Sequence[str] | None = None,
 ) -> list[str]:
     """Per-entity problems worth flagging *before* the submit loop fires.
 
-    Every one of these currently surfaces only as a ``BatchSubmitError`` in
+    Most of these would otherwise surface only as a ``BatchSubmitError`` in
     the summary box — after the loop has already submitted every entity
-    ahead of it in the batch.
+    ahead of it in the batch. None of them blocks; see :func:`entity_errors`
+    for the ones that do.
 
     Args:
         properties: The entity's resolved properties.
@@ -529,25 +569,32 @@ def entity_warnings(
         departments: Departments assigned to this entity
             (``config.department.get_entity_departments``), or ``None`` to
             skip that check.
+        requested: The channels checked for the batch, or ``None`` to skip
+            the skipped-channel warning.
     """
     warnings: list[str] = []
 
     if resolved.get('render'):
         if 'first_frame' not in resolved or 'last_frame' not in resolved:
             warnings.append("no frame range configured")
-        defined = set(channel_names(properties))
-        missing = [
-            name for name in read_channel_list(resolved, 'submission settings')
-            if name not in defined
-        ]
+        submitted = read_channel_list(resolved, 'submission settings')
+        skipped = skipped_channels(requested or (), properties)
+        # With nothing left to submit, entity_errors says so instead.
+        if skipped and submitted:
+            plural = 's' if len(skipped) > 1 else ''
+            warnings.append(
+                f"channel{plural} {_channel_list_text(skipped)} will be "
+                f"skipped (not defined on this entity)"
+            )
+        # Only reachable through a per-entity exception: resolution itself
+        # never submits a channel the entity lacks.
+        missing = skipped_channels(submitted, properties)
         if missing:
             plural = 's' if len(missing) > 1 else ''
-            # Elide: a union pick across a wide batch can name twenty, and
-            # this lands in a table cell.
-            shown = ', '.join(missing[:4])
-            if len(missing) > 4:
-                shown += f", +{len(missing) - 4} more"
-            warnings.append(f"channel{plural} not defined here: {shown}")
+            warnings.append(
+                f"channel{plural} {_channel_list_text(missing)} not defined "
+                f"here; the farm will refuse {'them' if plural else 'it'}"
+            )
         warnings.extend(
             _department_warning(resolved.get('render_department'), departments)
         )
@@ -563,6 +610,37 @@ def entity_warnings(
         )
 
     return warnings
+
+
+def entity_errors(
+    properties: dict,
+    resolved: dict,
+    *,
+    requested: Sequence[str] | None = None,
+) -> list[str]:
+    """Per-entity problems that must stop the submit.
+
+    Unlike :func:`entity_warnings`, the confirm step will not send a batch
+    while any entity has one of these.
+
+    Args:
+        properties: The entity's resolved properties.
+        resolved: What :func:`resolve_settings` produced for it.
+        requested: The channels checked for the batch.
+    """
+    errors: list[str] = []
+    if resolved.get('render'):
+        if not read_channel_list(resolved, 'submission settings'):
+            checked = list(requested or ())
+            if checked:
+                errors.append(
+                    f"defines none of the checked channels "
+                    f"({_channel_list_text(checked)}), so it has nothing "
+                    f"to render; check one of its channels or untick Render"
+                )
+            else:
+                errors.append("no channel checked to render")
+    return errors
 
 
 def _department_warning(

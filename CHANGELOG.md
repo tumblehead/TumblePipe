@@ -12,6 +12,20 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.68.1 — 2026-10-09
+
+### Fixes
+- fix(farm): the slapcomp reads each channel at its own version (`a16201f`)
+- fix(slapcomp): pin default to the bottom of the channel stack (`9c45fc7`)
+
+### Refactors
+- refactor(slapcomp): stack in the channel list's order, no default pin (`eff4013`)
+
+### Documentation
+- docs: render channels keep their own versions (`758c070`)
+- docs: add render-layer channels bottom to top (`da41229`)
+- docs: regenerate CHANGELOG.md for v1.68.0 (`9dac190`)
+
 ## v1.68.0 — 2026-10-09
 
 ### Breaking Changes

@@ -143,9 +143,15 @@ The Warnings column says, per row, what the submission would run into:
   published is sometimes the point.
 - `no frame range configured` — the entity has no `frame_start` /
   `frame_end` and you pinned none.
-- `channel(s) not defined here: …` — a checked render channel this entity
-  does not define; it will fail on submit for that entity rather than
-  silently render `default`.
+- `channel(s) … will be skipped (not defined on this entity)` — a checked
+  render channel this entity does not define. The entity renders the checked
+  channels it does define and leaves this one out; it does not render
+  `default` in its place.
+- `defines none of the checked channels (…), so it has nothing to render` —
+  render is ticked but the entity defines none of the checked channels (for
+  example `default` is unchecked and only another shot has the rest). This
+  one **blocks** the submit: check one of its channels or untick its Render
+  cell.
 - `department '<x>' is not assigned to this entity` — the pool still
   composes it, so this is a warning, not a block.
 
@@ -157,9 +163,11 @@ with the publishes broken down by department — and how many entities that
 covers. Previews that would show stale, unticked departments get their own
 amber section naming them per entity, and a **Tick those publishes** button
 that ticks exactly those departments and takes you back to the grid to check
-before submitting. Any other warnings are listed below that. **Submit N
-steps** sends it (Enter does the same); **Back** returns to the grid with
-nothing changed.
+before submitting. Any other warnings, including the channels each entity
+will skip, are listed below that. **Submit N steps** sends it (Enter does the
+same); **Back** returns to the grid with nothing changed. Entities with a
+blocking problem get a red section at the top, and **Submit** stays disabled
+until you go **Back** and fix or untick them.
 
 ## The settings
 
@@ -201,6 +209,11 @@ state.
 
 Which departments are published is what the grid's publish cells say.
 
+The publish jobs themselves always run at priority 90, and so do the builds
+and collapse that follow them on a row that also previews (see
+[Previews after a publish](#submit)); this **Priority** field does not
+currently change them.
+
 ### Playblast (shots only)
 
 | Field | Per-entity source | Default when unset |
@@ -221,7 +234,7 @@ is described in [Compositing → Playblast](../compositing.md#playblast).
 | Field | Per-entity source | Default when unset | Notes |
 |---|---|---|---|
 | **Up to** | `submission.render.department` | last renderable department (the whole shot) | Renders every department up to and including this one; departments after it are left out. Also names the render output. |
-| **Channels** | — | the entities' own channel lists | A checkable menu (`(none — check at least one)` when empty) with **All**. Lists the *union* of the rendering entities' channels, `default` first; opens with the *intersection* checked. Channels arriving with a later-ticked entity start unchecked. One render per checked channel. |
+| **Channels** | — | the entities' own channel lists | A checkable menu (`(none — check at least one)` when empty) with **All**. Lists the *union* of the rendering entities' channels, `default` first; opens with the *intersection* checked. Channels arriving with a later-ticked entity start unchecked. **All** checks every channel in the batch. The checks apply to the whole batch, but each entity renders only the checked channels **it defines** — one render per such channel — and the Warnings column and the confirm dialog list what each entity skips. See [Channels the farm refuses](#channels-the-farm-refuses). |
 | **Range** | — | `Full range` | `Full range` renders everything and chains slapcomp + MP4; `First / Middle / Last` renders three check frames and notifies. |
 | **Frames** (first → last) | `frame_start` / `frame_end` | *required* — omitted, and the entity fails with "no frame range configured" | |
 | **Pre / Post roll** | `roll_start` / `roll_end` | 0 / 0 | **Extends** the rendered range: `first - pre … last + post`. |
@@ -245,13 +258,30 @@ by any department layer that authors the render settings prim (typically a
 `render.overscan`, ray-limit and dicing properties are **not** read at submit;
 setting them in the config changes nothing on the farm.
 
+#### Channels the farm refuses
+
+A channel is only worth rendering where something was exported under it. Two
+checks behind the dialog make sure a channel never quietly renders the
+`default` scene again under its own name:
+
+- **At submit**, an entity asked to render a channel it does not define
+  fails before anything is sent to Deadline: `<entity> does not define render
+  channel <x> (it defines: …)`. The dialog never sends one, so this catches
+  other callers.
+- **On the farm**, the staged build for a non-`default` channel fails when no
+  department has exported that channel: `No department of <shot> has
+  exported channel '<x>' …`. Departments that did not export it still fall
+  back to their `default` layer; the build only fails when *every* layer
+  would be a `default` one.
+
 ## Submit
 
 Submit refuses with a message when nothing is ticked ("Tick at least one cell
 before submitting.") or a Render cell is ticked with no channel checked. With
 more than one entity, or any warning, it asks first — the summary line
 (`12 publishes · 8 playblasts · 2 renders — 9 shots`) and the warned
-entities.
+entities — and will not submit while any entity is blocked (a Render cell on
+an entity that defines none of the checked channels).
 
 It then does the cheap part in Houdini — each ticked row's settings resolved
 into a **plan** — and hands the rest to a separate process running Houdini's
@@ -316,7 +346,10 @@ the last publish job the batch adds a staged **build** job per channel the
 previews need (a first-ever department export, or a newly imported asset, is
 absent from the old build), and then a **collapse** job (`houdini` group)
 that snapshots the freshly built stage and submits the playblast and render
-jobs itself, with that snapshot bundled. Up to TumblePipe 1.53.0, previews were
+jobs itself, with that snapshot bundled. The builds and the collapse run at
+the publish jobs' priority (90), not the render's: the collapse is what
+creates the render batch, so at the render priority it waited behind other
+shots' renders. Up to TumblePipe 1.53.0, previews were
 snapshotted when the dialog submitted — *before* the publish had run — so a
 publish + playblast submission played the previous version and nothing
 flagged it. A **Standalone** render builds its stage on the farm anyway; after

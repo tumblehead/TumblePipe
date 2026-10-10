@@ -22,6 +22,13 @@ from tumblepipe.config.timeline import BlockRange
 
 
 SCRIPT_PATH = Path(__file__).parent / 'publish.py'
+
+# Every publish job runs at this priority, whatever its config asks for.
+# batch_submit runs the rest of a publish chain (builds, collapse) at it too,
+# so those steps don't queue behind other shots' renders.
+PRIORITY = 90
+
+
 def build(config, paths, staging_path):
 
     # Check if the config is valid
@@ -54,7 +61,7 @@ def build(config, paths, staging_path):
     task.name = title
     task.pool = pool_name
     task.group = 'houdini'
-    task.priority = 90
+    task.priority = PRIORITY
     task.start_frame = render_range.first_frame
     task.end_frame = render_range.last_frame
     task.step_size = 1

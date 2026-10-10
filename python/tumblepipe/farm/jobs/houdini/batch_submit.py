@@ -21,7 +21,7 @@ from tumblepipe.api import (
     api
 )
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.channels import read_channel_names
+from tumblepipe.config.channels import list_channels, read_channel_names
 from tumblepipe.config.department import list_departments, department_names_up_to
 from tumblepipe.apps.deadline import (
     Deadline,
@@ -30,6 +30,7 @@ from tumblepipe.apps.deadline import (
 from tumblepipe.config.timeline import FrameRange
 import tumblepipe.farm.tasks.stage.task as stage_task
 import tumblepipe.farm.tasks.collapse.task as collapse_task
+import tumblepipe.farm.tasks.publish.task as publish_task
 import tumblepipe.farm.jobs.houdini.build.job as build_job
 import tumblepipe.farm.jobs.houdini.render.job as render_job
 import tumblepipe.farm.jobs.houdini.playblast.job as playblast_job
@@ -177,6 +178,10 @@ def submit_entity_batch(config: dict) -> list[str]:
                                   the rendered range (first_frame - pre_roll
                                   .. last_frame + post_roll), matching what
                                   the dialog shows.
+                                  Every channel must be one the entity
+                                  defines (``list_channels``); an
+                                  undefined one raises before any job is
+                                  created.
                 - Playblast section: pb_department, pb_pool, pb_priority,
                                      pb_res
 
@@ -198,6 +203,12 @@ def submit_entity_batch(config: dict) -> list[str]:
     # Publish settings
     pub_pool = settings.get('pub_pool', 'general')
     pub_priority = settings.get('pub_priority', 50)
+    # The publish job itself always runs at publish_task.PRIORITY. The builds
+    # and the collapse after it are the same chain and create the render
+    # batch, so they run there too: at pub_priority (which follows the
+    # entity's farm.priority, like the render) they queued behind other
+    # shots' renders and held this shot's render back.
+    chain_priority = publish_task.PRIORITY
 
     # Render settings
     render_department = settings.get('render_department')
@@ -252,6 +263,22 @@ def submit_entity_batch(config: dict) -> list[str]:
             "member entities instead (the Submit Jobs dialog does this "
             "when opened from a Multi)."
         )
+
+    # A channel the entity does not define would still build (every
+    # department falls back to default) and render the default scene again
+    # under that name. The dialog only sends the checked channels each
+    # entity defines; this is the backstop for any other caller.
+    if do_render:
+        defined = list_channels(entity_uri)
+        undefined = [name for name in channels if name not in defined]
+        if undefined:
+            raise BatchSubmitError(
+                f"{entity_uri} does not define render channel"
+                f"{'s' if len(undefined) > 1 else ''} "
+                f"{', '.join(undefined)} (it defines: {', '.join(defined)}). "
+                f"Uncheck {'them' if len(undefined) > 1 else 'it'} for this "
+                f"entity, or add the channel to it first."
+            )
 
     if do_render and (first_frame is None or last_frame is None):
         raise BatchSubmitError(
@@ -412,7 +439,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                 job_name = f'build_{build_channel}'
                 jobs[job_name] = build_job.create(dict(
                     entity_uri=str(entity_uri),
-                    priority=pub_priority,
+                    priority=chain_priority,
                     pool_name=pub_pool,
                     variant_name=build_channel,
                 ), temp_path)
@@ -431,7 +458,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                 settings=dict(
                     user_name=user_name,
                     pool_name=pub_pool,
-                    priority=pub_priority,
+                    priority=chain_priority,
                 ),
             )
 

@@ -23,6 +23,17 @@ from tumblepipe.pipe.graph import Graph
 import tumblepipe.pipe.context as ctx
 
 
+class ChannelNotExportedError(RuntimeError):
+    """A non-default channel build where no department exported the channel.
+
+    Composing it anyway gives a stage made entirely of default-channel
+    layers, and the farm then renders the default scene a second time under
+    the channel's name. Deliberately not a ``ValueError``: the farm build
+    task wraps root generation in ``except ValueError``, which must not
+    swallow this.
+    """
+
+
 def get_source_department(inputs: list[dict], department_order: list[str]) -> str | None:
     """
     Find the source department (first shot department) from inputs array.
@@ -126,6 +137,10 @@ def _latest_shot_layer_paths(
         {asset_uri: inputs},
         {dept: variant_name}
     )
+
+    Raises:
+        ChannelNotExportedError: ``channel_name`` is not the default channel
+            and no department in ``shot_departments`` exported it.
     """
     # First pass: load each department's latest layer and its asset entries.
     # A department that has never exported under the requested channel falls
@@ -147,6 +162,18 @@ def _latest_shot_layer_paths(
             continue
         dept_layers[department_name] = layer
         dept_channels[department_name] = layer_channel
+
+    # The fallback is per department; the channel itself still has to come
+    # from somewhere. With no department exported under it, every layer
+    # above is a default one and the "channel" build is the default build
+    # again — which rendered the whole default scene a second time.
+    if channel_name != DEFAULT_CHANNEL and channel_name not in dept_channels.values():
+        raise ChannelNotExportedError(
+            f"No department of {shot_uri} has exported channel "
+            f"{channel_name!r} (looked in: {', '.join(shot_departments)}). "
+            f"A build would compose only default-channel layers. Export the "
+            f"channel from a department, or drop it from the submission."
+        )
 
     # Determine which assets exist in each source department (for validation)
     source_dept_assets = {
