@@ -381,6 +381,29 @@ def sourced_from_shot(inputs) -> bool:
     return False
 
 
+def arrived_from_downstream(inputs, downstream_departments) -> bool:
+    """True if a tracked asset reached a shot stage through a later layer.
+
+    The last shot entry in an asset's inputs is the department layer its
+    metadata most recently passed through. An upstream department whose
+    import_shot shows downstream layers (exclude mode 'self') sees those
+    layers' tracked assets as overs carrying metadata; scraping them back
+    into its own export makes it their source, and the build then keeps
+    composing them however often the department that really owned them
+    removes them (HideAndReek's Kangaroo in 020/040, 2026-10-11). Callers
+    keep the asset when the workfile's own import nodes bring it in.
+    """
+    downstream = set(downstream_departments)
+    for entry in reversed(list(inputs or ())):
+        if not isinstance(entry, dict):
+            continue
+        uri = str(entry.get('uri', ''))
+        if not uri.startswith(('entity:/shots/', 'groups:/shots/')):
+            continue
+        return entry.get('department') in downstream
+    return False
+
+
 def resolve_asset_build(
     graph: Graph,
     api,

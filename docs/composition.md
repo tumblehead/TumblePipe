@@ -87,6 +87,15 @@ lit by a shot's light) sees the shot's cast tagged on its stage, and those
 belong to the shot. They are recognised by metadata inputs naming a shot or
 a shot group (`pipe.build.sourced_from_shot`), and the staged build ignores
 such entries in older exports too.
+A *shot* export likewise leaves out an asset whose most recent shot input is
+a department later in the pipeline, unless an import node in the workfile
+brings that asset in itself (`pipe.build.arrived_from_downstream`). An
+`import_shot` on **This Department Only** shows the later layers, and their
+tracked assets compose as overs that carry metadata. Recording them made the
+upstream department their source, and the shot build then kept composing
+them however often they were removed (HideAndReek's Kangaroo in 020/040).
+Unlike the asset-side rule, this one only applies at export: existing layers
+that already adopted an asset keep it until re-exported.
 
 The *staged* file (`_staged/<variant>/v####/<Entity>_v####.usda`, one per
 channel) is what

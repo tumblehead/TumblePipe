@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.71.0 — 2026-10-10
+
+### Features
+- feat(hda): th::render_settings exposes Light Sampling Quality (`4105cf44`)
+
+### Documentation
+- docs: th::render_settings Light Sampling Quality (`da825d09`)
+- docs: regenerate CHANGELOG.md for v1.70.0 (`76d630ea`)
+
 ## v1.70.0 — 2026-10-10
 
 ### Features

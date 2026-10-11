@@ -297,6 +297,21 @@ that reached the stage through a shot layer, so **Build USD** on the set
 again gives a clean staged file without re-exporting. Bypassing the shot
 import before exporting also avoids it on older versions.
 
+### An asset I removed from a shot keeps coming back
+
+Every shot department shows the asset and removing it changes nothing.
+Hand-editing the `_staged` `.usda` does not stick, because the next build
+regenerates it from the department exports. The department that owns the
+asset is the first one in its `inputs` in any department's `context.json`
+(`export/shots/<seq>/<shot>/<channel>/<department>/v####/`). Look in that
+department's workfile, including group workfiles such as a Multi's
+`groups/shots/<group>/<department>/`, for an import node that still brings it
+in, delete it, re-export that department and **Build USD** the shot. The
+other departments drop it without re-exporting. Up to TumblePipe 1.71.0 an
+`import_shot` on **This Department Only** also re-adopted assets from the
+later layers it shows; on those versions switch it to **This + Downstream**
+before exporting.
+
 ### A deleted or renamed asset came back with old work, or a renamed one is empty
 
 Up to TumblePipe 1.62.1, deleting an asset left its folders, so a new asset

@@ -256,7 +256,9 @@ ROP outside the pipeline.
 What a local export writes: `export/<entity>/<channel>/<department>/v####/`
 with a `<entity>_<channel>_<department>_v####.usd` and a `context.json`
 recording every tracked asset on the stage (for an asset export, except
-the ones that came in through an imported shot layer) —
+the ones that came in through an imported shot layer; for a shot export,
+except the ones that came in only through a later department's layer and
+that no import node in the workfile brings in) —
 [Department exports and staged files](../composition.md#department-exports-and-staged-files).
 The node's comment then reads *last export: v#### / time / user*.
 

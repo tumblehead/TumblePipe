@@ -28,7 +28,8 @@ from tumblepipe.pipe.paths import (
 )
 from tumblepipe.pipe.usd import add_sublayer
 from tumblepipe.pipe.context import save_layer_context
-from tumblepipe.pipe.build import sourced_from_shot
+from tumblepipe.pipe.build import sourced_from_shot, arrived_from_downstream
+from tumblepipe.config.department import list_departments
 from tumblepipe.apps.houdini import (
     stitch_usd_directories,
     calculate_chunks,
@@ -675,6 +676,24 @@ class ExportLayer(EntityNode):
         # Check if we're exporting a shot (to add shot dept entry to inputs)
         is_shot_export = str(entity_uri).startswith('entity:/shots/')
 
+        # What the upstream import nodes placed on the stage. Read before the
+        # scrape: it decides which downstream-sourced assets stay, and the
+        # drop check below cross-checks the scrape against it.
+        expected_asset_uris = _list_expected_asset_uris(native)
+        # A self-import (import_layer pulling the exporting entity's own
+        # layer) is deliberately untagged — never expect it in the scrape.
+        expected_asset_uris.discard(str(entity_uri))
+
+        # Shot departments after this one. Their layers can be on the stage
+        # (import_shot exclude mode 'self'); the assets they track are theirs.
+        downstream_departments = []
+        if is_shot_export:
+            shot_department_names = [d.name for d in list_departments('shots')]
+            if department_name in shot_department_names:
+                downstream_departments = shot_department_names[
+                    shot_department_names.index(department_name) + 1:
+                ]
+
         # Scrape stage for assets - group by asset URI to count instances
         assets_by_uri = dict()  # {asset_uri: [list of instance info]}
         asset_inputs = set()
@@ -688,6 +707,22 @@ class ExportLayer(EntityNode):
             if not is_shot_export and sourced_from_shot(asset_metadata.get('inputs')):
                 logger.info(
                     "Not tracking %s at %s: it came in through a shot layer",
+                    asset_uri_str, prim_path,
+                )
+                continue
+
+            # A downstream layer's asset is not this department's to track,
+            # unless this workfile imports it too.
+            if (
+                is_shot_export
+                and asset_uri_str not in expected_asset_uris
+                and arrived_from_downstream(
+                    asset_metadata.get('inputs'), downstream_departments
+                )
+            ):
+                logger.info(
+                    "Not tracking %s at %s: it came in through a downstream "
+                    "department layer",
                     asset_uri_str, prim_path,
                 )
                 continue
@@ -764,10 +799,6 @@ class ExportLayer(EntityNode):
         # metadata-carrying asset at all (a shot's only asset dropped, or
         # every asset dropped). Cross-check the scrape against what the
         # upstream import nodes say they placed on the stage.
-        expected_asset_uris = _list_expected_asset_uris(native)
-        # A self-import (import_layer pulling the exporting entity's own
-        # layer) is deliberately untagged — never expect it in the scrape.
-        expected_asset_uris.discard(str(entity_uri))
         missing_asset_uris = sorted(expected_asset_uris - set(assets_by_uri))
         if missing_asset_uris:
             bullets = "\n  - ".join(missing_asset_uris)
