@@ -916,7 +916,7 @@ class ImportShot(ns.Node):
             context.bypass(True)
             return
         # Undo a bypass left by an earlier run with no shot selected.
-        context.bypass(False)
+        ns.clear_auto_bypass(context)
 
         # Get staged file path based on version and channel selection
         version_name = self.get_version_name()

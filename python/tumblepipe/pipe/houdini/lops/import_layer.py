@@ -274,7 +274,7 @@ class ImportLayer(EntityNode):
         # switching Department to one this entity has no export for) stayed
         # dead after switching back to a valid selection, despite a resolved
         # version and filepath. Clear it here, symmetrically with _bypass().
-        native.bypass(False)
+        ns.clear_auto_bypass(native)
 
         logger.info(f"Importing layer: uri={entity_uri}, dept={department_name}, channel={channel_name}, version={version_name}")
 

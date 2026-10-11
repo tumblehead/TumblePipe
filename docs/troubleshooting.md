@@ -310,7 +310,10 @@ in, delete it, re-export that department and **Build USD** the shot. The
 other departments drop it without re-exporting. Up to TumblePipe 1.71.0 an
 `import_shot` on **This Department Only** also re-adopted assets from the
 later layers it shows; on those versions switch it to **This + Downstream**
-before exporting.
+before exporting. Up to 1.71.1, reopening a scene also re-enabled every
+import node you had bypassed (the import refresh on open cleared the flag),
+so a bypassed import came back on the next export; delete the node instead of
+bypassing it on those versions.
 
 ### A deleted or renamed asset came back with old work, or a renamed one is empty
 

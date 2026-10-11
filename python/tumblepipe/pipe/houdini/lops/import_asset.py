@@ -532,7 +532,7 @@ class ImportAsset(EntityNode):
         import_node.parm('num_files').set(len(layer_paths))
         for index, layer_path in enumerate(layer_paths[1:], start=2):
             import_node.parm(f'filepath{index}').set(layer_path)
-        native.bypass(False)
+        ns.clear_auto_bypass(native)
 
         # Update version label with resolved folder name
         resolved_version = Path(resolved).parent.name

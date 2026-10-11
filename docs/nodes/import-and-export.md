@@ -42,7 +42,9 @@ Gotchas:
 - The node bypasses itself with a comment when it cannot import: *No asset
   selected*, *No staged file found* (the asset has never been staged, or the
   channel has no build), *All departments excluded*. Read the comment before
-  suspecting anything else.
+  suspecting anything else. The node clears that bypass itself once it can
+  import again; a bypass you set by hand is never cleared, not even by the
+  refresh when the scene is reopened (up to TumblePipe 1.71.1 it was).
 - Excluding a department only drops what actually composes; a department
   that is not a render layer (`rig`, `blendshape`) is never in a staged file,
   so excluding it changes nothing. Exclusion applies through nesting and is

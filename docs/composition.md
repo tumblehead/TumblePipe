@@ -648,7 +648,10 @@ import node inside another one (the children `import_assets` builds, the
 `import_layer` inside `import_model`) is left to its parent, so nothing
 imports twice. A node pinned to a specific version stays on that version:
 `import_layer` resolves its pin with latest-mode off, even when a `latest`
-node elsewhere in the session turned it on.
+node elsewhere in the session turned it on. A node you bypassed stays
+bypassed: an import only clears a bypass it set on itself, which it marks with
+a *Bypassed: …* comment (`nodes.clear_auto_bypass`). Up to TumblePipe 1.71.1
+every reopen un-bypassed it, and its assets went out with the next export.
 
 `tests/test_scene_imports.py` fails when a shipped HDA with a `version`
 parm has no refresh decision, and `scripts/verify_import_refresh.py`

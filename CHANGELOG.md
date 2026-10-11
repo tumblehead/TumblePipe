@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.71.1 — 2026-10-11
+
+### Fixes
+- fix(export): shot exports stop adopting downstream departments' assets (`833f6f63`)
+
+### Documentation
+- docs: shot exports skip assets adopted from later departments (`709875bd`)
+- docs: regenerate CHANGELOG.md for v1.71.0 (`30d9f09e`)
+
 ## v1.71.0 — 2026-10-10
 
 ### Features

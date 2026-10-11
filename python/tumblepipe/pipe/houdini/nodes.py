@@ -144,6 +144,25 @@ def set_node_comment(native, message: str):
     native.setComment(message)
     native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
+# Every bypass an import node sets on itself comes with a comment starting
+# with this, which is how a later run tells its own bypass from the artist's.
+AUTO_BYPASS_PREFIX = 'Bypassed:'
+
+def is_auto_bypass(bypassed: bool, comment: str) -> bool:
+    """True if a bypass was set by the node's own execute(), not the artist."""
+    return bypassed and comment.startswith(AUTO_BYPASS_PREFIX)
+
+def clear_auto_bypass(native):
+    """Undo a bypass the node set on itself in an earlier run.
+
+    A bypass the artist set is left alone. Import nodes re-execute on every
+    scene open (asset_browser.load_hook), and clearing the flag
+    unconditionally re-enabled every import an artist had switched off, so
+    assets they had disabled came back into the shot on the next export.
+    """
+    if is_auto_bypass(native.isBypassed(), native.comment()):
+        native.bypass(False)
+
 ##############################################################################
 # Node creation / styling
 ##############################################################################

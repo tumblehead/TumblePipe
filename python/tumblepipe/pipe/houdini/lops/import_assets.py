@@ -549,7 +549,7 @@ class ImportAssets(EntityNode):
             return
         # Undo a bypass left by an earlier empty run, or the node reports
         # "Imported" while passing nothing through.
-        context.bypass(False)
+        ns.clear_auto_bypass(context)
 
         # Build the merge node
         merge_node = dive_node.createNode('merge', 'merge')
