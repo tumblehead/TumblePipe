@@ -171,9 +171,16 @@ Gotchas:
   the Layer Stack, e.g. `Animation (downstream)`. In the final shot their
   opinions sit on top of yours, so an edit to a prim they also touch shows
   in your session but not in the render. Publishing is unaffected: the
-  export strips everything this node loads.
+  export strips everything this node loads, and does not record assets
+  that only arrived through the later layers
+  ([Department exports and staged files](../composition.md#department-exports-and-staged-files)).
 - Assets are dropped along with the department that introduced them, so a
-  lookdev-only exclusion never removes a model.
+  lookdev-only exclusion never removes a model. A dropped asset gets no
+  metadata and no instance copies either. Later departments' layers can
+  still hold empty `over`s at its path, so on **This Department Only** you
+  may see a bare, untyped prim where the asset would be (e.g. `/SET/cloud`).
+  That prim has no geometry and is not tracked. Up to TumblePipe 1.71.2 the
+  node tagged it as the asset and made empty copies (`cloud0`, `cloud1`).
 - Exclude Asset Departments **mutes** the layers instead of dropping rows:
   an asset's department layers sit inside its staged build (and, for scene
   assets, inside the root and scene layers), so they never appear in the

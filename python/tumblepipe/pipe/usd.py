@@ -807,6 +807,25 @@ def _missing_layer_message(
     return "\n".join(lines)
 
 
+def _excluded_asset_prim_paths(excluded_refs) -> set[str]:
+    """Prim paths of the whole assets among ``excluded_refs``.
+
+    Only staged asset refs count (no ``dept``); a department layer ref is
+    not an asset, and its prim is not one either.
+    """
+    prim_paths = set()
+    for ref in excluded_refs or ():
+        parsed_ref = parse_entity_sublayer_uri(ref)
+        if parsed_ref is None or parsed_ref.department is not None:
+            continue
+        if not parsed_ref.base.startswith('entity:/assets/'):
+            continue
+        _, _, prim_path = _asset_uri_to_prim_path(parsed_ref.base)
+        if prim_path:
+            prim_paths.add(prim_path)
+    return prim_paths
+
+
 def _collect_leaf_layers_and_instances(
     layer_path: str,
     visited: set = None,
@@ -826,7 +845,8 @@ def _collect_leaf_layers_and_instances(
         instances_by_asset: Dict to accumulate instance info (modified in place)
         excluded_refs: Refs to skip at *this* level only (not propagated into
                        the recursion) — a partial-department render drops the
-                       shot's own layers past the cut, never an asset's
+                       shot's own layers past the cut, never an asset's.
+                       An excluded asset ref also gets no instance copies
         referrer: The layer that sublayered this one, for error messages;
                   None at the top of the traversal
 
@@ -889,9 +909,15 @@ def _collect_leaf_layers_and_instances(
             _missing_layer_message(original_ref, layer_path, referrer)
         )
 
-    # Collect instance info from context.json alongside this layer
+    # Collect instance info from context.json alongside this layer. An asset
+    # whose staged ref is excluded here gets no copies: later departments'
+    # overs still make its prim exist, so copies of it would render as
+    # empty prims (import_shot's /SET/cloud0, cloud1 ghosts, 2026-10-12).
+    excluded_asset_prims = _excluded_asset_prim_paths(excluded_refs)
     layer_instances = _collect_instance_info_from_context(layer_path)
     for prim_path, instance_names in layer_instances.items():
+        if prim_path in excluded_asset_prims:
+            continue
         for instance_name in instance_names:
             if instance_name not in instances_by_asset[prim_path]:
                 instances_by_asset[prim_path].append(instance_name)

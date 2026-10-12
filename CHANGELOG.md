@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.71.2 — 2026-10-11
+
+### Fixes
+- fix(import): reopening a scene no longer re-enables bypassed import nodes (`49c57407`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.71.1 (`9c3e000d`)
+- docs: import nodes keep a bypass the artist set (`9fec2b86`)
+
 ## v1.71.1 — 2026-10-11
 
 ### Fixes

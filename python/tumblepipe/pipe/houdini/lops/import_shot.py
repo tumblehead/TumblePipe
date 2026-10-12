@@ -58,6 +58,26 @@ def excluded_departments(department_name, downstream_departments, mode):
     return excluded
 
 
+def split_excluded_assets(assets, departments_to_exclude, all_shot_departments):
+    """Split the build's assets into (kept, excluded asset URIs).
+
+    An asset is excluded when the department that introduced it is. Its
+    layer is not sublayered, but later departments' overs still make its
+    prim exist; tagging and duplicating that empty prim showed ghosts like
+    /SET/cloud0 and /SET/cloud1 (HideAndReek 010, 2026-10-12). Only the
+    kept assets get metadata and copies.
+    """
+    excluded_uris = set()
+    for asset_info in assets:
+        source_dept = get_source_department(
+            asset_info.get('inputs', []), all_shot_departments
+        )
+        if source_dept is not None and source_dept in departments_to_exclude:
+            excluded_uris.add(asset_info['asset'])
+    kept = [a for a in assets if a['asset'] not in excluded_uris]
+    return kept, excluded_uris
+
+
 def _context_json():
     """The workfile's context.json, whatever it names — shot or Multi."""
     file_path = Path(hou.hipFile.path())
@@ -1010,15 +1030,12 @@ class ImportShot(ns.Node):
             self.get_strictly_downstream_department_names()
         )
 
-        # Build set of asset URIs to exclude (introduced by current/downstream departments)
+        # Assets introduced by an excluded department stay out: their layers
+        # are not loaded, and they get no metadata or copies below.
         # This prevents import_shot from loading assets that import_assets will handle
-        all_shot_departments = self.list_shot_department_names()
-        excluded_asset_uris = set()
-        for asset_info in assets:
-            inputs = asset_info.get('inputs', [])
-            source_dept = get_source_department(inputs, all_shot_departments)
-            if source_dept is not None and source_dept in departments_to_exclude:
-                excluded_asset_uris.add(asset_info['asset'])
+        assets, excluded_asset_uris = split_excluded_assets(
+            assets, departments_to_exclude, self.list_shot_department_names()
+        )
 
         # Filter out excluded layers - both department layers AND assets from excluded departments
         def should_include_layer(info):

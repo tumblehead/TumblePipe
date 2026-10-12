@@ -732,7 +732,9 @@ not at all:
 - direct render drops the excluded sublayer refs before flattening
   (`pipe.usd.excluded_staged_refs`) — both the shot's own department
   layers and the assets those departments introduced, whose provenance
-  comes from the staged `context.json`;
+  comes from the staged `context.json`. A dropped asset also gets no
+  multi-instance copies: departments that stay can still hold empty
+  `over`s at its path, and copies of that prim would be empty;
 - the stage task both truncates its department re-apply pass and tells
   `import_shot` to exclude what is downstream of the cut
   (`exclude_downstream_of`). Truncating only the re-apply pass would look
