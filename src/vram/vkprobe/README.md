@@ -31,16 +31,17 @@ internal session. Forcing the extension on from the layer wouldn't help
 either: Houdini only names objects when it has decided to validate.
 
 **So exact per-prim VRAM isn't reachable from a layer in shipping Houdini 22.**
-The VRAM Inspector's itemised rows stay what they are: the measured `gpumem`
-total, split by an upload model calibrated against `gpumem`.
+It turned out to be reachable from inside Houdini instead: the viewport hook
+in `../hook/` reads each drawn prim's GPU memory during the viewport's own
+redraw, and is what the inspector measures with.
 
-## What a layer *does* see that `gpumem` does not
+## What a layer *does* see that Houdini's memory registry does not
 
 Exact live buffers and images by kind. On a bare session at a 1652×1042
 viewport, the viewer's render targets alone came to **≈105 MiB**: 12 colour
 images (RGBA16F, 13.1 MiB each) and 7 depth images (D32, 6.6 MiB each).
-`gpumem` lists none of this. It's part of what the inspector reports as "not
-reported by Houdini". A layer that exported a summary function (Python can
+Houdini's memory registry (what `gpumem` prints) lists none of this. It's
+part of what the inspector reports as "not reported by Houdini". A layer that exported a summary function (Python can
 `ctypes`-load the same DLL in-process) could break that gap down into render
 targets vs other. It's worth doing if the gap turns out to matter. The cost
 is that Houdini has to be launched with the layer enabled (env vars below),

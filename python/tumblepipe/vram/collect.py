@@ -1,9 +1,12 @@
 """The ``hou`` side of the VRAM Inspector: measure, find, and attribute.
 
-Everything here talks to the running session — the ``gpumem`` command, the
-Scene Viewers and their stages, viewport settings, node lookups — and hands
-plain data to the pure modules (:mod:`.gpumem`, :mod:`.report`). Call it on
-Houdini's main thread.
+Everything here talks to the running session — the viewport hook's
+commands, the Scene Viewers and their stages, viewport settings, node
+lookups — and hands plain data to the pure modules (:mod:`.hook`,
+:mod:`.report`). Call it on Houdini's main thread.
+
+Houdini's own ``gpumem`` command is never run: its geometry figure is
+inflated and it segfaults after a prim is hidden (see :mod:`.hook`).
 """
 
 from __future__ import annotations
@@ -13,18 +16,66 @@ from dataclasses import dataclass
 
 import hou
 
-from . import gpumem, process
-from .gpumem import Client
+from . import hook, process
+from .clients import Client
 from .sizes import TextureRules
 
 
-def measure() -> list[Client]:
-    """``gpumem -U``: every client on every device. Empty if unavailable."""
+def hook_snapshot() -> hook.Snapshot | None:
+    """The viewport hook's last snapshot, or ``None`` when it is not loaded.
+
+    Only copies text the hook already recorded during a redraw; it never
+    walks a renderer, so it is safe at any moment.
+    """
     try:
-        out, _err = hou.hscript("gpumem -U")
+        out, err = hou.hscript("ttvramhook_snapshot")
     except hou.Error:
-        return []
-    return gpumem.parse_usage(out)
+        return None
+    if err:
+        return None
+    return hook.parse(out)
+
+
+def hook_request() -> int:
+    """Ask every viewport for a walk on its next redraw; the request number."""
+    out, _err = hou.hscript("ttvramhook_request")
+    try:
+        return int(out.strip())
+    except ValueError:
+        return 0
+
+
+def redraw_viewers() -> None:
+    """Ask every visible Scene Viewer to redraw (on the next event-loop pass).
+
+    ``hou.ui.triggerUpdate()`` leaves an idle viewport alone; this does not.
+    """
+    for _owner, tab in _pane_tabs():
+        if tab.type() != hou.paneTabType.SceneViewer:
+            continue
+        try:
+            tab.curViewport().draw()
+        except (hou.Error, AttributeError):
+            pass
+
+
+def hook_clients(snap: hook.Snapshot) -> tuple[list[Client], dict[str, dict[str, int]]]:
+    """The report's clients from a hook snapshot, and exact prim bytes per
+    LOP viewer pane (see :func:`.hook.measured_clients`)."""
+    shown = []
+    for viewer in lop_viewers(list(snap.clients)):
+        node = viewer.shown_node()
+        shown.append((viewer.pane, node.path() if node is not None else ""))
+    return hook.measured_clients(snap, shown)
+
+
+def free_cached() -> int:
+    """Ask every non-geometry client to release its cached memory; bytes freed."""
+    out, _err = hou.hscript("ttvramhook_free")
+    try:
+        return int(out.strip())
+    except ValueError:
+        return 0
 
 
 def process_bytes() -> int | None:
@@ -34,7 +85,8 @@ def process_bytes() -> int | None:
 
 @dataclass
 class Viewer:
-    """A Scene Viewer showing a LOP stage, keyed as ``gpumem`` names it."""
+    """A Scene Viewer showing a LOP stage, keyed by its geometry client's
+    pane name."""
 
     pane: str
     viewer: hou.SceneViewer
@@ -86,8 +138,8 @@ def _pane_tabs():
 
 
 def lop_viewers(clients: list[Client]) -> list[Viewer]:
-    """Scene Viewers looking at a LOP network, named the way ``gpumem`` names
-    their geometry client (``<desktop>.<pane tab>.<context>``).
+    """Scene Viewers looking at a LOP network, named the way Houdini's memory
+    registry names their geometry client (``<desktop>.<pane tab>.<context>``).
 
     A viewer is matched to a client by desktop and pane-tab name; one with no
     matching client (its geometry not yet uploaded) gets a synthetic name so

@@ -5,7 +5,7 @@ import tempfile
 import hou
 import numpy as np
 import OpenImageIO as oiio
-from tumblepipe.vram import gpumem
+from tumblepipe.vram import collect
 
 d = os.path.join(tempfile.gettempdir(), "vram_inspector_test")
 
@@ -36,9 +36,9 @@ if not hasattr(builtins, "_tex_queue"):
     builtins._tex_results = {}
     builtins._tex_current = None
 
+snap = collect.hook_snapshot()
 reading = {c.name: round(c.used_bytes / 2**20, 3)
-           for c in gpumem.parse_usage(hou.hscript("gpumem -U")[0])
-           if c.kind == "textures"}
+           for c in (snap.clients if snap else ()) if c.kind == "textures"}
 if builtins._tex_current:
     builtins._tex_results[builtins._tex_current] = reading
 img = hou.node("/stage/vramtest_mtl/albedo")
@@ -47,7 +47,8 @@ if builtins._tex_queue:
     img.parm("file").set(path)
     hou.hscript("glcache -c")
     builtins._tex_current = name
-    hou.ui.triggerUpdate()
+    collect.hook_request()
+    collect.redraw_viewers()
 else:
     builtins._tex_current = None
 print(builtins._tex_results, "next:", builtins._tex_current)

@@ -12,6 +12,18 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.72.0 — 2026-10-13
+
+### Features
+- feat(vram): VRAM Inspector moves here from TumbleTrove (`fe0d67a7`)
+
+### Documentation
+- docs: VRAM Inspector guide, harnesses and src/vram layout (`a88939f1`)
+- docs: regenerate CHANGELOG.md for v1.71.3 (`63a7f571`)
+
+### Chores
+- chore(vram): Vulkan-layer probe and the calibration harness (`87c0b8f7`)
+
 ## v1.71.3 — 2026-10-12
 
 ### Fixes

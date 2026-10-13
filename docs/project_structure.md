@@ -24,10 +24,11 @@ TumblePipe/
 │   └── icon_browser.pypanel     # Icon browser Python panel
 ├── bin/                         # Pre-built hook apps (tt_setup, tt_prepare; per-platform)
 ├── resolver/                    # Pre-built USD asset resolver (native, per Houdini major)
+├── dso/                         # Pre-built VRAM Inspector viewport hook (per Houdini major.minor)
 ├── src/                         # Native (Rust/C++) sources — built, not shipped as source
 │   ├── resolver/                #   `entity://` USD resolver (Rust core + C++ ArResolver shim)
 │   ├── wizard/                  #   hook apps: core + tt_setup + tt_prepare (Rust/egui)
-│   └── vram/                    #   VRAM Inspector research: Vulkan-layer probe + calibration (dev-only)
+│   └── vram/                    #   VRAM Inspector: viewport hook DSO (C++), Vulkan-layer probe + calibration (dev-only)
 ├── resources/                   # Icons, UI resources, templates
 ├── scripts/                     # TumbleTrove hooks, node event scripts, maintenance CLIs
 │   ├── project_template/        #   new-project scaffolding (also migration's source of truth)
@@ -72,10 +73,11 @@ with `from tumblepipe import ...`. Subpackages:
   `tasks/` per-task build + worker scripts).
 - `config_editor/` — the Qt config-database editor application
   (launched from the asset browser's right-click menu).
-- `vram/` — the VRAM Inspector ([user guide](vram-inspector.md)): parses
-  `gpumem`, scans the viewed stage, textures and cooked COP layers, and
-  apportions each measured client across them. `gpumem`, `sizes`, `report`
-  and `process` are pure Python; the rest need `hou`, `pxr` or Qt.
+- `vram/` — the VRAM Inspector ([user guide](vram-inspector.md)): reads the
+  viewport hook's measurements (every memory client, and each viewer prim's
+  exact bytes), scans the viewed stage, textures and cooked COP layers, and
+  hangs the scan under the measured clients. `clients`, `hook`, `sizes`,
+  `report` and `process` are pure Python; the rest need `hou`, `pxr` or Qt.
 - `tools/` — network-editor helpers for the HDAs and the startup
   context menus. Named for the shelf tools that used to call them; the
   `toolbar/*.shelf` files were never in the package allowlist, so those

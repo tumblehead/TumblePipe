@@ -3,7 +3,7 @@
 The scanners (:mod:`.usd_scan`, :mod:`.cop_scan`) produce flat records —
 :class:`GeoPrim`, :class:`Texture`, :class:`CopLayer` — that know their own
 bytes and nothing about each other. This module groups them the way an
-artist looks for the culprit: under the ``gpumem`` client that holds them,
+artist looks for the culprit: under the memory client that holds them,
 by the node that made them, down to a single primvar.
 
 Every row carries three numbers:
@@ -15,8 +15,10 @@ Every row carries three numbers:
 ``share``
     The row's slice of the client's *measured* total, split in proportion
     to ``upload``. Shares of a client's rows sum to exactly its measured
-    bytes, so the column adds up the way ``gpumem`` does; it is the
-    estimate, and the window labels it so.
+    bytes, so the column adds up to the measurement; it is the estimate,
+    and the window labels it so. When the viewport hook
+    (:mod:`.hook`) measured a viewer, its prims' shares are their measured
+    bytes instead, and those rows are marked ``exact``.
 
 Pure Python: the property suite imports this without ``hou``.
 """
@@ -25,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .gpumem import Client
+from .clients import Client
 from .sizes import ImageInfo
 
 # ── Scan records ─────────────────────────────────────────────────────────────
@@ -128,6 +130,7 @@ class Row:
     upload: int = 0
     share: int = 0
     measured: bool = False
+    exact: bool = False
     ref: str = ""
     detail: str = ""
     children: list[Row] = field(default_factory=list)
@@ -176,6 +179,33 @@ def _spread(row: Row, total: int) -> None:
         parts = apportion(total, [c.upload for c in row.children])
         for child, part in zip(row.children, parts):
             _spread(child, part)
+
+
+def _exact(row: Row, measured: dict[str, int]) -> int:
+    """Give prim rows their measured bytes; parents sum them. Returns the share.
+
+    A prim's own children (topology, primvars) split its measured bytes by
+    ``upload`` — the measurement is per prim, not per primvar.
+    """
+    if row.kind == "prim":
+        row.exact = True
+        _spread(row, measured.get(row.ref, 0))
+        return row.share
+    if row.children:
+        row.share = sum(_exact(c, measured) for c in row.children)
+        row.exact = True
+    return row.share
+
+
+def _unscanned_row(scanned: set[str], measured: dict[str, int]) -> Row | None:
+    """Prims the viewport drew that the stage scan did not itemise."""
+    extra = [Row(path.rsplit("/", 1)[-1] or path, "prim", ref=path,
+                 detail="drawn by the viewport; not itemised by the scan")
+             for path, size in measured.items() if path not in scanned and size > 0]
+    if not extra:
+        return None
+    return Row("(drawn, not itemised)", "node", children=extra,
+               detail=f"{len(extra):,} prims")
 
 
 def _sort(row: Row) -> Row:
@@ -278,28 +308,42 @@ def cop_rows(layers: list[CopLayer]) -> list[Row]:
 def build(clients: list[Client],
           geometry: dict[str, list[GeoPrim]],
           textures: list[Texture],
-          cop_layers: list[CopLayer]) -> list[Row]:
+          cop_layers: list[CopLayer],
+          exact: dict[str, dict[str, int]] | None = None) -> list[Row]:
     """The report: one top-level row per measured client.
 
     ``geometry`` maps a client's pane (``Client.pane``) to the prims scanned
     from that viewer's stage. Textures hang under the texture-cache client,
     Copernicus layers under Copernicus's buffer cache (or the OpenCL pool
-    when there is none). Scanned data with no client to
+    when there is none). ``exact`` maps a pane to the viewport hook's
+    measured ``prim path → bytes``; that client's prims show their measured
+    bytes rather than a share. Scanned data with no client to
     hang under (no viewer, no cache yet) gets an unmeasured row of its own, so
     nothing found is ever dropped.
     """
     rows: list[Row] = []
     placed_tex = placed_cop = False
     placed_panes: set[str] = set()
-    # Copernicus layers belong to Copernicus's own cache when gpumem lists
-    # one (H22: "COP OpenCL Buffer Cache"), else to the generic OpenCL pool.
+    # Copernicus layers belong to Copernicus's own cache when the registry
+    # lists one (H22: "COP OpenCL Buffer Cache"), else to the generic OpenCL pool.
     cop_home = "cop" if any(c.kind == "cop" for c in clients) else "opencl"
     for client in clients:
         row = Row(client.name, client.kind, measured=True, ref=client.pane,
                   detail=client.device)
+        measured = (exact or {}).get(client.pane) if client.kind == "geometry" else None
         if client.kind == "geometry" and client.pane in geometry:
             row.children = geometry_rows(geometry[client.pane])
             placed_panes.add(client.pane)
+        if measured is not None:
+            scanned = {p.path for p in geometry.get(client.pane, ())}
+            extra = _unscanned_row(scanned, measured)
+            if extra is not None:
+                row.children.append(extra)
+            _sum_up(row)
+            _exact(row, measured)
+            row.share = client.used_bytes
+            rows.append(row)
+            continue
         elif client.kind == "textures" and not placed_tex:
             row.children = texture_rows(textures)
             placed_tex = True
@@ -346,7 +390,7 @@ def coverage(row: Row) -> float | None:
 
 
 def human_bytes(n: int) -> str:
-    """``1536`` → ``"1.5 KB"``; 1024-based like ``gpumem``; never negative.
+    """``1536`` → ``"1.5 KB"``; 1024-based like Houdini's memory figures; never negative.
 
     Three significant figures from KB up, so a column of them lines up by
     magnitude: ``"2.36 GB"``, ``"407 MB"``, ``"12.5 KB"``, ``"0 B"``.

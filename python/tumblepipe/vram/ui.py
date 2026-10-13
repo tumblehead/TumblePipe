@@ -1,27 +1,30 @@
 """The VRAM Inspector window.
 
-Top: the whole process's dedicated VRAM (Windows' counter), what ``gpumem``
-accounts for, and the gap between them. Below: the report tree — one row per
-``gpumem`` client, opened down through node, prim and primvar, or texture
-file, or Copernicus layer.
+Top: the whole process's dedicated VRAM (Windows' counter), what Houdini's
+memory clients account for, and the gap between them. Below: the report
+tree — one row per client, opened down through node, prim and primvar, or
+texture file, or Copernicus layer.
 
 Columns, left to right, go from estimate to fact:
 
-* **VRAM** — the row's share of its client's *measured* total (exact for the
-  client rows, an estimate below them).
+* **VRAM** — measured: the client rows, and every viewer prim (the viewport
+  hook measures each one). Below a prim, and under textures and Copernicus,
+  it is the row's share of its parent, split by upload.
 * **Upload** — what the viewport model says the row puts on the GPU.
 * **Data** — what the scene holds. Exact.
+
+Everything comes from the viewport hook (``tt_vramhook``, :mod:`.hook`), a
+DSO that measures during each viewport's own redraw. A Rescan requests a
+walk, asks the viewers to redraw, and a short timer reads the hook's snapshot
+until every viewport has answered — reading the snapshot copies text and
+never touches a renderer. Houdini's ``gpumem`` command is never run: its
+geometry figure is inflated, and it segfaults after a prim is hidden (it
+crashed a lighting session from TumbleTrove 0.46.0's 3-second "Live totals").
+Without the hook the window says so and measures nothing.
 
 Everything runs on Houdini's main thread. The stage scan is sliced by a
 zero-interval timer into ~20 ms steps so the session stays responsive, and a
 stage that changed since the scan is flagged rather than silently rescanned.
-
-``gpumem`` runs only when the artist asks: opening the window, Rescan, Free
-cached. Never on a timer. Houdini's own command segfaults
-(``GUI_GeoRender::gpuMemoryUsage`` ← ``DM_SceneManager::memoryButtons``) when
-it runs while the viewport is tearing down a geometry render, e.g. right after
-a prim is hidden. TumbleTrove 0.46.0, where this tool used to live, polled it
-every 3 s and crashed a lighting session exactly that way (H22.0.368).
 """
 
 from __future__ import annotations
@@ -45,7 +48,7 @@ from tumbletrove.common.theme import (
     SEARCH_STYLE, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY, WARNING, scaled,
     styled_menu,
 )
-from . import collect, cop_scan, report
+from . import collect, cop_scan, hook, report
 from .report import Row, human_bytes
 from .usd_scan import ScanOptions, StageScan
 
@@ -57,6 +60,7 @@ _ROW_ROLE = Qt.UserRole + 1
 _FRACTION_ROLE = Qt.UserRole + 2
 
 _SLICE_SECONDS = 0.02
+_HOOK_WAIT_SECONDS = 3.0
 
 _TREE_STYLE = f"""
 QTreeWidget {{
@@ -111,6 +115,10 @@ class VramInspector(QWidget):
         self.setStyleSheet(f"QWidget#tumblepipe_vram_inspector {{ background-color: {BG_DARKEST}; }}")
 
         self._clients = []
+        self._exact: dict[str, dict[str, int]] = {}
+        self._hook_request = 0
+        self._hook_deadline = 0.0
+        self._hook_note = ""
         self._geometry: dict[str, list] = {}
         self._serials: dict[str, tuple] = {}
         self._textures = []
@@ -123,6 +131,9 @@ class VramInspector(QWidget):
         self._slicer = QTimer(self)
         self._slicer.setInterval(0)
         self._slicer.timeout.connect(self._scan_slice)
+        self._hook_wait = QTimer(self)
+        self._hook_wait.setInterval(50)
+        self._hook_wait.timeout.connect(self._await_hook)
 
         self.rescan()
 
@@ -139,8 +150,8 @@ class VramInspector(QWidget):
         self._rescan_btn.clicked.connect(self.rescan)
         self._free_btn = QPushButton("Free cached", self)
         self._free_btn.setToolTip(
-            "Ask every GPU client to release memory it holds but is not using "
-            "(gpumem -f). It is reloaded on demand.")
+            "Ask the texture cache, OpenCL pools and Copernicus to release memory "
+            "they hold but are not using. It is reloaded on demand.")
         self._free_btn.clicked.connect(self._free_cached)
         for b in (self._rescan_btn, self._free_btn):
             b.setStyleSheet(BUTTON_FLAT_STYLE)
@@ -178,8 +189,8 @@ class VramInspector(QWidget):
         tree.setColumnWidth(_COL_NAME, scaled(340))
         for col in (_COL_SHARE, _COL_UPLOAD, _COL_DATA):
             tree.setColumnWidth(col, scaled(90))
-        tree.headerItem().setToolTip(_COL_SHARE, "Share of the measured gpumem total "
-                                     "(exact on client rows, estimated below)")
+        tree.headerItem().setToolTip(_COL_SHARE, "Measured on client and prim rows; "
+                                     "below them, a share split by upload")
         tree.headerItem().setToolTip(_COL_UPLOAD, "What the viewport model puts on the GPU")
         tree.headerItem().setToolTip(_COL_DATA, "What the scene holds (exact)")
         tree.itemExpanded.connect(self._fill_children)
@@ -194,9 +205,42 @@ class VramInspector(QWidget):
 
     def rescan(self) -> None:
         """Measure, then read every LOP viewer's stage, then the COPs."""
-        if self._slicer.isActive():
+        if self._slicer.isActive() or self._hook_wait.isActive():
             return
-        self._clients = collect.measure()
+        if collect.hook_snapshot() is None:
+            self._clients, self._exact = [], {}
+            self._status.setText(
+                "The VRAM hook (tt_vramhook) is not loaded in this session, so "
+                "nothing can be measured. It ships with TumblePipe; check that "
+                "this Houdini build has a TumblePipe hook build.")
+            self._rebuild()
+            return
+        self._rescan_btn.setEnabled(False)
+        self._hook_request = collect.hook_request()
+        self._hook_deadline = time.monotonic() + _HOOK_WAIT_SECONDS
+        collect.redraw_viewers()
+        self._status.setText("Measuring the viewports…")
+        self._hook_wait.start()
+
+    def _await_hook(self) -> None:
+        """Wait for every viewport to answer the hook request, then scan.
+
+        A viewport that is not drawing (a hidden pane) never answers; after
+        the deadline its last snapshot is used, and the status says so.
+        """
+        snap = collect.hook_snapshot()
+        answered = snap is not None and snap.answered(self._hook_request)
+        if not answered and time.monotonic() < self._hook_deadline:
+            return
+        self._hook_wait.stop()
+        if snap is None:
+            snap = hook.Snapshot()
+        self._clients, self._exact = collect.hook_clients(snap)
+        self._hook_note = "" if answered else "Some viewports did not redraw; their figures may be stale. "
+        self._start_scan()
+
+    def _start_scan(self) -> None:
+        """Read every LOP viewer's stage, sliced across event-loop passes."""
         self._scans = []
         seen: dict[tuple, StageScan] = {}
         for viewer in collect.lop_viewers(self._clients):
@@ -216,7 +260,6 @@ class VramInspector(QWidget):
                                  image_info=read_image_info)
                 seen[key] = scan
             self._scans.append((viewer, scan))
-        self._rescan_btn.setEnabled(False)
         self._scan_started = time.monotonic()
         self._status.setText("Scanning…")
         self._slicer.start()
@@ -262,30 +305,24 @@ class VramInspector(QWidget):
                 f"{_count(len(self._cop.layers), 'COP layer')} in {took:.1f}s.")
         if self._cop.skipped:
             note += f" {self._cop.skipped} uncooked COP nodes left alone."
+        note = self._hook_note + note
         self._status.setText(note)
         self._rebuild()
 
     # ── measuring ────────────────────────────────────────────────────────
 
     def _free_cached(self) -> None:
-        freed = []
-        for device in {c.device for c in self._clients if c.cached_bytes > 0}:
-            mb = sum(c.cached_bytes for c in self._clients if c.device == device) // (1 << 20) + 1
-            try:
-                out, _ = hou.hscript(f'gpumem -r "{device}" -f {mb}')
-                freed.append(out.strip())
-            except hou.Error:
-                log.exception("gpumem -f failed on %s", device)
-        self._status.setText(" ".join(f for f in freed if f) or "Nothing cached to free.")
-        self._clients = collect.measure()
-        self._rebuild()
+        freed = collect.free_cached()
+        self._status.setText(f"Freed {human_bytes(freed)}." if freed
+                             else "Nothing cached to free.")
+        self.rescan()
 
     # ── tree ─────────────────────────────────────────────────────────────
 
     def _rebuild(self) -> None:
         expanded = self._expanded_keys()
         self._rows = report.build(self._clients, self._geometry, self._textures,
-                                  self._cop.layers)
+                                  self._cop.layers, self._exact)
         self._tree.setUpdatesEnabled(False)
         try:
             self._tree.clear()
@@ -319,10 +356,14 @@ class VramInspector(QWidget):
             font.setBold(True)
             for col in (_COL_NAME, _COL_SHARE):
                 item.setFont(col, font)
-            item.setToolTip(_COL_SHARE, "Measured by gpumem")
+            item.setToolTip(_COL_SHARE, "Measured by the viewport hook")
+        elif row.exact:
+            item.setToolTip(_COL_SHARE, "Measured exactly by the viewport hook "
+                            "(split by upload below a prim)" if row.kind != "prim"
+                            else "Measured exactly by the viewport hook")
         elif row.kind in ("geometry", "textures", "cop") and not row.measured:
             item.setForeground(_COL_SHARE, QBrush(QColor(TEXT_DIM)))
-            item.setToolTip(_COL_SHARE, "No gpumem client to measure against — model estimate")
+            item.setToolTip(_COL_SHARE, "No measured client to hang under — model estimate")
         if row.children:
             item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
         return item
@@ -331,7 +372,11 @@ class VramInspector(QWidget):
         if row.measured:
             parts = [row.detail]
             cov = report.coverage(row)
-            if cov is not None:
+            if cov is not None and row.exact:
+                # Every prim was measured, so the ratio grades the size model,
+                # not the scan.
+                parts.append(f"measured per prim · the size model predicts {cov:.0%}")
+            elif cov is not None:
                 if cov > 1.15:
                     parts.append(f"scene asks for {cov:.1f}× this — evicted or reduced")
                 else:
@@ -425,7 +470,7 @@ class VramInspector(QWidget):
         parts = []
         if process_total is not None:
             parts.append(f"<b>Houdini process:</b> {human_bytes(process_total)} dedicated")
-        parts.append(f"<b>gpumem:</b> {human_bytes(measured)} across "
+        parts.append(f"<b>Measured:</b> {human_bytes(measured)} across "
                      f"{len(self._clients)} clients"
                      + (f" ({human_bytes(cached)} cached, freeable)" if cached else ""))
         if process_total is not None and process_total > measured:
@@ -433,9 +478,10 @@ class VramInspector(QWidget):
                          f"{human_bytes(process_total - measured)}</span>")
             self._summary.setToolTip(
                 "Windows' dedicated-VRAM figure for the whole Houdini process, "
-                "minus what gpumem accounts for: window surfaces and render "
+                "minus what Houdini's memory clients account for: window "
+                "surfaces and render "
                 "targets, the driver, and any GPU user that does not register "
-                "with gpumem (plug-ins, other renderers).")
+                "with Houdini's memory registry (plug-ins, other renderers).")
         stale = [pane for pane, serial in self._serials.items()
                  if self._viewer_serial(pane) not in (serial, None)]
         if stale:

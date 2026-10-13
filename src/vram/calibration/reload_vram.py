@@ -3,7 +3,7 @@ import tumblepipe.vram  # noqa: F401
 
 # This checkout's sources (the bridge execs this file, so there is no __file__).
 SRC = r"C:\Users\tumblehead\Documents\workspace\TumblePipe\python\tumblepipe\vram"
-for name in ("gpumem", "sizes", "report", "images", "process", "usd_scan",
+for name in ("clients", "hook", "sizes", "report", "images", "process", "usd_scan",
              "cop_scan", "collect", "ui"):
     full = f"tumblepipe.vram.{name}"
     __import__(full)

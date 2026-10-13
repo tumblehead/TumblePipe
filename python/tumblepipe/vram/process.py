@@ -1,12 +1,13 @@
 """How much dedicated VRAM the whole Houdini process holds, per Windows.
 
-``gpumem`` only knows the clients that register with it; drivers, Qt's own
+Houdini's GPU memory registry only knows the clients that register with
+it; drivers, Qt's own
 GL/Vulkan surfaces, Karma XPU in another process and third-party plug-ins
 don't. Windows' ``GPU Process Memory`` performance counter is what Task
 Manager's "Dedicated GPU memory" column shows, and it is the only per-process
 figure available on consumer Windows — NVML reports ``N/A`` for per-process
-usage under WDDM. The gap between this and the ``gpumem`` sum is shown as
-"not reported by Houdini".
+usage under WDDM. The gap between this and the measured clients' sum is
+shown as "not reported by Houdini".
 
 Instance names look like ``pid_23460_luid_0x00000000_0x0000D1B3_phys_0``: one
 per process per adapter, so a process on two GPUs has two.

@@ -83,6 +83,24 @@ browser's **User** column, sidecars and farm attribution all read the same
 variable. Launch through Desktop. See
 [Environment variables](configuration.md#environment-variables).
 
+### The VRAM Inspector says the VRAM hook is not loaded
+
+The [VRAM Inspector](vram-inspector.md) measures only through its viewport
+hook, a plug-in TumblePipe ships under `dso/<major>.<minor>/` and puts on
+`HOUDINI_DSO_PATH`. Without it the window measures nothing. Causes:
+
+- **Houdini 21.** The hook is built for Houdini 22 only.
+- **A Houdini 22 minor release the package wasn't built for** (say 22.5 when
+  the package ships `dso/22.0/`). A plug-in must match the major.minor it
+  loads into; update TumblePipe.
+- **A dev checkout that hasn't built it.** A dev launch builds it (the
+  `build-vramhook` prepack step needs CMake and a C++ compiler); check
+  `~/.tumbletrove/logs/build/` for the error.
+
+To check from Houdini's Python shell: `hou.hscript("ttvramhook_snapshot")`
+prints JSON when the hook is loaded, and an unknown-command error when it
+isn't.
+
 ## Saving, exporting, publishing
 
 ### Export or Publish "did nothing"

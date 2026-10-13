@@ -6,7 +6,9 @@
 * LOP attribution: a prim made inside a ``sopcreate`` is blamed on the
   ``sopcreate`` the artist placed, not the node buried inside it; a prim
   from a plain LOP is blamed on that LOP.
-* ``gpumem`` is callable and parses (empty here: hython has no viewport).
+* the hook snapshot reads without raising: a snapshot when ``tt_vramhook``
+  is on ``HOUDINI_DSO_PATH``, ``None`` when it is not (hython draws no
+  viewport, so there are no viewports in it either way).
 
 Run under hython::
 
@@ -85,8 +87,9 @@ def main() -> int:
     check("a plain LOP's prim is blamed on that LOP",
           owners.get("/verify_sphere") == sphere.path(), str(owners.get("/verify_sphere")))
 
-    clients = collect.measure()
-    check("gpumem is callable and parses", isinstance(clients, list), str(clients))
+    snap = collect.hook_snapshot()
+    check("the hook snapshot reads without raising (None when not loaded)",
+          snap is None or not snap.viewports, repr(snap))
     return report("VRAM collect")
 
 

@@ -410,10 +410,20 @@ checks every itemised row. `scripts/verify_vram_collect.py` checks the `hou`
 collectors: a cooked COP layer is itemised and an uncooked one is skipped
 *without being cooked*, and a prim made inside a `sopcreate` is blamed on the
 `sopcreate`. Both run under plain `hython` and touch no project data. The
-pure modules (`gpumem`, `sizes`, `report`, `process`) are covered by
-`tests/test_vram_*.py` instead. `test_vram_no_polling` fails if anything in
-`vram/ui.py` runs `gpumem` from a timer: Houdini's `gpumem` segfaults when it
-runs while the viewport tears down a geometry render.
+pure modules (`clients`, `hook`, `sizes`, `report`, `process`) are covered by
+`tests/test_vram_*.py` instead. `test_vram_no_gpumem` fails if anything in
+`tumblepipe.vram` runs an hscript command other than the viewport hook's own
+`ttvramhook_*`: Houdini's `gpumem` overcounts multi-part prims and segfaults
+right after a prim is hidden.
+
+The inspector's measurements come from the viewport hook, a C++ DSO in
+`src/vram/hook/` (its README has the design and the spike's findings).
+`.ci/build_vramhook.py` builds it into `dso/<major>.<minor>/` as the
+`build-vramhook` prepack script, so every dev launch and `hpm build` compiles
+it; `.ci/build_platform.py` refuses a Houdini 22 archive without it. The hook
+can only be exercised in a GUI session (it measures during viewport
+redraws): launch a dev session and read `ttvramhook_snapshot` over the
+bridge.
 
 The size constants in `vram/sizes.py` were measured in a live viewport;
 `src/vram/calibration/README.md` has the protocol and the scripts to measure

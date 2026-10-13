@@ -7,13 +7,14 @@ Two answers per item, kept apart on purpose:
 * **upload bytes** — what Houdini's Vulkan viewport would put on the GPU for
   it, following the viewport's own rules (texture resolution cap, mipmaps;
   doubles uploaded as floats; triangle and wireframe index buffers) with
-  per-point/per-triangle constants measured against ``gpumem``. A model, not
-  a measurement: :mod:`.report` scales these to the measured totals.
+  per-point/per-triangle constants measured in the viewport. A model, not a
+  measurement: :mod:`.report` uses it to split a measured prim, texture cache
+  or Copernicus total across its rows.
 
 The texture rules mirror ``hou.GeometryViewportSettings`` — read live by
 :mod:`.collect` into a :class:`TextureRules` — whose H22 defaults are a 2048²
 resolution cap, an HDR16 depth setting and mipmaps on. Geometry and texture
-upload sizes are calibrated against ``gpumem`` (see the tables below).
+upload sizes are calibrated in the viewport (see the tables below).
 
 Pure Python: the property suite imports this without ``hou``.
 """
@@ -108,7 +109,10 @@ def primvar_bytes(type_name: str, values: int, indices: int = 0) -> tuple[int, i
 # ── Calibration (H22.0.368, Vulkan Solaris viewport, RTX 3070) ──────────────
 #
 # Measured with ``gpumem -U`` on a 1000×1000 grid and variants of it, each
-# read after the viewport had redrawn (MiB):
+# read after the viewport had redrawn (MiB). Every variant draws as one part,
+# where gpumem's geometry figure is right; it overcounts multi-part prims
+# (see src/vram/hook/README.md), and the inspector no longer runs it. Re-
+# measure with the viewport hook: src/vram/calibration/README.md.
 #
 #   grid (1,000,000 points, 1,996,002 tris, 3,992,004 face-verts)    99.057
 #   triangulated (same points and tris, 5,988,006 face-verts)       114.285
