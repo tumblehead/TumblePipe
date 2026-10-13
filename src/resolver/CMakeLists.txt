@@ -270,12 +270,11 @@ endif()
 # -----------------------------------------------------------------------------
 
 # The plugInfo file needs the platform-specific library filename, not a
-# generic placeholder, so USD's plugin system can load it by path.
-set(PLUGIN_LIBRARY_FILENAME
-    "${CMAKE_SHARED_MODULE_PREFIX}tumbleResolver${CMAKE_SHARED_MODULE_SUFFIX}")
-
-# On windows CMake's module prefix is empty, so the filename collapses
-# to `tumbleResolver.dll`, which is what we want.
+# generic placeholder, so USD's plugin system can load it by path. No
+# CMAKE_SHARED_MODULE_PREFIX here: the target sets PREFIX "" above, and the
+# module prefix is "lib" on Linux and macOS, so using it named a file that
+# never exists and USD silently skipped the plugin.
+set(PLUGIN_LIBRARY_FILENAME "tumbleResolver${CMAKE_SHARED_MODULE_SUFFIX}")
 configure_file(cpp/plugInfo.json.in
     "${CMAKE_BINARY_DIR}/resources/plugInfo.json"
     @ONLY)

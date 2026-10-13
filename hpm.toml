@@ -1,7 +1,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.74.1"
+version = "1.74.2"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -130,6 +130,14 @@ DYLD_LIBRARY_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/ho
 # it loads into; both variables pass through hpm and are expanded by
 # Houdini's package loader, like $HOUDINI_MAJOR_RELEASE above.
 HOUDINI_DSO_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/dso/$HOUDINI_MAJOR_RELEASE.$HOUDINI_MINOR_RELEASE" }
+
+# The asset browser catalog, documentation, workfile context and package menu
+# are TumbleTrove's SDK; the network menus are Radial's. TumblePipe calls both
+# directly, so it requires the versions whose API it is written against.
+# TumbleTrove 0.48 drops SDK pieces this 1.74.x catalog uses, hence the cap.
+[dependencies]
+"tumbletrove/tumbletrove" = ">=0.47,<0.48"
+"tumbletrove/radial" = ">=0.8"
 
 [python_dependencies]
 qtpy = ">=2.4.0"

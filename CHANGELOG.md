@@ -12,6 +12,18 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.74.1 — 2026-10-13
+
+### Fixes
+- fix(farm): instance copies nothing placed keep the prototype's placement (`56f88882`)
+
+### Documentation
+- docs: why asset copies can render elsewhere on the farm (`d7d1ac75`)
+- docs: regenerate CHANGELOG.md for v1.74.0 (`b4cc7bdb`)
+
+### Chores
+- chore(changelog): pin short hashes to 8 characters (`878fbb72`)
+
 ## v1.74.0 — 2026-10-13
 
 ### Features
