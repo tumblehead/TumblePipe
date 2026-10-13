@@ -1,0 +1,11 @@
+{
+    "file_format_version": "1.2.0",
+    "layer": {
+        "name": "VK_LAYER_TT_vramprobe",
+        "type": "GLOBAL",
+        "library_path": ".\\tt_vramprobe.dll",
+        "api_version": "1.3.0",
+        "implementation_version": "1",
+        "description": "TumbleTrove VRAM probe: logs GPU buffers, images and their debug names"
+    }
+}

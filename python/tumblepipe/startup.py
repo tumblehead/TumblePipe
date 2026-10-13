@@ -566,7 +566,7 @@ def _make_pipeline_catalog():
 
 
 def register_package():
-    """Register TumblePipe with TumbleTrove: identity, docs, and the catalog.
+    """Register TumblePipe with TumbleTrove: identity, docs, menu, catalog.
 
     A no-op when TumbleTrove is not installed — TumblePipe is usable without
     it, the asset browser simply isn't. Order does not matter: TumbleTrove's
@@ -591,8 +591,15 @@ def register_package():
         docs=_package_root() / "docs",
         extra_docs=[("Online documentation", "https://tumblepipe.readthedocs.io")],
         icon="lucide:database",
+        menu=[package.item("VRAM Inspector", _open_vram_inspector)],
         catalogs=[package.catalog("pipeline", _make_pipeline_catalog)],
     )
+
+
+def _open_vram_inspector() -> None:
+    """Open the VRAM Inspector (imported on click: it pulls in Qt and pxr)."""
+    from tumblepipe.vram import ui
+    ui.show()
 
 
 def _package_root() -> Path:

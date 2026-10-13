@@ -12,6 +12,18 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.71.3 — 2026-10-12
+
+### Fixes
+- fix(farm): direct render makes no instance copies of assets the cut drops (`32eb5c3f`)
+- fix(import): import_shot no longer tags or copies assets it excludes (`4688db76`)
+
+### Documentation
+- docs: _collect_leaf_layers_and_instances skips copies of excluded assets (`69a60e10`)
+- docs: the render cut makes no copies of the assets it drops (`9d672429`)
+- docs: import_shot gives excluded assets no metadata or copies (`600f402a`)
+- docs: regenerate CHANGELOG.md for v1.71.2 (`a6ad733d`)
+
 ## v1.71.2 — 2026-10-11
 
 ### Fixes

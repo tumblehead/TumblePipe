@@ -50,6 +50,7 @@ ships a working example.
 - `resources/`, `ocio/` — resource files and OpenColorIO configuration.
 - `src/resolver/` — source for the `entity://` USD asset resolver.
 - `src/wizard/` — source for the native `tt_setup` project-setup wizard (Rust/egui).
+- `src/vram/` — VRAM Inspector research, not shipped: a Vulkan-layer probe and the scripts that calibrated `tumblepipe.vram.sizes`.
 - `docs/` — the documentation, as Markdown. Ships in the package and renders offline under **TumbleTrove ▸ Documentation** (TumbleTrove 0.27.0+); also hosted on Read the Docs.
 - `tests/` — property-based test harness (uv-managed, independent of hpm).
 - `hpm.toml` — HPM package manifest.

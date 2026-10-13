@@ -400,6 +400,25 @@ with `VERIFY_PROJECT`, `VERIFY_SHOT`, `VERIFY_VERSION` and
 scene (RND, Snail): that is the only path to scene assets, and paleindia
 has none.
 
+## VRAM Inspector harnesses
+
+`scripts/verify_vram_scan.py` scans a hand-built USD stage with one of
+everything the [VRAM Inspector](vram-inspector.md) must get right (indexed
+and unread primvars, invisible and guide prims, native and point instances,
+a texture only a stray shader names, a Karma `kma:surface` network) and
+checks every itemised row. `scripts/verify_vram_collect.py` checks the `hou`
+collectors: a cooked COP layer is itemised and an uncooked one is skipped
+*without being cooked*, and a prim made inside a `sopcreate` is blamed on the
+`sopcreate`. Both run under plain `hython` and touch no project data. The
+pure modules (`gpumem`, `sizes`, `report`, `process`) are covered by
+`tests/test_vram_*.py` instead. `test_vram_no_polling` fails if anything in
+`vram/ui.py` runs `gpumem` from a timer: Houdini's `gpumem` segfaults when it
+runs while the viewport tears down a geometry render.
+
+The size constants in `vram/sizes.py` were measured in a live viewport;
+`src/vram/calibration/README.md` has the protocol and the scripts to measure
+them again.
+
 ## HDA spare-parm UI harness
 
 `scripts/verify_import_shot_layer_stack.py` pins the import_shot Layer
