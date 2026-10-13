@@ -664,6 +664,33 @@ playblast worker runs it with `--verbose a2`:
     Defaulting to use settings found at /Render/rendersettings   # found by husk's own search
     No camera in render settings, defaulting to /scene/cameras/render_camera   # neither — wrong view
 
+### Asset copies render somewhere else on the farm (e.g. at the origin)
+
+The farm does not render the copies your scene shows: the collapsed stage
+re-creates every multi-instance asset's copies (`<Asset>0…N-1`, the original
+deactivated) from the instance count in the staged `context.json`. A copy
+nothing placed takes the original's placement through its reference. Up to
+**1.74.0** the farm gave such a copy an identity transform of its own
+instead, so it rendered at the world origin while the session kept it in
+place — HideAndReek 010's two Kangaroo copies sat in the middle of the
+studio on the farm and behind its back wall in the Lighting workfile.
+
+Copies an artist makes with a plain Duplicate LOP (`Kangaroo_1`, original
+kept) are not kept as made: the export records them as an instance count,
+and every import and farm render rebuilds that many copies stacked on the
+original's placement. To place copies individually, use the import node's
+**Instances** and place each copy downstream.
+
+To see what the farm will compose, collapse the staged build the way the
+submitter does and look at the copies' world positions:
+
+    from pathlib import Path
+    from tumblepipe.pipe.usd import collapse_latest_references
+    staged = Path('<shot>/_staged/<variant>/vNNNN/<file>.usda')
+    text = collapse_latest_references(staged, staged.with_name('collapsed.usda'))
+
+The instance defs are at the end of the returned text.
+
 ### The render came back at project defaults — my overrides were ignored
 
 The submit dialog's render overrides are applied to the shot's

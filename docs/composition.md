@@ -481,8 +481,7 @@ into its static defs.
 
 The rule is: **an order that composed is returned verbatim.** Only when
 none composed is one derived (ops with composed values, in
-XformCommonAPI order, pivot inverted last, identity dup op as the
-no-placement fallback) — that derivation exists solely for values the
+XformCommonAPI order, pivot inverted last) — that derivation exists solely for values the
 stripped Duplicate defs left orderless, and it is not a second opinion
 about an order that survived. Deriving unconditionally was a real
 divergence, not a hypothetical one: the flatten authors its result into
@@ -492,6 +491,17 @@ replaced by a CommonAPI set applying the stale translate/rotate/scale
 values sitting beside it, and every copy moved on the farm while the GUI
 stayed put. `xformOp:transform` is not in `PLACEMENT_OPS`, so the
 derivation cannot see it — which is exactly why it must not override.
+
+When nothing composed on a copy at all, it takes the prototype's
+placement. The GUI import reads a copy's order after the copy references
+the prototype, so the prototype's order and values reach it through that
+arc; the flatten's static defs therefore author no transform on such a
+copy and let the same arc supply it. They used to author an identity
+`xformOp:transform:{name}_dup` with its own `xformOpOrder` instead, and
+since that local order is stronger than the referenced one, the copies
+dropped to the origin on the farm while the session kept them where the
+prototype was placed (HideAndReek 010's Kangaroo copies, in the middle of
+the studio).
 
 `scripts/verify_tracked_asset_counts.py` sweeps a project for staged
 counts that drifted from the department contexts.

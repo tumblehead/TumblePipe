@@ -74,7 +74,8 @@ def composed_placement_op_order(prim) -> list[str]:
     order lived in the Duplicate LOP defs the export stripped. Then, and
     only then, derive one from what actually composed: ops with a value,
     XformCommonAPI ordering, pivot inverted last. Returns [] when no
-    placement composed either (callers fall back to an identity dup op).
+    placement composed either: the caller decides the fallback (the
+    flatten's copies then compose the prototype's placement).
 
     Deriving unconditionally *replaced* a real order: the static flatten
     authors this result into the collapsed ROOT layer, stronger than every
@@ -684,10 +685,12 @@ def _generate_instance_prim_definitions(
         placement_orders: Optional {prim_path: [op names]} from composing
                           the staged stage — instances present here author
                           that xformOpOrder (applying the placement values
-                          composed from the authoring department's sidecar)
-                          instead of the identity dup op. A prototype's own
-                          prim path may also appear: it then applies that
-                          order instead of the identity CommonAPI op set.
+                          composed from the authoring department's sidecar);
+                          absent ones author no transform of their own and
+                          compose the prototype's through the reference. A
+                          prototype's own prim path may also appear: it then
+                          applies that order instead of the identity
+                          CommonAPI op set.
 
     Returns:
         USDA text defining instance prims, or empty string if no multi-instance assets
@@ -726,8 +729,14 @@ def _generate_instance_prim_definitions(
 
             # Generate instance prims (MiniFig0, MiniFig1, MiniFig2, etc.)
             # Each instance references the base prim; the op order applies
-            # the composed placement values when known, else an identity
-            # transform gives the instance a transform surface.
+            # the composed placement values when known. Otherwise the
+            # instance authors no transform at all and composes the
+            # prototype's order and values through the reference, as the
+            # GUI import's copies do (util.apply_placement_op_order reads
+            # the order through that same arc). An identity dup op here
+            # used to override the referenced order: HideAndReek 010's two
+            # Kangaroo copies, placed on the prototype, rendered at the
+            # origin on the farm while the session kept them in place.
             for instance_name in instances:
                 instance_path = f'/{category}/{instance_name}'
                 order = placement_orders.get(instance_path)
@@ -739,9 +748,6 @@ def _generate_instance_prim_definitions(
                 if order:
                     order_str = ', '.join(f'"{op_name}"' for op_name in order)
                     lines.append(f'        uniform token[] xformOpOrder = [{order_str}]')
-                else:
-                    lines.append(f'        matrix4d xformOp:transform:{asset_name}_dup = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )')
-                    lines.append(f'        uniform token[] xformOpOrder = ["xformOp:transform:{asset_name}_dup"]')
                 lines.append('    }')
                 lines.append('')
 
@@ -969,7 +975,8 @@ def _composed_placement_orders(
     (composed_placement_op_order). Runs at submission time inside a
     Houdini/hython session, so pxr and the entity resolver are available;
     any failure returns {} and the static defs fall back to the identity
-    dup op. The instance prims exist on the staged stage only as typeless
+    op set on the prototype, which the copies compose by reference. The
+    instance prims exist on the staged stage only as typeless
     overs, which is enough — their attributes compose and are queryable
     via GetPrimAtPath.
     """
@@ -1002,6 +1009,8 @@ def _composed_placement_orders(
         for instance_name in instance_names:
             instance_path = f'{parent_path}/{instance_name}'
             prim = stage.GetPrimAtPath(instance_path)
+            # No department authored placement on this copy, so nothing
+            # composed there: the static def composes the prototype's.
             if not prim:
                 continue
             order = composed_placement_op_order(prim)
@@ -1275,8 +1284,8 @@ def collapse_latest_references(
 
     # Generate instance prim definitions for multi-instance assets, with
     # each instance's xformOpOrder derived from the composed staged stage
-    # (the placement values ride in department sidecars without an order;
-    # an identity dup op would leave every copy stacked at the prototype).
+    # (the placement values ride in department sidecars without an order).
+    # A copy nothing placed composes the prototype's placement instead.
     placement_orders = _composed_placement_orders(
         staged_file_path, instances_by_asset
     )

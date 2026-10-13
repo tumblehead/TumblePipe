@@ -153,8 +153,9 @@ def _subasset_script_lines(
                 # but not the xformOpOrder that applies them — see
                 # util.apply_placement_op_order. When no placement
                 # composed, fall back to an identity {base}_dup op so
-                # layout tooling still has a transform surface,
-                # mirroring the render stage's defs.
+                # layout tooling still has a transform surface. (The
+                # render stage's defs author none: the base above always
+                # carries an op set, which reaches them by reference.)
                 lines += [
                     f'    inst = stage.DefinePrim("{instance_prim_path}")',
                     '    inst.SetActive(True)',

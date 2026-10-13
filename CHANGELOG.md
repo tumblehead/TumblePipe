@@ -12,6 +12,26 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.74.0 — 2026-10-13
+
+### Features
+- feat(farm): the cloud render path runs in the priority bands too (`3e31c099`)
+- feat(farm): run jobs in priority bands, notify > publish > preview > render (`0e32d794`)
+- feat(submit): a Preview checkbox queues the full render behind it (`efbd1f82`)
+
+### Fixes
+- fix(api): local_path off Windows maps only drive paths (`4fec6f6a`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.73.1 (`453d9d26`)
+
+### Tests
+- test: load the docs and catalog tests from a sibling tumbletrove checkout (`b790ab56`)
+
+### Chores
+- chore(tests): the push gate and preflight run with parallel workers (`7f4f1e0b`)
+- chore(tests): require minigun 6.4 and run with parallel workers (`e359d8c0`)
+
 ## v1.73.1 — 2026-10-13
 
 ### Fixes
