@@ -24,7 +24,7 @@ config = {
         'department': 'string',          # cut: pool departments up to this one
         'variant_names': ['string'],
         'overrides': {'karma:attr': value},
-        'task_key': 'full_render' | 'partial_render',
+        'task_keys': ['full_render' | 'partial_render'],  # one or both
         'pool_name': 'string',
         'priority': 'int',
         'tile_count': 'int',
@@ -71,7 +71,9 @@ def _valid_render(render):
     if not check_str(render, 'department'): return False
     if not valid_channel_names(render): return False
     if not isinstance(render.get('overrides', {}), dict): return False
-    if render.get('task_key') not in RENDER_TASK_KEYS: return False
+    task_keys = render.get('task_keys')
+    if not isinstance(task_keys, list) or not task_keys: return False
+    if any(key not in RENDER_TASK_KEYS for key in task_keys): return False
     if not check_str(render, 'pool_name'): return False
     for key in ('priority', 'tile_count', 'first_frame', 'last_frame', 'batch_size'):
         if not check_int(render, key): return False

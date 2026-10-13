@@ -29,6 +29,25 @@ from tumblepipe.config.channels import (
     read_channel_name_list,
 )
 
+# The priority bands (see _render_build).
+PREVIEW_PRIORITY = _render_build.PREVIEW_PRIORITY
+RENDER_PRIORITY_MAX = _render_build.RENDER_PRIORITY_MAX
+
+
+def banded_priorities(tasks: dict) -> dict:
+    """``tasks`` with the partial/full render priorities moved into their bands."""
+    tasks = dict(tasks)
+    if 'partial_render' in tasks:
+        tasks['partial_render'] = dict(
+            tasks['partial_render'], priority=PREVIEW_PRIORITY,
+        )
+    if 'full_render' in tasks:
+        tasks['full_render'] = dict(
+            tasks['full_render'],
+            priority=min(tasks['full_render']['priority'], RENDER_PRIORITY_MAX),
+        )
+    return tasks
+
 """
 config = {
     'entity': {
@@ -330,8 +349,7 @@ def _build_partial_notify_job(
     version_name: str
     ):
     return _render_build.build_partial_notify_job(
-        config, staging_path, render_department_name, version_name,
-        priority = 55
+        config, staging_path, render_department_name, version_name
     )
 
 def _build_slapcomp_notify_job(
@@ -353,8 +371,7 @@ def _build_slapcomp_notify_job(
             f'{render_department_name}/slapcomp - '
             f'{version_name}'
         ),
-        log_label = 'slapcomp notify',
-        priority = 60
+        log_label = 'slapcomp notify'
     )
 
 def build(
@@ -380,6 +397,9 @@ def build(
     """
     if depends_on is None:
         depends_on = []
+
+    # Every caller (direct, collapse, stage) lands here: band once for all.
+    config = dict(config, tasks=banded_priorities(config['tasks']))
 
     # Config
     channel_names = read_channel_name_list(

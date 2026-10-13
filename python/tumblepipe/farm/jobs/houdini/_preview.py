@@ -234,7 +234,7 @@ def render_config(
     batch_size: int,
     denoise: bool,
     copy_to_edit: bool,
-    task_key: str,
+    task_keys: list[str],
 ) -> dict:
     """The ``render/job.py`` config for a direct render of collapsed inputs.
 
@@ -264,6 +264,7 @@ def render_config(
                 denoise=denoise,
                 channel_name='renders',
             )
+            for task_key in task_keys
         },
     )
 

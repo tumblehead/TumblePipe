@@ -2,6 +2,7 @@ from pathlib import Path
 import importlib.util
 import platform
 import os
+import re
 import threading
 
 def _load_module(path: Path):
@@ -10,12 +11,17 @@ def _load_module(path: Path):
     spec.loader.exec_module(module)
     return module
 
+_DRIVE_PATH = re.compile(r'^[A-Za-z]:(/|$)')
+
 def to_wsl_path(path: Path):
     # Legacy /mnt mapping. The farm no longer bridges any tool to WSL (image/video
     # processing runs on Houdini's native hoiiotool/hffmpeg), so this is only used
     # internally by local_path() for the non-Windows branch.
     raw_path = str(path).replace('\\', '/')
-    if raw_path.startswith('/'): return path
+    # Only a drive path ('P:/...') maps. Anything else -- POSIX, or relative
+    # like a frame name -- used to lose its last character to the drive-colon
+    # strip ('beauty.1001.exr' -> '/mnt/beauty.1001.ex').
+    if not _DRIVE_PATH.match(raw_path): return path
     parts = raw_path.split('/')
     drive = parts[0][:-1].lower()
     return Path('/mnt', drive, *parts[1:])

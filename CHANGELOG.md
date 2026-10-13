@@ -12,6 +12,22 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.73.1 — 2026-10-13
+
+### Fixes
+- fix(vram): build the viewport hook on macOS (`83df03e7`)
+
+## v1.73.0 — 2026-10-13
+
+### Features
+- feat(vram): the VRAM Inspector measures with the viewport hook, never gpumem (`4ee077a5`)
+- feat(vram): ship the viewport hook in dso/<major>.<minor> (`6d5fcbbb`)
+- feat(vram): viewport hook DSO measures GPU memory per USD prim (`7eb88d2a`)
+
+### Documentation
+- docs: VRAM Inspector measures with its viewport hook (`21569460`)
+- docs: regenerate CHANGELOG.md for v1.72.0 (`9705d6ab`)
+
 ## v1.72.0 — 2026-10-13
 
 ### Features

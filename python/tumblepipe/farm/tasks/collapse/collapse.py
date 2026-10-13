@@ -67,7 +67,7 @@ def _submit_render(config, result, output_dir) -> int:
         batch_size=render['batch_size'],
         denoise=render['denoise'],
         copy_to_edit=render['copy_to_edit'],
-        task_key=render['task_key'],
+        task_keys=render['task_keys'],
     ), paths)
 
 

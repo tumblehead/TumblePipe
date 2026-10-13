@@ -32,8 +32,10 @@ the repository root:
 ```bash
 cd tests
 uv sync
-uv run minigun --test-dir . --time-budget 30
+uv run minigun --test-dir . --time-budget 60 --jobs auto
 ```
+
+`--jobs auto` runs one worker process per CPU; see `tests/README.md`.
 
 On Windows that dies in the reporter, not the tests:
 
@@ -45,7 +47,7 @@ minigun's execution-plan table prints `∞`, and the console lands on
 cp1252. It says nothing about whether the suite passes. Force UTF-8:
 
 ```bash
-PYTHONUTF8=1 uv run minigun --test-dir . --time-budget 30
+PYTHONUTF8=1 uv run minigun --test-dir . --time-budget 60 --jobs auto
 ```
 
 (`PYTHONUTF8=1`, matching `tests/README.md` and the hooks — the two pages
@@ -67,8 +69,9 @@ properties: run `cargo test` in `src/resolver` and in `src/wizard`.
 The asset-browser catalog tests (`test_catalog*.py`) run the catalog
 against the **shipped TumbleTrove SDK**, not a stub: `tests/_catalog.py`
 puts the `python/` dir of the newest `tumbletrove` package hpm has
-fetched (`~/.hpm/fetch/tumbletrove-tumbletrove-<version>/python`, or
-`TUMBLETROVE_PYTHON`) on `sys.path`. The SDK's `asset_browser.api`,
+fetched (`~/.hpm/fetch/tumbletrove-tumbletrove-<version>/python`), else a
+sibling `tumbletrove` checkout's `python/`, or `TUMBLETROVE_PYTHON`, on
+`sys.path`. The SDK's `asset_browser.api`,
 `core.projects` and `common` layers are pure Python, so the catalog
 imports against the same base `Catalog`, `Collection`, `Asset` and
 project registry the browser uses — the only way a property can see the
@@ -180,7 +183,8 @@ A **pre-push hook** (`.githooks/pre-push`) runs the minigun property suite
 plus the binary-HDA check, and blocks the push on failure. Push is the
 boundary because it is the last moment before work leaves the machine, and
 the suite is time-budgeted rather than growing linearly with the test count
-(about two minutes for ~750 properties at `--time-budget 10`) — too slow per
+(about 35 seconds at `--time-budget 10 --jobs auto` on an 8-core machine,
+about a minute on one worker) — too slow per
 commit, cheap enough per push. It needs cargo as well as `uv` (see *Running
 the test harness*). `git push --no-verify` bypasses.
 

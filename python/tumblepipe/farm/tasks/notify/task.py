@@ -62,6 +62,13 @@ def _is_valid_config(config):
 
 SCRIPT_PATH = Path(__file__).parent / 'notify.py'
 REQUIREMENTS_PATH = Path(__file__).parent / 'requirements.txt'
+
+# Every notify job runs at this priority, whatever its config asks for. A
+# notify only starts once the work it reports on is done and takes seconds,
+# so it goes ahead of everything: finished work should not wait behind the
+# farm's queue before anyone hears of it.
+PRIORITY = 100
+
 def build(config, paths, staging_path):
 
     # Check if the config is valid
@@ -72,7 +79,6 @@ def build(config, paths, staging_path):
     
     # Config parameters
     title = config['title']
-    priority = config['priority']
     pool_name = config['pool_name']
 
     # Task context
@@ -94,7 +100,7 @@ def build(config, paths, staging_path):
     task.name = title
     task.pool = pool_name
     task.group = 'general'
-    task.priority = priority
+    task.priority = PRIORITY
     task.start_frame = 1
     task.end_frame = 1
     task.step_size = 1

@@ -518,7 +518,8 @@ failed the task instead.
 
 ### Farm job failed: `First frame not found: …/denoise/renders/…`
 
-The **notify** job of a **First / Middle / Last** render. It looked for the
+The **notify** job of a **Preview** (first / middle / last) render — the
+Range option was called **First / Middle / Last** before 1.74.0. It looked for the
 denoised frames under `denoise/<Discord channel>/` (`renders`) instead of
 `denoise/<render channel>/` (`default`), so it failed on every attempt even
 though the render and denoise succeeded. Fixed in 1.64.0; the frames

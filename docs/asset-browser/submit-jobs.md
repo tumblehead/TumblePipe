@@ -214,6 +214,22 @@ and collapse that follow them on a row that also previews (see
 [Previews after a publish](#submit)); this **Priority** field does not
 currently change them.
 
+### Farm priorities
+
+Deadline hands an idle worker the highest-priority job in its pools, so every
+job lands in a fixed band:
+
+| Band | Priority | Jobs |
+|---|---|---|
+| Notify | 100 | every Discord notify (publish, preview, render, playblast) — it only starts once its work is done and takes seconds, so finished work is announced at once |
+| Publish | 90 | publish jobs, and the builds and collapse that follow them |
+| Preview | 80 | a render's **Preview** chain: first/middle/last render, its denoise (and, with **Standalone**, the stage job in front of it) |
+| Render | artist's priority, at most 70 | the **Full range** chain: render, denoise, MP4s, slapcomp |
+
+Playblasts keep the artist's **Priority** uncapped. Pool comes before
+priority in Deadline's scheduling order, so the bands only hold among jobs a
+worker could take from the same pools.
+
 ### Playblast (shots only)
 
 | Field | Per-entity source | Default when unset |
@@ -236,11 +252,11 @@ is described in [Compositing → Playblast](../compositing.md#playblast).
 | **Up to** | `submission.render.department` | last renderable department (the whole shot) | Renders every department up to and including this one; departments after it are left out. Also names the render output. |
 | **Camera** | — | read-only | The camera the render looks through: the `camera` of the RenderSettings prim in the latest published layer of the strongest department in the **Up to** cut that sets one, else the project's `root_default_prims.usda`. Read from the first checked channel; the tooltip names the department per entity, and `⟨per entity⟩` means the ticked entities disagree. A preview — the farm still asks the composed stage. |
 | **Channels** | — | the entities' own channel lists | A checkable menu (`(none — check at least one)` when empty) with **All**. Lists the *union* of the rendering entities' channels, `default` first; opens with the *intersection* checked. Channels arriving with a later-ticked entity start unchecked. **All** checks every channel in the batch. The checks apply to the whole batch, but each entity renders only the checked channels **it defines** — one render per such channel — and the Warnings column and the confirm dialog list what each entity skips. See [Channels the farm refuses](#channels-the-farm-refuses). |
-| **Range** | — | `Full range` | `Full range` renders everything and chains slapcomp + MP4; `First / Middle / Last` renders three check frames and notifies. |
+| **Range** | — | Full range ticked | Two checkboxes. **Full range** renders everything and chains slapcomp + MP4; **Preview (first / middle / last)** renders three check frames and posts them to Discord. Tick both to get the preview first, with the full range queued behind it. One of the two must be ticked. |
 | **Frames** (first → last) | `frame_start` / `frame_end` | *required* — omitted, and the entity fails with "no frame range configured" | |
 | **Pre / Post roll** | `roll_start` / `roll_end` | 0 / 0 | **Extends** the rendered range: `first - pre … last + post`. |
 | **Pool** | `farm.default_pool` | `general` | |
-| **Pri / Tiles** | `farm.priority` / `farm.tile_count` | 50 / 4 | |
+| **Pri / Tiles** | `farm.priority` / `farm.tile_count` | 50 / 4 | Priority orders full renders among themselves and is capped at 70; see [Farm priorities](#farm-priorities). A preview always runs at 80. |
 | **Batch** | `farm.batch_size` | 10 | Frames per farm task. |
 | **Samples** | — | `⟨from scene⟩` — not sent | Set a value to override `karma:global:pathtracedsamples`; ↺ goes back to the scene's. |
 | **Denoise** | `render.enabledenoising` | on | Adds denoise jobs after each render. |
@@ -424,7 +440,8 @@ Output locations are in [Compositing → Where renders land](../compositing.md#w
 | Family | Triggered by | Chain (job name → group) | Output |
 |---|---|---|---|
 | **render**, Full range | Render cells | per channel: `full_render_<ch>` (`karma`) → `full_denoise_<ch>` (`denoise`, if Denoise) → `layer_mp4_<ch>` (`encode`); then across channels: `edit` (`edit`, if Copy to edit), `slapcomp` (`houdini`) → `slapcomp_mp4` (`encode`) → `slapcomp_notify` (`general`) | `render:/render/<shot>/<dept>/<channel>/vNNNN/<aov>/`, denoised frames under the `denoise` department, slapcomp MP4 + daily. Each channel keeps its own version counter (a new `characters` channel starts at v0001 while `default` may be at v0008); the slapcomp reads each channel at its own version and stacks them in the shot's channel order |
-| **render**, First / Middle / Last | Render cells | per channel: `partial_render_<ch>` (`karma`) → `partial_denoise_<ch>` (if Denoise) → `partial_notify_<ch>` — three frames, no MP4 | same version folders, three frames only; the notify carries first/middle/last |
+| **render**, Preview | Render cells | per channel: `partial_render_<ch>` (`karma`) → `partial_denoise_<ch>` (if Denoise) → `partial_notify_<ch>` — three frames, no MP4 | same version folders, three frames only; the notify carries first/middle/last |
+| **render**, Preview + Full range | Render cells | both chains above; each `full_render_<ch>` waits on its `partial_render_<ch>` and renders into the same version | the preview's three frames are posted, then the full range overwrites them in the same version folder |
 | **stage_render** | Render cells with **Standalone** | `stage` (`houdini`) → the render chain above | `stage_<channel>.usd` in the job's data dir |
 | **publish** | Publish cells; Farm mode in the process dialog | `publish_<dept>` (`houdini`) per department, chained → `notify` (`general`). A renderable asset publish then queues a **build** | `export/<entity>/<channel>/<dept>/vNNNN/` |
 | **build** | after a farm publish; Build USD in Farm mode; before the previews of a row that also publishes | `build` / `build_<channel>` (`general`) | `_staged/<channel>/vNNNN/` |

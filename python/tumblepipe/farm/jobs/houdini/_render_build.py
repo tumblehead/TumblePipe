@@ -52,6 +52,17 @@ import tumblepipe.farm.tasks.mp4.task as mp4_job
 import tumblepipe.farm.tasks.notify.task as notify_job
 from tumblepipe.config.channels import read_channel_name, read_channel_name_list
 
+# Farm priority bands, for render/job.py and cloud_render/job.py alike:
+# notify (100) > publish (90) > preview > render. The preview chain
+# (first/middle/last frames and their denoise) runs at PREVIEW_PRIORITY
+# whatever the submission asked for, so it jumps other shots' full renders.
+# The full-range chain keeps the artist's priority for ordering renders among
+# themselves, capped at RENDER_PRIORITY_MAX so it never outranks a preview or
+# a publish.
+PREVIEW_PRIORITY = 80
+RENDER_PRIORITY_MAX = 70
+
+
 def build_partial_render_job(
     config: dict,
     paths: dict[Path, Path],
@@ -681,9 +692,7 @@ def build_partial_notify_job(
     config: dict,
     staging_path: Path,
     render_department_name: str,
-    version_name: str,
-    *,
-    priority: int
+    version_name: str
     ):
     logging.debug('Creating partial notify task')
 
@@ -737,7 +746,7 @@ def build_partial_notify_job(
     # Create the task
     task = notify_job.build(dict(
         title = title,
-        priority = priority,
+        priority = notify_job.PRIORITY,
         pool_name = pool_name,
         user_name = user_name,
         channel_name = discord_channel_name,
@@ -762,8 +771,7 @@ def build_playblast_notify_job(
     *,
     title: str,
     message: str,
-    log_label: str,
-    priority: int
+    log_label: str
     ):
     logging.debug(f'Creating {log_label} task')
 
@@ -786,7 +794,7 @@ def build_playblast_notify_job(
     # Create the task
     task = notify_job.build(dict(
         title = title,
-        priority = priority,
+        priority = notify_job.PRIORITY,
         pool_name = pool_name,
         user_name = user_name,
         channel_name = channel_name,

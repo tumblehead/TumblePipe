@@ -110,6 +110,10 @@ def _is_valid_config(config):
     if not _valid_jobs(config['tasks']): return False
     return True
 
+def _full_priority(config: dict) -> int:
+    """The full-range chain's priority: the artist's, capped below previews."""
+    return min(config['settings']['priority'], _render_build.RENDER_PRIORITY_MAX)
+
 def _build_partial_render_job(
     config: dict,
     paths: dict[Path, Path],
@@ -118,7 +122,7 @@ def _build_partial_render_job(
     return _render_build.build_partial_render_job(
         config, paths, staging_path,
         render_task = render_job,
-        priority = 90,
+        priority = _render_build.PREVIEW_PRIORITY,
         render_task_extra = dict(
             archive_path = path_str(to_windows_path(
                 Path(config['settings']['archive_path'])
@@ -135,7 +139,7 @@ def _build_full_render_job(
     return _render_build.build_full_render_job(
         config, paths, staging_path, version_name,
         render_task = render_job,
-        priority = config['settings']['priority'],
+        priority = _full_priority(config),
         render_task_extra = dict(
             archive_path = path_str(to_windows_path(
                 Path(config['settings']['archive_path'])
@@ -151,7 +155,7 @@ def _build_partial_denoise_job(
     ):
     return _render_build.build_partial_denoise_job(
         config, staging_path, render_department_name, render_version_name,
-        priority = 90
+        priority = _render_build.PREVIEW_PRIORITY
     )
 
 def _build_full_denoise_job(
@@ -162,7 +166,7 @@ def _build_full_denoise_job(
     ):
     return _render_build.build_full_denoise_job(
         config, staging_path, render_department_name, render_version_name,
-        priority = config['settings']['priority']
+        priority = _full_priority(config)
     )
 
 def _build_slapcomp_job(
@@ -173,7 +177,7 @@ def _build_slapcomp_job(
     ):
     return _render_build.build_slapcomp_job(
         config, staging_path, render_department_name, version_name,
-        priority = config['settings']['priority']
+        priority = _full_priority(config)
     )
 
 def _build_mp4_job(
@@ -190,7 +194,7 @@ def _build_mp4_job(
             f'{slapcomp_version_name}'
         ),
         log_label = 'mp4',
-        priority = config['settings']['priority']
+        priority = _full_priority(config)
     )
 
 def _build_partial_notify_job(
@@ -200,8 +204,7 @@ def _build_partial_notify_job(
     version_name: str
     ):
     return _render_build.build_partial_notify_job(
-        config, staging_path, render_department_name, version_name,
-        priority = 90
+        config, staging_path, render_department_name, version_name
     )
 
 def _build_full_notify_job(
@@ -223,8 +226,7 @@ def _build_full_notify_job(
             f'{render_department_name} - '
             f'{version_name}'
         ),
-        log_label = 'full notify',
-        priority = 90
+        log_label = 'full notify'
     )
 
 

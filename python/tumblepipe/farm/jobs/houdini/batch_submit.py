@@ -62,6 +62,16 @@ FLOAT_ATTRIBUTES = {
     'karma:object:ssslimit',
 }
 
+# The render chains each Range mode submits. With both, render/job.py makes
+# every channel's full_render wait on its partial_render and reuse its
+# version: the first/middle/last check frames render (and go to Discord)
+# while the full range sits queued behind them.
+RENDER_TASK_KEYS = {
+    'full': ('full_render',),
+    'first_middle_last': ('partial_render',),
+    'preview_then_full': ('partial_render', 'full_render'),
+}
+
 
 class BatchSubmitError(Exception):
     """Error during batch submission."""
@@ -160,7 +170,9 @@ def submit_entity_batch(config: dict) -> list[str]:
                                   batch_size, denoise, render_mode
                                   ('full' renders the whole range;
                                   'first_middle_last' renders 3 check
-                                  frames via the partial_render chain).
+                                  frames via the partial_render chain;
+                                  'preview_then_full' submits both, the
+                                  full range waiting on the 3 frames).
                                   first_frame/last_frame are REQUIRED when
                                   render is on and have no default — the
                                   caller resolves them per entity.
@@ -235,11 +247,15 @@ def submit_entity_batch(config: dict) -> list[str]:
     pb_res = settings.get('pb_res', _preview.DEFAULT_PLAYBLAST_RES)
 
     # 'first_middle_last' submits the partial_render chain (3 check frames
-    # + notify) instead of the full_render chain (all frames + slapcomp/mp4).
-    render_task_key = (
-        'partial_render' if render_mode == 'first_middle_last'
-        else 'full_render'
-    )
+    # + notify) instead of the full_render chain (all frames + slapcomp/mp4);
+    # 'preview_then_full' submits both, and render/job.py holds each channel's
+    # full render until its partial render is done.
+    render_task_keys = RENDER_TASK_KEYS.get(render_mode)
+    if do_render and render_task_keys is None:
+        raise BatchSubmitError(
+            f"Unknown render_mode {render_mode!r}: expected one of "
+            f"{', '.join(RENDER_TASK_KEYS)}."
+        )
 
     if not do_publish and not do_render and not do_playblast:
         return []
@@ -463,7 +479,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         department=render_department,
                         variant_names=list(channels),
                         overrides=render_overrides,
-                        task_key=render_task_key,
+                        task_keys=list(render_task_keys),
                         pool_name=render_pool,
                         priority=render_priority,
                         tile_count=tile_count,
@@ -500,7 +516,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         batch_size=batch_size,
                         denoise=denoise,
                         copy_to_edit=copy_to_edit,
-                        task_key=render_task_key,
+                        task_keys=list(render_task_keys),
                     )
                     try:
                         render_job.build(
@@ -543,8 +559,22 @@ def submit_entity_batch(config: dict) -> list[str]:
                     ),
                     tasks={
                         'stage': dict(priority=render_priority, channel_name='exports'),
-                        render_task_key: dict(priority=render_priority, denoise=denoise, channel_name='renders')
+                        **{
+                            task_key: dict(priority=render_priority, denoise=denoise, channel_name='renders')
+                            for task_key in render_task_keys
+                        }
                     }
+                )
+
+                # The stage job gates the render chain it submits, so it runs in
+                # that chain's band: with a preview it must not wait behind
+                # other shots' full renders.
+                stage_config['tasks']['stage']['priority'] = max(
+                    task['priority']
+                    for key, task in render_job.banded_priorities(
+                        stage_config['tasks']
+                    ).items()
+                    if key != 'stage'
                 )
 
                 # Build stage job using existing task builder

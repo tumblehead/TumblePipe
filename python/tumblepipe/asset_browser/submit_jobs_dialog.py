@@ -80,6 +80,15 @@ PER_ENTITY_TEXT = "⟨per entity⟩"
 # sent, so the render uses whatever the scene's render settings author.
 FROM_SCENE_TEXT = "⟨from scene⟩"
 
+# The render_mode the Range checkboxes send, keyed by (preview, full range)
+# (batch_submit.RENDER_TASK_KEYS maps it to the render chains). Neither
+# ticked has no mode: submit refuses it.
+_RENDER_MODES = {
+    (False, True): 'full',
+    (True, False): 'first_middle_last',
+    (True, True): 'preview_then_full',
+}
+
 # Cell colours. The theme's own tokens where it has one; amber and green for
 # the two states that must be told apart at a glance (they also differ in
 # lightness, not only hue).
@@ -1792,12 +1801,19 @@ class _ContextPane(QWidget):
         self._rnd_channels.model().dataChanged.connect(lambda *_a: self._changed())
         form.addRow("Channels:", self._row(self._rnd_channels, all_channels))
 
-        # Range mode — a batch field: Full range submits the full_render chain
-        # (all frames + slapcomp/mp4); First / Middle / Last submits
-        # partial_render (3 check frames + notify).
-        self._rnd_mode = QComboBox()
-        self._rnd_mode.addItems(["Full range", "First / Middle / Last"])
-        form.addRow("Range:", self._rnd_mode)
+        # Range — a batch field: Full range submits the full_render chain
+        # (all frames + slapcomp/mp4); Preview submits partial_render (first,
+        # middle and last frame, posted to Discord). Both queue the full range
+        # behind the preview frames.
+        self._rnd_preview = QCheckBox("Preview (first / middle / last)")
+        self._rnd_preview.setToolTip(
+            "Render the first, middle and last frame first and post them to "
+            "Discord. With Full range also ticked, the full render waits for "
+            "the preview frames."
+        )
+        self._rnd_full = QCheckBox("Full range")
+        self._rnd_full.setChecked(True)
+        form.addRow("Range:", self._row(self._rnd_preview, self._rnd_full))
 
         self._rnd_first = self._spin('first_frame', -1_000_000, 1_000_000)
         self._rnd_last = self._spin('last_frame', -1_000_000, 1_000_000)
@@ -2040,14 +2056,17 @@ class _ContextPane(QWidget):
         values = {key: entry.value() for key, entry in self._fields.items()}
         values.update({
             'variants': self._rnd_channels.checked_items(),
-            'render_mode': (
-                'first_middle_last'
-                if self._rnd_mode.currentIndex() == 1 else 'full'
-            ),
+            'render_mode': self._render_mode() or 'full',
             'standalone': self._rnd_standalone.isChecked(),
             'copy_to_edit': self._rnd_copy_edit.isChecked(),
         })
         return values
+
+    def _render_mode(self) -> str | None:
+        """The render_mode the Range checkboxes ask for; None with neither ticked."""
+        return _RENDER_MODES.get(
+            (self._rnd_preview.isChecked(), self._rnd_full.isChecked())
+        )
 
     def _pinned_keys(self) -> list[str]:
         return [key for key, entry in self._fields.items() if entry.pinned]
@@ -2110,6 +2129,13 @@ class _ContextPane(QWidget):
         if not rows:
             QMessageBox.warning(
                 self, "Farm Submit", "Tick at least one cell before submitting.",
+            )
+            return
+        if any(s.get('render') for _u, s, _w, _e in rows) and self._render_mode() is None:
+            QMessageBox.warning(
+                self, "Farm Submit",
+                "Tick Preview, Full range or both in the Render settings "
+                "before submitting.",
             )
             return
         if any(s.get('render') for _u, s, _w, _e in rows) and not self._rnd_channels.checked_items():
