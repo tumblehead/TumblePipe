@@ -41,9 +41,11 @@ def require_current_layout(config_path: Path) -> None:
     if version < CONFIG_LAYOUT_VERSION:
         raise ProjectLayoutError(
             f'The project config at {config_path} is on layout v{version}; '
-            f'this TumblePipe reads v{CONFIG_LAYOUT_VERSION}. Run the '
-            'migration (launch the project from TumbleTrove Desktop and accept '
-            'the migration, or run tt_prepare --migrate) and open it again.'
+            f'this TumblePipe reads v{CONFIG_LAYOUT_VERSION}. Launch the '
+            'project from TumbleTrove Desktop, which migrates it (or run '
+            'Migrate Project Config from its menu there), and open it again. '
+            'If the launch reported that it could not migrate, fix what it '
+            'named first.'
         )
     if version > CONFIG_LAYOUT_VERSION:
         raise ProjectLayoutError(

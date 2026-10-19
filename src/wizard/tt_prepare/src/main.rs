@@ -33,7 +33,6 @@
 //!   is taken under a lock.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use th_project_core::looks_like_project;
@@ -43,7 +42,6 @@ use th_project_core::migration::{
 
 /// Status colours matching tt_setup, chosen to contrast on both themes.
 const STATUS_ERROR: egui::Color32 = egui::Color32::from_rgb(0xe0, 0x6c, 0x75);
-const STATUS_OK: egui::Color32 = egui::Color32::from_rgb(0x98, 0xc3, 0x79);
 
 /// A stale lock must not wedge the studio, so one is ignored past this age.
 const LOCK_STALE_AFTER: Duration = Duration::from_secs(15 * 60);
@@ -157,12 +155,13 @@ fn run(parsed: &Args) -> Result<(), String> {
     if steps.is_empty() {
         return Ok(());
     }
+    let step_count = steps.len();
 
     let at = current_version(&project);
     eprintln!(
         "tt_prepare: {} is at _config v{at}, {} step(s) behind v{}",
         project.display(),
-        steps.len(),
+        step_count,
         latest_version()
     );
 
@@ -174,16 +173,28 @@ fn run(parsed: &Args) -> Result<(), String> {
         return Ok(());
     }
 
-    let blocker = migration::first_blocker(&project, &template);
     let plan = Plan {
         project,
         template,
         from: at,
         to: latest_version(),
-        steps,
-        blocker,
     };
-    show(plan)
+    // A launch migrates rather than asking. The package reads exactly one
+    // layout and refuses any other, so declining left a project nothing
+    // could open, while the migration itself refuses before writing when a
+    // step cannot run and backs up whatever it replaces. The window is for
+    // the cases that need a person: a step that cannot run, or a migration
+    // that stopped.
+    if let Some((step, why)) = migration::first_blocker(&plan.project, &plan.template) {
+        return show(plan, Problem::Blocked(step, why));
+    }
+    match migrate_now(&plan) {
+        Ok(summary) => {
+            eprintln!("tt_prepare: {summary} (anything replaced was backed up alongside as .bak)");
+            Ok(())
+        }
+        Err(why) => show(plan, Problem::Failed(why)),
+    }
 }
 
 /// The one sentence for "TumblePipe is installed here, but nothing set the
@@ -417,13 +428,12 @@ impl Drop for Lock {
 
 // ---------- the window -----------------------------------------------------
 
-/// What not migrating costs, said the same way wherever the window or the
-/// log lets the artist go on without it. Since 1.75.0 a client refuses a
-/// project that is not on the layout the package reads
-/// (`tumblepipe.config.layout`), so deferring is no longer the harmless
-/// choice this window used to call it ("this project works as it is"): the
-/// Asset Browser came up with "failed to initialize project" and nothing
-/// named the migration as the cause.
+/// What an unmigrated project costs, said the same way wherever the window
+/// or the log lets the launch go on without the migration. Since 1.75.0 a
+/// client refuses a project that is not on the layout the package reads
+/// (`tumblepipe.config.layout`); the window used to offer "Not now" and call
+/// a blocked project one that "works as it is", and artists who believed it
+/// got an Asset Browser that said only "failed to initialize project".
 const UNTIL_MIGRATED: &str = "Until it is migrated, this version of TumblePipe will not open \
                               the project: the Asset Browser and the pipeline tools refuse it. \
                               Houdini itself still starts.";
@@ -433,63 +443,45 @@ struct Plan {
     template: PathBuf,
     from: u32,
     to: u32,
-    steps: Vec<Step>,
-    blocker: Option<(Step, String)>,
 }
 
-#[derive(Default, Clone)]
-enum Outcome {
-    #[default]
-    Deferred,
-    Migrated(String),
+/// Why the window opened: the only two launches that need a person.
+enum Problem {
+    /// A step cannot run; nothing was written.
+    Blocked(Step, String),
+    /// The migration ran and stopped; what it had not reached is untouched.
     Failed(String),
 }
 
 struct App {
     plan: Plan,
-    outcome: Arc<Mutex<Outcome>>,
-    /// Set once the migration has run, so the window shows results instead of
-    /// the plan.
-    finished: Option<Result<String, String>>,
+    problem: Problem,
 }
 
-fn show(plan: Plan) -> Result<(), String> {
-    let outcome = Arc::new(Mutex::new(Outcome::default()));
+/// Show why the project was not migrated, and let the launch carry on. A
+/// failed migration is returned as the hook's error, so the desktop's log
+/// records it beside the launch.
+fn show(plan: Plan, problem: Problem) -> Result<(), String> {
+    let result = match &problem {
+        Problem::Blocked(step, why) => {
+            eprintln!("tt_prepare: cannot migrate: {}: {why}. {UNTIL_MIGRATED}", step.description());
+            Ok(())
+        }
+        Problem::Failed(why) => Err(why.clone()),
+    };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([620.0, 420.0])
+            .with_inner_size([620.0, 360.0])
             .with_resizable(true),
         ..Default::default()
     };
-
-    let app_outcome = Arc::clone(&outcome);
     eframe::run_native(
         "TumblePipe — project configuration",
         options,
-        Box::new(move |_cc| {
-            Ok(Box::new(App {
-                plan,
-                outcome: app_outcome,
-                finished: None,
-            }))
-        }),
+        Box::new(move |_cc| Ok(Box::new(App { plan, problem }))),
     )
     .map_err(|e| format!("could not open the migration window: {e}"))?;
-
-    // Clone out first: a MutexGuard temporary would live to the end of the
-    // block and outlive `outcome` itself.
-    let final_outcome = outcome.lock().unwrap().clone();
-    match &final_outcome {
-        Outcome::Deferred => {
-            eprintln!("tt_prepare: migration deferred by the user. {UNTIL_MIGRATED}");
-            Ok(())
-        }
-        Outcome::Migrated(summary) => {
-            eprintln!("tt_prepare: {summary}");
-            Ok(())
-        }
-        Outcome::Failed(why) => Err(why.clone()),
-    }
+    result
 }
 
 /// Run the migration under the lock and summarise what happened.
@@ -520,95 +512,45 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::bottom("actions").show(ctx, |ui| {
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                match (&self.finished, &self.plan.blocker) {
-                    // Already run: one way out.
-                    (Some(_), _) => {
-                        if ui.button("Close").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    }
-                    // Cannot run: explain, and let the launch continue.
-                    (None, Some(_)) => {
-                        if ui.button("Continue without migrating").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    }
-                    (None, None) => {
-                        if ui.button("Migrate now").clicked() {
-                            let result = migrate_now(&self.plan);
-                            *self.outcome.lock().unwrap() = match &result {
-                                Ok(summary) => Outcome::Migrated(summary.clone()),
-                                Err(why) => Outcome::Failed(why.clone()),
-                            };
-                            self.finished = Some(result);
-                        }
-                        // Deferring leaves the project untouched and the
-                        // launch carries on, but TumblePipe refuses the
-                        // project until it is migrated; the body says so.
-                        if ui.button("Not now").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    }
-                }
-            });
+            if ui.button("Continue to Houdini").clicked() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
             ui.add_space(6.0);
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.add_space(4.0);
-            ui.heading("This project's configuration is out of date");
+            ui.heading("This project could not be migrated");
             ui.add_space(4.0);
             ui.label(format!("{}", self.plan.project.display()));
             ui.label(format!(
-                "_config is at v{}; this version of TumblePipe expects v{}.",
+                "_config is at v{}; this version of TumblePipe reads v{}.",
                 self.plan.from, self.plan.to
             ));
             ui.separator();
-
-            match &self.finished {
-                Some(Ok(summary)) => {
-                    ui.colored_label(STATUS_OK, summary);
-                    ui.add_space(4.0);
-                    ui.label(
-                        "Files that were replaced were backed up alongside as .bak, and the \
-                         property keys behind any renamed label are unchanged.",
+            match &self.problem {
+                Problem::Blocked(step, why) => {
+                    ui.colored_label(
+                        STATUS_ERROR,
+                        format!("Cannot migrate: {}", step.description()),
                     );
+                    ui.add_space(4.0);
+                    ui.label(why);
+                    ui.add_space(6.0);
+                    ui.label(format!(
+                        "Nothing has been changed. {UNTIL_MIGRATED} Fix the problem above \
+                         and launch again, or run Migrate Project Config from the project's \
+                         menu in TumbleTrove Desktop."
+                    ));
                 }
-                Some(Err(why)) => {
+                Problem::Failed(why) => {
                     ui.colored_label(STATUS_ERROR, why);
                     ui.add_space(4.0);
                     ui.label(format!(
-                        "The project was left as it was; nothing needs undoing. \
-                         {UNTIL_MIGRATED} Report the message above."
+                        "Steps it had not reached were left as they were, and anything it \
+                         replaced is backed up alongside as .bak. {UNTIL_MIGRATED} Report \
+                         the message above."
                     ));
-                }
-                None => {
-                    if let Some((step, why)) = &self.plan.blocker {
-                        ui.colored_label(
-                            STATUS_ERROR,
-                            format!("Cannot migrate: {}", step.description()),
-                        );
-                        ui.add_space(4.0);
-                        ui.label(why);
-                        ui.add_space(6.0);
-                        ui.label(format!(
-                            "Nothing has been changed. {UNTIL_MIGRATED} Fix the problem above \
-                             and launch again, or run Migrate Project Config from the project's \
-                             menu in TumbleTrove Desktop."
-                        ));
-                    } else {
-                        ui.label("These steps will run:");
-                        ui.add_space(4.0);
-                        for step in &self.plan.steps {
-                            ui.label(format!("  v{} — {}", step.version(), step.description()));
-                        }
-                        ui.add_space(8.0);
-                        ui.label(format!(
-                            "Anything replaced is backed up alongside as .bak first. \
-                             {UNTIL_MIGRATED} Not now leaves the project unchanged."
-                        ));
-                    }
                 }
             }
         });

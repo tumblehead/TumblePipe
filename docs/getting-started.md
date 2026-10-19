@@ -53,13 +53,12 @@ Desktop does not report an error. Details and the exit contract are in
 Launch the project from TumbleTrove Desktop. Two things can appear before
 Houdini does, both from the `tt_prepare` hook that runs on every launch:
 
-- **TumblePipe — project configuration** ("This project's configuration is
-  out of date") — the project's `_config/` is behind the version this
-  TumblePipe expects. The window lists the steps that would run, backs up
-  anything it replaces as `.bak`, and waits: **Migrate now** or **Not now**.
-  Not now launches with the project untouched, but TumblePipe will not open
-  it until it is migrated. When a step cannot run the window says
-  `Cannot migrate: …` and offers **Continue without migrating**.
+- **TumblePipe — project configuration** ("This project could not be
+  migrated") — the project's `_config/` is behind the version this
+  TumblePipe expects, and the launch could not bring it forward on its own.
+  (Normally it does, silently, backing up anything it replaces as `.bak`.)
+  The window says why; TumblePipe will not open the project until it is
+  migrated, so fix what it names and launch again.
   See [Migrating at launch](configuration.md#migrating-at-launch).
 - **TumblePipe — project not configured** ("This project has not been
   configured for TumblePipe yet … No _config/db/entity.json was found

@@ -29,14 +29,14 @@ the wizard screens in [Getting started](getting-started.md#2-configure-the-proje
 
 Both come from the `tt_prepare` hook, which runs on every launch:
 
-- **TumblePipe — project configuration** ("This project's configuration is
-  out of date") — the project's `_config/` is behind. **Migrate now** applies
-  the listed steps (replaced files are backed up as `.bak`); **Not now**
-  launches with the project untouched and asks again next time, but this
-  TumblePipe will not open the project until it is migrated — the Asset
-  Browser shows it as failing to initialize. `Cannot migrate: …` with
-  **Continue without migrating** means a step is blocked — the reason is on
-  the window; fix it and launch again. See
+- **TumblePipe — project configuration** ("This project could not be
+  migrated") — a launch migrates a project whose `_config/` is behind on its
+  own, backing up anything it replaces as `.bak`; this window appears only
+  when that could not happen. `Cannot migrate: …` means a step is blocked and
+  nothing was written; otherwise the migration stopped part way, and the
+  message says where. Either way this TumblePipe will not open the project
+  until it is migrated — the Asset Browser shows it as failing to
+  initialize. Fix what the window names and launch again. See
   [Migrating at launch](configuration.md#migrating-at-launch).
 - **TumblePipe — project not configured** — see the previous entry;
   **Launch anyway** opens Houdini without a pipeline.
@@ -366,9 +366,10 @@ The project has not taken the config migrations this TumblePipe needs (or
 was migrated by a newer one). The package reads exactly one config layout —
 an older one would not fail on its own but be read wrongly, e.g. every entity
 showing only the `default` channel after v13 — so it refuses the project
-when it opens. Launch the project from TumbleTrove Desktop and accept the
-migration (or run `python scripts/migrate_config.py <project>`). **Not now**
-leaves the project unopenable with this version until it is migrated. A farm
+when it opens. Launch the project from TumbleTrove Desktop, which migrates it
+(or run `python scripts/migrate_config.py <project>`). If the launch said it
+could not migrate, the project stays unopenable with this version until the
+problem it named is fixed. A farm
 worker never migrates, so migrate before submitting.
 
 ### Old files still say "variant"

@@ -12,6 +12,153 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.75.3 — 2026-10-19
+
+### Fixes
+- fix(wizard): the migration window says the project stays closed until migrated (`50767fad`)
+- fix(wizard): find the project template beside the running binary (`ffb33a37`)
+- fix(ci): send the [dependencies] ranges when registering a version (`8f4718b7`)
+
+### Documentation
+- docs: what the registry registration carries, and why the ranges matter (`77a07c0d`)
+
+## v1.75.2 — 2026-10-19
+
+### Fixes
+- fix(ci): fit the registry changelog under its 10000-character limit (`e556768e`)
+
+## v1.75.1 — 2026-10-19
+
+### Fixes
+- fix(ci): release notes range from the newest released ancestor tag (`656e4e43`)
+
+## v1.75.0 — 2026-10-19
+
+### Breaking Changes
+- feat(asset-browser)!: implement TumbleTrove's catalog capabilities (`90683540`)
+- refactor(asset-browser)!: talk to TumbleTrove 0.48 through its public catalog API (`5268d105`)
+- feat!: a client refuses a project not on the config layout the package reads (`3b5b12f9`)
+- refactor!: the publish channel is a channel in code, data and HDA parms (`5ae47e4c`)
+- feat(wizard)!: migration v13 stores the publish channel under its own name (`6b8ac958`)
+- refactor!: rename Uri.parse_unsafe to Uri.parse (`189e11bf`)
+- feat(wizard)!: migration v12 refreshes the stock department templates (`90a40e5d`)
+- refactor(houdini)!: split pipe/houdini/util.py by what it is about (`5ba5623f`)
+- refactor(houdini)!: HDA callbacks call tumblepipe directly (`8404e48f`)
+- refactor(houdini)!: one workfile-context resolver; entity nodes stop guessing (`4e3827eb`)
+- refactor(houdini)!: one th::cache implementation and one frame-range/farm reader (`17eda243`)
+- refactor(farm)!: the Farm Submit dialog's halves live in farm/submit (`349c32d2`)
+- fix!: a shot's root layer takes its fps from the shot, never a 24 default (`7c4b58b4`)
+- refactor(apps)!: USD stitching moves to pipe.usd.stitch; Job loses dead fields (`05186756`)
+- refactor(farm)!: one worker entry, one spec per family, one job factory, one review chain (`1c8ee68e`)
+- refactor(farm)!: split the farm into jobs, workers, specs and pipelines (`48532733`)
+- refactor(farm)!: slapcomp takes every layer's alpha from the RGBA beauty only (`b76d3fb5`)
+- refactor!: delete to_windows_path and local_path; paths are native (`4fc097dd`)
+- refactor(farm)!: drop the sys.path bootstrap from every job and task module (`38a7b15e`)
+- refactor!: project storage is a data table; drop the convention modules (`6ab075a2`)
+- refactor!: import PySide6 directly; qtpy is no longer a dependency (`9cf9dbfc`)
+- refactor!: the USD viewer launch raises; View Latest Export reports why (`9b7efa0b`)
+- refactor!: the publish window reports its failures; staged-export probes raise (`b387d0d5`)
+- refactor!: drops, thumbnails and the settings/department dialogs report failures (`48ecae20`)
+- refactor!: scene-open import refresh reports; workfile scans tolerate only "not made yet" (`2643a56f`)
+- refactor!: Farm Submit reads raise; its failures go through report_failure (`2515d65c`)
+- refactor!: scene save/reload/publish stop swallowing, legacy path context gone (`a1aa809f`)
+- refactor!: Multis/Roots and the detail panel raise instead of swallowing (`dcfa55cb`)
+- refactor!: the catalog's menus and actions report failures, nothing swallowed (`cf42e91e`)
+- refactor!: workfile open/new and project switch raise instead of swallowing (`e9b9a699`)
+- refactor(farm)!: slapcomp, stage, collapse and propagate stop skipping silently (`001168d5`)
+- refactor(farm)!: worker configs carry what they need; dropped settings raise (`5880e0f7`)
+- refactor(farm)!: build, denoise and the EXR helpers fail instead of guessing (`ca269cfb`)
+- refactor(farm)!: submission reads what the dialog resolved and raises on gaps (`97894b18`)
+- refactor(farm)!: the job manifest and Deadline job raise instead of guessing (`f0de8737`)
+- refactor!: th:: node parms resolve explicitly or raise EntityNodeError (`855fd89f`)
+- refactor!: import_asset drops file-path staged layers and sidecar-less builds (`0ad7ec03`)
+- refactor!: retire th::puzzlemattes for th::mattes (`bd54348a`)
+- refactor!: SOP th::cache loads .bgeo.sc only (`6becb2a8`)
+- refactor!: shot_root_prims no longer tolerates /_METADATA (`0a2a81a3`)
+- refactor!: import_assets drops the in-dive layout_assets and kept-name tags (`414e7458`)
+- refactor!: import_shot drops old-HDA shims and file-path staged sublayers (`593447f0`)
+- refactor!: build_comp reads the alpha from the RGBA beauty only (`cb952b06`)
+- refactor!: load_json raises; the core's swallowing fallbacks go (`1a95a134`)
+- refactor!: one workspace scanner, one reservation-stub rule, the hip save moves to pipe.houdini (`01a4344f`)
+- refactor!: paths.render keeps the render model; review paths and the file-name convention get their own modules (`bb46b13c`)
+- refactor!: split pipe.usd into a package, one module per job (`49efa631`)
+- refactor!: one composition-arc walker; the export guard fails closed (`c8bc08ef`)
+- refactor(farm)!: require TH_FARM_DATA and drop to_wsl_path (`32b8463b`)
+- refactor(apps)!: run hython directly and collapse the subprocess runners (`8d2b215b`)
+- refactor(farm)!: delete the cloud render family and the dead stage_render job (`c320bd28`)
+- refactor!: delete dead functions, the config facade's re-exports and duplicate export helpers (`03f344fb`)
+- feat!: declare TumbleTrove and Radial as dependencies; drop SDK version probes (`375efc05`)
+- feat!: require Houdini 22; one startup hook, tumblepipe on PYTHONPATH (`b190d70f`)
+
+### Features
+- feat(wizard): tt_setup asks for one folder and takes the project name from Desktop (`d27939b6`)
+- feat(farm): port the priority bands into the restructured farm (`46b625d8`)
+- feat(submit): port the Preview checkbox into the restructured farm (`a0680577`)
+
+### Fixes
+- fix(houdini): material_assigner's menu is empty without a stage (`b4f8bb0e`)
+- fix(houdini): shot_sequencer's end time evaluates with no shots (`284503e9`)
+- fix(houdini): lookdev_studio drops its bypassed th::render_vars::1.0 (`fdb7e1ee`)
+- fix(asset-browser): New from Template on a Multi-covered department builds the Multi's workfile (`7f04cae8`)
+- fix(scripts): the hython verify scripts follow the refactor; api.get_edit_path goes (`ba6a2eb2`)
+- fix(build_comp): make the Proxy source work again (`f721fdd4`)
+- fix(resolver): plugInfo LibraryPath names the shipped library on Linux and macOS (`8a8e61cc`)
+- fix(houdini): the import refresh reads each node's category without a swallow (`5b080e1d`)
+- fix(houdini): lookdev_studio's turntable mattes come from th::mattes (`a89fe577`)
+- fix(houdini): verify_build_comp_alpha follows the BuildComp entity and playbar moves (`36d2f6c2`)
+- fix(farm): instance copies nothing placed keep the prototype's placement (`d9a2f590`)
+- fix(graph): enumerate terminal entities so scan finds dependencies (`1e259495`)
+- fix(cache): import Path for cache_frame_path (`51cee350`)
+- fix(build_comp): a proxy source resolves its render's AOVs (`fcc77e7d`)
+
+### Refactors
+- refactor(resolver): read the published variant query key in one place (`76ec39fb`)
+- refactor(houdini): import_shot's sublayer parsing and Layer Stack UI move out (`9b2278c1`)
+- refactor(houdini): export_layer's checks move out; _export_local is steps (`3fe13e7b`)
+- refactor(houdini): split build_comp into the comp, its AOV networks and its farm submit (`70b6275b`)
+- refactor(houdini): one publish-task collector over a node table (`4a6f57d2`)
+- refactor(farm): the job environments read the active project, nothing else (`b79dca0e`)
+- refactor(config-editor): one tree item base, entity changes only (`2ea2ddd4`)
+- refactor(asset-browser): split the catalog along its jobs; collaborators get narrow dependencies (`89e5d1be`)
+- refactor(asset-browser): recipe and node failures are shown, not swallowed; dead id types gone (`acfc392e`)
+- refactor(asset-browser): entity and department folders come from pipe.paths (`5d93ae47`)
+- refactor(asset-browser): version labels sort by tumblepipe.naming.get_version_code (`a9372332`)
+- refactor(farm): the Farm Submit dialog's Qt-free halves move to tumblepipe.farm; bad setting values raise (`090a2639`)
+- refactor: process launching, folder opening and master scenes out of the asset browser (`1256e972`)
+- refactor: one delete / rename policy for entities, in pipe.entity_files (`804796f5`)
+- refactor(asset-browser): one entity URI -> browser id mapping, typed fields read directly (`3df3fdd1`)
+- refactor(paths): move get_rig_export_path to the export module (`f1e9f14e`)
+- refactor(ci): one ci.sh behind the four Woodpecker workflows (`7c0ed282`)
+- refactor(ci): the mirror derives from [stage].include, one deny guard for both trees (`424dffcd`)
+- refactor(ci): one helper module for the prepack build scripts (`b4ac79c4`)
+- refactor: report_failure and run_on_main_thread move to pipe/houdini/ui/report (`3ce4bd4b`)
+- refactor(resolver): catch panics at the C ABI, drop dead FFI and shim code (`7a47cd84`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.74.3 (`55590387`)
+- docs: getting started and troubleshooting describe the one-folder setup window (`fecc6c94`)
+- docs(nodes): th::shot_sequencer's end time and its Python module (`ed79e660`)
+- docs: the publish channel is a channel; where variant is still read (`05839375`)
+- docs: the resolver's plugInfo filename, TEST_HPM_FETCH_DIR, tests on the workers (`622b2c8e`)
+- docs: why asset copies can render elsewhere on the farm (`c25a3e51`)
+- docs: the farm's submit package in the development guide (`7235ae20`)
+- docs(farm): the package docstring maps its layout (`2fa4047f`)
+- docs: the farm's jobs/workers/specs/pipelines layout; HPM is the only plugin (`e1336b15`)
+- docs: fold the implemented designs into the docs and code (`0ba52927`)
+- docs: hpm.toml comments say what the manifest is; the history moves to development.md (`ed69c16c`)
+- docs(resolver): bring the README in line with the H22-only resolver (`2f740599`)
+- docs: regenerate CHANGELOG.md for v1.74.2 (`640d6e5b`)
+
+### Tests
+- test: the catalog SDK lookup accepts a sibling tumbletrove checkout again (`77f329b3`)
+- test: drop the to_wsl_path tests; the mapping is gone (`a0d0a7dc`)
+- test(workfile_context): a partial context.json raises (`413dc53a`)
+- test: load the real import_assets module for its rebuild properties (`d49ecf81`)
+- test: one way to put the hou/qtpy stubs on sys.path (`0591df15`)
+
+### Chores
+- chore: delete repo clutter, one-off scripts and the Vulkan-layer spike (`43acdaba`)
+
 ## v1.74.3 — 2026-10-19
 
 ### Features
@@ -2419,134 +2566,3 @@ _No user-facing changes._
 
 ### Chores
 - chore: add .gitignore and remove tracked __pycache__ files (`f024536e`)
-
-## v1.0.2 — 2026-03-29
-
-### Chores
-- chore: bump version to 1.0.2 (`b888242a`)
-- chore: bump version to 1.0.1 (`bc23246e`)
-- chore: bump version to 1.0.1 (`d1d594e5`)
-- chore: bump version to 1.0.1 (`dfefad7a`)
-- chore: bump version to 1.0.1 (`6f90d9df`)
-- chore: bump version to 1.0.1 (`1f235c68`)
-- chore: bump version to 1.0.1 (`fb2a37d5`)
-
-### Other Changes
-- Update TumblePipe framework from 42282b7f (`1a9822de`)
-- Update TumblePipe framework from 42282b7f (`0fafd9a2`)
-- Update TumblePipe framework from 42282b7f (`725d4e6b`)
-- Update TumblePipe framework from 42282b7f (`b4c305c4`)
-- Update TumblePipe framework from 1b09f532 (`73c563df`)
-- Update TumblePipe framework from 1b09f532 (`bbf8b8b5`)
-- Update TumblePipe framework from 1b09f532 (`85d9225c`)
-- Update TumblePipe framework from 1b09f532 (`de773845`)
-- Update TumblePipe framework from 1b09f532 (`0a2691d3`)
-- Update TumblePipe framework from 1b09f532 (`d9ac61e9`)
-- Update TumblePipe framework from 1b09f532 (`8ddcf40c`)
-- Update TumblePipe framework from 1b09f532 (`e3cc8e30`)
-- Update TumblePipe framework from 1b09f532 (`d2b56ca5`)
-- Update TumblePipe framework from 1b09f532 (`fa9b46c9`)
-- Update TumblePipe framework from 1b09f532 (`16dfc93e`)
-- Update TumblePipe framework from 1b09f532 (`2fb5a535`)
-- Update TumblePipe framework from 1b09f532 (`46d64318`)
-- Update TumblePipe framework from 1b09f532 (`3e9de18a`)
-- Update TumblePipe framework from 1b09f532 (`f65ae4a9`)
-- Update TumblePipe framework from 1b09f532 (`ad1ad1a0`)
-- Update TumblePipe framework from 1b09f532 (`d844eca5`)
-- Update TumblePipe framework from 1b09f532 (`63273fd2`)
-- Update TumblePipe framework from 3359f890 (`8f007588`)
-- Update TumblePipe framework from 3359f890 (`5197f44e`)
-- Update TumblePipe framework from d4f73dc9 (`46d30b3f`)
-- Update TumblePipe framework from d4f73dc9 (`dc821aa6`)
-- Update TumblePipe framework from d4f73dc9 (`07974a3a`)
-- Update TumblePipe framework from d4f73dc9 (`1dc4d985`)
-- Update TumblePipe framework from d4f73dc9 (`6653d71d`)
-- Update TumblePipe framework from d4f73dc9 (`99424e17`)
-- Update TumblePipe framework from d4f73dc9 (`5dc3e2c3`)
-
-## v1.0.1 — 2026-01-25
-
-### Features
-- feat: add weekly automated release workflow and HPM manifest (`c80c2f84`)
-
-### Chores
-- chore: bump version to 1.0.1 (`b9d75959`)
-- chore: bump version to 1.1.1 (`bb00c67c`)
-- chore: bump version to 1.1.0 (`7706f479`)
-
-### Other Changes
-- Update TumblePipe framework (`4b7c9725`)
-- Update TumblePipe framework (`9d89deb8`)
-- Update TumblePipe framework (`76c06bc0`)
-- Update TumblePipe framework (`fc267a86`)
-- Update TumblePipe framework (`4310c820`)
-- Update TumblePipe framework (`ffa4f517`)
-- Update TumblePipe framework (`1629134a`)
-- Update TumblePipe framework (`1cd7ad99`)
-- Update TumblePipe framework (`5fbd8013`)
-- Update TumblePipe framework (`80ae90f9`)
-- Update TumblePipe framework (`21985089`)
-- Update TumblePipe framework (`5d028646`)
-- Update TumblePipe framework (`f7bceec5`)
-- Update TumblePipe framework (`f667ff6c`)
-
-## v0.2.0 — 2025-11-11
-
-### Other Changes
-- Update example config to match Growth project patterns (`72409019`)
-- Expand README with Prerequisites and Render Farm sections (`cbe5cc0e`)
-- Restore examples directory (`34ce63cc`)
-- Update TumblePipe framework (`320e403a`)
-- Update TumblePipe framework (`4b61a794`)
-- Update Windows launcher for Houdini 21.0 (`79baf9d1`)
-- Merge pull request #6 from tumblehead/prepare_release (`6661a33e`)
-- Merge pull request #5 from tumblehead/prepare_release (`e72a7c35`)
-- Merge pull request #4 from tumblehead/prepare_release (`62bf5031`)
-- Merge pull request #3 from tumblehead:prepare_release (`ebe4ce99`)
-
-## v0.1.3 — 2025-05-20
-
-### Other Changes
-- fix various bugs (`2033138b`)
-- fix sync override (`8b834426`)
-
-## v0.1.2 — 2025-05-15
-
-### Fixes
-- fix: update archive naming to use OS instead of platform (`778039fa`)
-- fix: update archive naming to use OS instead of platform (`9e8f3b01`)
-
-### Other Changes
-- Merge pull request #4 from tumblehead/prepare_release (`62bf5031`)
-- prepare v.0.1.2 (`996cb24e`)
-- Merge pull request #3 from tumblehead:prepare_release (`ebe4ce99`)
-- Merge branch 'prepare_release' of https://github.com/tumblehead/TumblePipe into prepare_release (`ed5950fc`)
-
-## v0.1.1 — 2025-05-02
-
-### Fixes
-- fix: update download archives step to use merge-multiple option (`cde58eae`)
-- fix: add merge option for downloading archives in release workflow (`04351411`)
-- fix: remove .distignore and add .gitattributes for export-ignore configuration (`a08080ec`)
-- fix: update download archives step to use merge-multiple option (`82f81865`)
-- fix: add merge option for downloading archives in release workflow (`58f15a98`)
-- fix: remove .distignore and add .gitattributes for export-ignore configuration (`e88c42cf`)
-
-### Other Changes
-- Merge pull request #2 from tumblehead/prepare_release (`21e88e4d`)
-- Merge branch 'prepare_release' of https://github.com/tumblehead/TumblePipe into prepare_release (`02e4eb9e`)
-
-## v0.1.0 — 2025-05-02
-
-### Fixes
-- fix: update step names for clarity in build workflow (`5a572dbb`)
-- fix: replace zip build action with git archive command (`f3e56089`)
-- fix: update action version for building zip artifact (`8a37f931`)
-- fix: update setup-uv action reference in build workflow (`272474a5`)
-
-### Other Changes
-- Merge pull request #1 from tumblehead/prepare_release (`bcee49e0`)
-- add prepare_release branch to build trigger (`05967f6b`)
-- update the readme (`d64baee6`)
-- add all the files (`071f05de`)
-- Initial commit (`04202658`)
