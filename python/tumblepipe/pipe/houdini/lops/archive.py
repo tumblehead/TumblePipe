@@ -1,42 +1,18 @@
 from pathlib import Path
 
-import hou
 
-from tumblepipe.api import (
-    path_str
-)
-from tumblepipe.config.timeline import FrameRange
+from tumblepipe.api import path_str
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
 
-class Archive(ns.Node):
-    def __init__(self, native):
-        super().__init__(native)
+class Archive(FrameRangeNode, ns.Node):
+    FRAME_RANGE_PARM = 'range_type'
 
     def get_archive_path(self):
         archive_path = self.parm('archive_path').eval()
         if len(archive_path) == 0: return None
         return Path(archive_path)
-    
-    def get_frame_range(self):
-        range_type = self.parm('range_type').eval()
-        match range_type:
-            case 'single_frame':
-                frame_index = self.parm('frame_settingsx').eval()
-                return FrameRange(
-                    frame_index,
-                    frame_index,
-                    0, 0
-                )
-            case 'from_settings':
-                return FrameRange(
-                    self.parm('frame_settingsx').eval(),
-                    self.parm('frame_settingsy').eval(),
-                    self.parm('roll_settingsx').eval(),
-                    self.parm('roll_settingsy').eval()
-                )
-            case _:
-                raise ValueError(f'Invalid range type: "{range_type}"')
-    
+
     def export(self):
 
         # Nodes
@@ -46,11 +22,10 @@ class Archive(ns.Node):
         # Get the archive path
         stage_path = self.get_archive_path()
         if stage_path is None:
-            raise ValueError('Archive path is not set')
-        
+            raise self._error('Archive Path is not set')
+
         # Get and set the frame range
-        frame_range = self.get_frame_range()
-        render_range = frame_range.full_range()
+        render_range = self.get_frame_range().full_range()
         self.parm('frame_rangex').set(render_range.first_frame)
         self.parm('frame_rangey').set(render_range.last_frame)
 
@@ -66,15 +41,7 @@ class Archive(ns.Node):
 def create(scene, name):
     return ns.create_node(scene, name, Archive, 'archive')
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node, ns.SHAPE_NODE_DIVE)
-
-def on_created(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
-def export():
-    raw_node = hou.pwd()
+def export(kwargs):
+    raw_node = kwargs['node']
     node = Archive(raw_node)
     node.export()

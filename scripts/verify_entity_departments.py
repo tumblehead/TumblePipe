@@ -97,7 +97,7 @@ def main() -> int:
 
     for context in CONTEXTS:
         for uri in api.config.list_entity_uris(
-            filter=Uri.parse_unsafe(f'entity:/{context}'), closure=True,
+            filter=Uri.parse(f'entity:/{context}'), closure=True,
         ):
             # closure=True also returns childless *category*/*sequence* nodes;
             # only real shots/assets carry an assignment.

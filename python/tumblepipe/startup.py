@@ -1,8 +1,13 @@
-"""Houdini-startup registrations for the Radial menu system.
+"""TumblePipe's Houdini startup: :func:`bootstrap` and what it registers.
 
-Called by the per-interpreter startup stubs (``python3.11libs/pythonrc.py``
-and ``python3.13libs/pythonrc.py``) so Houdini 21 and Houdini 22 register
-exactly the same menus — the two stubs must stay thin and identical.
+``python3.13libs/pythonrc.py`` calls :func:`bootstrap` and nothing else.
+Houdini runs every package's ``pythonrc.py`` in one shared ``__main__``, so a
+helper defined there can be replaced by another package's file of the same
+name before a deferred call fires — TumbleRig's defines
+``_register_tumbletrove``, and once silently took TumblePipe's place. The
+logic therefore lives here, in a module namespace no other package touches.
+
+The rest of this module is the Radial menu system's registrations:
 
 Everything here targets the radial (the Space-key Qt radial), which ships as
 its own package — python package ``tumbleradial``. It used to live inside
@@ -25,8 +30,66 @@ favour of the radial; the pipeline-specific menus it carried live on here as:
 from pathlib import Path
 import json
 import logging
+import os
+import traceback
 
 logger = logging.getLogger(__name__)
+
+#: The desktop layout the package ships (desktop/TumblePipe.desk).
+DESKTOP_NAME = "TumblePipe"
+
+
+def bootstrap() -> None:
+    """Register everything TumblePipe adds to a Houdini session.
+
+    - Radial's actions, menus and menu directory, synchronously: Radial's own
+      deferred startup scans the menu directories and must find ours.
+    - The TumbleTrove package (identity, documentation, the pipeline catalog),
+      its scene-load callback that re-runs import nodes, and the workfile
+      context provider — deferred in a graphical session, once the UI exists;
+      inline in hython, which has no UI.
+
+    Each registration is isolated: one failing must not stop the others, and
+    none may stop Houdini from launching, so a failure prints its traceback to
+    the console instead of raising.
+    """
+    import hou
+
+    _guarded("radial registration",
+             lambda: register_radial(Path(os.environ["TH_PIPELINE_PATH"])))
+    if hou.isUIAvailable():
+        import hdefereval
+        hdefereval.executeDeferred(_register_tumbletrove)
+    else:
+        _register_tumbletrove()
+
+
+def select_desktop() -> None:
+    """Make the TumblePipe desktop current once the UI is ready, if it exists
+    and isn't current already (a desktop switched mid-session is respected
+    until the next launch). Called from ``python3.13libs/uiready.py``."""
+    import hou
+
+    desktop = {d.name(): d for d in hou.ui.desktops()}.get(DESKTOP_NAME)
+    if desktop is not None and hou.ui.curDesktop().name() != DESKTOP_NAME:
+        desktop.setAsCurrent()
+
+
+def _register_tumbletrove() -> None:
+    from tumblepipe import workfile_context
+    from tumblepipe.asset_browser import load_hook
+
+    _guarded("package registration", register_package)
+    _guarded("scene-load import refresh", load_hook.register)
+    _guarded("workfile context provider", workfile_context.register)
+
+
+def _guarded(label: str, fn) -> None:
+    try:
+        fn()
+    except Exception:
+        print(f"[tumblepipe] {label} failed:")
+        traceback.print_exc()
 
 
 def register_radial(pipeline_path: Path) -> None:
@@ -36,19 +99,7 @@ def register_radial(pipeline_path: Path) -> None:
     own deferred startup scans the custom-menu directories, so that scan
     picks up the menus in ``radial_menus/``.
     """
-    try:
-        import tumbleradial as radial
-    except ImportError:
-        # Warn rather than return bare. This guard read "tumbletrove not
-        # installed — nothing to register" and swallowed the import error
-        # when the radial moved out of tumbletrove (v0.14.0), so every menu
-        # below silently stopped registering and nothing said a word.
-        logger.warning(
-            "tumbleradial is not installed, so TumblePipe's radial menus "
-            "(pipeline submenus, recipes, asset favorites, cop/vop network "
-            "menus) will not register"
-        )
-        return
+    import tumbleradial as radial
 
     _register_general_actions(radial)
     context_menus = {
@@ -109,8 +160,7 @@ def _register_general_actions(radial) -> None:
                 f"Project name : {_safe(api.get_project_name)}\n"
                 f"User         : {_safe(api.get_user_name)}\n"
                 f"Pipeline     : {_safe(api.get_pipeline_path)}\n"
-                f"Project path : {_safe(api.get_project_path)}\n"
-                f"Edit path    : {_safe(api.get_edit_path)}"
+                f"Project path : {_safe(api.get_project_path)}"
             )
             hou.ui.displayMessage(msg, title="TumblePipe")
         _defer(_do)
@@ -276,11 +326,6 @@ _CONTEXT_MENU_SOURCE = "tumblepipe.context_menus"
 def _bind_context_menus(radial, menus: dict) -> None:
     """Bind the COP and VOP menus on the chord Radial's own menus open with.
 
-    Radial 0.4.0 replaced ``register(context, menu)`` with
-    ``bind(chord, context, menu, source)``. TumblePipe v1.48.0 still called
-    ``register``, so startup raised AttributeError at the COP menu and never
-    reached the VOP menu or the Alt+T, Alt+R and Alt+F menus after it.
-
     The chord is Radial's *Open menus with* setting (``trigger_key``, Space
     by default), so these open where the shipped network menu would. When
     that setting changes the bindings move with it, and an empty setting
@@ -290,13 +335,6 @@ def _bind_context_menus(radial, menus: dict) -> None:
     headless session therefore binds nothing, and a GUI session binds once
     the UI is up.
     """
-    if not hasattr(radial, "bind"):
-        logger.warning(
-            "tumbleradial predates bind() (Radial 0.4.0), so TumblePipe's COP "
-            "and VOP network menus will not register"
-        )
-        return
-
     import hou
     if not hou.isUIAvailable():
         return
@@ -568,21 +606,16 @@ def _make_pipeline_catalog():
 def register_package():
     """Register TumblePipe with TumbleTrove: identity, docs, menu, catalog.
 
-    A no-op when TumbleTrove is not installed — TumblePipe is usable without
-    it, the asset browser simply isn't. Order does not matter: TumbleTrove's
+    TumbleTrove is a declared dependency (hpm.toml). Order does not matter: TumbleTrove's
     menu is declared in XML and reads the package registry each time it opens,
     and the browser follows the registry for the life of the session, so this
     is picked up whether it runs before or after either of them.
     """
-    try:
-        from tumbletrove import package
-    except Exception:
-        return
+    from tumbletrove import package
 
-    # ``docs`` is the shipped ``docs/`` folder (Markdown, rendered offline by
-    # TumbleTrove >= 0.27.0 under **TumbleTrove ▸ Documentation**; an older
-    # TumbleTrove opens the folder itself instead of rendering it). The
-    # online build of the same pages stays reachable as an extra entry.
+    # ``docs`` is the shipped ``docs/`` folder (Markdown, rendered offline
+    # under **TumbleTrove ▸ Documentation**). The online build of the same
+    # pages stays reachable as an extra entry.
     package.register(
         "TumblePipe",
         version=_own_version(),

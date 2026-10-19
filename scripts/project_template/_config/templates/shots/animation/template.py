@@ -3,11 +3,11 @@ import hou
 
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
-from tumblepipe.pipe.houdini import util
+from tumblepipe.pipe.houdini import prim_metadata
+import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.lops import (
     import_shot,
-    export_layer,
-    animate
+    export_layer
 )
 from tumblepipe.pipe.houdini.sops import (
     import_rigs
@@ -26,8 +26,8 @@ def _scrape_rig_imports(import_native):
     if stage is None:
         return rig_imports
     root = stage.GetPseudoRoot()
-    for asset_info in util.list_assets(root):
-        asset_uri = Uri.parse_unsafe(asset_info['uri'])
+    for asset_info in prim_metadata.list_assets(root):
+        asset_uri = Uri.parse(asset_info['uri'])
         if asset_uri not in rig_imports:
             rig_imports[asset_uri] = 0
         rig_imports[asset_uri] += 1
@@ -76,7 +76,7 @@ def _create_entity(scene_node, entity_uri: Uri, department_name: str):
     camera_edit_node.setInput(0, import_node.native())
 
     # Create the animate node and populate anim_dive
-    animate_node = animate.create(scene_node, 'animate_shot')
+    animate_node = ns.create_node(scene_node, 'animate_shot', ns.Node, 'animate')
     animate_node.setInput(0, camera_edit_node)
     _build_animate_dive(animate_node, rig_imports)
 
@@ -101,7 +101,7 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
 
         # Import the assets (source node - no input needed)
         import_node = import_shot.create(scene_node, f'import_shot_{member_name}')
-        import_node.set_shot_uri(member_uri)
+        import_node.set_entity_uri(member_uri)
         import_node.set_department_name(department_name)
         import_node.execute()
 
@@ -113,7 +113,7 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
         camera_edit_node.setInput(0, import_node.native())
 
         # Create the animate node and populate anim_dive
-        animate_node = animate.create(scene_node, f'animate_shot_{member_name}')
+        animate_node = ns.create_node(scene_node, f'animate_shot_{member_name}', ns.Node, 'animate')
         animate_node.setInput(0, camera_edit_node)
         _build_animate_dive(animate_node, rig_imports)
 

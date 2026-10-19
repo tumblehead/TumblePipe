@@ -1,99 +1,52 @@
 from pathlib import Path
-import importlib.util
-import platform
 import os
-import re
 import threading
 
-def _load_module(path: Path):
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-_DRIVE_PATH = re.compile(r'^[A-Za-z]:(/|$)')
-
-def to_wsl_path(path: Path):
-    # Legacy /mnt mapping. The farm no longer bridges any tool to WSL (image/video
-    # processing runs on Houdini's native hoiiotool/hffmpeg), so this is only used
-    # internally by local_path() for the non-Windows branch.
-    raw_path = str(path).replace('\\', '/')
-    # Only a drive path ('P:/...') maps. Anything else -- POSIX, or relative
-    # like a frame name -- used to lose its last character to the drive-colon
-    # strip ('beauty.1001.exr' -> '/mnt/beauty.1001.ex').
-    if not _DRIVE_PATH.match(raw_path): return path
-    parts = raw_path.split('/')
-    drive = parts[0][:-1].lower()
-    return Path('/mnt', drive, *parts[1:])
-
-def to_windows_path(path: Path):
-    raw_path = str(path).replace('\\', '/')
-    if not raw_path.startswith('/mnt/'): return path
-    parts = raw_path.split('/')
-    drive = f'{parts[2].upper()}:/'
-    return Path(drive, *parts[3:])
-
-def local_path(path: Path):
-    """Native path for the *current* process: Windows form on Windows, /mnt on WSL.
-
-    The canonical path conversion for farm tasks. Use it for everything the
-    running python touches itself: LOCAL file IO (`.exists()`, `.stat()`,
-    `.open()`, `shutil.copyfile`, `store_json`, `mkdir`) AND arguments to the
-    native tools the task drives (husk, hoiiotool, hffmpeg, iconvert) — all run
-    in this same process's OS, so they want this process's native path.
-
-    The farm no longer bridges any tool to WSL, so the non-Windows branch
-    (`to_wsl_path`, always `/mnt`) has no task callers today.
-    """
-    if platform.system() == 'Windows':
-        return to_windows_path(path)
-    return to_wsl_path(path)
+from tumblepipe.config.layout import require_current_layout
+from tumblepipe.config.store import JsonConfigStore
+from tumblepipe.storage import Storage
 
 def path_str(path: Path):
     return str(path).replace('\\', '/')
 
 class Client:
+    """One project's pipeline: its paths, storage table and config database.
+
+    Everything comes from the arguments, never from ``TH_*``: the asset
+    browser builds a Client per project it lists, and those must not read
+    whichever project happens to be active.
+    """
+
     def __init__(self, project_path, pipeline_path, config_path):
 
         # Set project path
-        self.PROJECT_PATH = local_path(project_path)
+        self.PROJECT_PATH = project_path
         assert self.PROJECT_PATH.exists(), (
             'Invalid project path: '
             f'"{self.PROJECT_PATH}"'
         )
 
         # Set pipeline path
-        self.PIPELINE_PATH = local_path(pipeline_path)
+        self.PIPELINE_PATH = pipeline_path
         assert self.PIPELINE_PATH.exists(), (
             'Invalid pipeline path: '
             f'"{self.PIPELINE_PATH}"'
         )
 
         # Set config path
-        self.CONFIG_PATH = local_path(config_path)
+        self.CONFIG_PATH = config_path
         assert self.CONFIG_PATH.exists(), (
             'Invalid config path: '
             f'"{self.CONFIG_PATH}"'
         )
 
-        # Load naming convention
-        self.NAMING_CONVENTION_PATH = config_path / 'naming_convention.py'
-        _naming_module = _load_module(self.NAMING_CONVENTION_PATH)
-        self.naming = _naming_module.create()
-
-        # Load storage convention
-        self.STORAGE_CONVENTION_PATH = config_path / 'storage_convention.py'
-        _storage_module = _load_module(self.STORAGE_CONVENTION_PATH)
-        self.storage = _storage_module.create()
-
-        # Load config convention
-        self.CONFIG_CONVENTION_PATH = config_path / 'config_convention.py'
-        _config_module = _load_module(self.CONFIG_CONVENTION_PATH)
-        self.config = _config_module.create()
+        require_current_layout(self.CONFIG_PATH)
+        self.storage = Storage(self.PROJECT_PATH, self.PIPELINE_PATH, self.CONFIG_PATH)
+        self.config = JsonConfigStore(self.CONFIG_PATH)
 
 def _env(key):
     assert key in os.environ, f'{key} environment variable not set'
-    return local_path(Path(os.environ[key]))
+    return Path(os.environ[key])
 
 def is_dev():
     return os.environ.get('TH_DEV', '0') == '1'
@@ -109,9 +62,6 @@ def get_user_name():
     # launch) resolves to "".
     return os.environ.get('TH_USER') or ''
 
-def get_edit_path():
-    return _env('TH_EDIT_PATH')
-
 def get_project_path():
     return _env('TH_PROJECT_PATH')
 
@@ -123,12 +73,10 @@ def get_config_path():
 
 # Module-level singleton instance with thread safety.
 #
-# A plain, non-reentrant lock is correct: constructing the Client loads the
-# project's naming/storage/config convention modules, and none of them call
-# default_client() at import time, so the first caller never reenters while
-# holding the lock. The config conventions resolve the client lazily (via the
-# ``api`` proxy above) — that is what removed the import-time recursion which
-# previously forced an RLock here.
+# A plain, non-reentrant lock is correct: constructing the Client reads the
+# project's storage table and opens its config store, neither of which calls
+# default_client(), so the first caller never reenters while holding the
+# lock.
 _default_client_instance = None
 _default_client_lock = threading.Lock()
 
@@ -159,7 +107,7 @@ class _LazyClient:
 
         from tumblepipe.api import api
 
-    and reference ``api.config`` / ``api.naming`` / ``api.storage`` /
+    and reference ``api.config`` / ``api.storage`` /
     ``api.PROJECT_PATH`` etc. in their functions exactly as before. Each access
     is forwarded to the *current* ``default_client()``.
 

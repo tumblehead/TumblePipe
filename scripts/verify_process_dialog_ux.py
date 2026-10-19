@@ -1,7 +1,7 @@
 """Headless QTest harness for the ProcessDialog execution UX.
 
 Drives a real ProcessDialog + ProcessExecutor with fake tasks — no Houdini
-required (the process UI stack is pure qtpy).
+required (the process UI stack is pure PySide6).
 
 Pins down the fixes for the stuck-looking "Running: Export (render)" publish
 (tumblepipe__bugs 2026-07-08):
@@ -34,7 +34,7 @@ than the one it superseded:
 
 Run:
     cd scripts
-    uv run --python 3.12 --with pyside6 --with qtpy python verify_process_dialog_ux.py
+    uv run --python 3.12 --with pyside6 python verify_process_dialog_ux.py
 """
 
 from pathlib import Path
@@ -44,7 +44,7 @@ import time
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / 'python'))
 
-from qtpy import QtWidgets
+from PySide6 import QtWidgets
 
 from tumblepipe.util.errors import TaskSkipped
 from tumblepipe.util.progress import report_progress
@@ -52,7 +52,7 @@ from tumblepipe.pipe.houdini.ui.process_task import ProcessTask, TaskStatus
 from tumblepipe.pipe.houdini.ui.process_dialog import ProcessDialog
 from tumblepipe.util.uri import Uri
 
-SHOT_URI = Uri.parse_unsafe('entity:/shots/000/sh020_Clash')
+SHOT_URI = Uri.parse('entity:/shots/000/sh020_Clash')
 
 _checks: list[tuple[str, bool, str]] = []
 
@@ -243,7 +243,7 @@ def main() -> int:
 
     def disconnected_body():
         raise TaskSkipped(
-            "Nothing exported for variant 'fx': the node /stage/export1 "
+            "Nothing exported for channel 'fx': the node /stage/export1 "
             "has no stage input connected."
         )
 

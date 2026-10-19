@@ -14,7 +14,9 @@ crate-type = ["staticlib", "rlib"]
 [profile.release]
 lto = "thin"
 codegen-units = 1
-panic = "abort"
+# No `panic = "abort"`: the staticlib lives inside Houdini, and every C ABI
+# entry point catches panics (lib.rs `ffi_guard`) and reports them as an
+# error code. Abort would turn any core bug into a Houdini crash.
 strip = "symbols"
 
 [dev-dependencies]

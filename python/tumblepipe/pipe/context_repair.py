@@ -18,8 +18,9 @@ backs the ``_context`` dir and ``context.json`` up before writing.
 
 Both functions take a plain workspace directory ``Path`` (the department folder
 that holds the hips, ``_context/`` and ``context.json``), so they need no
-project/storage configuration and run headlessly. Only ``api.naming`` is used,
-to parse version names.
+project/storage configuration and run headlessly. ``tumblepipe.naming`` parses
+version names; the workspace is read by ``paths.scan_workspace``, the same
+scanner the save path uses.
 """
 
 from __future__ import annotations
@@ -30,12 +31,12 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tumblepipe.api import api, get_user_name
+from tumblepipe.api import get_user_name
+from tumblepipe import naming
+from tumblepipe.pipe.paths.workspace import is_reservation_stub, scan_workspace
 from tumblepipe.util.io import load_json, store_json
 
 logger = logging.getLogger(__name__)
-
-HIP_EXTENSIONS = ("hip", "hiplc", "hipnc")
 
 # How long a reservation claim is presumed to belong to a save still in flight.
 #
@@ -58,40 +59,23 @@ RESERVATION_GRACE = dt.timedelta(minutes=30)
 # --------------------------------------------------------------------------- #
 # Reading the on-disk state
 # --------------------------------------------------------------------------- #
-def _hip_versions(workspace_path: Path) -> dict[str, str]:
-    """Map ``version_name -> extension`` for every real hip file present."""
-    versions: dict[str, str] = {}
-    for ext in HIP_EXTENSIONS:
-        for hip_path in workspace_path.glob(f"*.{ext}"):
-            name = hip_path.stem.rsplit("_", 1)[-1]
-            if api.naming.is_valid_version_name(name):
-                versions[name] = ext
-    return versions
+def _read_pointer(workspace_path: Path) -> dict | None:
+    """The ``context.json`` pointer, or None for a workspace never saved into.
 
-
-def _context_entries(workspace_path: Path) -> dict[str, dict]:
-    """Load every ``_context/vNNNN.json`` entry, keyed by its version name."""
-    entries: dict[str, dict] = {}
-    context_dir = workspace_path / "_context"
-    if not context_dir.is_dir():
-        return entries
-    for entry_path in context_dir.glob("*.json"):
-        name = entry_path.stem
-        if not api.naming.is_valid_version_name(name):
-            continue
-        data = load_json(entry_path)
-        if isinstance(data, dict):
-            entries[name] = data
-    return entries
-
-
-def _is_reserved_stub(entry: dict) -> bool:
-    """A leftover reservation claim (from a failed save), not a real entry."""
-    return "reserved" in entry and "to_version" not in entry
+    Raises ValueError for a pointer that is not a JSON object: repair would
+    otherwise overwrite whatever it holds with a fresh pointer.
+    """
+    pointer_path = workspace_path / "context.json"
+    if not pointer_path.exists():
+        return None
+    pointer_data = load_json(pointer_path)
+    if not isinstance(pointer_data, dict):
+        raise ValueError(f"context.json is not a JSON object: {pointer_path}")
+    return pointer_data
 
 
 def _sorted_versions(names) -> list[str]:
-    return sorted(names, key=api.naming.get_version_code)
+    return sorted(names, key=naming.get_version_code)
 
 
 def _split_reservation_claims(
@@ -216,14 +200,15 @@ def diagnose(
     reported as in-flight rather than orphaned; see :data:`RESERVATION_GRACE`.
     """
     workspace_path = Path(workspace_path)
-    hip_map = _hip_versions(workspace_path)
+    scan = scan_workspace(workspace_path)
+    hip_map = scan.hips
     hip_versions = _sorted_versions(hip_map)
     hip_set = set(hip_versions)
 
-    entries = _context_entries(workspace_path)
-    finalized = {v: e for v, e in entries.items() if not _is_reserved_stub(e)}
+    entries = scan.entries
+    finalized = {v: e for v, e in entries.items() if not is_reservation_stub(e)}
     claims = _sorted_versions(
-        v for v, e in entries.items() if _is_reserved_stub(e)
+        v for v, e in entries.items() if is_reservation_stub(e)
     )
     # A reservation stub whose hip actually landed is not orphaned — it just
     # never got finalized; treat it as a missing entry instead.
@@ -245,10 +230,10 @@ def diagnose(
     null_extension: list[str] = []
     empty_timestamp: list[str] = []
     valid_targets = hip_set | {v for v in finalized}
-    lowest_code = api.naming.get_version_code(hip_versions[0]) if hip_versions else None
+    lowest_code = naming.get_version_code(hip_versions[0]) if hip_versions else None
     for version in _sorted_versions(finalized):
         entry = finalized[version]
-        to_code = api.naming.get_version_code(version)
+        to_code = naming.get_version_code(version)
         from_version = entry.get("from_version")
 
         if from_version is None:
@@ -260,10 +245,10 @@ def diagnose(
                 broken_links.append(
                     (version, "re-anchors to v0000 above a real predecessor")
                 )
-        elif not api.naming.is_valid_version_name(from_version):
+        elif not naming.is_valid_version_name(from_version):
             broken_links.append((version, f"invalid from_version {from_version!r}"))
         else:
-            from_code = api.naming.get_version_code(from_version)
+            from_code = naming.get_version_code(from_version)
             if from_code >= to_code:
                 broken_links.append(
                     (version, f"from_version {from_version} does not precede it")
@@ -283,9 +268,8 @@ def diagnose(
             if not entry.get("timestamp"):
                 empty_timestamp.append(version)
 
-    pointer_data = load_json(workspace_path / "context.json")
-    pointer = pointer_data.get("version") if isinstance(pointer_data, dict) else None
-    pointer = pointer or None
+    pointer_data = _read_pointer(workspace_path)
+    pointer = (pointer_data or {}).get("version") or None
     latest_hip = hip_versions[-1] if hip_versions else None
     pointer_ok = pointer == latest_hip
 
@@ -321,8 +305,8 @@ def _consecutive_predecessor(hip_versions: list[str], version: str) -> str:
     Used only to heal a structurally-broken link — the best recoverable guess
     for a provenance we can no longer trust.
     """
-    code = api.naming.get_version_code(version)
-    prior = [v for v in hip_versions if api.naming.get_version_code(v) < code]
+    code = naming.get_version_code(version)
+    prior = [v for v in hip_versions if naming.get_version_code(v) < code]
     return prior[-1] if prior else "v0000"
 
 
@@ -374,7 +358,8 @@ def repair(
         return report
 
     context_dir = workspace_path / "_context"
-    hip_map = _hip_versions(workspace_path)
+    scan = scan_workspace(workspace_path)
+    hip_map = scan.hips
     hip_versions = diag.hip_versions
 
     if backup and not dry_run:
@@ -384,7 +369,7 @@ def repair(
         if not dry_run:
             store_json(context_dir / f"{version}.json", data)
 
-    entries = _context_entries(workspace_path)
+    entries = scan.entries
 
     # 1. Broken links -> reset from_version to the consecutive predecessor.
     broken_versions = {v for v, _ in diag.broken_links}
@@ -450,10 +435,8 @@ def repair(
     #    same version and overwrite the first — so it is only reported.
     for version in diag.reserved_stubs:
         if not dry_run:
-            try:
-                (context_dir / f"{version}.json").unlink()
-            except OSError:
-                pass
+            # Gone already only if a concurrent repair reclaimed it first.
+            (context_dir / f"{version}.json").unlink(missing_ok=True)
         report.actions.append(f"stub {version}: removed orphaned reservation")
 
     for version in diag.inflight_reservations:
@@ -466,10 +449,7 @@ def repair(
     for version in diag.orphan_entries:
         if prune_orphans:
             if not dry_run:
-                try:
-                    (context_dir / f"{version}.json").unlink()
-                except OSError:
-                    pass
+                (context_dir / f"{version}.json").unlink(missing_ok=True)
             report.actions.append(f"entry {version}: pruned (no hip on disk)")
         else:
             report.actions.append(
@@ -479,9 +459,7 @@ def repair(
     # 6. Pointer -> latest hip.
     if not diag.pointer_ok and hip_versions:
         pointer_path = workspace_path / "context.json"
-        pointer_data = load_json(pointer_path)
-        if not isinstance(pointer_data, dict):
-            pointer_data = {}
+        pointer_data = _read_pointer(workspace_path) or {}
         pointer_data["version"] = hip_versions[-1]
         pointer_data.setdefault("user", get_user_name())
         pointer_data["timestamp"] = dt.datetime.now().isoformat()

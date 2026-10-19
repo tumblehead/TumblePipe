@@ -1,7 +1,8 @@
 //! Core entity-URI resolution rules.
 //!
-//! Every function here is pure aside from two inputs: the `TH_EXPORT_PATH`
-//! env var (read via [`crate::env::export_base`]) and the filesystem
+//! Every function here is pure aside from two inputs: the process env
+//! (`TH_EXPORT_PATH` and `TH_RESOLVER_LATEST_MODE`, read via [`crate::env`])
+//! and the filesystem
 //! (read by [`crate::version::find_latest`] when "latest" discovery is
 //! needed). Paths are returned with forward slashes on every platform.
 
@@ -9,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use crate::env::{export_base, latest_mode};
 use crate::error::{ResolveError, ResolveResult};
-use crate::uri::{EntityUri, SHARED_VARIANT};
+use crate::uri::{EntityUri, SHARED_CHANNEL};
 use crate::version::find_latest;
 
 pub const ROOT_DEPARTMENT: &str = "root";
@@ -30,12 +31,12 @@ pub fn resolve(uri: &EntityUri) -> ResolveResult<String> {
                 &base,
                 &uri.segments,
                 dept,
-                &uri.variant,
+                &uri.channel,
                 uri.version.as_deref(),
             )?
         }
     } else {
-        resolve_staged(&base, &uri.segments, &uri.variant, uri.version.as_deref())?
+        resolve_staged(&base, &uri.segments, &uri.channel, uri.version.as_deref())?
     };
 
     Ok(to_forward_slashes(path))
@@ -45,24 +46,24 @@ fn resolve_department(
     base: &Path,
     segments: &[String],
     department: &str,
-    variant: &str,
+    channel: &str,
     version: Option<&str>,
 ) -> ResolveResult<PathBuf> {
     let mut dir = base.to_path_buf();
     for seg in segments {
         dir.push(seg);
     }
-    dir.push(variant);
+    dir.push(channel);
     dir.push(department);
 
     let version_name = pick_version(&dir, version)?;
     let version_dir = dir.join(&version_name);
 
     let entity_name = segments.join("_");
-    let file_name = if variant == SHARED_VARIANT {
+    let file_name = if channel == SHARED_CHANNEL {
         format!("{entity_name}_shared_{department}_{version_name}.usd")
     } else {
-        format!("{entity_name}_{variant}_{department}_{version_name}.usd")
+        format!("{entity_name}_{channel}_{department}_{version_name}.usd")
     };
 
     Ok(version_dir.join(file_name))
@@ -71,7 +72,7 @@ fn resolve_department(
 fn resolve_staged(
     base: &Path,
     segments: &[String],
-    variant: &str,
+    channel: &str,
     version: Option<&str>,
 ) -> ResolveResult<PathBuf> {
     let mut dir = base.to_path_buf();
@@ -79,7 +80,7 @@ fn resolve_staged(
         dir.push(seg);
     }
     dir.push(STAGED_DIR);
-    dir.push(variant);
+    dir.push(channel);
 
     let version_name = pick_version(&dir, version)?;
     let version_dir = dir.join(&version_name);
@@ -143,7 +144,7 @@ fn resolve_scene(
 /// ignored and the filesystem is scanned for the highest `vNNNN`.
 fn pick_version(dir: &Path, requested: Option<&str>) -> ResolveResult<String> {
     if let Some(v) = requested {
-        if !latest_mode() {
+        if !latest_mode()? {
             return Ok(v.to_owned());
         }
     }

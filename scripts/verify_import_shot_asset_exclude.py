@@ -51,9 +51,9 @@ sys.path.insert(0, str(REPO / 'python'))
 
 import hou  # noqa: E402
 
-from tumblepipe.pipe.usd import parse_entity_sublayer_uri  # noqa: E402
+from tumblepipe.pipe.usd.sublayer_refs import parse_entity_sublayer_uri  # noqa: E402
 from tumblepipe.pipe.houdini.lops import import_shot  # noqa: E402
-from tumblepipe.pipe.houdini.util import uri_to_prim_path  # noqa: E402
+from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path# noqa: E402
 from tumblepipe.util.uri import Uri  # noqa: E402
 
 FAILURES = []
@@ -94,7 +94,7 @@ def mtl_prims(stage, layer_ids):
     names like ``kma_pyrosmokecolor1`` that a substring test counts.
     """
     roots = tuple(
-        uri_to_prim_path(Uri.parse_unsafe(parse_entity_sublayer_uri(i).base))
+        uri_to_prim_path(Uri.parse(parse_entity_sublayer_uri(i).base))
         + '/mtl'
         for i in layer_ids
     )

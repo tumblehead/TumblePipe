@@ -5,8 +5,8 @@ and ``JsonView`` (the QTreeView). Builds on the item classes and factories in
 ``items`` — the dependency runs one way (view -> items).
 """
 
-from qtpy.QtCore import QRect, Qt, Signal
-from qtpy.QtGui import (
+from PySide6.QtCore import QRect, Qt, Signal
+from PySide6.QtGui import (
     QColor,
     QIntValidator,
     QPainter,
@@ -14,7 +14,7 @@ from qtpy.QtGui import (
     QStandardItemModel,
     QValidator,
 )
-from qtpy.QtWidgets import (
+from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QAbstractItemView,
     QCheckBox,

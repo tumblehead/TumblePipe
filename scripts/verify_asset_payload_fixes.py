@@ -95,6 +95,9 @@ def check_a_primpath(report):
                 f"th::create_asset::1.0 not loaded ({exc})",
             )
             return
+        # Direct-primpath mode: from_context needs a registered entity and
+        # workfile, and raises without one.
+        asset.parm("use_entity").set(0)
         asset.parm("primpath").set(PRIM_PATH)
 
         model = subnet.createNode("th::create_asset_model::1.0", "MODEL")
@@ -110,7 +113,8 @@ def check_a_primpath(report):
                 model.parm("variants").set(1)
                 if model.parm("variant_name1") is not None:
                     model.parm("variant_name1").set("default")
-                model.hdaModule()._sync_variants(model)
+                from tumblepipe.pipe.houdini.lops import create_asset
+                create_asset.wrap(model).sync_variants()
         except Exception as exc:  # noqa: BLE001
             print(f"  (variant sync skipped: {exc})")
 
@@ -174,7 +178,7 @@ def check_b_localize(report):
         return
 
     try:
-        from tumblepipe.pipe.houdini.lops.export_layer import _localize_external_sidecars
+        from tumblepipe.pipe.houdini.export_checks import localize_external_sidecars as _localize_external_sidecars
     except Exception as exc:  # noqa: BLE001
         report.record("B. localize sidecars", "FAIL", f"import failed: {exc}")
         traceback.print_exc()
@@ -244,13 +248,13 @@ def check_c_export(report):
     try:
         from tumblepipe.api import default_client
         from tumblepipe.util.uri import Uri
-        from tumblepipe.pipe.houdini.util import uri_to_prim_path
+        from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
         from tumblepipe.pipe.houdini.lops import export_layer
         from tumblepipe.pipe.paths import latest_export_path
 
         api = default_client()
         assets = api.config.list_entities(
-            filter=Uri.parse_unsafe("entity:/assets"), closure=True
+            filter=Uri.parse("entity:/assets"), closure=True
         )
         entity = next((e.uri for e in assets if e.uri.purpose == "entity"), None)
         if entity is None:

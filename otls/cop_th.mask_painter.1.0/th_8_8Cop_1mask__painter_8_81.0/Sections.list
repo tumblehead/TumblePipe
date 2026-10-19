@@ -13,8 +13,6 @@ ViewerStateUninstall	ViewerStateUninstall
 EditableNodes	EditableNodes
 DiveTarget	DiveTarget
 MessageNodes	MessageNodes
-OnCreated	OnCreated
 ViewerStateName.orig	ViewerStateName.orig
-PythonModule	PythonModule
 ExtraFileOptions	ExtraFileOptions
 brush.json	brush.json

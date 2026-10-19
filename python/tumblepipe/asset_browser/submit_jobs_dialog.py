@@ -6,8 +6,8 @@ in pool order, then Playblast (shots only) and Render. A ticked cell means
 "do this step for this entity", and each cell shows how up to date that step
 is: never done, stale, current, or nothing to do. Every row, column and
 sequence carries a tri-state checkbox. The policy behind all of it — states,
-ticks, warnings, what a row submits — is pure and lives in ``farm_grid``; the
-status scan is ``farm_status``.
+ticks, warnings, what a row submits — is pure and lives in ``tumblepipe.farm.submit.grid``; the
+status scan is ``tumblepipe.farm.submit.status``.
 
 The settings stay the per-entity tri-state form it has been since the
 multi-entity rework: left alone a field is *unpinned* and every entity uses
@@ -15,11 +15,11 @@ its own configured value (``⟨per entity⟩`` when they disagree); touching it
 *pins* it for the whole submission. Samples, Motion blur and DOF are the
 exception: they override the scene's render settings, so unpinned they show
 ``⟨from scene⟩`` and send nothing. The read-only Camera row is looked up by
-``render_camera``. Resolution order and the rules live in
-``submit_jobs_resolve``. The grid chooses the *steps*; the form never did.
+``tumblepipe.farm.submit.camera``. Resolution order and the rules live in
+``submit_settings``. The grid chooses the *steps*; the form never did.
 
 Submit writes a plan and hands it to a separate process
-(``tumblepipe.farm.submit_plan``) running Houdini's bundled Python, then
+(``tumblepipe.farm.submit.plan``) running Houdini's bundled Python, then
 closes: Houdini is free in seconds however large the submission, and a
 non-modal status window (``farm_submission_window``) follows the progress.
 
@@ -64,10 +64,11 @@ from tumbletrove.asset_browser.core.theme import (
     TEXT_PRIMARY, TEXT_SECONDARY,
 )
 
-from . import farm_grid as grid
-from . import farm_status
-from . import render_camera
-from . import submit_jobs_resolve as resolve
+from tumblepipe.farm.submit import grid as grid
+from tumblepipe.farm.submit import status as farm_status
+from tumblepipe.farm.submit import camera as render_camera
+from tumblepipe.farm.submit import settings as resolve
+from tumblepipe.pipe.houdini.ui.report import report_failure
 
 log = logging.getLogger(__name__)
 
@@ -138,7 +139,7 @@ _URI_ROLE = Qt.UserRole
 _GROUP_ROLE = Qt.UserRole + 1
 
 # Every entity has this channel implicitly, whether or not its properties
-# list it. Owned by submit_jobs_resolve so the pure resolution policy and
+# list it. Owned by submit_settings so the pure resolution policy and
 # the widget that drives it can't drift apart.
 _DEFAULT_CHANNEL = resolve.DEFAULT_CHANNEL
 
@@ -272,21 +273,15 @@ def _properties_for(entity_uris: Sequence) -> list[dict]:
     """Resolved properties for each URI, read in one coherency scope.
 
     Bare ``get_properties`` re-stamps the config files per call, and this
-    runs over every entity in the context, so the reads are batched. Empty
-    list on failure.
+    runs over every entity in the context, so the reads are batched.
 
     Importing ``tumblepipe.api`` here is a passive lookup: the catalog has
     already activated the project before showing the dialog.
     """
-    uris = list(entity_uris)
-    try:
-        from tumblepipe.api import default_client
-        config = default_client().config
-        with config.coherent():
-            return [config.get_properties(uri) or {} for uri in uris]
-    except Exception:
-        log.exception("Failed to read properties for %d entities", len(uris))
-        return []
+    from tumblepipe.api import default_client
+    config = default_client().config
+    with config.coherent():
+        return [config.get_properties(uri) or {} for uri in entity_uris]
 
 
 def _list_dept_names(context: str, *, only_publishable: bool, only_renderable: bool) -> list[str]:
@@ -296,79 +291,60 @@ def _list_dept_names(context: str, *, only_publishable: bool, only_renderable: b
     Python-generated departments (which can't be exported from Houdini)
     and disabled ones.
     """
-    try:
-        from tumblepipe.config.department import list_departments
-        depts = list_departments(
-            context, include_generated=False, include_disabled=False,
-        )
-        if only_publishable:
-            depts = [d for d in depts if d.publishable]
-        if only_renderable:
-            depts = [d for d in depts if d.renderable]
-        return [d.name for d in depts]
-    except Exception:
-        log.exception("Failed to list departments for context=%s", context)
-        return []
+    from tumblepipe.config.department import list_departments
+    depts = list_departments(
+        context, include_generated=False, include_disabled=False,
+    )
+    if only_publishable:
+        depts = [d for d in depts if d.publishable]
+    if only_renderable:
+        depts = [d for d in depts if d.renderable]
+    return [d.name for d in depts]
 
 
 def _list_selectable_entities(context: str) -> list[object]:
     """Return every terminal entity URI in ``context``, sorted by path.
-
-    Empty list on failure — the grid then falls back to just the entities
-    the dialog was opened for.
 
     ``list_entity_uris(closure=True)`` returns childless *category* nodes
     (e.g. an empty ``assets/CHAR``) alongside real entities, so each URI is
     vetted with ``is_terminal_entity`` (schema-keyed), all inside one
     ``coherent()`` scope.
     """
-    try:
-        from tumblepipe.api import default_client
-        from tumblepipe.config.entities import is_terminal_entity
-        from tumblepipe.util.uri import Uri
-        config = default_client().config
-        root = Uri.parse_unsafe(f'entity:/{context}')
-        with config.coherent():
-            entities = [
-                uri for uri in config.list_entity_uris(root, closure=True)
-                if is_terminal_entity(config, uri)
-            ]
-        entities.sort(key=str)
-        return entities
-    except Exception:
-        log.exception("Failed to list entities for the grid")
-        return []
+    from tumblepipe.api import default_client
+    from tumblepipe.config.entities import is_terminal_entity
+    from tumblepipe.util.uri import Uri
+    config = default_client().config
+    root = Uri.parse(f'entity:/{context}')
+    with config.coherent():
+        entities = [
+            uri for uri in config.list_entity_uris(root, closure=True)
+            if is_terminal_entity(config, uri)
+        ]
+    entities.sort(key=str)
+    return entities
 
 
 def _list_groups(context: str) -> list[tuple[str, list[object]]]:
     """Return ``(group_name, member_uris)`` for every group in ``context``.
 
     Offered as a filter above the grid: picking a Multi narrows the rows to
-    its members. Empty list on failure.
+    its members.
     """
-    try:
-        from tumblepipe.api import default_client
-        from tumblepipe.config.groups import list_groups
-        with default_client().config.coherent():
-            groups = [
-                (group.name, list(group.members))
-                for group in list_groups(context)
-            ]
-        return sorted(groups, key=lambda item: item[0])
-    except Exception:
-        log.exception("Failed to list groups for context=%s", context)
-        return []
+    from tumblepipe.api import default_client
+    from tumblepipe.config.groups import list_groups
+    with default_client().config.coherent():
+        groups = [
+            (group.name, list(group.members))
+            for group in list_groups(context)
+        ]
+    return sorted(groups, key=lambda item: item[0])
 
 
 def _group_members(group_uri) -> list[object]:
-    """Member URIs of the Multi at ``group_uri``; empty list on failure."""
-    try:
-        from tumblepipe.config.groups import get_group
-        group = get_group(group_uri)
-        return list(group.members) if group is not None else []
-    except Exception:
-        log.exception("Failed to read the members of %s", group_uri)
-        return []
+    """Member URIs of the Multi at ``group_uri``; empty when it is gone."""
+    from tumblepipe.config.groups import get_group
+    group = get_group(group_uri)
+    return list(group.members) if group is not None else []
 
 
 def _box(painter: QPainter, rect: QRect, state: str) -> None:
@@ -918,8 +894,6 @@ class _ContextPane(QWidget):
         self._uris: list[str] = sorted(by_uri)
         self._uri_objects = by_uri
         props = _properties_for([by_uri[key] for key in self._uris])
-        if len(props) != len(self._uris):
-            props = [{} for _ in self._uris]
         self._props: dict[str, dict] = dict(zip(self._uris, props))
 
         self._publish_departments = _list_dept_names(
@@ -1473,9 +1447,15 @@ class _ContextPane(QWidget):
                         self._pending[self._executor.submit(farm_status.scan, probe)] = (
                             uri, self._preview_only,
                         )
-            except Exception:
+            except Exception as error:
+                # The rows whose folders could not be resolved show the
+                # error in their cells, like a scan that failed.
                 log.exception("Could not resolve status folders")
-                self._probe_queue = []
+                for uri in chunk:
+                    self._statuses[uri] = farm_status.RowStatus(
+                        uri=uri, error=str(error),
+                    )
+                    self._apply_status(uri)
 
         finished = [future for future in self._pending if future.done()]
         for future in finished:
@@ -1483,6 +1463,7 @@ class _ContextPane(QWidget):
             try:
                 status = future.result()
             except Exception as error:
+                # A share that will not answer: the row's cells show it.
                 status = farm_status.RowStatus(uri=uri, error=str(error))
             if preview_only:
                 # Only the preview folders were read; keep the publish half.
@@ -1895,6 +1876,7 @@ class _ContextPane(QWidget):
                         future = self._executor.submit(render_camera.read_camera, probe)
                         self._camera_pending[future] = key
             except Exception as error:
+                # Shown in the Camera row, which is where the artist looks.
                 log.exception("Could not resolve render camera folders")
                 for key in missing:
                     self._cameras[key] = render_camera.RenderCamera(
@@ -1911,6 +1893,7 @@ class _ContextPane(QWidget):
             try:
                 self._cameras[key] = future.result()
             except Exception as error:
+                # Shown in the Camera row, which is where the artist looks.
                 self._cameras[key] = render_camera.RenderCamera(
                     key[0], None, error=str(error),
                 )
@@ -2055,7 +2038,7 @@ class _ContextPane(QWidget):
         """
         values = {key: entry.value() for key, entry in self._fields.items()}
         values.update({
-            'variants': self._rnd_channels.checked_items(),
+            resolve.CHANNEL_LIST_KEY: self._rnd_channels.checked_items(),
             'render_mode': self._render_mode() or 'full',
             'standalone': self._rnd_standalone.isChecked(),
             'copy_to_edit': self._rnd_copy_edit.isChecked(),
@@ -2094,7 +2077,7 @@ class _ContextPane(QWidget):
                 grid.row_publish_departments(uri, self._columns, self._ticks),
             )
             assigned = list(properties.get('departments') or []) or None
-            requested = form['variants']
+            requested = form[resolve.CHANNEL_LIST_KEY]
             warnings = resolve.entity_warnings(
                 properties, settings, departments=assigned, requested=requested,
             )
@@ -2199,12 +2182,7 @@ class _ContextPane(QWidget):
         try:
             window = start_submission(configs, parent=self._dialog.parentWidget())
         except Exception as error:
-            log.exception("Could not start the background submission")
-            QMessageBox.critical(
-                self, "Farm Submit",
-                "Could not start the submission in the background:\n\n"
-                f"{error}",
-            )
+            report_failure("Starting the farm submission", error)
             return
         window.show()
         self._dialog.accept()
@@ -2337,16 +2315,13 @@ class SubmitJobsDialog(QDialog):
         try:
             self._show_context(context)
         except Exception as error:
-            log.exception("Could not open the %s tab", context)
             # Back to the tab still on screen, so the bar and grid agree.
             shown = self._stack.currentWidget()
             if isinstance(shown, _ContextPane):
                 self._tabs.blockSignals(True)
                 self._tabs.setCurrentIndex(grid.CONTEXTS.index(shown.context))
                 self._tabs.blockSignals(False)
-            QMessageBox.warning(
-                self, "Farm Submit", f"Could not list the {context}:\n\n{error}",
-            )
+            report_failure(f"Listing the {context}", error)
 
     def _pane_changed(self, pane: _ContextPane) -> None:
         """A pane's ticks changed: relabel its tab, and the footer if it is in front."""
@@ -2380,23 +2355,19 @@ def start_submission(configs: list[dict], parent: QWidget | None = None):
     import os
     import uuid
 
-    from tumblepipe.api import api, local_path
+    from tumblepipe.api import api
     from tumblepipe.util.uri import Uri
-    from tumblepipe.farm import submit_plan
+    from tumblepipe.farm.submit import plan as submit_plan
 
     from .farm_submission_window import FarmSubmissionWindow
 
-    houdini_version = os.environ.get('TH_HOUDINI_VERSION')
-    try:
-        import hou
-        houdini_version = hou.applicationVersionString()
-    except Exception:
-        pass
+    import hou
+    houdini_version = hou.applicationVersionString()
 
     stamp = dt.datetime.now().strftime('%Y%m%d_%H%M%S')
-    directory = Path(local_path(api.storage.resolve(
-        Uri.parse_unsafe('temp:/farm_submissions')
-    ))) / f'{stamp}_{uuid.uuid4().hex[:6]}'
+    directory = Path(api.storage.resolve(
+        Uri.parse('temp:/farm_submissions')
+    )) / f'{stamp}_{uuid.uuid4().hex[:6]}'
     plan = submit_plan.make_plan(configs, env=dict(os.environ), houdini_version=houdini_version)
     plan_path = submit_plan.write_plan(directory, plan)
     process = submit_plan.launch(plan_path)
@@ -2412,7 +2383,4 @@ _OPEN_WINDOWS: list = []
 
 
 def _forget_window(window) -> None:
-    try:
-        _OPEN_WINDOWS.remove(window)
-    except ValueError:
-        pass
+    _OPEN_WINDOWS.remove(window)

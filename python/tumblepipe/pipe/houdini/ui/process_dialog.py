@@ -1,16 +1,14 @@
 """Process dialog for executing publish and other workflow tasks"""
 
-import logging
 from typing import Callable
 
-from qtpy import QtWidgets
-from qtpy.QtCore import Qt, Signal
+from PySide6 import QtWidgets
+from PySide6.QtCore import Qt, Signal
 
 from .process_task import ProcessTask, ProcessTaskTreeModel, TaskStatus, TASK_ROLE, IS_ENTITY_ROLE, ENTITY_URI_ROLE
 from .process_executor import ProcessExecutor
 from .helpers import has_staged_export
-
-logger = logging.getLogger(__name__)
+from .report import report_failure
 
 
 def _primary_button_style(base: str, hover: str, pressed: str, border: str) -> str:
@@ -356,11 +354,8 @@ class ProcessDialog(QtWidgets.QDialog):
                 self._status_label.setStyleSheet("color: #4A90E2; font-weight: bold;")
                 QtWidgets.QApplication.processEvents()  # Allow UI to update
                 self._pre_execute_callback()
-            except Exception as e:
-                QtWidgets.QMessageBox.critical(
-                    self, "Pre-Execute Error",
-                    f"Failed to prepare for execution:\n{str(e)}"
-                )
+            except Exception as exc:
+                report_failure("Preparing to run the tasks", exc)
                 return
 
         # Set execution state
@@ -546,8 +541,9 @@ class ProcessDialog(QtWidgets.QDialog):
         Gated on a version actually having been written locally: farm
         submissions report no version (they write nothing into this process'
         filesystem), and a run where every task was skipped/failed has nothing
-        to float. Best-effort - a refresh failure must never turn a completed
-        publish into an error, so it is logged and swallowed.
+        to float. A refresh failure must not turn a completed publish into a
+        failed one, but the artist is told: the scene's imports still show
+        the old version until it is reopened or Updated.
         """
         def _wrote_version(ts) -> bool:
             for task in ts:
@@ -563,12 +559,11 @@ class ProcessDialog(QtWidgets.QDialog):
         try:
             from tumblepipe import resolver
             resolver.refresh_context()
-        except Exception:
-            logger.warning(
-                "Post-publish session refresh failed; new version(s) are on "
-                "disk but this scene's imports may still show the old version "
-                "until reopened or Updated.",
-                exc_info=True,
+        except Exception as exc:
+            report_failure(
+                "Floating this scene's imports to the version just published "
+                "(it is on disk; reopen the scene or Update to see it)",
+                exc,
             )
 
     def _explained_skips(self) -> list:
@@ -738,29 +733,28 @@ class ProcessDialog(QtWidgets.QDialog):
         from tumblepipe.pipe.paths import latest_export_path, current_staged_path
 
         try:
-            # Get channel from task, default to 'default'
             channel = task.channel if task.channel else 'default'
 
             if task.task_type == 'export':
-                # Open export directory
                 location_path = latest_export_path(task.uri, channel, task.department)
             elif task.task_type == 'build':
-                # Open staged (build) directory
                 location_path = current_staged_path(task.uri, channel)
             else:
                 return
 
             if location_path is None:
+                hou.ui.displayMessage(
+                    f"Nothing was written for {task.description}.",
+                    severity=hou.severityType.Warning,
+                )
                 return
 
-            # Open in file browser
             path = path_str(location_path)
             if location_path.is_dir():
                 path += "/"
             hou.ui.showInFileBrowser(path)
-
-        except Exception as e:
-            print(f"Failed to open location: {e}")
+        except Exception as exc:
+            report_failure(f"Opening the location of {task.description}", exc)
 
     def _view_latest_export(self, entity_uri):
         """Open the latest staged export file in USD viewer."""
@@ -773,11 +767,8 @@ class ProcessDialog(QtWidgets.QDialog):
                 entity_uri,
                 channel_name='default'
             )
-        except Exception as e:
-            hou.ui.displayMessage(
-                f"Could not find latest export.\n\nError: {str(e)}",
-                title="Export Not Found"
-            )
+        except Exception as exc:
+            report_failure(f"Finding the latest export of {entity_uri}", exc)
             return
 
         if not export_file or not export_file.exists():
@@ -788,11 +779,7 @@ class ProcessDialog(QtWidgets.QDialog):
             )
             return
 
-        # Launch in USD viewer
-        launcher = USDViewerLauncher(self)
-        if not launcher.launch_viewer(export_file, USDViewerType.AUTO):
-            hou.ui.displayMessage(
-                "Failed to launch USD viewer.\n\n"
-                "Configure viewer in Settings → Configure USD Viewers",
-                title="Viewer Not Configured"
-            )
+        try:
+            USDViewerLauncher(self).launch_viewer(export_file, USDViewerType.AUTO)
+        except Exception as exc:
+            report_failure(f"Opening {export_file.name} in a USD viewer", exc)

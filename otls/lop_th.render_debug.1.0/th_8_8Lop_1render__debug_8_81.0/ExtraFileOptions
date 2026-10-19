@@ -19,23 +19,23 @@
 		"type":"string",
 		"value":""
 	},
-	"PythonModule/Cursor":{
+	"SyncNodeVersion/Cursor":{
 		"type":"intarray",
-		"value":[4,1]
+		"value":[3,21]
 	},
-	"PythonModule/IsExpr":{
+	"SyncNodeVersion/IsExpr":{
 		"type":"bool",
 		"value":false
 	},
-	"PythonModule/IsPython":{
+	"SyncNodeVersion/IsPython":{
 		"type":"bool",
 		"value":true
 	},
-	"PythonModule/IsScript":{
+	"SyncNodeVersion/IsScript":{
 		"type":"bool",
 		"value":true
 	},
-	"PythonModule/Source":{
+	"SyncNodeVersion/Source":{
 		"type":"string",
 		"value":""
 	}

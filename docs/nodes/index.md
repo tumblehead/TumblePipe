@@ -103,7 +103,6 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 | Node | Category | Purpose |
 |---|---|---|
 | `th::mattes` | LOP | Single-channel matte and distance-ramp AOVs for grading |
-| `th::puzzlemattes` | LOP | Puzzle-matte AOVs from prim patterns (legacy; use `th::mattes`) |
 | `th::render_vars` | LOP | Toggle the standard AOV set |
 
 ### `_TumblePipe/comp`
@@ -191,9 +190,10 @@ Why this matters to you:
   ([Multis and Roots](../asset-browser/multis-and-roots.md#the-multis-workfiles)).
   **Department** `from_context` still resolves: a Multi covers departments,
   so the workfile's own department is unambiguous.
-- An **empty** Entity is *not* the same as `from_context`: the wrapper
-  resolves an empty parm to the first entity in the project. Do not clear
-  the field; put it back to `from_context` or pick an entity.
+- An **empty** Entity is *not* the same as `from_context`: it is an error,
+  and so is an entity that is not in the project, a Channel the entity does
+  not list, or a Department it does not have. The node raises and names the
+  parm instead of guessing. Put Entity back to `from_context` or pick one.
 
 Department works the same way: `from_context` is the workfile's own
 department. Note that on an *export* that is what you want, but on an
@@ -229,8 +229,8 @@ for why an asset's prim path never depends on who imports it.
 The parm labelled **Channel** (default `default`) picks the publish-tree fork
 to read or write — the `bg`/`fg`/character-pass axis a project defines per
 entity. The menu lists the entity's channels with `default` first. Its
-*internal* parm name is still `variant`, so expressions and scripts refer to
-`variant`; the label is the only thing that changed. What a channel is, and
+parm is named `channel` (scenes saved when it was still `variant` are
+upgraded on load). What a channel is, and
 why it is not a USD variant, is in
 [Channels](../composition.md#channels-and-why-they-are-not-usd-variants).
 

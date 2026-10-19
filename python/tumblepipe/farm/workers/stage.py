@@ -1,0 +1,140 @@
+"""Build a shot's render stages in hython (``stage_houdini.py``), one per
+channel, and submit the render pipeline over them: a standalone render."""
+
+from tempfile import TemporaryDirectory
+from pathlib import Path
+import sys
+
+from tumblepipe.api import (
+    path_str,
+    api
+)
+from tumblepipe.config.timeline import BlockRange
+from tumblepipe.util.io import store_json
+from tumblepipe.util.uri import Uri
+from tumblepipe.apps.houdini import Hython
+from tumblepipe.farm import worker
+from tumblepipe.farm.env import get_hython_env, job_data_dir, print_env
+from tumblepipe.farm.pipelines import render as render_pipeline
+from tumblepipe.farm.specs import stage as stage_spec
+from tumblepipe.farm.worker import error
+
+SCRIPT_PATH = Path(__file__).parent / 'stage_houdini.py'
+
+
+def main(config: dict, _frame_span: BlockRange) -> int:
+
+    # Print environment variables for debugging
+    print_env()
+
+    # Get config data
+    entity_uri = Uri.parse(config['entity']['uri'])
+    department_name = config['entity']['department']
+    user_name = config['settings']['user_name']
+    purpose = config['settings']['purpose']
+    pool_name = config['settings']['pool_name']
+    channel_names = config['settings']['channel_names']
+    render_department_name = config['settings']['render_department_name']
+    # Bundled into the job's data dir and addressed relative to it.
+    relative_render_settings_path = Path(config['settings']['render_settings_path'])
+    render_settings_path = job_data_dir() / relative_render_settings_path
+    tile_count = config['settings']['tile_count']
+    first_frame = config['settings']['first_frame']
+    last_frame = config['settings']['last_frame']
+    step_size = config['settings']['step_size']
+    batch_size = config['settings']['batch_size']
+    copy_to_edit = config['settings']['copy_to_edit']
+
+    # Get hython ready
+    hython = Hython()
+
+    # Open a temporary directory
+    root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
+    root_temp_path.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Create one output stage per channel. A single stage composing
+        # every channel would render the last channel's opinions for all
+        # of them (husk has no channel selection).
+        export_path = temp_path / 'export'
+        relative_export_path = export_path.relative_to(temp_path)
+        stage_paths = {
+            channel_name: export_path / f'stage_{channel_name}.usd'
+            for channel_name in channel_names
+        }
+        relative_stage_paths = {
+            channel_name: stage_path.relative_to(temp_path)
+            for channel_name, stage_path in stage_paths.items()
+        }
+
+        # Store stage config
+        config_path = temp_path / 'config.json'
+        store_json(config_path, dict(
+            entity = dict(
+                uri = str(entity_uri),
+                department = department_name
+            ),
+            settings = dict(
+                first_frame = first_frame,
+                last_frame = last_frame,
+                render_settings_path = path_str(render_settings_path),
+                render_department_name = render_department_name
+            ),
+            output_paths = {
+                channel_name: path_str(stage_path)
+                for channel_name, stage_path in stage_paths.items()
+            }
+        ))
+
+        # Export the USD stages
+        hython.run(
+            SCRIPT_PATH,
+            [
+                path_str(config_path)
+            ],
+            env = get_hython_env()
+        )
+
+        # Check if temp stages were generated
+        for channel_name, stage_path in stage_paths.items():
+            if not stage_path.exists():
+                return error(f'Stage not exported: {stage_path}')
+
+        # Submit the render pipe tasks with all render layers
+        tasks = config['tasks'].copy()
+        tasks.pop('stage')
+        render_pipeline.submit(dict(
+            entity = dict(
+                uri = str(entity_uri),
+                department = department_name
+            ),
+            settings = dict(
+                user_name = user_name,
+                purpose = purpose,
+                pool_name = pool_name,
+                channel_names = channel_names,
+                render_department_name = render_department_name,
+                render_settings_path = path_str(render_settings_path),
+                input_paths = {
+                    channel_name: path_str(relative_stage_path)
+                    for channel_name, relative_stage_path in relative_stage_paths.items()
+                },
+                tile_count = tile_count,
+                first_frame = first_frame,
+                last_frame = last_frame,
+                step_size = step_size,
+                batch_size = batch_size,
+                copy_to_edit = copy_to_edit
+            ),
+            tasks = tasks
+        ), {
+            render_settings_path: relative_render_settings_path,
+            export_path: relative_export_path
+        })
+
+    # Done
+    return 0
+
+if __name__ == '__main__':
+    sys.exit(worker.run(stage_spec.is_valid_context, main))

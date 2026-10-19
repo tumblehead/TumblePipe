@@ -7,9 +7,8 @@ Pipeline catalog beside assets and shots: they have a **Recipes** section in
 the sidebar, cards in the grid, and they show up in the browser's **All**
 view with everything else.
 
-Up to TumbleTrove 0.34 recipes lived in TumbleTrove's own *Network* catalog,
-in a personal folder on each machine. They now live in the project, so a
-recipe one artist saves is on every teammate's grid after a **Refresh**.
+Recipes live in the project, so a recipe one artist saves is on every
+teammate's grid after a **Refresh**.
 
 ## Where they are
 
@@ -38,8 +37,7 @@ Either:
   Recipes section). The recipe is exactly the nodes you dragged: drag one
   node of a selection to take the whole selection, or an unselected node to
   take just that node. The dragged nodes are selected when the form opens.
-  Needs TumbleTrove 0.35.1 or later; before it, the recipe was whatever
-  happened to be selected, which is not always what you dragged. Or
+  Or
 - select the nodes and pick **New Recipe...** from the **+** card, the list's
   **+** row, the empty-space menu, or the Recipes header's right-click menu.
 

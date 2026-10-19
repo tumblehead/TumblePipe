@@ -1,6 +1,5 @@
 from copy import deepcopy
 
-from tumblepipe.util.data import deep_merge as _deep_merge
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 
@@ -75,7 +74,7 @@ class DatabaseAdapter:
                     result.extend(_collect(child_data, child_uri))
             return result
 
-        base_uri = Uri.parse_unsafe(f"{purpose}:/")
+        base_uri = Uri.parse(f"{purpose}:/")
         return _collect(data, base_uri)
 
     def lookup(self, uri: Uri) -> dict | None:
@@ -153,96 +152,38 @@ class DatabaseAdapter:
             return {}
         return data.get('properties', {})
 
-    def get_root_inherited_properties(self, purpose: str) -> dict:
-        """Get inherited properties for a root entity (schema defaults).
-
-        Root entities like entity:/ have their schema at schemas:/{purpose}.
-        """
-        schema_uri = Uri.parse_unsafe(f'schemas:/{purpose}')
-        return self._get_schema_properties(schema_uri)
-
     def get_inherited_properties(self, uri: Uri) -> dict:
-        """Get properties to compare against (schema defaults + parent inheritance).
+        """What ``uri``'s own properties are compared against: its schema's
+        defaults (which also fix the field order) and every ancestor's own
+        properties — :meth:`JsonConfigStore.get_inherited_properties`, a
+        purpose root included. ``{}`` when an ancestor is missing."""
+        return self._config.get_inherited_properties(uri) or {}
 
-        For comparison purposes:
-        - Schema defaults define the baseline structure and field order
-        - Parent inheritance provides inherited property values (render, farm, etc.)
+    def save_properties(
+        self, uri: Uri, properties: dict, *, merge: bool = True,
+    ) -> tuple[bool, str]:
+        """Save just ``uri``'s properties, keeping its children.
 
-        For a URI like entity:/assets/CHAR/Chair with schema schemas:/entity/assets/category/asset,
-        this returns merged properties from:
-        1. schemas:/entity/assets/category/asset (schema defaults - defines order)
-        2. entity:/ -> entity:/assets -> entity:/assets/CHAR (parent inheritance)
+        ``merge`` folds in an external change made since the working copy
+        was read (see :meth:`save_with_merge`); ``(False, "conflict")`` when
+        that cannot be done. ``merge=False`` overwrites — the artist chose
+        their version over the external one. ``(True, "")`` once saved.
         """
-        # 1. Start with schema defaults (defines base structure and order).
-        # The schema is derived from the entity's position (handles the
-        # placeholder schema tree correctly) — the old naive
-        # schemas:/{purpose}/{segments} join mismatched placeholder paths.
-        schema_uri = self._config.get_entity_schema_uri(uri)
-        result = self._get_schema_properties(schema_uri) if schema_uri is not None else {}
-
-        # 2. Merge parent entity inheritance on top
-        if uri.segments:
-            cache_data = self.lookup_root(uri.purpose)
-            if cache_data:
-                # Merge root properties
-                result = _deep_merge(result, deepcopy(cache_data.get('properties', {})))
-
-                # Merge from root to parent (stop before last segment)
-                data = cache_data
-                for segment in uri.segments[:-1]:
-                    children = data.get('children', {})
-                    if segment not in children:
-                        break
-                    data = children[segment]
-                    result = _deep_merge(result, data.get('properties', {}))
-
-        return result
-
-    def _get_schema_properties(self, schema_uri: Uri) -> dict:
-        """Get properties from a schema URI with full hierarchy inheritance."""
-        # Use config's get_properties which walks full schema hierarchy
-        props = self._config.get_properties(schema_uri)
-        return props if props else {}
-
-    def save_properties(self, uri: Uri, properties: dict) -> None:
-        """Save just the properties for a URI, preserving children"""
         if uri.segments:
             data = self.lookup(uri) or {'properties': {}, 'children': {}}
         else:
             data = self.lookup_root(uri.purpose) or {'properties': {}, 'children': {}}
         data['properties'] = properties
+        if merge:
+            if uri.segments:
+                return self.save_with_merge(uri, data)
+            return self.save_root_with_merge(uri.purpose, data)
         if uri.segments:
             self.save(uri, data)
         else:
             self.save_root(uri.purpose, data)
+        return True, ""
 
-    def save_properties_with_merge(self, uri: Uri, properties: dict) -> tuple[bool, str]:
-        """Save properties with merge conflict detection. Returns (success, message)."""
-        if uri.segments:
-            data = self.lookup(uri) or {'properties': {}, 'children': {}}
-        else:
-            data = self.lookup_root(uri.purpose) or {'properties': {}, 'children': {}}
-        data['properties'] = properties
-        if uri.segments:
-            return self.save_with_merge(uri, data)
-        else:
-            return self.save_root_with_merge(uri.purpose, data)
-
-    def force_save_properties(self, uri: Uri, properties: dict) -> None:
-        """Force save properties without merge (user chose to overwrite)."""
-        if uri.segments:
-            data = self.lookup(uri) or {'properties': {}, 'children': {}}
-        else:
-            data = self.lookup_root(uri.purpose) or {'properties': {}, 'children': {}}
-        data['properties'] = properties
-        if uri.segments:
-            self.force_save(uri, data)
-        else:
-            self.force_save_root(uri.purpose, data)
-
-    def transact(self, uri: Uri) -> 'DatabaseTransaction':
-        """Create a transaction context for applying changes"""
-        return DatabaseTransaction(self, uri)
 
     def _record_file_mtimes(self) -> None:
         """Re-baseline the merge state for every loaded working copy."""
@@ -251,6 +192,13 @@ class DatabaseAdapter:
             if mtime is not None:
                 self._file_mtimes[purpose] = mtime
                 self._base_snapshots[purpose] = deepcopy(self._working[purpose])
+
+    def reload_purpose(self, purpose: str) -> None:
+        """Re-read ``purpose``'s working copy after a write made through
+        the config store itself (a delete or rename), and re-baseline."""
+        for state in (self._working, self._file_mtimes, self._base_snapshots):
+            state.pop(purpose, None)
+        self._ensure_loaded(purpose)
 
     def reload_cache(self) -> None:
         """Reload all data from disk, discarding local edits."""
@@ -348,145 +296,3 @@ class DatabaseAdapter:
         merged = patch(merger.unified_patches, base)
         return merged, False
 
-    def force_save(self, uri: Uri, data: dict) -> None:
-        """Force save without merge (user chose to overwrite)."""
-        self.save(uri, data)
-
-    def force_save_root(self, purpose: str, data: dict) -> None:
-        """Force save root without merge (user chose to overwrite)."""
-        self.save_root(purpose, data)
-
-
-class DatabaseTransaction:
-    """Transaction wrapper for applying changes to ConfigConvention"""
-
-    def __init__(self, adapter: DatabaseAdapter, uri: Uri):
-        self._adapter = adapter
-        self._uri = uri
-        self._original_data = None
-        self._working_data = None
-
-    def __enter__(self):
-        if self._uri.segments:
-            self._original_data = self._adapter.lookup(self._uri)
-        else:
-            self._original_data = self._adapter.lookup_root(self._uri.purpose)
-        self._working_data = deepcopy(self._original_data) if self._original_data else {}
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        if exc_type is None:
-            if self._uri.segments:
-                self._adapter.save(self._uri, self._working_data)
-            else:
-                self._adapter.save_root(self._uri.purpose, self._working_data)
-
-    def _navigate_path(self, path):
-        """Navigate to the parent of the target location and return (parent, key/index)"""
-        parts = _json_path_parts(path)
-        current = self._working_data
-        for part in parts[:-1]:
-            if isinstance(part, int):
-                current = current[part]
-            else:
-                current = current[part]
-        return current, parts[-1] if parts else None
-
-    def array_insert(self, path, index, value):
-        parts = _json_path_parts(path)
-        current = self._working_data
-        for part in parts:
-            if isinstance(part, int):
-                current = current[part]
-            else:
-                current = current[part]
-        current.insert(index, value)
-
-    def array_update(self, path, index, value):
-        parts = _json_path_parts(path)
-        current = self._working_data
-        for part in parts:
-            if isinstance(part, int):
-                current = current[part]
-            else:
-                current = current[part]
-        current[index] = value
-
-    def array_reorder(self, path, from_index, to_index, from_value, to_value):
-        parts = _json_path_parts(path)
-        current = self._working_data
-        for part in parts:
-            if isinstance(part, int):
-                current = current[part]
-            else:
-                current = current[part]
-        current[from_index] = to_value
-        current[to_index] = from_value
-
-    def array_remove(self, path, index):
-        parts = _json_path_parts(path)
-        current = self._working_data
-        for part in parts:
-            if isinstance(part, int):
-                current = current[part]
-            else:
-                current = current[part]
-        del current[index]
-
-    def object_insert(self, path, key, value):
-        parts = _json_path_parts(path)
-        current = self._working_data
-        for part in parts:
-            if isinstance(part, int):
-                current = current[part]
-            else:
-                current = current[part]
-        current[key] = value
-
-    def object_update(self, path, key, value):
-        parts = _json_path_parts(path)
-        current = self._working_data
-        for part in parts:
-            if isinstance(part, int):
-                current = current[part]
-            else:
-                current = current[part]
-        current[key] = value
-
-    def object_rename(self, path, old_key, new_key):
-        parts = _json_path_parts(path)
-        current = self._working_data
-        for part in parts:
-            if isinstance(part, int):
-                current = current[part]
-            else:
-                current = current[part]
-        current[new_key] = current.pop(old_key)
-
-    def object_remove(self, path, key):
-        parts = _json_path_parts(path)
-        current = self._working_data
-        for part in parts:
-            if isinstance(part, int):
-                current = current[part]
-            else:
-                current = current[part]
-        del current[key]
-
-
-def _json_path_parts(path) -> list[int | str]:
-    """Convert JsonPath to list of keys/indices"""
-    from .json_editor import JsonPathRoot, JsonPathField, JsonPathIndex
-
-    parts = []
-    while True:
-        if isinstance(path, JsonPathRoot):
-            return list(reversed(parts))
-        elif isinstance(path, JsonPathIndex):
-            parts.append(path.index)
-            path = path.path
-        elif isinstance(path, JsonPathField):
-            parts.append(path.key)
-            path = path.path
-        else:
-            raise ValueError(f"Invalid path type: {type(path)}")

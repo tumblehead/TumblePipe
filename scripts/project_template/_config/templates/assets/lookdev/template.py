@@ -3,7 +3,7 @@ import hou
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
 from tumblepipe.config.channels import list_channels
-from tumblepipe.pipe.houdini.lops import import_layer, export_layer
+from tumblepipe.pipe.houdini.lops import import_layer, export_layer, create_asset
 
 # --- /stage layout -------------------------------------------------------
 # Explicit positions: this department owns its layout, so nothing here calls
@@ -63,7 +63,7 @@ def _pin_entity(node, entity_uri: Uri):
     workfiles deliberately leave the parm at 'from_context' so the node
     follows the workfile it lives in.
     """
-    node.hdaModule()._apply_entity(node, str(entity_uri))
+    create_asset.wrap(node).set_entity_uri(entity_uri)
 
 def _sticky_note(parent, text: str, position: hou.Vector2, size: hou.Vector2,
                  text_color=NOTE_TEXT_COLOR, color=NOTE_COLOR,
@@ -221,7 +221,7 @@ def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
         lookdev_node.parm('variants').set(len(channel_names))
         for i, name in enumerate(channel_names):
             lookdev_node.parm(f'variant_name{i+1}').set(name)
-        lookdev_node.hdaModule()._sync_variants(lookdev_node)
+        create_asset.wrap(lookdev_node).sync_variants()
     else:
         channel_names = ['default']
 

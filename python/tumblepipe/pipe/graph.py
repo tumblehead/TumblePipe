@@ -11,13 +11,14 @@ Terminology:
 """
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 
+from tumblepipe.api import api
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.channels import DEFAULT_CHANNEL
-from tumblepipe.config.entities import get_entity_type
+from tumblepipe.config.department import list_entity_department_names
+from tumblepipe.config.entities import get_entity_type, is_terminal_entity
 from tumblepipe.pipe.paths import latest_export_path
 
 
@@ -45,15 +46,6 @@ def entity_key(entity_uri: Uri, department_name: Optional[str]) -> str:
     return f'{entity_uri}{dept_suffix}'
 
 
-def get_latest_version(api, entity_uri: Uri, channel_name: str, department_name: Optional[str]) -> Optional[Path]:
-    """
-    Look up latest version path for entity.
-
-    Uses latest_export_path() with Uri.
-    """
-    return latest_export_path(entity_uri, channel_name, department_name)
-
-
 def entity_from_dict(data: dict) -> Optional[tuple[Uri, Optional[str]]]:
     """Create (entity_uri, department_name) tuple from context.json input/output dict."""
     entity_str = data.get('uri')
@@ -61,7 +53,7 @@ def entity_from_dict(data: dict) -> Optional[tuple[Uri, Optional[str]]]:
         return None
 
     try:
-        entity_uri = Uri.parse_unsafe(entity_str)
+        entity_uri = Uri.parse(entity_str)
     except ValueError:
         return None
     department = data.get('department')
@@ -70,37 +62,31 @@ def entity_from_dict(data: dict) -> Optional[tuple[Uri, Optional[str]]]:
 
 # === Scanning ===
 
-def _iter_all_entities(api):
+def _iter_all_entities():
+    """Every (entity, department) pair whose latest export ``scan`` reads.
+
+    The entities are the terminal assets and shots, decided by the schema
+    (``is_terminal_entity``) rather than by URI depth: an asset is
+    ``entity:/assets/<category>/<asset>``, and departments are not entities
+    at all, so the ``entity:/assets/*/*/*`` filter this used to list matched
+    nothing and every scan came back empty. Each entity contributes the
+    departments assigned to it, disabled ones included, since a disabled
+    department's exports are still on disk and still referenced.
     """
-    Iterate all possible entities in the project.
-
-    Yields: (entity_uri, department_name) tuples for all combinations
-    """
-    # Iterate all asset entities (category/asset/department)
-    for entity in api.config.list_entities(Uri.parse_unsafe('entity:/assets/*/*/*'), closure=True):
-        # entity is Entity(uri, properties) from new API
-        # Extract department from URI path
-        path_segments = list(entity.uri.segments)
-        if len(path_segments) >= 4:
-            department_name = path_segments[3]
-            base_uri = Uri.parse_unsafe(f'entity:/assets/{path_segments[1]}/{path_segments[2]}')
-            yield base_uri, department_name
-        elif len(path_segments) == 3:
-            yield entity.uri, None
-
-    # Iterate all shot entities (sequence/shot/department)
-    for entity in api.config.list_entities(Uri.parse_unsafe('entity:/shots/*/*/*'), closure=True):
-        # Extract department from URI path
-        path_segments = list(entity.uri.segments)
-        if len(path_segments) >= 4:
-            department_name = path_segments[3]
-            base_uri = Uri.parse_unsafe(f'entity:/shots/{path_segments[1]}/{path_segments[2]}')
-            yield base_uri, department_name
-        elif len(path_segments) == 3:
-            yield entity.uri, None
+    with api.config.coherent():
+        for context in ('assets', 'shots'):
+            for entity_uri in api.config.list_entity_uris(
+                Uri.parse(f'entity:/{context}'), closure=True
+            ):
+                if not is_terminal_entity(api.config, entity_uri):
+                    continue
+                for department_name in list_entity_department_names(
+                    entity_uri, include_disabled=True
+                ):
+                    yield entity_uri, department_name
 
 
-def scan(api) -> Graph:
+def scan() -> Graph:
     """
     Scan all latest context.json files and build dependency graph.
 
@@ -109,17 +95,14 @@ def scan(api) -> Graph:
     nodes = {}
 
     # Scan all entities
-    for entity_uri, department_name in _iter_all_entities(api):
-        # Get latest version path (scan with default channel)
-        latest_path = get_latest_version(api, entity_uri, DEFAULT_CHANNEL, department_name)
+    for entity_uri, department_name in _iter_all_entities():
+        # Every edge is recorded in the default channel's latest export
+        latest_path = latest_export_path(entity_uri, DEFAULT_CHANNEL, department_name)
         if latest_path is None:
             continue
 
-        # Load context.json
-        context_path = latest_path / 'context.json'
-        context_data = load_json(context_path)
-        if context_data is None:
-            continue
+        # Every export writes its context.json; one missing is a broken export
+        context_data = load_json(latest_path / 'context.json')
 
         # Create node for this entity
         key = entity_key(entity_uri, department_name)
@@ -147,104 +130,8 @@ def scan(api) -> Graph:
     return Graph(nodes=nodes, scanned=True)
 
 
-def invalidate(graph: Graph) -> Graph:
-    """
-    Clear cache - return empty graph.
-
-    Returns: new empty Graph
-    """
-    return Graph()
-
-
-def invalidate_entity(graph: Graph, entity_uri: Uri, department_name: Optional[str]) -> Graph:
-    """
-    Remove specific entity from graph.
-
-    Returns: new Graph with entity removed
-    """
-    key = entity_key(entity_uri, department_name)
-    # Fresh nodes: re-pointing the edges of the shared Node objects stripped
-    # the entity out of the graph passed in as well, leaving that graph's
-    # dependencies and references no longer inverse to each other.
-    new_nodes = {
-        k: Node(entity_uri=v.entity_uri, department_name=v.department_name)
-        for k, v in graph.nodes.items() if k != key
-    }
-
-    def _kept(nodes):
-        return [
-            new_nodes[k] for k in (entity_key(n.entity_uri, n.department_name) for n in nodes)
-            if k in new_nodes
-        ]
-
-    for k, node in new_nodes.items():
-        node.dependencies = _kept(graph.nodes[k].dependencies)
-        node.references = _kept(graph.nodes[k].references)
-
-    return Graph(nodes=new_nodes, scanned=graph.scanned)
-
-
-# === Forward Queries ===
-
-def _closure(node: Node, edges) -> list[tuple[Uri, Optional[str]]]:
-    """Every node reachable from ``node`` along ``edges``, each once.
-
-    One ``seen`` set for the whole walk. The recursive version gave each
-    call its own, so a two-node cycle (A uses B, B uses A) recursed until
-    RecursionError, and a diamond listed the shared node twice.
-    """
-    result = []
-    seen = set()
-    worklist = list(edges(node))
-    while worklist:
-        current = worklist.pop(0)
-        current_key = entity_key(current.entity_uri, current.department_name)
-        if current_key in seen:
-            continue
-        seen.add(current_key)
-        result.append((current.entity_uri, current.department_name))
-        worklist.extend(edges(current))
-    return result
-
-
-def get_dependencies(graph: Graph, entity_uri: Uri, department_name: Optional[str], recursive: bool = False) -> list[tuple[Uri, Optional[str]]]:
-    """
-    Get what entity depends on (what it uses).
-
-    Returns: list of (entity_uri, department_name) tuples
-    """
-    if not graph.scanned:
-        raise ValueError("Graph not scanned")
-
-    key = entity_key(entity_uri, department_name)
-    if key not in graph.nodes:
-        return []
-
-    node = graph.nodes[key]
-    if not recursive:
-        return [(dep.entity_uri, dep.department_name) for dep in node.dependencies]
-    return _closure(node, lambda n: n.dependencies)
-
 
 # === Reverse Queries ===
-
-def get_references(graph: Graph, entity_uri: Uri, department_name: Optional[str], recursive: bool = False) -> list[tuple[Uri, Optional[str]]]:
-    """
-    Get what depends on entity (what uses it).
-
-    Returns: list of (entity_uri, department_name) tuples
-    """
-    if not graph.scanned:
-        raise ValueError("Graph not scanned")
-
-    key = entity_key(entity_uri, department_name)
-    if key not in graph.nodes:
-        return []
-
-    node = graph.nodes[key]
-    if not recursive:
-        return [(ref.entity_uri, ref.department_name) for ref in node.references]
-    return _closure(node, lambda n: n.references)
 
 
 def find_shots_referencing_asset(graph: Graph, asset_uri: Uri) -> list[Uri]:

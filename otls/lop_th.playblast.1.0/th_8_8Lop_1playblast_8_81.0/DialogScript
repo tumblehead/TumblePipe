@@ -25,7 +25,7 @@
             joinnext
             default { "0" }
             parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
-            parmtag { "script_callback" "hou.phm().select()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.playblast as th_node; th_node.select(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -52,14 +52,14 @@
             default { "from_context" }
             menu {
                 [ "from tumblepipe.pipe.houdini.lops import playblast" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = playblast.Playblast(hou.pwd())" ]
                 [ "items = node.list_department_names()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "return menus.list_to_menu(items)" ]
                 language python
             }
-            parmtag { "script_callback" "hou.phm().update_labels()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.playblast as th_node; th_node.update_labels(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -76,11 +76,11 @@
             default { "" }
             menu {
                 [ "from tumblepipe.pipe.houdini.lops import playblast" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = playblast.Playblast(hou.pwd())" ]
                 [ "items = node.list_camera_names()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "return menus.list_to_menu(items)" ]
                 language python
             }
             parmtag { "script_callback_language" "python" }
@@ -129,9 +129,9 @@
             name    "frame_range"
             label   "Frame Range"
             type    string
-            default { "from_config" }
+            default { "from_context" }
             menu {
-                "from_config"   "From Config"
+                "from_context"  "From Config"
                 "from_settings" "From Settings"
             }
             parmtag { "script_callback_language" "python" }
@@ -178,7 +178,7 @@
             type    button
             joinnext
             default { "0" }
-            parmtag { "script_callback" "hou.phm().export()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.playblast as th_node; th_node.export(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -187,7 +187,7 @@
             type    button
             joinnext
             default { "0" }
-            parmtag { "script_callback" "hou.phm().view_latest()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.playblast as th_node; th_node.view_latest(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -195,7 +195,7 @@
             label   "Browse All"
             type    button
             default { "0" }
-            parmtag { "script_callback" "hou.phm().open_location()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.playblast as th_node; th_node.open_location(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }

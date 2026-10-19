@@ -1,9 +1,9 @@
 # Configuration
 
 TumblePipe is customized through a small set of environment variables and a
-config directory of Python "convention" modules. The variables tell Houdini
-where to find the pipeline and the project, and the convention modules tell
-the pipeline how *your* studio names and organizes its files.
+per-project config directory of data files. The variables tell Houdini where
+to find the pipeline and the project, and the config directory tells the
+pipeline where the project's files live and how it is organised.
 
 ## Environment variables
 
@@ -22,8 +22,10 @@ typically set in a launcher script that then starts Houdini.
 `TH_CONFIG_PATH` defaults to `$TH_PROJECT_PATH/_config` and `TH_EXPORT_PATH`
 defaults to `$TH_PROJECT_PATH/export` when unset.
 
-`TH_TEMP` overrides where `temp:/` resolves. Scratch is machine-local by
-default — `<OS temp>/th_temp/<project>` — because everything that publishes
+`TH_TEMP` overrides the OS temp directory as `{local_temp}`, the root the
+scaffold's `temp` storage entry uses (see *The project config* below). Scratch
+is machine-local by default — `<OS temp>/th_temp/<project>` — because
+everything that publishes
 stages there and copies the finished result to its final home: an export
 writes the whole version payload into a temp directory and then copies it into
 `export/`, and a farm render writes its tiles there before the stitch. Putting
@@ -33,7 +35,7 @@ Nothing under `temp:/` outlives the operation that wrote it.
 `TH_TEMP` is read from the process environment of whatever is running, so it is
 per-machine: set it where the OS temp sits on a small system drive. It is
 deliberately **not** part of the environment a submission builds for its farm
-jobs (`farm.tasks.env.get_base_env`), so a worker resolves scratch against its
+jobs (`farm.env.get_base_env`), so a worker resolves scratch against its
 own environment rather than inheriting the artist's — see
 [Farm worker prerequisites](deadline.md#farm-worker-prerequisites). It is also
 the one variable here the package manifest does not declare: `[runtime]` edits
@@ -71,7 +73,7 @@ native window that asks for one thing, the project folder:
   override.
 - **An empty folder, or one that doesn't exist yet** — the window asks only
   for the FPS, then copies `scripts/project_template/_config/` into it — the
-  convention modules, the JSON databases, *and* the `templates/` department
+  storage table, the JSON databases, *and* the `templates/` department
   scaffolding — customises the JSON databases (farm pool default, fps),
   creates the standard top-level subdirs (`assets/`, `shots/`, `groups/`,
   `export/`), and persists `TH_PROJECT_PATH`. The project's name, which
@@ -128,18 +130,16 @@ so, in words that name the fix:
 exists. The marker is shared with the wizard's *existing project*
 check.
 
-## The convention framework
+## The project config
 
-TumblePipe expects a config directory (pointed at by `TH_CONFIG_PATH`) that
-contains these Python modules. The filenames are not optional — the pipeline
-imports them by name:
+TumblePipe expects a config directory (pointed at by `TH_CONFIG_PATH`) holding
+the project's data. Nothing in it is code: the pipeline reads it, it never
+imports it.
 
-- `config_convention.py` — workspace configuration (departments, shot
-  scaffolding, default task names). This is a thin shim: the config database
-  engine lives in the package (`tumblepipe.config.store.JsonConfigStore`),
-  and the file just instantiates it (`def create(): return JsonConfigStore()`).
-  Engine fixes therefore ship with the package and reach every project,
-  rather than being frozen into this per-project copy.
+- `db/*.json` — the config database: entities, schemas, departments, scenes,
+  groups and project settings. The engine that reads and writes it is the
+  package's (`tumblepipe.config.store.JsonConfigStore`, the client's
+  `api.config`), so fixes ship with the package and reach every project.
 
   Reads are **coherent and cheap**: each public read validates the backing
   `db/*.json` stamp at most once (so an out-of-process write is visible on
@@ -149,18 +149,67 @@ imports them by name:
   properties (use it whenever only `.uri` is consumed — HDA menus
   especially), and `with config.coherent():` batches a loop of reads into a
   single coherency check.
-- `naming_convention.py` — how assets, shots, and work files are named.
-- `storage_convention.py` — maps project URIs (`project://`, `entity://`, …)
-  to concrete filesystem paths.
+- `storage.json` — where each storage purpose lives on disk (below).
+- `version.json` — the layout version (see *Layout versioning and migration*).
+
+Naming is not configurable per project: entity names are ASCII letters and
+digits, versions are `v` plus at least four digits (`v0001`, `v10000`), and the
+second instance of an asset is `<asset>1`. The resolver and every path builder
+spell versions that way, so `tumblepipe.naming` is a plain module.
+
+### Storage
+
+`storage.json` maps each storage purpose to a path template:
+
+```json
+{
+    "assets": "{project_path}/assets",
+    "shots": "{project_path}/shots",
+    "groups": "{project_path}/groups",
+    "export": "{project_path}/export",
+    "cache": "{project_parent}/{project_name}_cache",
+    "render": "{project_parent}/{project_name}_render",
+    "turntable": "{project_parent}/{project_name}_turntable",
+    "temp": "{local_temp}/th_temp/{project_name}",
+    "proxy": "{project_parent}/{project_name}_proxy",
+    "preset": "{config_path}/presets",
+    "edit": "{project_path}/edit"
+}
+```
+
+That is the scaffold's table. A URI resolves by joining its segments under its
+purpose's path: `export:/assets/CHAR/Hero/default/model` is
+`<project>/export/assets/CHAR/Hero/default/model`. Edit the file to move a
+purpose; a show whose edit sources sit on another drive sets `"edit":
+"E:/Sources/Show"`. The table must list exactly these eleven purposes — a
+missing or unknown one stops the project from opening, with the file named —
+and a template may use only these placeholders:
+
+| Placeholder | Value |
+|---|---|
+| `{project_path}` | `TH_PROJECT_PATH` |
+| `{project_parent}` | the folder that contains the project |
+| `{project_name}` | the project folder's name |
+| `{pipeline_path}` | `TH_PIPELINE_PATH` |
+| `{config_path}` | `TH_CONFIG_PATH` |
+| `{home}` | the user's home directory |
+| `{local_temp}` | `TH_TEMP`, else the OS temp directory |
+
+`project:/`, `pipeline:/` and `config:/` are not in the table: they are the
+directories TumblePipe is launched with. Resolving any other purpose, or a
+wildcard URI, raises rather than returning nothing.
+
+Until layout v11 these were three Python modules (`naming_convention.py`,
+`storage_convention.py`, `config_convention.py`) that the client imported and
+ran. Only the storage paths ever differed between projects, so they became
+this table, and v11 converts an existing project (see below).
 
 Render / AOV configuration lives in the schema and entity data
 (`schemas.json`, `entity.json` under the `render` sub-object), not in a
 Python module. A shot's render layers are its **channels**, stored in the
-`variants` property — the same channel list the rest of the pipeline uses.
-(`variants` is the key writers emit, and readers take `channels` too; the
-concept is called a channel
-everywhere it is shown. There is no separate `render_layers` property;
-that name is retired.) How a render workfile produces each layer is in
+`channels` property — the same channel list the rest of the pipeline uses.
+(Projects from before v13 stored it as `variants`; v13 renamed the key.
+There is no separate `render_layers` property; that name is retired.) How a render workfile produces each layer is in
 [Render layers (channels)](nodes/lighting-and-rendering.md#render-layers-channels).
 
 ### Departments
@@ -294,12 +343,14 @@ card's (**Open Multi**, **Open Location**, **Edit Multi…**, **Delete Multi**)
 plus **Add selected to Multi** and **Remove selected from Multi** (see
 [Multis and Roots](asset-browser/multis-and-roots.md)).
 
-Every one of those operations except creation is routed by TumbleTrove
-through the catalog's `owns_collection` hook, and silently does nothing
-when no catalog claims the id — which is exactly what happened until the
-catalog overrode that hook: an artist could create a Multi and then never
-delete, edit, or populate it. `tests/test_catalog_multis.py` pins that
-contract against the shipped SDK.
+TumbleTrove routes every one of those operations to the catalog whose
+row or card was clicked, and asks it what the menu holds beyond its own
+entries (`container_kind_label`, `get_container_actions`,
+`execute_container_action`). Until TumbleTrove 0.48 it routed them through
+an `owns_collection` hook instead, and did nothing when no catalog claimed
+the id — which is exactly what happened until the catalog overrode it: an
+artist could create a Multi and then never delete, edit, or populate it.
+`tests/test_catalog_multis.py` pins the contract against the shipped SDK.
 
 ### Department templates
 
@@ -329,10 +380,6 @@ Each template splits on the URI it is handed:
 versioned with the rest of `_config` and refreshed by migration (below), so
 a fix here reaches live projects instead of only new ones.
 
-Each module exposes a specific interface that the pipeline calls into. The
-[*Turbulence* tech demo](https://www.sidefx.com/tech-demos/turbulence/)
-publishes a complete working example of these modules.
-
 ### Layout versioning and migration
 
 The `_config/` layout is versioned in `_config/version.json` (a project with
@@ -354,6 +401,12 @@ Every migration is idempotent — re-running is always safe — and `--dry-run`
 shows exactly what would change. New projects created by the wizard already
 ship at the current version.
 
+The package reads exactly the layout its newest migration writes
+(`tumblepipe.config.layout.CONFIG_LAYOUT_VERSION`): opening a project on any
+other layout raises `ProjectLayoutError` naming the fix, instead of reading
+the old layout wrongly. Older layouts are never refused by the migration
+itself — every one still migrates forward.
+
 You no longer have to remember to run it: the `tt_prepare` package hook runs
 on every project launch, notices when a project is behind and offers to bring
 it forward. The command above stays as the deliberate route — a bulk sweep,
@@ -369,10 +422,12 @@ pending step cannot complete — a project that cannot be fully migrated is
 left exactly as it was, rather than stamped part-way at the last step that
 happened to succeed.
 
-A migration never replaces a file without preserving the original. Which of
-the two it does depends on how load-bearing the file is:
+A migration never replaces a file without preserving the original — the one
+exception is a template v12 recognises as a version the scaffold shipped, which
+holds nothing of the project's. Which of the two it does depends on how
+load-bearing the file is:
 
-- **`config_convention.py` is refused, not clobbered.** If it is not the stock
+- **`config_convention.py` is refused, not clobbered (v1).** If it is not the stock
   engine, the migration raises rather than overwrite a customisation; the
   stock file is backed up to `config_convention.py.bak` before being replaced
   by the thin shim.
@@ -384,9 +439,9 @@ the two it does depends on how load-bearing the file is:
   HDAs on their `from_context` default instead of baking an entity URI in)
   would otherwise never reach a live project. If you *had* hand-tuned a
   template, reconcile it from the `.bak`. The refresh runs only as a
-  numbered step (v2, then v9 as `template.py.v9.bak`), so a later scaffold
-  template change reaches existing projects only once another refresh step
-  ships.
+  numbered step (v2, then v9 as `template.py.v9.bak`, then v12 for stock
+  templates only), so a later scaffold template change reaches existing
+  projects only once another refresh step ships.
 - **`_config/db/schemas.json` gains the `entity.departments` default (v3).**
   Additive and data-neutral — it declares the per-entity department
   assignment property (default `[]` = "inherit the pool") so the store can
@@ -405,10 +460,8 @@ the two it does depends on how load-bearing the file is:
 - **The `variants` column is relabelled `Channels` (v5).** The publish-tree
   fork is called a **channel** now — "variant" is reserved for USD's own
   `variantSet` (see *Channels* in `composition.md`). Only the label and its
-  tooltip move: the property key stays `variants`, because that is what every
-  project's database already stores and what the published path and URI wire
-  format spell. Data-neutral, and it leaves a project that has renamed the
-  column itself alone.
+  tooltip move here; v13 moves the key. Data-neutral, and it leaves a project
+  that has renamed the column itself alone.
 
 - **The retired `kits` entries leave `storage_convention.py` (v6).** `kits`
   was in the scaffold from the first commit and nothing ever resolved a
@@ -486,6 +539,75 @@ the two it does depends on how load-bearing the file is:
   Fix the file by hand -- remove the `alpha` RenderVar and its `orderedVars`
   target, make the beauty RenderVar `color4f` -- and launch again.
 
+- **The convention modules become data (v11).** `naming_convention.py`,
+  `storage_convention.py` and `config_convention.py` are retired, each kept
+  as `<name>.v11.bak`, and the storage paths are written to
+  `_config/storage.json` (see *Storage* above). The storage module is *read*,
+  not run: the step understands every shape the scaffold has shipped and the
+  live projects carry — literal and WSL `/mnt/...` roots, `Path.home()`,
+  locals such as `_primary_path`, f-strings on `project_name` — and writes
+  each purpose's path exactly as it resolved. A purpose the module never
+  routed (some old projects have no `groups`) gets the scaffold's location;
+  `kits` is dropped. A project with no storage module gets the scaffold's
+  table, and one that already has a `storage.json` keeps it.
+
+  It **refuses rather than guesses**, before anything is written, when the
+  storage module does something it cannot read (a condition, an environment
+  lookup, a helper call, a placeholder other than `{project_name}`, a purpose
+  of its own, a moved `project_path`), when `naming_convention.py` is not one
+  of the three versions the scaffold shipped, or when `config_convention.py`
+  is not v1's shim. The message names the file and the line. Write
+  `_config/storage.json` by hand from the scaffold's, or reconcile and delete
+  the naming/config module, then launch again.
+
+- **The stock department templates are refreshed for the 2026-10 refactor
+  (v12).** "New workfile from template" runs the *project's* copy of
+  `_config/templates/<context>/<department>/template.py`, and the refactor
+  removed APIs those copies call: `tumblepipe.pipe.houdini.util` (split into
+  `nodes`, `menus`, `playbar`, `prim_metadata` and `prim_queries`),
+  `pipe.houdini.sops.cache` (now `pipe.houdini.cache`), `lops.animate` and
+  `lops.render_vars` (now `nodes.create_node(...)`), `lops.puzzle_mattes` and
+  `th::puzzlemattes` (now `th::mattes`), `set_shot_uri` (now
+  `set_entity_uri`), and the create_asset / import_model `hdaModule()`
+  helpers (`_apply_entity`, `_sync_variants`, `_update_labels`, `execute`;
+  now `create_asset.wrap(node)` and `ImportModel(node)`). The full list is
+  `REMOVED_MODULES` and `REMOVED_CALLS` in `src/wizard/core/src/templates.rs`.
+
+  A template that is *stock* — byte for byte, bar line endings, one of the
+  versions the scaffold has ever shipped for that department (every one is
+  listed in `templates.rs`) — is replaced by the packaged one, with no
+  backup, since nothing in it is the project's. A missing one is put in
+  place. Anything else is the studio's own and is never written: a customised
+  template, or a `template.py` for a department the package does not ship,
+  is left alone when it calls nothing that was removed.
+
+  It **refuses**, before anything is written, when a customised template
+  calls something that was removed — replacing it would lose the studio's
+  work, keeping it leaves new workfiles from it broken. The message lists
+  each file and each removed import or call with what replaced it. Port the
+  changes onto the packaged template of the same department (or delete the
+  file, and the next launch puts the packaged one in its place; rename it
+  first to keep a copy), then launch again. A project still to run v9 is
+  judged as v9 will leave it: v9 replaces every packaged template whatever it
+  holds (keeping `template.py.v9.bak`), so only the project's own departments
+  can block v12 there.
+
+- **The publish channel is stored under its own name (v13).** The config
+  database still spelled the channel "variant": the entity property
+  `variants` (and its schema default), the `variant` key of each scene asset
+  entry, and the browser column whose key and property path name that
+  property. v13 renames them to `channels` / `channel` throughout
+  `schemas.json`, `entity.json`, `scenes.json` and `config.json`, in place —
+  same position, so each file's diff is the renamed lines — keeping each
+  rewritten file's original as `<file>.v13.bak`. From this version the
+  package reads and writes only the new keys, so a project that has not
+  taken v13 reads as having no custom channels. A record carrying both
+  spellings with the same value keeps one; with *different* values the step
+  refuses and names every such record — delete whichever is wrong, then
+  launch again. Published data (`export/**/context.json`, staged `.usda`
+  URIs) is not touched: published versions are immutable and are read in
+  either spelling (see *Channels* in `composition.md`).
+
 ### Migrating at launch
 
 You do not have to remember to run the command above. The `tt_prepare` package
@@ -560,28 +682,6 @@ under a wrong-case root prim, and import parms stored in workfiles, cannot
 be text-patched — fix the workfile in Houdini, re-export, and re-pick the
 entity on affected import nodes.
 
-### Legacy OCIO retire
-
-Color config is now project-owned (the v4 migration above), but the vestigial
-per-project launch scripts at `<project>/_pipeline/_project_config.bat` still
-set `OCIO` under the legacy `W:/_pipeline` tree. Only the old
-double-click-the-bat entry point sources them — Desktop launches never do — but
-any launch that does pins `OCIO` at the drive-side legacy config instead of the
-project's own. A maintenance CLI retires them:
-
-```
-python scripts/audit_legacy_ocio.py <projects-root> [--apply]
-python scripts/audit_legacy_ocio.py --projects P:/paleindia P:/Snail [--apply]
-```
-
-It scans each project's launch bat, resolves the `%VAR%` references against that
-same bat's `SET` lines, and flags any whose effective `OCIO` lands under
-`_pipeline` (read-only, exit 1 on findings). `--apply` repoints the setter at
-`%TH_CONFIG_PATH%/ocio/tumblehead.ocio` — but only for a project that already
-owns `_config/ocio/tumblehead.ocio`; one that doesn't is reported and skipped, so
-run `migrate_config.py` on it first. The original line is backed up and left
-commented above the rewrite, so the edit is reversible.
-
 ## Where configuration lives in the codebase
 
 - `hpm.toml` — Houdini package manifest and HPM metadata (dependencies,
@@ -600,8 +700,8 @@ commented above the rewrite, so the edit is reversible.
   maintenance CLI, and any Houdini startup scripts that run when the
   package loads. (The `tt_setup` wizard is a native binary built from
   `src/wizard/` into `bin/<platform>/`.)
-- `python3.11libs/` — Python-version-specific startup hooks (`pythonrc.py`,
-  `uiready.py`) executed by Houdini.
+- `python3.13libs/` — the startup hooks Houdini runs (`pythonrc.py`,
+  `uiready.py`).
 
 ## Next steps
 

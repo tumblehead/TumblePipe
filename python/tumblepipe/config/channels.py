@@ -1,4 +1,4 @@
-"""Publish *channel* configuration (formerly "variant").
+"""Publish *channel* configuration.
 
 A **channel** is the pipeline's publish-tree fork: the path segment in
 ``export/<entity>/<channel>/<dept>/v####/`` under which a department's layer
@@ -7,81 +7,31 @@ passes). Every entity has an implicit ``default`` channel; custom channels
 layer on top of it during resolution — a department with no export under a
 channel falls back to its ``default`` export.
 
-Why the name changed
---------------------
 This concept used to be called a *variant*, which collided head-on with USD's
-own ``variantSet`` — an unrelated, genuinely different mechanism that Solaris
-nodes (Add Variant / Set Variant) and our ``th::create_asset_model`` /
-``th::create_asset_lookdev`` HDAs author *on a prim*. Artists read one word
-and got the other concept. "Variant" now means exactly the USD thing
-everywhere in the UI; the publish-tree fork is a "channel".
+own ``variantSet`` — an unrelated mechanism that Solaris nodes (Add Variant /
+Set Variant) and our ``th::create_asset_model`` / ``th::create_asset_lookdev``
+HDAs author *on a prim* (their ``variants`` multiparm is that USD thing and
+keeps its name). "Variant" now means exactly the USD thing everywhere; the
+publish-tree fork is a "channel", in the UI, the code and the data:
 
-``variant`` is what writers still emit
---------------------------------------
-The v1.42.0 rename changed vocabulary only. It deliberately changed nothing
-already written to disk, so these are still WRITTEN as ``variant`` today
-(readers take either spelling — see below):
+* the config database stores an entity's custom channels under
+  :data:`CHANNEL_PROPERTY` and a scene asset entry's channel under
+  :data:`CHANNEL_KEY` — migration v13 (``src/wizard/core/src/migration.rs``)
+  rewrote every older project on upgrade, so they are read in that one
+  spelling only;
+* farm job configs carry ``channel_name`` / ``channel_names``. A job pins the
+  exact package version that submitted it (``farm.deadline.job_dependencies``),
+  so submitter and worker always agree on the spelling;
+* HDA parms are ``channel`` / ``channel#``; scenes saved with the old
+  ``variant`` parm are upgraded on load (``pipe.houdini.node_version``).
 
-* the ``?variant=`` URI query parameter and the ``_shared`` sentinel —
-  parsed by the Rust resolver (``src/resolver/src/uri.rs``) and embedded in
-  every published staged ``.usda``,
-* HDA parm *internal* names (``variant``, ``variant#``) — baked into every
-  saved scene; only their labels changed. These are the one set that will
-  NEVER move: Houdini resolves parms by name, so a tolerant reader cannot
-  help, and renaming them would need dual parms plus a scene-load migration
-  for no artist-visible gain,
-* farm job JSON keys (``variant_name`` / ``variant_names``) — submit↔worker
-  wire format, with in-flight jobs spanning an upgrade,
-* the ``variant`` key inside published ``export/**/context.json``,
-* the entity property key :data:`CHANNEL_PROPERTY` in the config DB, which
-  the asset browser also carries as its ``metadata["variants"]`` payload.
-
-Speak *channel* everywhere above those boundaries.
-:mod:`tests.test_frozen_tokens` pins what writers emit, so a sweep that flips
-one without the sequencing below fails there.
-
-These are not frozen *forever*, and the way out is not a flag day
-----------------------------------------------------------------
-The intent is still to eliminate ``variant``. What makes that awkward is
-that the data sits on the shared project drive while every reader ships
-per-machine in the hpm package, so the two update on their own schedules and
-will always pass each other somewhere.
-
-So the readers accept BOTH spellings rather than insisting on one:
-:func:`read_channel_names` and :func:`read_channel` here, and the Rust
-resolver's ``variant``/``channel`` query keys. A project halfway through a
-migration, or an artist a release behind, both read correctly.
-
-That turns the changeover from one synchronised jump into four independent
-steps, none of which is a flag day:
-
-1. readers accept both (this) — nothing on disk changes;
-2. once every machine has that, writers start emitting ``channel``;
-3. a migration rewrites old data whenever convenient — interruptible and
-   restartable, because mixed data reads fine;
-4. much later, drop ``variant`` reading.
-
-Step 2 is the one with a real ordering constraint: a writer that emits
-``channel`` before every reader accepts it hands an out-of-date machine a key
-it drops, and it resolves the *default* channel silently. Step 3 may never
-need doing — departments re-export constantly, so the new spelling spreads
-on its own.
-
-Carrying both spellings at once is legitimate (step 2 can emit both for a
-release). Carrying both with *different* values is not, and raises
-:class:`AmbiguousChannelError` rather than guessing.
-
-Two spellings are NOT this concept and must not be swept:
-
-* USD's own ``variantSet`` — what ``th::create_asset_model`` /
-  ``th::create_asset_lookdev`` author on a prim, including their
-  ``variant_names`` / ``add_variant`` / ``variants`` multiparm. Identical
-  spelling, unrelated mechanism.
-* ``{entity}_{variant}_{dept}_{ver}.usd`` — that slot holds the channel
-  *value*, not the literal word (see
-  :func:`~tumblepipe.pipe.paths.export.get_layer_file_name`), so there is
-  nothing to migrate. This docstring previously listed it as frozen; it was
-  never a token.
+Published data is the exception, and :func:`read_published_channel` is the one
+place it is handled. Every ``export/**/context.json``, every staged ``.usda``
+URI (``?variant=``) and every prim's pipeline ``customData`` written before
+the rename spells the channel ``variant``, and published versions are
+immutable — they are never rewritten, by a migration or anything else. So
+everything that reads a channel *out of published data* accepts both
+spellings, through that function, while every writer emits only ``channel``.
 """
 
 from tumblepipe.api import api
@@ -90,154 +40,75 @@ from tumblepipe.util.uri import Uri
 
 DEFAULT_CHANNEL = 'default'
 
-#: Entity property holding the custom channel names, as writers emit it today.
-#: ``variants`` is what every live project's ``_config`` database stores.
-CHANNEL_PROPERTY = 'variants'
+#: Entity property holding an entity's custom channel names.
+CHANNEL_PROPERTY = 'channels'
 
-#: Per-record key naming ONE channel, inside a stored list of assets
-#: (``context.json`` ``parameters.assets[]``, the scene ``assets`` property,
-#: an import node's asset table), as writers emit it today.
-CHANNEL_KEY = 'variant'
+#: Key naming ONE channel in a record: a scene asset entry, an entry of
+#: ``context.json`` ``parameters.assets[]``, a context output, a prim's
+#: pipeline ``customData`` and an entity URI's query (``?channel=``).
+CHANNEL_KEY = 'channel'
 
-#: Farm job-config keys, as the submitter emits them today. These cross a
-#: different version boundary from the ones above: submitter to worker, with
-#: in-flight jobs spanning an upgrade, and workers that self-bootstrap their
-#: own package copy.
-CHANNEL_NAME_KEY = 'variant_name'
-CHANNEL_NAMES_KEY = 'variant_names'
-
-#: All four, in the spelling the pipeline is moving to. Readers accept these;
-#: nothing writes them yet. Flipping the writers is a separate, later release,
-#: because every reader has to accept the new spelling *before* anything
-#: starts producing it.
-CHANNEL_PROPERTY_ALT = 'channels'
-CHANNEL_KEY_ALT = 'channel'
-CHANNEL_NAME_KEY_ALT = 'channel_name'
-CHANNEL_NAMES_KEY_ALT = 'channel_names'
+#: What :data:`CHANNEL_KEY` was spelled in everything published before the
+#: rename. Read by :func:`read_published_channel` and nowhere else.
+PUBLISHED_LEGACY_CHANNEL_KEY = 'variant'
 
 
 class AmbiguousChannelError(RuntimeError):
-    """A record spells its channel both ways, and the two disagree.
+    """A published record spells its channel both ways, and the two disagree.
 
-    Both spellings mean the same key, so carrying both is fine — and is a
-    reasonable thing for a writer to do while the changeover is in flight.
-    Carrying both with *different* values is unresolvable: picking either is a
-    guess, and the losing half is a wrong channel with a plausible render
-    behind it.
+    No writer ever emitted both, so this is a hand-edited or corrupt record;
+    picking either value would be a guess with a wrong render behind it.
     """
 
 
-class MissingChannelError(KeyError):
-    """A config that must name a channel names it under neither spelling.
+def read_published_channel(record, *, where: str, required: bool = False) -> str:
+    """The channel a record read from PUBLISHED data names.
 
-    A subclass of :class:`KeyError` because that is what the farm readers
-    raised before they learned the second spelling — ``config['settings']
-    ['variant_name']`` on a config without it. Tolerance must not quietly turn
-    a malformed job into a default-channel render.
+    Published data — ``export/**/context.json``, the entity URIs inside staged
+    ``.usda`` layers, prim ``customData`` in exported layers and in the
+    generated scripts saved scenes carry — exists in every version the
+    pipeline ever wrote, and published versions are immutable: nothing
+    rewrites them. Everything published before the variant→channel rename
+    names the channel under ``variant``; everything after, under ``channel``.
+    This is the single Python reader that accepts both (the Rust resolver's
+    ``uri::channel_from_query`` is its counterpart), so the old spelling lives
+    in exactly one place per language. Writers emit only :data:`CHANNEL_KEY`.
+
+    An absent key is the ordinary encoding of the default channel, unless
+    ``required``: a reader whose records always carry one raises
+    :class:`KeyError` instead. Both spellings present with different values
+    raises :class:`AmbiguousChannelError`. ``where`` names the record for
+    either message.
+
+    Not for config-database records (scenes, entity properties): those were
+    migrated (v13) and are read under :data:`CHANNEL_KEY` alone.
     """
-
-
-_MISSING = object()
-
-
-def _read_either(data, old_key: str, new_key: str, default, *, where: str):
-    """The value stored under either spelling of one key.
-
-    The single implementation of the rule, so every boundary answers the same
-    way: prefer the new spelling, fall back to the old, and refuse only when
-    both are present and disagree. ``default`` of :data:`_MISSING` makes the
-    key required.
-    """
-    if data is None:
-        old = new = None
-    else:
-        old = data.get(old_key)
-        new = data.get(new_key)
-    if old is not None and new is not None and old != new:
+    new = None if record is None else record.get(CHANNEL_KEY)
+    old = None if record is None else record.get(PUBLISHED_LEGACY_CHANNEL_KEY)
+    if new is not None and old is not None and new != old:
         raise AmbiguousChannelError(
-            f'{where} carries both {old_key!r}={old!r} and {new_key!r}={new!r}, '
-            f'which name different channels. They are two spellings of one key '
-            f'and must agree; fix whichever is wrong.'
+            f'{where} carries both {PUBLISHED_LEGACY_CHANNEL_KEY!r}={old!r} and '
+            f'{CHANNEL_KEY!r}={new!r}, which name different channels. They are '
+            f'two spellings of one key and must agree.'
         )
     if new is not None:
         return new
     if old is not None:
         return old
-    if default is _MISSING:
-        raise MissingChannelError(
-            f'{where} names no channel: it has neither {old_key!r} nor '
-            f'{new_key!r}.'
-        )
-    return default
+    if required:
+        raise KeyError(f'{where} names no channel ({CHANNEL_KEY!r})')
+    return DEFAULT_CHANNEL
 
 
-def read_channel_names(properties, *, where: str) -> list[str]:
+def read_channel_names(properties) -> list[str]:
     """The custom channel names stored in an entity's *properties*.
-
-    Accepts either spelling, so a project migrated to ``channels`` and one
-    still on ``variants`` both read correctly, on any package. That tolerance
-    is what lets the data on the shared drive and the readers that ship
-    per-machine cross over independently instead of in one synchronised jump.
 
     An absent key is not an error: an entity with no custom channels
     legitimately stores nothing and reads as ``default``-only.
-
-    ``where`` names the caller for the error message; make it something an
-    artist can act on, like the entity URI.
     """
-    old = None if properties is None else properties.get(CHANNEL_PROPERTY)
-    new = None if properties is None else properties.get(CHANNEL_PROPERTY_ALT)
-    if old is not None and new is not None and list(old) != list(new):
-        raise AmbiguousChannelError(
-            f'{where} carries both {CHANNEL_PROPERTY!r}={old!r} and '
-            f'{CHANNEL_PROPERTY_ALT!r}={new!r}, which name different channels. '
-            f'They are two spellings of one key and must agree; fix whichever '
-            f'is wrong.'
-        )
-    return list(new if new is not None else (old or []))
-
-
-def read_channel(record, *, where: str) -> str:
-    """The channel one stored *record* names, defaulting to ``default``.
-
-    As with :func:`read_channel_names`, either spelling is read and an absent
-    key is the ordinary encoding of "the default channel".
-    """
-    return _read_either(
-        record, CHANNEL_KEY, CHANNEL_KEY_ALT, DEFAULT_CHANNEL, where=where
-    )
-
-
-def read_channel_name(settings, *, where: str, default=_MISSING) -> str:
-    """The channel a farm job config names, under either spelling.
-
-    Required by default, because that is what the farm readers already were:
-    ``config['settings']['variant_name']`` raises on a config that does not
-    name a channel, and a malformed job must not quietly become a
-    default-channel render. Pass ``default`` only where the call site already
-    had one.
-    """
-    return _read_either(
-        settings, CHANNEL_NAME_KEY, CHANNEL_NAME_KEY_ALT, default, where=where
-    )
-
-
-def read_channel_name_list(settings, *, where: str, default=_MISSING) -> list[str]:
-    """The channel list a farm job config names, under either spelling."""
-    value = _read_either(
-        settings, CHANNEL_NAMES_KEY, CHANNEL_NAMES_KEY_ALT, default, where=where
-    )
-    return list(value) if value is not None else []
-
-
-def has_channel_names_key(settings) -> bool:
-    """Whether a farm config names a channel list under either spelling.
-
-    For the job-config validators, which check shape rather than read values.
-    """
-    if settings is None:
-        return False
-    return CHANNEL_NAMES_KEY in settings or CHANNEL_NAMES_KEY_ALT in settings
+    if properties is None:
+        return []
+    return list(properties.get(CHANNEL_PROPERTY) or [])
 
 
 def list_channels(entity_uri: Uri) -> list[str]:
@@ -257,7 +128,7 @@ def list_channels(entity_uri: Uri) -> list[str]:
     if properties is None:
         return [DEFAULT_CHANNEL]
 
-    channels = read_channel_names(properties, where=f'entity {entity_uri}')
+    channels = read_channel_names(properties)
 
     # Ensure 'default' is always first
     if DEFAULT_CHANNEL in channels:
@@ -285,7 +156,7 @@ def add_channel(entity_uri: Uri, channel_name: str) -> None:
     if properties is None:
         raise ValueError(f'Entity not found: {entity_uri}')
 
-    channels = read_channel_names(properties, where=f'entity {entity_uri}')
+    channels = read_channel_names(properties)
     if channel_name in channels:
         raise ValueError(f'Channel already exists: {channel_name}')
 
@@ -318,7 +189,7 @@ def remove_channel(entity_uri: Uri, channel_name: str) -> None:
     if properties is None:
         raise ValueError(f'Entity not found: {entity_uri}')
 
-    channels = read_channel_names(properties, where=f'entity {entity_uri}')
+    channels = read_channel_names(properties)
     if channel_name not in channels:
         raise ValueError(f'Channel not found: {channel_name}')
 

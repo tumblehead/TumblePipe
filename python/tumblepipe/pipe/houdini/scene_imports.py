@@ -30,9 +30,8 @@ logger = logging.getLogger(__name__)
 class ImportSpec:
     """One node type the refresh re-executes.
 
-    ``wrapper`` is ``"module:Class"`` for a node with a Python wrapper whose
-    ``execute()`` re-imports. ``None`` means the HDA's own PythonModule
-    ``execute(node)`` is the import action.
+    ``wrapper`` is the ``"module:Class"`` Python wrapper whose ``execute()``
+    re-imports.
 
     ``newest`` is the node's own name for "the newest publish" in its version
     menu: ``latest`` where it has one, ``current`` where that is the newest
@@ -42,7 +41,7 @@ class ImportSpec:
 
     type_name: str
     context: str
-    wrapper: Optional[str]
+    wrapper: str
     newest: str
     rows: Optional[str] = None
 
@@ -68,7 +67,9 @@ REFRESH_SPECS = (
                newest="latest"),
     # Run the outer HDA, not only its inner import_layer: its execute()
     # copies the version label and bypass state up from the inner node.
-    ImportSpec("import_model", "Sop", None, newest="current"),
+    ImportSpec("import_model", "Sop",
+               "tumblepipe.pipe.houdini.sops.import_model:ImportModel",
+               newest="current"),
 )
 
 # Expanded HDA dir name (without version) -> the REFRESH_SPECS type inside it
@@ -125,10 +126,7 @@ def _wrapper_class(spec: ImportSpec):
 
 def execute(native, spec: ImportSpec) -> None:
     """Run a node's import action, raising on failure."""
-    if spec.wrapper is None:
-        native.hdaModule().execute(native)
-    else:
-        _wrapper_class(spec)(native).execute()
+    _wrapper_class(spec)(native).execute()
 
 
 def force_newest(native, spec: ImportSpec) -> None:
@@ -145,12 +143,6 @@ def force_newest(native, spec: ImportSpec) -> None:
         native.parm(f"version{index}").set(spec.newest)
 
 
-def _category_name(native) -> Optional[str]:
-    try:
-        return native.type().category().name()
-    except Exception:
-        return None
-
 
 def find_import_nodes() -> list:
     """Every refreshable import node in the scene, outermost only."""
@@ -158,7 +150,7 @@ def find_import_nodes() -> list:
 
     matched = {}
     for native in hou.node("/").allSubChildren():
-        spec = spec_for(native.type().name(), _category_name(native) or "")
+        spec = spec_for(native.type().name(), native.type().category().name())
         if spec is not None:
             matched[native.path()] = (native, spec)
     return [matched[path] for path in outermost(matched)]

@@ -1,7 +1,7 @@
 """Asset structure validation for USD stages."""
 
 from tumblepipe.util.uri import Uri
-from tumblepipe.pipe.houdini.util import uri_to_prim_path
+from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 from .base import ValidationResult
 
 
@@ -37,7 +37,7 @@ def _validate_asset_base(root, context: dict | None, child_prim_name: str) -> Va
         return result
 
     # Parse entity URI
-    entity_uri = Uri.parse_unsafe(entity_uri_str)
+    entity_uri = Uri.parse(entity_uri_str)
 
     # Convert to prim path
     asset_prim_path = uri_to_prim_path(entity_uri)

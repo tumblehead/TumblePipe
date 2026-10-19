@@ -7,9 +7,9 @@ one shot), e.g. via TumbleTrove Desktop's run_hython:
 
 Nothing is submitted to Deadline. Checks:
 
- 1. The task config validator (tasks/playblast/_spec) accepts a well-formed
+ 1. The job config validator (farm/specs/playblast.py) accepts a well-formed
     config and rejects malformed ones.
- 2. The job config validator (jobs/houdini/playblast/job) does the same for
+ 2. The job config validator (farm/pipelines/playblast.py) does the same for
     the {entity, settings} shape the dialog builds.
  3. The versioned playblast + rolling daily output paths resolve for a real
     shot and land under <shot>/<dept>/ (i.e. the department is passed --
@@ -29,8 +29,8 @@ from pathlib import Path
 def main() -> int:
     from tumblepipe.api import default_client
     from tumblepipe.config.entities import is_terminal_entity
-    from tumblepipe.farm.tasks.playblast import _spec
-    import tumblepipe.farm.jobs.houdini.playblast.job as playblast_job
+    from tumblepipe.farm.specs import playblast as playblast_spec
+    from tumblepipe.farm.pipelines import playblast as playblast_pipeline
     from tumblepipe.pipe.paths import (
         get_next_playblast_path,
         get_daily_path,
@@ -65,15 +65,15 @@ def main() -> int:
         res=[1280, 720], input_path="stage.usda",
         output_paths=["a.mp4", "b.mp4"],
     )
-    check("task _spec accepts a well-formed config", _spec.is_valid_config(good_task))
-    check("task _spec rejects a sparse config", not _spec.is_valid_config({"title": "t"}))
+    check("job spec accepts a well-formed config", playblast_spec.is_valid_config(good_task))
+    check("job spec rejects a sparse config", not playblast_spec.is_valid_config({"title": "t"}))
     check(
-        "task _spec rejects a malformed resolution",
-        not _spec.is_valid_config({**good_task, "res": [1280]}),
+        "job spec rejects a malformed resolution",
+        not playblast_spec.is_valid_config({**good_task, "res": [1280]}),
     )
     check(
-        "task _spec rejects empty output_paths",
-        not _spec.is_valid_config({**good_task, "output_paths": []}),
+        "job spec rejects empty output_paths",
+        not playblast_spec.is_valid_config({**good_task, "output_paths": []}),
     )
 
     # 2. Job config validator.
@@ -86,14 +86,14 @@ def main() -> int:
             channel_name="renders",
         ),
     )
-    check("job validator accepts a well-formed config", playblast_job._is_valid_config(good_job))
+    check("job validator accepts a well-formed config", playblast_pipeline.is_valid_config(good_job))
     check(
         "job validator rejects a missing entity",
-        not playblast_job._is_valid_config({"settings": good_job["settings"]}),
+        not playblast_pipeline.is_valid_config({"settings": good_job["settings"]}),
     )
     check(
         "job validator rejects missing settings keys",
-        not playblast_job._is_valid_config(
+        not playblast_pipeline.is_valid_config(
             {"entity": good_job["entity"], "settings": {"user_name": "x"}}
         ),
     )
@@ -118,7 +118,7 @@ def main() -> int:
     deps: dict = {}
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
-            playblast_job.build(good_job, {}, Path(temp_dir), jobs, deps)
+            playblast_pipeline.build(good_job, {}, Path(temp_dir), jobs, deps)
     except Exception as exc:  # noqa: BLE001
         msg = str(exc)
         if "hpm" in msg.lower() or "packages" in msg.lower():

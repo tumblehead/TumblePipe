@@ -43,7 +43,7 @@
                     "timeout_mp4": 20,
                     "timeout_notify": 10
                 },
-                "variants": [
+                "channels": [
                     "default"
                 ],
                 "departments": []

@@ -8,8 +8,9 @@ Help	Help
 Tools.shelf	Tools.shelf
 EditableNodes	EditableNodes
 IconImage	IconImage
-PythonModule	PythonModule
 OnCreated	OnCreated
 OnDeleted	OnDeleted
 OnNameChanged	OnNameChanged
+Version	Version
+SyncNodeVersion	SyncNodeVersion
 ExtraFileOptions	ExtraFileOptions

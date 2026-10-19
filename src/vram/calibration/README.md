@@ -18,7 +18,6 @@ Run them inside a dev Houdini session (TumbleTrove Desktop's bridge
 | `measure_step.py` | One step of the geometry protocol: records the viewport hook's per-prim reading (`ttvramhook_snapshot`) under the variant set last step, then switches to the next queued variant and requests a new walk. Needs `builtins._vram_queue` (variant names), `builtins._vram_set(name)` (sets that variant's display flag) and `builtins._vram_clean = {}` set up first. |
 | `tex_step.py` | One step of the texture protocol: records the texture cache client from the hook's snapshot, generates the six test images, swaps `/stage/vramtest_mtl/albedo`'s file, runs `glcache -c`, requests a new walk. |
 | `reload_vram.py` | Hot-reloads `tumblepipe.vram` from this checkout into a running session. Dev sessions run a *staged* copy and the bridge blocks `importlib`, so it execs each module's source into `sys.modules[name].__dict__`. |
-| `strings_grep.py` | Printable-string grep over DLLs/PDBs (`python strings_grep.py <regex> <files…>`); how the debug-validation findings in `../vkprobe/README.md` were made. |
 
 ## Protocol
 

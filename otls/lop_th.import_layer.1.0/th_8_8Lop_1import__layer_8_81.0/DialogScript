@@ -104,7 +104,7 @@
             joinnext
             default { "0" }
             parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
-            parmtag { "script_callback" "hou.phm().select()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.import_layer as th_node; th_node.select(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -125,19 +125,27 @@
             default { "from_context: none" }
         }
         parm {
-            name    "variant"
+            name    "channel"
             label   "Channel"
             type    string
             default { "default" }
             menu {
                 [ "from tumblepipe.pipe.houdini.lops import import_layer" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = import_layer.ImportLayer(hou.pwd())" ]
                 [ "items = node.list_channel_names()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "return menus.list_to_menu(items)" ]
                 language python
             }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "variant"
+            label   "Legacy Variant"
+            type    string
+            invisible
+            default { "default" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -148,11 +156,11 @@
             default { "from_context" }
             menu {
                 [ "from tumblepipe.pipe.houdini.lops import import_layer" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = import_layer.ImportLayer(hou.pwd())" ]
                 [ "items = node.list_department_names()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "return menus.list_to_menu(items)" ]
                 language python
             }
             parmtag { "script_callback_language" "python" }
@@ -172,11 +180,11 @@
             default { "current" }
             menu {
                 [ "from tumblepipe.pipe.houdini.lops import import_layer" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = import_layer.ImportLayer(hou.pwd())" ]
                 [ "items = node.list_version_names()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "return menus.list_to_menu(items)" ]
                 language python
             }
             parmtag { "script_callback" "" }
@@ -212,7 +220,7 @@
                 "reference" "Reference"
                 "inline"    "Inline"
             }
-            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.import_layer as th_node; th_node.execute(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }
@@ -227,7 +235,7 @@
             type    button
             joinnext
             default { "0" }
-            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.import_layer as th_node; th_node.execute(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -235,7 +243,7 @@
             label   "Open Location"
             type    button
             default { "0" }
-            parmtag { "script_callback" "hou.phm().open_location()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.import_layer as th_node; th_node.open_location(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }

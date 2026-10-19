@@ -1,7 +1,3 @@
-from importlib import reload
+import tumblepipe.pipe.houdini.cops.build_comp as th_node
 
-from tumblepipe.pipe.houdini.cops import build_comp
-
-reload(build_comp)
-
-build_comp.on_created(kwargs['node'])
+th_node.on_created(kwargs['node'])

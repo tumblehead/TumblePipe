@@ -1,4 +1,8 @@
 {
+	"OnCreated/Cursor":{
+		"type":"intarray",
+		"value":[1,0]
+	},
 	"OnCreated/IsExpr":{
 		"type":"bool",
 		"value":false
@@ -11,16 +15,28 @@
 		"type":"bool",
 		"value":true
 	},
-	"PythonModule/IsExpr":{
+	"OnCreated/Source":{
+		"type":"string",
+		"value":""
+	},
+	"SyncNodeVersion/Cursor":{
+		"type":"intarray",
+		"value":[3,21]
+	},
+	"SyncNodeVersion/IsExpr":{
 		"type":"bool",
 		"value":false
 	},
-	"PythonModule/IsPython":{
+	"SyncNodeVersion/IsPython":{
 		"type":"bool",
 		"value":true
 	},
-	"PythonModule/IsScript":{
+	"SyncNodeVersion/IsScript":{
 		"type":"bool",
 		"value":true
+	},
+	"SyncNodeVersion/Source":{
+		"type":"string",
+		"value":""
 	}
 }

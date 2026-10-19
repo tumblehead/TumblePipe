@@ -27,14 +27,6 @@ def _type_category(node):
     if parent is None: return None
     return parent.childTypeCategory()
 
-def list_node_types(context):
-    categories = hou.nodeTypeCategories()
-    if context not in categories: return []
-    return [
-        node_type.name()
-        for node_type in categories[context].nodeTypes().values()
-        if node_type.name().lower().startswith('th::')
-    ]
 
 def list_by_node_type(type_name, context):
     def _valid_node(node):
@@ -48,10 +40,18 @@ def list_by_node_type(type_name, context):
 # Base Node class
 ##############################################################################
 
+class NodeError(Exception):
+    """A th:: node's parms do not resolve to something the node can act
+    on. The message names the node, and says how to fix it."""
+
+
 class Node:
     def __init__(self, native):
         self._path = native.path()
         self._session_id = native.sessionId()
+
+    def _error(self, message: str) -> NodeError:
+        return NodeError(f'{self.path()}: {message}')
 
     def native(self):
         node = hou.nodeBySessionId(self._session_id)
@@ -125,6 +125,26 @@ class Node:
         self.native().layoutChildren()
 
 ##############################################################################
+# Network building
+##############################################################################
+
+def connect_next(source, target):
+    """Wire ``source`` into ``target``'s next input after its last connected one."""
+    target.setInput(len(target.inputs()), source)
+
+def clear_network(network, output_node):
+    """Disconnect ``output_node`` and destroy every other child of ``network``.
+
+    The import/build nodes rebuild their internal network on every run; the
+    output node is the one thing that stays.
+    """
+    for connection in output_node.inputConnections():
+        output_node.setInput(connection.inputIndex(), None)
+    for child in network.children():
+        if child.name() == output_node.name(): continue
+        child.destroy()
+
+##############################################################################
 # Styling
 ##############################################################################
 
@@ -184,3 +204,33 @@ def set_node_style(raw_node, shape = SHAPE_NODE_DEFAULT, color = COLOR_NODE_DEFA
     """Apply the standard th:: node styling: node color + node shape."""
     raw_node.setColor(color)
     raw_node.setUserData('nodeshape', shape)
+
+def on_created(raw_node, shape = SHAPE_NODE_DEFAULT):
+    """The OnCreated script of a th:: HDA whose only setup is its styling.
+
+    HDAs with more to do on creation call their module's own on_created.
+    """
+    set_node_style(raw_node, shape)
+
+##############################################################################
+# LOP layer save paths
+##############################################################################
+
+# H22 flipped the sopcreate/sopimport 'Layer Save Path' default to ON with
+# $HIP/usd/$OS.usd. A save-path'ed layer is written NEXT TO THE WORKFILE by
+# the export ROP (savestyle=flattenimplicitlayers) instead of flattening into
+# the published layer, which then composes empty on every other machine.
+_LAYER_SAVE_PATH_PARMS = (
+    ('enable_savepath', 'savepath'),  # sopcreate / sopimport / sopmodify
+)
+
+def disable_layer_save_path(node) -> None:
+    """Turn off a LOP node's layer save path so its layer flattens on export."""
+    for enable_name, path_name in _LAYER_SAVE_PATH_PARMS:
+        enable_parm = node.parm(enable_name)
+        if enable_parm is None:
+            continue
+        enable_parm.set(False)
+        path_parm = node.parm(path_name)
+        if path_parm is not None:
+            path_parm.set('')

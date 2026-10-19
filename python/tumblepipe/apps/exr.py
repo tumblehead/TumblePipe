@@ -6,16 +6,10 @@ import datetime as dt
 import shutil
 import os
 
-from tumblepipe.api import (
-    path_str,
-    local_path,
-    to_windows_path
-)
+from tumblepipe.api import path_str
 from tumblepipe.apps import houdini
 
-# Native OpenImageIO oiiotool (Houdini's hoiiotool), lazily cached. The farm runs
-# in native Windows python now, so oiiotool runs directly — no WSL bridge — and
-# its path args are native (local_path), not /mnt forms.
+# Native OpenImageIO oiiotool (Houdini's hoiiotool), lazily cached.
 _OIIOTOOL = None
 def _oiiotool():
     global _OIIOTOOL
@@ -25,8 +19,9 @@ def _oiiotool():
 
 def _run(command, **kwargs):
     # command[0] is the 'oiiotool' program name; the native wrapper supplies the
-    # real hoiiotool executable, so drop it.
-    return _oiiotool().run(command[1:], **kwargs)
+    # real hoiiotool executable, so drop it. Both helpers raise
+    # app.CommandFailed when oiiotool exits non-zero.
+    _oiiotool().run(command[1:], **kwargs)
 
 def _call(command, **kwargs):
     return _oiiotool().call(command[1:], **kwargs)
@@ -56,10 +51,12 @@ class ImageInfo:
     compression: str
     compression_level: int
 
-def get_image_info(input_path: Path) -> Optional[list[ImageInfo]]:
+def _require_suffix(path: Path, suffix: str) -> None:
+    if path.suffix.lower() != suffix:
+        raise ValueError(f'Not a {suffix} file: {path}')
 
-    # Check if input path is an EXR file
-    if input_path.suffix.lower() != '.exr': return None
+def get_image_info(input_path: Path) -> list[ImageInfo]:
+    _require_suffix(input_path, '.exr')
 
     # Helpers
     def _split(delim: str, raw: str) -> list[str]:
@@ -157,7 +154,7 @@ def get_image_info(input_path: Path) -> Optional[list[ImageInfo]]:
     # Query the image info
     raw_infos = _split('</ImageSpec>', _call([
         'oiiotool', '--info:format=xml', '-v', '-a',
-        path_str(local_path(input_path)),
+        path_str(input_path),
     ]))
 
     # Parse the image info
@@ -194,26 +191,24 @@ def _stage_subimage(temp_path, temp_image_path, image_info, index_name):
     temp_renamed_path = temp_path / f'renamed_{index_name}.exr'
     _run([
         'oiiotool',
-        path_str(local_path(temp_image_path)),
+        path_str(temp_image_path),
         '--chnames', ','.join(
             _rename_channel(image_name, channel)
             for channel in channels
         ),
-        '-o', path_str(local_path(temp_renamed_path))
+        '-o', path_str(temp_renamed_path)
     ])
     return temp_renamed_path
 
 def split_subimages(input_path, output_path):
-
-    # Check if input path is an EXR file
-    if input_path.suffix.lower() != '.exr': return None
-
-    # Check if output path is a directory
-    if not output_path.is_dir(): return None
+    _require_suffix(input_path, '.exr')
+    if not output_path.is_dir():
+        raise NotADirectoryError(f'Split output is not a directory: {output_path}')
 
     # Get image infos
     image_infos = get_image_info(input_path)
-    if len(image_infos) == 0: return None
+    if len(image_infos) == 0:
+        raise ValueError(f'oiiotool lists no subimages in {input_path}')
 
     # Split subimages locally
     with TemporaryDirectory() as temp_dir:
@@ -225,10 +220,10 @@ def split_subimages(input_path, output_path):
         temp_output_path = temp_path / '%04d.exr'
         _run([
             'oiiotool',
-            path_str(local_path(input_path)),
+            path_str(input_path),
             '-a', *ACESCG_ATTRIB_ARGS,
             '-sisplit', '-o:all=1',
-            path_str(local_path(temp_output_path))
+            path_str(temp_output_path)
         ])
 
         # Copy each subimage to the output path, renaming channels when needed
@@ -248,6 +243,12 @@ def split_subimages(input_path, output_path):
         # Done
         return output_image_paths
 
+def _first_image_info(aov_name: str, aov_path: Path) -> ImageInfo:
+    image_infos = get_image_info(aov_path)
+    if not image_infos:
+        raise ValueError(f'AOV {aov_name}: oiiotool lists no image in {aov_path}')
+    return image_infos[0]
+
 def get_channel_counts(input_paths: dict[str, Path]) -> dict[str, int]:
     """Channel count of each per-AOV EXR, keyed by AOV name.
 
@@ -255,14 +256,14 @@ def get_channel_counts(input_paths: dict[str, Path]) -> dict[str, int]:
     configs carry -- oiiotool reads a file, not a glob. Split per-AOV files hold
     exactly one subimage, and the layout is constant for a whole render, so
     callers probe one frame ONCE per task and reuse the result across frames
-    rather than paying an oiiotool probe per AOV per frame.
+    rather than paying an oiiotool probe per AOV per frame. An AOV whose
+    channels can't be read raises.
     """
     result = dict()
     for aov_name, aov_path in input_paths.items():
-        image_infos = get_image_info(local_path(aov_path))
-        if not image_infos: continue
-        channels = image_infos[0].channels or []
-        if len(channels) == 0: continue
+        channels = _first_image_info(aov_name, aov_path).channels
+        if not channels:
+            raise ValueError(f'AOV {aov_name}: no channels in {aov_path}')
         result[aov_name] = len(channels)
     return result
 
@@ -286,16 +287,17 @@ def get_compressions(input_paths: dict[str, Path]) -> dict[str, str]:
     and friends author it per RenderVar), so a step that re-encodes a published
     AOV keeps it rather than imposing its own. Same probing contract as
     :func:`get_channel_counts`: concrete frame paths, probed once per task. An
-    AOV whose compression can't be read is left out.
+    AOV whose compression can't be read raises (it used to be re-encoded with
+    a guessed one).
     """
     result = dict()
     for aov_name, aov_path in input_paths.items():
-        image_infos = get_image_info(local_path(aov_path))
-        if not image_infos: continue
+        image_info = _first_image_info(aov_name, aov_path)
         spec = compression_spec(
-            image_infos[0].compression, image_infos[0].compression_level
+            image_info.compression, image_info.compression_level
         )
-        if spec is None: continue
+        if spec is None:
+            raise ValueError(f'AOV {aov_name}: no compression in {aov_path}')
         result[aov_name] = spec
     return result
 
@@ -359,10 +361,10 @@ def read_channel_names(input_path: Path) -> Optional[list[str]]:
     Takes a CONCRETE frame path, like :func:`get_channel_counts`.
     """
     try:
-        with open(local_path(input_path), 'rb') as stream:
+        with open(input_path, 'rb') as stream:
             return read_channel_names_from(stream)
-    except OSError:
-        return None
+    except FileNotFoundError:
+        return None  # A comp may be built before its frames are rendered.
 
 # The plane name the Copernicus File COP gives an EXR's unprefixed R,G,B(,A)
 # channels. A raw render split names its channels `<aov>.R`, and the File COP
@@ -410,15 +412,15 @@ def combine_aovs(
     `albedo.r/g/b`) and a plane idenoise can't resolve degrades silently.
 
     Returns the AOV names actually included (an AOV whose channel count can't be
-    normalized is warned about and dropped), or None if oiiotool failed.
+    normalized is warned about and dropped -- the caller fails it), or None when
+    none could be. ``channel_counts`` must cover every input. Raises
+    ``app.CommandFailed`` when oiiotool fails, and RuntimeError when it exits 0
+    without writing the file.
     """
     included = []
     command = ['oiiotool']
     for aov_name, aov_path in input_paths.items():
-        channel_count = channel_counts.get(aov_name)
-        if channel_count is None:
-            print(f'WARNING: Skipping AOV {aov_name} - could not read channels')
-            continue
+        channel_count = channel_counts[aov_name]
         selector = _channel_selector(channel_count)
         if selector is None:
             print(
@@ -427,7 +429,7 @@ def combine_aovs(
             )
             continue
         command += [
-            path_str(local_path(aov_path)),
+            path_str(aov_path),
             '--ch', selector,
             '--chnames', f'{aov_name}.R,{aov_name}.G,{aov_name}.B'
         ]
@@ -436,9 +438,10 @@ def combine_aovs(
         included.append(aov_name)
 
     if len(included) == 0: return None
-    command += ['-o', path_str(local_path(output_path))]
-    if _run(command) != 0: return None
-    if not local_path(output_path).exists(): return None
+    command += ['-o', path_str(output_path)]
+    _run(command)
+    if not output_path.exists():
+        raise RuntimeError(f'oiiotool exited 0 but wrote no {output_path}')
     return included
 
 def alpha_channel_index(channels: list[str]) -> Optional[int]:
@@ -465,10 +468,9 @@ def get_alpha_channels(input_paths: dict[str, Path]) -> dict[str, int]:
     """
     result = dict()
     for aov_name, aov_path in input_paths.items():
-        image_infos = get_image_info(local_path(aov_path))
-        if not image_infos: continue
-        index = alpha_channel_index(image_infos[0].channels or [])
-        if index is None: continue
+        channels = _first_image_info(aov_name, aov_path).channels
+        index = alpha_channel_index(channels or [])
+        if index is None: continue  # No alpha: most AOVs
         result[aov_name] = index
     return result
 
@@ -477,7 +479,7 @@ def extract_aov(
     aov_name: str,
     output_path: Path,
     alpha: Optional[tuple[Path, int]] = None
-    ) -> int:
+    ) -> None:
     """Pull one denoised plane out of an idenoise result.
 
     idenoise keeps its input's channel names, so the plane comes back as
@@ -493,20 +495,20 @@ def extract_aov(
     """
     command = [
         'oiiotool',
-        path_str(local_path(input_path)),
+        path_str(input_path),
         '--subimage', aov_name,
         '--chnames', 'R,G,B',
     ]
     if alpha is not None:
         alpha_source_path, alpha_index = alpha
         command += [
-            path_str(local_path(alpha_source_path)),
+            path_str(alpha_source_path),
             '--ch', str(alpha_index),
             '--chnames', 'A',
             '--chappend',
         ]
-    command += ['-o', path_str(local_path(output_path))]
-    return _run(command)
+    command += ['-o', path_str(output_path)]
+    _run(command)
 
 def encode(input_path, output_path, compression: str):
     """Re-encode an EXR with ``compression`` (an oiiotool spelling, e.g.
@@ -515,39 +517,32 @@ def encode(input_path, output_path, compression: str):
     This is the publish step of the denoise chain, whose channel shuffles
     dropped the colorspace metadata -- re-stamp it here.
     """
-
-    # Check if input path is an EXR file
-    if input_path.suffix.lower() != '.exr': return None
-
-    return _run([
-        'oiiotool', path_str(local_path(input_path)),
+    _require_suffix(input_path, '.exr')
+    _run([
+        'oiiotool', path_str(input_path),
         *ACESCG_ATTRIB_ARGS,
         '--compression', compression,
-        '-o', path_str(local_path(output_path))
+        '-o', path_str(output_path)
     ])
 
 def dwab_encode(input_path, output_path):
     return encode(input_path, output_path, 'dwab:45')
 
 def to_jpeg(input_path, output_path):
-
-    # Check if input path is an EXR file
-    if input_path.suffix.lower() != '.exr': return None
-
-    # Check if output path is a JPEG file
-    if output_path.suffix.lower() != '.jpg': return None
+    _require_suffix(input_path, '.exr')
+    _require_suffix(output_path, '.jpg')
 
     # Convert to JPEG
     # Note: Using --ociodisplay with empty string for view uses the OCIO config's default view
     iconvert = houdini.IConvert()
-    return iconvert.run(
+    iconvert.run(
         [
             '--iscolorspace', 'acescg',
             '--ociodisplay', 'sRGB - Display', '',
-            path_str(to_windows_path(input_path)),
-            path_str(to_windows_path(output_path))
+            path_str(input_path),
+            path_str(output_path)
         ],
         env = dict(
-            OCIO = path_str(to_windows_path(Path(os.environ['OCIO']))),
+            OCIO = path_str(Path(os.environ['OCIO'])),
         )
     )

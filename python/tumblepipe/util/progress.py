@@ -28,12 +28,10 @@ def progress_reporter(reporter: Callable[[str], None]):
 def report_progress(message: str):
     """Report a progress phase to the installed reporter, if any.
 
-    Reporter failures are swallowed - progress display must never be able
-    to break the operation it narrates.
+    A reporter that fails raises into the operation: it is a bug in the UI
+    driving the operation, and swallowing it left a progress display frozen
+    on a stale phase with nothing in the log to say why.
     """
     if _reporter is None:
         return
-    try:
-        _reporter(message)
-    except Exception:
-        pass
+    _reporter(message)

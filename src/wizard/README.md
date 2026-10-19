@@ -160,14 +160,28 @@ same words. The marker is `th_project_core::looks_like_project`, shared with
 - Writes **preserve a file's existing line endings** (new files get LF). These
   files sit on a shared drive; rewriting CRLF to LF turns a migration into a
   whole-file diff on every project.
-- Steps that touch `storage_convention.py` edit it **surgically**. A project's
-  convention legitimately differs — several carry their own `_primary_path` —
-  so replacing it would repoint where a show's assets and exports resolve.
-- **Templates refresh only in a numbered step** (v2, v9). A project past the
-  last refresh step never sees a later change to
+- Steps that touch `storage_convention.py` edit it **surgically** (v6-v8), and
+  v11, which retires it, carries every path it resolved into
+  `_config/storage.json`. A project's convention legitimately differs —
+  several carry their own `_primary_path` — so replacing it would repoint
+  where a show's assets and exports resolve. v11 *reads* the module rather
+  than running it (`core/src/conventions.rs`) and refuses a shape it cannot
+  read instead of guessing.
+- A test of a historical step runs the migration only up to that step
+  (`migrate_through`) when a later step moves on from the files it checks.
+- **Templates refresh only in a numbered step** (v2, v9, v12). A project past
+  the last refresh step never sees a later change to
   `scripts/project_template/_config/templates/`; shipping one to live projects
-  means adding another refresh step (with its own backup suffix, since
-  `write_preserving` never overwrites an existing `.bak`).
+  means adding another refresh step. v2 and v9 replace any template that
+  differs (each with its own backup suffix, since `write_preserving` never
+  overwrites an existing `.bak`); v12 replaces only *stock* ones and refuses
+  a customised one that calls a removed API (`core/src/templates.rs`).
+- **Every packaged template version is recorded.** `templates::STOCK` lists
+  the fingerprint of each `template.py` the scaffold ever shipped, with its
+  text under `core/tests/fixtures/templates/`, so a later refresh can tell a
+  stock template from a studio's own. Changing a packaged template fails
+  `cargo test` until its new version is added to both; the failure prints
+  the row.
 
 ### CLI
 

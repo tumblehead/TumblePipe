@@ -2,32 +2,27 @@
 
     python scripts/verify_hda_callbacks.py
 
-A parm's callback does not reach `python/tumblepipe/...` directly. It names a
-function on the HDA's own PythonModule section, which is a hand-maintained
-shim of one-line forwarders:
+A pipeline HDA's parm callbacks and OnCreated / SyncNodeVersion scripts call
+`python/tumblepipe/...` directly:
 
-    DialogScript          PythonModule              python/tumblepipe/...
-    hou.phm().select()  ->  def select():       ->  def select():
-                                th_cache.select()       ...
+    parmtag { "script_callback" "import tumblepipe.pipe.houdini.cache as th_cache; th_cache.select(kwargs)" }
 
-Three files, and the middle one is the one nobody edits. Add the parm and the
-backing function and both ends look finished while the button is dead: the
-callback is a string, so nothing resolves it until an artist clicks and gets
+They used to go through a third file, the HDA's PythonModule, as a shim of
+one-line forwarders (`hou.phm().select()` -> `def select(): th_cache.select()`),
+and the middle file was the one nobody edited: th::cache (SOP *and* LOP)
+shipped its Entity button dead in 93e4dc1. The callback is a string either
+way, so nothing resolves it until an artist clicks and gets an
+AttributeError — this audit is the only gate.
 
-    AttributeError: 'module' object has no attribute 'select'
+The checks:
 
-That is exactly how th::cache (SOP *and* LOP) shipped its Entity button broken
-in 93e4dc1, which touched only the two DialogScripts. Nothing else catches it:
-no lint or build gate resolves callbacks, and a stale otls/<name>.hda can
-hide a fix until compile-hdas runs.
-
-Both directions of the shim are checked:
-
-1. Dangling callback — a name a DialogScript calls that the PythonModule does
-   not define (including a PythonModule that does not exist at all).
-2. Dangling forwarder — a forwarder whose backing function is gone from the
-   module it delegates to. This is the near-miss class (get_asset_uri vs
-   get_entity_uri): the wrapper renames, the shim keeps calling the old name.
+1. Dangling direct call — a DialogScript callback or event script that
+   imports a tumblepipe module and calls a name the module does not define.
+2. Dangling hou.phm() name — the few PythonModules left (third-party HDAs,
+   and the ones whose parm *expressions* saved scenes store verbatim) must
+   define, or import from tumblepipe, every name `hou.phm()` asks for.
+3. Dangling forwarder — a PythonModule call into a tumblepipe module whose
+   function is gone (the get_asset_uri vs get_entity_uri near-miss class).
 
 A menu script skips the shim entirely — it constructs the wrapper itself and
 calls it — so it needs its own check:
@@ -84,7 +79,7 @@ _DEF = re.compile(r'^(?:def|class)\s+(\w+)', re.M)
 # `import tumblepipe.pipe.houdini.lops.cache as th_cache`
 _IMPORT_AS = re.compile(r'^import\s+([\w.]+)\s+as\s+(\w+)', re.M)
 # `from tumblepipe.pipe.houdini.lops import layer_split`
-_FROM_IMPORT = re.compile(r'^from\s+([\w.]+)\s+import\s+([\w,\s]+)$', re.M)
+_FROM_IMPORT = re.compile(r'^from\s+([\w.]+)\s+import\s+([\w, ]+?)\s*(?:#.*)?$', re.M)
 # a forwarder body's delegation: `th_cache.select()`
 _DELEGATE = re.compile(r'\b(\w+)\.(\w+)\s*\(')
 # one line of an HDA menu/callback script: `[ "node = x.Y(hou.pwd())" ]`
@@ -260,14 +255,66 @@ def check_menu_wrappers_resolve() -> list[str]:
     return failures
 
 
+# `import tumblepipe.x.y as alias; alias.fn(kwargs)` inside one callback string
+_DIRECT = re.compile(r'import\s+(tumblepipe[\w.]+)\s+as\s+(\w+)\s*;\s*\2\.(\w+)\s*\(')
+
+
+def _module_defines(path: Path) -> set[str]:
+    return set(_DEF.findall(_read(path)))
+
+
+def _pymodule_names(text: str) -> set[str]:
+    """Names a PythonModule offers hou.phm(): its defs, plus what it imports
+    from a tumblepipe module that really defines them."""
+    names = set(_DEF.findall(text))
+    for dotted, imported in _FROM_IMPORT.findall(text):
+        module = _module_path(dotted)
+        if module is None:
+            continue
+        defined = _module_defines(module)
+        for name in (n.strip() for n in imported.split('#')[0].split(',')):
+            if name in defined:
+                names.add(name)
+    return names
+
+
+def check_direct_callbacks_resolve() -> list[str]:
+    """Every tumblepipe function a callback or OnCreated calls exists."""
+    failures = []
+    for hda, dialog, _pymod in _sections():
+        if hda in KNOWN_GAPS:
+            continue
+        calls = set(_DIRECT.findall(_read(dialog)))
+        for event in ('OnCreated', 'SyncNodeVersion'):
+            script = dialog.parent / event
+            if not script.exists():
+                continue
+            text = _read(script)
+            for alias, path in _aliases(text).items():
+                for used_alias, attr in _DELEGATE.findall(text):
+                    if used_alias == alias:
+                        calls.add((str(path), alias, attr))
+        for module, _alias, attr in sorted(calls):
+            path = Path(module) if module.endswith('.py') else _module_path(module)
+            if path is None:
+                failures.append(f'{hda}: callback imports {module}, which does not exist')
+                continue
+            if attr not in _module_defines(path):
+                failures.append(
+                    f'{hda}: callback calls {attr}() in '
+                    f'{path.relative_to(REPO_ROOT).as_posix()}, which does not define it'
+                )
+    return failures
+
+
 def check_callbacks_resolve() -> list[str]:
-    """Every name a DialogScript calls is defined in the PythonModule."""
+    """Every name hou.phm() is asked for is offered by the PythonModule."""
     failures = []
     for hda, dialog, pymod in _sections():
         called = set(_CALL.findall(_read(dialog)))
         if not called:
             continue
-        defined = set(_DEF.findall(_read(pymod))) if pymod else set()
+        defined = _pymodule_names(_read(pymod)) if pymod else set()
         missing = sorted(called - defined)
         if not missing:
             continue
@@ -316,7 +363,8 @@ def report_known_gaps() -> None:
 
 
 CHECKS = (
-    ('every DialogScript callback resolves in its PythonModule', check_callbacks_resolve),
+    ('every direct callback reaches a real tumblepipe function', check_direct_callbacks_resolve),
+    ('every hou.phm() name resolves in its PythonModule', check_callbacks_resolve),
     ('every PythonModule forwarder reaches a real function', check_forwarders_resolve),
     ('every menu script reaches a real wrapper method', check_menu_wrappers_resolve),
 )

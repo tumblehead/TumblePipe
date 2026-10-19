@@ -2,7 +2,7 @@
 
 TumblePipe's quick access to its nodes and actions is a set of radial menus
 that open over a network editor. They are registered at Houdini startup by
-`python/tumblepipe/startup.py` (called from `python3.11libs/pythonrc.py`),
+`python/tumblepipe/startup.py` (called from `python3.13libs/pythonrc.py`),
 and they all belong to the **radial** — the Qt radial that ships as its own
 package, `tumbleradial`.
 
@@ -16,12 +16,9 @@ logs this warning and registers nothing:
 tumbleradial is not installed, so TumblePipe's radial menus (pipeline submenus, recipes, asset favorites, cop/vop network menus) will not register
 ```
 
-Install the package, restart Houdini, and the menus appear. The COP and
-VOP network menus need **Radial 0.4.0 or later**; an older Radial registers
-the other menus and logs `tumbleradial predates bind() (Radial 0.4.0), so
-TumblePipe's COP and VOP network menus will not register`. There is no
-other fallback — the Houdini-native `radialmenu/` system that used to carry
-these menus was retired in the radial's favour.
+Install the package, restart Houdini, and the menus appear. Radial is a
+declared dependency of TumblePipe (`hpm.toml [dependencies]`), so it installs
+with it.
 
 The shipped menu definitions live in the package's `radial_menus/`
 directory, which startup registers with the radial. `tumblepipe_pipeline.json`

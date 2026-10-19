@@ -1,15 +1,3 @@
-import hou
-import tumblepipe.pipe.houdini.nodes as ns
+import tumblepipe.pipe.houdini.sops.import_model as th_node
 
-node = kwargs['node']
-node.setColor(ns.COLOR_NODE_DEFAULT)
-node.setUserData('nodeshape', ns.SHAPE_NODE_IMPORT)
-
-# Link the inner import_layer's department to the SOP's department parm so
-# the dropdown actually drives the import. A plain .set() here clobbers the
-# channel reference baked into the HDA and silently unlinks them (the bug
-# where changing the dropdown did nothing) - set the reference instead.
-il_node = node.node('lopnet/import_layer')
-if il_node:
-    il_node.parm('department').setExpression(
-        'chs("../../department")', language=hou.exprLanguage.Hscript)
+th_node.on_created(kwargs['node'])

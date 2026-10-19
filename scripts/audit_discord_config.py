@@ -21,8 +21,8 @@ Reports, per project:
                last job in its family, so the whole batch reads as failed
 
 Reads the config JSON straight off disk: no `hou`, no pipeline import, and no
-dependency on whether the project's own `naming_convention.py` has been
-migrated -- so it covers projects that will not even open.
+dependency on whether the project's `_config` layout has been migrated -- so
+it covers projects that will not even open.
 
     python audit_discord_config.py P:/
     python audit_discord_config.py P:/HideAndReek P:/Snail

@@ -5,30 +5,39 @@ flows: path resolution, mtime / user attribution, version-aware open
 (in-process or new-Houdini-instance), and the three new-from-* save
 paths (template / current scene / group template).
 
-The manager holds a back-reference to the :class:`PipelineCatalog`
-because every method calls back into multiple catalog services
-(asset resolver, project activator, scene-timeline application,
-auto-save-before-swap, cache invalidation, card / detail refresh
-hooks). Threading those through ten constructor arguments would
-trade verbosity for no real decoupling — the catalog is the manager's
-runtime context.
+Its dependencies are handed in (resolver, project registry, client pool,
+project activator, scene manager, browser refresh, the catalog's cache
+invalidation), not the catalog.
+
+Every artist action here is its own failure boundary (:func:`_action`):
+whatever goes wrong - a share that will not answer, a template that
+raises, a project whose config cannot load - reaches the artist through
+:func:`report_failure`. Work deferred to Houdini's main thread is a second
+boundary of its own, since by then the action has returned.
 """
 
 from __future__ import annotations
 
+import functools
 import logging
-import os
-import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
-from .houdini import report_failure, run_on_main_thread, session_nc_type
-from .resolver import EntityNotRegistered
-from .types import latest_workfile, workfile_for_version
+from tumblepipe.pipe.paths.naming import entity_stem
+from tumblepipe.util import desktop
+
+from .houdini import session_nc_type
+from tumblepipe.pipe.houdini.ui.report import report_failure, run_on_main_thread
+from .types import workfile_for_version
 from . import uris as uris
 
 if TYPE_CHECKING:
-    from .catalog import PipelineCatalog
+    from .projects import PipelineProjectRegistry
+    from .clients import ClientPool
+    from .houdini import ProjectActivator
+    from .refresh import BrowserRefresh
+    from .resolver import AssetResolver
+    from .scene import SceneManager
 
 log = logging.getLogger(__name__)
 
@@ -54,133 +63,123 @@ def _show_stage_in_network_editors() -> None:
             continue
         if pane_tab.isPin():
             continue
-        try:
-            pane_tab.setPwd(stage)
-        except hou.Error:
-            log.exception("Could not point %s at /stage", pane_tab.name())
+        pane_tab.setPwd(stage)
+
+
+def _action(label: str):
+    """Make an ``(asset_id, dept, ...)`` action method its own boundary.
+
+    The actions are called from menu entries and detail-panel buttons, and
+    a Qt slot that raises only reaches the console - which reads as "the
+    button does nothing". ``label`` names the action in the report.
+    """
+
+    def wrap(method):
+        @functools.wraps(method)
+        def run(self, asset_id: str, dept: str, *args, **kwargs) -> None:
+            try:
+                method(self, asset_id, dept, *args, **kwargs)
+            except Exception as exc:
+                report_failure(f"{label} for {asset_id}/{dept}", exc)
+
+        return run
+
+    return wrap
 
 
 class WorkfileManager:
     """Open, create, and inspect workfiles for the Pipeline catalog."""
 
-    def __init__(self, catalog: "PipelineCatalog") -> None:
-        self._catalog = catalog
+    def __init__(
+        self,
+        *,
+        resolver: "AssetResolver",
+        registry: "PipelineProjectRegistry",
+        clients: "ClientPool",
+        activator: "ProjectActivator",
+        scene: "SceneManager",
+        refresh: "BrowserRefresh",
+        invalidate_cache: Callable[[], None],
+    ) -> None:
+        self._resolver = resolver
+        self._registry = registry
+        self._clients = clients
+        self._activator = activator
+        self._scene = scene
+        self._refresh = refresh
+        self._invalidate_cache = invalidate_cache
 
+    @_action("Opening the location")
     def open_dept_work_dir(self, asset_id: str, dept: str) -> None:
         """Open the dept's workfile directory in the OS file browser."""
-        if not asset_id:
+        base = self.dept_dir_for(asset_id, dept)
+        if base is None:
             return
-        parsed = self._catalog._resolver.split(asset_id)
-        if parsed is None:
-            return
-        project_name, second, third = parsed
-        root = self._catalog._resolver.root_for(asset_id)
-        if root is None:
-            return
-        try:
-            cats = self._catalog._list_categories_for_project(project_name)
-            kind = "assets" if second in cats else "shots"
-            base = root / kind / second / third / dept
-            target = base if base.exists() else base.parent
-            import subprocess
-            subprocess.Popen(
-                ["cmd", "/c", "start", "", str(target)],
-                creationflags=0x08000000,
-            )
-        except Exception as exc:
-            report_failure(f"Opening the location for {asset_id}/{dept}", exc)
+        desktop.open_in_file_browser(base if base.exists() else base.parent)
 
+    @_action("Opening the latest export")
     def open_latest_export(self, asset_id: str, dept: str) -> None:
         """Open the dept's latest export folder in the OS file browser."""
         if not asset_id:
             return
         # Activate the asset's project so latest_export_path resolves
         # against its config.
-        proj = self._catalog._resolver.project_for(asset_id)
+        proj = self._resolver.project_for(asset_id)
         if proj is not None:
-            self._catalog._activate_project(proj)
-        uri = self._catalog._resolver.uri_for_ready(asset_id)
+            self._activator.activate(proj)
+        uri = self._resolver.uri_for_ready(asset_id)
         if uri is None:
             return
-        try:
-            from tumblepipe.pipe.paths import latest_export_path
-            path = latest_export_path(uri, "default", dept)
-            if path is None:
-                import hou
-                hou.ui.setStatusMessage(
-                    f"No export found for {dept}.",
-                    severity=hou.severityType.Warning,
-                )
-                return
-            import subprocess
-            subprocess.Popen(
-                ["cmd", "/c", "start", "", str(path)],
-                creationflags=0x08000000,
+        from tumblepipe.pipe.paths import latest_export_path
+        path = latest_export_path(uri, "default", dept)
+        if path is None:
+            import hou
+            hou.ui.setStatusMessage(
+                f"No export found for {dept}.",
+                severity=hou.severityType.Warning,
             )
-        except Exception as exc:
-            report_failure(
-                f"Opening the latest export for {asset_id}/{dept}", exc,
-            )
+            return
+        desktop.open_in_file_browser(path)
 
     def dept_dir_for(self, asset_id: str, dept: str) -> Path | None:
-        """Return an asset/dept's directory, or ``None``.
+        """The folder ``asset_id``'s ``dept`` workfiles are saved in, or
+        ``None`` for a malformed id.
 
-        Uses direct filesystem math via the asset's project root —
-        does NOT call ``tumblehead.pipe.paths.get_hip_file_path``,
-        because that function caches ``TH_PROJECT_PATH`` at module
-        import time and returns paths under the wrong project for any
-        non-launch project.
+        ``pipe.paths.department_workspace``, so it is the folder Open and
+        Save use: a department a Multi covers is the Multi's folder. The
+        asset's project is activated first.
         """
         if not asset_id or not dept:
             return None
         if asset_id.startswith("group:"):
-            return self._group_dept_dir(asset_id, dept)
-        parsed = self._catalog._resolver.split(asset_id)
-        if parsed is None:
+            proj = self._group_project(asset_id)
+            uri = uris.group(self._split_group_id(asset_id)[1])
+        else:
+            proj = self._resolver.project_for(asset_id)
+            uri = None
+        if proj is None:
             return None
-        project_name, second, third = parsed
-        root = self._catalog._resolver.root_for(asset_id)
-        if root is None:
-            return None
-        try:
-            cats = self._catalog._list_categories_for_project(project_name)
-            kind = "assets" if second in cats else "shots"
-            return root / kind / second / third / dept
-        except Exception:
-            return None
+        self._activator.activate(proj)
+        if uri is None:
+            uri = self._resolver.uri_for_ready(asset_id)
+        from tumblepipe.pipe.paths import department_workspace
+        _workfile_uri, workspace = department_workspace(uri, dept)
+        return workspace
+
+    @staticmethod
+    def _split_group_id(asset_id: str) -> tuple[str, str]:
+        """``group:PROJECT:ctx/name`` → ``(PROJECT, ctx/name)``.
+
+        Group ids are minted by the catalog itself, so one that does not
+        split is a bug and raises.
+        """
+        _, proj_name, path = asset_id.split(":", 2)
+        return proj_name, path
 
     def _group_project(self, asset_id: str):
         """The registry project of a ``group:PROJECT:ctx/name`` id, or ``None``."""
-        try:
-            _, rest = asset_id.split(":", 1)
-            proj_name, _path = rest.split(":", 1)
-        except ValueError:
-            return None
-        return self._catalog._registry.get(proj_name)
-
-    def _group_dept_dir(self, asset_id: str, dept: str) -> Path | None:
-        """A Multi dept's workfile directory (``groups:/<path>/<dept>``).
-
-        Group ids don't split into ``PROJECT/SECOND/THIRD``, so without
-        this every per-version lookup on a Multi row — the Open button,
-        the user / edited label — resolved to nothing.
-        """
-        proj = self._group_project(asset_id)
-        if proj is None:
-            return None
-        path = asset_id.split(":", 2)[2]
-        try:
-            self._catalog._activate_project(proj)
-            from tumblepipe.api import api as tp_api
-            return tp_api.storage.resolve(
-                uris.groups_root() / uris.group(path).segments / dept,
-            )
-        except Exception:
-            log.debug(
-                "Group dept dir lookup failed for %s/%s", asset_id, dept,
-                exc_info=True,
-            )
-            return None
+        proj_name, _path = self._split_group_id(asset_id)
+        return self._registry.get(proj_name)
 
     def workfile_path_for(
         self, asset_id: str, dept: str, version: str,
@@ -191,10 +190,7 @@ class WorkfileManager:
         dept_dir = self.dept_dir_for(asset_id, dept)
         if dept_dir is None:
             return None
-        try:
-            return workfile_for_version(dept_dir, version)
-        except Exception:
-            return None
+        return workfile_for_version(dept_dir, version)
 
     @staticmethod
     def _read_version_sidecar(dept_dir: Path | None, version: str) -> dict:
@@ -205,22 +201,16 @@ class WorkfileManager:
         directly rather than through ``ui.helpers``, which would
         re-resolve the path via the cached single-project
         ``tumblehead.pipe.paths`` functions and miss cross-project
-        switches.
+        switches. A version saved before sidecars existed has none
+        (``{}``); one that will not parse raises.
         """
         if dept_dir is None or not version:
             return {}
-        try:
-            ctx_file = dept_dir / "_context" / f"{version}.json"
-            if not ctx_file.exists():
-                return {}
-            import json
-            data = json.loads(ctx_file.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else {}
-        except Exception:
-            log.debug(
-                "Failed to read version sidecar %s/%s", dept_dir, version,
-            )
+        ctx_file = dept_dir / "_context" / f"{version}.json"
+        if not ctx_file.exists():
             return {}
+        import json
+        return json.loads(ctx_file.read_text(encoding="utf-8"))
 
     def get_user_for_version(self, asset_id: str, dept: str, version: str):
         """Read the user attribution for a specific dept/version."""
@@ -333,17 +323,14 @@ class WorkfileManager:
         user = sidecar.get("user")
         note = sidecar.get("note")
 
-        path = None
-        try:
-            path = workfile_for_version(dept_dir, version)
-        except Exception:
-            path = None
+        path = workfile_for_version(dept_dir, version)
 
         mtime = 0.0
         if path is not None:
             try:
                 mtime = path.stat().st_mtime
-            except OSError:
+            except FileNotFoundError:
+                # Deleted between the glob that found it and this stat.
                 mtime = 0.0
 
         return (
@@ -357,21 +344,15 @@ class WorkfileManager:
         datetime, or ``None`` if no export exists."""
         if not asset_id:
             return None
-        uri = self._catalog._resolver.uri_for_ready(asset_id)
+        uri = self._resolver.uri_for_ready(asset_id)
         if uri is None:
             return None
-        try:
-            from tumblepipe.pipe.paths import latest_export_path
-            path = latest_export_path(uri, "default", dept)
-        except Exception:
+        from tumblepipe.pipe.paths import latest_export_path
+        path = latest_export_path(uri, "default", dept)
+        if path is None:
             return None
-        if path is None or not path.exists():
-            return None
-        try:
-            import datetime as dt
-            return dt.datetime.fromtimestamp(path.stat().st_mtime)
-        except OSError:
-            return None
+        import datetime as dt
+        return dt.datetime.fromtimestamp(path.stat().st_mtime)
 
     def get_user_for_export(self, asset_id: str, dept: str):
         """Read the user attribution for ``dept``'s latest export.
@@ -380,34 +361,22 @@ class WorkfileManager:
         write time; ``save_export_context`` puts ``user`` at the top
         level while ``save_layer_context`` nests it in ``outputs[0]``
         — accept both shapes. Returns ``None`` for exports predating
-        the stamp or on any read failure.
+        the stamp; a stamp that will not parse raises.
         """
         if not asset_id:
             return None
-        uri = self._catalog._resolver.uri_for_ready(asset_id)
+        uri = self._resolver.uri_for_ready(asset_id)
         if uri is None:
             return None
-        try:
-            from tumblepipe.pipe.paths import latest_export_path
-            path = latest_export_path(uri, "default", dept)
-        except Exception:
-            return None
+        from tumblepipe.pipe.paths import latest_export_path
+        path = latest_export_path(uri, "default", dept)
         if path is None:
             return None
         ctx_file = path / "context.json"
-        try:
-            if not ctx_file.exists():
-                return None
-            import json
-            data = json.loads(ctx_file.read_text(encoding="utf-8"))
-        except Exception:
-            log.debug(
-                "Failed to read export user for %s/%s",
-                asset_id, dept,
-            )
+        if not ctx_file.exists():
             return None
-        if not isinstance(data, dict):
-            return None
+        import json
+        data = json.loads(ctx_file.read_text(encoding="utf-8"))
         user = data.get("user")
         if not user:
             outputs = data.get("outputs") or []
@@ -449,6 +418,48 @@ class WorkfileManager:
         years = days // 365
         return f"{years}y ago"
 
+    def _load(self, path: Path, proj, asset_id: str, refresh_cb=None) -> None:
+        """Swap this session to the workfile at ``path``, on the main thread.
+
+        ``hou.hipFile.load`` off the GUI thread crashes Houdini, so the swap
+        is deferred there - and is therefore its own failure boundary: the
+        action that scheduled it has already returned.
+        """
+
+        def _do_load() -> None:
+            try:
+                import hou
+                from tumblepipe.pipe.houdini import playbar
+                decision = self._scene.prepare_scene_swap()
+                if decision is None:
+                    return  # user cancelled the save prompt
+                self._activator.activate(proj)
+                # Manual update mode so neither the load, the
+                # hou.setFrame() in apply_scene_timeline, nor load_hook's
+                # import re-execute triggers a live full-graph cook.
+                with playbar.update_mode(hou.updateMode.Manual):
+                    try:
+                        hou.hipFile.load(
+                            str(path), suppress_save_prompt=decision,
+                        )
+                    except hou.LoadWarning as warning:
+                        # The scene IS open, with warnings (a missing HDA,
+                        # say); the open carries on and says so.
+                        hou.ui.setStatusMessage(
+                            f"Opened {path.name} with warnings: {warning}",
+                            severity=hou.severityType.Warning,
+                        )
+                    log.info("Opened workfile: %s", path)
+                    self._scene.apply_scene_timeline(asset_id)
+                if callable(refresh_cb):
+                    refresh_cb()
+                self._refresh.detail()
+            except Exception as exc:
+                report_failure(f"Opening {path}", exc)
+
+        run_on_main_thread(_do_load)
+
+    @_action("Opening a workfile version")
     def open_version_now(
         self, asset_id: str, dept: str, version: str | None,
         refresh_cb=None,
@@ -462,28 +473,23 @@ class WorkfileManager:
         """
         if not asset_id or not version:
             return
+        import hou
         is_group = asset_id.startswith("group:")
         if is_group:
             proj = self._group_project(asset_id)
         else:
-            proj = self._catalog._resolver.project_for(asset_id)
+            proj = self._resolver.project_for(asset_id)
         if proj is None:
             return
 
         # Cross-project: launch a new Houdini instance instead of
         # loading into the current session (resolver + env mismatch).
         # Multis load in-process, like open_group_workfile.
-        try:
-            import hou
-            scene_proj = self._catalog._project_for_hip_path(
+        if not is_group:
+            scene_proj = self._resolver.project_for_path(
                 Path(hou.hipFile.path()),
             )
-            if (
-                not is_group
-                and scene_proj is not None
-                and proj is not None
-                and scene_proj.name != proj.name
-            ):
+            if scene_proj is not None and scene_proj.name != proj.name:
                 hou.ui.setStatusMessage(
                     f"Opening {proj.name} scene in a new Houdini "
                     f"instance...",
@@ -491,136 +497,57 @@ class WorkfileManager:
                 )
                 self.open_in_new_instance(asset_id, dept)
                 return
-        except Exception:
-            pass
 
         path = self.workfile_path_for(asset_id, dept, version)
-        if path is None or not path.exists():
-            try:
-                import hou
-                hou.ui.setStatusMessage(
-                    f"Workfile not found: {asset_id} / {dept} / {version}",
-                    severity=hou.severityType.Warning,
-                )
-            except Exception:
-                pass
+        if path is None:
+            hou.ui.setStatusMessage(
+                f"Workfile not found: {asset_id} / {dept} / {version}",
+                severity=hou.severityType.Warning,
+            )
             return
+        self._load(path, proj, asset_id, refresh_cb)
 
-        path_str = str(path)
-
-        def _do_load(target_proj=proj):
-            try:
-                import hou
-                from tumblepipe.pipe.houdini import util
-                decision = self._catalog._scene.prepare_scene_swap()
-                if decision is None:
-                    return  # user cancelled the save prompt
-                self._catalog._activate_project(target_proj)
-                # Manual update mode so neither the load, the
-                # hou.setFrame() in apply_scene_timeline, nor load_hook's import
-                # re-execute triggers a live full-graph cook. Mirrors
-                # the open flow of the since-retired Project Browser.
-                with util.update_mode(hou.updateMode.Manual):
-                    hou.hipFile.load(path_str, suppress_save_prompt=decision)
-                    log.info("Opened workfile: %s", path_str)
-                    self._catalog._scene.apply_scene_timeline(asset_id)
-            except Exception as exc:
-                report_failure(f"Opening {path_str}", exc)
-                return
-            if callable(refresh_cb):
-                try:
-                    refresh_cb()
-                except Exception:
-                    log.exception("Detail refresh after open failed")
-            self._catalog._request_global_detail_refresh()
-
-        run_on_main_thread(_do_load)
-
-    def new_from_template(
-        self, asset_id: str, dept: str, refresh_cb=None,
+    def _create_from_template(
+        self, *, asset_id: str, entity_uri, context: str, dept: str,
+        proj, client, module_name: str, refresh_cb,
     ) -> None:
-        """Save the next ``dept/vNNNN`` workfile for ``asset_id`` from
-        the department template.
+        """Save the next ``dept/vNNNN`` workfile of ``entity_uri`` from the
+        department template, on the main thread.
 
-        Mirrors Project Browser's 'New from Template' action: activate the
-        target project's env, clear the scene, save an empty hip at the
-        next versioned path, then run the matching
+        Activate the target project's env, clear the scene, save an empty
+        hip at the next versioned path, then run the matching
         ``config:/templates/{context}/{dept}/template.py`` to populate
-        ``/stage`` before saving again. Works for both empty depts
-        (next = v0001) and populated depts (next = v(N+1)).
+        ``/stage`` and stamp the config timeline before saving again. Works
+        for both empty depts (next = v0001) and populated depts
+        (next = v(N+1)). A department with no template saves an empty
+        scene and says so; a template that raises is reported, as is
+        everything else that fails here.
         """
-        if not asset_id:
-            return
-        proj = self._catalog._resolver.project_for(asset_id)
-        if proj is None:
-            return
-        # Activate before resolving anything so next_hip_file_path /
-        # storage.resolve / template loading all see the right project.
-        self._catalog._activate_project(proj)
-        client = self._catalog._resolver.client_for(asset_id)
-        if client is None:
-            return
-        # A write path: never create a workfile for an entity the config
-        # does not hold (see EntityNotRegistered).
-        try:
-            entity_uri = self._catalog._resolver.registered_uri_for(asset_id)
-        except EntityNotRegistered as exc:
-            report_failure(f"Creating a workfile for {asset_id}/{dept}", exc)
-            return
-        if entity_uri is None:
-            return
 
-        try:
-            from tumblepipe.pipe.paths import reserve_next_hip_file_path
-        except Exception as exc:
-            report_failure("Create workfile", exc)
-            return
-
-
-        def _do_create(target_proj=proj):
+        def _do_create() -> None:
             try:
                 import hou
                 from tumblepipe.pipe.context import (
-                    save_context, save_entity_context, save_hip_file,
+                    save_context, save_entity_context,
                     workfile_context,
                 )
+                from tumblepipe.pipe.houdini.workfile_save import (
+                    save_hip_file,
+                )
+                from tumblepipe.pipe.paths import reserve_next_hip_file_path
 
                 # Re-activate inside the deferred tick so no background
                 # thread can clobber the global client between activate
                 # and the path resolution that depends on it.
-                self._catalog._activate_project(target_proj)
-
-                try:
-                    next_path = reserve_next_hip_file_path(
-                        entity_uri, dept, nc_type=session_nc_type(),
-                    )
-                except Exception as exc:
-                    report_failure(
-                        f"Creating a workfile for {asset_id}/{dept}", exc,
-                    )
-                    return
-                if next_path is None:
-                    hou.ui.setStatusMessage(
-                        f"Create: could not resolve path for {dept}.",
-                        severity=hou.severityType.Warning,
-                    )
-                    return
-
-                # Resolve the template module path.
-                segs = entity_uri.segments
-                entity_context = segs[0] if len(segs) > 0 else "assets"
-                try:
-                    template_uri = uris.dept_template(entity_context, dept)
-                    template_path = client.storage.resolve(template_uri)
-                except Exception:
-                    log.exception(
-                        "Create: failed to resolve template URI for %s/%s",
-                        entity_context, dept,
-                    )
-                    template_path = None
+                self._activator.activate(proj)
+                next_path = reserve_next_hip_file_path(
+                    entity_uri, dept, nc_type=session_nc_type(),
+                )
+                template_path = Path(client.storage.resolve(
+                    uris.dept_template(context, dept),
+                ))
 
                 next_path.parent.mkdir(parents=True, exist_ok=True)
-
                 hou.hipFile.clear(suppress_save_prompt=True)
                 _show_stage_in_network_editors()
                 # Houdini may rewrite the extension (Education/Apprentice
@@ -634,159 +561,139 @@ class WorkfileManager:
                 )
                 save_entity_context(next_path.parent, new_ctx)
 
-                # Run the department template against /stage
-                template_applied = False
-                if template_path is not None and Path(template_path).exists():
-                    try:
-                        from tumblepipe.pipe.houdini.ui.helpers import (
-                            load_module,
-                        )
-                        stage = hou.node("/stage")
-                        if stage is not None:
-                            module_name = (
-                                f"{'_'.join(entity_uri.segments[1:])}"
-                                f"_{dept}_template"
-                            )
-                            template = load_module(
-                                Path(template_path), module_name,
-                            )
-                            template.create(stage, entity_uri, dept)
-                            template_applied = True
-                    except Exception:
-                        log.exception(
-                            "Create: template.create() failed for %s/%s",
-                            asset_id, dept,
-                        )
-                else:
-                    log.warning(
-                        "Create: no template found at %s — saving empty scene",
-                        template_path,
-                    )
+                # A department need not ship a template: it then starts
+                # from an empty /stage.
+                template_applied = template_path.exists()
+                if template_applied:
+                    from tumblepipe.pipe.houdini.ui.helpers import load_module
+                    template = load_module(template_path, module_name)
+                    template.create(hou.node("/stage"), entity_uri, dept)
 
                 # Stamp the config timeline into the fresh workfile so it
                 # persists in the hip. force_frame_range=True: creation is
                 # the one time a non-animatable entity (asset) should get
                 # its starting range — subsequent opens leave it be so the
                 # artist can freely move it.
-                try:
-                    self._catalog._scene.apply_scene_timeline(
-                        asset_id, force_frame_range=True,
-                    )
-                    timeline_applied = True
-                except Exception:
-                    log.exception(
-                        "Create: applying scene timeline failed for %s/%s",
-                        asset_id, dept,
-                    )
-                    timeline_applied = False
-
+                self._scene.apply_scene_timeline(
+                    asset_id, force_frame_range=True,
+                )
                 hou.hipFile.save(str(next_path))
 
                 log.info(
                     "Created %s (template_applied=%s)",
                     next_path, template_applied,
                 )
-                msg = f"Created {Path(next_path).name}"
+                msg = f"Created {next_path.name}"
                 if not template_applied:
                     msg += " (no template)"
-                if not timeline_applied:
-                    msg += " (frame range/fps NOT applied — check the log)"
                 hou.ui.setStatusMessage(
                     msg, severity=hou.severityType.Message,
                 )
-            except Exception as exc:
-                report_failure(f"Creating a workfile for {asset_id}/{dept}", exc)
-                return
 
-            self._catalog.invalidate_cache()
-            # Swap the entity's card/list row in place so the new
-            # dept/version shows instantly — the refresh_cb below only
-            # re-renders the currently-displayed detail, which may be a
-            # different asset (mirrors new_group_from_template).
-            try:
-                self._catalog._request_card_refresh_for_id(asset_id)
-            except Exception:
-                log.exception(
-                    "card refresh failed for new workfile %s", asset_id,
-                )
-            if callable(refresh_cb):
-                try:
+                self._invalidate_cache()
+                # Swap the entity's card/list row in place so the new
+                # dept/version shows instantly — the refresh_cb below only
+                # re-renders the currently-displayed detail, which may be a
+                # different asset.
+                self._refresh.card(asset_id)
+                if callable(refresh_cb):
                     refresh_cb()
-                except Exception:
-                    log.exception("Detail refresh after create failed")
+            except Exception as exc:
+                report_failure(
+                    f"Creating a workfile for {asset_id}/{dept}", exc,
+                )
 
         run_on_main_thread(_do_create)
 
+    @_action("Creating a workfile")
+    def new_from_template(
+        self, asset_id: str, dept: str, refresh_cb=None,
+    ) -> None:
+        """Save the next ``dept/vNNNN`` workfile for ``asset_id`` from
+        the department template (see :meth:`_create_from_template`)."""
+        if not asset_id:
+            return
+        proj = self._resolver.project_for(asset_id)
+        if proj is None:
+            return
+        # Activate before resolving anything so next_hip_file_path /
+        # storage.resolve / template loading all see the right project.
+        self._activator.activate(proj)
+        client = self._resolver.client_for(asset_id)
+        # A write path: never create a workfile for an entity the config
+        # does not hold (see EntityNotRegistered).
+        entity_uri = self._resolver.registered_uri_for(asset_id)
+        if entity_uri is None:
+            return
+        # A department a Multi covers belongs to the Multi: its workfile is
+        # the Multi's (department_workspace routes the save there), so the
+        # template must build the Multi's scene, not the member's.
+        from tumblepipe.pipe.paths import department_workspace
+        workfile_uri, _ = department_workspace(entity_uri, dept)
+        is_group = workfile_uri.purpose == 'groups'
+        self._create_from_template(
+            asset_id=asset_id, entity_uri=workfile_uri,
+            context=workfile_uri.segments[0], dept=dept, proj=proj,
+            client=client,
+            module_name=(
+                entity_stem(workfile_uri, dept, "template", "group")
+                if is_group else entity_stem(workfile_uri, dept, "template")
+            ),
+            refresh_cb=refresh_cb,
+        )
+
+    @_action("New from Current")
     def new_from_current(
         self, asset_id: str, dept: str, refresh_cb=None,
     ) -> None:
         """Save the *currently loaded* scene as the next ``dept/vNNNN``
         workfile for ``asset_id``.
 
-        Mirrors Project Browser's 'New from Current' action — copies the
-        in-memory scene state into a fresh workfile slot for the target
-        dept, regardless of which entity the scene was originally
-        loaded from. The previous scene's context (if any) becomes
-        ``from_version`` in the new ``_context/<vNNNN>.json`` so the
-        provenance is preserved.
+        Copies the in-memory scene state into a fresh workfile slot for
+        the target dept, regardless of which entity the scene was
+        originally loaded from. The previous scene's context (if any)
+        becomes ``from_version`` in the new ``_context/<vNNNN>.json`` so
+        the provenance is preserved.
         """
         if not asset_id:
             return
-        proj = self._catalog._resolver.project_for(asset_id)
+        proj = self._resolver.project_for(asset_id)
         if proj is None:
             return
-        self._catalog._activate_project(proj)
+        self._activator.activate(proj)
         # A write path: never save the open scene as a workfile of an entity
         # the config does not hold (see EntityNotRegistered).
-        try:
-            entity_uri = self._catalog._resolver.registered_uri_for(asset_id)
-        except EntityNotRegistered as exc:
-            report_failure(f"New from Current for {asset_id}/{dept}", exc)
-            return
+        entity_uri = self._resolver.registered_uri_for(asset_id)
         if entity_uri is None:
             return
 
-
-        def _do_save(target_proj=proj):
+        def _do_save() -> None:
             try:
                 import hou
                 from tumblepipe.pipe.paths import (
                     reserve_next_hip_file_path, get_workfile_context,
                 )
                 from tumblepipe.pipe.context import (
-                    save_context, save_entity_context, save_hip_file,
+                    save_context, save_entity_context,
                     workfile_context,
+                )
+                from tumblepipe.pipe.houdini.workfile_save import (
+                    save_hip_file,
                 )
 
                 # Re-activate inside the deferred tick so no background
                 # thread can clobber the global client.
-                self._catalog._activate_project(target_proj)
+                self._activator.activate(proj)
+                next_path = reserve_next_hip_file_path(
+                    entity_uri, dept, nc_type=session_nc_type(),
+                )
 
-                try:
-                    next_path = reserve_next_hip_file_path(
-                        entity_uri, dept, nc_type=session_nc_type(),
-                    )
-                except Exception as exc:
-                    report_failure(
-                        f"New from Current for {asset_id}/{dept}", exc,
-                    )
-                    return
-                if next_path is None:
-                    hou.ui.setStatusMessage(
-                        f"New from Current: could not resolve path for {dept}.",
-                        severity=hou.severityType.Warning,
-                    )
-                    return
-
-                # Capture the current scene's context (if any) so we
-                # can record from_version provenance metadata.
-                prev_ctx = None
-                try:
-                    hip_str = hou.hipFile.path()
-                    if hip_str:
-                        prev_ctx = get_workfile_context(Path(hip_str))
-                except Exception:
-                    prev_ctx = None
+                # The current scene's context (None for a scene that is
+                # not a pipeline workfile) records from_version provenance.
+                hip_str = hou.hipFile.path()
+                prev_ctx = (
+                    get_workfile_context(Path(hip_str)) if hip_str else None
+                )
 
                 next_path.parent.mkdir(parents=True, exist_ok=True)
                 # Houdini may rewrite the extension (Education/Apprentice
@@ -804,25 +711,19 @@ class WorkfileManager:
                 # would publish over it: point them at the new workfile.
                 retargeted = []
                 if prev_ctx is not None:
-                    from tumblepipe.pipe.houdini import util
+                    from tumblepipe.pipe.houdini import playbar
                     from tumblepipe.pipe.houdini.scene_retarget import (
                         retarget_scene,
                     )
-                    try:
-                        with util.update_mode(hou.updateMode.Manual):
-                            retargeted = retarget_scene(prev_ctx, new_ctx)
-                        hou.hipFile.save(str(next_path))
-                    except Exception:
-                        log.exception(
-                            "New from Current: retargeting nodes failed "
-                            "for %s", next_path,
-                        )
+                    with playbar.update_mode(hou.updateMode.Manual):
+                        retargeted = retarget_scene(prev_ctx, new_ctx)
+                    hou.hipFile.save(str(next_path))
 
                 log.info(
                     "New from Current: saved %s (retargeted %d node(s))",
                     next_path, len(retargeted),
                 )
-                msg = f"Saved {Path(next_path).name}"
+                msg = f"Saved {next_path.name}"
                 if retargeted:
                     msg += (
                         f" ({len(retargeted)} node(s) now follow the "
@@ -831,461 +732,154 @@ class WorkfileManager:
                 hou.ui.setStatusMessage(
                     msg, severity=hou.severityType.Message,
                 )
+
+                self._invalidate_cache()
+                # See _create_from_template: refresh the entity's own
+                # card/list row directly, not just the displayed detail.
+                self._refresh.card(asset_id)
+                if callable(refresh_cb):
+                    refresh_cb()
             except Exception as exc:
                 report_failure(
                     f"New from Current for {asset_id}/{dept}", exc,
                 )
-                return
-
-            self._catalog.invalidate_cache()
-            # See new_from_template: refresh the entity's own card/list
-            # row directly, not just the currently-displayed detail.
-            try:
-                self._catalog._request_card_refresh_for_id(asset_id)
-            except Exception:
-                log.exception(
-                    "card refresh failed for new workfile %s", asset_id,
-                )
-            if callable(refresh_cb):
-                try:
-                    refresh_cb()
-                except Exception:
-                    log.exception(
-                        "Detail refresh after New from Current failed",
-                    )
 
         run_on_main_thread(_do_save)
 
+    @_action("Opening in a new Houdini instance")
     def open_in_new_instance(self, asset_id: str, dept: str) -> None:
         """Launch a new Houdini process with the latest workfile for a dept.
 
         Inherits the current process's full environment (TH_*, HOUDINI_PATH,
-        etc.) so the new instance has identical pipeline context.
+        etc.) so the new instance has identical pipeline context, with the
+        target project's ``TH_PROJECT_PATH`` / ``TH_CONFIG_PATH``.
         """
         if not asset_id:
             return
-        parsed = self._catalog._resolver.split(asset_id)
-        if parsed is None:
+        proj = self._resolver.project_for(asset_id)
+        if proj is None:
             return
-        project_name, second, third = parsed
-        proj = self._catalog._registry.get(project_name)
-        root = self._catalog._resolver.root_for(asset_id)
-        if proj is None or root is None:
-            return
-        try:
-            cats = self._catalog._list_categories_for_project(project_name)
-            if second in cats:
-                work_dir = root / "assets" / second / third / dept
-            else:
-                work_dir = root / "shots" / second / third / dept
+        self._activator.activate(proj)
+        entity_uri = self._resolver.uri_for_ready(asset_id)
+        from tumblepipe.pipe.houdini.workfiles import (
+            open_workfile_in_new_instance,
+        )
+        # The same workfile Open lands on (a Multi's, where one covers the
+        # department), in a Houdini bound to the asset's project.
+        open_workfile_in_new_instance(
+            entity_uri, dept,
+            env_overrides={
+                "TH_PROJECT_PATH": proj.project_path,
+                "TH_CONFIG_PATH": proj.config_path,
+            },
+        )
 
-            hip_path = latest_workfile(work_dir)
-
-            if hip_path is None:
-                import hou
-                hou.ui.setStatusMessage(
-                    f"No workfile found for {dept}.",
-                    severity=hou.severityType.Warning,
-                )
-                return
-
-            # Build env: current process env + target project's TH_* vars.
-            # TH_PIPELINE_PATH is hpm-owned and inherited from the parent
-            # process; never override it per-project.
-            import subprocess
-            env = dict(os.environ)
-            env["TH_PROJECT_PATH"] = proj.project_path
-            env["TH_CONFIG_PATH"] = proj.config_path
-
-            # Use the same executable as the current Houdini process
-            houdini_bin = Path(sys.executable)
-            if not houdini_bin.exists():
-                hfs = os.environ.get("HFS", "")
-                houdini_bin = Path(hfs) / "bin" / "houdinifx.exe" if hfs else None
-
-            # CREATE_NEW_PROCESS_GROUP detaches the child so it
-            # survives after the calling callback returns.
-            flags = subprocess.CREATE_NEW_PROCESS_GROUP
-            if houdini_bin and houdini_bin.exists():
-                subprocess.Popen(
-                    [str(houdini_bin), str(hip_path)],
-                    env=env,
-                    creationflags=flags,
-                )
-                log.info("Launched new Houdini instance: %s", hip_path)
-            else:
-                subprocess.Popen(
-                    ["cmd", "/c", "start", "", str(hip_path)],
-                    env=env,
-                    creationflags=flags,
-                )
-                log.info("Launched hip via shell: %s", hip_path)
-        except Exception as exc:
-            report_failure(
-                f"Opening {asset_id}/{dept} in a new Houdini instance", exc,
-            )
-
+    @_action("Opening the workfile")
     def open_workfile(self, asset_id: str, dept: str) -> None:
         """Open the latest workfile for a department.
-
-        File-system inspection happens on the worker thread; the actual
-        ``hou.hipFile.load`` must run on the GUI thread or Houdini crashes.
 
         Resolution is delegated to ``latest_hip_file_path_with_context``,
         which auto-routes to a covering group's workfile when one
         exists — so clicking a member shot's covered dept opens the
-        group's hip, not a local shot hip.
+        group's hip, not a local shot hip. With no workfile at all, the
+        department's folder opens instead.
         """
         if not asset_id:
             return
-        parsed = self._catalog._resolver.split(asset_id)
+        parsed = self._resolver.split(asset_id)
         if parsed is None:
             return
-        project_name, second, third = parsed
-        proj = self._catalog._registry.get(project_name)
-        root = self._catalog._resolver.root_for(asset_id)
-        if proj is None or root is None:
+        proj = self._registry.get(parsed[0])
+        if proj is None:
             return
-        try:
-            cats = self._catalog._list_categories_for_project(project_name)
-            if second in cats:
-                work_dir = root / "assets" / second / third / dept
-            else:
-                work_dir = root / "shots" / second / third / dept
+        self._activator.activate(proj)
+        entity_uri = self._resolver.uri_for_ready(asset_id)
+        from tumblepipe.pipe import paths as paths_mod
+        hip_path = paths_mod.latest_hip_file_path_with_context(
+            entity_uri, dept,
+        )
+        if hip_path is not None and hip_path.exists():
+            self._load(hip_path, proj, asset_id)
+            return
+        work_dir = self.dept_dir_for(asset_id, dept)
+        desktop.open_in_file_browser(
+            work_dir if work_dir.exists() else work_dir.parent,
+        )
 
-            hip_path: Path | None = None
-            try:
-                self._catalog._activate_project(proj)
-                from tumblepipe.pipe import paths as paths_mod
-                entity_uri = self._catalog._resolver.uri_for_ready(asset_id)
-                if entity_uri is not None:
-                    resolved = paths_mod.latest_hip_file_path_with_context(
-                        entity_uri, dept,
-                    )
-                    if resolved is not None and resolved.exists():
-                        hip_path = resolved
-            except Exception:
-                log.debug(
-                    "latest_hip_file_path_with_context failed for %s/%s",
-                    asset_id, dept, exc_info=True,
-                )
-
-            # Last-resort fallback: legacy direct glob over the
-            # member's own dept folder. Kept so that a tumblepipe
-            # path-resolver hiccup doesn't break opens entirely.
-            if hip_path is None:
-                hip_path = latest_workfile(work_dir)
-
-            if hip_path is not None:
-
-                def _do_load(p=hip_path, target_proj=proj):
-                    try:
-                        import hou
-                        from tumblepipe.pipe.houdini import util
-                        decision = self._catalog._scene.prepare_scene_swap()
-                        if decision is None:
-                            return  # user cancelled the save prompt
-                        self._catalog._activate_project(target_proj)
-                        # Manual update mode so neither the load, the
-                        # hou.setFrame() in apply_scene_timeline, nor
-                        # load_hook's import re-execute triggers a live full-graph
-                        # cook. Mirrors the open flow of the since-retired
-                        # Project Browser.
-                        with util.update_mode(hou.updateMode.Manual):
-                            hou.hipFile.load(str(p), suppress_save_prompt=decision)
-                            log.info("Opened workfile: %s", p)
-                            self._catalog._scene.apply_scene_timeline(asset_id)
-                    except Exception as exc:
-                        report_failure(f"Opening {p}", exc)
-                        return
-                    self._catalog._request_global_detail_refresh()
-
-                run_on_main_thread(_do_load)
-                return
-
-            # Fallback: open the directory in Explorer (safe off-thread)
-            target = work_dir if work_dir.exists() else root
-            import subprocess
-            subprocess.Popen(
-                ["cmd", "/c", "start", "", str(target)],
-                creationflags=0x08000000,
-            )
-        except Exception as exc:
-            report_failure(f"Opening the workfile for {asset_id}/{dept}", exc)
-
+    @_action("Opening the group workfile")
     def open_group_workfile(self, asset_id: str, dept: str) -> None:
         """Open the latest workfile for a group's department.
 
-        Mirrors :meth:`_open_workfile` but routes through tumblepipe's
-        group-aware path resolver. The ``hou.hipFile.load`` call is
-        dispatched on the GUI thread; if no workfile exists, the
-        group's work directory is opened in Explorer.
+        Mirrors :meth:`open_workfile` but routes through tumblepipe's
+        group-aware path resolver. If no workfile exists, the group's
+        work directory is opened in Explorer.
         """
         if not asset_id.startswith("group:"):
             return
-        try:
-            _, rest = asset_id.split(":", 1)
-            proj_name, path = rest.split(":", 1)
-        except ValueError:
-            return
-        proj = self._catalog._registry.get(proj_name)
+        proj = self._group_project(asset_id)
         if proj is None:
             return
-        try:
-            self._catalog._activate_project(proj)
-            from tumblepipe.pipe import paths as paths_mod
-            from tumblepipe.api import api as tp_api
-            group_uri = uris.group(path)
-            hip_path = paths_mod.latest_hip_file_path_with_context(
-                group_uri, dept,
-            )
-            if hip_path is not None and hip_path.exists():
+        _proj_name, path = self._split_group_id(asset_id)
+        self._activator.activate(proj)
+        from tumblepipe.pipe import paths as paths_mod
+        hip_path = paths_mod.latest_hip_file_path_with_context(
+            uris.group(path), dept,
+        )
+        if hip_path is not None and hip_path.exists():
+            self._load(hip_path, proj, asset_id)
+            return
+        self._open_group_folder(path, dept)
 
-                def _do_load(p=hip_path, target_proj=proj):
-                    try:
-                        import hou
-                        from tumblepipe.pipe.houdini import util
-                        decision = self._catalog._scene.prepare_scene_swap()
-                        if decision is None:
-                            return  # user cancelled the save prompt
-                        self._catalog._activate_project(target_proj)
-                        # Manual update mode so neither the load, the
-                        # hou.setFrame() in apply_scene_timeline, nor
-                        # load_hook's import re-execute triggers a live full-graph
-                        # cook. Mirrors the open flow of the since-retired
-                        # Project Browser.
-                        with util.update_mode(hou.updateMode.Manual):
-                            hou.hipFile.load(str(p), suppress_save_prompt=decision)
-                            log.info("Opened group workfile: %s", p)
-                            self._catalog._scene.apply_scene_timeline(asset_id)
-                    except Exception as exc:
-                        report_failure(f"Opening the group workfile {p}", exc)
-                        return
-                    self._catalog._request_global_detail_refresh()
-
-                run_on_main_thread(_do_load)
-                return
-
-            # Fallback: open the resolved work directory in Explorer.
-            # If the dept folder doesn't exist yet, walk up to the
-            # group root so the user still lands somewhere sensible.
-            workspace_uri = (
-                uris.groups_root() / group_uri.segments / dept
-            )
-            target = tp_api.storage.resolve(workspace_uri)
-            if not target.exists():
-                group_root_uri = (
-                    uris.groups_root() / group_uri.segments
-                )
-                target = tp_api.storage.resolve(group_root_uri)
-            import subprocess
-            subprocess.Popen(
-                ["cmd", "/c", "start", "", str(target)],
-                creationflags=0x08000000,
-            )
-        except Exception as exc:
-            report_failure(
-                f"Opening the group workfile for {asset_id}/{dept}", exc,
-            )
-
+    @_action("Opening the group work directory")
     def open_group_dept_work_dir(self, asset_id: str, dept: str) -> None:
-        """Open a group dept's workfile directory in Explorer.
-
-        Mirrors :meth:`_open_dept_work_dir` but resolves the path via
-        the group's ``groups:/`` workspace URI. Walks up to the group
-        root if the dept folder doesn't exist yet.
-        """
+        """Open a group dept's workfile directory in Explorer."""
         if not asset_id.startswith("group:"):
             return
-        try:
-            _, rest = asset_id.split(":", 1)
-            proj_name, path = rest.split(":", 1)
-        except ValueError:
-            return
-        proj = self._catalog._registry.get(proj_name)
+        proj = self._group_project(asset_id)
         if proj is None:
             return
-        try:
-            self._catalog._activate_project(proj)
-            from tumblepipe.api import api as tp_api
-            group_uri = uris.group(path)
-            workspace_uri = (
-                uris.groups_root() / group_uri.segments / dept
-            )
-            target = tp_api.storage.resolve(workspace_uri)
-            if not target.exists():
-                target = tp_api.storage.resolve(
-                    uris.groups_root() / group_uri.segments,
-                )
-            import subprocess
-            subprocess.Popen(
-                ["cmd", "/c", "start", "", str(target)],
-                creationflags=0x08000000,
-            )
-        except Exception as exc:
-            report_failure(
-                f"Opening the group work directory for {asset_id}/{dept}", exc,
-            )
+        _proj_name, path = self._split_group_id(asset_id)
+        self._activator.activate(proj)
+        self._open_group_folder(path, dept)
 
+    @staticmethod
+    def _open_group_folder(path: str, dept: str) -> None:
+        """Show a group dept's work directory, or the group's own root
+        when the dept folder does not exist yet. The group's project must
+        be active."""
+        from tumblepipe.api import api as tp_api
+        group_segments = uris.group(path).segments
+        target = tp_api.storage.resolve(
+            uris.groups_root() / group_segments / dept,
+        )
+        if not target.exists():
+            target = tp_api.storage.resolve(
+                uris.groups_root() / group_segments,
+            )
+        desktop.open_in_file_browser(target)
+
+    @_action("Creating a group workfile")
     def new_group_from_template(
         self, asset_id: str, dept: str, refresh_cb=None,
     ) -> None:
         """Save the next ``dept/vNNNN`` workfile for a group from the
-        department template.
-
-        Mirrors :meth:`_new_from_template` but routes through the
-        group's ``groups:/ctx/name`` URI, which
-        :func:`next_hip_file_path` and the template loader already
-        handle. Falls back to a no-op if the project or URI can't be
-        resolved.
-        """
+        department template, via the group's ``groups:/ctx/name`` URI (see
+        :meth:`_create_from_template`)."""
         if not asset_id.startswith("group:"):
             return
-        try:
-            _, rest = asset_id.split(":", 1)
-            proj_name, path = rest.split(":", 1)
-        except ValueError:
-            return
-        proj = self._catalog._registry.get(proj_name)
+        proj = self._group_project(asset_id)
         if proj is None:
             return
-        self._catalog._activate_project(proj)
-        client, _err = self._catalog._clients.try_get(proj_name)
-        if client is None:
-            return
-
-        try:
-            from tumblepipe.pipe.paths import reserve_next_hip_file_path
-        except Exception as exc:
-            report_failure("New group workfile from template", exc)
-            return
-
+        proj_name, path = self._split_group_id(asset_id)
+        self._activator.activate(proj)
+        client = self._clients.get(proj_name)
         group_uri = uris.group(path)
-        # Context for groups is the first segment ("shots" or "assets")
-        # (Lives on the ContainerManager since the container split; the
-        # old catalog-level name survived here and made every "New:
-        # Template" on a Multi row raise AttributeError.)
-        ctx = (
-            self._catalog._containers._group_context_from_tag(asset_id)
-            or "shots"
+        self._create_from_template(
+            asset_id=asset_id, entity_uri=group_uri,
+            # A group's context is its path's first segment; groups share
+            # the per-context dept template with shots/assets.
+            context=group_uri.segments[0], dept=dept, proj=proj,
+            client=client,
+            module_name=entity_stem(group_uri, dept, "template", "group"),
+            refresh_cb=refresh_cb,
         )
-
-
-        def _do_create(target_proj=proj):
-            try:
-                import hou
-                from tumblepipe.pipe.context import (
-                    save_context, save_entity_context, save_hip_file,
-                    workfile_context,
-                )
-
-                self._catalog._activate_project(target_proj)
-
-                try:
-                    next_path = reserve_next_hip_file_path(
-                        group_uri, dept, nc_type=session_nc_type(),
-                    )
-                except Exception:
-                    log.exception(
-                        "New from Template (group): reserving next version "
-                        "failed for %s/%s", asset_id, dept,
-                    )
-                    return
-                if next_path is None:
-                    hou.ui.setStatusMessage(
-                        f"Create: could not resolve path for {dept}.",
-                        severity=hou.severityType.Warning,
-                    )
-                    return
-
-                # Resolve the template module path — groups share the
-                # same per-context dept template as shots/assets.
-                try:
-                    template_uri = uris.dept_template(ctx, dept)
-                    template_path = client.storage.resolve(template_uri)
-                except Exception:
-                    log.exception(
-                        "New from Template (group): failed to resolve "
-                        "template URI for %s/%s", ctx, dept,
-                    )
-                    template_path = None
-
-                next_path.parent.mkdir(parents=True, exist_ok=True)
-
-                hou.hipFile.clear(suppress_save_prompt=True)
-                _show_stage_in_network_editors()
-                # Houdini may rewrite the extension (Education/Apprentice
-                # save .hip as .hipnc); record the path it actually wrote.
-                next_path = save_hip_file(next_path)
-
-                new_ctx = workfile_context(group_uri, dept, next_path)
-                save_context(
-                    next_path.parent, None, new_ctx,
-                    file_extension=next_path.suffix.lstrip("."),
-                )
-                save_entity_context(next_path.parent, new_ctx)
-
-                # Run the department template against /stage
-                if template_path is not None and Path(template_path).exists():
-                    try:
-                        from tumblepipe.pipe.houdini.ui.helpers import (
-                            load_module,
-                        )
-                        stage = hou.node("/stage")
-                        if stage is not None:
-                            module_name = (
-                                f"{'_'.join(group_uri.segments[1:])}"
-                                f"_{dept}_template_group"
-                            )
-                            template = load_module(
-                                Path(template_path), module_name,
-                            )
-                            template.create(stage, group_uri, dept)
-                            hou.hipFile.save(str(next_path))
-                    except Exception:
-                        log.exception(
-                            "New from Template (group): template apply "
-                            "failed for %s/%s", ctx, dept,
-                        )
-
-                # Stamp the config timeline into the fresh group workfile
-                # (see the asset/shot create path for the rationale) and
-                # persist it. force_frame_range=True so non-animatable
-                # groups still get a sensible starting range at creation.
-                try:
-                    self._catalog._scene.apply_scene_timeline(
-                        asset_id, force_frame_range=True,
-                    )
-                    hou.hipFile.save(str(next_path))
-                except Exception:
-                    log.exception(
-                        "New from Template (group): applying scene timeline "
-                        "failed for %s/%s", asset_id, dept,
-                    )
-
-                log.info("Created group workfile: %s", next_path)
-                # The detail-panel-driven refresh path only fires for
-                # the currently-displayed card. After New from Template
-                # from a deck item right-click we need the Multi card
-                # itself to swap out its "missing" deck item for the
-                # new "v0001"-bearing one — regardless of whether the
-                # group's detail is open.
-                try:
-                    self._catalog._request_card_refresh_for_id(asset_id)
-                except Exception:
-                    log.exception(
-                        "card refresh failed for new group workfile %s",
-                        asset_id,
-                    )
-                if refresh_cb is not None:
-                    try:
-                        refresh_cb()
-                    except Exception:
-                        log.exception("refresh_cb failed after group create")
-            except Exception as exc:
-                report_failure(
-                    f"Creating a group workfile for {asset_id}/{dept}", exc,
-                )
-
-        run_on_main_thread(_do_create)
-

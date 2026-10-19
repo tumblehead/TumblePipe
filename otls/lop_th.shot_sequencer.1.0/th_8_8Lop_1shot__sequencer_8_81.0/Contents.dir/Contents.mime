@@ -525,20 +525,8 @@ Content-Type: text/plain
       righttype = extend
       flags = 0
       start = 43.75
-      segment { length = 0 value = 1100 1100 expr = "node = hou.pwd()
-hda = node.node(\"..\")
-
-input_shots = hda.evalParm(\"shots\")
-last_shot_length = hda.evalParm(f\"shotlength{input_shots}\")
-last_shot_start = hda.evalParm(f\"startframe{input_shots}\")
-last_shot_end = last_shot_start + last_shot_length
-
-total_length = 0
-for i in range(1, input_shots+1):
-    length = hda.evalParm(f\"shotlength{i}\")
-    total_length += length
-
-return hda.evalParm(\"seq_startframe\") + total_length" language = python }
+      segment { length = 0 value = 1100 1100 expr = "from tumblepipe.pipe.houdini.lops import shot_sequencer
+return shot_sequencer.end_time(hou.pwd().parent())" language = python }
     }
     channel timepersecond {
       lefttype = extend

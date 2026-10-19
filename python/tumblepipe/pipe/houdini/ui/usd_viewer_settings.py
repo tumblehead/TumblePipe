@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from qtpy import QtWidgets
+from PySide6 import QtWidgets
 
 from .usd_viewer import USDViewerLauncher, USDViewerType
 

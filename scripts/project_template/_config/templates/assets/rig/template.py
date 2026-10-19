@@ -3,7 +3,8 @@ import hou
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
 from tumblepipe.pipe.houdini.sops import export_rig
-from tumblepipe.pipe.houdini.util import disable_layer_save_path
+from tumblepipe.pipe.houdini.sops.import_model import ImportModel
+from tumblepipe.pipe.houdini.nodes import disable_layer_save_path
 
 # --- /stage layout -------------------------------------------------------
 # Explicit positions: this department owns its layout, so nothing here calls
@@ -38,10 +39,9 @@ def _run_import(sop_import_node):
     version until someone clicks the button. execute() is the same code path
     that button runs — it resolves the entity and version labels, wires up
     the layer file paths, and bypasses the node with a reason when the
-    department has nothing staged yet. It takes an explicit node so callers
-    outside the parm-callback context can drive it.
+    department has nothing staged yet.
     """
-    sop_import_node.hdaModule().execute(sop_import_node)
+    ImportModel(sop_import_node).execute()
 
 def _pin_entity(sop_import_node, entity_uri: Uri):
     """Pin a th::import_model HDA to one specific entity.

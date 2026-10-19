@@ -1,3 +1,3 @@
-from tumblepipe.pipe.houdini.lops import import_layer
+import tumblepipe.pipe.houdini.lops.import_layer as th_node
 
-import_layer.on_created(kwargs['node'])
+th_node.on_created(kwargs['node'])

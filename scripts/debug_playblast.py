@@ -49,7 +49,7 @@ def _shot_uris(config, wanted: list[str]):
     from tumblepipe.config.entities import is_terminal_entity
 
     if wanted:
-        return [Uri.parse_unsafe(raw) for raw in wanted]
+        return [Uri.parse(raw) for raw in wanted]
     return sorted(
         (
             uri for uri in config.list_entity_uris(closure=True)
@@ -89,7 +89,7 @@ def _report_stage(collapsed_path: Path, frame: int) -> bool:
     """Print what husk will resolve from *collapsed_path*. True if it looks
     renderable."""
     from pxr import Usd, UsdGeom, UsdLux, UsdRender
-    from tumblepipe.pipe.usd import find_render_settings_prim_path
+    from tumblepipe.pipe.usd.render_settings import find_render_settings_prim_path
 
     stage = Usd.Stage.Open(str(collapsed_path), Usd.Stage.LoadAll)
     if stage is None:
@@ -207,18 +207,18 @@ def _report_stage(collapsed_path: Path, frame: int) -> bool:
 def _run_husk(
     collapsed_path: Path, frame: int, resolution, out_dir: Path
 ) -> bool:
-    from tumblepipe.api import api, path_str, to_windows_path
+    from tumblepipe.api import path_str
     from tumblepipe.apps.houdini import Husk
-    from tumblepipe.farm.tasks.env import get_base_env
-    from tumblepipe.farm.tasks.playblast.playblast import XPU_ARGS
+    from tumblepipe.farm.env import get_base_env
+    from tumblepipe.farm.workers.playblast import XPU_ARGS
 
     out_path = out_dir / 'debug_playblast.$F4.jpg'
     width, height = resolution
     print(f'  husk -> {out_path}')
     exit_code = Husk().run(
-        to_windows_path(collapsed_path),
+        collapsed_path,
         [
-            '--resolver-context', path_str(to_windows_path(collapsed_path)),
+            '--resolver-context', path_str(collapsed_path),
             '--check-licenses', 'Karma Renderer',
             *XPU_ARGS,
             '--verbose', 'a2',
@@ -227,9 +227,9 @@ def _run_husk(
             '--res', str(width), str(height),
             '--frame', str(frame),
             '--frame-count', '1',
-            '--output', path_str(to_windows_path(out_path)),
+            '--output', path_str(out_path),
         ],
-        env=get_base_env(api),
+        env=get_base_env(),
     )
     rendered = sorted(out_dir.glob('debug_playblast.*.jpg'))
     print(f'  husk exit {exit_code}, {len(rendered)} frame(s) written')
@@ -269,7 +269,7 @@ def main(argv=None) -> int:
     from tumblepipe.config.department import department_names_up_to
     from tumblepipe.config.timeline import get_frame_range
     from tumblepipe.pipe.paths import get_latest_staged_file_path
-    from tumblepipe.pipe.usd import (
+    from tumblepipe.pipe.usd.collapse import (
         collapse_latest_references,
         excluded_staged_refs,
     )
@@ -316,8 +316,7 @@ def main(argv=None) -> int:
         )
         try:
             content = collapse_latest_references(
-                staged_path, collapsed_path, {},
-                excluded_refs=excluded, playblast=True
+                staged_path, {}, excluded_refs=excluded, playblast=True
             )
         except Exception as error:
             print(f'  FAIL: collapse refused this shot: {error}')

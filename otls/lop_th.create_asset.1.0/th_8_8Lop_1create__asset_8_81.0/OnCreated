@@ -1,2 +1,3 @@
-node = kwargs['node']
-node.hdaModule().init_entity_from_context(node)
+import tumblepipe.pipe.houdini.lops.create_asset as th_node
+
+th_node.on_created(kwargs['node'])

@@ -63,7 +63,7 @@
                 joinnext
                 default { "0" }
                 parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
-                parmtag { "script_callback" "hou.phm().select(kwargs['parm'].multiParmInstanceIndices()[0])" }
+                parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.import_assets as th_node; th_node.select(kwargs)" }
                 parmtag { "script_callback_language" "python" }
             }
             parm {
@@ -85,7 +85,7 @@
                 default { "" }
             }
             parm {
-                name    "variant#"
+                name    "channel#"
                 label   "Channel"
                 type    string
                 nolabel
@@ -93,13 +93,21 @@
                 default { "default" }
                 menu {
                     [ "from tumblepipe.pipe.houdini.lops import import_assets" ]
-                    [ "from tumblepipe.pipe.houdini import util" ]
+                    [ "from tumblepipe.pipe.houdini import menus" ]
                     [ "" ]
-                    [ "index = int(kwargs['parm'].name()[len('variant'):])" ]
+                    [ "index = int(kwargs['parm'].name()[len('channel'):])" ]
                     [ "node = import_assets.ImportAssets(hou.pwd())" ]
-                    [ "return util.list_to_menu(node.list_channel_names(index))" ]
+                    [ "return menus.list_to_menu(node.list_channel_names(index))" ]
                     language python
                 }
+                parmtag { "script_callback_language" "python" }
+            }
+            parm {
+                name    "variant#"
+                label   "Legacy Variant"
+                type    string
+                invisible
+                default { "default" }
                 parmtag { "script_callback_language" "python" }
             }
             parm {
@@ -111,11 +119,11 @@
                 default { "latest" }
                 menu {
                     [ "from tumblepipe.pipe.houdini.lops import import_assets" ]
-                    [ "from tumblepipe.pipe.houdini import util" ]
+                    [ "from tumblepipe.pipe.houdini import menus" ]
                     [ "" ]
                     [ "index = int(kwargs['parm'].name()[len('version'):])" ]
                     [ "node = import_assets.ImportAssets(hou.pwd())" ]
-                    [ "return util.list_to_menu(node.list_version_names(index))" ]
+                    [ "return menus.list_to_menu(node.list_version_names(index))" ]
                     language python
                 }
                 parmtag { "script_callback_language" "python" }
@@ -170,16 +178,16 @@
             default { "" }
             menutoggle {
                 [ "from tumblepipe.pipe.houdini.lops import import_assets" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = import_assets.ImportAssets(hou.pwd())" ]
-                [ "return util.list_to_checked_menu(" ]
+                [ "return menus.list_to_checked_menu(" ]
                 [ "    node.list_department_names()," ]
                 [ "    node.get_exclude_department_names()" ]
                 [ ")" ]
                 language python
             }
-            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.import_assets as th_node; th_node.execute(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -199,7 +207,7 @@
                 "reference" "Reference"
                 "inline"    "Inline"
             }
-            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.import_assets as th_node; th_node.execute(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }
@@ -214,7 +222,7 @@
             label   "Import"
             type    button
             default { "0" }
-            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.import_assets as th_node; th_node.execute(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }

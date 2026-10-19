@@ -4,7 +4,7 @@ import hou
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
 from tumblepipe.config.channels import list_channels
-from tumblepipe.pipe.houdini.lops import export_layer
+from tumblepipe.pipe.houdini.lops import export_layer, create_asset
 
 # --- /stage layout -------------------------------------------------------
 # Explicit positions: this department owns its layout, so nothing here calls
@@ -34,11 +34,11 @@ def _pin_entity(node, entity_uri: Uri):
 
     Only group workfiles need this: they hold several entities at once, so
     the 'from_context' default cannot resolve to a single one. Routing
-    through the HDA's _apply_entity keeps the visible Entity label in step
-    with the parm. Single-entity workfiles deliberately leave the parm at
+    through the wrapper keeps the visible Entity label in step with the
+    parm. Single-entity workfiles deliberately leave the parm at
     'from_context' so the node follows the workfile it lives in.
     """
-    node.hdaModule()._apply_entity(node, str(entity_uri))
+    create_asset.wrap(node).set_entity_uri(entity_uri)
 
 def _sticky_note(scene_node, offset: hou.Vector2):
     """The 'Create model in here -->' pointer sitting left of a MODEL node."""
@@ -113,7 +113,7 @@ def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
         model_node.parm('variants').set(len(channel_names))
         for i, name in enumerate(channel_names):
             model_node.parm(f'variant_name{i+1}').set(name)
-        model_node.hdaModule()._sync_variants(model_node)
+        create_asset.wrap(model_node).sync_variants()
     else:
         channel_names = ['default']
 

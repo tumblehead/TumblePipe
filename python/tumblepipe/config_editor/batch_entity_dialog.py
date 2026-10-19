@@ -1,5 +1,5 @@
-from qtpy import QtWidgets
-from qtpy.QtCore import Signal
+from PySide6 import QtWidgets
+from PySide6.QtCore import Signal
 
 from tumblepipe.config.schema import apply_defaults
 from tumblepipe.util.uri import Uri
@@ -18,7 +18,7 @@ class BatchEntityDialog(QtWidgets.QDialog):
         self._purpose = purpose
 
         # Build parent entity URI
-        self._parent_uri = Uri.parse_unsafe(f'{purpose}:/{"/".join(parent_path)}')
+        self._parent_uri = Uri.parse(f'{purpose}:/{"/".join(parent_path)}')
 
         # Get parent's schema and child schemas
         # For root entities (shots, assets), look up root schema directly
@@ -28,7 +28,7 @@ class BatchEntityDialog(QtWidgets.QDialog):
 
         if len(parent_path) == 1:
             # Root entity (e.g., "shots" or "assets") - look up root schema
-            root_schema_uri = Uri.parse_unsafe(f'schemas:/{purpose}/{parent_path[0]}')
+            root_schema_uri = Uri.parse(f'schemas:/{purpose}/{parent_path[0]}')
             self._parent_schema = api.config.get_schema(root_schema_uri)
             if self._parent_schema is not None:
                 self._child_schemas = api.config.get_child_schemas(root_schema_uri)

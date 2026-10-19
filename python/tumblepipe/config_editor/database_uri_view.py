@@ -1,8 +1,15 @@
+"""The Database Editor's URI tree: one row per purpose, entities below.
+
+Edits made in the tree (add, remove, rename, reorder an entity) are emitted
+as :class:`EntityChange` and persisted by the window. Purposes are the
+database's files and are not edited here.
+"""
+
 from dataclasses import dataclass
 
-from qtpy.QtCore import QObject, QRect, Qt, Signal
-from qtpy.QtGui import QColor, QPainter, QPen, QStandardItem, QStandardItemModel
-from qtpy.QtWidgets import (
+from PySide6.QtCore import QObject, QRect, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPen, QStandardItem, QStandardItemModel
+from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QAbstractItemView,
     QInputDialog,
@@ -13,74 +20,6 @@ from qtpy.QtWidgets import (
     QTreeView,
 )
 from tumblepipe.util.uri import Uri
-
-
-def _add_purpose_action(widget, item):
-    purpose, ok = QInputDialog.getText(
-        widget, "Add Purpose", "Enter the purpose for the new URI:"
-    )
-    if not ok or len(purpose) == 0:
-        return
-    if purpose in item._items:
-        QMessageBox.warning(
-            widget, "Error", f'A purpose with label "{purpose}" already exists.'
-        )
-        return
-    item._ensure_purpose(purpose)
-
-
-def _remove_purpose_action(widget, item):
-    label = item._label
-    ok = QMessageBox.question(
-        widget,
-        "Remove Purpose",
-        f'Are you sure you want to remove the purpose "{label}"?',
-    )
-    if ok != QMessageBox.Yes:
-        return
-    item.model()._remove_purpose(label)
-
-
-def _add_entity_action(widget, item, api=None, on_created=None):
-    uri = item.uri()
-
-    # Use batch dialog for all purposes with segments (not just entity)
-    if api is not None and uri.segments:
-        from .batch_entity_dialog import BatchEntityDialog
-        path = list(uri.segments)
-        purpose = uri.purpose
-        dialog = BatchEntityDialog(api, path, purpose=purpose, parent=widget)
-        if dialog.exec_() == BatchEntityDialog.Accepted:
-            if on_created:
-                on_created()
-        return
-
-    label, ok = QInputDialog.getText(
-        widget, "Add Entity", "Enter the label for the new entity:"
-    )
-    if not ok or len(label) == 0:
-        return
-    if label in item._items:
-        QMessageBox.warning(
-            widget, "Error", f'An entity with label "{label}" already exists.'
-        )
-        return
-    item._ensure_entity(label)
-
-
-def _remove_entity_action(widget, item):
-    label = item._label
-    ok = QMessageBox.question(
-        widget,
-        "Remove Entity",
-        f'Are you sure you want to remove the entity "{label}"?',
-    )
-    if ok != QMessageBox.Yes:
-        return
-    was_selected = widget.get_selected() == item.uri()
-    item.parent()._remove_entity(label)
-    if was_selected:
-        widget.clearSelection()
 
 
 def _uri_lookup(model: QStandardItemModel, uri: Uri):
@@ -105,131 +44,135 @@ def _collect_descendants(item):
 
 
 @dataclass(frozen=True)
-class PurposeOp:
-    pass
-
-
-@dataclass(frozen=True)
-class PurposeOpInsert(PurposeOp):
+class EntityOpInsert:
     label: str
 
 
 @dataclass(frozen=True)
-class PurposeOpUpdate(PurposeOp):
+class EntityOpUpdate:
     from_label: str
     to_label: str
 
 
 @dataclass(frozen=True)
-class PurposeOpRemove(PurposeOp):
+class EntityOpRemove:
     label: str
 
 
 @dataclass(frozen=True)
-class PurposeChange:
-    op: PurposeOp
-
-
-def _purpose_change_insert(label: str) -> PurposeChange:
-    return PurposeChange(PurposeOpInsert(label))
-
-
-def _purpose_change_update(from_label: str, to_label: str) -> PurposeChange:
-    return PurposeChange(PurposeOpUpdate(from_label, to_label))
-
-
-def _purpose_change_remove(label: str) -> PurposeChange:
-    return PurposeChange(PurposeOpRemove(label))
-
-
-@dataclass(frozen=True)
-class EntityOp:
-    pass
-
-
-@dataclass(frozen=True)
-class EntityOpInsert(EntityOp):
-    label: str
-
-
-@dataclass(frozen=True)
-class EntityOpUpdate(EntityOp):
+class EntityOpReorder:
     from_label: str
     to_label: str
 
 
-@dataclass(frozen=True)
-class EntityOpRemove(EntityOp):
-    label: str
-
-
-@dataclass(frozen=True)
-class EntityOpReorder(EntityOp):
-    from_label: str
-    to_label: str
+EntityOp = EntityOpInsert | EntityOpUpdate | EntityOpRemove | EntityOpReorder
 
 
 @dataclass(frozen=True)
 class EntityChange:
+    """``op`` applied to a child of the entity (or purpose root) ``uri``."""
     uri: Uri
     op: EntityOp
 
 
-def _entity_change_insert(uri: Uri, label: str) -> EntityChange:
-    return EntityChange(uri, EntityOpInsert(label))
+class _UriNode(QStandardItem, QObject):
+    """A tree row whose children are entities: a purpose root or an entity.
 
+    Every edit to its children is emitted on :attr:`change`, and a child's
+    own ``change`` is forwarded, so the model sees each edit once.
+    """
 
-def _entity_change_update(uri: Uri, from_label: str, to_label: str) -> EntityChange:
-    return EntityChange(uri, EntityOpUpdate(from_label, to_label))
-
-
-def _entity_change_remove(uri: Uri, label: str) -> EntityChange:
-    return EntityChange(uri, EntityOpRemove(label))
-
-
-def _entity_change_reorder(uri: Uri, from_label: str, to_label: str) -> EntityChange:
-    return EntityChange(uri, EntityOpReorder(from_label, to_label))
-
-
-@dataclass(frozen=True)
-class UriChange:
-    pass
-
-
-@dataclass(frozen=True)
-class UriChangePupose(UriChange):
-    change: PurposeChange
-
-
-@dataclass(frozen=True)
-class UriChangeEntity(UriChange):
-    change: EntityChange
-
-
-def _uri_change_purpose(change: PurposeChange) -> UriChange:
-    return UriChangePupose(change)
-
-
-def _uri_change_entity(change: EntityChange) -> UriChange:
-    return UriChangeEntity(change)
-
-
-class UriPathItem(QStandardItem, QObject):
     change = Signal(object)
 
     def __init__(self, label: str):
         QStandardItem.__init__(self)
         QObject.__init__(self)
-
         self._label = label
-        self._items = dict()
+        self._items: dict[str, "UriPathItem"] = {}
 
-        # Enable drag and drop for reordering
-        flags = self.flags()
-        flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
-        self.setFlags(flags)
+    def uri(self) -> Uri:
+        raise NotImplementedError
 
-    def uri(self):
+    def _attach(self, label: str) -> "UriPathItem":
+        item = UriPathItem(label)
+        item.change.connect(self.change)
+        self._items[label] = item
+        self.appendRow(item)
+        return item
+
+    def _ensure_entity(self, label: str) -> "UriPathItem":
+        if label in self._items:
+            return self._items[label]
+        item = self._attach(label)
+        self.change.emit(EntityChange(self.uri(), EntityOpInsert(label)))
+        return item
+
+    def _remove_entity(self, label: str) -> None:
+        item = self._items.pop(label)
+        item.change.disconnect(self.change)
+        self.removeRow(item.row())
+        self.change.emit(EntityChange(self.uri(), EntityOpRemove(label)))
+
+    def _reorder_entity(self, from_label: str, to_label: str) -> None:
+        """Move ``from_label`` to the position of ``to_label``."""
+        if from_label == to_label:
+            return
+        to_row = self._items[to_label].row()
+        row_items = self.takeRow(self._items[from_label].row())
+        self.insertRow(to_row, row_items)
+        self._items = {
+            child._label: child
+            for child in (self.child(row, 0) for row in range(self.rowCount()))
+        }
+        self.change.emit(
+            EntityChange(self.uri(), EntityOpReorder(from_label, to_label)),
+        )
+
+    def add_parts(self, parts: list[str], notify: bool = True) -> None:
+        if not parts:
+            return
+        label = parts.pop(0)
+        item = self._items.get(label)
+        if item is None:
+            item = self._attach(label)
+            if notify:
+                self.change.emit(EntityChange(self.uri(), EntityOpInsert(label)))
+        item.add_parts(parts, notify)
+
+    def _on_add_entity(self) -> None:
+        view = self.model().parent()
+        uri = self.uri()
+        if uri.segments:
+            # Below a purpose root: the batch dialog, which writes itself.
+            from .batch_entity_dialog import BatchEntityDialog
+            dialog = BatchEntityDialog(
+                view._adapter._api, list(uri.segments), purpose=uri.purpose,
+                parent=view,
+            )
+            if dialog.exec_() == BatchEntityDialog.Accepted:
+                view.refresh()
+            return
+        label, ok = QInputDialog.getText(
+            view, "Add Entity", "Enter the label for the new entity:",
+        )
+        if not ok or not label:
+            return
+        if label in self._items:
+            QMessageBox.warning(
+                view, "Error", f'An entity with label "{label}" already exists.',
+            )
+            return
+        self._ensure_entity(label)
+
+
+class UriPathItem(_UriNode):
+    """An entity row: draggable among its siblings, renamed in place."""
+
+    def __init__(self, label: str):
+        super().__init__(label)
+        self.setFlags(self.flags() | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled)
+
+    def uri(self) -> Uri:
         return self.parent().uri() / self._label
 
     def data(self, role=None):
@@ -237,76 +180,13 @@ class UriPathItem(QStandardItem, QObject):
             case Qt.EditRole:
                 return self._label
             case Qt.DisplayRole:
-                return (
-                    self._label if len(self._items) == 0 else f"{self._label}/"
-                )
+                return self._label if not self._items else f"{self._label}/"
             case _:
                 return super().data(role)
 
-    def _ensure_entity(self, label: str):
-        if label in self._items:
-            return self._items[label]
-        item = UriPathItem(label)
-        item.change.connect(self.change)
-        self._items[label] = item
-        self.appendRow(item)
-        self.change.emit(_entity_change_insert(self.uri(), label))
-        return item
-
-    def _remove_entity(self, label: str):
-        item = self._items[label]
-        item.change.disconnect(self.change)
-        index = item.row()
-        self.removeRow(index)
-        del self._items[label]
-        self.change.emit(_entity_change_remove(self.uri(), label))
-
-    def _reorder_entity(self, from_label: str, to_label: str):
-        """Move entity from_label to the position of to_label."""
-        if from_label == to_label:
-            return
-
-        # Get items
-        from_item = self._items[from_label]
-        to_item = self._items[to_label]
-
-        # Get rows
-        from_row = from_item.row()
-        to_row = to_item.row()
-
-        # Move in model using takeRow/insertRow
-        row_items = self.takeRow(from_row)
-        self.insertRow(to_row, row_items)
-
-        # Rebuild _items dict in new order
-        new_items = {}
-        for row in range(self.rowCount()):
-            child = self.child(row, 0)
-            if isinstance(child, UriPathItem):
-                new_items[child._label] = child
-        self._items = new_items
-
-        # Emit change signal
-        self.change.emit(_entity_change_reorder(self.uri(), from_label, to_label))
-
-    def add_parts(self, parts: list[str], notify: bool = True):
-        if len(parts) == 0:
-            return
-        label = parts.pop(0)
-        if label in self._items:
-            item = self._items[label]
-        else:
-            item = UriPathItem(label)
-            item.change.connect(self.change)
-            self._items[label] = item
-            self.appendRow(item)
-            if notify:
-                self.change.emit(_entity_change_insert(self.uri(), label))
-        item.add_parts(parts, notify)
-
-    def _on_label_changed(self, to_label: str):
+    def _on_label_changed(self, to_label: str) -> None:
         from_label = self._label
-        if from_label == to_label or len(to_label) == 0:
+        if from_label == to_label or not to_label:
             return
         parent = self.parent()
         if to_label in parent._items:
@@ -317,46 +197,43 @@ class UriPathItem(QStandardItem, QObject):
             for label, item in parent._items.items()
         }
         self.change.emit(
-            _entity_change_update(parent.uri(), from_label, to_label)
+            EntityChange(parent.uri(), EntityOpUpdate(from_label, to_label)),
         )
 
-    def _on_add_entity(self):
+    def _on_remove_entity(self) -> None:
         view = self.model().parent()
-        api = view._adapter._api if hasattr(view, '_adapter') else None
-        _add_entity_action(view, self, api, on_created=view.refresh)
+        ok = QMessageBox.question(
+            view, "Remove Entity",
+            f'Are you sure you want to remove the entity "{self._label}"?',
+        )
+        if ok != QMessageBox.Yes:
+            return
+        was_selected = view.get_selected() == self.uri()
+        self.parent()._remove_entity(self._label)
+        if was_selected:
+            view.clearSelection()
 
-    def _on_remove_entity(self):
-        view = self.model().parent()
-        _remove_entity_action(view, self)
-
-    def _on_context_menu(self, position):
+    def _on_context_menu(self, position) -> None:
         menu = QMenu()
         menu.addAction("Add Entity", self._on_add_entity)
         menu.addAction("Remove Entity", self._on_remove_entity)
         menu.exec_(position)
 
 
-class UriPurposeItem(QStandardItem, QObject):
-    purpose_change = Signal(object)
-    entity_change = Signal(object)
+class UriPurposeItem(_UriNode):
+    """A purpose's root row (``entity:/``, ``departments:/``, ...).
+
+    Not editable: a purpose is one of the database's files, which the
+    editor neither renames, adds nor removes. It accepts drops so its
+    children can be reordered.
+    """
 
     def __init__(self, label: str):
-        QStandardItem.__init__(self)
-        QObject.__init__(self)
-
-        self._label = label
-        self._items = dict()
-
-        # Purpose renames are never persisted (the window only handles entity
-        # changes), so don't offer an editor that silently drops them.
+        super().__init__(label)
         self.setEditable(False)
+        self.setFlags(self.flags() | Qt.ItemIsDropEnabled)
 
-        # Enable drop for child entity reordering (but not drag - purposes are fixed)
-        flags = self.flags()
-        flags |= Qt.ItemIsDropEnabled
-        self.setFlags(flags)
-
-    def uri(self):
+    def uri(self) -> Uri:
         return Uri(self._label, None)
 
     def data(self, role=None):
@@ -364,157 +241,46 @@ class UriPurposeItem(QStandardItem, QObject):
             case Qt.EditRole:
                 return self._label
             case Qt.DisplayRole:
-                return (
-                    f"{self._label}:"
-                    if len(self._items) == 0
-                    else f"{self._label}:/"
-                )
+                return f"{self._label}:" if not self._items else f"{self._label}:/"
             case _:
                 return super().data(role)
 
-    def _ensure_entity(self, label: str):
-        if label in self._items:
-            return self._items[label]
-        item = UriPathItem(label)
-        item.change.connect(self.entity_change)
-        self._items[label] = item
-        self.appendRow(item)
-        self.entity_change.emit(_entity_change_insert(self.uri(), label))
-        return item
-
-    def _remove_entity(self, label: str):
-        item = self._items[label]
-        item.change.disconnect(self.entity_change)
-        self.removeRow(item.row())
-        del self._items[label]
-        self.entity_change.emit(_entity_change_remove(self.uri(), label))
-
-    def _reorder_entity(self, from_label: str, to_label: str):
-        """Move entity from_label to the position of to_label."""
-        if from_label == to_label:
-            return
-
-        # Get items
-        from_item = self._items[from_label]
-        to_item = self._items[to_label]
-
-        # Get rows
-        from_row = from_item.row()
-        to_row = to_item.row()
-
-        # Move in model using takeRow/insertRow
-        row_items = self.takeRow(from_row)
-        self.insertRow(to_row, row_items)
-
-        # Rebuild _items dict in new order
-        new_items = {}
-        for row in range(self.rowCount()):
-            child = self.child(row, 0)
-            if isinstance(child, UriPathItem):
-                new_items[child._label] = child
-        self._items = new_items
-
-        # Emit change signal
-        self.entity_change.emit(_entity_change_reorder(self.uri(), from_label, to_label))
-
-    def add_parts(self, parts: list[str], notify: bool = True):
-        if len(parts) == 0:
-            return
-        label = parts.pop(0)
-        if label in self._items:
-            item = self._items[label]
-        else:
-            item = UriPathItem(label)
-            item.change.connect(self.entity_change)
-            self._items[label] = item
-            self.appendRow(item)
-            if notify:
-                self.entity_change.emit(_entity_change_insert(self.uri(), label))
-        item.add_parts(parts, notify)
-
-    def _on_label_changed(self, to_label: str):
-        from_label = self._label
-        if from_label == to_label:
-            return
-        self._label = to_label
-        self.purpose_change.emit(_purpose_change_update(from_label, to_label))
-
-    def _on_add_entity(self):
-        view = self.model().parent()
-        api = view._adapter._api if hasattr(view, '_adapter') else None
-        _add_entity_action(view, self, api, on_created=view.refresh)
-
-    def _on_remove_purpose(self):
-        view = self.model().parent()
-        _remove_purpose_action(view, self)
-
-    def _on_context_menu(self, position):
+    def _on_context_menu(self, position) -> None:
         menu = QMenu()
         menu.addAction("Add Entity", self._on_add_entity)
-        menu.addAction("Remove Purpose", self._on_remove_purpose)
         menu.exec_(position)
 
 
 class UriModel(QStandardItemModel):
+    """Purpose rows; emits every :class:`EntityChange` made in the tree."""
+
     change = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-
         self.setColumnCount(1)
         self.setHorizontalHeaderLabels(["URI"])
-        root_item = self.invisibleRootItem()
-        root_item.setEditable(False)
+        self.invisibleRootItem().setEditable(False)
+        self._items: dict[str, UriPurposeItem] = {}
 
-        self._items = dict()
-
-    def _ensure_purpose(self, label: str, notify: bool = True):
+    def _ensure_purpose(self, label: str) -> UriPurposeItem:
         if label in self._items:
             return self._items[label]
         item = UriPurposeItem(label)
-        item.purpose_change.connect(self._on_purpose_change)
-        item.entity_change.connect(self._on_entity_change)
+        item.change.connect(self.change)
         self._items[label] = item
         self.appendRow(item)
-        if notify:
-            self._on_purpose_change(_purpose_change_insert(label))
         return item
 
-    def _remove_purpose(self, purpose: str):
-        item = self._items[purpose]
-        item.purpose_change.disconnect(self._on_purpose_change)
-        item.entity_change.disconnect(self._on_entity_change)
-        self.removeRow(item.row())
-        del self._items[purpose]
-        self._on_purpose_change(_purpose_change_remove(purpose))
-
-    def add_entity(self, uri: Uri, notify: bool = True):
+    def add_entity(self, uri: Uri, notify: bool = True) -> None:
         purpose, parts = uri.parts()
-        item = self._ensure_purpose(purpose, notify)
-        item.add_parts(parts, notify)
+        self._ensure_purpose(purpose).add_parts(parts, notify)
 
-    def clear_all(self):
-        for purpose in list(self._items.keys()):
-            item = self._items[purpose]
-            item.purpose_change.disconnect(self._on_purpose_change)
-            item.entity_change.disconnect(self._on_entity_change)
+    def clear_all(self) -> None:
+        for item in self._items.values():
+            item.change.disconnect(self.change)
             self.removeRow(item.row())
         self._items.clear()
-
-    def _on_purpose_change(self, change: PurposeChange):
-        self.change.emit(_uri_change_purpose(change))
-
-    def _on_entity_change(self, change: EntityChange):
-        self.change.emit(_uri_change_entity(change))
-
-    def _on_add_purpose(self):
-        view = self.parent()
-        _add_purpose_action(view, self)
-
-    def _on_context_menu(self, position):
-        menu = QMenu()
-        menu.addAction("Add Purpose", self._on_add_purpose)
-        menu.exec_(position)
 
 
 class UriDelegate(QStyledItemDelegate):
@@ -581,10 +347,10 @@ class DatabaseUriView(QTreeView):
         """Load entities from adapter into the model"""
         purposes = self._adapter.list_purposes()
         for purpose in purposes:
-            root_uri = Uri.parse_unsafe(f"{purpose}:/")
+            root_uri = Uri.parse(f"{purpose}:/")
             entities = self._adapter.list_entities(root_uri)
             if not entities:
-                self._model._ensure_purpose(purpose, notify=False)
+                self._model._ensure_purpose(purpose)
             else:
                 for uri in entities:
                     self._model.add_entity(uri, notify=False)
@@ -645,28 +411,17 @@ class DatabaseUriView(QTreeView):
         self.expand(parent)
         self.setCurrentIndex(item.index())
 
-    def _on_change(self, change: UriChange):
-        match change:
-            case UriChangeEntity(entity_change):
-                self._on_entity_change(entity_change)
-            case _:
-                pass
-
-    def _on_entity_change(self, change: EntityChange):
-        match change.op:
-            case EntityOpInsert(label):
-                self._on_item_added(change.uri / label)
-            case _:
-                pass
+    def _on_change(self, change: EntityChange):
+        if isinstance(change.op, EntityOpInsert):
+            self._on_item_added(change.uri / change.op.label)
 
     def _on_context_menu(self, position):
         index = self.indexAt(position)
-        target = (
-            self._model
-            if not index.isValid()
-            else self._model.itemFromIndex(index)
+        if not index.isValid():
+            return  # empty space: purposes are not added here
+        self._model.itemFromIndex(index)._on_context_menu(
+            self.mapToGlobal(position),
         )
-        target._on_context_menu(self.mapToGlobal(position))
 
     def mousePressEvent(self, event):
         # Clicking empty space while an editor is open must commit it. Clicks
@@ -865,11 +620,8 @@ class DatabaseUriView(QTreeView):
             event.ignore()
             return
 
-        if hasattr(parent, '_reorder_entity'):
-            parent._reorder_entity(from_label, to_label)
-            event.accept()
-        else:
-            event.ignore()
+        parent._reorder_entity(from_label, to_label)
+        event.accept()
 
     def paintEvent(self, event):
         """Custom paint to show prominent drop indicator line."""

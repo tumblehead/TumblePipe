@@ -33,30 +33,20 @@ def _get_version_from_path(export_path) -> str | None:
 
 
 def _get_frame_range_values(entity_uri: Uri, export_node=None) -> tuple[int | None, int | None]:
-    """Get first and last frame for display in process dialog.
+    """First and last frame for the process dialog, rolls included.
 
-    Args:
-        entity_uri: The entity URI to get frame range for
-        export_node: Optional export node to get frame range from (preferred)
-
-    Returns:
-        Tuple of (first_frame, last_frame) or (None, None) if unavailable
+    An export node's own Frame Range setting decides its range (and raises
+    when it does not resolve). Without a node, the entity's authored range;
+    (None, None) for an entity with none, such as a static asset.
     """
-    # Try to get from export node first (has node-specific settings)
     if export_node is not None:
-        result = export_node.get_frame_range()
-        if result is not None:
-            frame_range, _ = result
-            render_range = frame_range.full_range()
-            return (render_range.first_frame, render_range.last_frame)
-
-    # Fall back to entity config
-    frame_range = get_frame_range(entity_uri)
-    if frame_range is not None:
-        render_range = frame_range.full_range()
-        return (render_range.first_frame, render_range.last_frame)
-
-    return (None, None)
+        frame_range = export_node.get_frame_range()
+    else:
+        frame_range = get_frame_range(entity_uri)
+        if frame_range is None:
+            return (None, None)
+    render_range = frame_range.full_range()
+    return (render_range.first_frame, render_range.last_frame)
 
 
 def _entity_context_from_uri(entity_uri: Uri | None) -> str:
@@ -301,12 +291,8 @@ def _create_export_group_task(
 
 
 def _get_build_version(entity_uri: Uri, channel_name: str = 'default') -> str | None:
-    """Get the current build version for an entity"""
-    try:
-        build_path = current_staged_path(entity_uri, channel_name)
-        return _get_version_from_path(build_path)
-    except Exception:
-        return None
+    """The current build version for an entity, or None before its first."""
+    return _get_version_from_path(current_staged_path(entity_uri, channel_name))
 
 
 def _create_build_group_task(
@@ -385,7 +371,7 @@ def _execute_build_local(entity_uri: Uri, channel_name: str = 'default', first_f
     """
     from tumblepipe.pipe.paths import next_staged_file_path
     from tumblepipe.config.timeline import get_frame_range, BlockRange
-    from tumblepipe.farm.tasks.build import build as build_task
+    from tumblepipe.pipe.staged_build import build_staged
 
     # Determine entity type for validation
     entity_type = get_entity_type(entity_uri)
@@ -419,9 +405,7 @@ def _execute_build_local(entity_uri: Uri, channel_name: str = 'default', first_f
     # Assets: render_range is optional (animated assets have it, static don't)
 
     # Execute the build
-    result = build_task.main(entity_uri, output_path, render_range, channel_name)
-    if result != 0:
-        raise RuntimeError(f"Build failed with exit code {result}")
+    build_staged(entity_uri, output_path, render_range, channel_name)
 
     return _get_version_from_path(output_path)
 
@@ -437,12 +421,12 @@ def _execute_build_farm(entity_uri: Uri, channel_name: str = 'default', first_fr
         first_frame: Optional first frame override (from export node)
         last_frame: Optional last frame override (from export node)
     """
-    from tumblepipe.farm.jobs.houdini.build import job as build_job
+    from tumblepipe.farm.pipelines import build as build_job
 
     # Prepare config for farm submission
     config = {
         'entity_uri': str(entity_uri),
-        'variant_name': channel_name,
+        'channel_name': channel_name,
         'priority': 50,  # Default priority
         'pool_name': 'houdini'  # Default pool
     }

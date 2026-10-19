@@ -74,7 +74,7 @@ fn department_explicit_version() {
 
     let _g = EnvGuard::new(base, false);
     let resolved = resolve_uri(
-        "entity:/assets/SET/Arena?dept=lookdev&variant=default&version=v0013",
+        "entity:/assets/SET/Arena?dept=lookdev&channel=default&version=v0013",
     )
     .unwrap();
     assert!(resolved.ends_with(
@@ -83,7 +83,7 @@ fn department_explicit_version() {
 }
 
 #[test]
-fn department_shared_variant_uses_shared_filename() {
+fn department_shared_channel_uses_shared_filename() {
     let td = tempfile::tempdir().unwrap();
     let base = td.path();
     make_tree(
@@ -94,7 +94,7 @@ fn department_shared_variant_uses_shared_filename() {
 
     let _g = EnvGuard::new(base, false);
     let resolved = resolve_uri(
-        "entity:/assets/SET/Arena?dept=lookdev&variant=_shared&version=v0005",
+        "entity:/assets/SET/Arena?dept=lookdev&channel=_shared&version=v0005",
     )
     .unwrap();
     assert!(resolved.ends_with(
@@ -124,7 +124,7 @@ fn staged_drops_first_segment_in_filename() {
 
     let _g = EnvGuard::new(base, false);
     let resolved =
-        resolve_uri("entity:/assets/CHAR/Crowd?variant=cheering&version=v0002").unwrap();
+        resolve_uri("entity:/assets/CHAR/Crowd?channel=cheering&version=v0002").unwrap();
     assert!(resolved.ends_with(
         "assets/CHAR/Crowd/_staged/cheering/v0002/CHAR_Crowd_v0002.usda"
     ), "got {resolved}");
@@ -157,7 +157,7 @@ fn latest_version_auto_discovery() {
 
     let _g = EnvGuard::new(base, false);
     let resolved =
-        resolve_uri("entity:/assets/PROP/Box?dept=model&variant=default").unwrap();
+        resolve_uri("entity:/assets/PROP/Box?dept=model&channel=default").unwrap();
     assert!(resolved.contains("/v0009/"), "got {resolved}");
 }
 
@@ -176,9 +176,50 @@ fn latest_mode_overrides_explicit_version() {
 
     let _g = EnvGuard::new(base, true);
     let resolved =
-        resolve_uri("entity:/assets/PROP/Box?dept=model&variant=default&version=v0001")
+        resolve_uri("entity:/assets/PROP/Box?dept=model&channel=default&version=v0001")
             .unwrap();
     assert!(resolved.contains("/v0009/"), "got {resolved}");
+}
+
+#[test]
+fn latest_mode_zero_honours_the_pin() {
+    let td = tempfile::tempdir().unwrap();
+    let base = td.path();
+    make_tree(
+        base,
+        &[
+            "assets/PROP/Box/default/model/v0001",
+            "assets/PROP/Box/default/model/v0009",
+        ],
+        &[],
+    );
+
+    let _g = EnvGuard::new(base, false);
+    std::env::set_var(LATEST_MODE_VAR, "0");
+    let resolved =
+        resolve_uri("entity:/assets/PROP/Box?dept=model&channel=default&version=v0001")
+            .unwrap();
+    assert!(resolved.contains("/v0001/"), "got {resolved}");
+}
+
+#[test]
+fn latest_mode_rejects_values_the_facade_never_writes() {
+    // Only "0" / "1" are written (tumblepipe.resolver.set_latest_mode).
+    // Anything else is a bug upstream and must not quietly read as "off".
+    let td = tempfile::tempdir().unwrap();
+    let base = td.path();
+    make_tree(base, &["assets/PROP/Box/default/model/v0001"], &[]);
+
+    let _g = EnvGuard::new(base, false);
+    for value in ["true", "True", "yes", "", " 1"] {
+        std::env::set_var(LATEST_MODE_VAR, value);
+        let err = resolve_uri("entity:/assets/PROP/Box?dept=model&version=v0001")
+            .expect_err("an unexpected latest-mode value must be refused");
+        assert!(
+            matches!(err, th_resolver_core::ResolveError::InvalidLatestMode(_)),
+            "{value:?}: {err}"
+        );
+    }
 }
 
 #[test]
@@ -201,7 +242,7 @@ fn no_versions_at_path_is_error() {
     let td = tempfile::tempdir().unwrap();
     let base = td.path();
     let _g = EnvGuard::new(base, false);
-    let result = resolve_uri("entity:/assets/NONE/Thing?dept=model&variant=default");
+    let result = resolve_uri("entity:/assets/NONE/Thing?dept=model&channel=default");
     assert!(result.is_err());
 }
 

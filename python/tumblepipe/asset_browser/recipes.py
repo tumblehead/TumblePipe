@@ -37,14 +37,17 @@ import logging
 import os
 import re
 import shutil
-import sys
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from tumbletrove.asset_browser.api.errors import DetailBuildError
+from tumbletrove.asset_browser.api.errors import (
+    AssetDiscoveryError, CatalogError, DetailBuildError,
+)
+from tumblepipe.api import get_user_name
+from tumblepipe.util import desktop
 from tumbletrove.asset_browser.api.types import (
     Asset,
     AssetAction,
@@ -53,7 +56,8 @@ from tumbletrove.asset_browser.api.types import (
 )
 
 if TYPE_CHECKING:
-    from .catalog import PipelineCatalog
+    from .projects import PipelineProjectRegistry
+    from .refresh import BrowserRefresh
 
 log = logging.getLogger(__name__)
 
@@ -174,16 +178,24 @@ class RecipeEntry:
 
 
 def read_entry(entry_dir: Path) -> dict | None:
-    """The ``meta`` dict from ``entry.json``, or None when unreadable."""
-    try:
-        with (entry_dir / _ENTRY_FILE).open(encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError):
+    """The ``meta`` dict from ``entry.json``; None when there is none.
+
+    No ``entry.json`` is a folder that is not a recipe (yet: a save writes
+    it last). One that is there but is not a recipe's raises ValueError —
+    a torn or hand-edited file is a fault to show, not a recipe to hide.
+    """
+    path = entry_dir / _ENTRY_FILE
+    if not path.exists():
         return None
-    if not isinstance(doc, dict) or doc.get("kind", _KIND) != _KIND:
-        return None
-    meta = doc.get("meta", {})
-    return dict(meta) if isinstance(meta, dict) else None
+    with path.open(encoding="utf-8") as fh:
+        doc = json.load(fh)
+    if (
+        not isinstance(doc, dict)
+        or doc.get("kind") != _KIND
+        or not isinstance(doc.get("meta"), dict)
+    ):
+        raise ValueError(f"{path} is not a recipe entry")
+    return dict(doc["meta"])
 
 
 def write_entry(entry_dir: Path, meta: dict) -> None:
@@ -240,34 +252,20 @@ def _created_epoch(meta: dict) -> float:
     raw = meta.get("created_date", "")
     if not raw:
         return 0.0
-    try:
-        return datetime.fromisoformat(str(raw)).timestamp()
-    except (TypeError, ValueError):
-        return 0.0
+    return datetime.fromisoformat(raw).timestamp()
 
 
 def active_context() -> str:
     """The network editor's current short context, or ``""``.
 
-    Wraps tumbletrove's ``detect_active_context`` so a host without it
-    (the test stub) reads as "no context" rather than an ImportError.
+    Wraps tumbletrove's ``detect_active_context``.
     """
-    try:
-        from tumbletrove.asset_browser.core.context_map import detect_active_context
-    except ImportError:
-        return ""
-    try:
-        return detect_active_context() or ""
-    except Exception:
-        log.debug("active-context detection failed", exc_info=True)
-        return ""
+    from tumbletrove.asset_browser.core.context_map import detect_active_context
+    return detect_active_context() or ""
 
 
 def context_label(context: str) -> str:
-    try:
-        from tumbletrove.asset_browser.core.context_map import CONTEXT_LABELS
-    except ImportError:
-        CONTEXT_LABELS = {}
+    from tumbletrove.asset_browser.core.context_map import CONTEXT_LABELS
     return CONTEXT_LABELS.get(context, context.upper())
 
 
@@ -322,15 +320,12 @@ def build_detail(entry: RecipeEntry, active_ctx: str, catalog_id: str) -> AssetD
 def ghost_data(entry: RecipeEntry):
     """The saved node layout as a drag ghost, or None when it is missing.
 
-    A save always writes ``nodes`` and ``connections``; a hand-mangled
-    recipe without them gets no ghost rather than a partial one.
+    A save always writes ``nodes`` and ``connections``.
     """
     from tumbletrove.asset_browser.core.ghost_overlay import (
         GhostConnection, GhostData, GhostNode,
     )
     m = entry.meta
-    if "nodes" not in m or "connections" not in m:
-        return None
     nodes_data = m["nodes"]
     if not nodes_data:
         return GhostData(nodes=[GhostNode("null", 0.0, 0.0)])
@@ -393,13 +388,10 @@ def capture_thumbnail() -> bytes | None:
     """A 400×300 PNG of the network editor framed on the selection.
 
     GUI thread only (grabs a widget). None when there is no network
-    editor or the grab fails — the card then shows the placeholder.
+    editor to grab — the card then shows the placeholder.
     """
-    try:
-        import hou
-        from PySide6.QtCore import QBuffer, QByteArray, QIODevice
-    except ImportError:
-        return None
+    import hou
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice
     editor = None
     for pane_tab in hou.ui.paneTabs():
         if isinstance(pane_tab, hou.NetworkEditor):
@@ -407,23 +399,14 @@ def capture_thumbnail() -> bytes | None:
             break
     if editor is None:
         return None
-    try:
-        editor.homeToSelection()
-        widget = editor.qtWindow()
-        if widget is None:
-            return None
-        pixmap = widget.grab()
-        if pixmap.isNull():
-            return None
-        scaled = pixmap.scaled(400, 300, mode=1)
-        ba = QByteArray()
-        buf = QBuffer(ba)
-        buf.open(QIODevice.WriteOnly)
-        scaled.save(buf, "PNG")
-        return bytes(ba)
-    except Exception:
-        log.debug("Thumbnail capture failed", exc_info=True)
-        return None
+    editor.homeToSelection()
+    pixmap = editor.qtWindow().grab()
+    scaled = pixmap.scaled(400, 300, mode=1)
+    ba = QByteArray()
+    buf = QBuffer(ba)
+    buf.open(QIODevice.WriteOnly)
+    scaled.save(buf, "PNG")
+    return bytes(ba)
 
 
 def _place_loaded_nodes(new_nodes: list, drop) -> None:
@@ -440,21 +423,22 @@ def _place_loaded_nodes(new_nodes: list, drop) -> None:
             n.setPosition(n.position() + offset)
     for i, n in enumerate(new_nodes):
         n.setSelected(True, clear_all_selected=(i == 0))
+    # Not every node type carries the flags (a LOP has no render flag, a
+    # ROP no display flag), so each is set where the node has it.
     last = new_nodes[-1]
-    try:
-        last.setDisplayFlag(True)
-        last.setRenderFlag(True)
-    except AttributeError:
-        pass
+    for flag in ("setDisplayFlag", "setRenderFlag"):
+        setter = getattr(last, flag, None)
+        if setter is not None:
+            setter(True)
 
 
 def materialize(entry: RecipeEntry, drop) -> bool:
     """Load the recipe's nodes into the dropped-on network editor.
 
     Returns True whenever the drop was ours to handle (including a
-    cancelled context-mismatch prompt or a failed load, both reported),
-    False only for a pane that is not a network editor so the browser
-    can show its fallback menu.
+    cancelled context-mismatch prompt or a failed load, which is
+    reported), False only for a pane that is not a network editor so the
+    browser can show its fallback menu.
     """
     import hou
 
@@ -484,22 +468,15 @@ def materialize(entry: RecipeEntry, drop) -> bool:
 
     network = drop.network
     existing_paths = {n.path() for n in network.children()}
-    new_nodes: list = []
-    try:
-        with hou.undos.group(f"Load recipe: {name}"):
-            network.loadItemsFromFile(str(cpio_path))
-            new_nodes = [
-                n for n in network.children()
-                if n.path() not in existing_paths
-            ]
-            _place_loaded_nodes(new_nodes, drop)
-    except Exception:
-        log.exception("Failed to load recipe %s", name)
-        hou.ui.setStatusMessage(
-            f"Failed to load recipe: {name}",
-            severity=hou.severityType.Error,
-        )
-        return True
+    # A failure raises into the browser, which reports it and does not
+    # retry the drop its own way (TumbleTrove >= 0.48).
+    with hou.undos.group(f"Load recipe: {name}"):
+        network.loadItemsFromFile(str(cpio_path))
+        new_nodes = [
+            n for n in network.children()
+            if n.path() not in existing_paths
+        ]
+        _place_loaded_nodes(new_nodes, drop)
 
     hou.ui.setStatusMessage(
         f"Loaded recipe: {name} ({len(new_nodes)} nodes)",
@@ -508,45 +485,25 @@ def materialize(entry: RecipeEntry, drop) -> bool:
     return True
 
 
-def _open_folder(path: Path) -> None:
-    try:
-        if sys.platform.startswith("win"):
-            os.startfile(str(path))  # type: ignore[attr-defined]
-        elif sys.platform == "darwin":
-            import subprocess
-            subprocess.Popen(["open", str(path)])
-        else:
-            import subprocess
-            subprocess.Popen(["xdg-open", str(path)])
-    except Exception:
-        log.exception("could not open %s", path)
-
-
-def _user_name() -> str:
-    try:
-        from tumblepipe.api import get_user_name
-        return get_user_name() or ""
-    except Exception:
-        return ""
-
-
 # ── Manager ──────────────────────────────────────────────────
 
 
 class RecipeManager:
     """Recipe scanning, cards and mutations for :class:`PipelineCatalog`.
 
-    Holds a back-reference to the catalog (as ``WorkfileManager`` and
-    ``DetailSectionBuilder`` do) for the project registry, the catalog
-    id, and the browser-refresh helpers.
+    Handed the project registry and the browser refresh, not the catalog.
     """
 
     def __init__(
         self,
-        catalog: "PipelineCatalog",
-        on_counts_changed: Callable[[], None] | None = None,
+        catalog_id: str,
+        *,
+        registry: "PipelineProjectRegistry",
+        refresh: "BrowserRefresh",
     ) -> None:
-        self._catalog = catalog
+        self._catalog_id = catalog_id
+        self._registry = registry
+        self._refresh = refresh
         # project name → entries. None until the first scan, so the
         # sidebar can tell "not scanned yet" from "no recipes".
         self._cache: dict[str, list[RecipeEntry]] | None = None
@@ -556,9 +513,7 @@ class RecipeManager:
         # the Recipes section with no rows and no count after every
         # Refresh (the auto-refresh timer included).
         self._stale = False
-        # Called after a rescan changes the per-context counts, so the
-        # sidebar — already rebuilt from the previous scan — catches up.
-        self._on_counts_changed = on_counts_changed
+        self._errors: list[CatalogError] = []
 
     # ── Cache ────────────────────────────────────────────
 
@@ -573,24 +528,33 @@ class RecipeManager:
         """
         before = self._all_counts() if self._cache is not None else None
         cache: dict[str, list[RecipeEntry]] = {}
-        for proj in self._catalog._registry.all():
+        errors: list[CatalogError] = []
+        for proj in self._registry.all():
+            # One project's unreadable share or torn recipe must not hide
+            # every other project's recipes: its recipes are left out and
+            # the failure rides on the next page's errors.
             try:
                 cache[proj.name] = scan_project(proj.name, proj.project_path)
-            except Exception:
+            except Exception as exc:
                 log.exception("recipe scan failed for %s", proj.name)
+                errors.append(AssetDiscoveryError(
+                    self._catalog_id,
+                    f"recipes of {proj.name} could not be read: {exc}",
+                    cause=exc,
+                ))
                 cache[proj.name] = []
         self._cache = cache
+        self._errors = errors
         self._stale = False
-        if (
-            before is not None
-            and self._on_counts_changed is not None
-            and self._all_counts() != before
-        ):
-            try:
-                self._on_counts_changed()
-            except Exception:
-                log.debug("recipe count notification failed", exc_info=True)
+        if before is not None and self._all_counts() != before:
+            # The sidebar was built from the previous scan's counts.
+            self._refresh.sidebar()
         return self.cached_entries()
+
+    @property
+    def errors(self) -> list[CatalogError]:
+        """What the last scan could not read, for the page's errors."""
+        return list(self._errors)
 
     def _all_counts(self) -> dict[str, dict[str, int]]:
         return {p: self.context_counts(p) for p in (self._cache or {})}
@@ -622,7 +586,7 @@ class RecipeManager:
         entry = self.find(asset_id)
         if entry is None:
             raise DetailBuildError(
-                self._catalog.id, asset_id, "recipe not found",
+                self._catalog_id, asset_id, "recipe not found",
             )
         return entry
 
@@ -641,7 +605,7 @@ class RecipeManager:
     def cards(self) -> list[Asset]:
         """A card per recipe, for the catalog's merged item list."""
         active = active_context()
-        cid = self._catalog.id
+        cid = self._catalog_id
         return [build_card(e, active, cid) for e in self.entries()]
 
     def restamp_disabled(self, items: list[Asset]) -> list[Asset]:
@@ -663,11 +627,11 @@ class RecipeManager:
         entry = self.find(asset_id)
         if entry is None:
             return None
-        return build_card(entry, active_context(), self._catalog.id)
+        return build_card(entry, active_context(), self._catalog_id)
 
     def get_detail(self, asset_id: str) -> AssetDetail:
         return build_detail(
-            self._require(asset_id), active_context(), self._catalog.id,
+            self._require(asset_id), active_context(), self._catalog_id,
         )
 
     def get_thumbnail(self, asset: Asset):
@@ -710,7 +674,7 @@ class RecipeManager:
         if action_id == "open_recipe_folder":
             entry = self.find(detail.id)
             if entry is not None:
-                _open_folder(entry.entry_dir)
+                desktop.open_in_file_browser(entry.entry_dir)
             return True
         return False
 
@@ -764,7 +728,7 @@ class RecipeManager:
         entry = self.find(asset_id)
         if entry is None:
             return False
-        shutil.rmtree(entry.entry_dir, ignore_errors=True)
+        shutil.rmtree(entry.entry_dir)
         if self._cache is not None:
             entries = self._cache.get(entry.ref.project, [])
             self._cache[entry.ref.project] = [
@@ -781,17 +745,13 @@ class RecipeManager:
         if entry is None:
             return []
         asset_id = asset.id
-        refresh_card = self._catalog._request_card_refresh_for_id
+        refresh_card = self._refresh.card
 
         def _edit_description():
             import hou
             from PySide6.QtWidgets import QInputDialog
-            try:
-                parent = hou.qt.mainWindow()
-            except Exception:
-                parent = None
             text, ok = QInputDialog.getMultiLineText(
-                parent, "Edit Description",
+                hou.qt.mainWindow(), "Edit Description",
                 f"Description for {entry.name}:",
                 str(entry.meta.get("description", "")),
             )
@@ -802,11 +762,7 @@ class RecipeManager:
         def _set_icon():
             import hou
             from tumbletrove.common.icon_picker import IconPicker
-            try:
-                parent = hou.qt.mainWindow()
-            except Exception:
-                parent = None
-            picker = IconPicker(parent)
+            picker = IconPicker(hou.qt.mainWindow())
             if not picker.exec():
                 return
             icon_id = picker.selected_icon()
@@ -823,7 +779,7 @@ class RecipeManager:
             )
 
         def _open_directory():
-            _open_folder(entry.entry_dir)
+            desktop.open_in_file_browser(entry.entry_dir)
 
         def _delete():
             import hou
@@ -835,7 +791,7 @@ class RecipeManager:
                 title="Delete Recipe",
             )
             if choice == 0 and self.delete(asset_id):
-                self._catalog._request_global_grid_refresh()
+                self._refresh.grid()
 
         return [
             ("Edit Description…", _edit_description),
@@ -874,8 +830,8 @@ class RecipeManager:
 
         GUI thread, straight after the creation dialog. Returns the new
         recipe's id (the browser selects its card) or None when the
-        user cancelled or nothing could be saved — every such case has
-        already been reported through ``hou.ui``.
+        user cancelled or nothing was selected (both said through
+        ``hou.ui``). A save that fails raises; ``create_entity`` reports it.
         """
         import hou
 
@@ -922,28 +878,13 @@ class RecipeManager:
             if choice != 0:
                 return None
 
-        tmp_path = ""
+        with tempfile.NamedTemporaryFile(suffix=".cpio", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
         try:
-            with tempfile.NamedTemporaryFile(
-                suffix=".cpio", delete=False,
-            ) as tmp:
-                tmp_path = tmp.name
-            parent.saveItemsToFile(selected, tmp_path)
-            cpio_bytes = Path(tmp_path).read_bytes()
-        except Exception:
-            log.exception("Failed to save nodes to .cpio")
-            hou.ui.displayMessage(
-                "Failed to save selected nodes.",
-                title="Save Error",
-                severity=hou.severityType.Error,
-            )
-            return None
+            parent.saveItemsToFile(selected, str(tmp_path))
+            cpio_bytes = tmp_path.read_bytes()
         finally:
-            if tmp_path:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
+            tmp_path.unlink(missing_ok=True)
 
         thumb_bytes = capture_thumbnail()
         nodes_data, conns_data = capture_node_layout(list(selected))
@@ -956,25 +897,17 @@ class RecipeManager:
             "node_count": len(selected),
             "created_date": datetime.now(timezone.utc).isoformat(),
             "houdini_version": hou_ver,
-            "user": _user_name(),
+            "user": get_user_name(),
             "nodes": nodes_data,
             "connections": conns_data,
             "thumbnail": _THUMB_FILE if thumb_bytes else "",
         }
-        try:
-            entry_dir.mkdir(parents=True, exist_ok=True)
-            (entry_dir / _CPIO_FILE).write_bytes(cpio_bytes)
-            if thumb_bytes:
-                (entry_dir / _THUMB_FILE).write_bytes(thumb_bytes)
-            write_entry(entry_dir, meta)
-        except OSError:
-            log.exception("Failed to write recipe %s", entry_dir)
-            hou.ui.displayMessage(
-                f"Failed to write the recipe under {root}.",
-                title="Save Error",
-                severity=hou.severityType.Error,
-            )
-            return None
+        entry_dir.mkdir(parents=True, exist_ok=True)
+        (entry_dir / _CPIO_FILE).write_bytes(cpio_bytes)
+        if thumb_bytes:
+            (entry_dir / _THUMB_FILE).write_bytes(thumb_bytes)
+        # Last: entry.json is what makes the folder a recipe.
+        write_entry(entry_dir, meta)
 
         # Local write, so a synchronous rescan is cheap and makes the
         # new card and its sidebar count visible at once.
@@ -992,8 +925,5 @@ def _split_tags(text: str) -> list[str]:
 
 
 def _short_context(category_name: str) -> str:
-    try:
-        from tumbletrove.asset_browser.core.context_map import CONTEXT_MAP
-    except ImportError:
-        CONTEXT_MAP = {}
+    from tumbletrove.asset_browser.core.context_map import CONTEXT_MAP
     return CONTEXT_MAP.get(category_name, category_name.lower())

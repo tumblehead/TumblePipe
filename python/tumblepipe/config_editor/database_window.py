@@ -1,8 +1,7 @@
-import shutil
 from copy import deepcopy
 
-from qtpy.QtCore import Qt, QTimer, Signal
-from qtpy.QtWidgets import (
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
@@ -47,6 +46,11 @@ class DatabaseWindow(QMainWindow):
         self._inherited_properties = {}
 
         self._build_ui()
+
+    @property
+    def client(self):
+        """The project client this window edits."""
+        return self._api
 
     def _build_ui(self):
         central_widget = QSplitter(Qt.Horizontal, self)
@@ -111,10 +115,9 @@ class DatabaseWindow(QMainWindow):
         else:
             if uri.segments:
                 value = self._adapter.lookup_properties(uri)
-                inherited = self._adapter.get_inherited_properties(uri)
             else:
                 value = self._adapter.lookup_root_properties(uri.purpose)
-                inherited = self._adapter.get_root_inherited_properties(uri.purpose)
+            inherited = self._adapter.get_inherited_properties(uri)
             self._original_properties = deepcopy(value)
             self._inherited_properties = inherited
             self._json_view.set_value(value, inherited_data=inherited)
@@ -174,7 +177,7 @@ class DatabaseWindow(QMainWindow):
                     apply_migration(self._adapter, migration)
 
         # Try to save with merge conflict detection
-        success, msg = self._adapter.save_properties_with_merge(self._uri, new_properties)
+        success, msg = self._adapter.save_properties(self._uri, new_properties)
         if not success:
             if msg == "conflict":
                 if not self._handle_properties_merge_conflict(new_properties):
@@ -185,10 +188,9 @@ class DatabaseWindow(QMainWindow):
 
         if self._uri.segments:
             value = self._adapter.lookup_properties(self._uri)
-            inherited = self._adapter.get_inherited_properties(self._uri)
         else:
             value = self._adapter.lookup_root_properties(self._uri.purpose)
-            inherited = self._adapter.get_root_inherited_properties(self._uri.purpose)
+        inherited = self._adapter.get_inherited_properties(self._uri)
         self._original_properties = deepcopy(value)
         self._inherited_properties = inherited
         self._json_view.set_value(value, inherited_data=inherited, preserve_state=True)
@@ -212,7 +214,7 @@ class DatabaseWindow(QMainWindow):
             QMessageBox.Discard
         )
         if result == QMessageBox.Save:
-            self._adapter.force_save_properties(self._uri, new_properties)
+            self._adapter.save_properties(self._uri, new_properties, merge=False)
             return True
         else:
             self._reload_from_disk()
@@ -236,21 +238,23 @@ class DatabaseWindow(QMainWindow):
         event.accept()
 
     def _on_uri_change(self, change):
-        """Handle entity add/remove/rename in URI tree"""
+        """Persist an entity add / remove / rename / reorder made in the tree."""
+        parent_uri = change.uri
+        op = change.op
+        try:
+            self._apply_entity_op(parent_uri, op)
+        except Exception as exc:
+            from tumblepipe.pipe.houdini.ui.report import report_failure
+            report_failure(f"Editing {parent_uri}", exc)
+            self._reload_from_disk()
+
+    def _apply_entity_op(self, parent_uri: Uri, op) -> None:
         from .database_uri_view import (
-            UriChangeEntity,
             EntityOpInsert,
             EntityOpRemove,
             EntityOpReorder,
             EntityOpUpdate,
         )
-
-        if not isinstance(change, UriChangeEntity):
-            return
-
-        entity_change = change.change
-        parent_uri = entity_change.uri
-        op = entity_change.op
 
         if isinstance(op, EntityOpInsert):
             new_uri = parent_uri / op.label
@@ -259,72 +263,46 @@ class DatabaseWindow(QMainWindow):
                 self.data_changed.emit(new_uri)
 
         elif isinstance(op, EntityOpRemove):
-            if self._remove_entity_from_parent(parent_uri, op.label):
+            if self._remove_entity(parent_uri / op.label):
                 self.data_changed.emit(parent_uri)
 
         elif isinstance(op, EntityOpUpdate):
-            if self._rename_entity(parent_uri, op.from_label, op.to_label):
-                new_uri = parent_uri / op.to_label
-                self.data_changed.emit(new_uri)
+            if self._rename_entity(parent_uri / op.from_label, op.to_label):
+                self.data_changed.emit(parent_uri / op.to_label)
 
         elif isinstance(op, EntityOpReorder):
             if self._reorder_entity_in_parent(parent_uri, op.from_label, op.to_label):
                 self.data_changed.emit(parent_uri)
 
-    def _remove_entity_from_parent(self, parent_uri: Uri, label: str) -> bool:
-        """Remove a child entity from its parent. Returns True if saved."""
-        if parent_uri.segments:
-            parent_data = self._adapter.lookup(parent_uri)
-        else:
-            parent_data = self._adapter.lookup_root(parent_uri.purpose)
+    def _remove_entity(self, uri: Uri) -> bool:
+        """Delete ``uri`` the way the Asset Browser's Delete does: its
+        folders go to ``_deleted/`` (or a new entity of the name would
+        inherit them), and nothing changes if they cannot all move."""
+        from tumblepipe.pipe.entity_files import ArchiveError, delete_entity
+        try:
+            delete_entity(uri)
+        except ArchiveError as exc:
+            QMessageBox.warning(self, "Remove Entity", str(exc))
+            # Put the row back. Deferred: this runs inside the tree's own
+            # signal.
+            QTimer.singleShot(0, self._reload_from_disk)
+            return False
+        self._adapter.reload_purpose(uri.purpose)
+        return True
 
-        if parent_data and 'children' in parent_data:
-            if label in parent_data['children']:
-                # Same as the Asset Browser's Delete: the entity's folders go
-                # to _deleted/, or a new entity of this name inherits them.
-                from tumblepipe.pipe.entity_files import ArchiveError, archive_entity_folders
-                try:
-                    archived = archive_entity_folders(parent_uri / label)
-                except ArchiveError as exc:
-                    QMessageBox.warning(self, "Remove Entity", str(exc))
-                    return False
-                del parent_data['children'][label]
-                if self._save_with_conflict_handling(parent_uri, parent_data):
-                    return True
-                for source, dest in reversed(archived):
-                    shutil.move(str(dest), str(source))
-        return False
-
-    def _rename_entity(self, parent_uri: Uri, old_label: str, new_label: str) -> bool:
-        """Rename an entity by moving its data to a new key. Returns True if saved."""
-        if parent_uri.segments:
-            parent_data = self._adapter.lookup(parent_uri)
-        else:
-            parent_data = self._adapter.lookup_root(parent_uri.purpose)
-
-        # Workfiles, exports and renders sit in folders named after the
-        # entity, and published layers name it inside: renaming the row
-        # would leave all of that under the old name.
-        from tumblepipe.pipe.entity_files import has_entity_files
-        if has_entity_files(parent_uri / old_label):
-            QMessageBox.warning(
-                self, "Rename Entity",
-                f"'{old_label}' has workfiles or exports on disk, so it can't "
-                "be renamed: they would stay under the old name and the "
-                "renamed entity would come up empty.\n\n"
-                "Use Duplicate… on its card in the Asset Browser to make a "
-                "copy under the new name, then delete the old one.",
-            )
+    def _rename_entity(self, uri: Uri, new_label: str) -> bool:
+        """Rename ``uri``; refused for an entity with files on disk."""
+        from tumblepipe.pipe.entity_files import EntityHasFiles, rename_entity
+        try:
+            rename_entity(uri, new_label)
+        except EntityHasFiles as exc:
+            QMessageBox.warning(self, "Rename Entity", str(exc))
             # Put the old label back. Deferred: this runs inside the tree's
             # own edit-commit signal.
             QTimer.singleShot(0, self._reload_from_disk)
             return False
-
-        if parent_data and 'children' in parent_data:
-            if old_label in parent_data['children']:
-                parent_data['children'][new_label] = parent_data['children'].pop(old_label)
-                return self._save_with_conflict_handling(parent_uri, parent_data)
-        return False
+        self._adapter.reload_purpose(uri.purpose)
+        return True
 
     def _reorder_entity_in_parent(self, parent_uri: Uri, from_label: str, to_label: str) -> bool:
         """Reorder entity from_label to the position of to_label in parent's children. Returns True if saved."""
@@ -380,9 +358,9 @@ class DatabaseWindow(QMainWindow):
         )
         if result == QMessageBox.Save:
             if uri.segments:
-                self._adapter.force_save(uri, data)
+                self._adapter.save(uri, data)
             else:
-                self._adapter.force_save_root(uri.purpose, data)
+                self._adapter.save_root(uri.purpose, data)
             return True
         else:
             self._reload_from_disk()

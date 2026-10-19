@@ -6,7 +6,7 @@ import logging
 import shutil
 import re
 
-from tumblepipe.api import local_path, to_windows_path, path_str, get_user_name
+from tumblepipe.api import path_str, get_user_name
 from tumblepipe.apps import app
 
 # Farm plugin. 'HPM' runs the task from a package resolved on the worker
@@ -14,13 +14,13 @@ from tumblepipe.apps import app
 PLUGIN = 'HPM'
 
 # Matches the .hpm/packages/<name>@<version>/<relative...> segment of a script
-# path, regardless of whether it's a Windows (C:/...) or WSL (/mnt/c/...) form.
+# path.
 _HPM_PACKAGE_RE = re.compile(r'(?:^|/)\.hpm/packages/([^/]+@[^/]+)/(.+)$')
 
 def hpm_package_spec(script_path):
     """Split an in-package script path into (package_spec, package_relative_path).
 
-    The farm tasks build SCRIPT_PATH from `Path(__file__).parent / 'x.py'`, so
+    A farm job's script is `farm/workers/<name>.py` of the running package, so
     under HPM the path runs through the submitter's own
     ~/.hpm/packages/<name>@<version>/ store. The HPM plugin needs the package
     identity plus a package-relative ScriptFile so it can re-resolve the same
@@ -41,17 +41,8 @@ def hpm_package_spec(script_path):
     return match.group(1), match.group(2)
 
 def log_progress(iterable):
-    try:
-        items = list(iterable)
-    except Exception as e:
-        iterable_info = f"type: {type(iterable)}"
-        if hasattr(iterable, '__dict__'):
-            try:
-                iterable_info += f", attrs: {iterable.__dict__}"
-            except:
-                pass
-        raise ValueError(f"Failed to convert iterable to list: {e}. Iterable {iterable_info}")
-    
+    """Yield ``iterable``'s items, printing Deadline's ``Progress: N`` lines."""
+    items = list(iterable)
     total = len(items)
     if total == 0:
         return
@@ -97,22 +88,6 @@ def _parse_submission(output):
         return line[6:].strip()
     raise ValueError('JobID not found')
 
-def _parse_output(output):
-    raw_jobs = list(filter(
-        lambda part: len(part) != 0,
-        map(
-            lambda part: part.strip(),
-            output.replace('\r\n', '\n').split('\n\n')
-        )
-    ))
-    return list(map(
-        lambda raw_job: dict([
-            tuple(part.split('=', 1))
-            for part in raw_job.split('\n')
-        ]),
-        raw_jobs
-    ))
-
 def _parse_groups(output):
     return list(filter(
         lambda item: len(item) != 0,
@@ -148,7 +123,7 @@ def deadline_setup_problem(environ = None):
     raw_path = environ.get('DEADLINE_PATH', '').strip().strip('"')
     if not raw_path:
         return f'Deadline is not set up on this machine. {_NOT_INSTALLED_HINT}'
-    bin_path = local_path(Path(raw_path.replace('\\', '/')))
+    bin_path = Path(raw_path.replace('\\', '/'))
     if not bin_path.exists():
         return (
             f'DEADLINE_PATH points at "{raw_path}", which does not exist. '
@@ -161,20 +136,23 @@ def _get_deadline_path():
     if problem is not None:
         raise DeadlineNotInstalled(problem)
     raw_path = os.environ['DEADLINE_PATH'].strip().strip('"')
-    bin_path = local_path(Path(raw_path.replace('\\', '/')))
+    bin_path = Path(raw_path.replace('\\', '/'))
     return bin_path / 'deadlinecommand.exe'
 
 def _get_repository_path(deadline_path):
-    raw_path = app.call([str(deadline_path), 'GetRepositoryPath']).strip()
-    assert raw_path is not None, 'Repository path not found'
-    return local_path(Path(raw_path.replace('\\', '/')))
+    raw_path = app.run(
+        [str(deadline_path), 'GetRepositoryPath'], echo=False
+    ).strip()
+    if not raw_path:
+        raise RuntimeError('deadlinecommand GetRepositoryPath printed no path')
+    return Path(raw_path.replace('\\', '/'))
 
 def _find_free_job_path(root_path):
     retries = 10
     for _ in range(retries):
         path = root_path / str(uuid4())
         if not path.exists(): return path
-    assert False, f'Failed to find free job path in "{root_path}"'
+    raise RuntimeError(f'Failed to find a free job path in "{root_path}"')
 
 class Batch:
     def __init__(self, name):
@@ -243,20 +221,17 @@ class Batch:
             for job_name, job in jobs.items()
         }
         for job_name, job_deps in deps.items():
-            if len(job_deps) == 0: continue
             for dep_name in job_deps:
                 if dep_name not in indicies:
-                    logging.warning(
-                        f'Job "{job_name}" depends on '
-                        f'non-existing job "{dep_name}"'
+                    raise ValueError(
+                        f'Job "{job_name}" depends on non-existing job '
+                        f'"{dep_name}"'
                     )
-                    continue
                 self.add_dep(indicies[job_name], indicies[dep_name])
 
 class Job:
     def __init__(self,
         script_path,
-        requirements_path,
         *args
         ):
 
@@ -264,23 +239,19 @@ class Job:
         assert script_path is not None, 'Script path not set'
         assert isinstance(script_path, Path), 'Invalid script path type'
 
-        # Members
+        # Members. The scheduling ones start unset: every task builder sets
+        # them, and job_info() refuses a job that forgot one rather than
+        # rendering frame 1 at priority 10.
         self.name = None
         self.pool = None
         self.group = None
-        self.comment = ''
-        self.priority = 10
+        self.priority = None
         self.frames = list()
-        self.start_frame = 1
-        self.end_frame = 1
-        self.step_size = 1
-        self.chunk_size = 1
-        self.min_frame_time = None
+        self.start_frame = None
+        self.end_frame = None
+        self.step_size = None
+        self.chunk_size = None
         self.max_frame_time = None
-        self.pre_job_script_path = None
-        self.post_job_script_path = None
-        self.pre_task_script_path = None
-        self.post_task_script_path = None
         self.env = dict()
         self.paths = dict()
         self.output_paths = list()
@@ -288,22 +259,21 @@ class Job:
         # submit() writes it into the job dir and hands the plugin its path.
         self.manifest = None
         self._script_path = script_path
-        self._requirements_path = requirements_path
         self._args = args
     
     def _frames(self):
         if len(self.frames) != 0: return ','.join(map(str, self.frames))
         return f'{self.start_frame}-{self.end_frame}x{self.step_size}'
-    
+
     def job_info(self) -> dict:
-        assert self.name is not None, 'Job name not set'
-        assert self.pool is not None, 'Job pool not set'
-        assert self.group is not None, 'Job group not set'
-        assert 0 <= self.priority <= 100, f'Invalid priority value: {self.priority}'
-        min_frame_time = (
-            self.min_frame_time * 60
-            if self.min_frame_time is not None else 0
-        )
+        required = ['name', 'pool', 'group', 'priority', 'chunk_size']
+        if len(self.frames) == 0:
+            required += ['start_frame', 'end_frame', 'step_size']
+        unset = [key for key in required if getattr(self, key) is None]
+        if unset:
+            raise ValueError(f'Job {self.name!r} has no {", ".join(unset)} set')
+        if not 0 <= self.priority <= 100:
+            raise ValueError(f'Invalid priority value: {self.priority}')
         max_frame_time = (
             self.max_frame_time * 60
             if self.max_frame_time is not None else 0
@@ -313,7 +283,6 @@ class Job:
             'Pool': self.pool,
             'Group': self.group,
             'Priority': str(self.priority),
-            'Comment': self.comment,
             'UserName': get_user_name(),
             'MachineName': platform.node(),
             'InitialStatus': 'Active',
@@ -321,24 +290,7 @@ class Job:
             'Frames': self._frames(),
             'ChunkSize': str(self.chunk_size),
             'EnableFrameTimeouts': 'true',
-            'MinRenderTimeSeconds': str(min_frame_time),
             'TaskTimeoutSeconds': str(max_frame_time),
-            'PreJobScript': (
-                '' if self.pre_job_script_path is None else
-                path_str(self.pre_job_script_path
-            )),
-            'PostJobScript': (
-                '' if self.post_job_script_path is None else
-                path_str(self.post_job_script_path)
-            ),
-            'PreTaskScript': (
-                '' if self.pre_task_script_path is None else
-                path_str(self.pre_task_script_path)
-            ),
-            'PostTaskScript': (
-                '' if self.post_task_script_path is None else
-                path_str(self.post_task_script_path)
-            )
         } | {
             f'OutputDirectory{index}': path_str(output_path.parent)
             for index, output_path in enumerate(self.output_paths)
@@ -361,8 +313,6 @@ class Job:
             'Arguments': arguments,
             'StartupDirectory': path_str(job_path / 'data')
         }
-        if self._requirements_path is not None:
-            result['RequirementsFile'] = path_str(self._requirements_path)
         if env_file_path is not None:
             result['EnvironmentFile'] = path_str(env_file_path)
         return result
@@ -389,95 +339,21 @@ class Deadline:
     def list_pools(self, refresh = False):
         global POOL_NAMES
         if not (POOL_NAMES is None or refresh): return POOL_NAMES.copy()
-        POOL_NAMES = _parse_pools(app.call([
+        POOL_NAMES = _parse_pools(app.run([
             str(DEADLINE_PATH),
             'Pools'
-        ]))
+        ], echo=False))
         return POOL_NAMES.copy()
     
     def list_groups(self, refresh = False):
         global GROUP_NAMES
         if not (GROUP_NAMES is None or refresh): return GROUP_NAMES.copy()
-        GROUP_NAMES = _parse_groups(app.call([
+        GROUP_NAMES = _parse_groups(app.run([
             str(DEADLINE_PATH),
             'Groups'
-        ]))
+        ], echo=False))
         return GROUP_NAMES.copy()
     
-    def find_jobs(self, **filters):
-        all_jobs = _parse_output(app.call([
-            str(DEADLINE_PATH),
-            'GetJobs'
-        ]))
-        if len(filters) == 0: return all_jobs
-        return list(filter(
-            lambda job: all(
-                job[key] == value
-                for key, value in filters.items()
-            ),
-            all_jobs
-        ))
-
-    def find_tasks(self, job_id, **filters):
-        all_tasks = _parse_output(app.call([
-            str(DEADLINE_PATH),
-            'GetJobTasks',
-            job_id
-        ]))
-        if len(filters) == 0: return all_tasks
-        return list(filter(
-            lambda task: all(
-                task[key] == value
-                for key, value in filters.items()
-            ),
-            all_tasks
-        ))
-    
-    def suspend_jobs(self, *job_ids):
-        if len(job_ids) == 0: return False
-        return_code = app.run([
-            str(DEADLINE_PATH),
-            'SuspendJob',
-            ','.join(job_ids)
-        ])
-        return return_code == 0
-
-    def resume_jobs(self, *job_ids):
-        if len(job_ids) == 0: return False
-        return_code = app.run([
-            str(DEADLINE_PATH),
-            'ResumeJob',
-            ','.join(job_ids)
-        ])
-        return return_code == 0
-    
-    def remove_job(self, job_id):
-        app.run([
-            str(DEADLINE_PATH),
-            'DeleteJob',
-            job_id
-        ])
-    
-    def suspend_tasks(self, job_id, *task_ids):
-        if len(task_ids) == 0: return False
-        return_code = app.run([
-            str(DEADLINE_PATH),
-            'SuspendJobTasks',
-            job_id,
-            ','.join(task_ids)
-        ])
-        return return_code == 0
-    
-    def resume_tasks(self, job_id, *task_ids):
-        if len(task_ids) == 0: return False
-        return_code = app.run([
-            str(DEADLINE_PATH),
-            'ResumeJobTasks',
-            job_id,
-            ','.join(task_ids)
-        ])
-        return return_code == 0
-
     def submit(self,
         batch,
         jobs_path
@@ -496,11 +372,6 @@ class Deadline:
         for job_index in batch.topological_order():
             job = batch.get_job(job_index)
 
-            # Handle existing jobs
-            if isinstance(job, str):
-                job_ids[job_index] = job
-                continue
-
             # Prepare job info
             job_info_path = (
                 job_path /
@@ -508,7 +379,7 @@ class Deadline:
             )
             job_info = job.job_info() | {
                 'BatchName': batch.get_name(),
-                'NetworkRoot': path_str(to_windows_path(REPOSITORY_PATH))
+                'NetworkRoot': path_str(REPOSITORY_PATH)
             }
             job_deps = batch.get_deps(job_index)
             if len(job_deps) != 0:
@@ -537,7 +408,7 @@ class Deadline:
                     f'{str(job_index).zfill(2)}_hpm.toml'
                 )
                 manifest_path.write_text(job.manifest)
-                plugin_info['Manifest'] = path_str(to_windows_path(manifest_path))
+                plugin_info['Manifest'] = path_str(manifest_path)
 
             _write_key_value(plugin_info_path, plugin_info)
 
@@ -548,10 +419,10 @@ class Deadline:
                 _copy_path(from_path, to_path)
             
             # Submit job
-            job_ids[job_index] = _parse_submission(app.call([
+            job_ids[job_index] = _parse_submission(app.run([
                 str(DEADLINE_PATH),
-                str(to_windows_path(job_info_path)),
-                str(to_windows_path(plugin_info_path))
-            ]))
+                str(job_info_path),
+                str(plugin_info_path)
+            ], echo=False))
 
         return list(job_ids.values())

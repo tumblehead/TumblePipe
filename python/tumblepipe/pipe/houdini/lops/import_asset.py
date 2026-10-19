@@ -2,33 +2,31 @@ import os
 import re
 from pathlib import Path
 
-import hou
 
 from tumblepipe.api import api
+from tumblepipe import naming
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
-from tumblepipe.config.channels import list_channels, read_channel
+from tumblepipe.config.channels import CHANNEL_KEY, read_published_channel
+from tumblepipe.pipe.usd.sublayer_refs import generate_staged_sublayer_uri
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
-from tumblepipe.pipe.houdini.util import uri_to_prim_path
+from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
+from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 from tumblepipe.pipe.paths import (
-    get_workfile_context,
     current_staged_path,
     list_version_paths
 )
-
 
 def _staged_context_assets(staged_file_path: Path) -> list[dict]:
     """Tracked sub-assets recorded next to a staged file.
 
     The staged build's context.json lists every asset tracked in the
-    department layers it composed ({asset, instances, channel, inputs}).
-    Old staged builds without a sidecar yield an empty list.
+    department layers it composed ({asset, instances, channel, inputs});
+    every staged build writes one, so a missing sidecar raises -- rebuild it.
     """
     context_data = load_json(staged_file_path.parent / 'context.json')
-    if context_data is None:
-        return []
-    return context_data.get('parameters', {}).get('assets', [])
+    return context_data['parameters']['assets']
 
 def _subasset_script_lines(
     subassets: list[dict],
@@ -79,13 +77,13 @@ def _subasset_script_lines(
         if not asset_uri_raw:
             continue
         try:
-            sub_uri = Uri.parse_unsafe(asset_uri_raw)
+            sub_uri = Uri.parse(asset_uri_raw)
             base_path = uri_to_prim_path(sub_uri)
         except ValueError:
             continue
         base_name = sub_uri.segments[-1]
         instances = asset_info.get('instances', 1)
-        channel = read_channel(asset_info, where=f'asset row {asset_uri_raw}')
+        channel = read_published_channel(asset_info, where=f"asset row {asset_uri_raw}")
         inputs = list(asset_info.get('inputs', []))
         if shot_uri is not None and shot_department is not None:
             shot_entry = {
@@ -119,24 +117,24 @@ def _subasset_script_lines(
         ]
         lines += stale_cleanup
         # Give the base the transform a direct import would have given it
-        # (see util.author_identity_placement_ops). Runs before the
+        # (see prim_queries.author_identity_placement_ops). Runs before the
         # instances below are defined so the op set composes onto them
         # through the internal reference — their own placement values,
         # authored locally, still win over the referenced identities.
         lines += [
-            '    if not util.apply_placement_op_order(base):',
-            '        util.author_identity_placement_ops(base)',
+            '    if not prim_queries.apply_placement_op_order(base):',
+            '        prim_queries.author_identity_placement_ops(base)',
         ]
         if instances <= 1:
             lines.append('    base.SetActive(True)')
             if inline:
-                lines.append('    util.mark_inlined(base)')
+                lines.append('    prim_metadata.mark_inlined(base)')
             else:
                 lines += [
-                    '    util.set_metadata(base, {',
+                    '    prim_metadata.set_metadata(base, {',
                     f"        'uri': '{asset_uri_raw}',",
                     f"        'instance': '{base_name}',",
-                    f"        'variant': '{channel}',",
+                    f"        '{CHANNEL_KEY}': '{channel}',",
                     f"        'inputs': {inputs!r}",
                     '    })',
                 ]
@@ -145,13 +143,13 @@ def _subasset_script_lines(
             lines.append('    base.SetActive(False)')
             for index in range(instances):
                 instance_prim_path = f'{parent_path}/{base_name}{index}'
-                instance_name = api.naming.get_instance_name(
+                instance_name = naming.get_instance_name(
                     base_name, index
                 )
                 # The set layer's overs carry the placement op VALUES
                 # (translate/rotate/scale/pivot survive the layerbreak)
                 # but not the xformOpOrder that applies them — see
-                # util.apply_placement_op_order. When no placement
+                # prim_queries.apply_placement_op_order. When no placement
                 # composed, fall back to an identity {base}_dup op so
                 # layout tooling still has a transform surface. (The
                 # render stage's defs author none: the base above always
@@ -160,7 +158,7 @@ def _subasset_script_lines(
                     f'    inst = stage.DefinePrim("{instance_prim_path}")',
                     '    inst.SetActive(True)',
                     f'    inst.GetReferences().AddInternalReference("{base_path}")',
-                    '    if not util.apply_placement_op_order(inst):',
+                    '    if not prim_queries.apply_placement_op_order(inst):',
                     f'        if not inst.GetAttribute("xformOp:transform:{base_name}_dup"):',
                     '            dup_op = UsdGeom.Xformable(inst).AddTransformOp(',
                     f'                UsdGeom.XformOp.PrecisionDouble, "{base_name}_dup"',
@@ -168,13 +166,13 @@ def _subasset_script_lines(
                     '            dup_op.Set(Gf.Matrix4d(1))',
                 ]
                 if inline:
-                    lines.append('    util.mark_inlined(inst)')
+                    lines.append('    prim_metadata.mark_inlined(inst)')
                 else:
                     lines += [
-                        '    util.set_metadata(inst, {',
+                        '    prim_metadata.set_metadata(inst, {',
                         f"        'uri': '{asset_uri_raw}',",
                         f"        'instance': '{instance_name}',",
-                        f"        'variant': '{channel}',",
+                        f"        '{CHANNEL_KEY}': '{channel}',",
                         f"        'inputs': {inputs!r}",
                         '    })',
                     ]
@@ -208,7 +206,7 @@ def _metadata_script(
 
     script = f'''import hou
 
-from tumblepipe.pipe.houdini import util
+from tumblepipe.pipe.houdini import prim_metadata, prim_queries
 
 node = hou.pwd()
 stage = node.editableStage()
@@ -220,10 +218,10 @@ if prim.IsValid():
     metadata = {{
         'uri': '{str(asset_uri)}',
         'instance': '{entity_name}',
-        'variant': '{channel_name}',
+        '{CHANNEL_KEY}': '{channel_name}',
         'inputs': {inputs_str}
     }}
-    util.set_metadata(prim, metadata)
+    prim_metadata.set_metadata(prim, metadata)
 '''
     subasset_lines = _subasset_script_lines(
         subassets or [], shot_uri, shot_department, inline=False
@@ -252,7 +250,7 @@ def _inline_metadata_script(
 
     script = f'''import hou
 
-from tumblepipe.pipe.houdini import util
+from tumblepipe.pipe.houdini import prim_metadata, prim_queries
 
 node = hou.pwd()
 stage = node.editableStage()
@@ -260,7 +258,7 @@ root = stage.GetPseudoRoot()
 
 prim = root.GetPrimAtPath("{prim_path}")
 if prim.IsValid():
-    util.mark_inlined(prim)
+    prim_metadata.mark_inlined(prim)
 '''
     subasset_lines = _subasset_script_lines(subassets or [], inline=True)
     if subasset_lines:
@@ -306,17 +304,14 @@ def _expand_staged_layers(
             if _dropped is not None:
                 _dropped.add(department)
             continue
-        if ref.startswith('entity:'):
-            uri = Uri.parse_unsafe(ref)
-            # Strip version when in 'latest' mode so the resolver
-            # picks the actual latest department export.
-            if latest and 'version' in uri.query:
-                stripped = dict(uri.query)
-                del stripped['version']
-                uri = Uri(uri.purpose, uri.segments, stripped)
-            layer_resolved = resolver.try_resolve_entity_uri(str(uri))
-        else:
-            layer_resolved = os.path.normpath(str(staged_path.parent / ref))
+        uri = Uri.parse(ref)
+        # Strip version when in 'latest' mode so the resolver
+        # picks the actual latest department export.
+        if latest and 'version' in uri.query:
+            stripped = dict(uri.query)
+            del stripped['version']
+            uri = Uri(uri.purpose, uri.segments, stripped)
+        layer_resolved = resolver.try_resolve_entity_uri(str(uri))
         if not layer_resolved or not Path(layer_resolved).exists():
             continue
         if department is None and '_staged' in Path(layer_resolved).parts:
@@ -332,25 +327,21 @@ def _list_staged_layers(staged_file_path: Path) -> list[tuple[str | None, str]]:
 
     The staged asset file sublayers one layer per exported department,
     strongest first, followed by the staged files of any tracked nested
-    assets. The department is read from the entity URI's dept= query
-    param, falling back to the directory layout
-    (../{variant}/{department}/{version}/file.usd) for filesystem refs
-    in old staged files. Refs with no recognizable department yield None
-    (nested-asset staged refs always do — they carry no dept= param).
+    assets. Every ref is an entity URI; the department is its dept= query
+    param, None for nested-asset staged refs (they carry no dept=). A
+    filesystem-path ref (from builds staged before URIs) is refused --
+    rebuild the asset.
     """
     layers = []
     content = staged_file_path.read_text()
     for match in re.finditer(r'@([^@]+)@', content):
         ref = match.group(1)
-        department = None
-        if ref.startswith('entity:'):
-            uri = Uri.parse_unsafe(ref)
-            department = uri.query.get('dept')
-        else:
-            parts = [part for part in ref.split('/') if part not in ('..', '.')]
-            if len(parts) >= 3:
-                department = parts[-3]
-        layers.append((department, ref))
+        if not ref.startswith('entity:'):
+            raise ValueError(
+                f'{staged_file_path} sublayers {ref!r}, a file path: staged '
+                'builds sublayer entity URIs. Rebuild the asset.'
+            )
+        layers.append((Uri.parse(ref).query.get('dept'), ref))
     return layers
 
 class ImportAsset(EntityNode):
@@ -369,9 +360,9 @@ class ImportAsset(EntityNode):
             return ['latest', 'current']
 
         # Get staged directory for the selected channel
-        # (_staged/<variant>/v####, mirroring import_shot)
+        # (_staged/<channel>/v####, mirroring import_shot)
         staged_uri = (
-            Uri.parse_unsafe('export:/') /
+            Uri.parse('export:/') /
             asset_uri.segments /
             '_staged' /
             self.get_channel_name()
@@ -385,35 +376,10 @@ class ImportAsset(EntityNode):
         # Add special options at the beginning
         return ['latest', 'current'] + version_names
 
-    def list_channel_names(self) -> list[str]:
-        """List available channel names for current entity."""
-        asset_uri = self.get_entity_uri()
-        if asset_uri is None:
-            return ['default']
-        channels = list_channels(asset_uri)
-        if not channels:
-            return ['default']
-        # Ensure 'default' is always first
-        if 'default' in channels:
-            channels.remove('default')
-            channels.insert(0, 'default')
-        return channels
-
-    def list_entity_uris(self) -> list[str]:
-        return ['from_context'] + [str(uri) for uri in self.list_asset_uris()]
 
     def _update_labels(self):
         """Update label parameters to show current entity selection."""
-        entity_raw = self.parm('entity').eval()
-        entity_uri = self.get_entity_uri()
-        if entity_raw == 'from_context':
-            self.parm('entity_label').set(
-                f'from_context: {entity_uri}' if entity_uri else 'from_context: none'
-            )
-        elif entity_uri:
-            self.parm('entity_label').set(str(entity_uri))
-        else:
-            self.parm('entity_label').set('none')
+        self.parm('entity_label').set(self._entity_label())
 
         # Resolve version name (resolve 'latest' to actual version)
         version_name = self.get_version_name()
@@ -427,12 +393,7 @@ class ImportAsset(EntityNode):
     def execute(self):
         self._update_labels()
         native = self.native()
-        asset_uri = self.get_entity_uri()
-        if asset_uri is None:
-            self.parm('import_filepath1').set('')
-            ns.set_node_comment(native, "Bypassed: No asset selected")
-            native.bypass(True)
-            return
+        asset_uri = self.require_entity_uri()
 
         # Get channel and staged file path based on version selection
         channel_name = self.get_channel_name()
@@ -446,7 +407,7 @@ class ImportAsset(EntityNode):
         # the version, freezing both this top-level resolve and nested ones.
         if version_name == 'latest':
             resolver.set_latest_mode(True)
-            staged_uri = f"{asset_uri}?variant={channel_name}"
+            staged_uri = generate_staged_sublayer_uri(asset_uri, channel_name)
         else:
             resolver.set_latest_mode(False)
             if version_name == 'current':
@@ -459,7 +420,7 @@ class ImportAsset(EntityNode):
                 pinned_version = current_path.name
             else:
                 pinned_version = version_name
-            staged_uri = f"{asset_uri}?variant={channel_name}&version={pinned_version}"
+            staged_uri = generate_staged_sublayer_uri(asset_uri, channel_name, pinned_version)
 
         # Invalidate cached nested resolutions so the new mode takes effect
         resolver.refresh_context()
@@ -540,14 +501,11 @@ class ImportAsset(EntityNode):
         self.parm('version_label').set(resolved_version)
 
         # Get shot context if we're in a shot workfile
-        shot_uri = None
-        shot_department = None
-        file_path = Path(hou.hipFile.path())
-        workfile_context = get_workfile_context(file_path)
-        if workfile_context is not None:
-            if str(workfile_context.entity_uri).startswith('entity:/shots/'):
-                shot_uri = workfile_context.entity_uri
-                shot_department = workfile_context.department_name
+        workfile_context = scene_context()
+        shot_uri = entity_in_contexts(workfile_context, contexts=('shots',))
+        shot_department = (
+            workfile_context.department_name if shot_uri is not None else None
+        )
 
         # Generate and set metadata script. Inline mode swaps the pipeline
         # metadata for a marker so the export bakes the asset in instead of
@@ -569,11 +527,8 @@ class ImportAsset(EntityNode):
 def create(scene, name):
     return ns.create_node(scene, name, ImportAsset, 'import_asset', force_valid_node_name=True)
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
-
 def on_created(raw_node):
-    set_style(raw_node)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
     node = ImportAsset(raw_node)
     # 'entity' keeps its 'from_context' default. Seeding it with the first
     # asset in the project pinned every fresh node to an arbitrary asset —
@@ -581,33 +536,16 @@ def on_created(raw_node):
     # deliberate choice.
     node._update_labels()
 
-def execute():
-    raw_node = hou.pwd()
+def execute(kwargs):
+    raw_node = kwargs['node']
     node = ImportAsset(raw_node)
     node.execute()
 
-def select():
-    """HDA button callback to open entity selector dialog."""
-    from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
-
-    raw_node = hou.pwd()
-    node = ImportAsset(raw_node)
-
-    dialog = EntitySelectorDialog(
-        api=api,
-        entity_filter='assets',
-        include_from_context=True,
-        current_selection=node.parm('entity').eval(),
-        title="Select Asset",
-        parent=hou.qt.mainWindow()
-    )
-
-    if dialog.exec_():
-        selected_uri = dialog.get_selected_uri()
-        if selected_uri:
-            node.parm('entity').set(selected_uri)
-            node.execute()
-
+def select(kwargs):
+    """Entity button: pick the asset, then import it."""
+    node = ImportAsset(kwargs['node'])
+    if node.pick_entity('Select Asset'):
+        node.execute()
 
 def output_modified_prims(raw_node) -> str:
     """Return the prim path this HDA wrote, for the output's modifiedprims.
@@ -618,10 +556,8 @@ def output_modified_prims(raw_node) -> str:
     internal transform's primpattern -- so the artist's placement of the
     imported asset silently applied to nothing.
     """
+    # Evaluated on every cook: an unset 'from_context' modifies nothing.
     entity_uri = ImportAsset(raw_node).get_entity_uri()
     if entity_uri is None:
         return ''
-    try:
-        return uri_to_prim_path(entity_uri)
-    except ValueError:
-        return ''
+    return uri_to_prim_path(entity_uri)

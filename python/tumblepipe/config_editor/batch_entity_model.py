@@ -1,5 +1,5 @@
-from qtpy.QtCore import Qt, QAbstractTableModel, QModelIndex
-from qtpy.QtGui import QBrush, QColor
+from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
+from PySide6.QtGui import QBrush, QColor
 
 from tumblepipe.config.schema import Schema, apply_defaults, validate_properties, infer_field_type
 

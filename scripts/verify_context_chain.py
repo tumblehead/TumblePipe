@@ -17,8 +17,8 @@ reports it without touching it. That claim is the lock that stops two savers
 taking the same version number, so removing a live one would silently lose one
 artist's file.
 
-Needs the pipeline environment configured (TH_CONFIG_PATH etc.) so ``api.naming``
-can parse version names — run it from a pipeline shell, same as any other task.
+Needs the pipeline environment configured (TH_CONFIG_PATH etc.) — run it from
+a pipeline shell, same as any other task.
 """
 
 from __future__ import annotations

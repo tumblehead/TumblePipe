@@ -1,10 +1,10 @@
 """Verify the database editor's edit-commit UX by driving the real widgets.
 
-Runs headless of Houdini — the editor stack is pure qtpy — but needs a Qt
+Runs headless of Houdini — the editor stack is pure PySide6 — but needs a Qt
 binding and a desktop session (QTest simulates real clicks and keystrokes)::
 
     cd scripts
-    uv run --python 3.12 --with pyside6 --with qtpy python verify_database_editor_ux.py
+    uv run --python 3.12 --with pyside6 python verify_database_editor_ux.py
 
 Covers the commit model fixed on 2026-07-08 (each case prints PASS / FAIL):
 
@@ -44,9 +44,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
 
-from qtpy.QtCore import QPoint, Qt
-from qtpy.QtTest import QTest
-from qtpy.QtWidgets import QApplication, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QLineEdit, QVBoxLayout, QWidget
 
 from tumblepipe.config_editor.database_uri_view import (
     DatabaseUriView,
@@ -251,8 +251,8 @@ class _StubAdapter:
 
     def list_entities(self, root):
         return [
-            Uri.parse_unsafe("assets:/char/Chair"),
-            Uri.parse_unsafe("assets:/char/Table"),
+            Uri.parse("assets:/char/Chair"),
+            Uri.parse("assets:/char/Table"),
         ]
 
 

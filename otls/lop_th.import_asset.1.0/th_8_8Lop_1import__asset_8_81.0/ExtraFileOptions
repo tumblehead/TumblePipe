@@ -78,5 +78,25 @@
 	"PythonModule/Source":{
 		"type":"string",
 		"value":""
+	},
+	"SyncNodeVersion/Cursor":{
+		"type":"intarray",
+		"value":[3,21]
+	},
+	"SyncNodeVersion/IsExpr":{
+		"type":"bool",
+		"value":false
+	},
+	"SyncNodeVersion/IsPython":{
+		"type":"bool",
+		"value":true
+	},
+	"SyncNodeVersion/IsScript":{
+		"type":"bool",
+		"value":true
+	},
+	"SyncNodeVersion/Source":{
+		"type":"string",
+		"value":""
 	}
 }

@@ -4,7 +4,9 @@
 //! by unit tests without spinning up a window.
 
 pub mod beauty_alpha;
+pub mod conventions;
 pub mod migration;
+pub mod templates;
 
 use std::path::{Path, PathBuf};
 

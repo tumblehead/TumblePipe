@@ -25,12 +25,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from tumbletrove.asset_browser.core.projects import ProjectConfig
+from .projects import ProjectConfig
 from tumbletrove.asset_browser.core.theme import (
     ACCENT, BUTTON_PRIMARY_STYLE, FONT_FAMILY, FONT_SMALL,
     TEXT_DIM, TEXT_PRIMARY, scaled,
 )
 from tumbletrove.settings.widgets import section_header
+
+from tumblepipe.pipe.houdini.ui.report import report_failure
 
 from . import access
 from .departments import GHOST_STYLE, LIST_STYLE, DepartmentPoolEditor
@@ -236,7 +238,12 @@ class PipelineSettingsWidget(QWidget):
             "uses is chosen on its card, under Departments….",
             TEXT_DIM,
         ))
-        self._pool_editor = DepartmentPoolEditor(self._catalog, parent=self)
+        self._pool_editor = DepartmentPoolEditor(
+            activator=self._catalog._activator,
+            refresh=self._catalog._refresh,
+            invalidate_cache=self._catalog.invalidate_cache,
+            parent=self,
+        )
         outer.addWidget(self._pool_editor)
 
         self._refresh_list()
@@ -253,14 +260,11 @@ class PipelineSettingsWidget(QWidget):
         self._catalog._prefs.autosave_on_scene_change = bool(checked)
         try:
             save_prefs(self._catalog._prefs)
-        except Exception:
+        except Exception as exc:
             # Don't roll back the checkbox — the in-memory pref is what
-            # the catalog reads at scene-swap time, and a failed disk
-            # write will surface as an inconsistency on next launch.
-            QMessageBox.warning(
-                self, "Pipeline Settings",
-                "Failed to persist autosave preference — see Houdini console.",
-            )
+            # the catalog reads at scene-swap time; the report says it
+            # will not survive a restart.
+            report_failure("Saving the autosave preference", exc)
 
     def _on_auto_refresh_toggled(self, checked: bool) -> None:
         """Persist the auto-import-on-open pref immediately on toggle.
@@ -274,12 +278,8 @@ class PipelineSettingsWidget(QWidget):
         self._catalog._prefs.auto_refresh_on_open = bool(checked)
         try:
             save_prefs(self._catalog._prefs)
-        except Exception:
-            QMessageBox.warning(
-                self, "Pipeline Settings",
-                "Failed to persist auto-import preference — see Houdini "
-                "console.",
-            )
+        except Exception as exc:
+            report_failure("Saving the auto-import preference", exc)
 
     def _on_prompt_note_toggled(self, checked: bool) -> None:
         """Persist the version-note prompt pref immediately on toggle.
@@ -293,12 +293,8 @@ class PipelineSettingsWidget(QWidget):
         self._catalog._prefs.prompt_note_on_save = bool(checked)
         try:
             save_prefs(self._catalog._prefs)
-        except Exception:
-            QMessageBox.warning(
-                self, "Pipeline Settings",
-                "Failed to persist version-note preference — see Houdini "
-                "console.",
-            )
+        except Exception as exc:
+            report_failure("Saving the version-note preference", exc)
 
     # ── Helpers ───────────────────────────────────────
 
@@ -483,12 +479,9 @@ class PipelineSettingsWidget(QWidget):
             return
         try:
             self._catalog._apply_project_changes(self._working)
-        except Exception:
-            QMessageBox.critical(
-                self, "Project Settings",
-                "Failed to apply project changes — see Houdini console.",
-            )
-            raise
+        except Exception as exc:
+            report_failure("Applying the project changes", exc)
+            return
         # A project added here is registered now, so its department pool
         # can be read: show it instead of "Apply this project first".
         self._show_project_defaults()

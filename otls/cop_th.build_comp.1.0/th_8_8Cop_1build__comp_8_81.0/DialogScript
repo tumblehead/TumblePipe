@@ -44,11 +44,11 @@
             default { "from_context" }
             menu {
                 [ "from tumblepipe.pipe.houdini.cops import build_comp" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = build_comp.BuildComp(hou.pwd())" ]
-                [ "items = node.list_shot_uris()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "items = node.list_entity_uris()" ]
+                [ "return menus.list_to_menu(items)" ]
                 language python
             }
             parmtag { "script_callback_language" "python" }
@@ -67,11 +67,11 @@
             default { "denoise" }
             menu {
                 [ "from tumblepipe.pipe.houdini.cops import build_comp" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = build_comp.BuildComp(hou.pwd())" ]
                 [ "items = node.list_render_department_names()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "return menus.list_to_menu(items)" ]
                 language python
             }
             parmtag { "script_callback_language" "python" }
@@ -113,11 +113,10 @@
             default { "" }
             menu {
                 [ "from tumblepipe.pipe.houdini.cops import build_comp" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = build_comp.BuildComp(hou.pwd())" ]
-                [ "items = node.list_pool_names()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "return node.pool_menu()" ]
                 language python
             }
             parmtag { "script_callback_language" "python" }
@@ -137,11 +136,11 @@
             default { "all" }
             menu {
                 [ "from tumblepipe.pipe.houdini.cops import build_comp" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = build_comp.BuildComp(hou.pwd())" ]
-                [ "items = ['all'] + node.list_render_department_names()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "items = node.list_render_layer_names()" ]
+                [ "return menus.list_to_menu(items)" ]
                 language python
             }
             parmtag { "script_callback_language" "python" }
@@ -192,9 +191,9 @@
                 name    "frame_range"
                 label   "Frame Range"
                 type    string
-                default { "from_config" }
+                default { "from_context" }
                 menu {
-                    "from_config"   "From Config"
+                    "from_context"  "From Config"
                     "from_settings" "From Settings"
                 }
                 parmtag { "script_callback_language" "python" }
@@ -205,7 +204,7 @@
                 type    intvector2
                 size    2
                 default { 1001 1100 }
-                disablewhen "{ frame_range == from_config }"
+                disablewhen "{ frame_range == from_context }"
                 range   { 1! 999999! }
                 parmtag { "script_callback_language" "python" }
             }
@@ -215,7 +214,7 @@
                 type    intvector2
                 size    2
                 default { 0 0 }
-                disablewhen "{ frame_range == from_config }"
+                disablewhen "{ frame_range == from_context }"
                 range   { 0! 999999! }
                 parmtag { "script_callback_language" "python" }
             }
@@ -249,7 +248,7 @@
             type    button
             joinnext
             default { "0" }
-            parmtag { "script_callback" "hou.phm().update()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.build_comp as th_node; th_node.update(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -257,7 +256,7 @@
             label   "Stop"
             type    button
             default { "0" }
-            parmtag { "script_callback" "hou.phm().stop()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.build_comp as th_node; th_node.stop(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -265,7 +264,7 @@
             label   "Render to mplay"
             type    button
             default { "0" }
-            parmtag { "script_callback" "hou.phm().preview()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.build_comp as th_node; th_node.preview(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -273,7 +272,7 @@
             label   "Submit to farm"
             type    button
             default { "0" }
-            parmtag { "script_callback" "hou.phm().submit()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.build_comp as th_node; th_node.submit(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }

@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 from tumbletrove.asset_browser.api.errors import CatalogInitError
-from tumbletrove.asset_browser.core.projects import ProjectConfig, PipelineProjectRegistry
+from .projects import ProjectConfig, PipelineProjectRegistry
 
 from .types import (
     PERMANENT_INIT_ERRORS,

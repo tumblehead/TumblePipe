@@ -6,7 +6,7 @@ from tumblepipe.util.uri import Uri
 
 logger = logging.getLogger(__name__)
 
-DEPARTMENTS_URI = Uri.parse_unsafe('departments:/')
+DEPARTMENTS_URI = Uri.parse('departments:/')
 
 # Names the pipeline already uses for pseudo-departments that are never
 # registered in the pool: 'root' is the scene-build root layer (and the Rust
@@ -183,13 +183,6 @@ def set_generated(context: str, name: str, generated: bool):
     own['generated'] = generated
     api.config.set_own_properties(department_uri, own)
 
-def is_generated(context: str, name: str) -> bool:
-    """Check if a department is generated (Python-only, not Houdini-exportable)."""
-    department_uri = DEPARTMENTS_URI / context / name
-    properties = api.config.get_properties(department_uri)
-    if properties is None:
-        raise KeyError(f'Department not found: {department_uri}')
-    return properties.get('generated', False)
 
 def set_enabled(context: str, name: str, enabled: bool):
     """Set whether a department is enabled (active) or disabled (retired)."""
@@ -219,13 +212,6 @@ def set_short(context: str, name: str, short: str | None):
     own['short'] = short
     api.config.set_own_properties(department_uri, own)
 
-def get_short(context: str, name: str) -> str | None:
-    """Return the optional abbreviated label, or ``None`` if unset."""
-    department_uri = DEPARTMENTS_URI / context / name
-    properties = api.config.get_properties(department_uri)
-    if properties is None:
-        raise KeyError(f'Department not found: {department_uri}')
-    return properties.get('short')
 
 def list_departments(context: str, include_generated: bool = True, include_disabled: bool = False) -> list[Department]:
     """
@@ -245,20 +231,16 @@ def list_departments(context: str, include_generated: bool = True, include_disab
         # Resolve through get_properties so schema defaults fill in — the
         # raw cache node stores only sparse overrides, so default-valued
         # fields (independent/publishable/renderable) may be absent there.
-        props = api.config.get_properties(DEPARTMENTS_URI / context / dept_name) or {}
-        # Read every field with .get() + its schema default. get_properties
-        # fills schema defaults on a migrated config, but an un-migrated or
-        # sparsely-written node can be missing independent/publishable/
-        # renderable — direct-key access (props['independent']) then raised
-        # KeyError, which callers swallowed into a differently-shaped
-        # fallback pool. The defaults here match the schema and
-        # add_department() (independent=False, publishable=True,
-        # renderable=False), so migrated configs are unaffected.
+        props = api.config.get_properties(DEPARTMENTS_URI / context / dept_name)
+        # independent/publishable/renderable come from the department
+        # schema, so a config missing one is a broken config and raises.
+        # generated/enabled/short are not in the schema: they are optional
+        # flags only some departments pin, and absent means the default.
         departments.append(Department(
             name = dept_name,
-            independent = props.get('independent', False),
-            publishable = props.get('publishable', True),
-            renderable = props.get('renderable', False),
+            independent = props['independent'],
+            publishable = props['publishable'],
+            renderable = props['renderable'],
             generated = props.get('generated', False),
             enabled = props.get('enabled', True),
             short = props.get('short'),
@@ -366,34 +348,3 @@ def set_entity_departments(entity_uri: Uri, names: list[str]):
     own['departments'] = [name for name in pool if name in set(names)]
     api.config.set_own_properties(entity_uri, own)
 
-
-def assign_department(entity_uri: Uri, name: str):
-    """Add a department to an entity's assignment.
-
-    An entity that was inheriting the whole pool is materialised first, so
-    assignment is always explicit once touched.
-    """
-    current = list_entity_department_names(entity_uri, include_disabled=True)
-    if name in current:
-        return
-    set_entity_departments(entity_uri, current + [name])
-
-
-def unassign_department(entity_uri: Uri, name: str):
-    """Drop a department from an entity's assignment.
-
-    This is a scoping decision, not a delete: any workfile or export the
-    department already has stays on disk and keeps composing into the build.
-    """
-    current = list_entity_department_names(entity_uri, include_disabled=True)
-    if name not in current:
-        return
-    remaining = [n for n in current if n != name]
-    if not remaining:
-        # An empty assignment is how an entity says "inherit the pool", so
-        # there is no way to store "this entity has no departments at all".
-        raise ValueError(
-            'Cannot unassign the last department — an entity scoped to '
-            'nothing is indistinguishable from one inheriting the pool'
-        )
-    set_entity_departments(entity_uri, remaining)

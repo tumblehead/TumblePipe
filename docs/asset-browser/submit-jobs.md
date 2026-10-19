@@ -11,12 +11,12 @@ dialog, which had one form for the whole batch and submitted from inside
 Houdini.
 
 Source: [`submit_jobs_dialog.py`](../../python/tumblepipe/asset_browser/submit_jobs_dialog.py)
-(the dialog), [`farm_grid.py`](../../python/tumblepipe/asset_browser/farm_grid.py)
-(what cells, ticks and warnings mean), [`farm_status.py`](../../python/tumblepipe/asset_browser/farm_status.py)
-(reading each cell's status), [`submit_jobs_resolve.py`](../../python/tumblepipe/asset_browser/submit_jobs_resolve.py)
-(how each setting resolves per entity), [`submit_plan.py`](../../python/tumblepipe/farm/submit_plan.py)
+(the dialog), [`submit_grid.py`](../../python/tumblepipe/farm/submit/grid.py)
+(what cells, ticks and warnings mean), [`submit_status.py`](../../python/tumblepipe/farm/submit/status.py)
+(reading each cell's status), [`submit_settings.py`](../../python/tumblepipe/farm/submit/settings.py)
+(how each setting resolves per entity), [`submit_plan.py`](../../python/tumblepipe/farm/submit/plan.py)
 (the background submission) and
-[`batch_submit.py`](../../python/tumblepipe/farm/jobs/houdini/batch_submit.py)
+[`batch_submit.py`](../../python/tumblepipe/farm/pipelines/batch_submit.py)
 (what gets built and submitted). Farm prerequisites are in
 [Deadline and the render farm](../deadline.md).
 
@@ -417,7 +417,7 @@ discovered on the stage, never assumed — see
 
 ## Job families
 
-Source: [`farm/jobs/houdini/`](../../python/tumblepipe/farm/jobs/houdini/).
+Source: [`farm/pipelines/`](../../python/tumblepipe/farm/pipelines/).
 Each job runs in a Deadline **pool** from the settings' Pool field and a
 fixed Deadline **group** per task type. Every family ends in a **notify**
 job that posts to Discord — render and playblast notifies address the
@@ -442,7 +442,7 @@ Output locations are in [Compositing → Where renders land](../compositing.md#w
 | **render**, Full range | Render cells | per channel: `full_render_<ch>` (`karma`) → `full_denoise_<ch>` (`denoise`, if Denoise) → `layer_mp4_<ch>` (`encode`); then across channels: `edit` (`edit`, if Copy to edit), `slapcomp` (`houdini`) → `slapcomp_mp4` (`encode`) → `slapcomp_notify` (`general`) | `render:/render/<shot>/<dept>/<channel>/vNNNN/<aov>/`, denoised frames under the `denoise` department, slapcomp MP4 + daily. Each channel keeps its own version counter (a new `characters` channel starts at v0001 while `default` may be at v0008); the slapcomp reads each channel at its own version and stacks them in the shot's channel order |
 | **render**, Preview | Render cells | per channel: `partial_render_<ch>` (`karma`) → `partial_denoise_<ch>` (if Denoise) → `partial_notify_<ch>` — three frames, no MP4 | same version folders, three frames only; the notify carries first/middle/last |
 | **render**, Preview + Full range | Render cells | both chains above; each `full_render_<ch>` waits on its `partial_render_<ch>` and renders into the same version | the preview's three frames are posted, then the full range overwrites them in the same version folder |
-| **stage_render** | Render cells with **Standalone** | `stage` (`houdini`) → the render chain above | `stage_<channel>.usd` in the job's data dir |
+| **render**, Standalone | Render cells with **Standalone** | `stage` (`houdini`) → the render chain above | `stage_<channel>.usd` in the job's data dir |
 | **publish** | Publish cells; Farm mode in the process dialog | `publish_<dept>` (`houdini`) per department, chained → `notify` (`general`). A renderable asset publish then queues a **build** | `export/<entity>/<channel>/<dept>/vNNNN/` |
 | **build** | after a farm publish; Build USD in Farm mode; before the previews of a row that also publishes | `build` / `build_<channel>` (`general`) | `_staged/<channel>/vNNNN/` |
 | **collapse** | Playblast or (non-Standalone) Render cells on a row that also publishes | `collapse` (`houdini`), after the row's builds; it then submits the playblast and render families above with the fresh snapshot | nothing of its own; the previews' batches |
@@ -450,9 +450,9 @@ Output locations are in [Compositing → Where renders land](../compositing.md#w
 | **composite** | the `th::build_comp` node's **Submit** | see [Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s) | `render:/render/<shot>/composite/…` |
 | **export_render** | the `th::lookdev_studio` HDA | `export` (`houdini`) → `notify` | lookdev turntable renders |
 | **propagate**, **update** | command line only (`propagate`: re-publish dependents of a department; `update`: republish every shot up to a department) | publish/build jobs → `notify` | exports and staged builds |
-| **cloud_render**, **cloud_stage_render** | the cloud stage task, not the dialog | `stage` → render → denoise → slapcomp → mp4 → notify (`cloud_karma`) | as render |
 
-Job priorities come from the settings; notify jobs run at 90, edit at 90,
-stage notify at 60. Playblasts run in the `karma` group with final renders
+Job priorities come from the settings, inside the
+[Farm priorities](#farm-priorities) bands; every notify job runs at 100,
+edit at 90. Playblasts run in the `karma` group with final renders
 — they are Karma XPU renders and need the same NVIDIA GPU workers, see
 [Farm worker prerequisites](../deadline.md#farm-worker-prerequisites).

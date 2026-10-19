@@ -12,15 +12,12 @@ environment variable its installer sets. Without it, Submit stops with
 Install the client, restart Houdini, and submit again. For working without a
 farm, see "Rendering without a farm" in `docs/compositing.md`.
 
-## Plugins: HPM (default) and UV (legacy)
+## The HPM plugin
 
-Farm tasks live inside the TumblePipe package, which artists run via
+Farm workers live inside the TumblePipe package, which artists run via
 [HPM](https://github.com/3db-dk/hpm) out of `~/.hpm/packages/<name>@<version>/`.
-Two plugins can run them:
-
-- **HPM** *(default)* —
-  [tumblehead/deadline-hpm-plugin](https://github.com/tumblehead/deadline-hpm-plugin).
-  A job bundles an `hpm.toml` whose dependency is the task package at its exact
+The [tumblehead/deadline-hpm-plugin](https://github.com/tumblehead/deadline-hpm-plugin)
+runs them. A job bundles an `hpm.toml` whose dependency is the task package at its exact
   version and whose `[scripts.task]` runs `python -m <module>` with
   `package-env = true` (plus the task's own `requirements`, if any). Its
   `[runtime]` supplies `TH_PROJECT_PATH`, which TumblePipe's own manifest
@@ -34,16 +31,10 @@ Two plugins can run them:
   deps on `PYTHONPATH`. No node has to mirror the submitter's disk, and the
   plugin self-bootstraps the `hpm` CLI so render nodes need no TumbleTrove
   Desktop install. (Requires hpm ≥ v0.22.2 for `package-env`.)
-- **UV** *(legacy)* —
-  [tumblehead/deadline-uv-plugin](https://github.com/tumblehead/deadline-uv-plugin).
-  Bakes an **absolute** script path at submit time. This only works when every
-  worker mirrors the submitter's `~/.hpm` store at the identical path, which is
-  why it fails under HPM with `Script file not found: …/.hpm/packages/…`.
 
-Install a plugin by copying its directory into
-`<DeadlineRepository>/custom/plugins/<HPM|UV>/` and restarting the workers that
-should pick it up. The two can coexist during migration; a job chooses via
-`Job(..., plugin="HPM")` (see below).
+Install the plugin by copying its directory into
+`<DeadlineRepository>/custom/plugins/HPM/` and restarting the workers that
+should pick it up.
 
 ## Farm worker prerequisites
 
@@ -64,8 +55,7 @@ Each worker needs the same environment as an artist workstation:
   HPM the task runs in native Windows python and drives Houdini's bundled tools
   directly — `husk.exe`, the Windows USD resolver, `iconvert`, `idenoise` for
   denoising, and Houdini's `hoiiotool`/`hffmpeg` for image/video processing.
-  **No WSL2 or UV is needed** for HPM jobs (the legacy UV plugin still requires
-  both).
+  No WSL2 or UV is needed.
 
   At submit the creating Houdini's full version is captured into the job env as
   `TH_HOUDINI_VERSION` (e.g. `22.0.368`); the worker selects a matching install —
@@ -99,8 +89,7 @@ Each worker needs the same environment as an artist workstation:
   `denoiseai` COP uses but needs no token (verified by running it with
   `SESI_LMHOST` pointed at a dead host, where hython cannot license at all). It
   still needs a Houdini *install* — that is where `idenoise` lives — but the
-  `denoise` group never contends for seats. See
-  `designs/denoise-without-hython.md`.
+  `denoise` group never contends for seats.
 
   It also runs OIDN on the **CPU**, so `denoise` workers need no GPU. OIDN's
   CUDA device quantizes what it writes to a couple of hundred values per stop,
@@ -147,68 +136,60 @@ For the **HPM** plugin specifically — **no per-node setup is required**:
 
 `tumblepipe.apps.deadline` is a generic `deadlinecommand` wrapper:
 
-- `Job` — a single task (script + optional `requirements.txt` + args).
+- `Job` — one Deadline job (a package script and its arguments).
 - `Batch` — a named collection of jobs with optional dependencies.
 - `Deadline` — the submission client.
 
-It is intentionally HPM-agnostic. Farm jobs use the thin factory
-`tumblepipe.farm.deadline.Task`, which builds a `Job` **and** generates the
-HPM `hpm.toml` manifest for it (the manifest the worker installs to resolve the
-task's package). `submit()` writes that manifest into the shared job dir and
-hands the plugin only its path — generation is owned by the job creators, not
-the generic wrapper.
+It is intentionally HPM-agnostic. A farm job is built by
+`tumblepipe.farm.deadline.farm_job`, which makes a `Job` that runs one of the
+package's workers (`farm/workers/<name>.py`) on a context dict it bundles, with
+the farm's base environment, **and** generates the HPM `hpm.toml` manifest the
+worker's machine installs to resolve the package. `submit()` writes that
+manifest into the shared job dir and hands the plugin only its path.
 
 ```python
 from pathlib import Path
 
 from tumblepipe.apps.deadline import Batch, Deadline
-from tumblepipe.farm.deadline import Task
+from tumblepipe.farm.deadline import farm_job, run_once
 
-# The script must live inside an installed HPM package, i.e. under
-# ~/.hpm/packages/<name>@<version>/...  — the package identity + manifest are
-# derived from it. Submitting from a dev/editable checkout is rejected, because
-# it has no reproducible version to ship.
-job = Task(
-    Path("/path/to/.hpm/packages/tumblepipe@1.12.2/python/.../script.py"),
-    None,                       # per-task requirements.txt; None if the task has none
-    "arg1",
-    "arg2",
+# The package must be an installed HPM package (under
+# ~/.hpm/packages/<name>@<version>/): its identity and manifest are derived
+# from the worker's path. A dev/editable checkout is rejected, because it has
+# no reproducible version to ship.
+job = farm_job(
+    "notify",                   # farm/workers/notify.py
+    {"user_name": "me", "channel_name": "renders",
+     "message": "hello", "command": {"mode": "notify"}},
+    Path("/path/to/staging"),   # where the context is written before bundling
+    name="My notify",
+    pool="general",
+    group="general",
+    priority=50,
+    max_minutes=10,
 )
-
-job.name = "My Render Job"
-job.pool = "general"
-job.group = "karma"
-job.priority = 50
-job.start_frame = 1
-job.end_frame = 100
-job.env.update({"MY_VAR": "value"})
+run_once(job, 1, 1)
 
 batch = Batch("My batch")
 batch.add_job(job)
-
-farm = Deadline()
-farm.submit(batch, Path("/path/to/jobs-dir"))
+Deadline().submit(batch, Path("/path/to/jobs-dir"))
 ```
 
-The default plugin is set by `DEFAULT_PLUGIN` in `tumblepipe.apps.deadline`
-(pass `plugin="UV"` to `Task`/`Job` for the legacy path). Under **HPM**, the
-task's third-party Python dependencies come from two places, both resolved into
-the package-env: the package's own `hpm.toml` `[python_dependencies]`, plus any
-per-task `requirements.txt` passed as `requirements_path`. `Task` reads that
-file and writes its specs into the generated manifest's `[scripts.task]`
-`requirements`, which the package-env merges on top of the package deps as
-"extra requirements" (visible in the worker log as
-`N manifest dep(s) + M extra requirement(s)`). A task with libraries the package
-itself doesn't declare — e.g. `notify` needs `discord.py` — relies on this; the
-file is `None` only when the task adds nothing beyond the package deps.
+A worker's third-party Python dependencies come from two places, both resolved
+into the package-env: the package's own `hpm.toml` `[python_dependencies]`,
+plus the worker's own `farm/workers/<name>_requirements.txt` when there is
+one. `farm_job` writes that file's specs into the generated manifest's
+`[scripts.task]` `requirements`, which the package-env merges on top of the
+package deps as "extra requirements" (visible in the worker log as
+`N manifest dep(s) + M extra requirement(s)`). `notify` needs `discord.py`,
+which the package itself does not declare.
 
 Use `Batch.add_dep(first, second)` to mark `second` as a dependency of
 `first`, or `Batch.add_jobs_with_deps(jobs, deps)` to wire a whole graph
-at once. See the farm job implementations in
-`python/tumblepipe/farm/jobs/` for complete examples.
+at once. The job builders in `python/tumblepipe/farm/jobs/` and the
+pipelines in `python/tumblepipe/farm/pipelines/` are complete examples.
 
 ## Further reading
 
 - [deadline-hpm-plugin](https://github.com/tumblehead/deadline-hpm-plugin) — the default plugin and its options
 - [Deadline plugin development](https://docs.thinkboxsoftware.com/products/deadline/10.1/1_User%20Manual/manual/manual-plugins.html)
-- [Astral UV documentation](https://docs.astral.sh/uv/)

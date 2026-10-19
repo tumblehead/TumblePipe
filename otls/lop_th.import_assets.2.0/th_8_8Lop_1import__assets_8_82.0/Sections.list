@@ -11,4 +11,6 @@ DiveTarget	DiveTarget
 DefaultState	DefaultState
 PythonModule	PythonModule
 OnCreated	OnCreated
+Version	Version
+SyncNodeVersion	SyncNodeVersion
 ExtraFileOptions	ExtraFileOptions

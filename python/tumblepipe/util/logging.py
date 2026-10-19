@@ -129,17 +129,3 @@ def get_log_paths() -> list[Path]:
             paths.append(Path(filename))
     return paths
 
-
-def set_workspace(workspace_path: Optional[Path]) -> None:
-    """Update workspace-specific log location."""
-    global _workspace_handler
-
-    root_logger = logging.getLogger()
-    if _workspace_handler:
-        root_logger.removeHandler(_workspace_handler)
-        _workspace_handler = None
-
-    if workspace_path:
-        workspace_log_path = workspace_path / LOG_DIR_NAME / _get_log_filename()
-        _workspace_handler = _create_file_handler(workspace_log_path)
-        root_logger.addHandler(_workspace_handler)

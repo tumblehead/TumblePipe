@@ -4470,11 +4470,11 @@ Content-Type: text/plain
       defaultString = \"\"
       flags = 0
       start = 41.666666666666664
-      segment { length = 0 expr = "from tumblepipe.pipe.houdini import util
+      segment { length = 0 expr = "from tumblepipe.pipe.houdini import prim_queries
 
 node = hou.node('../IN_stage')
 root = node.stage().GetPseudoRoot()
-return ' '.join(util.list_lpe_tags(root))" language = python }
+return ' '.join(prim_queries.list_lpe_tags(root))" language = python }
     }
   }
 
@@ -5743,7 +5743,7 @@ Content-Type: text/plain
     channel aov_names {
       lefttype = extend
       righttype = extend
-      defaultString = "\"from tumblepipe.pipe.houdini.util import list_render_vars
+      defaultString = "\"from tumblepipe.pipe.houdini.prim_queries import list_render_vars
 node = hou.pwd()
 root = node.stage().GetPseudoRoot()
 prim = root.GetPrimAtPath('/Render/Products/Vars')
@@ -9736,7 +9736,7 @@ Content-Type: text/plain
       flags = 0
       segment { options = {	 autoslope  ai ao }
 
-	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini import util
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini import prim_queries
 
 try:
     hda = hou.node(\"..\")
@@ -9748,7 +9748,7 @@ try:
         for i in range(hda.parm(\"tags\").eval())
         if hda.parm(\"enable%d\" % i).eval()
     ]
-    missing = util.unmatched_lpe_tags(stage.GetPseudoRoot(), tag_names)
+    missing = prim_queries.unmatched_lpe_tags(stage.GetPseudoRoot(), tag_names)
     if not missing: return \"\"
     return \"No light carries: %s. Check the Lights pattern - no beauty_<tag> AOV is built for a tag nothing carries.\" % \", \".join(missing)
 except Exception:

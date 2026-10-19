@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 
-ENTITY_ROOT_URI = Uri.parse_unsafe('entity:/')
+ENTITY_ROOT_URI = Uri.parse('entity:/')
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,11 @@ def list_pools() -> list[Pool]:
     """List all available render pools."""
     pools = _get_root_farm().get('pools', [])
     return [Pool(name=p) for p in pools]
+
+
+def get_default_pool() -> str | None:
+    """The project's default render pool; None when none is set."""
+    return _get_root_farm().get('default_pool') or None
 
 
 def add_pool(name: str) -> None:

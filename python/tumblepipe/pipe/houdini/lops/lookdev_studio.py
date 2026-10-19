@@ -5,90 +5,53 @@ import shutil
 import hou
 
 from tumblepipe.api import (
-    local_path,
     path_str,
     get_user_name,
     api
 )
-from tumblepipe.config.timeline import FrameRange
-from tumblepipe.config.farm import list_pools
 from tumblepipe.util.io import store_json
 from tumblepipe.util.uri import Uri
 import tumblepipe.pipe.houdini.nodes as ns
-import tumblepipe.pipe.houdini.util as util
-from tumblepipe.pipe.paths import load_entity_context
+from tumblepipe.pipe.houdini import prim_queries
+from tumblepipe.pipe.houdini.farm_node import FarmNode
+from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
+from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
 
-def _entity_from_context_json():
-    # Path to current workfile
-    file_path = Path(hou.hipFile.path())
-    if not file_path.exists(): return None
+class LookdevStudio(FrameRangeNode, FarmNode, ns.Node):
 
-    # Look for context.json in the workfile directory
-    context_json_path = file_path.parent / "context.json"
-    if not context_json_path.exists(): return None
+    # The farm turntable range: First/Last only, no source menu, no roll.
+    FRAME_RANGE_PARM = None
+    FRAME_SETTINGS_PARM = 'farm_frame_settings'
+    ROLL_SETTINGS_PARM = None
+    POOL_PARM = 'farm_pool'
+    PRIORITY_PARM = 'farm_priority'
+    BATCH_SIZE_PARM = 'farm_batchsize'
 
-    # Load context using shared helper
-    context = load_entity_context(context_json_path)
-    if context is None: return None
-
-    return context
-
-class LookdevStudio(ns.Node):
-    def __init__(self, native):
-        super().__init__(native)
-
-    def list_pool_names(self):
-        return [pool.name for pool in list_pools()]
-    
-    def get_frame_range(self):
-        first_frame = self.parm('farm_frame_settingsx').eval()
-        last_frame = self.parm('farm_frame_settingsy').eval()
-        return FrameRange(
-            first_frame,
-            last_frame,
-            0, 0
-        )
-    
-    def get_priority(self):
-        return self.parm('farm_priority').eval()
-    
-    def get_pool_name(self):
-        pool_names = self.list_pool_names()
-        if len(pool_names) == 0: return None
-        pool_name = self.parm('farm_pool').eval()
-        if pool_name not in pool_names: return pool_names[0]
-        return pool_name
-    
     def get_step_size(self):
         return self.parm('farm_stepsize').eval()
-
-    def get_batch_size(self):
-        return self.parm('farm_batchsize').eval()
 
     def get_aov_names(self):
         root = self.native().node('OUT/stage_OUT').stage().GetPseudoRoot()
         return [
             aov_path.rsplit('/', 1)[-1].lower()
-            for aov_path in util.list_render_vars(root)
+            for aov_path in prim_queries.list_render_vars(root)
         ]
-    
-    
-    def submit(self):
-        
-        # Import the job module
-        from tumblepipe.farm.jobs.houdini.export_render import (
-            job as export_render_job
-        )
 
-        # Get the entity
-        context = _entity_from_context_json()
-        assert context is not None, 'Invalid workfile path'
-        # A Multi's workfile records the Multi, and a turntable renders one
-        # asset: the group URI names no entity for the farm to resolve.
-        assert context.entity_uri.purpose == 'entity', (
-            f'This workfile belongs to the Multi {context.entity_uri}, and a '
-            f'turntable renders one asset.'
-        )
+    def submit(self):
+
+        # Import the job module
+        from tumblepipe.farm.pipelines import export_render as export_render_job
+
+        # A turntable renders one asset, from that asset's workfile. A
+        # Multi's workfile records the group, which names no entity for the
+        # farm to resolve.
+        context = scene_context()
+        entity_uri = entity_in_contexts(context, contexts=('assets',))
+        if entity_uri is None:
+            raise self._error(
+                'a turntable submits from one asset\'s workfile; this scene '
+                f'is {context.entity_uri if context else "not a pipeline workfile"}'
+            )
 
         # Parameters
         node_path = self.node('OUT/stage_OUT').path()
@@ -101,7 +64,7 @@ class LookdevStudio(ns.Node):
         aov_names = self.get_aov_names()
 
         # Open temporary directory
-        root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
@@ -138,7 +101,7 @@ class LookdevStudio(ns.Node):
                 .relative_to(temp_path)
             )
             store_json(render_settings_path, dict(
-                variant_names = ['main'],
+                channel_names = ['main'],
                 aov_names = aov_names,
                 overrides = dict()
             ))
@@ -146,14 +109,14 @@ class LookdevStudio(ns.Node):
             # Submit the job
             export_render_job.submit(dict(
                 entity = dict(
-                    uri = str(context.entity_uri),
+                    uri = str(entity_uri),
                     department = context.department_name
                 ),
                 settings = dict(
                     user_name = get_user_name(),
                     purpose = 'turntable',
                     pool_name = pool_name,
-                    variant_name = 'main',
+                    channel_name = 'main',
                     render_department_name = 'render',
                     render_settings_path = path_str(
                         relative_render_settings_path
@@ -173,15 +136,121 @@ class LookdevStudio(ns.Node):
 def create(scene, name):
     return ns.create_node(scene, name, LookdevStudio, 'lookdev_studio')
 
-def submit():
-    raw_node = hou.pwd()
-    node = LookdevStudio(raw_node)
-    node.submit()
+# HDA callbacks ---------------------------------------------------------------
+# The viewport helpers below used to live in the HDA's PythonModule.
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node)
+TURNTABLE_CAMERA = '/cameras/turntable_camera'
+
 
 def on_created(raw_node):
+    ns.set_node_style(raw_node)
+    raw_node.setOutputForViewFlag(1)
 
-    # Set node style
-    set_style(raw_node)
+
+def _scene_viewer():
+    return hou.ui.curDesktop().paneTabOfType(hou.paneTabType.SceneViewer)
+
+
+def submit_to_farm(kwargs):
+    """Submit the turntable with the batch-render switch on for the submit."""
+    raw_node = kwargs['node']
+    batchrender = raw_node.parm('batchrender')
+    batchrender.set(1)
+    try:
+        LookdevStudio(raw_node).submit()
+    finally:
+        batchrender.set(0)
+
+
+def set_view_transform(kwargs):
+    scene_viewer = _scene_viewer()
+    scene_viewer.setUsingOCIO(True)
+    scene_viewer.setOCIODisplayView(display="sRGB - Display", view="ACES 1.0 - SDR Video")
+
+
+def dive_to_node(kwargs, node_path):
+    """Open a floating network editor on the parent of ``node_path``."""
+    node = kwargs['node'].node(node_path)
+    panel = hou.ui.curDesktop().createFloatingPanel(hou.paneTabType.NetworkEditor)
+    panel.setName("Edit Turntable Lights")
+    panel.setSize((1500, 1500))
+    pane = panel.panes()[-1]
+    pane.setShowPaneTabs(False)
+    pane.showPaneTabsStow(False)
+    tab = panel.paneTabs()[-1]
+    tab.setPwd(node.parent())
+    tab.setShowNetworkControls(False)
+
+
+def toggle_render_view(kwargs):
+    # render names: 'Houdini VK', 'Karma CPU', 'Karma XPU', 'Storm'
+    scene_viewer = _scene_viewer()
+    if scene_viewer.currentHydraRenderer() == "Houdini VK":
+        scene_viewer.setHydraRenderer('Karma XPU')
+    else:
+        scene_viewer.setHydraRenderer('Houdini VK')
+
+
+def _turntable_range(raw_node):
+    return (
+        raw_node.evalParm("asset_turn_framerangemin"),
+        raw_node.evalParm("light_turn_framerangemax"),
+    )
+
+
+def set_timeline_to_loop(kwargs):
+    first, last = _turntable_range(kwargs['node'])
+    hou.playbar.setFrameRange(first, last)
+    hou.playbar.setPlaybackRange(first, last)
+
+
+def set_view_camera(kwargs):
+    _scene_viewer().viewports()[-1].setCamera(TURNTABLE_CAMERA)
+
+
+def playblast(kwargs):
+    """Flipbook the turntable through the turntable camera into MPlay."""
+    raw_node = kwargs['node']
+    set_view_camera(kwargs)
+    scene_viewer = _scene_viewer()
+    viewport = scene_viewer.curViewport()
+    flipbook_options = scene_viewer.flipbookSettings()
+    flipbook_options.useResolution(True)
+    flipbook_options.resolution((
+        raw_node.evalParm("render_resolutionx"),
+        raw_node.evalParm("render_resolutiony"),
+    ))
+    flipbook_options.frameRange(_turntable_range(raw_node))
+    flipbook_options.output("")  # Empty means send to MPlay
+    flipbook_options.appendFramesToCurrent(True)
+    flipbook_options.antialias(hou.flipbookAntialias.Good)
+    viewport.settings().setLighting(hou.viewportLighting.HighQualityWithShadows)
+    scene_viewer.flipbook(viewport, flipbook_options)
+
+
+def apply_slapcomp(kwargs):
+    viewport = _scene_viewer().curViewport()
+    viewport.setSlapcomp(kwargs['node'].path())
+
+
+_TRANSFORM_PARMS = (
+    "Translate_Camerax",
+    "Translate_Cameray",
+    "Translate_Cameraz",
+    "rotate_camerax",
+    "rotate_cameray",
+    "rotate_cameraz",
+    "asset_angle",
+    "light_rotation",
+    "asset_offsetx",
+    "asset_offsety",
+    "asset_offsetz",
+)
+
+
+def reset_transforms(kwargs):
+    raw_node = kwargs['node']
+    for parm_name in _TRANSFORM_PARMS:
+        raw_node.parm(parm_name).set(0)
+    raw_node.parm("focalLength").set(35)
+

@@ -52,7 +52,7 @@ class Uri:
     # ── Construction ─────────────────────────────────────────────
 
     @staticmethod
-    def parse_unsafe(raw_uri: str) -> 'Uri':
+    def parse(raw_uri: str) -> 'Uri':
         """Parse a URI string, raising ``ValueError`` on anything invalid."""
         if ':' not in raw_uri:
             raise ValueError(f'Invalid URI "{raw_uri}"')

@@ -1,6 +1,6 @@
 """A small non-modal window that follows a Farm submission running elsewhere.
 
-The submission itself runs in a separate process (``tumblepipe.farm.submit_plan``);
+The submission itself runs in a separate process (``tumblepipe.farm.submit.plan``);
 this window only reads the progress file it appends to, so nothing here can
 block Houdini. Closing the window (or Houdini) does not stop the submission;
 **Cancel** does, between entities (``submit_plan.request_cancel``).
@@ -13,10 +13,10 @@ import subprocess
 from pathlib import Path
 from typing import Sequence
 
-from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QColor, QDesktopServices
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QHBoxLayout, QHeaderView, QLabel, QMessageBox, QProgressBar, QPushButton,
+    QHBoxLayout, QHeaderView, QLabel, QProgressBar, QPushButton,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -25,7 +25,9 @@ from tumbletrove.asset_browser.core.theme import (
     TEXT_PRIMARY, TEXT_SECONDARY,
 )
 
-from tumblepipe.farm import submit_plan
+from tumblepipe.farm.submit import plan as submit_plan
+from tumblepipe.util import desktop
+from tumblepipe.pipe.houdini.ui.report import report_failure
 
 from .submit_jobs_dialog import VISIBLE_SCROLLBARS
 
@@ -300,14 +302,13 @@ class FarmSubmissionWindow(QWidget):
     # ── actions ───────────────────────────────────────────
 
     def _open_folder(self) -> None:
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._plan_path.parent)))
+        desktop.open_in_file_browser(self._plan_path.parent)
 
     def _cancel_submission(self) -> None:
         try:
             submit_plan.request_cancel(self._plan_path)
-        except OSError as error:
-            log.exception("Could not cancel the submission")
-            QMessageBox.critical(self, "Farm Submit", f"Could not cancel:\n\n{error}")
+        except Exception as error:
+            report_failure("Cancelling the farm submission", error)
             return
         self._cancelling = True
         self._cancel.setEnabled(False)
@@ -330,8 +331,7 @@ class FarmSubmissionWindow(QWidget):
         try:
             window = start_submission(configs, parent=self.parentWidget())
         except Exception as error:
-            log.exception("Could not resubmit the unfinished entities")
-            QMessageBox.critical(self, "Farm Submit", f"Could not retry:\n\n{error}")
+            report_failure("Resubmitting the unfinished entities", error)
             return
         window.show()
         self.close()

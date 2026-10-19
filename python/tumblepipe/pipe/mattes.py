@@ -5,8 +5,7 @@ Two kinds of single-channel AOV, both for grading:
 - **Matte** ``objid_<name>``: 1 on the matte's prims, 0 elsewhere. A constant
   float primvar ``objid_<name>`` is set on each matched prim (primvars
   inherit, so a prim's descendants carry it too) and a primvar RenderVar
-  reads it -- the mechanism ``th::puzzlemattes`` already uses, one channel
-  instead of three. A matched GeomSubset (one material's faces, e.g. a
+  reads it. A matched GeomSubset (one material's faces, e.g. a
   bench's planks) gets a per-face ``uniform`` primvar on its mesh instead.
 - **Distance ramp** ``ramp_<name>``: 0 at ``near``, 1 at ``far``, clamped;
   the sky reads 1. Karma evaluates it through a *global AOV material*

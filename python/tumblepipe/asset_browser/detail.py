@@ -9,24 +9,33 @@ row — is constructed by a method on :class:`DetailSectionBuilder`.
 The catalog's :meth:`get_detail_sections` returns ``DetailSection``
 entries whose ``widget_factory`` points at one of these methods.
 
-Like :class:`WorkfileManager`, the builder holds a back-reference to
-the catalog because every section reads multiple catalog services
-(asset resolver, container parser, workfile manager for user / mtime
-labels, dept-version overrides, membership lookups, etc.). The win
-of this module is file separation — the 1100 LoC of Qt widget code
-no longer dominates the catalog file.
+The builder is handed the services its sections read (workfiles, scene,
+containers, resolver, department scope, the per-asset version overrides,
+the browser refresh) and two catalog actions (the Departments… dialog and
+the export folder lookup), not the catalog.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
-from .submit_jobs_resolve import read_channel_list
+from tumblepipe.pipe.houdini.ui.report import reporting
+from tumblepipe.farm.submit.settings import channel_list
 
 if TYPE_CHECKING:
-    from .catalog import PipelineCatalog
     from tumbletrove.asset_browser.api.types import DetailContext
+    from .projects import PipelineProjectRegistry
+    from .clients import ClientPool
+    from .containers import ContainerManager
+    from .dept_scope import DepartmentScope
+    from .houdini import ProjectActivator
+    from .refresh import BrowserRefresh
+    from .resolver import AssetResolver
+    from .scene import SceneManager
+    from .types import DeptVersionStore
+    from .workfiles import WorkfileManager
 
 log = logging.getLogger(__name__)
 
@@ -34,25 +43,50 @@ log = logging.getLogger(__name__)
 class DetailSectionBuilder:
     """Qt widget construction for the Pipeline catalog's detail panel."""
 
-    def __init__(self, catalog: "PipelineCatalog") -> None:
-        self._catalog = catalog
+    def __init__(
+        self,
+        catalog_id: str,
+        *,
+        registry: "PipelineProjectRegistry",
+        clients: "ClientPool",
+        resolver: "AssetResolver",
+        activator: "ProjectActivator",
+        workfiles: "WorkfileManager",
+        scene: "SceneManager",
+        containers: "ContainerManager",
+        dept_scope: "DepartmentScope",
+        dept_versions: "DeptVersionStore",
+        refresh: "BrowserRefresh",
+        edit_departments: Callable[[str], None],
+        export_path: Callable[[str], Path | None],
+    ) -> None:
+        self._catalog_id = catalog_id
+        self._registry = registry
+        self._clients = clients
+        self._resolver = resolver
+        self._activator = activator
+        self._workfiles = workfiles
+        self._scene = scene
+        self._containers = containers
+        self._dept_scope = dept_scope
+        self._dept_versions = dept_versions
+        self._refresh = refresh
+        self._edit_departments = edit_departments
+        self._export_path = export_path
 
     @staticmethod
     def mix_hex(base_hex: str, accent_hex: str, ratio: float) -> str:
         """Linearly blend two ``#rrggbb`` colors. ``ratio`` is the share
         of ``accent_hex`` in the result (0..1)."""
-        try:
-            def _hx(s: str) -> tuple[int, int, int]:
-                s = s.lstrip("#")
-                return int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
-            br, bg, bb = _hx(base_hex)
-            ar, ag, ab = _hx(accent_hex)
-            r = int(br + (ar - br) * ratio)
-            g = int(bg + (ag - bg) * ratio)
-            b = int(bb + (ab - bb) * ratio)
-            return f"#{r:02x}{g:02x}{b:02x}"
-        except Exception:
-            return base_hex
+        def _hx(s: str) -> tuple[int, int, int]:
+            s = s.lstrip("#")
+            return int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
+        br, bg, bb = _hx(base_hex)
+        ar, ag, ab = _hx(accent_hex)
+        r = int(br + (ar - br) * ratio)
+        g = int(bg + (ag - bg) * ratio)
+        b = int(bb + (ab - bb) * ratio)
+        return f"#{r:02x}{g:02x}{b:02x}"
 
     def build_combined_info_section(self, ctx: DetailContext):
         """Info tab content — identity breadcrumb, filesystem path,
@@ -162,11 +196,7 @@ class DetailSectionBuilder:
             BG_MID, FONT_TINY, TEXT_DIM, scaled,
         )
 
-        try:
-            path = self._catalog._resolve_export_path(detail.id if detail else "")
-        except Exception:
-            log.debug("export-path resolution failed", exc_info=True)
-            return None
+        path = self._export_path(detail.id if detail else "")
         if not path:
             return None
 
@@ -202,7 +232,8 @@ class DetailSectionBuilder:
         row.addWidget(copy_btn)
         return w
 
-    def resolve_identity_segments(self, detail):
+    @staticmethod
+    def resolve_identity_segments(detail):
         """Return the breadcrumb segments for an asset's URI, or
         ``None`` when no identity is resolvable.
 
@@ -214,29 +245,22 @@ class DetailSectionBuilder:
         parts = [p for p in parts if p]
         if not parts:
             return None
-        # Either spelling: "variants" is what the catalog writes today,
-        # "channels" is where it is going. Reading only one produced a
-        # SHORTER BREADCRUMB with no error on the other -- the quiet form of
-        # showing the wrong channel.
-        channels = read_channel_list(meta, "asset browser metadata")
+        channels = channel_list(meta)
         if "type:asset" in detail.tags and channels:
             return parts + ["/".join(channels)] if len(channels) > 1 \
                 else parts + [str(channels[0])]
         return parts
 
     def copy_to_clipboard(self, text: str) -> None:
-        try:
-            from PySide6.QtWidgets import QApplication
-            QApplication.clipboard().setText(text)
-        except Exception:
-            log.debug("clipboard copy failed", exc_info=True)
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(text)
 
     def build_container_info_section(self, ctx: DetailContext):
         """Info tab content for a Group/Scene detail.
 
         Shows identity (project / context / path) and member count.
         For groups, the editable departments toggle lives on its own
-        Departments tab (see :meth:`_build_group_departments_section`).
+        Departments tab (see :meth:`build_departments_section`).
         """
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import (
@@ -319,9 +343,7 @@ class DetailSectionBuilder:
                 )
                 btn.clicked.connect(
                     lambda checked=False, d=dept_name:
-                        self.execute_action(
-                            f"open_workfile:{d}", detail,
-                        )
+                        self._workfiles.open_group_workfile(detail.id, d)
                 )
                 btn_row.addWidget(btn)
             btn_row.addStretch(1)
@@ -330,91 +352,13 @@ class DetailSectionBuilder:
         vbox.addStretch(1)
         return holder
 
-    def build_group_departments_section(self, ctx: DetailContext):
-        """Departments tab content for a Group detail.
-
-        Inline checkbox list mirroring the dialog-based Edit flow's
-        ``departments`` multi-select. Commits via :meth:`edit_collection`.
-        """
-        from PySide6.QtWidgets import (
-            QCheckBox,
-            QHBoxLayout,
-            QLabel,
-            QPushButton,
-            QVBoxLayout,
-            QWidget,
-        )
-
-        detail = ctx.detail
-        meta = detail.metadata or {}
-        depts_current = list(meta.get("departments") or ())
-        known_depts = list(meta.get("known_departments") or ())
-
-        holder = QWidget()
-        vbox = QVBoxLayout(holder)
-        vbox.setContentsMargins(0, 0, 0, 0)
-        vbox.setSpacing(8)
-
-        if not known_depts:
-            empty = QLabel("(no departments defined for this context)")
-            empty.setStyleSheet("color: #666;")
-            vbox.addWidget(empty)
-            vbox.addStretch(1)
-            return holder
-
-        boxes_holder = QWidget()
-        boxes_lyt = QVBoxLayout(boxes_holder)
-        boxes_lyt.setContentsMargins(0, 0, 0, 0)
-        boxes_lyt.setSpacing(2)
-        current_set = {str(d) for d in depts_current}
-        boxes: list[QCheckBox] = []
-        for d in known_depts:
-            cb = QCheckBox(d)
-            cb.setChecked(d in current_set)
-            boxes_lyt.addWidget(cb)
-            boxes.append(cb)
-        vbox.addWidget(boxes_holder)
-
-        btn_row = QHBoxLayout()
-        btn_row.addStretch(1)
-        apply_btn = QPushButton("Apply")
-        btn_row.addWidget(apply_btn)
-        vbox.addLayout(btn_row)
-
-        cid = detail.id  # container id == tag
-
-        def _apply() -> None:
-            selected = tuple(
-                cb.text() for cb in boxes if cb.isChecked()
-            )
-            try:
-                ok = bool(self.edit_collection(
-                    cid, {"departments": selected},
-                ))
-            except Exception:
-                log.exception("edit_collection failed for %s", cid)
-                ok = False
-            if ok and ctx.refresh_detail is not None:
-                try:
-                    ctx.refresh_detail()
-                except Exception:
-                    log.exception("refresh_detail failed")
-
-        apply_btn.clicked.connect(_apply)
-        vbox.addStretch(1)
-        return holder
-
     def build_combined_departments_section(self, ctx: DetailContext):
         """Departments tab content — Multi / Root membership pills on
         top (a shot's Root-ref is conceptually the root layer of its
         department stack), then the departments grid below.
-
-        Wrapped defensively: if either sub-builder throws, we still
-        return a non-empty widget so the detail panel keeps the
-        Departments tab visible.
         """
         from PySide6.QtWidgets import (
-            QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+            QHBoxLayout, QPushButton, QVBoxLayout, QWidget,
         )
 
         holder = QWidget()
@@ -422,11 +366,7 @@ class DetailSectionBuilder:
         vbox.setContentsMargins(0, 0, 0, 0)
         vbox.setSpacing(8)
 
-        try:
-            mem_w = self.build_membership_section(ctx)
-        except Exception:
-            log.exception("Membership section build failed")
-            mem_w = None
+        mem_w = self.build_membership_section(ctx)
         if mem_w is not None:
             vbox.addWidget(mem_w)
 
@@ -442,37 +382,19 @@ class DetailSectionBuilder:
             )
 
             def _edit(aid: str = ctx.detail.id) -> None:
-                try:
-                    self._catalog._edit_entity_departments(aid)
-                except Exception:
-                    log.exception("Departments dialog failed for %s", aid)
-                    return
+                self._edit_departments(aid)
                 if ctx.refresh_detail is not None:
-                    try:
-                        ctx.refresh_detail()
-                    except Exception:
-                        log.exception("refresh_detail failed")
+                    ctx.refresh_detail()
 
-            edit_btn.clicked.connect(_edit)
+            edit_btn.clicked.connect(reporting(
+                f"Editing the departments for {ctx.detail.id}", _edit,
+            ))
             edit_row.addWidget(edit_btn)
             vbox.addLayout(edit_row)
 
-        try:
-            depts_w = self.build_departments_section(ctx)
-        except Exception:
-            log.exception(
-                "Departments section build failed for %s", ctx.detail.id,
-            )
-            depts_w = None
+        depts_w = self.build_departments_section(ctx)
         if depts_w is not None:
             vbox.addWidget(depts_w)
-        else:
-            err = QLabel(
-                "(failed to load departments — see log for traceback)"
-            )
-            err.setStyleSheet("color: #f06060;")
-            err.setWordWrap(True)
-            vbox.addWidget(err)
 
         vbox.addStretch(1)
         return holder
@@ -485,12 +407,12 @@ class DetailSectionBuilder:
             rows.append(("Project", str(meta["project"])))
         if meta.get("category"):
             rows.append(("Category", str(meta["category"])))
-        channels = read_channel_list(meta, "asset browser metadata")
+        channels = channel_list(meta)
         if channels:
             rows.append(("Channels", ", ".join(channels)))
         if detail.versions:
             latest = detail.versions[-1]
-            rows.append(("Latest", getattr(latest, "version", "") or ""))
+            rows.append(("Latest", latest.version))
         return self.build_info_table(rows)
 
     def build_shot_info_section(self, ctx: DetailContext):
@@ -526,39 +448,19 @@ class DetailSectionBuilder:
         ``inherited`` is True when the scene_ref is inherited from the
         parent sequence rather than set on the shot itself.
         """
-        try:
-            parts = asset_id.split("/", 1)
-            if len(parts) != 2:
-                return ("", False)
-            project_name = parts[0]
-            proj = self._catalog._registry.get(project_name)
-            if proj is None or not self._catalog._clients.is_ready(project_name):
-                return ("", False)
-            self._catalog._activate_project(proj)
-            from tumblepipe.config import scene as scene_mod
-            shot_uri = self._catalog._resolver.uri_for(asset_id)
-            if shot_uri is None:
-                return ("", False)
-            direct = scene_mod.get_scene_ref(shot_uri)
-            if direct is not None:
-                scene_uri = direct
-                inherited = False
-            else:
-                resolved, _src = scene_mod.get_inherited_scene_ref(shot_uri)
-                if resolved is None:
-                    return ("", False)
-                scene_uri = resolved
-                inherited = True
-            segs = getattr(scene_uri, "segments", None)
-            label = (
-                "/".join(segs) if segs else str(scene_uri)
-            )
-            return (label, inherited)
-        except Exception:
-            log.debug(
-                "Failed to read scene_ref for %s", asset_id, exc_info=True,
-            )
+        proj = self._resolver.project_for(asset_id)
+        if proj is None or not self._clients.is_ready(proj.name):
             return ("", False)
+        self._activator.activate(proj)
+        from tumblepipe.config import scene as scene_mod
+        shot_uri = self._resolver.uri_for(asset_id)
+        scene_uri = scene_mod.get_scene_ref(shot_uri)
+        inherited = scene_uri is None
+        if inherited:
+            scene_uri, _source = scene_mod.get_inherited_scene_ref(shot_uri)
+            if scene_uri is None:
+                return ("", False)
+        return ("/".join(scene_uri.segments), inherited)
 
     def build_info_table(self, rows: list[tuple[str, str]]):
         """Build a label/value grid section box from a list of rows.
@@ -608,7 +510,7 @@ class DetailSectionBuilder:
             TEXT_SECONDARY,
         )
 
-        memberships = self._catalog.get_asset_membership(ctx.detail.id)
+        memberships = self._containers.get_asset_membership(ctx.detail.id)
         if not memberships:
             return None
 
@@ -649,17 +551,14 @@ class DetailSectionBuilder:
             FONT_SMALL, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
         )
 
-        try:
-            from tumbletrove import asset_browser
-            mgr = asset_browser.get_todos()
-        except Exception:
-            mgr = None
+        from tumbletrove import asset_browser
+        mgr = asset_browser.get_todos()
         if mgr is None:
             return None
-        self._catalog._hook_todo_refresh(mgr)
+        self._refresh.follow_todos(mgr)
 
         asset_id = ctx.detail.id
-        todos = mgr.todos(self._catalog.id, asset_id)
+        todos = mgr.todos(self._catalog_id, asset_id)
         w, lay = make_section_box()
 
         _flat_btn = (
@@ -685,7 +584,7 @@ class DetailSectionBuilder:
                 cb.setTextColor(TEXT_DIM if todo.done else TEXT_PRIMARY)
                 cb.toggled.connect(
                     lambda done, i=idx: mgr.set_done(
-                        self._catalog.id, asset_id, i, done,
+                        self._catalog_id, asset_id, i, done,
                     )
                 )
                 row.addWidget(cb, stretch=1)
@@ -697,7 +596,7 @@ class DetailSectionBuilder:
                 rm.setStyleSheet(_flat_btn)
                 rm.clicked.connect(
                     lambda checked=False, i=idx: mgr.remove(
-                        self._catalog.id, asset_id, i,
+                        self._catalog_id, asset_id, i,
                     )
                 )
                 row.addWidget(rm)
@@ -726,7 +625,7 @@ class DetailSectionBuilder:
             if not text:
                 return
             add_input.clear()
-            mgr.add(self._catalog.id, asset_id, text)
+            mgr.add(self._catalog_id, asset_id, text)
 
         add_input.returnPressed.connect(_do_add)
         footer.addWidget(add_input, stretch=1)
@@ -763,9 +662,9 @@ class DetailSectionBuilder:
                     )
                 )
                 if chosen is a_done:
-                    mgr.clear_completed(self._catalog.id, asset_id)
+                    mgr.clear_completed(self._catalog_id, asset_id)
                 elif chosen is a_all:
-                    mgr.clear(self._catalog.id, asset_id)
+                    mgr.clear(self._catalog_id, asset_id)
 
             clear_btn.clicked.connect(_show_clear_menu)
             footer.addWidget(clear_btn)
@@ -790,21 +689,18 @@ class DetailSectionBuilder:
         # for "exported") to base64 PNG data URIs so QLabel rich text can
         # render them inline via <img> without writing cache files.
         def _icon_html(name: str, size: int = 11) -> str:
-            try:
-                import base64
-                from tumbletrove.asset_browser.core.icons import icon_pixmap
-                pix = icon_pixmap(name, scaled(size), TEXT_DIM)
-                arr = QByteArray()
-                buf = QBuffer(arr)
-                buf.open(QIODevice.WriteOnly)
-                pix.save(buf, "PNG")
-                b64 = base64.b64encode(bytes(arr)).decode("ascii")
-                return (
-                    f'<img src="data:image/png;base64,{b64}" '
-                    f'width="{size}" height="{size}"/>'
-                )
-            except Exception:
-                return ""
+            import base64
+            from tumbletrove.asset_browser.core.icons import icon_pixmap
+            pix = icon_pixmap(name, scaled(size), TEXT_DIM)
+            arr = QByteArray()
+            buf = QBuffer(arr)
+            buf.open(QIODevice.WriteOnly)
+            pix.save(buf, "PNG")
+            b64 = base64.b64encode(bytes(arr)).decode("ascii")
+            return (
+                f'<img src="data:image/png;base64,{b64}" '
+                f'width="{size}" height="{size}"/>'
+            )
         _user_html = _icon_html("user-round")
         _edited_html = _icon_html("clock")
         _exported_html = _icon_html("upload")
@@ -834,15 +730,15 @@ class DetailSectionBuilder:
         # unassigned department with a workfile is flagged, never hidden).
         assigned_depts: set[str] = set()
         if is_multi:
-            all_depts = self._catalog._list_entity_departments(ent_ctx)
+            all_depts = self._dept_scope.pool(ent_ctx)
             assigned_depts = set(all_depts)
         else:
-            all_depts, assigned_depts = self._catalog._entity_department_scope(
+            all_depts, assigned_depts = self._dept_scope.for_entity(
                 asset_id, ent_ctx, with_work=dept_info.keys(),
             )
-        dept_shorts = self._catalog._list_entity_dept_shorts(ent_ctx)
-        overrides = self._catalog._dept_versions.get(asset_id)
-        scene_dv = self._catalog._scene.get_scene_dept_version(asset_id)
+        dept_shorts = self._dept_scope.shorts(ent_ctx)
+        overrides = self._dept_versions.get(asset_id)
+        scene_dv = self._scene.get_scene_dept_version(asset_id)
         active_dept = scene_dv[0] if scene_dv else None
         active_version = scene_dv[1] if scene_dv else None
         # Coverage toggle state for Multis: depts the user has flagged
@@ -925,10 +821,13 @@ class DetailSectionBuilder:
                     f"Override {dept_name} for all members of this Multi"
                 )
                 toggle.toggled.connect(
-                    lambda checked, gid=asset_id, dn=dept_name:
-                        self._catalog._containers._toggle_group_dept_coverage(
-                            gid, dn, bool(checked),
-                        )
+                    lambda checked, gid=asset_id, dn=dept_name: reporting(
+                        f"Changing {gid}'s {dn} coverage",
+                        lambda: self._containers
+                            .set_coverage(
+                                gid, dn, bool(checked),
+                            ),
+                    )()
                 )
                 row_layout.addWidget(toggle)
 
@@ -1057,7 +956,7 @@ class DetailSectionBuilder:
                 open_btn.clicked.connect(
                     lambda _checked=False, c=combo, dn=dept_name,
                     aid=asset_id, rd=ctx.refresh_detail:
-                        self._catalog._workfiles.open_version_now(
+                        self._workfiles.open_version_now(
                             aid, dn, c.currentData(), rd,
                         )
                 )
@@ -1070,11 +969,11 @@ class DetailSectionBuilder:
                 # · magnus") so DeptMetaLabel's width-based piece
                 # dropping keeps working unchanged; exports predating
                 # the context.json user stamp just show the age.
-                exported_age = self._catalog._workfiles.format_relative_time(
-                    self._catalog._workfiles.get_latest_export_mtime(asset_id, dept_name)
+                exported_age = self._workfiles.format_relative_time(
+                    self._workfiles.get_latest_export_mtime(asset_id, dept_name)
                 )
                 if exported_age:
-                    export_user = self._catalog._workfiles.get_user_for_export(
+                    export_user = self._workfiles.get_user_for_export(
                         asset_id, dept_name,
                     )
                     if export_user:
@@ -1082,9 +981,9 @@ class DetailSectionBuilder:
 
                 # Initial fill + live update on combo change
                 user_lbl.set_parts(
-                    self._catalog._workfiles.get_user_for_version(asset_id, dept_name, current) or "",
-                    self._catalog._workfiles.format_relative_time(
-                        self._catalog._workfiles.get_mtime_for_version(asset_id, dept_name, current)
+                    self._workfiles.get_user_for_version(asset_id, dept_name, current) or "",
+                    self._workfiles.format_relative_time(
+                        self._workfiles.get_mtime_for_version(asset_id, dept_name, current)
                     ),
                     exported=exported_age,
                 )
@@ -1097,9 +996,9 @@ class DetailSectionBuilder:
                     v = c.currentData()
                     self.on_dept_version_picked(aid, dn, v)
                     ulbl.set_parts(
-                        self._catalog._workfiles.get_user_for_version(aid, dn, v) or "",
-                        self._catalog._workfiles.format_relative_time(
-                            self._catalog._workfiles.get_mtime_for_version(aid, dn, v)
+                        self._workfiles.get_user_for_version(aid, dn, v) or "",
+                        self._workfiles.format_relative_time(
+                            self._workfiles.get_mtime_for_version(aid, dn, v)
                         ),
                         exported=exp,
                     )
@@ -1127,7 +1026,7 @@ class DetailSectionBuilder:
                 create_btn.clicked.connect(
                     lambda _checked=False, dn=dept_name,
                     aid=asset_id, rd=ctx.refresh_detail:
-                        self._catalog._workfiles.new_from_template(aid, dn, rd)
+                        self._workfiles.new_from_template(aid, dn, rd)
                 )
                 row_layout.addWidget(create_btn)
 
@@ -1156,7 +1055,7 @@ class DetailSectionBuilder:
     ) -> None:
         if not version:
             return
-        self._catalog._dept_versions.set(asset_id, dept, version)
+        self._dept_versions.set(asset_id, dept, version)
         log.debug(
             "Pipeline: dept version override %s/%s -> %s",
             asset_id, dept, version,
@@ -1187,12 +1086,12 @@ class DetailSectionBuilder:
             new_tmpl_act = menu.addAction("New from Template")
             new_tmpl_act.triggered.connect(
                 lambda _checked=False:
-                    self._catalog._workfiles.new_from_template(asset_id, dept, refresh_cb)
+                    self._workfiles.new_from_template(asset_id, dept, refresh_cb)
             )
             new_cur_act = menu.addAction("New from Current")
             new_cur_act.triggered.connect(
                 lambda _checked=False:
-                    self._catalog._workfiles.new_from_current(asset_id, dept, refresh_cb)
+                    self._workfiles.new_from_current(asset_id, dept, refresh_cb)
             )
 
         if available and combo is not None:
@@ -1200,7 +1099,7 @@ class DetailSectionBuilder:
             open_act = menu.addAction(f"Open {ver}" if ver else "Open")
             open_act.triggered.connect(
                 lambda _checked=False:
-                    self._catalog._workfiles.open_version_now(asset_id, dept, ver, refresh_cb)
+                    self._workfiles.open_version_now(asset_id, dept, ver, refresh_cb)
             )
 
         if not available:
@@ -1209,26 +1108,26 @@ class DetailSectionBuilder:
 
         loc_act = menu.addAction("Open Folder")
         loc_act.triggered.connect(
-            lambda _checked=False: self._catalog._workfiles.open_dept_work_dir(asset_id, dept)
+            lambda _checked=False: self._workfiles.open_dept_work_dir(asset_id, dept)
         )
 
         export_act = menu.addAction("View Latest Export")
         export_act.triggered.connect(
-            lambda _checked=False: self._catalog._workfiles.open_latest_export(asset_id, dept)
+            lambda _checked=False: self._workfiles.open_latest_export(asset_id, dept)
         )
 
         if available:
             new_inst_act = menu.addAction("Open in New Houdini")
             new_inst_act.triggered.connect(
                 lambda _checked=False:
-                    self._catalog._workfiles.open_in_new_instance(asset_id, dept)
+                    self._workfiles.open_in_new_instance(asset_id, dept)
             )
 
         if is_active:
             menu.addSeparator()
             reload_act = menu.addAction("Reload Scene")
             reload_act.triggered.connect(
-                lambda _checked=False: self._catalog._scene.reload_current_scene(refresh_cb)
+                lambda _checked=False: self._scene.reload_current_scene(refresh_cb)
             )
 
         if available:

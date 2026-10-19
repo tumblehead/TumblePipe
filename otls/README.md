@@ -28,25 +28,21 @@ Editing rules learned the hard way:
   `p.expression()` over every parm of the moved node, old build vs new.
 - **Never delete `*.orig` files** (e.g. `ViewerStateName.orig`) — they
   are load-bearing for compile-hdas.
-- DialogScript menu/toggle parms follow the existing idioms in each
-  file (`hou.phm().execute()` callbacks, python `menu {}` blocks);
-  copy a neighbouring parm rather than inventing a new shape.
-- **A callback takes three files, not two.** `hou.phm().select()` does
-  not reach `python/tumblepipe/…` directly — the HDA's own
-  `PythonModule` section is a hand-maintained shim of one-line
-  forwarders (`def select(): th_cache.select()`) sitting in between.
-  Add the parm *and* the backing function and both ends look finished,
-  while the button raises `AttributeError: 'module' object has no
-  attribute 'select'` on the first click, because the file in the middle
-  is the one nobody edits. This is how `th::cache`'s Entity button
-  shipped dead in **both** the SOP and the LOP (93e4dc1 touched only the
-  two DialogScripts). Nothing static catches it: the callback is a
-  string, no lint or build gate resolves it, and the failure waits for a
-  click. Check with `hou.nodeType(cat, name).hdaModule()` — it needs no
-  node instantiated — and `hasattr` every name your parms reference.
-  Beware two directions of the same bug: the shim may be missing the
-  name, *or* the shim's forwarder may call a backing function that no
-  longer exists (see the wrapper near-miss trap in `docs/`).
+- **Callbacks call `tumblepipe` directly.** A pipeline HDA's button
+  callback is `import tumblepipe.pipe.houdini.<module> as th_node;
+  th_node.<fn>(kwargs)`, and the function takes `kwargs` (never
+  `hou.pwd()`); OnCreated calls the module's `on_created(kwargs['node'])`,
+  or `ns.on_created(kwargs['node'], ns.SHAPE_…)` when styling is all it
+  does. Copy a neighbouring parm. There used to be a `PythonModule` of
+  one-line forwarders in between, and that middle file was the one nobody
+  edited — th::cache's Entity button shipped dead on both the SOP and the
+  LOP that way (93e4dc1). A `PythonModule` stays only where a parm
+  *expression* says `hou.phm()` (`output_modified_prims`,
+  `effective_primpath`): saved scenes store those expressions verbatim,
+  so the module re-exports the function. `scripts/verify_hda_callbacks.py`
+  resolves every callback, OnCreated call and `hou.phm()` name against the
+  sources; a callback is a string, and nothing else catches a dead one
+  before an artist clicks it.
 - **Menu scripts are read-only.** Houdini evaluates them on every
   parameter-pane redraw, so a `parm.set()` inside a `menu {}` block
   dirties the node mid-draw and can re-trigger evaluation (import_assets
@@ -56,10 +52,10 @@ Editing rules learned the hard way:
   `list_entities` (which resolves properties per entity).
 - **No absolute node paths in `opmenu` references.** DialogScript
   `opmenu -l -a <path> <parm>` resolves relative to the HDA instance;
-  an absolute path like `/stage/import_assets1/dive/layout_assets` only
+  an absolute path like `/stage/import_assets1/layout_assets` only
   works for an instance with that exact name and location — every other
   instance's menu silently errors. Use the instance-relative form
-  (`dive/layout_assets`).
+  (`layout_assets`).
 - No build or lint gate parses channel expressions — a syntactically
   broken `.chn` sails through. The only real gate is loading a scene
   that contains the node in a live Houdini.

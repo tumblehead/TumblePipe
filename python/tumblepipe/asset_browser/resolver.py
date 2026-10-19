@@ -1,31 +1,20 @@
-"""Parse asset ids into typed (ref, project, client, uri, root) tuples.
+"""Parse asset ids into the project, client, entity URI and folder they name.
 
 Replaces the half-dozen separate ``_split_asset_id`` /
-``_parse_entity_ref`` / ``_project_for_asset_id`` /
-``_client_for_asset_id`` / ``_uri_for_asset_id`` /
-``_project_root_for_asset_id`` helpers that used to live on
-:class:`PipelineCatalog`. Each callsite previously opened with two or
-three None-checked partial lookups; an :class:`AssetCtx` returned by
-:meth:`AssetResolver.resolve` gives you everything in one go and
-fails loudly when the id is bad.
-
-Lightweight accessors (``project_for``, ``parse_ref``, ``uri_for``,
-``client_for``, ``root_for``) survive for callers that genuinely
-need a partial view — e.g. building a project-scoped collection
-tree before any client is READY.
+``_project_for_asset_id`` / ``_client_for_asset_id`` /
+``_uri_for_asset_id`` / ``_project_root_for_asset_id`` helpers that used
+to live on :class:`PipelineCatalog`.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from tumbletrove.asset_browser.api.errors import CatalogError
-from tumbletrove.asset_browser.core.projects import ProjectConfig, PipelineProjectRegistry
+from .projects import ProjectConfig, PipelineProjectRegistry
 
 from .clients import ClientPool
-from .types import AssetRef, EntityRef, parse_entity_ref
 from . import uris as uris
 
 if TYPE_CHECKING:
@@ -33,18 +22,9 @@ if TYPE_CHECKING:
 
 
 class AssetResolutionError(CatalogError):
-    """Raised when an ``asset_id`` cannot be fully resolved.
+    """An ``asset_id`` does not lead anywhere sensible.
 
-    Distinct from :class:`CatalogInitError` (Client construction
-    failure) — this is the higher-level "id doesn't lead anywhere
-    sensible" error. The cause is one of:
-
-    - malformed id (not three slash-separated segments),
-    - unknown project (first segment doesn't match the registry),
-    - entity not parseable against the project's category list.
-
-    Client construction failures bubble up as ``CatalogInitError``
-    unchanged.
+    Distinct from :class:`CatalogInitError` (Client construction failure).
     """
 
 
@@ -62,24 +42,8 @@ class EntityNotRegistered(AssetResolutionError):
     """
 
 
-@dataclass(frozen=True)
-class AssetCtx:
-    """Fully-resolved view of an asset id.
-
-    Every field is non-None. Built by :meth:`AssetResolver.resolve`;
-    callers can use any field without re-checking.
-    """
-
-    asset_id: str
-    ref: EntityRef
-    project: ProjectConfig
-    client: object  # ``tumblepipe.api.Client`` when READY
-    uri: "Uri"
-    root: Path
-
-
 class AssetResolver:
-    """``asset_id`` → typed context, with both eager and best-effort entry points.
+    """``asset_id`` → its project, client, entity URI and project root.
 
     Takes the catalog's ID for error provenance, the project registry
     for project lookup, the :class:`ClientPool` for Client access, and
@@ -102,13 +66,14 @@ class AssetResolver:
     # ── Lightweight accessors (no client build) ──────────
 
     def split(self, asset_id: str) -> tuple[str, str, str] | None:
-        """Split ``"PROJECT/SECOND/THIRD"`` or return ``None``."""
+        """Split ``"PROJECT/SECOND/THIRD"`` or return ``None`` for any
+        other shape, an empty segment included."""
         if not asset_id:
             return None
         # split() with no maxsplit: a 4-segment id must be rejected, not
-        # glued into third="c/d" (mirrors parse_entity_ref in types).
+        # glued into third="c/d".
         parts = asset_id.split("/")
-        if len(parts) != 3:
+        if len(parts) != 3 or not all(parts):
             return None
         return (parts[0], parts[1], parts[2])
 
@@ -121,31 +86,27 @@ class AssetResolver:
             return None
         return self._registry.get(parts[0])
 
-    def parse_ref(self, asset_id: str) -> EntityRef | None:
-        """Return :class:`AssetRef` / :class:`ShotRef` using the
-        project's category list to disambiguate. Returns ``None`` on
-        parse failure. Treats the entity as a shot when categories
-        are unknown (Client not READY) — same fallback as the legacy
-        ``_parse_entity_ref``."""
-        parts = self.split(asset_id)
-        if parts is None:
+    def project_for_path(self, path: Path | str | None) -> ProjectConfig | None:
+        """The registered project whose folder holds ``path`` (a ``.hip``),
+        or None — an untitled scene, or a file outside every project."""
+        if not path:
             return None
-        cats = self._categories_for_project(parts[0])
-        return parse_entity_ref(asset_id, cats)
+        resolved = Path(path).resolve()
+        for proj in self._registry.all():
+            if resolved.is_relative_to(Path(proj.project_path).resolve()):
+                return proj
+        return None
 
     def uri_for(self, asset_id: str) -> "Uri | None":
-        """Build the entity URI. ``None`` on parse failure. Falls back
-        to the shot URI shape when categories are unknown."""
+        """Build the entity URI. ``None`` for a malformed id. Takes the
+        shot URI shape when categories are unknown."""
         parts = self.split(asset_id)
         if parts is None:
             return None
         project_name, second, third = parts
         cats = self._categories_for_project(project_name)
         kind = "assets" if second in cats else "shots"
-        try:
-            return uris.entity(kind, second, third)
-        except Exception:
-            return None
+        return uris.entity(kind, second, third)
 
     def uri_for_ready(self, asset_id: str) -> "Uri | None":
         """:meth:`uri_for` with the project's Client guaranteed READY first.
@@ -158,15 +119,13 @@ class AssetResolver:
         under ``shots/<cat>/<asset>/``. Paths that read or write on disk must
         use this. It blocks on Client construction, so it belongs on the
         worker thread the file-system handlers already run on, never on the
-        GUI thread. ``None`` when the id is malformed or the Client cannot be
-        built (the error is the pool's to surface).
+        GUI thread. ``None`` when the id is malformed; a Client that cannot
+        be built raises :class:`CatalogInitError`.
         """
         parts = self.split(asset_id)
         if parts is None:
             return None
-        client, _err = self._clients.try_get(parts[0])
-        if client is None:
-            return None
+        self._clients.get(parts[0])
         return self.uri_for(asset_id)
 
     def registered_uri_for(self, asset_id: str) -> "Uri | None":
@@ -178,19 +137,17 @@ class AssetResolver:
         :class:`EntityNotRegistered`. Reading paths keep ``uri_for_ready``: an
         open or a listing of something missing already comes back empty.
 
-        Returns ``None`` exactly where ``uri_for_ready`` does (malformed id,
-        Client not buildable — the pool surfaces that error).
+        Returns ``None`` exactly where ``uri_for_ready`` does (malformed id).
 
         Raises:
+            CatalogInitError: the project's Client cannot be built.
             EntityNotRegistered: the id is well formed, but no such entity
                 exists in the project's config.
         """
         uri = self.uri_for_ready(asset_id)
         if uri is None:
             return None
-        client, _err = self._clients.try_get(asset_id.split("/", 1)[0])
-        if client is None:
-            return None
+        client = self._clients.get(asset_id.split("/", 1)[0])
         if client.config.get_properties(uri) is None:
             raise EntityNotRegistered(
                 self._catalog_id,
@@ -202,81 +159,22 @@ class AssetResolver:
         return uri
 
     def client_for(self, asset_id: str):
-        """Best-effort client lookup — ``None`` on parse failure or
-        Client init failure (errors are silently swallowed; use
-        :meth:`resolve` if you need the typed error)."""
+        """The project's Client — ``None`` for a malformed id; a Client
+        that cannot be built raises :class:`CatalogInitError`."""
         parts = self.split(asset_id)
         if parts is None:
             return None
-        client, _err = self._clients.try_get(parts[0])
-        return client
+        return self._clients.get(parts[0])
 
-    def root_for(self, asset_id: str) -> Path | None:
-        """Project root on disk. Prefers the live Client's
-        ``PROJECT_PATH`` (so any bootstrap-time fixups apply); falls
-        back to the registry entry when the Client isn't READY."""
-        parts = self.split(asset_id)
-        if parts is None:
+    def entity_dir(self, asset_id: str) -> Path | None:
+        """The entity's own folder (``project:/<segments>``), resolved by its
+        project's own storage table — no project activation needed, so it is
+        safe for the per-card thumbnail lookups. Where its sidecars
+        (``description.txt``, ``thumbnail.png``) live. ``None`` for a
+        malformed id; a Client that cannot be built raises
+        :class:`CatalogInitError`."""
+        uri = self.uri_for_ready(asset_id)
+        if uri is None:
             return None
-        client, _err = self._clients.try_get(parts[0])
-        if client is not None:
-            return Path(client.PROJECT_PATH)
-        proj = self._registry.get(parts[0])
-        if proj is not None:
-            return Path(proj.project_path)
-        return None
-
-    # ── Full resolution (builds client) ──────────────────
-
-    def resolve(self, asset_id: str) -> AssetCtx:
-        """Return the full :class:`AssetCtx`.
-
-        Raises:
-            AssetResolutionError: id is malformed / project unknown /
-                entity unparseable against the project's categories.
-            CatalogInitError: Client construction failed (propagated
-                from :meth:`ClientPool.get`).
-        """
-        parts = self.split(asset_id)
-        if parts is None:
-            raise AssetResolutionError(
-                self._catalog_id,
-                f"malformed asset_id {asset_id!r}",
-            )
-        project_name, second, third = parts
-        proj = self._registry.get(project_name)
-        if proj is None:
-            raise AssetResolutionError(
-                self._catalog_id,
-                f"unknown project {project_name!r} in {asset_id!r}",
-            )
-        # Client first — categories require a READY client.
-        client = self._clients.get(project_name)
-        cats = self._categories_for_project(project_name)
-        ref = parse_entity_ref(asset_id, cats)
-        if ref is None:
-            raise AssetResolutionError(
-                self._catalog_id,
-                f"unparseable entity in {asset_id!r}",
-            )
-        kind = "assets" if isinstance(ref, AssetRef) else "shots"
-        uri = uris.entity(kind, second, third)
-        return AssetCtx(
-            asset_id=asset_id,
-            ref=ref,
-            project=proj,
-            client=client,
-            uri=uri,
-            root=Path(client.PROJECT_PATH),
-        )
-
-    def try_resolve(self, asset_id: str) -> AssetCtx | None:
-        """As :meth:`resolve` but returns ``None`` instead of raising.
-
-        Use for aggregator paths that must skip bad entries (e.g.
-        discovery merging across projects, where one project's
-        broken client shouldn't stop the others)."""
-        try:
-            return self.resolve(asset_id)
-        except Exception:
-            return None
+        client = self._clients.get(asset_id.split("/", 1)[0])
+        return Path(client.storage.resolve(uris.project_root() / uri.segments))

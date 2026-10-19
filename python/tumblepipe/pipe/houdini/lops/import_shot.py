@@ -1,11 +1,7 @@
 import logging
-from pathlib import Path
-import os
-import re
 
-import hou
 
-from tumblepipe.api import api, path_str
+from tumblepipe.api import api
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import get_frame_range, get_fps
@@ -13,23 +9,22 @@ from tumblepipe.config.department import (
     list_departments,
     list_entity_departments,
 )
-from tumblepipe.config.channels import list_channels, read_channel
+from tumblepipe.config.channels import CHANNEL_KEY, list_channels, read_published_channel
 import tumblepipe.pipe.houdini.nodes as ns
-import tumblepipe.pipe.houdini.util as util
+from tumblepipe.pipe.houdini import playbar
+from tumblepipe.pipe.houdini.entity_node import EntityNode, FROM_CONTEXT
+from tumblepipe.pipe.houdini.lops import shot_sublayers
+from tumblepipe.pipe.houdini.ui import layer_stack
 from tumblepipe.pipe.paths import (
-    load_entity_context,
+    SHARED_CHANNEL,
     current_staged_file_path,
     get_staged_file_path,
     list_version_paths,
-    version_name_from_path,
 )
-from tumblepipe.pipe.build import get_source_department
-from tumblepipe.pipe.usd import (
-    read_staged_sublayer_refs,
-    parse_entity_sublayer_uri,
+from tumblepipe.pipe.context import get_source_department
+from tumblepipe.pipe.usd.sublayer_refs import (
     nested_asset_department_refs,
 )
-from tumblepipe.pipe.asset_layers import build_asset_layer_report
 from tumblepipe import resolver
 
 logger = logging.getLogger(__name__)
@@ -78,39 +73,10 @@ def split_excluded_assets(assets, departments_to_exclude, all_shot_departments):
     return kept, excluded_uris
 
 
-def _context_json():
-    """The workfile's context.json, whatever it names — shot or Multi."""
-    file_path = Path(hou.hipFile.path())
-    if not file_path.exists(): return None
-    context_json_path = file_path.parent / "context.json"
-    if not context_json_path.exists(): return None
-    return load_entity_context(context_json_path)
-
-def _department_from_context_json():
-    """The workfile's department, also inside a Multi.
-
-    A Multi's context.json names the group, not a shot, so it must not go
-    through the shot filter below: that turned 'from_context' into *no*
-    department, and the node then excluded nothing — its own layer included.
-    """
-    context = _context_json()
-    if context is None: return None
-    return context.department_name or None
-
-def _entity_from_context_json():
-    context = _context_json()
-    if context is None: return None
-
-    # Verify it's a shot entity (not a group)
-    if context.entity_uri.purpose != 'entity': return None
-    if len(context.entity_uri.segments) < 1: return None
-    if context.entity_uri.segments[0] != 'shots': return None
-
-    return context
-
 def _indent(lines):
     """Indent lines of code by 4 spaces."""
     return [f"    {line}" for line in lines]
+
 
 def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
     """Generate Python script to set shot and asset metadata in USD stage.
@@ -118,12 +84,12 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
     Shot metadata is stored in stage-level customLayerData.
     Asset metadata is stored as customData on each asset's scene prim.
     """
-    from tumblepipe.pipe.houdini.util import uri_to_prim_path
+    from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 
     header = [
         'import hou',
         '',
-        'from tumblepipe.pipe.houdini import util',
+        'from tumblepipe.pipe.houdini import prim_metadata',
         '',
         'node = hou.pwd()',
         'stage = node.editableStage()',
@@ -144,29 +110,33 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
         f"    'version': '{version_name}',",
         "    'inputs': []",
         "}",
-        "util.set_shot_metadata(stage, shot_metadata)",
+        "prim_metadata.set_shot_metadata(stage, shot_metadata)",
     ]
 
     # Set asset metadata on scene prims
     for asset_info in assets:
         asset_uri_str = asset_info['asset']
-        asset_uri = Uri.parse_unsafe(asset_uri_str)
+        asset_uri = Uri.parse(asset_uri_str)
         asset_prim_path = uri_to_prim_path(asset_uri)
         asset_name = asset_uri.segments[-1]
-        # Propagate inputs from staged context.json to preserve composition history
-        asset_inputs = asset_info.get('inputs', [])
-        # Get instance count (default 1 if not specified)
-        instances = asset_info.get('instances', 1)
+        # Every asset record carries these: the staged build's context.json
+        # writes all four, and _get_scene_assets builds them. Inputs keep the
+        # composition history.
+        asset_channel = read_published_channel(
+            asset_info, where=f'asset record {asset_uri_str}', required=True
+        )
+        asset_inputs = asset_info['inputs']
+        instances = asset_info['instances']
 
         content.extend([
             "",
             f"# Asset: {asset_uri_str}",
             f"asset_prim = root.GetPrimAtPath('{asset_prim_path}')",
             "if asset_prim.IsValid():",
-            "    util.set_metadata(asset_prim, {",
+            "    prim_metadata.set_metadata(asset_prim, {",
             f"        'uri': '{asset_uri_str}',",
             f"        'instance': '{asset_name}',",
-            f"        'variant': '{asset_info.get('variant', 'default')}',",
+            f"        '{CHANNEL_KEY}': '{asset_channel}',",
             f"        'instances': {instances},",
             f"        'inputs': {asset_inputs!r}",
             "    })",
@@ -176,6 +146,7 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
 
     script = header + _indent(content) + footer
     return '\n'.join(script)
+
 
 def _get_scene_assets(shot_uri: Uri) -> list[dict]:
     """Get current asset data from scene context.json, including inherited assets.
@@ -200,28 +171,19 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
         return []
 
     # Read scene reference from root's context.json
-    root_context_path = root_version_path / 'context.json'
-    root_context_data = load_json(root_context_path)
-    if root_context_data is None:
-        return []
+    root_context_data = load_json(root_version_path / 'context.json')
 
     scene_ref = root_context_data.get('parameters', {}).get('scene')
     if scene_ref is None:
         return []
 
     # Follow scene reference to get current assets
-    scene_uri = Uri.parse_unsafe(scene_ref)
+    scene_uri = Uri.parse(scene_ref)
     scene_layer_path = get_current_scene_staged_file_path(scene_uri)
     if scene_layer_path is None:
         return []
 
-    scene_context_path = scene_layer_path.parent / 'context.json'
-    if not scene_context_path.exists():
-        return []
-
-    scene_context = load_json(scene_context_path)
-    if scene_context is None:
-        return []
+    scene_context = load_json(scene_layer_path.parent / 'context.json')
 
     # Get direct scene assets
     scene_assets = scene_context.get('parameters', {}).get('assets', [])
@@ -236,11 +198,11 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
     # Add inherited assets (from furthest parent to closest)
     for entry, parent_uri in reversed(inherited):
         if entry.asset not in seen_assets:
-            asset_uri = Uri.parse_unsafe(entry.asset)
+            asset_uri = Uri.parse(entry.asset)
             result.append({
                 'asset': entry.asset,
                 'instance': asset_uri.segments[-1],
-                'variant': entry.channel,
+                CHANNEL_KEY: entry.channel,
                 'instances': entry.instances,
                 'inputs': []
             })
@@ -249,11 +211,11 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
     # Add/override with direct scene assets
     for asset_data in scene_assets:
         asset_uri_str = asset_data['asset']
-        asset_uri = Uri.parse_unsafe(asset_uri_str)
+        asset_uri = Uri.parse(asset_uri_str)
         new_entry = {
             'asset': asset_uri_str,
             'instance': asset_uri.segments[-1],
-            'variant': read_channel(asset_data, where=f'scene asset {asset_uri_str}'),
+            CHANNEL_KEY: read_published_channel(asset_data, where=f'scene asset {asset_uri_str}'),
             'instances': asset_data.get('instances', 1),
             'inputs': []
         }
@@ -270,216 +232,19 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
     return result
 
 
-def _parse_entity_uri_info(uri_string: str) -> dict:
-    """Parse entity:/ URI and extract layer metadata for filtering.
 
-    Does NOT resolve the URI to a filesystem path - the URI is kept as a string
-    so it can be passed to the Sublayer LOP, which will use the USD ArResolver
-    to resolve it. This allows the resolver's _latest_mode logic to apply,
-    dynamically resolving to the latest version when enabled.
-
-    Args:
-        uri_string: Entity URI string (e.g., entity:/shots/seq/shot?dept=animation&variant=default&version=v0006)
-
-    Returns:
-        Dict with keys: path (entity URI string), type, department, channel
-    """
-    # Split base URI from query string
-    if '?' in uri_string:
-        base_uri, query_string = uri_string.split('?', 1)
-    else:
-        return {'path': uri_string, 'type': 'unknown', 'department': None}
-
-    # Parse query parameters
-    params = {}
-    for param in query_string.split('&'):
-        if '=' in param:
-            k, v = param.split('=', 1)
-            params[k] = v
-
-    dept = params.get('dept')
-    channel = read_channel(params, where=f'sublayer ref {base_uri!r}')
-
-    # Determine type based on URI and department
-    if '/assets/' in base_uri:
-        layer_type = 'asset'
-    elif dept == 'root':
-        layer_type = 'root'
-    else:
-        layer_type = 'shot_department'
-
-    # Keep entity URI as string - let USD resolver handle version resolution
-    return {
-        'path': uri_string,  # Entity URI passed to Sublayer LOP
-        'type': layer_type,
-        'department': dept,
-        'variant': channel
-    }
+# The Department token that imports the whole staged stack with no
+# department/downstream exclusion. Set by the render stage builder, where the
+# composition must not depend on the ambient workfile context (the farm has
+# none, a debug session has an arbitrary one).
+NO_DEPARTMENT = 'none'
 
 
-def _parse_staged_sublayers(staged_file_path: Path) -> list[dict]:
-    """Parse staged .usda file and extract sublayer info.
+class ImportShot(EntityNode):
 
-    Handles both entity:/ URIs (new format) and filesystem paths
-    (backwards compatibility with existing files).
-
-    Returns list of dicts with:
-    - path: absolute Path to the layer file OR entity URI string
-    - type: 'shot_department' | 'asset' | 'root' | 'scene'
-    - department: department name (for shot_department type)
-    - channel: channel name (if present in URI)
-    """
-    sublayers = []
-    staged_dir = staged_file_path.parent
-
-    # Extract sublayer paths/URIs from USDA
-    for ref in read_staged_sublayer_refs(staged_file_path):
-        # Check if this is an entity URI
-        if ref.startswith('entity:/'):
-            # Entity URI - parse parameters to get info
-            info = _parse_entity_uri_info(ref)
-            sublayers.append(info)
-        else:
-            # Filesystem path (backwards compatibility with existing files)
-            # Use normpath instead of resolve() to preserve drive letter (avoid UNC paths)
-            abs_path = Path(os.path.normpath(staged_dir / ref))
-
-            # Categorize layer
-            if '/root/' in ref:
-                sublayers.append({'path': abs_path, 'type': 'root', 'department': 'root'})
-            elif '/_staged/' in ref:
-                sublayers.append({'path': abs_path, 'type': 'asset', 'department': None})
-            else:
-                # Shot department layer - extract dept name from path
-                # Pattern: ../../../{variant}/{dept}/v{version}/shots_{seq}_{shot}_{dept}_{version}.usd
-                # parts: [0]='..' [1]='..' [2]='..' [3]=channel [4]=dept [5]=version [6]=filename
-                parts = ref.split('/')
-                dept = parts[4] if len(parts) > 4 else None
-                sublayers.append({'path': abs_path, 'type': 'shot_department', 'department': dept})
-
-    return sublayers
-
-
-def _get_layer_display_name(layer_info: dict) -> str:
-    """Generate human-readable display name for layer."""
-    layer_type = layer_info.get('type', 'unknown')
-    department = layer_info.get('department')
-
-    if layer_type == 'root':
-        return 'Root'
-    elif layer_type == 'shot_department' and department:
-        if layer_info.get('downstream'):
-            return f'{department.capitalize()} (downstream)'
-        return department.capitalize()
-    elif layer_type == 'asset':
-        path_value = layer_info.get('path', '')
-        if isinstance(path_value, str) and 'entity:/assets/' in path_value:
-            parts = path_value.split('/assets/')[-1].split('?')[0]
-            return f"Asset: {parts.split('/')[-1]}"
-        return 'Asset'
-    return f'Layer ({layer_type})'
-
-
-def _extract_layer_version(layer_info: dict) -> str:
-    """The version *recorded* in the layer ref — the staged build's pin.
-
-    In 'latest' mode this is not what loads: ``execute`` strips the pin so
-    the resolver floats to the newest export. Use :func:`_layer_display_version`
-    for anything artist-facing.
-    """
-    path_value = layer_info.get('path', '')
-
-    if isinstance(path_value, str) and 'version=' in path_value:
-        for param in path_value.split('?')[-1].split('&'):
-            if param.startswith('version='):
-                return param.split('=')[1]
-    elif hasattr(path_value, 'parent'):
-        parent_name = path_value.parent.name
-        if parent_name.startswith('v') and parent_name[1:].isdigit():
-            return parent_name
-    return 'latest'
-
-
-def _resolve_effective_version(layer_ref: str) -> str | None:
-    """The version the resolver actually lands on for ``layer_ref``.
-
-    ``layer_ref`` must be the exact string handed to the Sublayer LOP — the
-    point is to report what composed, so anything re-derived here instead of
-    asked of the resolver can disagree with the loaded stage.
-
-    Returns None when the ref does not resolve (never exported, or a target
-    that vanished); the caller falls back to the recorded pin.
-    """
-    try:
-        resolved = resolver.try_resolve_entity_uri(layer_ref)
-    except Exception:
-        # A resolver hiccup must not take the Import button down: the
-        # version column is cosmetic, the composition is not.
-        logger.debug("Effective-version resolve failed: %s", layer_ref,
-                     exc_info=True)
-        return None
-    if resolved is None:
-        return None
-    return version_name_from_path(resolved)
-
-
-def _layer_display_version(layer_info: dict) -> str:
-    """The version to show an artist: what composed, not what was pinned.
-
-    ``effective_version`` is stamped by ``execute`` when the resolver was
-    asked; absent (a pinned import, or a caller driving the UI directly)
-    it falls back to the recorded pin, which is correct in pinned mode.
-    """
-    effective = layer_info.get('effective_version')
-    if effective:
-        return effective
-    return _extract_layer_version(layer_info)
-
-
-def _sanitize_parm_name(name: str) -> str:
-    """Convert display name to valid parameter name."""
-    safe = re.sub(r'[^a-zA-Z0-9]', '_', name)
-    if safe and safe[0].isdigit():
-        safe = 'l_' + safe
-    return safe.lower()
-
-
-def _extract_asset_uri_from_sublayer(path_value) -> str | None:
-    """Extract asset entity URI from sublayer path info.
-
-    Args:
-        path_value: Either an entity URI string or a filesystem Path
-
-    Returns:
-        The asset entity URI string (without query params), or None
-    """
-    if isinstance(path_value, str) and 'entity:/assets/' in path_value:
-        # Entity URI format: entity:/assets/CATEGORY/ASSET?variant=...
-        # Strip query parameters
-        return path_value.split('?')[0]
-    return None
-
-
-def _containing_folder(parm_group, parm_name: str):
-    """Find the folder template holding a parm, or None if absent."""
-    if parm_group.find(parm_name) is None:
-        return None
-    try:
-        return parm_group.containingFolder(parm_name)
-    except hou.OperationFailed:
-        return None
-
-
-class ImportShot(ns.Node):
-    def __init__(self, native):
-        super().__init__(native)
-
-    def list_shot_uris(self) -> list[str]:
-        uris = api.config.list_entity_uris(
-            filter = Uri.parse_unsafe('entity:/shots'),
-            closure = True
-        )
-        return ['from_context'] + [str(uri) for uri in uris]
+    # A shot import only ever addresses a shot: 'from_context' in an asset
+    # workfile or a Multi's resolves to nothing, and the node bypasses.
+    ENTITY_CONTEXTS = ('shots',)
 
     def list_asset_department_names(self):
         # The whole pool: these are the departments of the *assets* this shot
@@ -489,7 +254,7 @@ class ImportShot(ns.Node):
 
     def _shot_departments(self):
         """The shot's own departments — its assignment, or the whole pool."""
-        shot_uri = self.get_shot_uri()
+        shot_uri = self.get_entity_uri()
         if shot_uri is None:
             return list_departments('shots')
         return list_entity_departments(shot_uri)
@@ -499,32 +264,18 @@ class ImportShot(ns.Node):
 
     def list_department_names(self) -> list[str]:
         names = [d.name for d in self._shot_departments()]
-        return ['from_context'] + names
-
-    def list_channel_names(self) -> list[str]:
-        """List available channel names for current shot."""
-        shot_uri = self.get_shot_uri()
-        if shot_uri is None:
-            return ['default']
-        channels = list_channels(shot_uri)
-        if not channels:
-            return ['default']
-        # Ensure 'default' is always first
-        if 'default' in channels:
-            channels.remove('default')
-            channels.insert(0, 'default')
-        return channels
+        return [FROM_CONTEXT, NO_DEPARTMENT] + names
 
     def list_version_names(self) -> list[str]:
         """List available staged versions including 'latest' and 'current'."""
-        shot_uri = self.get_shot_uri()
+        shot_uri = self.get_entity_uri()
         if shot_uri is None:
             return ['latest', 'current']
 
         channel_name = self.get_channel_name()
 
         # Get staged directory for this channel
-        staged_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_staged' / channel_name
+        staged_uri = Uri.parse('export:/') / shot_uri.segments / '_staged' / channel_name
         staged_path = api.storage.resolve(staged_uri)
 
         # Get versioned directories (v0001, v0002, etc.)
@@ -534,60 +285,21 @@ class ImportShot(ns.Node):
         # Add special options at the beginning
         return ['latest', 'current'] + version_names
 
-    def get_version_name(self) -> str:
-        """Get selected version name. Default is 'latest'."""
-        version_name = self.parm('version').eval()
-        if len(version_name) == 0:
-            return 'latest'  # Default to latest
-        return version_name
-
-    def get_channel_name(self) -> str:
-        """Get selected channel name. Default is 'default'."""
-        channel_name = self.parm('variant').eval()
-        if len(channel_name) == 0:
-            return 'default'
-        return channel_name
-
     def get_department_name(self) -> str | None:
-        department_name = self.parm('department').eval()
-        # Explicit no-department: import the full staged stack with no
-        # department/downstream exclusion. Set by the render stage builder,
-        # where the composition must not depend on the ambient workfile
-        # context (the farm has none, a debug session has an arbitrary one).
-        if department_name == 'none':
+        """The department the import is for; None for 'none' (the whole
+        staged stack) or an unset 'from_context'. A Multi's workfile
+        resolves its own department even though it resolves no shot: the
+        node then still excludes its own layer."""
+        if self.parm('department').eval() == NO_DEPARTMENT:
             return None
-        if department_name == 'from_context':
-            return _department_from_context_json()
-        # From settings
-        department_names = self.list_department_names()
-        if len(department_names) == 0: return None
-        if len(department_name) == 0: return department_names[1] if len(department_names) > 1 else None
-        if department_name not in department_names: return None
-        return department_name
-
-    def get_shot_uri(self) -> Uri | None:
-        shot_uri_raw = self.parm('entity').eval()
-        if shot_uri_raw == 'from_context':
-            context = _entity_from_context_json()
-            if context is None: return None
-            return context.entity_uri
-        # From settings
-        shot_uris = self.list_shot_uris()
-        if len(shot_uris) <= 1: return None  # Only 'from_context' means no real URIs
-        if len(shot_uri_raw) == 0: return Uri.parse_unsafe(shot_uris[1])  # Skip 'from_context'
-        if shot_uri_raw not in shot_uris: return None  # Compare strings
-        return Uri.parse_unsafe(shot_uri_raw)
+        return super().get_department_name()
 
     def get_exclude_asset_department_names(self) -> list[str]:
-        parm = self.parm('asset_departments')
-        if parm is None: return []  # older HDA binary; nothing excluded
-        return list(filter(len, parm.eval().split()))
+        return list(filter(len, self.parm('asset_departments').eval().split()))
 
     def set_exclude_asset_department_names(self, department_names):
-        parm = self.parm('asset_departments')
-        if parm is None: return
         asset_department_names = self.list_asset_department_names()
-        parm.set(' '.join([
+        self.parm('asset_departments').set(' '.join([
             department_name
             for department_name in department_names
             if department_name in asset_department_names
@@ -610,10 +322,12 @@ class ImportShot(ns.Node):
         environment workfile seeing the animation camera. Safe for publishing:
         export_layer layerbreaks everything this node loads.
         """
-        parm = self.parm('exclude')
-        if parm is None: return EXCLUDE_DOWNSTREAM  # older HDA binary
-        mode = parm.eval()
-        if mode not in EXCLUDE_MODES: return EXCLUDE_DOWNSTREAM
+        mode = self.parm('exclude').eval()
+        if mode not in EXCLUDE_MODES:
+            raise ValueError(
+                f"Unknown exclude mode '{mode}' on the node: "
+                f"expected one of {', '.join(EXCLUDE_MODES)}"
+            )
         return mode
 
     def set_exclude_mode(self, mode: str):
@@ -622,9 +336,7 @@ class ImportShot(ns.Node):
                 f"Unknown exclude mode '{mode}': "
                 f"expected one of {', '.join(EXCLUDE_MODES)}"
             )
-        parm = self.parm('exclude')
-        if parm is None: return
-        parm.set(mode)
+        self.parm('exclude').set(mode)
 
     def get_exclude_downstream_of(self) -> str | None:
         """Department whose *downstream* alone should be excluded, or None.
@@ -639,16 +351,12 @@ class ImportShot(ns.Node):
         persisted here would be silently lost on a re-cook and the node
         would quietly go back to composing every department.
         """
-        parm = self.parm('exclude_downstream_of')
-        if parm is None: return None  # older HDA binary; no strict cut
-        department_name = parm.eval()
+        department_name = self.parm('exclude_downstream_of').eval()
         if len(department_name) == 0: return None
         return department_name
 
     def set_exclude_downstream_of(self, department_name: str | None):
-        parm = self.parm('exclude_downstream_of')
-        if parm is None: return
-        parm.set(department_name or '')
+        self.parm('exclude_downstream_of').set(department_name or '')
 
     def get_strictly_downstream_department_names(self):
         """Departments after ``exclude_downstream_of``, itself included.
@@ -665,32 +373,17 @@ class ImportShot(ns.Node):
         if department_name not in shot_department_names:
             raise ValueError(
                 f"exclude_downstream_of '{department_name}' is not a "
-                f"renderable department of {self.get_shot_uri()}: "
+                f"renderable department of {self.get_entity_uri()}: "
                 f"[{', '.join(shot_department_names)}]"
             )
         index = shot_department_names.index(department_name)
         return shot_department_names[index + 1:]
 
-    def get_frame_range(self):
-        shot_uri = self.get_shot_uri()
-        if shot_uri is None: return None
-        return get_frame_range(shot_uri)
-            
     def get_include_procedurals(self):
         return bool(self.parm('include_procedurals').eval())
 
-    def set_shot_uri(self, shot_uri: Uri):
-        shot_uris = self.list_shot_uris()
-        if str(shot_uri) not in shot_uris: return  # Compare strings
-        self.parm('entity').set(str(shot_uri))
-        self._update_labels()
-
-    def set_department_name(self, department_name: str):
-        self.parm('department').set(department_name)
-        self._update_labels()
-
     def set_channel_name(self, channel_name: str):
-        self.parm('variant').set(channel_name)
+        super().set_channel_name(channel_name)
         self._update_labels()
 
     def set_version_name(self, version_name: str):
@@ -702,32 +395,13 @@ class ImportShot(ns.Node):
 
     def _update_labels(self):
         """Update label parameters to show current entity/department selection."""
-        entity_raw = self.parm('entity').eval()
-        if entity_raw == 'from_context':
-            shot_uri = self.get_shot_uri()
-            if shot_uri:
-                self.parm('entity_label').set(f'from_context: {shot_uri}')
-            else:
-                self.parm('entity_label').set('from_context: none')
-        else:
-            # Specific entity URI selected
-            self.parm('entity_label').set(entity_raw)
-
-        department_raw = self.parm('department').eval()
-        if department_raw == 'from_context':
-            department_name = self.get_department_name()
-            if department_name:
-                self.parm('department_label').set(f'from_context: {department_name}')
-            else:
-                self.parm('department_label').set('from_context: none')
-        else:
-            # Specific department selected - no label needed
-            self.parm('department_label').set('')
+        self.parm('entity_label').set(self._entity_label())
+        self.parm('department_label').set(self._department_label())
 
         # Update version label when 'latest' or 'current' is selected
         version_raw = self.parm('version').eval()
-        if version_raw in ('latest', 'current', ''):
-            shot_uri = self.get_shot_uri()
+        if version_raw in ('latest', 'current'):
+            shot_uri = self.get_entity_uri()
             if shot_uri is not None:
                 # Both 'latest' and 'current' use highest versioned staged file
                 # ('latest' strips versions for dynamic resolution at import time)
@@ -744,178 +418,6 @@ class ImportShot(ns.Node):
             # Specific version selected - no label needed
             self.parm('version_label').set('')
 
-    def _update_layer_stack_ui(self, layers_to_load: list[dict]):
-        """Update HDA spare parameters to show layer stack with toggles.
-
-        Creates checkbox parameters on HDA that control sublayer enables via expressions.
-        """
-        native = self.native()
-        import_node = native.node('import')
-
-        # Get existing parameter template group (preserve existing UI!)
-        parm_group = native.parmTemplateGroup()
-
-        # Remove old layer_stack folder if it exists (for rebuild on re-import)
-        if parm_group.find('layer_stack'):
-            parm_group.remove('layer_stack')
-
-        # Create Layer Stack folder
-        layer_folder = hou.FolderParmTemplate(
-            'layer_stack', 'Layer Stack',
-            folder_type=hou.folderType.Simple
-        )
-
-        # Calculate max name length for padding (column alignment)
-        max_name_len = max(
-            (len(_get_layer_display_name(info)) for info in layers_to_load),
-            default=20
-        )
-
-        # Add parameters for each layer
-        for i, layer_info in enumerate(layers_to_load):
-            display_name = _get_layer_display_name(layer_info)
-            version = _layer_display_version(layer_info)
-            safe_name = f"layer_{i}"
-
-            # Pad the display name for column alignment
-            padded_name = display_name.ljust(max_name_len + 2)
-
-            # Toggle parameter with padded label
-            toggle_parm = hou.ToggleParmTemplate(
-                f'{safe_name}_enable',
-                padded_name,
-                default_value=True
-            )
-            toggle_parm.setJoinWithNext(True)
-            layer_folder.addParmTemplate(toggle_parm)
-
-            # Version label - hide the parameter name, show only column_labels
-            version_parm = hou.LabelParmTemplate(
-                f'{safe_name}_version',
-                '',  # Empty main label
-                column_labels=(version,),
-                is_label_hidden=True  # Hide parameter name
-            )
-
-            # Asset rows get a third column: an asset is a composed blob, and
-            # this is the only way to see the department layers inside it.
-            # Other row types are already a single department — there is
-            # nothing to open.
-            inspectable = (
-                layer_info.get('type') == 'asset'
-                and _extract_asset_uri_from_sublayer(layer_info.get('path'))
-                is not None
-            )
-            if inspectable:
-                version_parm.setJoinWithNext(True)
-            layer_folder.addParmTemplate(version_parm)
-
-            if inspectable:
-                inspect_parm = hou.ButtonParmTemplate(
-                    f'{safe_name}_inspect',
-                    '...',
-                    # Route through the HDA's PythonModule (the convention the
-                    # definition's own buttons use) rather than baking a module
-                    # path into every artist's .hip: spare-parm callbacks are
-                    # serialized into the file, and this indirection ships with
-                    # the package.
-                    script_callback=f'hou.phm().inspect_asset_layer({i})',
-                    script_callback_language=hou.scriptLanguage.Python,
-                )
-                inspect_parm.setHelp(
-                    "Show the department layers composing this asset"
-                )
-                layer_folder.addParmTemplate(inspect_parm)
-
-        # Insert after the Selection folder (before Settings). Anchor on
-        # definition parms, not folder names: inserting a spare folder makes
-        # Houdini spare-ify the HDA's containers under renamed names
-        # (selection -> selection2), so folder-name lookups go stale after
-        # the first import and the Layer Stack folder would fall through to
-        # append() — jumping below Actions on every re-import.
-        selection_folder = _containing_folder(parm_group, 'entity')
-        settings_folder = _containing_folder(parm_group, 'include_procedurals')
-        if selection_folder is not None:
-            parm_group.insertAfter(selection_folder, layer_folder)
-        elif settings_folder is not None:
-            parm_group.insertBefore(settings_folder, layer_folder)
-        else:
-            parm_group.append(layer_folder)
-
-        # Apply modified parameter template group
-        native.setParmTemplateGroup(parm_group)
-
-        # Set expressions on sublayer enables to read from HDA checkboxes
-        for i in range(len(layers_to_load)):
-            safe_name = f"layer_{i}"
-            enable_parm = import_node.parm(f'enable{i+1}')
-            enable_parm.setExpression(f'ch("../{safe_name}_enable")')
-
-    def inspect_asset_layer(self, index: int):
-        """Open the layer inspector for the asset on Layer Stack row ``index``.
-
-        Driven by the row's spare button. The ref is re-read from the node
-        rather than baked into the callback string: spare-parm callbacks are
-        serialized into the .hip, so a file saved against an older stack would
-        otherwise reopen with a stale asset URI in the button.
-        """
-        native = self.native()
-        import_node = native.node('import')
-
-        ref_parm = import_node.parm(f'filepath{index + 1}')
-        if ref_parm is None:
-            hou.ui.displayMessage(
-                "That layer is no longer in the stack. Re-import to refresh.",
-                severity=hou.severityType.Warning,
-            )
-            return
-
-        ref = ref_parm.eval()
-        asset_uri_string = _extract_asset_uri_from_sublayer(ref)
-        if asset_uri_string is None:
-            hou.ui.displayMessage(
-                "That layer is not an asset.",
-                severity=hou.severityType.Warning,
-            )
-            return
-
-        asset_uri = Uri.parse_unsafe(asset_uri_string)
-        pinned = self.get_version_name() != 'latest'
-
-        # Resolve the row's own ref rather than looking up "the latest staged
-        # file": in latest mode those are the same, but pinned they are not,
-        # and reporting a build the node is not composing is the exact lie
-        # this dialog exists to kill.
-        with resolver.latest_mode(not pinned):
-            staged = resolver.try_resolve_entity_uri(ref)
-
-        if staged is None:
-            hou.ui.displayMessage(
-                f"{asset_uri.segments[-1]} has no staged build to inspect.",
-                severity=hou.severityType.Warning,
-            )
-            return
-
-        # The asset's own channel, from its ref — not the node's channel parm,
-        # which is the *shot's*. They are independent, and a department that
-        # isn't composing is looked up under this one.
-        asset_ref = parse_entity_sublayer_uri(ref)
-        asset_channel = asset_ref.channel if asset_ref is not None else 'default'
-
-        staged_path = Path(staged)
-        report = build_asset_layer_report(
-            asset_uri,
-            staged_path,
-            pinned,
-            channel=asset_channel,
-            staged_version=staged_path.parent.name,
-        )
-
-        from tumblepipe.pipe.houdini.ui.asset_layer_dialog import (
-            AssetLayerDialog,
-        )
-        dialog = AssetLayerDialog(report, parent=hou.qt.mainWindow())
-        dialog.show()
 
     def _initialize(self):
         """Initialize node and update labels to show resolved values."""
@@ -930,7 +432,7 @@ class ImportShot(ns.Node):
         metadata_node = context.node('metadata')
 
         # Get parameters
-        shot_uri = self.get_shot_uri()
+        shot_uri = self.get_entity_uri()
         if shot_uri is None:
             ns.set_node_comment(context, "Bypassed: No shot selected")
             context.bypass(True)
@@ -1012,7 +514,7 @@ class ImportShot(ns.Node):
                 assets = context_data.get('parameters', {}).get('assets', [])
 
         # Parse sublayers from staged file
-        sublayers = _parse_staged_sublayers(staged_file_path)
+        sublayers = shot_sublayers.parse_staged_sublayers(staged_file_path)
 
         # Exclude the current department, and its downstream unless the node
         # asks to see them. Shown downstream layers are tagged for the Layer
@@ -1040,17 +542,16 @@ class ImportShot(ns.Node):
         # Filter out excluded layers - both department layers AND assets from excluded departments
         def should_include_layer(info):
             # Skip _shared channel layers for single-channel entities
-            if info.get('variant') == '_shared':
+            if info[CHANNEL_KEY] == SHARED_CHANNEL:
                 if len(list_channels(shot_uri)) <= 1:
                     return False
 
             if info['type'] == 'shot_department':
                 return info['department'] not in departments_to_exclude
             elif info['type'] == 'asset':
-                asset_uri = _extract_asset_uri_from_sublayer(info['path'])
-                if asset_uri is not None:
-                    return asset_uri not in excluded_asset_uris
-            # Include root, scene, and unknown types
+                asset_uri = shot_sublayers.asset_uri_of(info['path'])
+                return str(asset_uri) not in excluded_asset_uris
+            # The root layer
             return True
 
         layers_to_load = list(reversed([
@@ -1066,25 +567,16 @@ class ImportShot(ns.Node):
 
         loaded_refs = []
         for i, info in enumerate(layers_to_load):
-            # Handle both filesystem paths (Path objects) and entity URIs (strings)
-            path_value = info['path']
+            # Every staged sublayer is an entity URI
+            uri = Uri.parse(info['path'])
             pin_stripped = False
-            if isinstance(path_value, str) and path_value.startswith('entity:'):
-                # Entity URI - parse to manipulate query params
-                uri = Uri.parse_unsafe(path_value)
-                # Strip version when in 'latest' mode so resolver picks actual latest
-                if version_name == 'latest' and 'version' in uri.query:
-                    stripped = dict(uri.query)
-                    del stripped['version']
-                    uri = Uri(uri.purpose, uri.segments, stripped)
-                    pin_stripped = True
-                layer_path = str(uri)
-            elif isinstance(path_value, str):
-                # Other string path - pass through directly
-                layer_path = path_value
-            else:
-                # Filesystem Path object
-                layer_path = path_str(path_value)
+            # Strip version when in 'latest' mode so resolver picks actual latest
+            if version_name == 'latest' and 'version' in uri.query:
+                stripped = dict(uri.query)
+                del stripped['version']
+                uri = Uri(uri.purpose, uri.segments, stripped)
+                pin_stripped = True
+            layer_path = str(uri)
             import_node.parm(f'filepath{i+1}').set(layer_path)
             loaded_refs.append(layer_path)
 
@@ -1094,10 +586,10 @@ class ImportShot(ns.Node):
             # version and the recorded pin is already the truth — no reason to
             # pay a resolve per layer for a value we have.
             if pin_stripped:
-                info['effective_version'] = _resolve_effective_version(layer_path)
+                info['effective_version'] = shot_sublayers.effective_layer_version(layer_path)
 
         # Update layer stack UI with checkboxes and link to sublayer enables
-        self._update_layer_stack_ui(layers_to_load)
+        layer_stack.update_layer_stack(context, layers_to_load)
 
         # Excluded asset departments are muted, not filtered: the layers sit
         # several sublayers below anything this node loads (scene assets go
@@ -1115,30 +607,25 @@ class ImportShot(ns.Node):
         # is stored against the final fps from the start; an fps change after
         # the range is set can otherwise shift the start/end frames. set_fps
         # also pins the range now, so this ordering is belt-and-suspenders.
-        frame_range = self.get_frame_range()
-        if frame_range is not None:
-            fps = get_fps(shot_uri)
-            if fps is not None:
-                util.set_fps(fps)
-            # Don't yank the playhead back to the start on every re-import;
-            # only reset it when the current frame is outside the shot range.
-            util.set_frame_range(frame_range, preserve_current_frame=True)
+        frame_range = get_frame_range(shot_uri)
+        if frame_range is None:
+            raise self._error(f'{shot_uri} has no frame range authored')
+        fps = get_fps(shot_uri)
+        if fps is None:
+            raise self._error(f'no fps configured for {shot_uri} or the project')
+        playbar.set_fps(fps)
+        # Don't yank the playhead back to the start on every re-import;
+        # only reset it when the current frame is outside the shot range.
+        playbar.set_frame_range(frame_range, preserve_current_frame=True)
 
-        # Set shot metadata script
-        if frame_range is not None and staged_file_path is not None:
-            version_name = staged_file_path.parent.name
-
-            # Generate the metadata Python script
-            metadata_script = _set_shot_metadata_script(
-                shot_uri,
-                frame_range,
-                get_fps(shot_uri),
-                version_name,
-                assets
-            )
-
-            # Set the script on the metadata pythonscript node
-            metadata_node.parm('python').set(metadata_script)
+        # Set the shot metadata script on the metadata pythonscript node
+        metadata_node.parm('python').set(_set_shot_metadata_script(
+            shot_uri,
+            frame_range,
+            fps,
+            staged_file_path.parent.name,
+            assets
+        ))
 
         # Handle asset duplication for assets with instances > 1
         self._setup_asset_duplication(context, assets, mute_refs)
@@ -1176,7 +663,7 @@ class ImportShot(ns.Node):
         every import, and a mute only has to come before whatever reads the
         composed stage.
         """
-        from tumblepipe.pipe.houdini.util import uri_to_prim_path
+        from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
         from tumblepipe.api import default_client
 
         api = default_client()
@@ -1220,7 +707,7 @@ class ImportShot(ns.Node):
             if not asset_uri_str:
                 continue
 
-            asset_uri = Uri.parse_unsafe(asset_uri_str)
+            asset_uri = Uri.parse(asset_uri_str)
             asset_prim_path = uri_to_prim_path(asset_uri)
             asset_name = asset_uri.segments[-1] if asset_uri.segments else 'asset'
 
@@ -1259,7 +746,7 @@ class ImportShot(ns.Node):
             script_lines = [
                 'import hou',
                 '',
-                'from tumblepipe.pipe.houdini import util',
+                'from tumblepipe.pipe.houdini import prim_queries',
                 '',
                 'node = hou.pwd()',
                 'stage = node.editableStage()',
@@ -1271,20 +758,20 @@ class ImportShot(ns.Node):
             # that never passed an import Transform LOP is none at all.
             # Authoring here before the copies below lets the op set reach
             # them through Duplicate's reference arc, matching the GUI
-            # import (see util.author_identity_placement_ops).
+            # import (see prim_queries.author_identity_placement_ops).
             for prototype_prim_path in prototype_prim_paths:
                 script_lines += [
                     f'prim = root.GetPrimAtPath("{prototype_prim_path}")',
                     'if prim.IsValid():',
-                    '    if not util.apply_placement_op_order(prim):',
-                    '        util.author_identity_placement_ops(prim)',
+                    '    if not prim_queries.apply_placement_op_order(prim):',
+                    '        prim_queries.author_identity_placement_ops(prim)',
                     '',
                 ]
             for instance_prim_path in instance_prim_paths:
                 script_lines += [
                     f'prim = root.GetPrimAtPath("{instance_prim_path}")',
                     'if prim.IsValid():',
-                    '    util.apply_placement_op_order(prim)',
+                    '    prim_queries.apply_placement_op_order(prim)',
                     '',
                 ]
             order_node = duplicates_node.createNode(
@@ -1309,39 +796,29 @@ class ImportShot(ns.Node):
 def create(scene, name):
     return ns.create_node(scene, name, ImportShot, 'import_shot', force_valid_node_name=True)
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
 
 def on_created(raw_node):
     # Set node style
-    set_style(raw_node)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
 
     node = ImportShot(raw_node)
     node._initialize()
 
-def execute():
-    raw_node = hou.pwd()
+
+def execute(kwargs):
+    raw_node = kwargs['node']
     node = ImportShot(raw_node)
     node.execute()
 
-def select():
-    """HDA button callback to open entity selector dialog."""
-    from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
 
-    raw_node = hou.pwd()
-    node = ImportShot(raw_node)
+def select(kwargs):
+    """Entity button."""
+    ImportShot(kwargs['node']).pick_entity('Select Shot')
 
-    dialog = EntitySelectorDialog(
-        api=api,
-        entity_filter='shots',  # Only shots for import_shot
-        include_from_context=True,
-        current_selection=node.parm('entity').eval(),
-        title="Select Shot",
-        parent=hou.qt.mainWindow()
+
+def inspect_asset_layer(kwargs, index: int):
+    """A Layer Stack row's '...' button."""
+    native = kwargs['node']
+    layer_stack.inspect_asset_layer(
+        native, index, pinned=ImportShot(native).get_version_name() != 'latest'
     )
-
-    if dialog.exec_():
-        selected_uri = dialog.get_selected_uri()
-        if selected_uri:
-            node.parm('entity').set(selected_uri)
-            node._update_labels()

@@ -31,7 +31,7 @@ Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
 comment ""
-position -22.362 7.39688
+position 0 0
 connectornextid 0
 flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
@@ -166,6 +166,7 @@ Content-Type: text/plain
 
 {
 version 0.8
+cablerenamebylabel	[ 0	locks=0 ]	(	"off"	)
 inputs	[ 0	locks=0 ]	(	0	)
 outputs	[ 0	locks=0 ]	(	1	)
 outputlabel1	[ 0	locks=0 ]	(	C	)
@@ -286,6 +287,7 @@ Content-Type: text/plain
 
 {
 version 0.8
+cablerenamebylabel	[ 0	locks=0 ]	(	"off"	)
 inputs	[ 0	locks=0 ]	(	0	)
 outputs	[ 0	locks=0 ]	(	0	)
 }
@@ -372,7 +374,7 @@ Content-Type: text/plain
       defaultString = @aov_name
       flags = 0
       start = 41.666666666666664
-      segment { length = 0 expr = @aov_name }
+      segment { length = 0 expr = @import_plane }
     }
   }
 
@@ -402,6 +404,7 @@ missingcolor	[ 0	locks=0 ]	(	0	0	0	1	)
 colorspace	[ 0	locks=0 ]	(	"raw"	)
 premultiplied	[ 0	locks=0 ]	(	"on"	)
 loadcamera	[ 0	locks=0 ]	(	"off"	)
+keepdisplaywindow	[ 0	locks=0 ]	(	"off"	)
 addaovs	[ 0	locks=0 ]	(	0	)
 aovs	[ 0	locks=0 ]	(	1	)
 aov1	[ 8	locks=0 ]	(	[ aov1	"" ] 	)
@@ -551,7 +554,7 @@ Content-Type: text/plain
       defaultString = @aov_name
       flags = 0
       start = 41.666666666666664
-      segment { length = 0 expr = @aov_name }
+      segment { length = 0 expr = @import_plane }
     }
   }
 
@@ -581,6 +584,7 @@ missingcolor	[ 0	locks=0 ]	(	0	0	0	1	)
 colorspace	[ 0	locks=0 ]	(	"raw"	)
 premultiplied	[ 0	locks=0 ]	(	"on"	)
 loadcamera	[ 0	locks=0 ]	(	"off"	)
+keepdisplaywindow	[ 0	locks=0 ]	(	"off"	)
 addaovs	[ 0	locks=0 ]	(	0	)
 aovs	[ 0	locks=0 ]	(	1	)
 aov1	[ 8	locks=0 ]	(	[ aov1	"" ] 	)
@@ -730,7 +734,7 @@ Content-Type: text/plain
       defaultString = @aov_name
       flags = 0
       start = 41.666666666666664
-      segment { length = 0 expr = @aov_name }
+      segment { length = 0 expr = @import_plane }
     }
   }
 
@@ -760,6 +764,7 @@ missingcolor	[ 0	locks=0 ]	(	0	0	0	1	)
 colorspace	[ 0	locks=0 ]	(	"raw"	)
 premultiplied	[ 0	locks=0 ]	(	"on"	)
 loadcamera	[ 0	locks=0 ]	(	"off"	)
+keepdisplaywindow	[ 0	locks=0 ]	(	"off"	)
 addaovs	[ 0	locks=0 ]	(	0	)
 aovs	[ 0	locks=0 ]	(	1	)
 aov1	[ 8	locks=0 ]	(	[ aov1	"" ] 	)
@@ -855,11 +860,11 @@ version 0.8
 execute	[ 0	locks=0 ]	(	0	)
 renderpreview	[ 0	locks=0 ]	(	0	)
 executebackground	[ 0	locks=0 ]	(	0	)
-renderdialog	[ 0	locks=0 ]	(	0	)
 trange	[ 0	locks=0 ]	(	"off"	)
 f	[ 0	locks=0 ]	(	0	0	1	)
 setudim	[ 0	locks=0 ]	(	"off"	)
 udim	[ 0	locks=0 ]	(	1001	1001	)
+udimlist	[ 0	locks=0 ]	(	""	)
 take	[ 0	locks=0 ]	(	_current_	)
 coppath	[ 0	locks=0 ]	(	../OUT_MONO	)
 copoutput	[ 8	locks=0 ]	(	[ copoutput	$HIP/comp/$HIPNAME.$OS.$F4.exr ] 	)
@@ -884,6 +889,7 @@ stdswitcher	[ 0	locks=0 ]	(	2	2	2	2	0	)
 addaovs	[ 0	locks=0 ]	(	0	)
 outputaovs	[ 0	locks=0 ]	(	1	)
 mkpath	[ 0	locks=0 ]	(	"on"	)
+initsim	[ 0	locks=0 ]	(	"off"	)
 alfprogress	[ 0	locks=0 ]	(	"off"	)
 savebackground	[ 0	locks=0 ]	(	"on"	)
 exportattribs	[ 0	locks=0 ]	(	"on"	)
@@ -896,6 +902,7 @@ vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
 mktx	[ 0	locks=0 ]	(	"off"	)
 txtilesize	[ 0	locks=0 ]	(	64	64	)
 txmipmapfilter	[ 0	locks=0 ]	(	box	)
+txopaquedetect	[ 0	locks=0 ]	(	"on"	)
 vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
 vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
 vm_image_exr_compression	[ 0	locks=0 ]	(	"dwab"	)
@@ -1069,11 +1076,11 @@ version 0.8
 execute	[ 0	locks=0 ]	(	0	)
 renderpreview	[ 0	locks=0 ]	(	0	)
 executebackground	[ 0	locks=0 ]	(	0	)
-renderdialog	[ 0	locks=0 ]	(	0	)
 trange	[ 0	locks=0 ]	(	"off"	)
 f	[ 0	locks=0 ]	(	0	0	1	)
 setudim	[ 0	locks=0 ]	(	"off"	)
 udim	[ 0	locks=0 ]	(	1001	1001	)
+udimlist	[ 0	locks=0 ]	(	""	)
 take	[ 0	locks=0 ]	(	_current_	)
 coppath	[ 0	locks=0 ]	(	../OUT_RGB	)
 copoutput	[ 8	locks=0 ]	(	[ copoutput	$HIP/comp/$HIPNAME.$OS.$F4.exr ] 	)
@@ -1098,6 +1105,7 @@ stdswitcher	[ 0	locks=0 ]	(	2	2	2	2	0	)
 addaovs	[ 0	locks=0 ]	(	0	)
 outputaovs	[ 0	locks=0 ]	(	1	)
 mkpath	[ 0	locks=0 ]	(	"on"	)
+initsim	[ 0	locks=0 ]	(	"off"	)
 alfprogress	[ 0	locks=0 ]	(	"off"	)
 savebackground	[ 0	locks=0 ]	(	"on"	)
 exportattribs	[ 0	locks=0 ]	(	"on"	)
@@ -1110,6 +1118,7 @@ vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
 mktx	[ 0	locks=0 ]	(	"off"	)
 txtilesize	[ 0	locks=0 ]	(	64	64	)
 txmipmapfilter	[ 0	locks=0 ]	(	box	)
+txopaquedetect	[ 0	locks=0 ]	(	"on"	)
 vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
 vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
 vm_image_exr_compression	[ 0	locks=0 ]	(	"dwab"	)
@@ -1224,11 +1233,11 @@ version 0.8
 execute	[ 0	locks=0 ]	(	0	)
 renderpreview	[ 0	locks=0 ]	(	0	)
 executebackground	[ 0	locks=0 ]	(	0	)
-renderdialog	[ 0	locks=0 ]	(	0	)
 trange	[ 0	locks=0 ]	(	"off"	)
 f	[ 0	locks=0 ]	(	0	0	1	)
 setudim	[ 0	locks=0 ]	(	"off"	)
 udim	[ 0	locks=0 ]	(	1001	1001	)
+udimlist	[ 0	locks=0 ]	(	""	)
 take	[ 0	locks=0 ]	(	_current_	)
 coppath	[ 0	locks=0 ]	(	../OUT_RGBA	)
 copoutput	[ 8	locks=0 ]	(	[ copoutput	$HIP/comp/$HIPNAME.$OS.$F4.exr ] 	)
@@ -1253,6 +1262,7 @@ stdswitcher	[ 0	locks=0 ]	(	2	2	2	2	0	)
 addaovs	[ 0	locks=0 ]	(	0	)
 outputaovs	[ 0	locks=0 ]	(	1	)
 mkpath	[ 0	locks=0 ]	(	"on"	)
+initsim	[ 0	locks=0 ]	(	"off"	)
 alfprogress	[ 0	locks=0 ]	(	"off"	)
 savebackground	[ 0	locks=0 ]	(	"on"	)
 exportattribs	[ 0	locks=0 ]	(	"on"	)
@@ -1265,6 +1275,7 @@ vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
 mktx	[ 0	locks=0 ]	(	"off"	)
 txtilesize	[ 0	locks=0 ]	(	64	64	)
 txmipmapfilter	[ 0	locks=0 ]	(	box	)
+txopaquedetect	[ 0	locks=0 ]	(	"on"	)
 vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
 vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
 vm_image_exr_compression	[ 0	locks=0 ]	(	"dwab"	)
@@ -1495,6 +1506,7 @@ local_usehoudinimaxthreads	[ 0	locks=0 ]	(	"off"	)
 local_houdinimaxthreads	[ 0	locks=0 ]	(	0	)
 local_requireswindow	[ 0	locks=0 ]	(	"off"	)
 local_skippackages	[ 0	locks=0 ]	(	"on"	)
+local_setworkingdir	[ 0	locks=0 ]	(	"on"	)
 local_envunset	[ 0	locks=0 ]	(	""	)
 local_env_file	[ 0	locks=0 ]	(	""	)
 local_envmulti	[ 0	locks=0 ]	(	0	)
@@ -1564,115 +1576,9 @@ sepparm	[ 0	locks=0 ]	(	)
 callbacks	[ 0	locks=0 ]	(	0	0	0	0	0	)
 generate	[ 0	locks=0 ]	(	"import hou
 
-from tumblepipe.pipe.houdini.cops import build_comp
-from tumblepipe.pipe.paths import get_render, get_aov_frame_path
-from tumblepipe.api import path_str, default_client
+from tumblepipe.pipe.houdini.cops import comp_proxy
 
-api = default_client()
-context = build_comp.BuildComp(hou.pwd().parent().parent().parent())
-
-shot_uri = context.get_shot_uri()
-render_department_name = context.get_render_department_name()
-resolution_name = context.get_proxy_resolution()
-
-frame_range = api.config.get_frame_range(shot_uri) if shot_uri is not None else None
-if frame_range is not None:
-    block_range = frame_range.full_range()
-    start_frame = block_range.first_frame
-    end_frame = block_range.last_frame
-else:
-    start_frame = 0
-    end_frame = 0
-
-def _aov_included(aov_name):
-    if aov_name.startswith('C_'): return True
-    if aov_name.startswith('objid_'): return True
-    if aov_name == 'C': return True
-    if aov_name == 'N': return True
-    if aov_name == 'P': return True
-    if aov_name == 'Z': return True
-    if aov_name == 'A': return True
-    if aov_name == 'albedo': return True
-    if aov_name == 'color': return True
-    if aov_name == 'normal': return True
-    if aov_name == 'position': return True
-    if aov_name == 'depth': return True
-    if aov_name == 'alpha': return True
-    return False
-
-def _task_type(aov_name):
-    if aov_name.startswith('C_'): return 'rgba'
-    if aov_name == 'sampleCount': return 'mono'
-    if aov_name == 'C': return 'rgba'
-    return 'rgb'
-
-def _scale(resolution):
-    match resolution:
-        case 'full': return 1.0
-        case 'half': return 2.0
-        case 'quarter': return 4.0
-        case _: assert False, f'Unknown resolution {resolution}'
-
-import_render = (
-    get_render(shot_uri, render_department_name, purpose = 'render')
-    if shot_uri is not None
-    else None
-)
-
-render_layer_names = (
-    list(import_render.layers.keys())
-    if import_render is not None
-    else []
-)
-
-for render_layer_name in render_layer_names:
-    if import_render is None: continue
-    
-    render_layer = import_render.get_latest_complete_layer(render_layer_name)
-    if render_layer is None: continue
-    
-    import_normal_path = render_layer.get_aov_frame_path('normal', '$F')
-    import_albedo_path = render_layer.get_aov_frame_path('albedo', '$F')
-    
-    for aov_name, aov in render_layer.aovs.items():
-    
-        if not _aov_included(aov_name): continue
-    
-        export_aov_path = get_aov_frame_path(
-            shot_uri,
-            resolution_name,
-            render_layer_name,
-            render_layer.version,
-            aov_name,
-            '$F',
-            purpose = 'proxy'
-        )
-        if export_aov_path.exists(): continue
-        
-        import_aov_path = aov.get_aov_frame_path('$F')
-        
-        task = item_holder.addWorkItem()
-        task.addAttrib('task_type', pdg.attribType.String)
-        task.addAttrib('import_path', pdg.attribType.String)
-        task.addAttrib('import_normal_path', pdg.attribType.String)
-        task.addAttrib('import_albedo_path', pdg.attribType.String)
-        task.addAttrib('export_path', pdg.attribType.String)
-        task.addAttrib('aov_name', pdg.attribType.String)
-        task.addAttrib('scale', pdg.attribType.Float)
-        task.addAttrib('start_frame', pdg.attribType.Int)
-        task.addAttrib('end_frame', pdg.attribType.Int)
-        
-        task_type = _task_type(aov_name)
-        task.setStringAttrib('task_type', task_type)
-        task.setStringAttrib('import_path', path_str(import_aov_path))
-        if task_type == 'lpe':
-            task.setStringAttrib('import_normal_path', path_str(import_normal_path))
-            task.setStringAttrib('import_albedo_path', path_str(import_albedo_path))
-        task.setStringAttrib('export_path', path_str(export_aov_path))
-        task.setStringAttrib('aov_name', aov_name)
-        task.setFloatAttrib('scale', _scale(resolution_name))
-        task.setIntAttrib('start_frame', start_frame)
-        task.setIntAttrib('end_frame', end_frame)"	)
+comp_proxy.generate(hou.pwd(), item_holder)"	)
 useregeneratestatic	[ 0	locks=0 ]	(	"off"	)
 regeneratestatic	[ 0	locks=0 ]	(	"# Called when this node may need to regenerate existing work items
 #
@@ -1827,6 +1733,7 @@ framegeneration	[ 0	locks=0 ]	(	"0"	)
 useframeoverride	[ 0	locks=0 ]	(	"off"	)
 frameoverride	[ 0	locks=0 ]	(	1	)
 range	[ 0	locks=0 ]	(	0	0	1	)
+customrange	[ 0	locks=0 ]	(	$FSTART-$FEND	)
 singletask	[ 0	locks=0 ]	(	"off"	)
 sepparm	[ 0	locks=0 ]	(	)
 batchall	[ 0	locks=0 ]	(	"off"	)
@@ -2131,6 +2038,7 @@ framegeneration	[ 0	locks=0 ]	(	"0"	)
 useframeoverride	[ 0	locks=0 ]	(	"off"	)
 frameoverride	[ 0	locks=0 ]	(	1	)
 range	[ 0	locks=0 ]	(	0	0	1	)
+customrange	[ 0	locks=0 ]	(	$FSTART-$FEND	)
 singletask	[ 0	locks=0 ]	(	"off"	)
 sepparm	[ 0	locks=0 ]	(	)
 batchall	[ 0	locks=0 ]	(	"off"	)
@@ -2355,6 +2263,7 @@ framegeneration	[ 0	locks=0 ]	(	"0"	)
 useframeoverride	[ 0	locks=0 ]	(	"off"	)
 frameoverride	[ 0	locks=0 ]	(	1	)
 range	[ 0	locks=0 ]	(	0	0	1	)
+customrange	[ 0	locks=0 ]	(	$FSTART-$FEND	)
 singletask	[ 0	locks=0 ]	(	"off"	)
 sepparm	[ 0	locks=0 ]	(	)
 batchall	[ 0	locks=0 ]	(	"off"	)
@@ -2586,41 +2495,9 @@ pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
 pdg_command	[ 0	locks=0 ]	(	""	)
 sepparm	[ 0	locks=0 ]	(	)
 callbacks	[ 0	locks=0 ]	(	0	0	0	0	0	)
-generate	[ 0	locks=0 ]	(	"# Called when this node should generate new work items from upstream items.
-#
-# self             -   A reference to the current pdg.Node instance
-# item_holder      -   A pdg.WorkItemHolder for constructing and adding work items
-# upstream_items   -   The list of work items in the node above, or empty list if there are no inputs
-# generation_type  -   The type of generation, e.g. pdg.generationType.Static, Dynamic, or Regenerate
-from pathlib import Path
+generate	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.cops import comp_proxy
 
-for upstream_item in upstream_items:
-
-    start_frame = upstream_item.intAttribValue('start_frame')
-    end_frame = upstream_item.intAttribValue('end_frame')
-    import_path = upstream_item.stringAttribValue('import_path')
-    export_path = upstream_item.stringAttribValue('export_path')
-    aov_name = upstream_item.stringAttribValue('aov_name')
-    scale = upstream_item.floatAttribValue('scale')
-    
-    for frame_index in range(start_frame, end_frame + 1):
-        frame_name = str(frame_index).zfill(4)
-        
-        task_import_path = import_path.replace('$F', frame_name)
-        task_export_path = export_path.replace('$F', frame_name)
-        
-        if Path(task_export_path).exists(): continue
-        
-        task = item_holder.addWorkItem(parent=upstream_item)
-        task.addAttrib('import_path', pdg.attribType.String)
-        task.addAttrib('export_path', pdg.attribType.String)
-        task.addAttrib('aov_name', pdg.attribType.String)
-        task.addAttrib('scale', pdg.attribType.Float)
-        
-        task.setStringAttrib('import_path', task_import_path)
-        task.setStringAttrib('export_path', task_export_path)
-        task.setStringAttrib('aov_name', aov_name)
-        task.setFloatAttrib('scale', scale)"	)
+comp_proxy.generate_frames(upstream_items, item_holder)"	)
 useregeneratestatic	[ 0	locks=0 ]	(	"off"	)
 regeneratestatic	[ 0	locks=0 ]	(	"# Called when this node may need to regenerate existing work items
 #
@@ -2744,41 +2621,9 @@ pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
 pdg_command	[ 0	locks=0 ]	(	""	)
 sepparm	[ 0	locks=0 ]	(	)
 callbacks	[ 0	locks=0 ]	(	0	0	0	0	0	)
-generate	[ 0	locks=0 ]	(	"# Called when this node should generate new work items from upstream items.
-#
-# self             -   A reference to the current pdg.Node instance
-# item_holder      -   A pdg.WorkItemHolder for constructing and adding work items
-# upstream_items   -   The list of work items in the node above, or empty list if there are no inputs
-# generation_type  -   The type of generation, e.g. pdg.generationType.Static, Dynamic, or Regenerate
-from pathlib import Path
+generate	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.cops import comp_proxy
 
-for upstream_item in upstream_items:
-
-    start_frame = upstream_item.intAttribValue('start_frame')
-    end_frame = upstream_item.intAttribValue('end_frame')
-    import_path = upstream_item.stringAttribValue('import_path')
-    export_path = upstream_item.stringAttribValue('export_path')
-    aov_name = upstream_item.stringAttribValue('aov_name')
-    scale = upstream_item.floatAttribValue('scale')
-    
-    for frame_index in range(start_frame, end_frame + 1):
-        frame_name = str(frame_index).zfill(4)
-        
-        task_import_path = import_path.replace('$F', frame_name)
-        task_export_path = export_path.replace('$F', frame_name)
-        
-        if Path(task_export_path).exists(): continue
-        
-        task = item_holder.addWorkItem(parent=upstream_item)
-        task.addAttrib('import_path', pdg.attribType.String)
-        task.addAttrib('export_path', pdg.attribType.String)
-        task.addAttrib('aov_name', pdg.attribType.String)
-        task.addAttrib('scale', pdg.attribType.Float)
-        
-        task.setStringAttrib('import_path', task_import_path)
-        task.setStringAttrib('export_path', task_export_path)
-        task.setStringAttrib('aov_name', aov_name)
-        task.setFloatAttrib('scale', scale)"	)
+comp_proxy.generate_frames(upstream_items, item_holder)"	)
 useregeneratestatic	[ 0	locks=0 ]	(	"off"	)
 regeneratestatic	[ 0	locks=0 ]	(	"# Called when this node may need to regenerate existing work items
 #
@@ -2902,41 +2747,9 @@ pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
 pdg_command	[ 0	locks=0 ]	(	""	)
 sepparm	[ 0	locks=0 ]	(	)
 callbacks	[ 0	locks=0 ]	(	0	0	0	0	0	)
-generate	[ 0	locks=0 ]	(	"# Called when this node should generate new work items from upstream items.
-#
-# self             -   A reference to the current pdg.Node instance
-# item_holder      -   A pdg.WorkItemHolder for constructing and adding work items
-# upstream_items   -   The list of work items in the node above, or empty list if there are no inputs
-# generation_type  -   The type of generation, e.g. pdg.generationType.Static, Dynamic, or Regenerate
-from pathlib import Path
+generate	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.cops import comp_proxy
 
-for upstream_item in upstream_items:
-
-    start_frame = upstream_item.intAttribValue('start_frame')
-    end_frame = upstream_item.intAttribValue('end_frame')
-    import_path = upstream_item.stringAttribValue('import_path')
-    export_path = upstream_item.stringAttribValue('export_path')
-    aov_name = upstream_item.stringAttribValue('aov_name')
-    scale = upstream_item.floatAttribValue('scale')
-    
-    for frame_index in range(start_frame, end_frame + 1):
-        frame_name = str(frame_index).zfill(4)
-        
-        task_import_path = import_path.replace('$F', frame_name)
-        task_export_path = export_path.replace('$F', frame_name)
-        
-        if Path(task_export_path).exists(): continue
-        
-        task = item_holder.addWorkItem(parent=upstream_item)
-        task.addAttrib('import_path', pdg.attribType.String)
-        task.addAttrib('export_path', pdg.attribType.String)
-        task.addAttrib('aov_name', pdg.attribType.String)
-        task.addAttrib('scale', pdg.attribType.Float)
-        
-        task.setStringAttrib('import_path', task_import_path)
-        task.setStringAttrib('export_path', task_export_path)
-        task.setStringAttrib('aov_name', aov_name)
-        task.setFloatAttrib('scale', scale)"	)
+comp_proxy.generate_frames(upstream_items, item_holder)"	)
 useregeneratestatic	[ 0	locks=0 ]	(	"off"	)
 regeneratestatic	[ 0	locks=0 ]	(	"# Called when this node may need to regenerate existing work items
 #
@@ -3137,6 +2950,11 @@ pythonbin	[ 0	locks=0 ]	(	"0"	)
 python	[ 0	locks=0 ]	(	__PDG_PYTHON__	)
 pythonvenv	[ 0	locks=0 ]	(	`@venvroot`	)
 resetpython	[ 0	locks=0 ]	(	"off"	)
+backgroundtask	[ 0	locks=0 ]	(	"off"	)
+sepparm6	[ 0	locks=0 ]	(	)
+usescenefile	[ 0	locks=0 ]	(	"off"	)
+scenefile	[ 0	locks=0 ]	(	$HIPFILE	)
+applywedges	[ 0	locks=0 ]	(	"off"	)
 nativeworkitem	[ 0	locks=0 ]	(	"off"	)
 sepparm3	[ 0	locks=0 ]	(	)
 pythonargs	[ 0	locks=0 ]	(	-u	)
@@ -3164,14 +2982,11 @@ expansion	[ 0	locks=0 ]	(	0	)
 expandscript	[ 0	locks=0 ]	(	"off"	)
 expandstrings	[ 0	locks=0 ]	(	"off"	)
 scriptsource	[ 0	locks=0 ]	(	"0"	)
-script	[ 0	locks=0 ]	(	"from importlib import reload
-import hou
+script	[ 0	locks=0 ]	(	"import hou
 
-from tumblepipe.pipe.houdini.cops import build_comp
-reload(build_comp)
+from tumblepipe.pipe.houdini.cops import comp_proxy
 
-context = build_comp.BuildComp(hou.pwd().parent().parent().parent())
-context._update()"	)
+comp_proxy.read_proxies(hou.pwd())"	)
 scriptfile	[ 0	locks=0 ]	(	$HIP/script.py	)
 pdg_cachemode	[ 0	locks=0 ]	(	"0"	)
 copyoutputs	[ 0	locks=0 ]	(	"2"	)
@@ -3446,32 +3261,6 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/proxy/tops/gpu_scheduler.chn"
-Content-Type: text/plain
-
-{
-    channel maxprocs {
-      lefttype = extend
-      righttype = extend
-      default = 1
-      flags = 0
-      start = 41.666666666666664
-      segment { length = 0 value = 1 1 expr = "import nvsmi
-import os
-
-def _total_vram():
-    return int(sum(
-        gpu.mem_total
-        for gpu in nvsmi.get_gpus()
-    )) // 1024
-
-num_cpu_workers = os.cpu_count() - 1
-num_gpu_workers = _total_vram() // 2
-return min(num_cpu_workers, num_gpu_workers)" language = python }
-    }
-  }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/proxy/tops/gpu_scheduler.parm"
 Content-Type: text/plain
 
@@ -3479,8 +3268,8 @@ Content-Type: text/plain
 version 0.8
 folder0	[ 0	locks=0 ]	(	0	0	0	)
 folder5	[ 0	locks=0 ]	(	0	)
-maxprocsmenu	[ 0	locks=0 ]	(	"1"	)
-maxprocs	[ 0	locks=0 ]	(	[ maxprocs	1 ] 	)
+maxprocsmenu	[ 0	locks=0 ]	(	"0"	)
+maxprocs	[ 0	locks=0 ]	(	1	)
 pdg_usemaxtasks	[ 0	locks=0 ]	(	"off"	)
 pdg_maxtasks	[ 0	locks=0 ]	(	0	)
 verbose	[ 0	locks=0 ]	(	"off"	)
@@ -3544,6 +3333,7 @@ local_usehoudinimaxthreads	[ 0	locks=0 ]	(	"off"	)
 local_houdinimaxthreads	[ 0	locks=0 ]	(	0	)
 local_requireswindow	[ 0	locks=0 ]	(	"off"	)
 local_skippackages	[ 0	locks=0 ]	(	"on"	)
+local_setworkingdir	[ 0	locks=0 ]	(	"on"	)
 local_envunset	[ 0	locks=0 ]	(	""	)
 local_env_file	[ 0	locks=0 ]	(	""	)
 local_envmulti	[ 0	locks=0 ]	(	0	)
@@ -3565,7 +3355,7 @@ Content-Disposition: attachment; filename="hdaroot/proxy/tops/stop_service.init"
 Content-Type: text/plain
 
 type = servicestop
-matchesdef = 1
+matchesdef = 0
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/proxy/tops/stop_service.def"
@@ -3621,15 +3411,15 @@ Content-Type: text/plain
 version 0.8
 servicedata	[ 0	locks=0 ]	(	0	0	)
 openpdgservicepanel	[ 0	locks=0 ]	(	0	)
-sepparm2	[ 0	locks=0 ]	(	)
+sepparm	[ 0	locks=0 ]	(	)
 pdg_workitemgeneration	[ 0	locks=0 ]	(	"2"	)
 pdg_cooktype	[ 0	locks=0 ]	(	"1"	)
 servicestopped	[ 0	locks=0 ]	(	"0"	)
 copyoutputs	[ 0	locks=0 ]	(	"off"	)
-sepparm	[ 0	locks=0 ]	(	)
+sepparm2	[ 0	locks=0 ]	(	)
 servicename	[ 0	locks=0 ]	(	ropfetch	)
 topscheduler	[ 0	locks=0 ]	(	""	)
-addjobparms	[ 0	locks=0 ]	(	[ addjobparms	3 ] 	)
+addjobparms	[ 0	locks=0 ]	(	[ addjobparms	0 ] 	)
 pdg_useschedulewhen	[ 0	locks=0 ]	(	"off"	)
 pdg_schedulewhen	[ 0	locks=0 ]	(	1	)
 sepparm3	[ 0	locks=0 ]	(	)
@@ -3767,11 +3557,11 @@ version 0.8
 execute	[ 0	locks=0 ]	(	0	)
 renderpreview	[ 0	locks=0 ]	(	0	)
 executebackground	[ 0	locks=0 ]	(	0	)
-renderdialog	[ 0	locks=0 ]	(	0	)
 trange	[ 0	locks=0 ]	(	"normal"	)
 f	[ 0	locks=0 ]	(	[ f1	0 ] 	[ f2	0 ] 	1	)
 setudim	[ 0	locks=0 ]	(	"off"	)
 udim	[ 0	locks=0 ]	(	1001	1001	)
+udimlist	[ 0	locks=0 ]	(	""	)
 take	[ 0	locks=0 ]	(	_current_	)
 coppath	[ 0	locks=0 ]	(	../dive	)
 copoutput	[ 0	locks=0 ]	(	$HIP/render/$HIPNAME.$OS.$F4.exr	)
@@ -3796,6 +3586,7 @@ stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	0	)
 addaovs	[ 0	locks=0 ]	(	0	)
 outputaovs	[ 0	locks=0 ]	(	1	)
 mkpath	[ 0	locks=0 ]	(	"on"	)
+initsim	[ 0	locks=0 ]	(	"off"	)
 alfprogress	[ 0	locks=0 ]	(	"off"	)
 savebackground	[ 0	locks=0 ]	(	"on"	)
 exportattribs	[ 0	locks=0 ]	(	"on"	)
@@ -3808,6 +3599,7 @@ vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
 mktx	[ 0	locks=0 ]	(	"off"	)
 txtilesize	[ 0	locks=0 ]	(	64	64	)
 txmipmapfilter	[ 0	locks=0 ]	(	box	)
+txopaquedetect	[ 0	locks=0 ]	(	"on"	)
 vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
 vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
 vm_image_exr_compression	[ 0	locks=0 ]	(	"dwab"	)
@@ -3891,11 +3683,11 @@ version 0.8
 execute	[ 0	locks=0 ]	(	0	)
 renderpreview	[ 0	locks=0 ]	(	0	)
 executebackground	[ 0	locks=0 ]	(	0	)
-renderdialog	[ 0	locks=0 ]	(	0	)
 trange	[ 0	locks=0 ]	(	"normal"	)
 f	[ 0	locks=0 ]	(	1001	1001	1	)
 setudim	[ 0	locks=0 ]	(	"off"	)
 udim	[ 0	locks=0 ]	(	1001	1001	)
+udimlist	[ 0	locks=0 ]	(	""	)
 take	[ 0	locks=0 ]	(	_current_	)
 coppath	[ 0	locks=0 ]	(	../dive	)
 copoutput	[ 0	locks=0 ]	(	""	)
@@ -3920,6 +3712,7 @@ stdswitcher	[ 0	locks=0 ]	(	0	0	0	0	0	)
 addaovs	[ 0	locks=0 ]	(	0	)
 outputaovs	[ 0	locks=0 ]	(	1	)
 mkpath	[ 0	locks=0 ]	(	"on"	)
+initsim	[ 0	locks=0 ]	(	"off"	)
 alfprogress	[ 0	locks=0 ]	(	"off"	)
 savebackground	[ 0	locks=0 ]	(	"on"	)
 exportattribs	[ 0	locks=0 ]	(	"on"	)
@@ -3932,6 +3725,7 @@ vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
 mktx	[ 0	locks=0 ]	(	"off"	)
 txtilesize	[ 0	locks=0 ]	(	64	64	)
 txmipmapfilter	[ 0	locks=0 ]	(	box	)
+txopaquedetect	[ 0	locks=0 ]	(	"on"	)
 vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
 vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
 vm_image_exr_compression	[ 0	locks=0 ]	(	"dwab"	)

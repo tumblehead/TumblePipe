@@ -5,11 +5,11 @@ project-owned — 7 of 13 live projects keep them under `/scene/Render`, the
 rest at `/Render` — so a validator that looked at `/Render/rendersettings`
 reported "not found" on a stage that has one, and skipped the render-camera
 check entirely on the projects most likely to need it. See
-`pipe.usd.find_render_settings_prim_path` and
+`pipe.usd.render_settings.find_render_settings_prim_path` and
 docs/composition.md#where-the-render-settings-live.
 """
 
-from tumblepipe.pipe.usd import (
+from tumblepipe.pipe.usd.render_settings import (
     RenderSettingsError,
     find_render_settings_prim_path,
 )

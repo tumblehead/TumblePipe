@@ -20,7 +20,7 @@
         type    button
         joinnext
         default { "0" }
-        parmtag { "script_callback" "hou.phm().init_materials(kwargs)" }
+        parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.material_assigner as th_node; th_node.init_materials(kwargs)" }
         parmtag { "script_callback_language" "python" }
     }
     parm {
@@ -28,7 +28,7 @@
         label   "Update Materials Paths"
         type    button
         default { "0" }
-        parmtag { "script_callback" "hou.phm().update_material_paths()" }
+        parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.material_assigner as th_node; th_node.update_material_paths(kwargs)" }
         parmtag { "script_callback_language" "python" }
     }
     multiscroll {
@@ -72,35 +72,8 @@
                 type    string
                 default { "" }
                 menureplace {
-                    [ "from pxr import Usd, UsdShade" ]
-                    [ "import hou" ]
-                    [ "" ]
-                    [ "menu = list()" ]
-                    [ "" ]
-                    [ "node = kwargs['node']" ]
-                    [ "stage = node.stage()" ]
-                    [ "" ]
-                    [ "# Collect all material paths" ]
-                    [ "materials = [prim for prim in stage.Traverse() if prim.IsA(UsdShade.Material)]" ]
-                    [ "" ]
-                    [ "# Append Materials to menu" ]
-                    [ "if materials:" ]
-                    [ "    for mat in materials:" ]
-                    [ "        path_str = str(mat.GetPath())   # Full USD path" ]
-                    [ "        name_str = mat.GetName()        # Just the prim name" ]
-                    [ "        menu.append(path_str)           # token" ]
-                    [ "        menu.append(name_str)           # label" ]
-                    [ "else:" ]
-                    [ "    print(\"No materials found in stage.\")" ]
-                    [ "" ]
-                    [ "# chosen_material = hou.ui.selectFromList([str(mat.GetName()) for mat in materials], " ]
-                    [ "# title=\"Select Material to Assign\")," ]
-                    [ "# exlcusive=True," ]
-                    [ "# num_visible_rows = len(materials)" ]
-                    [ "#" ]
-                    [ "# menu[chosen_material]" ]
-                    [ "" ]
-                    [ "return menu" ]
+                    [ "import tumblepipe.pipe.houdini.lops.material_assigner as th_node" ]
+                    [ "return th_node.material_menu(kwargs['node'].stage())" ]
                     language python
                 }
                 parmtag { "script_action" "import loputils\nkwargs['ctrl'] = True\nloputils.selectPrimsInParm(kwargs, True, allowinstanceproxies=True)" }

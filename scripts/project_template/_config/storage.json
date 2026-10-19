@@ -1,0 +1,13 @@
+{
+    "assets": "{project_path}/assets",
+    "shots": "{project_path}/shots",
+    "groups": "{project_path}/groups",
+    "export": "{project_path}/export",
+    "cache": "{project_parent}/{project_name}_cache",
+    "render": "{project_parent}/{project_name}_render",
+    "turntable": "{project_parent}/{project_name}_turntable",
+    "temp": "{local_temp}/th_temp/{project_name}",
+    "proxy": "{project_parent}/{project_name}_proxy",
+    "preset": "{config_path}/presets",
+    "edit": "{project_path}/edit"
+}

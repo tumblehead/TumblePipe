@@ -9,12 +9,9 @@ so the project registry can stay focused on per-project paths.
 from __future__ import annotations
 
 import json
-import logging
 import os
 from dataclasses import dataclass, asdict
 from pathlib import Path
-
-log = logging.getLogger(__name__)
 
 
 def _prefs_path() -> Path:
@@ -47,35 +44,37 @@ class PipelinePrefs:
 
 
 def load_prefs() -> PipelinePrefs:
+    """The saved prefs, or the defaults when none were saved yet.
+
+    A file that will not parse raises: it is ours, so a torn or hand-broken
+    one is a fault to fix, not a reason to quietly reset the artist's
+    choices.
+    """
     path = _prefs_path()
     if not path.exists():
         return PipelinePrefs()
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        auto_refresh = bool(data.get("auto_refresh_on_open", True))
-        if int(data.get("prefs_version", 1)) < 2:
-            # Pre-flip file: an auto_refresh_on_open=False in it almost
-            # always means "toggled some OTHER pref while the default was
-            # still False", not an explicit opt-out — so re-default it
-            # once. The next save_prefs stamps the current version, after
-            # which an explicit off is honored forever.
-            auto_refresh = True
-        return PipelinePrefs(
-            autosave_on_scene_change=bool(
-                data.get("autosave_on_scene_change", False)
-            ),
-            auto_refresh_on_open=auto_refresh,
-            # Defaults True and needs no _PREFS_VERSION bump: this is a
-            # NEW key, not a flipped default, so a file written before it
-            # existed simply misses it and gets the default. The version
-            # gate is only for defaults that changed value.
-            prompt_note_on_save=bool(
-                data.get("prompt_note_on_save", True)
-            ),
-        )
-    except Exception:
-        log.exception("Failed to load pipeline_prefs.json — using defaults")
-        return PipelinePrefs()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    auto_refresh = bool(data.get("auto_refresh_on_open", True))
+    if int(data.get("prefs_version", 1)) < 2:
+        # Pre-flip file: an auto_refresh_on_open=False in it almost
+        # always means "toggled some OTHER pref while the default was
+        # still False", not an explicit opt-out — so re-default it
+        # once. The next save_prefs stamps the current version, after
+        # which an explicit off is honored forever.
+        auto_refresh = True
+    return PipelinePrefs(
+        autosave_on_scene_change=bool(
+            data.get("autosave_on_scene_change", False)
+        ),
+        auto_refresh_on_open=auto_refresh,
+        # Defaults True and needs no _PREFS_VERSION bump: this is a
+        # NEW key, not a flipped default, so a file written before it
+        # existed simply misses it and gets the default. The version
+        # gate is only for defaults that changed value.
+        prompt_note_on_save=bool(
+            data.get("prompt_note_on_save", True)
+        ),
+    )
 
 
 def save_prefs(prefs: PipelinePrefs) -> None:

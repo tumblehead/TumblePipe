@@ -1,3 +1,51 @@
-.github/ export-ignore
-.gitattributes export-ignore
-.gitignore export-ignore
+# Line-ending policy.
+#
+# The repo is already LF: of 1416 tracked text blobs, 6 were CRLF and all six
+# were the project-template seed under scripts/project_template/_config/. That
+# inconsistency is why comparing a live project's _config against the packaged
+# scaffold needs `diff --strip-trailing-cr`, and why the Rust migrator carries a
+# `newlines` module to normalise before every comparison
+# (src/wizard/core/src/migration.rs). This file pins the status quo so the
+# mismatch cannot come back.
+#
+# Deliberately conservative: only file classes positively confirmed safe get a
+# rule. Everything unlisted keeps whatever the committer's core.autocrlf does
+# today. In particular otls/ (expanded HDA sections, some with base64 payloads),
+# *.shelf files are left UNSET on purpose - Houdini owns those files and
+# rewrites them itself.
+
+# Source and config: always LF in the repo and in the worktree.
+*.py     text eol=lf
+*.rs     text eol=lf
+*.json   text eol=lf
+*.toml   text eol=lf
+*.md     text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.cfg    text eol=lf
+*.txt    text eol=lf
+
+# Shell scripts are executed by sh (Git-Bash on Windows); a CR would end up in
+# the interpreted line and break them. The git hooks are the case that matters.
+*.sh          text eol=lf
+.githooks/*   text eol=lf
+
+# Never touch: binary, or text git must not sniff.
+*.hda    binary
+*.exe    binary
+*.dll    binary
+*.so     binary
+*.dylib  binary
+*.lib    binary
+*.pyd    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.ico    binary
+*.gz     binary
+*.zip    binary
+*.pic    binary
+*.rat    binary
+*.exr    binary
+*.usd    binary
+*.usdc   binary

@@ -10,7 +10,7 @@ from contextlib import contextmanager
 import traceback
 import sys
 
-from qtpy.QtCore import QObject, Signal, QTimer
+from PySide6.QtCore import QObject, Signal, QTimer
 
 from tumblepipe.util.errors import TaskSkipped
 from tumblepipe.util.progress import progress_reporter

@@ -58,7 +58,7 @@
             default { "$OS" }
             menureplace {
                 [ "from tumblepipe.pipe.houdini.lops import sop_modify" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = sop_modify.SopModify(hou.pwd())" ]
                 [ "items = node.list_cache_names()" ]
@@ -80,11 +80,11 @@
             default { "" }
             menu {
                 [ "from tumblepipe.pipe.houdini.lops import sop_modify" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = sop_modify.SopModify(hou.pwd())" ]
                 [ "items = node.list_version_names()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "return menus.list_to_menu(items)" ]
                 language python
             }
             parmtag { "script_callback_language" "python" }
@@ -94,7 +94,7 @@
             label   "Latest"
             type    button
             default { "0" }
-            parmtag { "script_callback" "hou.phm().latest()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.sop_modify as th_node; th_node.latest(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -220,7 +220,7 @@
                 joinnext
                 default { "0" }
                 parmtag { "autoscope" "0000000000000000" }
-                parmtag { "script_callback" "hou.phm().cache()" }
+                parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.sop_modify as th_node; th_node.cache(kwargs)" }
                 parmtag { "script_callback_language" "python" }
             }
             parm {
@@ -229,7 +229,7 @@
                 type    button
                 default { "0" }
                 parmtag { "autoscope" "0000000000000000" }
-                parmtag { "script_callback" "hou.phm().load()" }
+                parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.sop_modify as th_node; th_node.load(kwargs)" }
                 parmtag { "script_callback_language" "python" }
             }
         }

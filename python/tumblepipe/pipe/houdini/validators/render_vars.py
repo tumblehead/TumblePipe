@@ -1,13 +1,13 @@
 """RenderVar validation - ensures prim names match aov:name attributes."""
 
-from tumblepipe.pipe.houdini import util
+from tumblepipe.pipe.houdini import prim_queries
 from .base import ValidationResult
 
 
 def _get_render_var_paths(stage) -> set[str]:
     """Get all RenderVar prim paths from the stage."""
     root = stage.GetPseudoRoot()
-    return set(util.list_render_vars(root))
+    return set(prim_queries.list_render_vars(root))
 
 
 def _get_render_products(stage) -> list:
@@ -40,7 +40,7 @@ def validate_render_var_names(root) -> ValidationResult:
         result.add_warning("No stage available for validation")
         return result
 
-    for prim_path in util.list_render_vars(root):
+    for prim_path in prim_queries.list_render_vars(root):
         prim = stage.GetPrimAtPath(prim_path)
         if not prim.IsValid():
             continue

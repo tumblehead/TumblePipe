@@ -160,6 +160,10 @@ the shot).
 **New Root…** (the Roots header's right-click menu, or the **+** card) asks
 for a **Name**. Status: *Created Root: forest*. It starts empty.
 
+**Create Root from Items…** on the shelf's **⋯** menu asks the same, then
+adds every pipeline asset on the shelf to the new Root. Status: *Created with
+N assets*, noting how many shelf items came from other catalogs.
+
 ### Members
 
 Add assets the same three ways as a Multi: drag onto the Root's sidebar row,

@@ -11,7 +11,7 @@ from typing import Optional
 
 from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.channels import DEFAULT_CHANNEL, read_channel
+from tumblepipe.config.channels import DEFAULT_CHANNEL, read_published_channel
 from tumblepipe.config.department import list_departments
 from tumblepipe.pipe.paths import (
     latest_export_path,
@@ -34,37 +34,6 @@ class ChannelNotExportedError(RuntimeError):
     """
 
 
-def get_source_department(inputs: list[dict], department_order: list[str]) -> str | None:
-    """
-    Find the source department (first shot department) from inputs array.
-
-    Extracts all shot department entries from inputs and returns the one
-    that appears earliest in the pipeline department order.
-
-    Args:
-        inputs: List of input dicts with 'uri' and 'department' keys
-        department_order: List of department names in pipeline order
-
-    Returns:
-        The source department name, or None if no shot entries found
-    """
-    # Extract shot department entries (URIs starting with entity:/shots/)
-    shot_depts = [
-        inp['department'] for inp in inputs
-        if inp.get('uri', '').startswith('entity:/shots/')
-    ]
-    if not shot_depts:
-        return None
-
-    # Return the one earliest in pipeline order
-    for dept in department_order:
-        if dept in shot_depts:
-            return dept
-
-    # Fallback to first shot department found
-    return shot_depts[0]
-
-
 def _load_shot_layer(
     shot_uri: Uri,
     department_name: str,
@@ -81,9 +50,8 @@ def _load_shot_layer(
     if latest_version_path is None:
         return None
 
+    # Every export writes its context.json; one missing is a broken export.
     context_data = load_json(latest_version_path / 'context.json')
-    if context_data is None:
-        return None
 
     layer_info = ctx.find_output(
         context_data,
@@ -95,7 +63,7 @@ def _load_shot_layer(
 
     asset_entries = [
         (
-            Uri.parse_unsafe(asset_datum['asset']),
+            Uri.parse(asset_datum['asset']),
             asset_datum.get('instances', 1),
             asset_datum.get('inputs', [])
         )
@@ -107,19 +75,25 @@ def _load_shot_layer(
 def _resolve_source_department(
     inputs: list[dict],
     asset_uri: Uri,
+    shot_uri: Uri,
+    department_name: str,
     all_shot_departments: list[str],
-    source_dept_assets: dict[str, set[Uri]]
-) -> Optional[str]:
-    """Determine which shot department an asset entry originates from."""
-    source_dept = get_source_department(inputs, all_shot_departments)
-    if source_dept is not None:
-        return source_dept
+) -> str:
+    """The shot department an asset entry of a shot layer originates from.
 
-    # Backwards compatibility: use first department in order that has this asset
-    for dept in all_shot_departments:
-        if asset_uri in source_dept_assets.get(dept, ()):
-            return dept
-    return None
+    Every shot export records itself in the inputs of each asset it tracks,
+    so an entry with no shot department in its inputs is a corrupt context
+    and raises — guessing a department would decide whether the asset
+    survives a department cut.
+    """
+    source_dept = ctx.get_source_department(inputs, all_shot_departments)
+    if source_dept is None:
+        raise ValueError(
+            f"{asset_uri} in the {department_name} layer of {shot_uri} "
+            f"records no shot department in its inputs, so which department "
+            f"introduced it is unknown. Re-export {department_name}."
+        )
+    return source_dept
 
 
 def _latest_shot_layer_paths(
@@ -135,7 +109,7 @@ def _latest_shot_layer_paths(
         {dept: version_path},
         {asset_uri: instances},
         {asset_uri: inputs},
-        {dept: variant_name}
+        {dept: channel_name}
     )
 
     Raises:
@@ -196,7 +170,8 @@ def _latest_shot_layer_paths(
     for department_name, (version_path, stamp, asset_entries) in dept_layers.items():
         for asset_uri, instances, inputs in asset_entries:
             source_dept = _resolve_source_department(
-                inputs, asset_uri, all_shot_departments, source_dept_assets
+                inputs, asset_uri, shot_uri, department_name,
+                all_shot_departments,
             )
             if source_dept not in shot_departments:
                 continue
@@ -235,12 +210,10 @@ def _latest_asset_layer_paths(
 def _get_root_scene_uri(root_version_path: Path) -> Optional[Uri]:
     """Read the scene reference from a root layer's context.json."""
     root_context_data = load_json(root_version_path / 'context.json')
-    if root_context_data is None:
-        return None
     scene_ref = root_context_data.get('parameters', {}).get('scene')
     if scene_ref is None:
         return None
-    return Uri.parse_unsafe(scene_ref)
+    return Uri.parse(scene_ref)
 
 
 def _iter_scene_assets(scene_uri: Uri):
@@ -254,18 +227,17 @@ def _iter_scene_assets(scene_uri: Uri):
     scene_path = get_current_scene_staged_file_path(scene_uri)
     if scene_path is not None:
         scene_context_data = load_json(scene_path.parent / 'context.json')
-        if scene_context_data is not None:
-            for asset_datum in scene_context_data.get('parameters', {}).get('assets', []):
-                asset_uri = Uri.parse_unsafe(asset_datum['asset'])
-                yield (
-                    asset_uri,
-                    read_channel(asset_datum, where=f'{scene_path.parent} context.json'),
-                    asset_datum.get('instances', 1)
-                )
+        for asset_datum in scene_context_data.get('parameters', {}).get('assets', []):
+            asset_uri = Uri.parse(asset_datum['asset'])
+            yield (
+                asset_uri,
+                read_published_channel(asset_datum, where=f'{scene_path.parent} context.json'),
+                asset_datum.get('instances', 1)
+            )
 
     from tumblepipe.config.scene import get_inherited_assets
     for entry, _parent_uri in get_inherited_assets(scene_uri):
-        yield Uri.parse_unsafe(entry.asset), entry.channel, entry.instances
+        yield Uri.parse(entry.asset), entry.channel, entry.instances
 
 
 def resolve_shot_build(
@@ -319,7 +291,7 @@ def resolve_shot_build(
 
     # Find root department layer (shot-level, stored at _root/)
     root_layer = None
-    export_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_root'
+    export_uri = Uri.parse('export:/') / shot_uri.segments / '_root'
     export_path = api.storage.resolve(export_uri)
     root_version_path = get_latest_version_path(export_path)
     if root_version_path is not None:
@@ -427,7 +399,7 @@ def resolve_asset_build(
 
     Returns: {
         'asset_uri': asset_uri,
-        'variant': channel_name,
+        'channel': channel_name,
         'department_layers': {dept_name: version_path},
         'assets': {tracked_asset_uri: instances},
         'asset_inputs': {tracked_asset_uri: inputs},
@@ -466,8 +438,6 @@ def resolve_asset_build(
     asset_stamps = {}
     for department_name, version_path in department_layers.items():
         context_data = load_json(version_path / 'context.json')
-        if context_data is None:
-            continue
         layer_info = ctx.find_output(
             context_data,
             uri=str(asset_uri),
@@ -479,7 +449,7 @@ def resolve_asset_build(
         # (very old exports) rank oldest.
         stamp = layer_info.get('timestamp', '')
         for asset_datum in layer_info['parameters'].get('assets', []):
-            tracked_uri = Uri.parse_unsafe(asset_datum['asset'])
+            tracked_uri = Uri.parse(asset_datum['asset'])
             if tracked_uri == asset_uri:
                 continue  # self-import — never sublayer an asset into itself
             if sourced_from_shot(asset_datum.get('inputs')):
@@ -489,13 +459,13 @@ def resolve_asset_build(
             asset_stamps[tracked_uri] = stamp
             assets[tracked_uri] = asset_datum.get('instances', 1)
             asset_inputs[tracked_uri] = asset_datum.get('inputs', [])
-            asset_channels[tracked_uri] = read_channel(
+            asset_channels[tracked_uri] = read_published_channel(
                 asset_datum, where=f'staged context.json of {asset_uri}'
             )
 
     return dict(
         asset_uri=asset_uri,
-        variant=channel_name,
+        channel=channel_name,
         department_layers=department_layers,
         assets=assets,
         asset_inputs=asset_inputs,

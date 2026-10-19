@@ -43,33 +43,12 @@ file(WRITE "${CMAKE_BINARY_DIR}/BUILD_INFO"
 
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
+# Native builds only: every CI worker (including the Apple Silicon macOS
+# one) builds for its own architecture, so cargo's host target is the
+# right one.
 set(RUST_TARGET_DIR "${CMAKE_BINARY_DIR}/rust-target")
-
-# Force cargo onto the same target triple the C++ side is building for.
-# Matters most on macOS where CI workers are typically x86_64 but we
-# cross-compile to arm64 via -DCMAKE_OSX_ARCHITECTURES=arm64; without an
-# explicit --target cargo follows the host and the linker silently
-# discards every Rust object as "wrong architecture". The CI worker must
-# have the matching rustup target installed (e.g. `rustup target add
-# aarch64-apple-darwin`).
-if(APPLE)
-    if("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64")
-        set(RUST_TARGET_TRIPLE "aarch64-apple-darwin")
-    elseif("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64")
-        set(RUST_TARGET_TRIPLE "x86_64-apple-darwin")
-    endif()
-endif()
-
-if(DEFINED RUST_TARGET_TRIPLE)
-    set(_cargo_target_args --target ${RUST_TARGET_TRIPLE})
-    set(RUST_PROFILE_DIR "${RUST_TARGET_DIR}/${RUST_TARGET_TRIPLE}/release")
-else()
-    set(_cargo_target_args "")
-    set(RUST_PROFILE_DIR "${RUST_TARGET_DIR}/release")
-endif()
-
 set(RUST_STATICLIB
-    "${RUST_PROFILE_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}th_resolver_core${CMAKE_STATIC_LIBRARY_SUFFIX}")
+    "${RUST_TARGET_DIR}/release/${CMAKE_STATIC_LIBRARY_PREFIX}th_resolver_core${CMAKE_STATIC_LIBRARY_SUFFIX}")
 
 include(ExternalProject)
 ExternalProject_Add(th_resolver_core_rust
@@ -79,7 +58,6 @@ ExternalProject_Add(th_resolver_core_rust
     BUILD_COMMAND ${CARGO_EXECUTABLE} build
         --release
         --verbose
-        ${_cargo_target_args}
         --manifest-path "${CMAKE_SOURCE_DIR}/Cargo.toml"
         --target-dir "${RUST_TARGET_DIR}"
     INSTALL_COMMAND ""
@@ -97,24 +75,16 @@ add_dependencies(th_resolver_core th_resolver_core_rust)
 # -----------------------------------------------------------------------------
 #
 # resolver.cpp is compiled into a STATIC library, then force-linked into
-# the MODULE library via /WHOLEARCHIVE (or its non-MSVC equivalent). This
-# is what makes AR_DEFINE_RESOLVER actually work on Windows.
+# the MODULE library via /WHOLEARCHIVE (or its non-MSVC equivalent).
 #
-# AR_DEFINE_RESOLVER expands to a TF_REGISTRY_FUNCTION block — an
-# anonymous-namespace static initializer that registers an Ar_ResolverFactory
-# with TfRegistryManager. Nothing else in the DLL externally references
-# that COMDAT, so MSVC's /OPT:REF drops it during link. The TumbleResolver
-# class itself is __declspec(dllexport) and survives, so the type still
-# appears in ArResolver's derived-types list (USD picks it up from the
-# plugInfo.json metadata) — but the *factory* never gets registered.
-# When USD tries to manufacture an instance, _PluginResolver::Create
-# returns nullptr with "Failed to manufacture asset resolver". Symptom:
-# TfType.FindByName('TumbleResolver').isUnknown is False, plugin loads,
-# Ar.GetRegisteredURISchemes() lists 'entity' — yet Ar.Resolve('entity:/...')
-# returns empty and never calls into _Resolve.
-#
-# Putting the shim in a STATIC lib and applying /WHOLEARCHIVE pulls every
-# TU into the final DLL, keeping the static-init COMDAT alive.
+# The resolver factory is registered by a static initializer at the bottom
+# of resolver.cpp (see the comment there for why it is not
+# AR_DEFINE_RESOLVER). Nothing else in the DLL references that object, so
+# without a whole-archive link the linker never pulls it in and the
+# factory never gets registered: the TumbleResolver type still appears in
+# ArResolver's derived-types list (from plugInfo.json) and 'entity' is a
+# registered URI scheme, but USD fails with "Failed to manufacture asset
+# resolver".
 
 add_library(tumbleResolver_cpp STATIC cpp/resolver.cpp)
 target_include_directories(tumbleResolver_cpp PUBLIC cpp)
@@ -194,25 +164,16 @@ elseif(WIN32)
 
     # Houdini's USD on Windows pulls in pxr_boost::python which
     # references Py_NoneStruct / Py_Dealloc. Link against Houdini's
-    # bundled python so those resolve. Houdini 21 ships Python 3.11;
-    # Houdini 22 ships Python 3.13. The NAMES list covers both plus
-    # older fallbacks so adding a new Houdini major only requires
-    # appending the matching pythonNNN entry.
-    file(GLOB _hfs_python_dirs LIST_DIRECTORIES true "${HFS}/python3*")
-    set(HFS_PYTHON HFS_PYTHON-NOTFOUND)
-    foreach(_pydir ${_hfs_python_dirs})
-        find_library(HFS_PYTHON
-            NAMES python313 python312 python311 python310 python39
-            HINTS "${_pydir}/libs"
-            NO_DEFAULT_PATH)
-        if(HFS_PYTHON)
-            break()
-        endif()
-    endforeach()
+    # bundled python so those resolve. Houdini 22 ships Python 3.13; a new
+    # Houdini major with a different Python updates this name.
+    find_library(HFS_PYTHON
+        NAMES python313
+        HINTS "${HFS}/python313/libs"
+        NO_DEFAULT_PATH)
     if(NOT HFS_PYTHON)
         message(FATAL_ERROR
-            "Could not find Houdini's bundled python import lib under "
-            "${HFS}/python3*/libs; Houdini install may differ from the "
+            "Could not find Houdini's bundled python313 import lib under "
+            "${HFS}/python313/libs; Houdini install may differ from the "
             "expected layout.")
     endif()
     target_link_libraries(tumbleResolver PRIVATE "${HFS_PYTHON}")
@@ -288,8 +249,8 @@ configure_file(cpp/plugInfo.json.in
 #     resources/plugInfo.json
 #     BUILD_INFO
 #
-# Callers point -DCMAKE_INSTALL_PREFIX at
-# houdini/TumblePipe/resolver/<platform>/houdini<major>/.
+# .ci/build_resolver.py installs with `--prefix <repo>/resolver/houdini<major>`;
+# each per-platform release archive carries one platform's binaries there.
 
 install(TARGETS tumbleResolver
     LIBRARY DESTINATION tumbleResolver/lib

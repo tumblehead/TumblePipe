@@ -1,20 +1,6 @@
-import hou
+# TumblePipe's UI-ready hook: see tumblepipe.startup.select_desktop.
+#
+# Like pythonrc.py, this runs in Houdini's shared __main__, so it binds no
+# names and makes one call.
 
-DESKTOP_NAME = "TumblePipe"
-
-
-def _set_default_desktop():
-    desktops = {d.name(): d for d in hou.ui.desktops()}
-    desktop = desktops.get(DESKTOP_NAME)
-    if desktop is None:
-        return
-    if hou.ui.curDesktop().name() == DESKTOP_NAME:
-        return
-    desktop.setAsCurrent()
-
-
-def load():
-    _set_default_desktop()
-
-
-load()
+__import__("tumblepipe.startup").startup.select_desktop()

@@ -76,6 +76,14 @@ entries skipped; back to 430.45 MiB with 0).
   past the end. Only the counted `getNum*Objects()` / `get*Object(i)` lists are
   walked.
 
+**Ruled out — a Vulkan layer.** A pass-through Vulkan layer that logged
+every buffer, image and allocation (a 2026-10 spike, since deleted) showed
+Houdini 22 never names its Vulkan objects (`vkSetDebugUtilsObjectNameEXT` is
+never called, with or without `HOUDINI_OGL_DEBUG`), so a layer cannot
+attribute memory to prims. What it does see that the memory registry does
+not: the viewer's render targets — about 105 MiB of RGBA16F colour and D32
+depth images for one 1652×1042 viewport — part of "not reported by Houdini".
+
 **Open:** `RV_VKMemAllocator` totals (`vulkan.device_vk`) are recorded but not
 yet broken down (render targets, the "not reported by Houdini" gap). Houdini
 21 is not built.

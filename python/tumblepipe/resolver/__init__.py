@@ -1,7 +1,7 @@
 """Python facade over the tumbleResolver USD plugin.
 
-The resolution rules live in Rust (houdini/TumblePipe/src/resolver/); this
-module provides the small surface the rest of the pipeline uses:
+The resolution rules live in Rust (src/resolver/ in the TumblePipe repo);
+this module provides the small surface the rest of the pipeline uses:
 
 - latest-mode toggle (via the TH_RESOLVER_LATEST_MODE env var that the
   Rust core reads on every resolve)
@@ -26,12 +26,24 @@ LATEST_MODE_ENV_VAR = "TH_RESOLVER_LATEST_MODE"
 
 
 def set_latest_mode(enabled: bool) -> None:
-    """Toggle "latest" cascade semantics for entity:// resolution."""
+    """Toggle "latest" cascade semantics for entity:// resolution.
+
+    Writes "1" or "0", the only two values the Rust core accepts (unset
+    also means off); anything else makes every entity:// resolve fail.
+    """
     os.environ[LATEST_MODE_ENV_VAR] = "1" if enabled else "0"
 
 
 def get_latest_mode() -> bool:
-    return os.environ.get(LATEST_MODE_ENV_VAR, "0") == "1"
+    """Read the mode with the same rules as the Rust core (env.rs)."""
+    value = os.environ.get(LATEST_MODE_ENV_VAR)
+    if value is None or value == "0":
+        return False
+    if value == "1":
+        return True
+    raise ValueError(
+        f'{LATEST_MODE_ENV_VAR} must be "0" or "1", got {value!r}'
+    )
 
 
 @contextmanager
@@ -65,15 +77,13 @@ def refresh_context() -> None:
     resolved path changed, so already-composed stages float to newly
     published versions (and honor latest-mode flips).
 
-    Why not ``Ar.GetResolver().RefreshContext(...)``? Two dead ends,
-    verified live against Houdini 22's USD (2026-07-13):
-
-    - USD's dispatching resolver never forwards ``RefreshContext`` to
-      URI-scheme resolvers, so ``TumbleResolver::_RefreshContext`` (which
-      sends the affects-all ``ArNotice::ResolverChanged``) is unreachable
-      through the public API — the call was a silent no-op.
-    - ``ArNotice.ResolverChanged`` is listen-only in Python; it cannot be
-      constructed or sent from here.
+    Why not ``Ar.GetResolver().RefreshContext(...)``? It never reaches
+    TumbleResolver: Ar's dispatching resolver forwards ``RefreshContext``
+    only to URI resolvers whose plugInfo.json declares
+    ``implementsContexts``, and ours does not (resolution depends on
+    process env and the filesystem, never on a bound context), so the shim
+    has no context overrides at all. And ``ArNotice.ResolverChanged`` is
+    listen-only in Python; it cannot be constructed or sent from here.
 
     The staleness itself lives in the Sdf layer registry: it hands back
     the originally-opened layer for an identifier forever, so a
@@ -96,7 +106,6 @@ def refresh_context() -> None:
 
 
 def _reload_stale_entity_layers() -> None:
-    import os
     from pxr import Ar, Sdf
 
     def _norm(p: str) -> str:

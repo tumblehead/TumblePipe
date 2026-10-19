@@ -5,8 +5,8 @@ files under `_config/db/` that define entities, their schemas, departments,
 groups and project-wide settings — as a tree of entities on the left and the
 selected entity's properties on the right. Source:
 [`config_editor/`](../../python/tumblepipe/config_editor/). The
-convention framework these files feed is described in
-[Configuration](../configuration.md#the-convention-framework).
+project config these files belong to is described in
+[Configuration](../configuration.md#the-project-config).
 
 ## Opening it
 
@@ -40,7 +40,7 @@ template ships these:
 | Purpose | URI form | Holds |
 |---|---|---|
 | `entity` | `entity:/shots/<sequence>/<shot>`, `entity:/assets/<category>/<asset>` | The shots and assets themselves and their properties (frame range, render and farm settings, channels, department assignment). The root carries project-wide defaults such as `farm.pools` / `farm.default_pool`; `entity:/shots` carries the render resolution. |
-| `schemas` | `schemas:/entity/shots/sequence/shot`, `schemas:/entity/assets/category/asset`, … | The **schema** for each position in the other databases: the fields an entity at that depth has, with their defaults (`frame_start`, `fps`, `render.*`, `farm.*`, `variants`, `departments`, …). Also schemas for `departments`, `groups` and `config` entries. |
+| `schemas` | `schemas:/entity/shots/sequence/shot`, `schemas:/entity/assets/category/asset`, … | The **schema** for each position in the other databases: the fields an entity at that depth has, with their defaults (`frame_start`, `fps`, `render.*`, `farm.*`, `channels`, `departments`, …). Also schemas for `departments`, `groups` and `config` entries. |
 | `departments` | `departments:/shots/<name>`, `departments:/assets/<name>`, `departments:/render/<name>` | The department pools, in pipeline order, with `independent` / `publishable` / `renderable` flags. Normally edited through the [pool editor](settings.md#the-department-pool-editor). |
 | `groups` | `groups:/shots/<name>`, `groups:/assets/<name>` | Multis — each with `members` and the `departments` it covers. |
 | `scenes` | `scenes:/<name>` | Roots (config-driven scenes) and their asset lists. |
@@ -163,6 +163,6 @@ removals.
 Only `_config/db/<purpose>.json` files — one rewrite of the whole file per
 save, add, remove, rename or reorder. Apart from moving a removed entity's
 folders to `_deleted/`, it never touches workfiles, exports or the
-`_config/*.py` conventions, and a project's layout version
+`_config/storage.json`, and a project's layout version
 (`_config/version.json`) is untouched. Because the browser reads the same
 files coherently, an edit shows in the Asset Browser on its next refresh.

@@ -1,4 +1,0 @@
-from tumblepipe.pipe.houdini.lops import set_kinds
-
-def execute():
-    set_kinds.execute()

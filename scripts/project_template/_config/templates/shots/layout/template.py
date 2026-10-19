@@ -38,7 +38,7 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
 
         # Create the import node
         import_node = import_shot.create(scene_node, f'import_shot_{member_name}')
-        import_node.set_shot_uri(member_uri)
+        import_node.set_entity_uri(member_uri)
 
         prev_node = import_node.native()
 

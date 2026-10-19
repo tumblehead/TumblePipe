@@ -13,11 +13,10 @@ submitted with. Gated on the ``auto_refresh_on_open`` Browser setting.
 
 from __future__ import annotations
 
-import logging
+from tumblepipe.pipe.houdini.ui.report import report_failure
 
 from .prefs import load_prefs
 
-log = logging.getLogger(__name__)
 
 _UNTITLED = "untitled.hip"
 
@@ -29,20 +28,22 @@ def _should_refresh() -> bool:
 
 def _refresh() -> None:
     import hou
-    from tumblepipe.pipe.houdini import util
+    from tumblepipe.pipe.houdini import playbar
     from tumblepipe.pipe.houdini.scene_imports import refresh_scene_imports
 
-    with util.update_mode(hou.updateMode.Manual):
+    with playbar.update_mode(hou.updateMode.Manual):
         refresh_scene_imports()
 
 
 def _refresh_if_enabled() -> None:
+    # The scene is open by now, so a failed refresh must not read as a
+    # failed open - but it must reach the artist: the scene would otherwise
+    # sit on the versions it was saved with and nothing would say so.
     try:
         if _should_refresh():
             _refresh()
-    except Exception:
-        # A failed refresh must not turn into a failed scene open.
-        log.exception("Refreshing imports after scene load failed")
+    except Exception as exc:
+        report_failure("Refreshing the scene's imports after it opened", exc)
 
 
 def on_hip_file_event(event_type) -> None:

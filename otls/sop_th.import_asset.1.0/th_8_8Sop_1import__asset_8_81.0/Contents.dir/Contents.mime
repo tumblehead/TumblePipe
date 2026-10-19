@@ -188,12 +188,12 @@ Content-Type: text/plain
       flags = 0
       segment { length = 0 expr = chs(\"../../entity\") }
     }
-    channel variant {
+    channel channel {
       lefttype = extend
       righttype = extend
       defaultString = \"default\"
       flags = 0
-      segment { length = 0 expr = chs(\"../../variant\") }
+      segment { length = 0 expr = chs(\"../../channel\") }
     }
     channel version {
       lefttype = extend
@@ -226,7 +226,7 @@ Content-Type: text/plain
 version 0.8
 selection	[ 0	locks=0 ]	(	1	)
 entity	[ 0	locks=0 ]	(	[ entity	"" ] 	)
-variant	[ 0	locks=0 ]	(	[ variant	default ] 	)
+channel	[ 0	locks=0 ]	(	[ channel	default ] 	)
 version	[ 0	locks=0 ]	(	[ version	latest ] 	)
 settings	[ 0	locks=0 ]	(	0	)
 departments	[ 0	locks=0 ]	(	[ departments	"" ] 	)

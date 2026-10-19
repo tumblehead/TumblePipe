@@ -2,8 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable
 
-from qtpy.QtCore import Qt
-from qtpy.QtGui import QBrush, QColor, QStandardItemModel, QStandardItem
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor, QStandardItemModel, QStandardItem
 
 from tumblepipe.util.uri import Uri
 

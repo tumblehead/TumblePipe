@@ -24,7 +24,9 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::beauty_alpha::{self, Edit};
+use crate::conventions;
 use crate::load_json;
+use crate::templates;
 
 /// Where a project records the `_config` layout version it is at.
 pub const VERSION_FILE: &str = "version.json";
@@ -53,6 +55,18 @@ pub enum Step {
     /// v10 — drop the separate `alpha` AOV from the project's default render
     /// vars and render the beauty RGBA.
     BeautyCarriesAlpha,
+    /// v11 — replace the three convention modules with data: the storage
+    /// paths move into `_config/storage.json`, naming and the config engine
+    /// are the package's (see [`conventions`]).
+    ConventionsToData,
+    /// v12 — bring every stock department template up to the packaged one,
+    /// and refuse a customised one that calls an API the package removed
+    /// (see [`templates`]).
+    RefreshStockTemplates,
+    /// v13 — store the publish channel under its own name: the entity
+    /// property `variants` becomes `channels`, a scene asset entry's
+    /// `variant` becomes `channel` (see [`v13_plan`]).
+    ChannelKeys,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -96,7 +110,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 10] = [
+pub const STEPS: [Step; 13] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -107,6 +121,9 @@ pub const STEPS: [Step; 10] = [
     Step::TempToLocalScratch,
     Step::RefreshTemplatesAgain,
     Step::BeautyCarriesAlpha,
+    Step::ConventionsToData,
+    Step::RefreshStockTemplates,
+    Step::ChannelKeys,
 ];
 
 impl Step {
@@ -123,6 +140,9 @@ impl Step {
             Step::TempToLocalScratch => 8,
             Step::RefreshTemplatesAgain => 9,
             Step::BeautyCarriesAlpha => 10,
+            Step::ConventionsToData => 11,
+            Step::RefreshStockTemplates => 12,
+            Step::ChannelKeys => 13,
         }
     }
 
@@ -152,6 +172,15 @@ impl Step {
             }
             Step::BeautyCarriesAlpha => {
                 "drop the separate alpha AOV and render the beauty RGBA"
+            }
+            Step::ConventionsToData => {
+                "replace the _config/*_convention.py modules with _config/storage.json"
+            }
+            Step::RefreshStockTemplates => {
+                "refresh the stock _config/templates for the APIs this version removed"
+            }
+            Step::ChannelKeys => {
+                "store the publish channel under `channels`/`channel` in the config database"
             }
         }
     }
@@ -194,8 +223,17 @@ pub fn current_version(project_path: &Path) -> u32 {
 
 /// Steps newer than the project's current version, in order.
 pub fn pending(project_path: &Path) -> Vec<Step> {
+    pending_through(project_path, latest_version())
+}
+
+/// [`pending`], stopping at the step that reaches `last`.
+fn pending_through(project_path: &Path, last: u32) -> Vec<Step> {
     let at = current_version(project_path);
-    STEPS.iter().copied().filter(|s| s.version() > at).collect()
+    STEPS
+        .iter()
+        .copied()
+        .filter(|s| s.version() > at && s.version() <= last)
+        .collect()
 }
 
 /// Whether a step can run, decided before anything is written.
@@ -310,13 +348,49 @@ impl Step {
                 Ok(_) => Readiness::Ready,
                 Err(why) => Readiness::Blocked(why),
             },
+            // Blocked when a module holds something the package cannot
+            // stand in for: a naming or config convention that is not one
+            // the scaffold shipped, or a storage convention whose paths
+            // cannot be read without running it. Nothing is guessed at.
+            Step::ConventionsToData => match v11_plan(&cfg, template_dir) {
+                Ok(_) => Readiness::Ready,
+                Err(why) => Readiness::Blocked(why),
+            },
+            // Blocked when a customised template calls an API the package
+            // removed: replacing it would lose the studio's work, keeping it
+            // leaves "New workfile" broken, so its owner decides. A project
+            // still to run v9 is judged as v9 will leave it, since v9
+            // replaces every packaged template whatever it holds.
+            Step::RefreshStockTemplates => {
+                let v9_pending =
+                    current_version(project_path) < Step::RefreshTemplatesAgain.version();
+                match v12_plan(&cfg, template_dir, v9_pending) {
+                    Ok(_) => Readiness::Ready,
+                    Err(why) => Readiness::Blocked(why),
+                }
+            }
+            // Blocked only when a record spells the channel both ways with
+            // different values, or a database file is unreadable: keeping
+            // either value would be a guess with a wrong render behind it.
+            Step::ChannelKeys => match v13_plan(&cfg) {
+                Ok(_) => Readiness::Ready,
+                Err(why) => Readiness::Blocked(why),
+            },
         }
     }
 }
 
 /// Readiness of every pending step, in order. Empty when nothing is pending.
 pub fn preflight(project_path: &Path, template_dir: &Path) -> Vec<(Step, Readiness)> {
-    pending(project_path)
+    preflight_through(project_path, template_dir, latest_version())
+}
+
+fn preflight_through(
+    project_path: &Path,
+    template_dir: &Path,
+    last: u32,
+) -> Vec<(Step, Readiness)> {
+    pending_through(project_path, last)
         .into_iter()
         .map(|step| {
             let readiness = step.readiness(project_path, template_dir);
@@ -328,7 +402,15 @@ pub fn preflight(project_path: &Path, template_dir: &Path) -> Vec<(Step, Readine
 /// The first blocked step of a pending run, if any — what a caller shows the
 /// user instead of starting a migration that cannot finish.
 pub fn first_blocker(project_path: &Path, template_dir: &Path) -> Option<(Step, String)> {
-    preflight(project_path, template_dir)
+    first_blocker_through(project_path, template_dir, latest_version())
+}
+
+fn first_blocker_through(
+    project_path: &Path,
+    template_dir: &Path,
+    last: u32,
+) -> Option<(Step, String)> {
+    preflight_through(project_path, template_dir, last)
         .into_iter()
         .find_map(|(step, readiness)| match readiness {
             Readiness::Blocked(why) => Some((step, why)),
@@ -743,6 +825,44 @@ impl Step {
                 }
                 Ok(())
             }
+            Step::ConventionsToData => {
+                // The table is worked out, and every module vetted, before
+                // anything is written. The table goes down first: a failure
+                // after it leaves the modules in place and the step re-runs.
+                if let Some(table) = v11_plan(&cfg, template_dir)? {
+                    let text = crate::to_json_string(&Value::Object(table));
+                    write_preserving_as(&cfg.join(conventions::STORAGE_FILE), &text, "v11.bak")?;
+                }
+                for name in CONVENTION_FILES {
+                    retire(&cfg, name)?;
+                }
+                Ok(())
+            }
+            Step::RefreshStockTemplates => {
+                // Every template is judged before any is written, so a
+                // refusal leaves the project exactly as it was. No backup: a
+                // stock template is one the scaffold shipped, and a
+                // customised one is never written.
+                for (path, text) in v12_plan(&cfg, template_dir, false)? {
+                    if let Some(parent) = path.parent() {
+                        std::fs::create_dir_all(parent)
+                            .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
+                    }
+                    let style = newlines::style_of_file(&path);
+                    std::fs::write(&path, newlines::apply(&text, style))
+                        .map_err(|e| format!("could not write {}: {e}", path.display()))?;
+                }
+                Ok(())
+            }
+            Step::ChannelKeys => {
+                // Every file is planned before any is written, so a refusal
+                // leaves the database exactly as it was. Own backup suffix:
+                // a `.bak` an earlier step left stays that step's original.
+                for (path, data) in v13_plan(&cfg)? {
+                    write_preserving_as(&path, &crate::to_json_string(&data), "v13.bak")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -780,6 +900,116 @@ fn v10_edits(cfg: &Path) -> Result<Vec<(PathBuf, String)>, String> {
     Ok(out)
 }
 
+/// The packaged scaffold's storage table, which a new project starts from.
+fn scaffold_storage_table(template_dir: &Path) -> Result<serde_json::Map<String, Value>, String> {
+    let path = template_dir.join("_config").join(conventions::STORAGE_FILE);
+    let Value::Object(table) = load_json(&path).map_err(|why| {
+        format!(
+            "packaged {} unreadable ({why}) — the TumblePipe package is incomplete",
+            path.display()
+        )
+    })?
+    else {
+        return Err(format!("packaged {} is not a JSON object", path.display()));
+    };
+    conventions::validate_table(&table)
+        .map_err(|why| format!("packaged {} is invalid: {why}", path.display()))?;
+    Ok(table)
+}
+
+/// v11's work for a project: `Ok(Some(table))` when `storage.json` is to be
+/// written, `Ok(None)` when the one already there stands, or why a module
+/// cannot be retired.
+fn v11_plan(
+    cfg: &Path,
+    template_dir: &Path,
+) -> Result<Option<serde_json::Map<String, Value>>, String> {
+    let scaffold = scaffold_storage_table(template_dir)?;
+    let read = |name: &str| -> Result<Option<String>, String> {
+        let path = cfg.join(name);
+        match std::fs::read_to_string(&path) {
+            Ok(text) => Ok(Some(text)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(format!("cannot read {}: {err}", path.display())),
+        }
+    };
+    if let Some(text) = read("naming_convention.py")? {
+        if !conventions::naming_is_stock(&text) {
+            return Err(format!(
+                "{} is not a naming convention TumblePipe shipped. Naming (entity names, \
+                 vNNNN versions, instance names) is now fixed by the package and cannot be \
+                 customised per project: reconcile what it changes, delete the file, then \
+                 launch again",
+                cfg.join("naming_convention.py").display()
+            ));
+        }
+    }
+    if let Some(text) = read("config_convention.py")? {
+        if !conventions::config_is_stock(&text) {
+            return Err(format!(
+                "{} is not the stock config shim. The package's config store is now used \
+                 directly and cannot be replaced per project: reconcile what it changes, \
+                 delete the file, then launch again",
+                cfg.join("config_convention.py").display()
+            ));
+        }
+    }
+    let storage_json = cfg.join(conventions::STORAGE_FILE);
+    match read("storage_convention.py")? {
+        Some(text) => conventions::storage_table(&text, &scaffold)
+            .map(Some)
+            .map_err(|why| {
+                format!(
+                    "{} cannot be turned into {}: {why}. Write {} by hand (start from the \
+                     packaged scaffold's; docs/configuration.md lists the placeholders), \
+                     delete the module, then launch again",
+                    cfg.join("storage_convention.py").display(),
+                    conventions::STORAGE_FILE,
+                    storage_json.display()
+                )
+            }),
+        // A table of the project's own, from an earlier run or by hand
+        None if storage_json.exists() => {
+            let Value::Object(table) = load_json(&storage_json)? else {
+                return Err(format!("{} is not a JSON object", storage_json.display()));
+            };
+            conventions::validate_table(&table)
+                .map_err(|why| format!("{} is invalid: {why}", storage_json.display()))?;
+            Ok(None)
+        }
+        // No module and no table: the project resolved nothing, so it gets
+        // the locations a new project is created with.
+        None => Ok(Some(scaffold)),
+    }
+}
+
+/// Move a retired convention module aside as `<name>.v11.bak`, and drop its
+/// compiled copy. A `.v11.bak` already there is the true original from an
+/// earlier run, so it is kept and the live file simply removed.
+fn retire(cfg: &Path, name: &str) -> Result<(), String> {
+    let path = cfg.join(name);
+    if path.exists() {
+        let backup = cfg.join(format!("{name}.v11.bak"));
+        let moved = if backup.exists() {
+            std::fs::remove_file(&path)
+        } else {
+            std::fs::rename(&path, &backup)
+        };
+        moved.map_err(|e| format!("could not retire {}: {e}", path.display()))?;
+    }
+    let prefix = format!("{}.", name.trim_end_matches(".py"));
+    let mut compiled = Vec::new();
+    find_files(&cfg.join("__pycache__"), None, &mut compiled);
+    for file in compiled {
+        let file_name = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if file_name.starts_with(&prefix) && file_name.ends_with(".pyc") {
+            std::fs::remove_file(&file)
+                .map_err(|e| format!("could not remove {}: {e}", file.display()))?;
+        }
+    }
+    Ok(())
+}
+
 /// Copy every packaged `template.py` over the project's, backing up any that
 /// differ. Replacing is fine here, unlike `storage_convention.py`: a hand-tuned
 /// template only shapes future workfiles, and the backup keeps it.
@@ -808,6 +1038,288 @@ fn refresh_templates(cfg: &Path, template_dir: &Path, backup_suffix: &str) -> Re
         }
     }
     Ok(())
+}
+
+/// v12's writes, as `(project template, packaged LF text)`, or why the step
+/// refuses.
+///
+/// Each packaged template is written where the project has none, or a stock
+/// one (a version the scaffold shipped, [`templates::is_stock`]) that differs
+/// from it. A customised one — and any `template.py` the package does not
+/// ship, such as a department of the studio's own — is left alone, unless it
+/// calls something the package removed ([`templates::removed_apis`]); then
+/// the whole step refuses, naming each file and what it calls.
+///
+/// `v9_pending`: v9 is part of the same run, and it replaces every packaged
+/// template whatever it holds, so those are taken as already current.
+fn v12_plan(
+    cfg: &Path,
+    template_dir: &Path,
+    v9_pending: bool,
+) -> Result<Vec<(PathBuf, String)>, String> {
+    let source = scaffold_templates_dir(template_dir);
+    if !source.is_dir() {
+        return Err(format!(
+            "packaged templates not found at {} — the TumblePipe package is incomplete",
+            source.display()
+        ));
+    }
+    let target = cfg.join("templates");
+    let read = |path: &Path| -> Result<Option<String>, String> {
+        match std::fs::read_to_string(path) {
+            Ok(text) => Ok(Some(text)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(format!("cannot read {}: {err}", path.display())),
+        }
+    };
+
+    let mut packaged = Vec::new();
+    find_files(&source, Some("template.py"), &mut packaged);
+    let mut writes = Vec::new();
+    let mut broken: Vec<(PathBuf, Vec<String>)> = Vec::new();
+    let mut shipped = std::collections::HashSet::new();
+    for src in packaged {
+        let relative = template_key(&source, &src);
+        let dst = target.join(src.strip_prefix(&source).map_err(|e| e.to_string())?);
+        shipped.insert(relative.clone());
+        if v9_pending {
+            continue;
+        }
+        let new_text = newlines::normalize(
+            &std::fs::read_to_string(&src)
+                .map_err(|e| format!("could not read {}: {e}", src.display()))?,
+        );
+        match read(&dst)? {
+            None => writes.push((dst, new_text)),
+            Some(old) if newlines::normalize(&old) == new_text => {}
+            Some(old) if templates::is_stock(&relative, &old) => writes.push((dst, new_text)),
+            Some(old) => {
+                let found = templates::removed_apis(&old);
+                if !found.is_empty() {
+                    broken.push((dst, found));
+                }
+            }
+        }
+    }
+
+    // Templates of the project's own: never written, but a new workfile
+    // runs them all the same.
+    let mut own = Vec::new();
+    find_files(&target, Some("template.py"), &mut own);
+    for path in own {
+        let relative = template_key(&target, &path);
+        if shipped.contains(&relative) {
+            continue;
+        }
+        let Some(text) = read(&path)? else { continue };
+        if templates::is_stock(&relative, &text) {
+            continue; // a department the scaffold no longer ships
+        }
+        let found = templates::removed_apis(&text);
+        if !found.is_empty() {
+            broken.push((path, found));
+        }
+    }
+
+    if broken.is_empty() {
+        return Ok(writes);
+    }
+    let mut why = format!(
+        "{} customised template(s) call what this TumblePipe version removed, so a new \
+         workfile from them would fail. Each is the studio's own work, so it is not \
+         replaced, and nothing was written:",
+        broken.len()
+    );
+    for (path, found) in &broken {
+        why.push_str(&format!("\n    {}:", path.display()));
+        for item in found {
+            why.push_str(&format!("\n      - {item}"));
+        }
+    }
+    why.push_str(&format!(
+        "\n  Port each to the packaged template of the same department under {} (or \
+         delete it, and the next launch puts the packaged one in its place), then \
+         launch again",
+        source.display()
+    ));
+    Err(why)
+}
+
+/// The entity property naming an entity's custom channels, before and after v13.
+const CHANNELS_OLD: &str = "variants";
+const CHANNELS_NEW: &str = "channels";
+/// The key naming one channel inside a scene's asset entry, before and after v13.
+const CHANNEL_OLD: &str = "variant";
+const CHANNEL_NEW: &str = "channel";
+
+/// Rename `old` to `new` in one map, keeping its position, so the file's
+/// diff is that one line. Both present and equal folds to `new`; both
+/// present and different is pushed onto `clashes` with `where_` and left
+/// alone. Returns whether the map changed.
+fn rename_key(
+    map: &mut serde_json::Map<String, Value>,
+    old: &str,
+    new: &str,
+    where_: &str,
+    clashes: &mut Vec<String>,
+) -> bool {
+    let Some(old_value) = map.get(old) else {
+        return false;
+    };
+    if let Some(new_value) = map.get(new) {
+        if new_value != old_value {
+            clashes.push(format!(
+                "{where_}: \"{old}\" = {old_value} but \"{new}\" = {new_value}"
+            ));
+            return false;
+        }
+        map.remove(old);
+        return true;
+    }
+    let taken = std::mem::take(map);
+    *map = taken
+        .into_iter()
+        .map(|(key, value)| if key == old { (new.to_string(), value) } else { (key, value) })
+        .collect();
+    true
+}
+
+/// Walk a `{properties, children}` config tree, renaming the entity channel
+/// property in every node's `properties`.
+fn rename_property_in_tree(node: &mut Value, path: &str, clashes: &mut Vec<String>) -> bool {
+    let Value::Object(map) = node else {
+        return false;
+    };
+    let mut changed = false;
+    if let Some(Value::Object(properties)) = map.get_mut("properties") {
+        let where_ = if path.is_empty() { "/" } else { path };
+        changed |= rename_key(properties, CHANNELS_OLD, CHANNELS_NEW, where_, clashes);
+    }
+    if let Some(Value::Object(children)) = map.get_mut("children") {
+        for (name, child) in children.iter_mut() {
+            changed |= rename_property_in_tree(child, &format!("{path}/{name}"), clashes);
+        }
+    }
+    changed
+}
+
+/// Walk `scenes.json`, renaming the channel key of every asset entry.
+fn rename_scene_entries(node: &mut Value, path: &str, clashes: &mut Vec<String>) -> bool {
+    let Value::Object(map) = node else {
+        return false;
+    };
+    let mut changed = false;
+    if let Some(Value::Array(assets)) = map
+        .get_mut("properties")
+        .and_then(|p| p.as_object_mut())
+        .and_then(|p| p.get_mut("assets"))
+    {
+        for (index, entry) in assets.iter_mut().enumerate() {
+            if let Value::Object(entry) = entry {
+                let where_ = format!("{path} assets[{index}]");
+                changed |= rename_key(entry, CHANNEL_OLD, CHANNEL_NEW, &where_, clashes);
+            }
+        }
+    }
+    if let Some(Value::Object(children)) = map.get_mut("children") {
+        for (name, child) in children.iter_mut() {
+            changed |= rename_scene_entries(child, &format!("{path}/{name}"), clashes);
+        }
+    }
+    changed
+}
+
+/// Point every browser column spec that names the channel property at its
+/// new name. Labels were already moved by v5; this moves the key itself.
+fn rename_column_keys(node: &mut Value) -> bool {
+    let mut changed = false;
+    match node {
+        Value::Array(items) => {
+            for item in items {
+                changed |= rename_column_keys(item);
+            }
+        }
+        Value::Object(map) => {
+            for field in ["key", "property_path"] {
+                if map.get(field).and_then(|v| v.as_str()) == Some(CHANNELS_OLD) {
+                    map.insert(field.to_string(), Value::String(CHANNELS_NEW.to_string()));
+                    changed = true;
+                }
+            }
+            for (_, value) in map.iter_mut() {
+                changed |= rename_column_keys(value);
+            }
+        }
+        _ => {}
+    }
+    changed
+}
+
+/// v13's edits to a project's config database, as `(file, new data)`: empty
+/// when there is nothing to do, or why it cannot run.
+///
+/// The publish channel used to be spelled "variant" in the database — the
+/// `variants` entity property (and its schema default), the `variant` key of
+/// a scene's asset entries, and the browser column naming that property —
+/// colliding with USD's own variants. The package reads and writes only the
+/// `channels`/`channel` spelling from this version on, so every project is
+/// brought to it here, on upgrade, rather than every reader carrying both.
+///
+/// Published data (`export/**/context.json`, staged `.usda` URIs) is NOT
+/// touched: published versions are immutable, and their readers keep
+/// accepting the old spelling instead.
+///
+/// A record carrying both spellings with the same value folds to the new
+/// one; with different values the step refuses, naming every such record,
+/// because keeping either would be a guess.
+fn v13_plan(cfg: &Path) -> Result<Vec<(PathBuf, Value)>, String> {
+    let db = cfg.join("db");
+    let mut out = Vec::new();
+    let mut clashes = Vec::new();
+    for name in ["schemas.json", "entity.json", "scenes.json", "config.json"] {
+        let path = db.join(name);
+        if !path.is_file() {
+            continue; // this project has no such database
+        }
+        let mut data = load_json(&path)?;
+        let mut found = Vec::new();
+        let changed = match name {
+            "scenes.json" => rename_scene_entries(&mut data, "", &mut found),
+            "config.json" => rename_column_keys(&mut data),
+            _ => rename_property_in_tree(&mut data, "", &mut found),
+        };
+        clashes.extend(found.into_iter().map(|f| format!("{}: {f}", path.display())));
+        if changed {
+            out.push((path, data));
+        }
+    }
+    if clashes.is_empty() {
+        return Ok(out);
+    }
+    let mut why = format!(
+        "{} record(s) name the publish channel under both its old and new key with \
+         different values, so neither can be kept safely and nothing was written:",
+        clashes.len()
+    );
+    for clash in &clashes {
+        why.push_str(&format!("\n    {clash}"));
+    }
+    why.push_str("\n  Delete whichever of the two is wrong, then launch again");
+    Err(why)
+}
+
+/// A template's directory under `root`, `/`-separated: the key of a
+/// [`templates::STOCK`] row.
+fn template_key(root: &Path, file: &Path) -> String {
+    file.parent()
+        .and_then(|dir| dir.strip_prefix(root).ok())
+        .map(|dir| {
+            dir.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/")
+        })
+        .unwrap_or_default()
 }
 
 /// Record the layout version a project has reached.
@@ -845,6 +1357,13 @@ impl Report {
 /// part-migrated state nobody asked for. Checking every pending step first
 /// means a project that cannot be fully migrated is left exactly as it was.
 pub fn migrate(project_path: &Path, template_dir: &Path) -> Report {
+    migrate_through(project_path, template_dir, latest_version())
+}
+
+/// [`migrate`], stopping at the step that reaches `last`. The tests of a
+/// historical step use it to look at that step's output before a later step
+/// (v11 retires the convention modules v6-v8 edit) moves on from it.
+fn migrate_through(project_path: &Path, template_dir: &Path, last: u32) -> Report {
     let from = current_version(project_path);
     let mut report = Report {
         from,
@@ -853,13 +1372,13 @@ pub fn migrate(project_path: &Path, template_dir: &Path) -> Report {
         refused: None,
     };
 
-    if let Some((step, why)) = first_blocker(project_path, template_dir) {
+    if let Some((step, why)) = first_blocker_through(project_path, template_dir, last) {
         report.refused = Some((step, why));
         return report;
     }
 
     let cfg = config_dir(project_path);
-    for step in pending(project_path) {
+    for step in pending_through(project_path, last) {
         let result = step
             .apply(project_path, template_dir)
             .and_then(|()| write_version(&cfg, step.version()));
@@ -966,8 +1485,18 @@ mod tests {
         let ocio = dir.path().join("_config").join("ocio");
         std::fs::create_dir_all(&ocio).unwrap();
         std::fs::write(ocio.join("tumblehead.ocio"), "ocio_profile_version: 2\n").unwrap();
+        std::fs::write(dir.path().join("_config").join(conventions::STORAGE_FILE), SCAFFOLD_STORAGE)
+            .unwrap();
         dir
     }
+
+    /// The packaged storage table.
+    const SCAFFOLD_STORAGE: &str =
+        include_str!("../../../../scripts/project_template/_config/storage.json");
+
+    /// The last step a test of v6-v8's edits to the convention modules runs:
+    /// v11 retires those modules, so their output is looked at before it.
+    const BEFORE_V11: u32 = 10;
 
     /// The convention a project has once v6 has run.
     ///
@@ -1038,14 +1567,13 @@ mod tests {
         assert!(pending(dir.path()).is_empty());
     }
 
-    /// The v5 relabel: the label and tooltip move, the property key does not.
-    /// The key is what every project's database already stores and what the
-    /// published path and URI wire format spell.
+    /// The v5 relabel: the label and tooltip move, the property key does not
+    /// (v13 moves that, and is not run here).
     #[test]
     fn relabelling_moves_the_label_but_never_the_key() {
         let dir = database_project();
         let template = scaffold();
-        migrate(dir.path(), template.path());
+        migrate_through(dir.path(), template.path(), Step::RefreshStockTemplates.version());
 
         let config = load_json(&dir.path().join("_config").join("db").join("config.json")).unwrap();
         let column = &config["columns"][0];
@@ -1062,14 +1590,14 @@ mod tests {
         let convention = dir.path().join("_config").join("config_convention.py");
         let original = std::fs::read_to_string(&convention).unwrap();
 
-        migrate(dir.path(), template.path());
+        migrate_through(dir.path(), template.path(), BEFORE_V11);
         let backup = convention.with_file_name("config_convention.py.bak");
         assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
         let after_first = std::fs::read_to_string(&convention).unwrap();
 
         // Rewind the stamp so every step runs a second time against current files.
         write_version(&dir.path().join("_config"), 0).unwrap();
-        let second = migrate(dir.path(), template.path());
+        let second = migrate_through(dir.path(), template.path(), BEFORE_V11);
         assert!(second.is_ok(), "{second:?}");
         // The .bak still holds the true original, not the shim from run one.
         assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
@@ -1204,7 +1732,7 @@ mod tests {
         let path = dir.path().join("_config").join("storage_convention.py");
         std::fs::write(&path, CONVENTION_WITH_KITS).unwrap();
 
-        let report = migrate(dir.path(), template.path());
+        let report = migrate_through(dir.path(), template.path(), BEFORE_V11);
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), PACKAGED_CONVENTION);
         assert_eq!(
@@ -1241,7 +1769,7 @@ mod tests {
         );
         std::fs::write(&path, mine).unwrap();
 
-        let report = migrate(dir.path(), template.path());
+        let report = migrate_through(dir.path(), template.path(), BEFORE_V11);
         assert!(report.is_ok(), "a customized convention must not block: {report:?}");
 
         let after = std::fs::read_to_string(&path).unwrap();
@@ -1264,7 +1792,7 @@ mod tests {
         let path = dir.path().join("_config").join("storage_convention.py");
         std::fs::write(&path, PACKAGED_CONVENTION).unwrap();
 
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).is_ok());
         assert!(
             !path.with_file_name("storage_convention.py.bak").exists(),
             "a convention with no kits entries must not be rewritten or backed up"
@@ -1308,7 +1836,7 @@ mod tests {
         )
         .unwrap();
 
-        let report = migrate(dir.path(), template.path());
+        let report = migrate_through(dir.path(), template.path(), BEFORE_V11);
         assert!(report.is_ok(), "{report:?}");
 
         let naming = std::fs::read_to_string(cfg.join("naming_convention.py")).unwrap();
@@ -1338,7 +1866,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).is_ok());
         assert!(
             !cfg.join("naming_convention.py.bak").exists(),
             "an already-correct convention must not be rewritten or backed up"
@@ -1354,7 +1882,7 @@ mod tests {
         let path = dir.path().join("_config").join("storage_convention.py");
         std::fs::write(&path, CONVENTION_WITH_PROJECT_TEMP).unwrap();
 
-        let report = migrate(dir.path(), template.path());
+        let report = migrate_through(dir.path(), template.path(), BEFORE_V11);
         assert!(report.is_ok(), "{report:?}");
 
         let after = std::fs::read_to_string(&path).unwrap();
@@ -1402,7 +1930,7 @@ mod tests {
         );
         std::fs::write(&path, mine).unwrap();
 
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).is_ok());
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             mine,
@@ -1422,13 +1950,13 @@ mod tests {
         let path = dir.path().join("_config").join("storage_convention.py");
         std::fs::write(&path, CONVENTION_WITH_PROJECT_TEMP).unwrap();
 
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).is_ok());
         let once = std::fs::read_to_string(&path).unwrap();
 
         // Wind the stamp back so the step runs a second time against its own
         // output — what a re-run after a part-migrated project looks like.
         write_version(&dir.path().join("_config"), 7).unwrap();
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).is_ok());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), once);
     }
 
@@ -1450,7 +1978,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).is_ok());
         let after = std::fs::read_to_string(&path).unwrap();
         assert!(
             after.starts_with("from tumblepipe.storage import default_temp_path\n"),
@@ -1704,7 +2232,7 @@ mod tests {
         .unwrap();
         write_version(&dir.path().join("_config"), 9).unwrap();
 
-        let report = migrate(dir.path(), template.path());
+        let report = migrate_through(dir.path(), template.path(), BEFORE_V11);
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(report.to, 10);
         assert_eq!(
@@ -1754,5 +2282,830 @@ mod tests {
                 .readiness(dir.path(), template.path())
                 .is_ready());
         }
+    }
+
+    /// v11 end to end on a project as the scaffold left it: the table it
+    /// writes is the packaged one, and all three modules are retired with
+    /// their originals kept.
+    #[test]
+    fn v11_turns_the_stock_conventions_into_the_packaged_table() {
+        let dir = database_project();
+        let template = scaffold();
+        let cfg = dir.path().join("_config");
+        let fixtures = [
+            ("storage_convention.py", include_str!("../tests/fixtures/storage_convention_v8.py")),
+            ("naming_convention.py", include_str!("../tests/fixtures/naming_convention_current.py")),
+            ("config_convention.py", include_str!("../tests/fixtures/config_convention_shim.py")),
+        ];
+        for (name, text) in fixtures {
+            std::fs::write(cfg.join(name), text).unwrap();
+        }
+        let pycache = cfg.join("__pycache__");
+        std::fs::create_dir_all(&pycache).unwrap();
+        std::fs::write(pycache.join("storage_convention.cpython-311.pyc"), "x").unwrap();
+        std::fs::write(pycache.join("unrelated.cpython-311.pyc"), "x").unwrap();
+        write_version(&cfg, 10).unwrap();
+
+        let report = migrate_through(dir.path(), template.path(), 11);
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.to, 11);
+        assert_eq!(
+            std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(),
+            SCAFFOLD_STORAGE
+        );
+        for (name, text) in fixtures {
+            assert!(!cfg.join(name).exists(), "{name} was not retired");
+            assert_eq!(
+                std::fs::read_to_string(cfg.join(format!("{name}.v11.bak"))).unwrap(),
+                text
+            );
+        }
+        assert!(!pycache.join("storage_convention.cpython-311.pyc").exists());
+        assert!(pycache.join("unrelated.cpython-311.pyc").exists());
+    }
+
+    /// A project coming from v5 is preflighted with its modules still in
+    /// their pre-v6 shape, and v6-v8 reshape them before v11 reads them.
+    #[test]
+    fn v11_reads_a_project_coming_from_v5() {
+        let dir = database_project();
+        let template = scaffold();
+        let cfg = dir.path().join("_config");
+        std::fs::write(
+            cfg.join("storage_convention.py"),
+            include_str!("../tests/fixtures/storage_convention_initial.py"),
+        )
+        .unwrap();
+        std::fs::write(
+            cfg.join("naming_convention.py"),
+            include_str!("../tests/fixtures/naming_convention_current.py")
+                .replace("from tumblepipe.", "from tumblehead."),
+        )
+        .unwrap();
+        write_version(&cfg, 5).unwrap();
+
+        assert_eq!(first_blocker(dir.path(), template.path()), None);
+        let report = migrate(dir.path(), template.path());
+        assert!(report.is_ok(), "{report:?}");
+        // v8 moved temp to local scratch before v11 read it
+        assert_eq!(
+            std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(),
+            SCAFFOLD_STORAGE
+        );
+        assert!(!cfg.join("storage_convention.py").exists());
+    }
+
+    /// The live share's commonest shape: WSL-era scratch and an edit root on
+    /// another drive. Every path is carried over as it resolved.
+    #[test]
+    fn v11_keeps_a_projects_own_paths() {
+        let dir = database_project();
+        let template = scaffold();
+        let cfg = dir.path().join("_config");
+        let mine = include_str!("../tests/fixtures/storage_convention_v8.py")
+            .replace(
+                "        project_name = get_project_name()\n",
+                concat!(
+                    "        project_name = get_project_name()\n",
+                    "        _primary_path = Path('/mnt/c')\n",
+                    "        _secondary_path = Path('/mnt/e')\n",
+                    "        _home = _primary_path / 'users' / 'tumblehead'\n",
+                ),
+            )
+            .replace(
+                "self.temp_path = default_temp_path()",
+                "self.temp_path = _home / 'th_temp' / project_name",
+            )
+            .replace(
+                "self.edit_path = self.project_path / 'edit'",
+                "self.edit_path = _secondary_path / 'Sources' / 'Buzz'",
+            )
+            .replace('\n', "\r\n");
+        std::fs::write(cfg.join("storage_convention.py"), &mine).unwrap();
+        write_version(&cfg, 10).unwrap();
+
+        assert!(migrate(dir.path(), template.path()).is_ok());
+        let table = load_json(&cfg.join(conventions::STORAGE_FILE)).unwrap();
+        assert_eq!(table["temp"], "/mnt/c/users/tumblehead/th_temp/{project_name}");
+        assert_eq!(table["edit"], "/mnt/e/Sources/Buzz");
+        assert_eq!(table["cache"], "{project_parent}/{project_name}_cache");
+        assert_eq!(
+            std::fs::read_to_string(cfg.join("storage_convention.py.v11.bak")).unwrap(),
+            mine,
+            "the original keeps its bytes, CRLF included"
+        );
+    }
+
+    /// What v11 cannot carry over blocks the run before anything is written.
+    #[test]
+    fn v11_refuses_what_it_cannot_carry_over_and_writes_nothing() {
+        let storage = include_str!("../tests/fixtures/storage_convention_v8.py");
+        let naming = include_str!("../tests/fixtures/naming_convention_current.py");
+        let cases = [
+            (
+                "storage_convention.py",
+                storage.replace(
+                    "self.cache_path = self.project_path.parent / f'{project_name}_cache'",
+                    "self.cache_path = Path(os.environ['STUDIO_CACHE'])",
+                ),
+                "storage_convention.py",
+            ),
+            (
+                "naming_convention.py",
+                naming.replace("zfill(4)", "zfill(3)"),
+                "naming_convention.py",
+            ),
+            (
+                "config_convention.py",
+                "from tumblepipe.config.store import JsonConfigStore\n\nclass Mine(JsonConfigStore):\n    pass\n\ndef create():\n    return Mine()\n".to_string(),
+                "config_convention.py",
+            ),
+        ];
+        for (name, text, named) in cases {
+            let dir = database_project();
+            let template = scaffold();
+            let cfg = dir.path().join("_config");
+            std::fs::write(cfg.join(name), &text).unwrap();
+            write_version(&cfg, 10).unwrap();
+
+            let (step, why) =
+                first_blocker(dir.path(), template.path()).expect("must be blocked");
+            assert_eq!(step, Step::ConventionsToData);
+            assert!(why.contains(named), "{name}: {why}");
+            let report = migrate(dir.path(), template.path());
+            assert!(!report.is_ok());
+            assert_eq!(current_version(dir.path()), 10);
+            assert_eq!(std::fs::read_to_string(cfg.join(name)).unwrap(), text);
+            assert!(!cfg.join(conventions::STORAGE_FILE).exists());
+            assert!(!cfg.join(format!("{name}.v11.bak")).exists());
+        }
+    }
+
+    /// A project with no storage module resolved nothing; it gets the
+    /// scaffold's table. One with a table of its own keeps it.
+    #[test]
+    fn v11_without_a_storage_module() {
+        let dir = database_project();
+        let template = scaffold();
+        let cfg = dir.path().join("_config");
+        write_version(&cfg, 10).unwrap();
+        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert_eq!(
+            std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(),
+            SCAFFOLD_STORAGE
+        );
+
+        let own = SCAFFOLD_STORAGE.replace("{project_path}/edit", "//cutroom/edit");
+        std::fs::write(cfg.join(conventions::STORAGE_FILE), &own).unwrap();
+        write_version(&cfg, 10).unwrap();
+        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert_eq!(std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(), own);
+        assert!(!cfg.join("storage.json.v11.bak").exists());
+    }
+
+    /// Re-running v11 over its own output (or over a module that came back)
+    /// changes nothing and never overwrites the first backup.
+    #[test]
+    fn v11_is_idempotent() {
+        let dir = database_project();
+        let template = scaffold();
+        let cfg = dir.path().join("_config");
+        let original = include_str!("../tests/fixtures/storage_convention_v8.py");
+        std::fs::write(cfg.join("storage_convention.py"), original).unwrap();
+        write_version(&cfg, 10).unwrap();
+        assert!(migrate(dir.path(), template.path()).is_ok());
+        let once = std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap();
+
+        std::fs::write(cfg.join("storage_convention.py"), original.replace("self.project_path / 'edit'", "self.project_path / 'cut'"))
+            .unwrap();
+        write_version(&cfg, 10).unwrap();
+        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert_eq!(
+            std::fs::read_to_string(cfg.join("storage_convention.py.v11.bak")).unwrap(),
+            original
+        );
+        assert!(!cfg.join("storage_convention.py").exists());
+        let twice = std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap();
+        assert_eq!(twice, once.replace("{project_path}/edit", "{project_path}/cut"));
+        assert_eq!(
+            std::fs::read_to_string(cfg.join("storage.json.v11.bak")).unwrap(),
+            once
+        );
+    }
+
+    /// The package refusing to ship without its own table blocks v11 rather
+    /// than writing a guess.
+    #[test]
+    fn v11_needs_the_packaged_table() {
+        let dir = database_project();
+        let template = scaffold();
+        std::fs::remove_file(template.path().join("_config").join(conventions::STORAGE_FILE))
+            .unwrap();
+        write_version(&dir.path().join("_config"), 10).unwrap();
+        let (step, why) = first_blocker(dir.path(), template.path()).expect("must be blocked");
+        assert_eq!(step, Step::ConventionsToData);
+        assert!(why.contains("incomplete"), "{why}");
+    }
+
+    // ── v12: the stock templates are refreshed ──────────────────────────
+
+    /// The real packaged scaffold, which v12 refreshes from.
+    fn packaged_scaffold() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("scripts")
+            .join("project_template")
+    }
+
+    /// Every template the scaffold has shipped, as (directory under
+    /// `templates/`, fixture file, text).
+    fn shipped_templates() -> Vec<(String, PathBuf, String)> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("templates");
+        let mut files = Vec::new();
+        find_files(&root, None, &mut files);
+        files
+            .into_iter()
+            .map(|file| {
+                let text = std::fs::read_to_string(&file).unwrap();
+                (template_key(&root, &file), file, text)
+            })
+            .collect()
+    }
+
+    /// Every packaged template, as (directory under `templates/`, LF text).
+    fn packaged_templates() -> Vec<(String, String)> {
+        let root = scaffold_templates_dir(&packaged_scaffold());
+        let mut files = Vec::new();
+        find_files(&root, Some("template.py"), &mut files);
+        files
+            .into_iter()
+            .map(|file| {
+                let text = newlines::normalize(&std::fs::read_to_string(&file).unwrap());
+                (template_key(&root, &file), text)
+            })
+            .collect()
+    }
+
+    fn project_template(dir: &Path, relative: &str) -> PathBuf {
+        let mut path = dir.join("_config").join("templates");
+        for part in relative.split('/') {
+            path = path.join(part);
+        }
+        path.join("template.py")
+    }
+
+    /// A project through v11 holding `templates` (directory, text).
+    fn project_at_v11(templates: &[(&str, &str)]) -> tempfile::TempDir {
+        let dir = project(Some(11));
+        for (relative, text) in templates {
+            let path = project_template(dir.path(), relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, text).unwrap();
+        }
+        dir
+    }
+
+    fn packaged_text(relative: &str) -> String {
+        packaged_templates()
+            .into_iter()
+            .find(|(key, _)| key == relative)
+            .map(|(_, text)| text)
+            .unwrap()
+    }
+
+    /// The fixtures and the STOCK table are the same set, so a row cannot be
+    /// added without the text it stands for, nor a fixture without its row.
+    #[test]
+    fn every_shipped_template_has_a_stock_row_and_every_row_a_fixture() {
+        let shipped = shipped_templates();
+        assert_eq!(shipped.len(), templates::STOCK.len());
+        for (relative, file, text) in &shipped {
+            assert!(
+                templates::is_stock(relative, text),
+                "{} has no STOCK row: (\"{relative}\", 0x{:016x})",
+                file.display(),
+                templates::fingerprint(text)
+            );
+        }
+    }
+
+    /// A packaged template that is not a STOCK row would read as customised
+    /// to the next refresh step on every project left on it.
+    #[test]
+    fn the_packaged_templates_are_stock_and_call_nothing_removed() {
+        let packaged = packaged_templates();
+        assert!(!packaged.is_empty());
+        for (relative, text) in packaged {
+            assert!(
+                templates::is_stock(&relative, &text),
+                "templates/{relative}/template.py changed without a STOCK row: copy it to \
+                 src/wizard/core/tests/fixtures/templates/{relative}/<blob>.py and add \
+                 (\"{relative}\", 0x{:016x}) to templates::STOCK",
+                templates::fingerprint(&text)
+            );
+            assert_eq!(templates::removed_apis(&text), Vec::<String>::new(), "{relative}");
+        }
+    }
+
+    /// Each version the scaffold ever shipped, at its own department, is
+    /// brought up to the packaged template — line endings kept, no backup.
+    #[test]
+    fn v12_refreshes_every_shipped_version() {
+        let template = packaged_scaffold();
+        for (index, (relative, file, text)) in shipped_templates().into_iter().enumerate() {
+            let text = if index % 2 == 0 { text } else { text.replace('\n', "\r\n") };
+            let dir = project_at_v11(&[(&relative, &text)]);
+            let report = migrate(dir.path(), &template);
+            assert!(report.is_ok(), "{}: {report:?}", file.display());
+            assert_eq!(report.to, latest_version());
+            let path = project_template(dir.path(), &relative);
+            let after = std::fs::read_to_string(&path).unwrap();
+            assert_eq!(newlines::normalize(&after), packaged_text(&relative), "{}", file.display());
+            assert_eq!(newlines::style_of(&after), newlines::style_of(&text));
+            let mut left = Vec::new();
+            find_files(path.parent().unwrap(), None, &mut left);
+            assert_eq!(left, vec![path.clone()], "no backup of a stock template");
+        }
+    }
+
+    /// A template the project lacks is put in place, and every other
+    /// department's is too: a v12 project has the whole packaged set.
+    #[test]
+    fn v12_fills_in_missing_templates() {
+        let dir = project_at_v11(&[]);
+        let report = migrate(dir.path(), &packaged_scaffold());
+        assert!(report.is_ok(), "{report:?}");
+        for (relative, text) in packaged_templates() {
+            let after = std::fs::read_to_string(project_template(dir.path(), &relative)).unwrap();
+            assert_eq!(after, text, "{relative}");
+        }
+    }
+
+    /// A studio's own template that only uses what still exists is theirs to
+    /// keep: not written, not backed up — while a stock one beside it is
+    /// still refreshed.
+    #[test]
+    fn v12_leaves_a_clean_customised_template_alone() {
+        let customised = format!("{}\n# studio: our own render column\n", packaged_text("shots/render"));
+        let own_department = "from tumblepipe.pipe.houdini.lops import import_shot\n";
+        let old_animation = shipped_templates()
+            .into_iter()
+            .find(|(relative, _, text)| {
+                relative == "shots/animation" && *text != packaged_text("shots/animation")
+            })
+            .unwrap()
+            .2;
+        let dir = project_at_v11(&[
+            ("shots/render", &customised),
+            ("shots/stunts", own_department),
+            ("shots/animation", &old_animation),
+        ]);
+        let report = migrate(dir.path(), &packaged_scaffold());
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.to, latest_version());
+        let render = project_template(dir.path(), "shots/render");
+        assert_eq!(std::fs::read_to_string(&render).unwrap(), customised);
+        assert_eq!(
+            std::fs::read_to_string(project_template(dir.path(), "shots/stunts")).unwrap(),
+            own_department
+        );
+        assert_eq!(
+            std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap(),
+            packaged_text("shots/animation")
+        );
+        let mut files = Vec::new();
+        find_files(&dir.path().join("_config").join("templates"), None, &mut files);
+        assert!(
+            files.iter().all(|f| f.file_name().unwrap() == "template.py"),
+            "nothing is backed up: {files:?}"
+        );
+    }
+
+    /// A customised template calling a removed API blocks the step, naming
+    /// every such file and what it calls — and nothing at all is written,
+    /// not even the stock template beside it.
+    #[test]
+    fn v12_blocks_a_customised_template_calling_a_removed_api() {
+        let old_render = shipped_templates()
+            .into_iter()
+            .find(|(_, file, _)| file.ends_with("572f2ad8d6.py"))
+            .unwrap()
+            .2;
+        let customised = format!("{old_render}\n# studio: tweaked\n");
+        let own_department = "from tumblepipe.pipe.houdini.util import disable_layer_save_path\n";
+        let old_animation = shipped_templates()
+            .into_iter()
+            .find(|(_, file, _)| file.ends_with("cb38ffa938.py"))
+            .unwrap()
+            .2;
+        let dir = project_at_v11(&[
+            ("shots/render", &customised),
+            ("shots/stunts", own_department),
+            ("shots/animation", &old_animation),
+        ]);
+        let preflight = preflight(dir.path(), &packaged_scaffold());
+        let [(Step::RefreshStockTemplates, Readiness::Blocked(why)), (Step::ChannelKeys, Readiness::Ready)] =
+            preflight.as_slice()
+        else {
+            panic!("v12 must be blocked: {preflight:?}");
+        };
+        for expected in [
+            "2 customised template(s)",
+            &project_template(dir.path(), "shots/render").display().to_string(),
+            "imports tumblepipe.pipe.houdini.lops.render_vars",
+            "imports tumblepipe.pipe.houdini.lops.puzzle_mattes",
+            "calls .set_shot_uri",
+            &project_template(dir.path(), "shots/stunts").display().to_string(),
+            "imports tumblepipe.pipe.houdini.util",
+            "delete it",
+        ] {
+            assert!(why.contains(expected), "{expected:?} missing from: {why}");
+        }
+        assert!(!why.contains("animation"), "a stock template is not reported: {why}");
+
+        let report = migrate(dir.path(), &packaged_scaffold());
+        assert!(!report.is_ok());
+        assert!(report.applied.is_empty());
+        assert_eq!(current_version(dir.path()), 11);
+        for (relative, text) in [
+            ("shots/render", customised.as_str()),
+            ("shots/stunts", own_department),
+            ("shots/animation", old_animation.as_str()),
+        ] {
+            assert_eq!(
+                std::fs::read_to_string(project_template(dir.path(), relative)).unwrap(),
+                text,
+                "{relative} was written"
+            );
+        }
+    }
+
+    /// The fix the message offers: deleting the template takes the packaged one.
+    #[test]
+    fn v12_after_deleting_the_blocked_template() {
+        let dir = project_at_v11(&[("shots/render", "node.set_shot_uri(uri)\n")]);
+        assert!(first_blocker(dir.path(), &packaged_scaffold()).is_some());
+        std::fs::remove_file(project_template(dir.path(), "shots/render")).unwrap();
+        let report = migrate(dir.path(), &packaged_scaffold());
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(
+            std::fs::read_to_string(project_template(dir.path(), "shots/render")).unwrap(),
+            packaged_text("shots/render")
+        );
+    }
+
+    /// A project still to run v9 is judged as v9 leaves it: v9 replaces every
+    /// packaged template (keeping a .v9.bak), so a customised one there does
+    /// not block — but one in a department of the project's own still does.
+    #[test]
+    fn v12_with_v9_still_pending() {
+        let dir = project(Some(8));
+        let render = project_template(dir.path(), "shots/render");
+        std::fs::create_dir_all(render.parent().unwrap()).unwrap();
+        std::fs::write(&render, "node.set_shot_uri(uri)\n").unwrap();
+        assert!(Step::RefreshStockTemplates
+            .readiness(dir.path(), &packaged_scaffold())
+            .is_ready());
+
+        let own = project_template(dir.path(), "shots/stunts");
+        std::fs::create_dir_all(own.parent().unwrap()).unwrap();
+        std::fs::write(&own, "node.set_shot_uri(uri)\n").unwrap();
+        let readiness = Step::RefreshStockTemplates.readiness(dir.path(), &packaged_scaffold());
+        let Readiness::Blocked(why) = readiness else {
+            panic!("a project's own department must still be checked");
+        };
+        assert!(why.contains("stunts") && !why.contains("render"), "{why}");
+    }
+
+    #[test]
+    fn v12_is_idempotent() {
+        let old_layout = shipped_templates()
+            .into_iter()
+            .find(|(_, file, _)| file.ends_with("cb72b1129e.py"))
+            .unwrap()
+            .2;
+        let customised = "# ours\nfrom tumblepipe.pipe.houdini.lops import import_shot\n";
+        let dir = project_at_v11(&[("shots/layout", &old_layout), ("shots/light", customised)]);
+        let template = packaged_scaffold();
+        assert!(migrate(dir.path(), &template).is_ok());
+        let snapshot = |dir: &Path| {
+            let mut files = Vec::new();
+            find_files(&dir.join("_config").join("templates"), None, &mut files);
+            files
+                .into_iter()
+                .map(|f| (f.clone(), std::fs::read_to_string(&f).unwrap()))
+                .collect::<Vec<_>>()
+        };
+        let first = snapshot(dir.path());
+
+        write_version(&dir.path().join("_config"), 11).unwrap();
+        let second = migrate(dir.path(), &template);
+        assert!(second.is_ok(), "{second:?}");
+        assert_eq!(second.to, latest_version());
+        assert_eq!(snapshot(dir.path()), first);
+        assert!(v12_plan(&dir.path().join("_config"), &template, false)
+            .unwrap()
+            .is_empty());
+    }
+
+    /// A project made from this package is born at v13, with nothing to do.
+    #[test]
+    fn a_fresh_scaffold_is_already_at_v13() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("fresh");
+        crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
+        assert_eq!(latest_version(), 13);
+        assert_eq!(current_version(&target), latest_version());
+        assert!(pending(&target).is_empty());
+        assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
+            .unwrap()
+            .is_empty());
+        assert!(v13_plan(&config_dir(&target)).unwrap().is_empty());
+    }
+
+    // ── v13: the publish channel is stored as a channel ─────────────────
+
+    /// A v12 project's database as the package wrote it before v13: the
+    /// channel spelled `variant` in every place it is stored.
+    fn project_at_v12_with_variants() -> tempfile::TempDir {
+        let dir = project(Some(12));
+        let db = dir.path().join("_config").join("db");
+        let files = [
+            (
+                "schemas.json",
+                r#"{
+    "properties": {},
+    "children": {
+        "entity": {
+            "properties": {
+                "fps": 24,
+                "variants": [
+                    "default"
+                ],
+                "departments": []
+            },
+            "children": {}
+        },
+        "config": {
+            "properties": {},
+            "children": {
+                "discord": {
+                    "properties": {},
+                    "children": {
+                        "channels": {
+                            "properties": {
+                                "channel": ""
+                            },
+                            "children": {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#,
+            ),
+            (
+                "entity.json",
+                r#"{
+    "properties": {},
+    "children": {
+        "shots": {
+            "properties": {},
+            "children": {
+                "010": {
+                    "properties": {
+                        "variants": [
+                            "bg"
+                        ]
+                    },
+                    "children": {
+                        "020": {
+                            "properties": {
+                                "frame_start": 1001,
+                                "variants": [
+                                    "bg",
+                                    "fg"
+                                ],
+                                "frame_end": 1100
+                            },
+                            "children": {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#,
+            ),
+            (
+                "scenes.json",
+                r#"{
+    "properties": {},
+    "children": {
+        "park": {
+            "properties": {
+                "assets": [
+                    {
+                        "asset": "entity:/assets/PROP/bench",
+                        "instances": 2,
+                        "variant": "default"
+                    },
+                    {
+                        "asset": "entity:/assets/CHAR/kid",
+                        "instances": 1,
+                        "variant": "feathers"
+                    }
+                ]
+            },
+            "children": {}
+        }
+    }
+}
+"#,
+            ),
+            (
+                "config.json",
+                r#"{
+    "columns": [
+        {
+            "key": "variants",
+            "label": "Channels",
+            "property_path": "variants",
+            "tooltip": "Publish channels to render"
+        },
+        {
+            "key": "pool",
+            "label": "Pool"
+        }
+    ]
+}
+"#,
+            ),
+        ];
+        for (name, text) in files {
+            std::fs::write(db.join(name), text).unwrap();
+        }
+        dir
+    }
+
+    fn db_text(dir: &Path, name: &str) -> String {
+        std::fs::read_to_string(dir.join("_config").join("db").join(name)).unwrap()
+    }
+
+    #[test]
+    fn v13_moves_every_stored_channel_to_its_own_name() {
+        let dir = project_at_v12_with_variants();
+        let report = migrate(dir.path(), &packaged_scaffold());
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.applied.len(), 1);
+        assert_eq!(report.to, 13);
+
+        let db = dir.path().join("_config").join("db");
+        let schemas = load_json(&db.join("schemas.json")).unwrap();
+        let entity_props = &schemas["children"]["entity"]["properties"];
+        assert_eq!(entity_props["channels"], serde_json::json!(["default"]));
+        assert!(entity_props.get("variants").is_none());
+        // The discord `channels` node and its `channel` property are a
+        // different thing that happens to share the word; untouched.
+        assert_eq!(
+            schemas["children"]["config"]["children"]["discord"]["children"]["channels"]
+                ["properties"]["channel"],
+            ""
+        );
+
+        let entity = load_json(&db.join("entity.json")).unwrap();
+        let seq = &entity["children"]["shots"]["children"]["010"];
+        assert_eq!(seq["properties"]["channels"], serde_json::json!(["bg"]));
+        let shot = &seq["children"]["020"]["properties"];
+        assert_eq!(shot["channels"], serde_json::json!(["bg", "fg"]));
+        assert!(shot.get("variants").is_none());
+        // Renamed in place: the key keeps its position, so the diff is one line.
+        let keys: Vec<&String> = shot.as_object().unwrap().keys().collect();
+        assert_eq!(keys, ["frame_start", "channels", "frame_end"]);
+
+        let scenes = load_json(&db.join("scenes.json")).unwrap();
+        let assets = scenes["children"]["park"]["properties"]["assets"].as_array().unwrap();
+        assert_eq!(assets[0]["channel"], "default");
+        assert_eq!(assets[1]["channel"], "feathers");
+        assert!(assets.iter().all(|a| a.get("variant").is_none()));
+
+        let config = load_json(&db.join("config.json")).unwrap();
+        assert_eq!(config["columns"][0]["key"], "channels");
+        assert_eq!(config["columns"][0]["property_path"], "channels");
+        assert_eq!(config["columns"][1]["key"], "pool");
+
+        // The originals are kept beside each rewritten file.
+        for name in ["schemas.json", "entity.json", "scenes.json", "config.json"] {
+            let backup = db.join(format!("{name}.v13.bak"));
+            assert!(backup.is_file(), "{name} has no v13 backup");
+            assert!(std::fs::read_to_string(backup).unwrap().contains("variant"));
+        }
+    }
+
+    /// An old project goes all the way through, v13 included.
+    #[test]
+    fn v13_runs_from_an_unstamped_project() {
+        let dir = database_project();
+        let db = dir.path().join("_config").join("db");
+        std::fs::write(
+            db.join("entity.json"),
+            "{\n    \"properties\": {\n        \"variants\": [\n            \"bg\"\n        ]\n    },\n    \"children\": {}\n}\n",
+        )
+        .unwrap();
+        let template = scaffold();
+        let report = migrate(dir.path(), template.path());
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(current_version(dir.path()), 13);
+        let entity = load_json(&db.join("entity.json")).unwrap();
+        assert_eq!(entity["properties"]["channels"], serde_json::json!(["bg"]));
+        let config = load_json(&db.join("config.json")).unwrap();
+        assert_eq!(config["columns"][0]["key"], "channels");
+        assert_eq!(config["columns"][0]["label"], "Channels", "v5 still relabels first");
+    }
+
+    #[test]
+    fn v13_is_idempotent() {
+        let dir = project_at_v12_with_variants();
+        assert!(migrate(dir.path(), &packaged_scaffold()).is_ok());
+        let names = ["schemas.json", "entity.json", "scenes.json", "config.json"];
+        let first: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
+
+        write_version(&dir.path().join("_config"), 12).unwrap();
+        let second = migrate(dir.path(), &packaged_scaffold());
+        assert!(second.is_ok(), "{second:?}");
+        assert_eq!(second.to, 13);
+        let again: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
+        assert_eq!(again, first);
+        assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
+    }
+
+    /// A project that never stored a channel has nothing to rewrite: no
+    /// file is written and no backup appears.
+    #[test]
+    fn v13_with_nothing_to_do_writes_nothing() {
+        let dir = project(Some(12));
+        let db = dir.path().join("_config").join("db");
+        let entity = "{\n    \"properties\": {\n        \"fps\": 24\n    },\n    \"children\": {}\n}\n";
+        std::fs::write(db.join("entity.json"), entity).unwrap();
+        assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
+
+        let report = migrate(dir.path(), &packaged_scaffold());
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.to, 13);
+        assert_eq!(db_text(dir.path(), "entity.json"), entity);
+        let mut files = Vec::new();
+        find_files(&db, None, &mut files);
+        assert_eq!(files, vec![db.join("entity.json")], "nothing else may be written");
+    }
+
+    /// Both spellings with the same value fold to the new one; with
+    /// different values the run is refused and nothing is written.
+    #[test]
+    fn v13_folds_agreeing_spellings_and_refuses_disagreeing_ones() {
+        let dir = project(Some(12));
+        let db = dir.path().join("_config").join("db");
+        std::fs::write(
+            db.join("entity.json"),
+            r#"{"properties": {"variants": ["bg"], "channels": ["bg"]}, "children": {}}"#,
+        )
+        .unwrap();
+        assert!(migrate(dir.path(), &packaged_scaffold()).is_ok());
+        let entity = load_json(&db.join("entity.json")).unwrap();
+        assert_eq!(
+            entity["properties"],
+            serde_json::json!({"channels": ["bg"]})
+        );
+
+        let dir = project(Some(12));
+        let db = dir.path().join("_config").join("db");
+        let clash = r#"{"properties": {}, "children": {"park": {"properties": {"assets": [{"asset": "a", "variant": "bg", "channel": "fg"}]}, "children": {}}}}"#;
+        std::fs::write(db.join("scenes.json"), clash).unwrap();
+        let report = migrate(dir.path(), &packaged_scaffold());
+        let (step, why) = report.refused.expect("a disagreeing record must refuse the run");
+        assert_eq!(step, Step::ChannelKeys);
+        assert!(why.contains("/park assets[0]"), "{why}");
+        assert_eq!(current_version(dir.path()), 12);
+        assert_eq!(db_text(dir.path(), "scenes.json"), clash);
+    }
+
+    /// A CRLF database stays CRLF.
+    #[test]
+    fn v13_keeps_line_endings() {
+        let dir = project_at_v12_with_variants();
+        let db = dir.path().join("_config").join("db");
+        let crlf = db_text(dir.path(), "entity.json").replace('\n', "\r\n");
+        std::fs::write(db.join("entity.json"), crlf).unwrap();
+        assert!(migrate(dir.path(), &packaged_scaffold()).is_ok());
+        let after = db_text(dir.path(), "entity.json");
+        assert!(after.contains("\"channels\"") && after.contains("\r\n"));
+        assert!(!after.replace("\r\n", "").contains('\n'));
     }
 }

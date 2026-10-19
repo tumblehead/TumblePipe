@@ -44,12 +44,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from tumbletrove.asset_browser.api.errors import AssetDiscoveryError, CatalogError
 from tumbletrove.asset_browser.api.tags import match_tags, parse_tag
 from tumbletrove.asset_browser.api.types import (
     Asset, AssetAction, AssetDetail, AssetPage, AssetVersion, Collection,
 )
 
-from .houdini import run_on_main_thread
+from tumblepipe.pipe.houdini.ui.report import run_on_main_thread
 
 log = logging.getLogger(__name__)
 
@@ -401,8 +402,9 @@ def _create_reporting(family: NodeFamily, version: NodeVersion, **kwargs) -> Non
     try:
         create_node(version, family.hou_category, **kwargs)
     except hou.OperationFailed as exc:
-        message = exc.instanceMessage() if hasattr(exc, "instanceMessage") else str(exc)
-        hou.ui.setStatusMessage(message, severity=hou.severityType.Warning)
+        hou.ui.setStatusMessage(
+            exc.instanceMessage(), severity=hou.severityType.Warning,
+        )
 
 
 # ── Catalog section ──────────────────────────────────────────────────────────
@@ -426,6 +428,8 @@ class PipelineNodes:
         self._lookup = lookup or hou_lookup
         self._index: list[NodeFamily] | None = None
         self._by_id: dict[str, NodeFamily] = {}
+        # Why the last index build failed, shown on the Nodes page.
+        self._error: CatalogError | None = None
 
     # ── Index ───────────────────────────────────────────
 
@@ -433,13 +437,22 @@ class PipelineNodes:
         index = self._index
         if index is None:
             # The sidebar asks for this on the GUI thread, so a Nodes section
-            # that cannot be built is an empty section and a log line, never
-            # an exception out of get_collections.
+            # that cannot be built must not raise out of get_collections: it
+            # is an empty section whose page carries the error (the way a
+            # project whose discovery fails does), and the log the trace.
+            self._error = None
             try:
                 index = build_index(load_operators(self._root), self._lookup)
-            except Exception:
-                log.warning("pipeline node index could not be built from %s",
-                            self._root, exc_info=True)
+            except Exception as exc:
+                log.exception(
+                    "pipeline node index could not be built from %s", self._root,
+                )
+                self._error = AssetDiscoveryError(
+                    self._catalog_id,
+                    f"the pipeline's node list could not be built from "
+                    f"{self._root}: {exc}",
+                    cause=exc,
+                )
                 index = []
             self._by_id = {f.asset_id: f for f in index}
             self._index = index
@@ -500,6 +513,7 @@ class PipelineNodes:
             assets=[self._asset(f) for f in hits[start:end]],
             cursor=str(end) if end < len(hits) else None,
             total=len(hits),
+            errors=(self._error,) if self._error is not None else (),
         )
 
     def collection(self) -> Collection | None:
@@ -575,10 +589,7 @@ class PipelineNodes:
             return Path(asset.thumbnail_url)
         from tumbletrove.asset_browser.core.thumbnail import IconThumbnail
         fallback = IconThumbnail(asset.icon or FALLBACK_ICON, 128)
-        try:
-            from tumbletrove.asset_browser.api.node_thumbnail import NodeThumbnail
-        except ImportError:
-            return fallback
+        from tumbletrove.asset_browser.api.node_thumbnail import NodeThumbnail
         family = self.find(asset.id)
         if family is None:
             return fallback

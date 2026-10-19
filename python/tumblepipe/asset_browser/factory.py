@@ -3,7 +3,7 @@
 Browses production assets and shots from any number of registered
 Tumblehead projects. Projects are stored in
 ``~/.config/asset_browser/projects.json`` (see
-:class:`asset_browser.core.projects.PipelineProjectRegistry`). Each entry
+:class:`.projects.PipelineProjectRegistry`). Each entry
 holds ``project_path`` and ``config_path``; the registry's
 ``pipeline_path`` field is ignored at runtime. The active TumblePipe
 install is read from ``$TH_PIPELINE_PATH`` (set globally by hpm via
@@ -31,7 +31,7 @@ import logging
 import os
 from pathlib import Path
 
-from tumbletrove.asset_browser.core.projects import PipelineProjectRegistry
+from .projects import PipelineProjectRegistry
 
 from .catalog import PipelineCatalog
 from .types import projects_json_path

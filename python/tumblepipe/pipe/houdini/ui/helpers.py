@@ -30,11 +30,8 @@ def has_staged_export(entity_uri: Uri) -> bool:
     """
     if entity_uri is None:
         return False
-    try:
-        export_file = get_latest_staged_file_path(entity_uri, channel_name='default')
-        return export_file is not None and export_file.exists()
-    except Exception:
-        return False
+    export_file = get_latest_staged_file_path(entity_uri, channel_name='default')
+    return export_file is not None and export_file.exists()
 
 
 def load_module(module_path: Path, module_name: str):

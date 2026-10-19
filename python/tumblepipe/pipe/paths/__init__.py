@@ -4,7 +4,9 @@ Organized by concern into cohesive submodules; this package re-exports the
 full public surface so callers keep importing from ``tumblepipe.pipe.paths``:
 
 - ``version``   — version-name/version-path primitives (shared core)
-- ``render``    — render/AOV/layer dataclasses, frame/playblast/daily paths
+- ``naming``    — the ``<entity>_<part>_<version>`` file-name convention
+- ``render``    — render frame paths and the Render/Layer/AOV model
+- ``review``    — playblast and daily paths
 - ``workspace`` — hip workfile paths and workfile context
 - ``export``    — department + shared export paths and layer file names
 - ``staged``    — staged entity paths and scene-staged paths
@@ -21,31 +23,27 @@ from tumblepipe.pipe.paths.render import (
     AOV,
     Layer,
     Render,
-    AOVContext,
-    LayerContext,
     RenderContext,
     get_frame_path,
     get_next_frame_path,
-    get_latest_frame_path,
     get_aov_frame_path,
-    get_next_aov_frame_path,
-    get_latest_aov_frame_path,
+    get_render,
+    get_render_context,
+    mirror_aov,
+    get_proxy_aov,
+    comp_input_problems,
+)
+from tumblepipe.pipe.paths.review import (
     get_layer_playblast_path,
     get_playblast_path,
-    get_next_layer_playblast_path,
     get_next_playblast_path,
-    get_latest_layer_playblast_path,
     get_latest_playblast_path,
     get_layer_daily_path,
     get_daily_path,
-    get_render,
-    get_render_context,
-    comp_input_problems,
 )
 from tumblepipe.pipe.paths.workspace import (
     HIP_EXTENSIONS,
     Context,
-    list_hip_file_paths,
     get_hip_file_path,
     latest_hip_file_path,
     latest_hip_file_path_with_context,
@@ -57,17 +55,18 @@ from tumblepipe.pipe.paths.workspace import (
     get_workfile_context,
     get_workspace_relpath,
     resolve_workfile_uri,
+    department_workspace,
+    entity_root_path,
 )
 from tumblepipe.pipe.paths.export import (
     get_export_path,
     latest_export_path,
     next_export_path,
     get_export_uri,
+    get_rig_export_path,
     get_layer_file_name,
     get_root_layer_file_name,
-    get_shared_export_path,
-    latest_shared_export_path,
-    next_shared_export_path,
+    SHARED_CHANNEL,
     get_shared_layer_file_name,
 )
 from tumblepipe.pipe.paths.staged import (
@@ -84,7 +83,6 @@ from tumblepipe.pipe.paths.staged import (
     next_scene_staged_path,
     get_current_scene_staged_file_path,
     get_scene_layer_file_name,
-    get_rig_export_path,
 )
 
 __all__ = [
@@ -98,30 +96,25 @@ __all__ = [
     'AOV',
     'Layer',
     'Render',
-    'AOVContext',
-    'LayerContext',
     'RenderContext',
     'get_frame_path',
     'get_next_frame_path',
-    'get_latest_frame_path',
     'get_aov_frame_path',
-    'get_next_aov_frame_path',
-    'get_latest_aov_frame_path',
+    'get_render',
+    'get_render_context',
+    'mirror_aov',
+    'get_proxy_aov',
+    'comp_input_problems',
+    # review
     'get_layer_playblast_path',
     'get_playblast_path',
-    'get_next_layer_playblast_path',
     'get_next_playblast_path',
-    'get_latest_layer_playblast_path',
     'get_latest_playblast_path',
     'get_layer_daily_path',
     'get_daily_path',
-    'get_render',
-    'get_render_context',
-    'comp_input_problems',
     # workspace
     'HIP_EXTENSIONS',
     'Context',
-    'list_hip_file_paths',
     'get_hip_file_path',
     'latest_hip_file_path',
     'latest_hip_file_path_with_context',
@@ -133,16 +126,17 @@ __all__ = [
     'get_workfile_context',
     'get_workspace_relpath',
     'resolve_workfile_uri',
+    'department_workspace',
+    'entity_root_path',
     # export
     'get_export_path',
     'latest_export_path',
     'next_export_path',
     'get_export_uri',
+    'get_rig_export_path',
     'get_layer_file_name',
     'get_root_layer_file_name',
-    'get_shared_export_path',
-    'latest_shared_export_path',
-    'next_shared_export_path',
+    'SHARED_CHANNEL',
     'get_shared_layer_file_name',
     # staged
     'get_staged_path',
@@ -158,5 +152,4 @@ __all__ = [
     'next_scene_staged_path',
     'get_current_scene_staged_file_path',
     'get_scene_layer_file_name',
-    'get_rig_export_path',
 ]

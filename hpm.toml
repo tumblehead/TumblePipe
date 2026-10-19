@@ -1,227 +1,123 @@
+# Rationale for the non-obvious entries below: docs/development.md,
+# "The package manifest".
+
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.74.3"
+version = "1.75.2"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
 keywords = ["houdini"]
 
 [compat]
-# Cargo-style version requirement with an EXCLUSIVE upper bound. ">=21, <23"
-# admits Houdini 21.x and 22.x; the cap is the first UNSUPPORTED major, not
-# the last supported one. (The pre-Manifest-2.0 form `max_version = "22"`
-# compiled to `houdini_version < '22'` and silently disabled the entire
-# package on every 22.x build — that was the H22 "package not registering"
-# bug.) Bump the upper bound to "<24" only once the CI matrix actually
-# builds a houdini23 resolver — see src/resolver/houdini_majors.toml and the
-# per-platform HPM_HOUDINI_MAJORS in .woodpecker/build-*.yml — otherwise users
-# on the new major install cleanly and then hit a runtime failure when USD's
-# plugin registry can't find a matching resolver/houdini<major>/ tree.
-houdini = ">=21, <23"
-
-# Native platforms this package ships a resolver binary for. Each
-# per-platform CI worker (.woodpecker/build-<os>.yml) builds only its own
-# platform's resolver into resolver/houdini<major>/ and packs with
-# `hpm pack --platform <id>`. The macOS worker is Apple Silicon (darwin/arm64
-# since 2026-09-24) and builds arm64 natively (-DCMAKE_OSX_ARCHITECTURES=arm64
-# pins it), hence macos-aarch64 only.
-#
-# No [stage.platform.<id>] place rules are needed: the release flow stages an
-# allowlisted tree (.ci/_tumblepipe_build.py) that carries no .gitignore, so
-# the built resolver/ tree is present at pack time and ships as common
-# content at its workspace path. Per-platform staging only ever contains
-# that worker's own resolver, so there is nothing cross-platform to filter.
+# The upper bound is EXCLUSIVE (the first unsupported major). Raise it only
+# together with HPM_HOUDINI_MAJORS in .woodpecker/build-*.yml, which builds
+# the per-major resolver and VRAM hook the package loads.
+houdini = ">=22, <23"
+# One archive per platform; each CI worker builds and packs its own natively.
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 
 [runtime]
 TH_PIPELINE_PATH = { method = "set", value = "$HPM_PACKAGE_ROOT" }
-# No ASSET_BROWSER_CATALOG_PATH: the pipeline catalog is *declared* to
-# TumbleTrove from scripts/python/pythonrc.py, not found by globbing a
-# directory for a module exporting create_catalog(). Declaring it means a
-# renamed factory fails loudly instead of the catalog quietly not appearing,
-# and its settings page is filed under TumblePipe rather than under whichever
-# package hosts the browser. Needs TumbleTrove >= 0.26.0.
-# Required placeholder — deliberately NO `value`. hpm reads a valueless entry
-# with `required = true` as "the consuming project must supply this"; the old
-# `value = ""` was an ordinary *satisfied* entry, so prepare succeeded and
-# Houdini received an empty string. That is how the three keys below silently
-# collapsed to rootless paths (/_config, /export, /library) on a project that
-# never set it. Now an unset project fails prepare with `Required env var
-# 'TH_PROJECT_PATH' for package 'tumblepipe' has no value`, and TumbleTrove
-# Desktop surfaces it as an empty required field in the project editor — paired
-# with the tt_setup wizard's Configure… button ([scripts.tt_setup] below), which
-# emits exactly this key.
-#
-# Projects that already set it are unaffected: a project-level `set` override
-# suppresses this entry outright (hpm never reads the package value in that
-# branch) and carries the value in ~hpm-project-overrides.json, which Houdini
-# processes after every per-package file. Farm workers satisfy the placeholder
-# through the synthetic job manifest in tumblepipe.farm.deadline — the two must
-# stay in step, or every farm task fails at `hpm install` on a cache miss.
+# The importable `tumblepipe` package, in Houdini, hython and farm tasks alike.
+# python3.13libs/ is found through the package root on HOUDINI_PATH; python/
+# is not.
+PYTHONPATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/python" }
+# Required placeholder, deliberately with NO `value`: the consuming project
+# must supply it (tt_setup's Configure emits it), and an install without it
+# fails rather than launching with rootless /_config, /export, /library paths.
+# The farm's synthetic job manifest (tumblepipe.farm.deadline) satisfies it
+# too; keep the two in step.
 TH_PROJECT_PATH = { method = "set", required = true }
 TH_CONFIG_PATH = { method = "set", value = "$TH_PROJECT_PATH/_config" }
 TH_EXPORT_PATH = { method = "set", value = "$TH_PROJECT_PATH/export" }
-# Pipeline user identity = the TumbleTrove account. $TT_USER_NAME passes
-# through hpm verbatim (like $HOUDINI_MAJOR_RELEASE) and is expanded by
-# Houdini's package loader at startup, when the Desktop launcher has already
-# injected TT_USER_NAME into the process env. This is the ONLY place the
-# pipeline knows about TT_USER_NAME — the Python side reads TH_USER alone.
-# Outside a Desktop launch it expands to "" and attribution is blank —
-# deliberately no OS-username fallback (must not leak into project files).
+# Pipeline user = the TumbleTrove account. $TT_USER_NAME passes through hpm and
+# is expanded by Houdini from the Desktop launcher's environment; outside a
+# Desktop launch it is blank, deliberately with no OS-username fallback. The
+# Python side reads TH_USER only.
 TH_USER = { method = "set", value = "$TT_USER_NAME" }
-# Root tumbletrove's asset-browser catalog downloads (Poly Haven, AmbientCG, …)
-# under the active project so library assets stay project-local:
-# <project>/library/<catalog>. Read by tumbletrove > 0.16.0 (resolve_download_dir).
-# The rootless-"/library" case this used to describe is now unreachable via an
-# unset project: TH_PROJECT_PATH above is a required placeholder, so a project
-# that never supplies it fails `hpm install` rather than launching with an empty
-# value. tumbletrove's downstream guard (_is_unresolved_project_base → fall back
-# to ~/Downloads/<catalog>) is deliberately left in place as belt-and-braces —
-# retiring it is a separate call with its own blast radius.
+# TumbleTrove's asset-browser downloads land project-local, under
+# <project>/library/<catalog>.
 TT_DOWNLOADS_PATH = { method = "set", value = "$TH_PROJECT_PATH/library" }
-# Color config is owned by the project, not the package: it ships in the
-# config template (scripts/project_template/_config/ocio/) and lands at
-# <project>/_config/ocio/ per project. $TH_CONFIG_PATH is set above from
-# $TH_PROJECT_PATH, and Houdini expands package vars top-to-bottom, so this
-# resolves at package-load time. $TH_PROJECT_PATH is always a real path here:
-# it is a required placeholder, so an install without one never completes.
-# Keeping OCIO out of the package is also what stops it from
-# fighting a legacy _pipeline OCIO source and getting pathsep-concatenated
-# into an unreadable multi-path value.
+# The color config belongs to the project (scaffolded from
+# scripts/project_template/_config/ocio/), not to the package.
 OCIO = { method = "set", value = "$TH_CONFIG_PATH/ocio/tumblehead.ocio" }
-
-# tumbleResolver registration. Houdini applies these env edits during its
-# package-loading phase, *before* USD's Plug.Registry first-touches — that's
-# the only timing that works in-process (Plug.Registry is a one-shot
-# scanner; pythonrc.py runs too late).
-#
-# PXR_PLUGINPATH_NAME is the load-bearing one: USD reads it via getenv when
-# Plug.Registry initialises, so a value applied at package-load time is seen.
-#
-# The three library-path variables are NOT what lets the in-process dlopen
-# find the plugin's dependencies, despite how this comment used to read. On
-# Windows PATH genuinely works — LoadLibrary re-reads it at call time. On Linux
-# and macOS it cannot: glibc and dyld each evaluate LD_LIBRARY_PATH /
-# DYLD_LIBRARY_PATH once during process startup, and Houdini applies package
-# env edits long after that, so a later dlopen never consults them. Nothing
-# broke only because every library the resolver needs is a Houdini one already
-# loaded in the host process. The in-process case is now covered properly by
-# the -rpath '$ORIGIN' / '@loader_path' the resolver is linked with
-# (src/resolver/CMakeLists.txt), which needs no environment at all.
-#
-# They are kept because they are still meaningful for *child* processes —
-# husk, hython, a farm task spawned from a Houdini session inherit this
-# environment and read it at their own startup, where it behaves normally.
-#
-# Two layers of variable expansion:
-#   - $HPM_PACKAGE_ROOT is consumed by hpm at pack time and rewritten to
-#     a Houdini-side reference to the package install dir.
-#   - $HOUDINI_MAJOR_RELEASE passes through hpm verbatim and is expanded
-#     by Houdini's package loader at startup, so a single value per
-#     variable routes H21 to resolver/houdini21/ and H22 to
-#     resolver/houdini22/ off the same archive.
+# tumbleResolver registration. Package env edits apply before USD's plugin
+# registry first scans, which is the only in-process timing that works.
+# $HOUDINI_MAJOR_RELEASE passes through hpm and is expanded by Houdini, so
+# each Houdini picks its own resolver/houdini<major>/. The library-path
+# entries serve child processes (husk, hython, farm tasks); in-process
+# loading relies on the resolver's rpath.
 PXR_PLUGINPATH_NAME = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/houdini$HOUDINI_MAJOR_RELEASE/tumbleResolver/resources" }
 PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/houdini$HOUDINI_MAJOR_RELEASE/tumbleResolver/lib" }
 LD_LIBRARY_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/houdini$HOUDINI_MAJOR_RELEASE/tumbleResolver/lib" }
 DYLD_LIBRARY_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/houdini$HOUDINI_MAJOR_RELEASE/tumbleResolver/lib" }
-# The VRAM Inspector's viewport hook (src/vram/hook, built by build-vramhook
-# into dso/<major>.<minor>/). An HDK DSO must match the Houdini major.minor
-# it loads into; both variables pass through hpm and are expanded by
-# Houdini's package loader, like $HOUDINI_MAJOR_RELEASE above.
+# The VRAM Inspector's viewport hook. An HDK DSO must match the Houdini
+# major.minor it loads into, hence dso/<major>.<minor>/.
 HOUDINI_DSO_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/dso/$HOUDINI_MAJOR_RELEASE.$HOUDINI_MINOR_RELEASE" }
 
 # The asset browser catalog, documentation, workfile context and package menu
 # are TumbleTrove's SDK; the network menus are Radial's. TumblePipe calls both
 # directly, so it requires the versions whose API it is written against.
-# TumbleTrove 0.48 drops SDK pieces this 1.74.x catalog uses, hence the cap.
 [dependencies]
-"tumbletrove/tumbletrove" = ">=0.47,<0.48"
+"tumbletrove/tumbletrove" = ">=0.48"
 "tumbletrove/radial" = ">=0.8"
 
 [python_dependencies]
-qtpy = ">=2.4.0"
 dictdiffer = ">=0.9.0"
-# Writes the farm-job hpm.toml manifest (tumblepipe.farm.deadline); tomllib's
-# stdlib-recommended write companion.
+# Writes the farm-job hpm.toml manifest (tumblepipe.farm.deadline).
 tomli-w = ">=1.0"
 
 [stage]
-# Compile the native/derived artifacts before staging:
-#   build-resolver — cmake-build the tumbleResolver USD plugin into
-#                    resolver/houdini<major>/
-#   build-wizard   — cargo-build the tt_setup project-setup wizard into
-#                    bin/<platform>/
-#   build-vramhook — cmake-build the VRAM Inspector's viewport hook DSO into
-#                    dso/<major>.<minor>/
-#   compile-hdas   — collapse expanded otls/<name>/ dirs into otls/<name>.hda
-# hpm has no native HDA collapse (verified on 0.18 — a no-prepack `hpm build`
-# leaves the expanded dir untouched), so this is the script that does it.
-#
-# IMPORTANT: only `hpm build` and `hpm run <script>` honour prepack — `hpm
-# pack` packs the workspace as-is and does NOT run it. The release flow
-# therefore runs `hpm build` (which runs both prepack scripts + stages) and
-# then `hpm pack` on that output; local devs get the same via `hpm build`.
-#
-# No per-platform [stage.platform.*].place rules: place `to` is literal (hpm
-# doesn't expand wildcards in it), so `to = "resolver/houdini*/**/"` collapses
-# every file onto one path and pack fails with a duplicate-filename error. The
-# resolver ships as ordinary tree content instead (re-included for packing via
-# .hpmignore, since resolver/ is gitignored for git hygiene).
+# Build the artifacts the archive ships, before staging. Only `hpm build` (and
+# `hpm run <script>`) runs these; `hpm pack` does not. The outputs are
+# gitignored, so .hpmignore re-includes them.
+#   build-resolver — tumbleResolver USD plugin -> resolver/houdini<major>/
+#   build-wizard   — tt_setup + tt_prepare hook apps -> bin/<platform>/
+#   build-vramhook — VRAM Inspector hook DSO -> dso/<major>.<minor>/
+#   compile-hdas   — expanded otls/<name>/ -> otls/<name>.hda
 prepack = ["build-resolver", "build-wizard", "build-vramhook", "compile-hdas"]
 
-# Archive contents (allowlist — mirrors .ci/_tumblepipe_build.py
-# INCLUDE_PATTERNS, minus the mirror-only .readthedocs.yaml + src/). Without
-# this, tracked-but-non-package files (keymaps, *.pref.nosave,
-# viewer_states/, tests/, …) would ship as common content.
+# Archive contents: an allowlist. It is also the public source mirror's list,
+# plus .ci/_packaging.py MIRROR_EXTRAS (src/ and repo metadata).
 include = [
     "README.md",
     "CHANGELOG.md",              # docs/changelog.md links to it in the installed package
     "LICENSE",
     "hpm.toml",
-    # The user documentation, as Markdown. tumblepipe.startup registers it
-    # with TumbleTrove (>= 0.27.0), which renders it offline under
-    # TumbleTrove ▸ Documentation; docs/index.md is the front page and the
-    # sidebar. The Sphinx build files alongside it are carved out below.
+    # The user documentation, rendered offline by TumbleTrove ▸ Documentation
+    # (docs/index.md is the front page and sidebar).
     "docs/**",
     "radial_menus/**",
-    # Stock department radials, handed to TumbleTrove's layers as the lowest
-    # layer (tumblepipe.workfile_context). Not under radial_menus/: that
-    # folder is read as the package layer, where they would tie with
-    # TumbleRig's.
+    # Stock department radials: TumbleTrove's lowest radial layer. Not under
+    # radial_menus/, which is read as the package layer.
     "stock/**",
     "otls/**",
     "python/tumblepipe/**",
-    "python3.11libs/**",
     "python3.13libs/**",
     "desktop/TumblePipe.desk",
     "scripts/**",
     "resources/**",
-    # Prebuilt native artifacts only — NOT their sources. src/resolver/ and
-    # src/wizard/ are build-time inputs (the build-resolver / build-wizard
-    # prepack scripts run from the working tree), so the installed archive
-    # never needs them; end users get the built resolver/ tree and
-    # bin/<platform>/ binary. The sources live in the repo / github mirror.
+    # Built native artifacts (prepack); their sources under src/ do not ship.
     "resolver/**",
     "bin/**",
     "dso/**",
 ]
 # Carve-outs within the included dirs.
 exclude = [
-    "otls/*/**",                 # decompiled HDA source dirs — ship the .hda, not the source
-    "scripts/verify_*.py",       # in-app verification harnesses — dev-only, not shipped
+    "otls/*/**",                 # expanded HDA sources — the collapsed .hda ships
+    "scripts/verify_*.py",       # dev-only verification harnesses
     "docs/conf.py",              # the readthedocs (Sphinx) build, not part of the offline book
     "docs/requirements.txt",
     "docs/_static/**",
     "docs/_build/**",
-    "**/__pycache__/**",         # bytecode: the project_template scaffold accumulates it,
-                                 # and tt_setup copies _config/ wholesale into a new project
+    "**/__pycache__/**",         # tt_setup copies the project_template scaffold wholesale
 ]
 
-# build-resolver ports the cmake loop + arch/symbol verification out of the
-# three .woodpecker/build-*.yml files into one script. A [scripts] `when`
-# only supports the `os` axis, so the per-Houdini-major loop lives inside the
-# script (driven by $HPM_HOUDINI_MAJORS, else src/resolver/houdini_majors.toml).
+# The prepack scripts. `when.os` is the only [scripts] axis, so each routes to
+# its worker's platform id; the per-Houdini-major loops (resolver, VRAM hook)
+# live in the scripts and follow $HPM_HOUDINI_MAJORS, which they require.
 [scripts.build-resolver]
 cmd = [
     { when = { os = "windows" }, set = "python .ci/build_resolver.py --platform windows-x86_64" },
@@ -230,13 +126,6 @@ cmd = [
 ]
 python = "3.11"
 
-# build-wizard compiles the tt_setup project-setup wizard (a Rust/egui GUI in
-# src/wizard/) into bin/<platform>/tt_setup[.exe]. Like build-resolver it's a
-# prepack step so `hpm build` (locally) and `hpm run build-wizard` (in CI)
-# produce the binary the archive ships. Far simpler than the resolver: plain
-# `cargo build --release` with no cmake/HDK, and Houdini-major-independent
-# (the wizard runs out of process). The per-platform `when.os` axis routes to
-# the one platform id each worker builds.
 [scripts.build-wizard]
 cmd = [
     { when = { os = "windows" }, set = "python .ci/build_wizard.py --platform windows-x86_64" },
@@ -245,11 +134,6 @@ cmd = [
 ]
 python = "3.11"
 
-# build-vramhook compiles the VRAM Inspector's viewport hook (src/vram/hook,
-# an HDK DSO) into dso/<major>.<minor>/. The inspector has no other source of
-# measurements (it never runs gpumem), so the archive must carry it. Built
-# for the Houdini majors .ci/build_vramhook.py supports (22), out of those in
-# $HPM_HOUDINI_MAJORS.
 [scripts.build-vramhook]
 cmd = [
     { when = { os = "windows" }, set = "python .ci/build_vramhook.py --platform windows-x86_64" },
@@ -258,9 +142,6 @@ cmd = [
 ]
 python = "3.11"
 
-# compile-hdas collapses expanded HDA dirs to binary .hda in place, NON-
-# destructively (leaves the tracked source dirs; [stage].exclude drops them
-# from the archive). os-agnostic, but uses the conditional form for parity.
 [scripts.compile-hdas]
 cmd = [
     { when = { os = "windows" }, set = "python .ci/compile_hdas.py" },
@@ -269,29 +150,14 @@ cmd = [
 ]
 python = "3.11"
 
-# tt_setup runs when the user clicks Configure on the package card in
-# TumbleTrove. It launches a native wizard (Rust/egui, built by build-wizard
-# above into bin/<platform>/) that either points at an existing project or
-# scaffolds a new one from scripts/project_template/, then emits
-# {"envVars": {"TH_PROJECT_PATH": ...}} on stdout.
+# Desktop hooks. Program paths are absolute ($HPM_PACKAGE_ROOT) and quoted:
+# Windows resolves a relative program against the desktop app's cwd, and the
+# package root can contain spaces or `@`. They run the prebuilt binaries
+# directly, with no managed Python. No label: a label would list them as
+# buttons in the desktop's Scripts panel.
 #
-# This used to be the PySide6 Python wizard (scripts/tt_setup.py) run through a
-# uv-managed venv — the table form with `requirements = ["PySide6>=6.6"]`. That
-# meant the very first Configure click had to fetch a CPython interpreter and
-# build a ~100 MB PySide6 venv before the window could appear. The plain-string
-# form below runs the prebuilt binary directly against the host with NO managed
-# venv (per hpm's script contract), so launch is instant with no download. The
-# `when.os` axis picks the one platform id present in each per-platform archive.
-#
-# The program path MUST go through $HPM_PACKAGE_ROOT (the desktop hook runner
-# always sets it to the package dir, and expands $VAR in the cmd string before
-# spawn). A bare relative program like `bin/.../tt_setup.exe` can't be spawned on
-# Windows: CreateProcess resolves a relative executable against the *caller's*
-# cwd (the desktop app's dir), not the child's working dir, so it fails with
-# ERROR_PATH_NOT_FOUND. An absolute path sidesteps that. Both the exe and the
-# template dir are quoted so a package root containing spaces or `@` (HPM's CAS
-# layout: ...\packages\tumblehead\tumblepipe@1.39.2) tokenizes as one arg. No
-# `python`/`requirements` fields: this is not a Python script.
+# tt_setup: the Configure button — points at or scaffolds a project and emits
+# {"envVars": {"TH_PROJECT_PATH": ...}}.
 [scripts.tt_setup]
 cmd = [
     { when = { os = "windows" }, set = "\"$HPM_PACKAGE_ROOT/bin/windows-x86_64/tt_setup.exe\" --template-dir \"$HPM_PACKAGE_ROOT/scripts/project_template\"" },
@@ -299,22 +165,8 @@ cmd = [
     { when = { os = "macos" }, set = "\"$HPM_PACKAGE_ROOT/bin/macos-aarch64/tt_setup\" --template-dir \"$HPM_PACKAGE_ROOT/scripts/project_template\"" },
 ]
 
-# tt_prepare runs on EVERY launch_project — the only TumbleTrove hook that
-# reliably fires after a package upgrade (tt_install is per-project, not
-# per-version, and does not re-fire; tt_setup is driven by unfilled required
-# vars or the Configure button). It brings a project's _config forward, asking
-# first, so a studio that upgrades no longer has to notice the Scripts-panel
-# button below to pick up a migration.
-#
-# Absolute, quoted $HPM_PACKAGE_ROOT path for the same reason tt_setup uses one:
-# CreateProcess resolves a bare relative program against the *caller's* cwd (the
-# desktop app's dir), not the child's, so a relative path fails on Windows with
-# ERROR_PATH_NOT_FOUND — the `os error 3` that burned v1.39.2. Quoted so a
-# package root containing spaces or `@` (HPM's CAS layout) stays one arg.
-#
-# Deliberately NO label/description: a label is what puts a script in the
-# desktop's per-project Scripts panel as a user-clickable button, and this is a
-# hook, not a button.
+# tt_prepare: runs on every project launch (the only hook that fires after a
+# package upgrade) and offers to bring the project's _config forward.
 [scripts.tt_prepare]
 cmd = [
     { when = { os = "windows" }, set = "\"$HPM_PACKAGE_ROOT/bin/windows-x86_64/tt_prepare.exe\" --template-dir \"$HPM_PACKAGE_ROOT/scripts/project_template\"" },
@@ -322,44 +174,20 @@ cmd = [
     { when = { os = "macos" }, set = "\"$HPM_PACKAGE_ROOT/bin/macos-aarch64/tt_prepare\" --template-dir \"$HPM_PACKAGE_ROOT/scripts/project_template\"" },
 ]
 
-# migrate-config brings a project's _config layout forward to the current
-# version. It is a thin shim over the same prebuilt tt_prepare binary the
-# tt_prepare hook above uses (the migrations themselves live in the
-# th_project_core crate), so the button and the hook cannot disagree about
-# what a migration does. It targets $TH_PROJECT_PATH, so it is meant
-# to be run from the desktop launcher's per-project Scripts panel: a user
-# adopting a new pipeline version clicks Run to update their own project. It
-# writes a config_convention.py.bak first and is idempotent. The migration
-# module is stdlib-only and Houdini-free, so the table form's uv-managed
-# python runs it anywhere (and dodges the Windows bare-`python` 9009 gotcha).
+# Scripts-panel buttons (the label is what lists them). Desktop scripts run in
+# the project dir, so the script path goes through $HPM_PACKAGE_ROOT.
 #
-# label/description are what make the launcher list this in the per-project
-# Scripts panel — the desktop surfaces only scripts that carry a label, so
-# the unlabeled build/lifecycle scripts (build-resolver, compile-hdas,
-# tt_setup) stay hidden from users. Supported since hpm 0.23 (deployed
-# HPM_VERSION is v0.25).
-#
-# Addressed through $HPM_PACKAGE_ROOT like [scripts.farm] below: the desktop
-# runs scripts from the project dir, where a bare relative path doesn't exist.
+# migrate-config: the same tt_prepare migration, on demand, for
+# $TH_PROJECT_PATH. Writes a .bak first; idempotent.
 [scripts.migrate-config]
 cmd = "python \"$HPM_PACKAGE_ROOT/scripts/migrate_config.py\""
 python = "3.11"
 label = "Migrate Project Config"
 description = "Bring this project's _config layout up to the current pipeline version"
 
-# farm opens the Farm Submit grid (publish / playblast / render any shots on the
-# farm) from the desktop's per-project Scripts panel, with no Houdini session.
-# The launcher is stdlib-only, so the uv-managed python just runs it; it then
-# finds a Houdini install matching this manifest's and the project's [compat],
-# replays the project's generated Houdini package files into an environment
-# (the Scripts panel passes HOUDINI_PACKAGE_DIR and the project's own vars, not
-# TumblePipe's [runtime] ones) and starts the window in that Houdini's bundled
-# Python, which has PySide6 and pxr and takes no licence. See
-# designs/farm-pipeline-grid.md §3.6.
-#
-# The script is addressed through $HPM_PACKAGE_ROOT, which the desktop expands
-# before spawning: scripts run with their working directory set to the desktop
-# project dir, so a bare relative path would be looked up there instead.
+# farm: the Farm Submit grid without a Houdini session. The stdlib-only
+# launcher finds a matching Houdini and starts the window in its bundled
+# Python.
 [scripts.farm]
 cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\""
 python = "3.11"
@@ -740,14 +568,6 @@ label = "th projection mapping"
 category = "Lop"
 tab_submenu = "_TumblePipe/lookdev"
 source = "otls/lop_th.projection_mapping.1.1.hda"
-
-[[operators]]
-kind = "hda"
-type_name = "th::puzzlemattes::4.0"
-label = "th puzzle mattes"
-category = "Lop"
-tab_submenu = "_TumblePipe/rendering"
-source = "otls/lop_th.puzzlemattes.4.0.hda"
 
 [[operators]]
 kind = "hda"

@@ -10,13 +10,15 @@ Source: [`workfiles.py`](../../python/tumblepipe/asset_browser/workfiles.py)
 (open and create), [`scene.py`](../../python/tumblepipe/asset_browser/scene.py)
 (save, reload, the unsaved-changes prompt),
 [`pipe/paths/workspace.py`](../../python/tumblepipe/pipe/paths/workspace.py)
-(paths and version numbers) and
-[`pipe/context.py`](../../python/tumblepipe/pipe/context.py) (the sidecars).
+(paths and version numbers),
+[`pipe/context.py`](../../python/tumblepipe/pipe/context.py) (the sidecars)
+and [`pipe/houdini/workfile_save.py`](../../python/tumblepipe/pipe/houdini/workfile_save.py)
+(the save itself).
 
 ## Where workfiles live
 
-Paths come from the project's storage convention
-([`storage_convention.py`](../../scripts/project_template/_config/storage_convention.py)):
+Paths come from the project's storage table
+([`storage.json`](../../scripts/project_template/_config/storage.json)):
 
 | Entity | Department folder |
 |---|---|
@@ -87,7 +89,7 @@ Double-click a department row (or a deck item), pick **Open Latest (vNNNN)**
 from its right-click menu (or an older one under **Open Version ▸**, which
 lists every other version newest first and only appears once there are two;
 a version saved with a note shows a comment icon, and hovering it shows the
-note — needs TumbleTrove 0.40 or later), or press the play button on a row of the detail panel's Departments tab
+note), or press the play button on a row of the detail panel's Departments tab
 (which opens whichever version its dropdown shows).
 What happens, in order:
 
@@ -172,8 +174,6 @@ empty. **Cancel** aborts the save entirely and burns no version number. The
 note is stored as `note` in that version's `_context/vNNNN.json` and shows
 in the list view's **Note** column: on the department row for its own
 version, and on the entity row for the newest version across departments.
-The column needs TumbleTrove 0.24 or newer; older browsers still store the
-note, they just cannot show it.
 
 Saves you did not ask for — the autosave-on-switch path, the save-before-
 switch prompt's **Save new version**, and the emergency save — never prompt

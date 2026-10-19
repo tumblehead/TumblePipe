@@ -2,9 +2,10 @@ import hou
 
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
-from tumblepipe.pipe.houdini.sops import cache
+from tumblepipe.pipe.houdini import cache
 from tumblepipe.pipe.houdini.lops import import_layer, export_layer
-from tumblepipe.pipe.houdini.util import disable_layer_save_path, uri_to_prim_path
+from tumblepipe.pipe.houdini.nodes import disable_layer_save_path
+from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 
 # --- /stage layout -------------------------------------------------------
 # Explicit positions: this department owns its layout, so nothing here calls
@@ -106,7 +107,7 @@ def _build_sop_dive(sop_dive_node):
     sculpt_node = sop_dive_node.createNode('sculpt::2.0', 'sculpt')
     sculpt_node.setInput(0, unpack_node)
 
-    cache_node = cache.create(sop_dive_node, 'cache')
+    cache_node = cache.create(sop_dive_node, 'cache', cache.SopCache)
     cache_node.setInput(0, sculpt_node)
 
     name_node = sop_dive_node.createNode('name', 'name')

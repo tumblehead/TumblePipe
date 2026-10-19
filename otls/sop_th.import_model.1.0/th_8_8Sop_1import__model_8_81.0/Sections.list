@@ -8,7 +8,6 @@ EditableNodes	EditableNodes
 TypePropertiesOptions	TypePropertiesOptions
 Help	Help
 Tools.shelf	Tools.shelf
-PythonModule	PythonModule
 OnCreated	OnCreated
 OnNameChanged	OnNameChanged
 OnDeleted	OnDeleted

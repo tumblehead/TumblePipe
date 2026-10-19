@@ -79,40 +79,6 @@ def _get_downstream_departments(
     return department_names[department_index + 1:]
 
 
-def collect_publish_tasks(context: Context) -> list[ProcessTask]:
-    """
-    Collect all publish tasks for the current context.
-
-    Includes tasks for current department AND all downstream departments.
-    For groups: Returns tasks for all member export nodes across all departments.
-    For single entities: Returns tasks for the entity across all departments.
-    """
-    if context is None:
-        return []
-
-    tasks: list[ProcessTask] = []
-    entity_type = get_entity_type(context.entity_uri)
-    department_name = context.department_name
-
-    # Get downstream departments to include
-    downstream_departments = _get_downstream_departments(
-        entity_type, department_name, entity_uri=context.entity_uri,
-    )
-    all_departments = [department_name] + downstream_departments
-
-    if _is_rig_context(context, entity_type):
-        owned = _owned_entity_uris(context, entity_type)
-        tasks = _collect_rig_publish_tasks(owned) if owned else []
-    elif entity_type == 'group':
-        tasks = _collect_group_publish_tasks(context, all_departments)
-    elif entity_type == 'shot':
-        tasks = _collect_shot_publish_tasks(context, all_departments)
-    elif entity_type == 'asset':
-        tasks = _collect_asset_publish_tasks(context, all_departments)
-
-    return tasks
-
-
 def _is_rig_context(context: Context, entity_type: str | None) -> bool:
     """Does this workfile publish export_rig SOPs rather than export_layer LOPs?
 
@@ -168,7 +134,7 @@ def _multis_covering(entity_uri_strings) -> list[str]:
     uris = []
     for raw in entity_uri_strings:
         try:
-            uris.append(Uri.parse_unsafe(raw))
+            uris.append(Uri.parse(raw))
         except ValueError:
             return []
     contexts = {uri.segments[0] for uri in uris if len(uri.segments) > 0}
@@ -223,18 +189,9 @@ def describe_missing_tasks(context: Context) -> str:
 
     # Mirror the collector that actually ran: only a rig context collects
     # export_rig SOPs, every other context collects export_layer LOPs.
-    if _is_rig_context(context, entity_type):
-        nodes = [
-            export_rig.ExportRig(native)
-            for native in ns.list_by_node_type('export_rig', 'Sop')
-        ]
-        node_kind = 'th::export_rig'
-    else:
-        nodes = [
-            export_layer.ExportLayer(native)
-            for native in ns.list_by_node_type('export_layer', 'Lop')
-        ]
-        node_kind = 'th::export_layer'
+    kind = _RIG_EXPORTS if _is_rig_context(context, entity_type) else _LAYER_EXPORTS
+    nodes = _list_nodes(kind)
+    node_kind = f'th::{kind[1]}'
 
     owner = (
         f'Multi {context.entity_uri}' if entity_type == 'group'
@@ -319,141 +276,113 @@ def describe_missing_tasks(context: Context) -> str:
     return '\n'.join(lines)
 
 
-def _collect_group_publish_tasks(context: Context, departments: list[str]) -> list[ProcessTask]:
-    """Collect publish tasks for all group members across all specified departments.
+def collect_publish_tasks(context: Context) -> list[ProcessTask]:
+    """Collect all publish tasks for the current context.
 
-    Creates grouped export tasks where layer_split and export_layer nodes are
-    organized under a parent "Export (dept)" task for each entity/department.
+    The workfile publishes its own entity — or, in a Multi's workfile, every
+    member — in its own department and every one downstream of it. A rig
+    context publishes its export_rig SOPs; every other context its
+    export_layer LOPs (and the layer_split LOPs upstream of them).
     """
-    tasks = []
-
-    group = get_group(context.entity_uri)
-    if group is None:
+    if context is None:
         return []
-
-    member_uris = set(group.members)
-
-    # Filter function for export_layer nodes
-    def _is_group_export_correct(node):
-        if node.native().isBypassed():
-            return False
-        entity_uri = node.get_entity_uri()
-        if entity_uri is None:
-            return False
-        dept = node.get_department_name()
-        if dept not in departments:
-            return False
-        return entity_uri in member_uris
-
-    # Find all export nodes for group members across all departments
-    group_export_nodes = list(
-        filter(
-            _is_group_export_correct,
-            map(
-                export_layer.ExportLayer,
-                ns.list_by_node_type("export_layer", "Lop"),
-            ),
-        )
+    entity_type = get_entity_type(context.entity_uri)
+    owned = _owned_entity_uris(context, entity_type)
+    if not owned:
+        return []
+    if _is_rig_context(context, entity_type):
+        return _collect_rig_publish_tasks(owned)
+    departments = [context.department_name] + _get_downstream_departments(
+        entity_type, context.department_name, entity_uri=context.entity_uri,
     )
+    return _collect_layer_publish_tasks(owned, departments)
 
-    # Collect paths of layer_split nodes that are connected upstream to valid export nodes
-    connected_split_paths = set()
-    for export_node in group_export_nodes:
-        for upstream in find_upstream_export_nodes(export_node):
-            if isinstance(upstream, layer_split.LayerSplit):
-                connected_split_paths.add(upstream.path())
 
-    # Filter function for layer_split nodes - must be connected to a valid export node
-    def _is_group_split_correct(node):
-        if node.native().isBypassed():
-            return False
-        if node.path() not in connected_split_paths:
-            return False
-        entity_uri = node.get_entity_uri()
-        if entity_uri is None:
-            return False
-        dept = node.get_department_name()
-        if dept not in departments:
-            return False
-        return entity_uri in member_uris
+def _publishes(node, owned: set[Uri], departments: list[str]) -> bool:
+    """The predicate every collected node passes: live, owned, in scope."""
+    if node.native().isBypassed():
+        return False
+    if node.get_entity_uri() not in owned:
+        return False
+    return node.get_department_name() in departments
 
-    # Find layer_split nodes - only connected ones
-    group_split_nodes = list(
-        filter(
-            _is_group_split_correct,
-            map(
-                layer_split.LayerSplit,
-                ns.list_by_node_type("layer_split", "Lop"),
-            ),
-        )
-    )
 
-    # Group export nodes by entity URI and department
-    exports_by_entity_dept: dict[tuple[str, str], list] = {}
-    for export_node in group_export_nodes:
-        entity_uri = export_node.get_entity_uri()
-        dept = export_node.get_department_name()
-        key = (str(entity_uri), dept)
-        if key not in exports_by_entity_dept:
-            exports_by_entity_dept[key] = []
-        exports_by_entity_dept[key].append(export_node)
+# The node kinds a publish collects: (wrapper module, node type name,
+# category). The wrapper class is looked up when listing.
+_LAYER_EXPORTS = (export_layer, 'export_layer', 'Lop')
+_LAYER_SPLITS = (layer_split, 'layer_split', 'Lop')
+_RIG_EXPORTS = (export_rig, 'export_rig', 'Sop')
 
-    # Group layer_split nodes by entity URI and department
-    splits_by_entity_dept: dict[tuple[str, str], list] = {}
-    for split_node in group_split_nodes:
-        entity_uri = split_node.get_entity_uri()
-        dept = split_node.get_department_name()
-        key = (str(entity_uri), dept)
-        if key not in splits_by_entity_dept:
-            splits_by_entity_dept[key] = []
-        splits_by_entity_dept[key].append(split_node)
+_WRAPPERS = {
+    'export_layer': 'ExportLayer',
+    'layer_split': 'LayerSplit',
+    'export_rig': 'ExportRig',
+}
 
-    # Sort departments for consistent ordering
-    dept_order = {dept: i for i, dept in enumerate(departments)}
 
-    # Group by entity for output ordering
-    entities_with_exports: dict[str, list[str]] = {}  # uri_str -> list of departments
-    for (uri_str, dept) in exports_by_entity_dept.keys():
-        if uri_str not in entities_with_exports:
-            entities_with_exports[uri_str] = []
-        entities_with_exports[uri_str].append(dept)
+def _list_nodes(kind) -> list:
+    module, type_name, category = kind
+    wrapper = getattr(module, _WRAPPERS[type_name])
+    return [wrapper(native) for native in ns.list_by_node_type(type_name, category)]
 
-    # For each entity: add validation + export tasks, then build task
-    for uri_str in sorted(entities_with_exports.keys()):
-        depts = entities_with_exports[uri_str]
-        # Sort by department order
-        depts.sort(key=lambda d: dept_order.get(d, 999))
 
-        # Get entity URI from first export node
-        first_key = (uri_str, depts[0])
-        entity_uri = exports_by_entity_dept[first_key][0].get_entity_uri()
+def _collect_layer_publish_tasks(
+    owned: set[Uri], departments: list[str],
+    ) -> list[ProcessTask]:
+    """Validation + grouped export tasks per entity and department, then a
+    grouped build task per entity.
 
-        # Track export task IDs for build dependency
+    A layer_split node is collected only when it is upstream of a collected
+    export node; it runs inside its department's export group.
+    """
+    export_nodes = [
+        node for node in _list_nodes(_LAYER_EXPORTS)
+        if _publishes(node, owned, departments)
+    ]
+    connected_split_paths = {
+        upstream.path()
+        for export_node in export_nodes
+        for upstream in find_upstream_export_nodes(export_node)
+        if isinstance(upstream, layer_split.LayerSplit)
+    }
+    split_nodes = [
+        node for node in _list_nodes(_LAYER_SPLITS)
+        if node.path() in connected_split_paths
+        and _publishes(node, owned, departments)
+    ]
+
+    def _by_entity_and_department(nodes):
+        grouped: dict[str, dict[str, list]] = {}
+        for node in nodes:
+            grouped.setdefault(str(node.get_entity_uri()), {}).setdefault(
+                node.get_department_name(), []
+            ).append(node)
+        return grouped
+
+    exports = _by_entity_and_department(export_nodes)
+    splits = _by_entity_and_department(split_nodes)
+
+    tasks = []
+    for uri_str in sorted(exports):
+        entity_exports = exports[uri_str]
+        entity_uri = Uri.parse(uri_str)
         export_task_ids = []
-
-        # Create validation + export tasks per department
-        for dept in depts:
-            key = (uri_str, dept)
-            dept_exports = exports_by_entity_dept.get(key, [])
-            dept_splits = splits_by_entity_dept.get(key, [])
-
-            # Get frame range from first export node
-            first_frame, last_frame = _get_frame_range_values(entity_uri, dept_exports[0] if dept_exports else None)
-
-            # Create validation task (export depends on this)
+        for department in sorted(entity_exports, key=departments.index):
+            department_exports = entity_exports[department]
+            first_frame, last_frame = _get_frame_range_values(
+                entity_uri, department_exports[0]
+            )
             validation_task = _create_validation_task(
                 entity_uri=entity_uri,
-                department=dept,
-                export_nodes=dept_exports,
+                department=department,
+                export_nodes=department_exports,
             )
             tasks.append(validation_task)
-
-            # Create grouped export task (depends on validation)
             group_task = _create_export_group_task(
                 entity_uri=entity_uri,
-                department=dept,
-                split_nodes=dept_splits,
-                export_nodes=dept_exports,
+                department=department,
+                split_nodes=splits.get(uri_str, {}).get(department, []),
+                export_nodes=department_exports,
                 first_frame=first_frame,
                 last_frame=last_frame,
                 depends_on=[validation_task.id],
@@ -461,287 +390,22 @@ def _collect_group_publish_tasks(context: Context, departments: list[str]) -> li
             tasks.append(group_task)
             export_task_ids.append(group_task.id)
 
-        # Collect unique channels from export nodes for this entity
-        entity_channels_found = set()
-        for dept in depts:
-            key = (uri_str, dept)
-            for export_node in exports_by_entity_dept.get(key, []):
-                entity_channels_found.add(export_node.get_channel_name())
-
-        # Add grouped build task (depends on all exports)
-        if entity_channels_found:
-            build_group = _create_build_group_task(
-                entity_uri,
-                sorted(entity_channels_found),
-                depends_on=export_task_ids
-            )
-            tasks.append(build_group)
-
-    return tasks
-
-
-def _collect_shot_publish_tasks(context: Context, departments: list[str]) -> list[ProcessTask]:
-    """Collect publish tasks for a single shot across all specified departments.
-
-    Creates grouped export tasks where layer_split and export_layer nodes are
-    organized under a parent "Export (dept)" task for each department.
-    """
-    tasks = []
-    shot_uri = context.entity_uri
-
-    # Filter function for export_layer nodes
-    def _is_shot_export_correct(node):
-        if node.native().isBypassed():
-            return False
-        entity_uri = node.get_entity_uri()
-        if entity_uri != shot_uri:
-            return False
-        dept = node.get_department_name()
-        return dept in departments
-
-    # Find export nodes for the shot across all departments
-    shot_export_nodes = list(
-        filter(
-            _is_shot_export_correct,
-            map(
-                export_layer.ExportLayer,
-                ns.list_by_node_type("export_layer", "Lop"),
-            ),
+        # One build per entity, over every channel its exports publish. Its
+        # frame range is the first export node's: exports of one entity
+        # share the range setting.
+        all_entity_exports = [
+            node for nodes in entity_exports.values() for node in nodes
+        ]
+        build_first, build_last = _get_frame_range_values(
+            entity_uri, all_entity_exports[0]
         )
-    )
-
-    # Collect paths of layer_split nodes that are connected upstream to valid export nodes
-    connected_split_paths = set()
-    for export_node in shot_export_nodes:
-        for upstream in find_upstream_export_nodes(export_node):
-            if isinstance(upstream, layer_split.LayerSplit):
-                connected_split_paths.add(upstream.path())
-
-    # Filter function for layer_split nodes - must be connected to a valid export node
-    def _is_shot_split_correct(node):
-        if node.native().isBypassed():
-            return False
-        if node.path() not in connected_split_paths:
-            return False
-        entity_uri = node.get_entity_uri()
-        if entity_uri != shot_uri:
-            return False
-        dept = node.get_department_name()
-        return dept in departments
-
-    # Find layer_split nodes - only connected ones
-    shot_split_nodes = list(
-        filter(
-            _is_shot_split_correct,
-            map(
-                layer_split.LayerSplit,
-                ns.list_by_node_type("layer_split", "Lop"),
-            ),
-        )
-    )
-
-    # Group export nodes by department
-    exports_by_dept: dict[str, list] = {}
-    for export_node in shot_export_nodes:
-        dept = export_node.get_department_name()
-        if dept not in exports_by_dept:
-            exports_by_dept[dept] = []
-        exports_by_dept[dept].append(export_node)
-
-    # Group layer_split nodes by department
-    splits_by_dept: dict[str, list] = {}
-    for split_node in shot_split_nodes:
-        dept = split_node.get_department_name()
-        if dept not in splits_by_dept:
-            splits_by_dept[dept] = []
-        splits_by_dept[dept].append(split_node)
-
-    # Sort departments for consistent ordering
-    dept_order = {dept: i for i, dept in enumerate(departments)}
-    sorted_depts = sorted(exports_by_dept.keys(), key=lambda d: dept_order.get(d, 999))
-
-    # Track export task IDs for build dependency
-    export_task_ids = []
-
-    # Create validation + export tasks per department
-    for dept in sorted_depts:
-        dept_exports = exports_by_dept.get(dept, [])
-        dept_splits = splits_by_dept.get(dept, [])
-
-        # Get frame range from first export node
-        first_frame, last_frame = _get_frame_range_values(shot_uri, dept_exports[0] if dept_exports else None)
-
-        # Create validation task (export depends on this)
-        validation_task = _create_validation_task(
-            entity_uri=shot_uri,
-            department=dept,
-            export_nodes=dept_exports,
-        )
-        tasks.append(validation_task)
-
-        # Create grouped export task (depends on validation)
-        group_task = _create_export_group_task(
-            entity_uri=shot_uri,
-            department=dept,
-            split_nodes=dept_splits,
-            export_nodes=dept_exports,
-            first_frame=first_frame,
-            last_frame=last_frame,
-            depends_on=[validation_task.id],
-        )
-        tasks.append(group_task)
-        export_task_ids.append(group_task.id)
-
-    # Collect unique channels from export nodes for build tasks
-    channels_found = set()
-    for export_node in shot_export_nodes:
-        channels_found.add(export_node.get_channel_name())
-
-    # Add grouped build task (depends on all exports)
-    if channels_found:
-        # Get frame range from first export node (exports share the same frame range setting)
-        build_first, build_last = None, None
-        if shot_export_nodes:
-            build_first, build_last = _get_frame_range_values(shot_uri, shot_export_nodes[0])
-
-        build_group = _create_build_group_task(
-            shot_uri,
-            sorted(channels_found),
+        tasks.append(_create_build_group_task(
+            entity_uri,
+            sorted({node.get_channel_name() for node in all_entity_exports}),
             depends_on=export_task_ids,
             first_frame=build_first,
-            last_frame=build_last
-        )
-        tasks.append(build_group)
-
-    return tasks
-
-
-def _collect_asset_publish_tasks(context: Context, departments: list[str]) -> list[ProcessTask]:
-    """Collect publish tasks for a single asset across all specified departments.
-
-    Creates grouped export tasks where layer_split and export_layer nodes are
-    organized under a parent "Export (dept)" task for each department.
-    """
-    tasks = []
-    asset_uri = context.entity_uri
-
-    # Filter function for export_layer nodes
-    def _is_asset_export_correct(node):
-        if node.native().isBypassed():
-            return False
-        entity_uri = node.get_entity_uri()
-        if entity_uri != context.entity_uri:
-            return False
-        dept = node.get_department_name()
-        return dept in departments
-
-    # Find export nodes for the asset across all departments
-    asset_export_nodes = list(
-        filter(
-            _is_asset_export_correct,
-            map(
-                export_layer.ExportLayer,
-                ns.list_by_node_type("export_layer", "Lop"),
-            ),
-        )
-    )
-
-    # Collect paths of layer_split nodes that are connected upstream to valid export nodes
-    connected_split_paths = set()
-    for export_node in asset_export_nodes:
-        for upstream in find_upstream_export_nodes(export_node):
-            if isinstance(upstream, layer_split.LayerSplit):
-                connected_split_paths.add(upstream.path())
-
-    # Filter function for layer_split nodes - must be connected to a valid export node
-    def _is_asset_split_correct(node):
-        if node.native().isBypassed():
-            return False
-        if node.path() not in connected_split_paths:
-            return False
-        entity_uri = node.get_entity_uri()
-        if entity_uri != asset_uri:
-            return False
-        dept = node.get_department_name()
-        return dept in departments
-
-    # Find layer_split nodes - only connected ones
-    asset_split_nodes = list(
-        filter(
-            _is_asset_split_correct,
-            map(
-                layer_split.LayerSplit,
-                ns.list_by_node_type("layer_split", "Lop"),
-            ),
-        )
-    )
-
-    # Group export nodes by department
-    exports_by_dept: dict[str, list] = {}
-    for export_node in asset_export_nodes:
-        dept = export_node.get_department_name()
-        if dept not in exports_by_dept:
-            exports_by_dept[dept] = []
-        exports_by_dept[dept].append(export_node)
-
-    # Group layer_split nodes by department
-    splits_by_dept: dict[str, list] = {}
-    for split_node in asset_split_nodes:
-        dept = split_node.get_department_name()
-        if dept not in splits_by_dept:
-            splits_by_dept[dept] = []
-        splits_by_dept[dept].append(split_node)
-
-    # Sort departments for consistent ordering
-    dept_order = {dept: i for i, dept in enumerate(departments)}
-    sorted_depts = sorted(exports_by_dept.keys(), key=lambda d: dept_order.get(d, 999))
-
-    # Collect unique channels from export nodes for build tasks
-    channels_found = set()
-    for export_node in asset_export_nodes:
-        channels_found.add(export_node.get_channel_name())
-
-    # Track export task IDs for build dependency
-    export_task_ids = []
-
-    # Create validation + export tasks per department
-    for dept in sorted_depts:
-        dept_exports = exports_by_dept.get(dept, [])
-        dept_splits = splits_by_dept.get(dept, [])
-
-        # Get frame range from first export node
-        first_frame, last_frame = _get_frame_range_values(asset_uri, dept_exports[0] if dept_exports else None)
-
-        # Create validation task (export depends on this)
-        validation_task = _create_validation_task(
-            entity_uri=asset_uri,
-            department=dept,
-            export_nodes=dept_exports,
-        )
-        tasks.append(validation_task)
-
-        # Create grouped export task (depends on validation)
-        group_task = _create_export_group_task(
-            entity_uri=asset_uri,
-            department=dept,
-            split_nodes=dept_splits,
-            export_nodes=dept_exports,
-            first_frame=first_frame,
-            last_frame=last_frame,
-            depends_on=[validation_task.id],
-        )
-        tasks.append(group_task)
-        export_task_ids.append(group_task.id)
-
-    # Add grouped build task (depends on all exports)
-    if channels_found:
-        build_group = _create_build_group_task(
-            asset_uri,
-            sorted(channels_found),
-            depends_on=export_task_ids
-        )
-        tasks.append(build_group)
-
+            last_frame=build_last,
+        ))
     return tasks
 
 
@@ -751,22 +415,10 @@ def _collect_rig_publish_tasks(owned_uris: set[Uri]) -> list[ProcessTask]:
     One asset for an asset rig workfile, every member for an asset Multi.
     """
     tasks = []
-
-    def _is_rig_export_correct(node):
-        if node.native().isBypassed():
-            return False
-        return node.get_entity_uri() in owned_uris
-
-    rig_export_nodes = list(
-        filter(
-            _is_rig_export_correct,
-            map(
-                export_rig.ExportRig,
-                ns.list_by_node_type("export_rig", "Sop"),
-            ),
-        )
-    )
-
+    rig_export_nodes = [
+        node for node in _list_nodes(_RIG_EXPORTS)
+        if _publishes(node, owned_uris, ['rig'])
+    ]
     for export_node in rig_export_nodes:
         asset_uri = export_node.get_entity_uri()
         channel = export_node.get_channel_name()

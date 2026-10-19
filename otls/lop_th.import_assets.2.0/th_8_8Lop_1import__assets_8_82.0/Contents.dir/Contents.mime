@@ -356,7 +356,6 @@ Content-Type: text/plain
 version 0.8
 python	[ 0	locks=0 ]	(	"import hou
 
-from tumblepipe.pipe.houdini import util
 
 node = hou.pwd()
 stage = node.editableStage()

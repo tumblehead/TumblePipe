@@ -26,11 +26,11 @@
             default { "default" }
             menureplace {
                 [ "from tumblepipe.pipe.houdini.lops import render_settings" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = render_settings.RenderSettings(hou.pwd())" ]
                 [ "items = node.list_preset_names()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "return menus.list_to_menu(items)" ]
                 language python
             }
             parmtag { "script_callback_language" "python" }
@@ -41,7 +41,7 @@
             type    button
             joinnext
             default { "0" }
-            parmtag { "script_callback" "hou.phm().load()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.render_settings as th_node; th_node.load(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -51,7 +51,7 @@
             joinnext
             default { "0" }
             disablewhen "{ unlock_save == 0 }"
-            parmtag { "script_callback" "hou.phm().save()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.render_settings as th_node; th_node.save(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {

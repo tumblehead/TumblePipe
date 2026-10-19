@@ -1,17 +1,4 @@
-import hou
-from tumblepipe.pipe.houdini.lops import export_layer
-
-def execute():
-    export_layer.execute()
-
-def select():
-    export_layer.select()
-
-def open_location():
-    export_layer.open_location()
-
-def validate():
-    export_layer.validate()
-
-def output_modified_prims(node):
-    return export_layer.output_modified_prims(node)
+# The hidden 'output_modified_prims' parm's pythonexprs reaches the HDA
+# module (saved scenes store the expression verbatim); every callback
+# calls tumblepipe.pipe.houdini.lops.export_layer directly.
+from tumblepipe.pipe.houdini.lops.export_layer import output_modified_prims  # noqa: F401

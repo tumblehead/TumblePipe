@@ -72,13 +72,13 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication([])
 
-    from tumblepipe.api import default_client, local_path, api
+    from tumblepipe.api import default_client, api
     from tumblepipe.util.uri import Uri
     from tumblepipe.config.entities import is_terminal_entity
-    from tumblepipe.asset_browser import farm_grid as grid
+    from tumblepipe.farm.submit import grid as grid
     from tumblepipe.asset_browser import submit_jobs_dialog as mod
-    from tumblepipe.farm import submit_plan
-    from tumblepipe.farm.jobs.houdini import _preview
+    from tumblepipe.farm.submit import plan as submit_plan
+    from tumblepipe.farm.pipelines import preview as _preview
     from tumblepipe.pipe.paths import get_latest_staged_file_path
 
     results: list[bool] = []
@@ -102,7 +102,7 @@ def main() -> int:
 
     config = default_client().config
     shots = sorted(
-        (u for u in config.list_entity_uris(Uri.parse_unsafe("entity:/shots"), closure=True)
+        (u for u in config.list_entity_uris(Uri.parse("entity:/shots"), closure=True)
          if is_terminal_entity(config, u)),
         key=str,
     )
@@ -393,7 +393,7 @@ def main() -> int:
 
     # ── 17: Assets and Shots tabs ─────────────────────────
     assets = sorted(
-        (u for u in config.list_entity_uris(Uri.parse_unsafe("entity:/assets"), closure=True)
+        (u for u in config.list_entity_uris(Uri.parse("entity:/assets"), closure=True)
          if is_terminal_entity(config, u)),
         key=str,
     )
@@ -494,7 +494,7 @@ def main() -> int:
           "settings": {"render": True, "first_frame": 1001, "last_frame": 1001}}],
         env=dict(os.environ), houdini_version=os.environ.get("TH_HOUDINI_VERSION"),
     )
-    folder = Path(local_path(api.storage.resolve(Uri.parse_unsafe("temp:/farm_submissions"))))
+    folder = Path(api.storage.resolve(Uri.parse("temp:/farm_submissions")))
     plan_path = submit_plan.write_plan(folder / f"verify_{int(time.time())}", plan)
     process = submit_plan.launch(plan_path)
     try:

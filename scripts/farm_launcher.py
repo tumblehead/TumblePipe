@@ -64,7 +64,7 @@ def _compare(left: tuple, right: tuple) -> int:
 
 
 def satisfies(version: tuple[int, ...], requirement: str) -> bool:
-    """Whether ``version`` meets a Cargo-style ``">=21, <23"`` requirement."""
+    """Whether ``version`` meets a Cargo-style ``">=22, <23"`` requirement."""
     for clause in (c.strip() for c in requirement.split(',')):
         if not clause:
             continue

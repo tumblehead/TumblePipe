@@ -1,11 +1,12 @@
-"""On-disk JSON config store — the engine behind ``ConfigConvention``.
+"""On-disk JSON config store: every project's config database.
 
 This is the generic, project-independent implementation that backs every
 project's config database (``_config/db/*.json``). It used to live, in full,
 inside each project's templated ``_config/config_convention.py``; that meant
 the engine was frozen into a project at creation and could never be fixed for
-existing projects. It now lives in the package, so a single update reaches
-every project, and the per-project convention is a thin ``create()`` shim.
+existing projects. It lives in the package, so a single update reaches every
+project, and ``tumblepipe.api.Client`` constructs it directly (migration v1
+reduced the per-project module to a shim, and v11 retired it).
 
 Reads are **coherent**: every public read validates the backing file's stamp
 (``st_mtime_ns`` + ``st_size``) and transparently reloads when another process
@@ -26,14 +27,19 @@ was a multi-second stall per parameter-pane redraw (the v1.16.5 regression).
 import copy
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
-from tumblepipe.api import get_config_path
-from tumblepipe.config import ConfigConvention, Entity
 from tumblepipe.config.schema import Schema, schema_from_properties
 from tumblepipe.util.data import deep_merge as _deep_merge
 from tumblepipe.util.io import load_json, store_json
 from tumblepipe.util.uri import Uri
+
+
+@dataclass(frozen=True)
+class Entity:
+    uri: Uri
+    properties: dict
 
 
 def _contains(data: dict, path: list[str]) -> bool:
@@ -167,8 +173,8 @@ def _list_uri_deep(data, root_path: Uri, filter_path: list[str] | None = None) -
     return _filter_none(current, base_path)
 
 
-class JsonConfigStore(ConfigConvention):
-    """A ``ConfigConvention`` backed by ``_config/db/<purpose>.json`` files.
+class JsonConfigStore:
+    """A project's config database, backed by ``_config/db/<purpose>.json``.
 
     Each ``<purpose>.json`` holds one entity/schema tree (``entity``,
     ``schemas``, ``departments``, ``config`` ...). A node stores exactly the
@@ -182,8 +188,8 @@ class JsonConfigStore(ConfigConvention):
     up on the next read with no manual refresh.
     """
 
-    def __init__(self, config_path: Path | None = None):
-        self.config_path = config_path if config_path is not None else get_config_path()
+    def __init__(self, config_path: Path):
+        self.config_path = config_path
         self.db_path = self.config_path / 'db'
         # Coherent cache: purpose -> parsed json, plus the file stamp it was
         # loaded from so a stale entry is detected and reloaded on next read.
@@ -368,7 +374,47 @@ class JsonConfigStore(ConfigConvention):
         _remove(data, uri.segments)
         self.write_root(uri.purpose, data)
 
+    def rename_entity(self, uri: Uri, new_name: str):
+        """Rename the entity at ``uri`` to ``new_name``, keeping its place.
+
+        Only the config row: whatever on disk is named after it is the
+        caller's (see ``pipe.entity_files.rename_entity``, which refuses an
+        entity that has files).
+        """
+        if not uri.segments:
+            raise ValueError('A purpose root cannot be renamed')
+        data = self._load(uri.purpose)
+        if data is None or not _contains(data, uri.segments):
+            raise ValueError('Entity does not exist')
+        new_path = [*uri.segments[:-1], new_name]
+        if _contains(data, new_path):
+            raise ValueError(f"Entity '{new_name}' already exists")
+        collision = _find_case_collision(data, new_path)
+        if collision is not None:
+            wanted, existing = collision
+            raise ValueError(
+                f"Entity name '{wanted}' collides with existing "
+                f"'{existing}' (names may not differ only by case)"
+            )
+        node = data
+        for step in uri.segments[:-1]:
+            node = node['children'][step]
+        old_name = uri.segments[-1]
+        node['children'] = {
+            (new_name if name == old_name else name): child
+            for name, child in node['children'].items()
+        }
+        self.write_root(uri.purpose, data)
+
     def reorder_children(self, uri: Uri, names: list[str]):
+        """Reorder the children of ``uri`` to match ``names``.
+
+        Child order is not cosmetic everywhere: the department pool's order
+        is the pipeline order (it drives USD sublayer strength and every
+        "downstream" computation), so it needs to be settable without
+        rewriting the tree by hand. ``names`` must be a permutation of the
+        node's existing children.
+        """
         data = self._load(uri.purpose)
         if data is None:
             raise ValueError('Entity does not exist')
@@ -389,8 +435,12 @@ class JsonConfigStore(ConfigConvention):
     def get_properties(self, uri: Uri) -> dict | None:
         """Get properties with hierarchical resolution.
 
-        For entity URIs: starts with schema defaults, then deep merges entity
-        hierarchy properties from root to leaf. For schema URIs: just merges
+        Merges properties from root to leaf, with child values overriding
+        parent ones (root < shots < seq010 < shot020 for
+        ``entity:/shots/seq010/shot020``); nested dicts such as ``render``
+        and ``farm`` merge recursively. For entity URIs this starts from the
+        schema defaults; for schema URIs it merges the schema hierarchy only
+        (no schema-of-schema lookup). For schema URIs: just merges
         schema hierarchy (no schema-of-schema lookup).
 
         Memoized per store generation; the caller owns the returned dict.
@@ -411,7 +461,19 @@ class JsonConfigStore(ConfigConvention):
             self._memo[key] = (generation, result)
             return copy.deepcopy(result)
 
-    def _compute_properties(self, uri: Uri) -> dict | None:
+    def get_inherited_properties(self, uri: Uri) -> dict | None:
+        """What ``uri`` would resolve to without its own properties.
+
+        Its schema's defaults (none for a ``schemas:`` URI) merged with every
+        ancestor's own properties, root first — :meth:`get_properties` minus
+        the entity's own layer. What the Database Editor diffs an entity's
+        own properties against. None when an ancestor does not exist.
+        """
+        with self._coherent():
+            result = self._compute_properties(uri, include_own=False)
+            return copy.deepcopy(result) if result is not None else None
+
+    def _compute_properties(self, uri: Uri, include_own: bool = True) -> dict | None:
         data = self._load(uri.purpose)
         if data is None:
             return None
@@ -426,23 +488,32 @@ class JsonConfigStore(ConfigConvention):
         else:
             result = {}
 
-        # Merge root properties
-        result = _deep_merge(result, copy.deepcopy(data.get('properties', {})))
-
-        # Walk down the path, deep merging properties
+        # The chain of nodes whose properties apply, root first; the entity's
+        # own node last (left out for the inherited view).
+        nodes = [data]
         for step in uri.segments:
             if step not in data.get('children', {}):
                 return None
             data = data['children'][step]
-            child_props = data.get('properties', {})
-            result = _deep_merge(result, child_props)
+            nodes.append(data)
+        if not include_own:
+            nodes.pop()
 
-        return result if result else None
+        for node in nodes:
+            result = _deep_merge(result, copy.deepcopy(node.get('properties', {})))
+
+        if include_own:
+            return result if result else None
+        return result
 
     def get_own_properties(self, uri: Uri) -> dict | None:
-        """Properties stored directly on this entity (no defaults, no
-        inheritance). {} if the entity exists but stores nothing; None if
-        it does not exist. See the ConfigConvention base for the contract.
+        """Properties stored directly on this entity only.
+
+        Unlike ``get_properties``, this applies no schema defaults and no
+        inheritance from ancestors: it returns exactly what is stored on the
+        entity's own node ({} if it exists but stores nothing), or None if
+        the entity does not exist. Use it to tell a value set ON an entity
+        apart from one merged down from a parent.
         """
         data = self._load(uri.purpose)
         if data is None:
@@ -516,7 +587,7 @@ class JsonConfigStore(ConfigConvention):
         if root is None:
             return []
         data = root.get('children', {})
-        root_path = Uri.parse_unsafe(f'{purpose}:/')
+        root_path = Uri.parse(f'{purpose}:/')
         if not closure:
             return _list_uri_shallow(data, root_path, filter_path)
         return _list_uri_deep(data, root_path, filter_path)
@@ -548,7 +619,7 @@ class JsonConfigStore(ConfigConvention):
             return []
         if parent_uri is None:
             data = schemas_data.get('children', {})
-            root_path = Uri.parse_unsafe('schemas:/')
+            root_path = Uri.parse('schemas:/')
         else:
             if parent_uri.purpose != 'schemas':
                 return []
@@ -597,7 +668,7 @@ class JsonConfigStore(ConfigConvention):
                 return None
             schema_segments.append(chosen)
             node = children[chosen]
-        return Uri.parse_unsafe('schemas:/' + '/'.join(schema_segments))
+        return Uri.parse('schemas:/' + '/'.join(schema_segments))
 
     def get_entity_schema(self, entity_uri: Uri) -> Schema | None:
         with self._coherent():
@@ -610,7 +681,3 @@ class JsonConfigStore(ConfigConvention):
         if schema_uri.purpose != 'schemas':
             return []
         return self.list_schemas(schema_uri)
-
-
-def create() -> JsonConfigStore:
-    return JsonConfigStore()

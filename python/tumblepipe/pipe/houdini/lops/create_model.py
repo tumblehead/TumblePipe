@@ -1,15 +1,9 @@
-from pathlib import Path
-
 import hou
 
-from tumblepipe.api import api
-from tumblepipe.pipe.paths import (
-    get_workfile_context
-)
 from tumblepipe.util.uri import Uri
-from tumblepipe.pipe.houdini.util import uri_to_prim_path
+from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 import tumblepipe.pipe.houdini.nodes as ns
-
+from tumblepipe.pipe.houdini.entity_node import EntityNode
 
 def _metadata_script(asset_uri: Uri) -> str:
     """Generate Python script for setting asset metadata on the scene prim."""
@@ -18,7 +12,7 @@ def _metadata_script(asset_uri: Uri) -> str:
 
     script = f'''import hou
 
-from tumblepipe.pipe.houdini import util
+from tumblepipe.pipe.houdini import prim_metadata
 
 node = hou.pwd()
 stage = node.editableStage()
@@ -32,45 +26,16 @@ if prim.IsValid():
         'instance': '{entity_name}',
         'inputs': []
     }}
-    util.set_metadata(prim, metadata)
+    prim_metadata.set_metadata(prim, metadata)
 '''
     return script
 
+class CreateModel(EntityNode):
 
-class CreateModel(ns.Node):
-    def __init__(self, native):
-        super().__init__(native)
-
-    def list_asset_uris(self) -> list[str]:
-        uris = api.config.list_entity_uris(
-            filter = Uri.parse_unsafe('entity:/assets'),
-            closure = True
-        )
-        return ['from_context'] + [str(uri) for uri in uris]
-
-    def get_entity_uri(self) -> Uri | None:
-        asset_uri_raw = self.parm('asset').eval()
-        if asset_uri_raw == 'from_context':
-            file_path = Path(hou.hipFile.path())
-            context = get_workfile_context(file_path)
-            if context is None: return None
-            # Verify it's an asset entity (a Multi's workfile records the
-            # group, which is not one asset and has no model to create)
-            if context.entity_uri.purpose != 'entity': return None
-            if not context.entity_uri.segments: return None
-            if context.entity_uri.segments[0] != 'assets': return None
-            return context.entity_uri
-        # From settings
-        asset_uris = self.list_asset_uris()
-        if len(asset_uris) <= 1: return None  # Only 'from_context' means no real URIs
-        if len(asset_uri_raw) == 0: return Uri.parse_unsafe(asset_uris[1])  # Skip 'from_context'
-        if asset_uri_raw not in asset_uris: return None  # Compare strings
-        return Uri.parse_unsafe(asset_uri_raw)
-
-    def set_entity_uri(self, asset_uri: Uri):
-        asset_uris = self.list_asset_uris()
-        if str(asset_uri) not in asset_uris: return  # Compare strings
-        self.parm('asset').set(str(asset_uri))
+    # One asset's model. The parm is spelled 'asset' in saved scenes; an
+    # asset Multi's workfile records the group, which has no model.
+    ENTITY_PARM = 'asset'
+    ENTITY_CONTEXTS = ('assets',)
 
     def get_metadata_content(self) -> str:
         """Get metadata script content."""
@@ -80,13 +45,7 @@ class CreateModel(ns.Node):
         return _metadata_script(asset_uri)
 
     def _update_labels(self):
-        """Update label parameters to show resolved values when 'from_context' is selected."""
-        asset_raw = self.parm('asset').eval()
-        if asset_raw == 'from_context':
-            asset_uri = self.get_entity_uri()
-            self.parm('asset_label').set(str(asset_uri) if asset_uri else '')
-        else:
-            self.parm('asset_label').set('')
+        self.parm('asset_label').set(self._entity_label())
 
     def _initialize(self):
         """Refresh the labels. The 'asset' parm keeps its 'from_context'
@@ -101,46 +60,30 @@ class CreateModel(ns.Node):
         script = self.get_metadata_content()
         self.parm('metadata_python').set(script)
 
-
 def create(scene, name):
     return ns.create_node(scene, name, CreateModel, 'create_model')
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
-
 def on_created(raw_node):
-    # Set node style
-    set_style(raw_node)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
+    CreateModel(raw_node)._initialize()
+    fill_materials(raw_node)
 
-    # Validate node type
-    raw_node_type = raw_node.type()
-    if raw_node_type is None:
-        return
-    node_type = ns.find_node_type('create_model', 'Lop')
-    if node_type is None:
-        return
-    if raw_node_type != node_type:
-        return
-
-    node = CreateModel(raw_node)
-    node._initialize()
-
-def execute():
+def execute(kwargs):
     """Execute node from HDA callback."""
-    raw_node = hou.pwd()
+    raw_node = kwargs['node']
     node = CreateModel(raw_node)
     node.execute()
 
 def _get_materials(geo, outputnode):
-    materials = []
-    try:
-        materials = [x for x in sorted(set(geo.primStringAttribValues("shop_materialpath"))) if x and outputnode.node(x)]
-    except:
-        try:
-            materials = [geo.stringAttribValue("shop_materialpath")]
-        except:
-            pass
-    return materials
+    """The SOP material paths on ``geo``: per primitive, or one on the detail."""
+    if geo.findPrimAttrib("shop_materialpath") is not None:
+        return [
+            x for x in sorted(set(geo.primStringAttribValues("shop_materialpath")))
+            if x and outputnode.node(x)
+        ]
+    if geo.findGlobalAttrib("shop_materialpath") is not None:
+        return [geo.stringAttribValue("shop_materialpath")]
+    return []
 
 def fill_materials(node):
     sopnet = node.node("sopnet")
@@ -205,18 +148,15 @@ def fill_materials(node):
 
             prop = prim.GetProperty("primvars:shop_materialpath")
             if prop:
-                try:
-                    material = prop.Get(hou.frame())
-                    # If the materialpath is an array attribute of some kind,
-                    # just take the first value. All the values should be the
-                    # same, generally.
-                    if hasattr(material, '__iter__') and not isinstance(material, str):
-                        material = material[0]
-                    if material not in matprims:
-                        matprims[material] = []
-                    matprims[material].append(primpath)
-                except:
-                    pass
+                material = prop.Get(hou.frame())
+                # If the materialpath is an array attribute of some kind,
+                # just take the first value. All the values should be the
+                # same, generally.
+                if hasattr(material, '__iter__') and not isinstance(material, str):
+                    material = material[0]
+                if material not in matprims:
+                    matprims[material] = []
+                matprims[material].append(primpath)
             
             elif prim.GetTypeName() == "GeomSubset":
                 material = prim.GetCustomDataByKey('partitionValue')

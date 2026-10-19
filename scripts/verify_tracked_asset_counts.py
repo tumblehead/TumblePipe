@@ -4,7 +4,7 @@
 
 Read-only; exit 1 when anything is flagged.
 
-For every asset with a staged build (export/assets/**/_staged/<variant>/),
+For every asset with a staged build (export/assets/**/_staged/<channel>/),
 compare the CURRENT staged context.json's tracked-asset entries against
 what the newest-export-wins policy (TumblePipe >= 1.21.1) derives from
 the departments' current context.json files: per tracked asset, the most
@@ -17,7 +17,7 @@ before an import surfaces phantom instances.
 
 Flags per staged build:
 - COUNT    staged instances differ from the newest department context
-- VARIANT  staged channel differs from the newest department context
+- CHANNEL  staged channel differs from the newest department context
 - STALE    staged tracks an asset no current department context records
 - MISSING  a current department context tracks an asset the staged
            context lacks (staged predates the department export)
@@ -35,6 +35,11 @@ import json
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'python'))
+
+# Published contexts from before the variant->channel rename spell it variant.
+from tumblepipe.config.channels import read_published_channel  # noqa: E402
 
 VERSION_PATTERN = re.compile(r'^v\d+$')
 
@@ -100,7 +105,7 @@ def _expected_tracked(asset_root: Path, channel_name: str, departments, own_uri)
             stamps[uri] = stamp
             expected[uri] = (
                 entry.get('instances', 1),
-                entry.get('variant', 'default')
+                read_published_channel(entry, where=f'{asset_root} {_department} context.json')
             )
     return expected
 
@@ -127,7 +132,7 @@ def _check_staged_build(asset_root: Path, channel_name: str) -> list[str]:
     staged_assets = {
         entry['asset']: (
             entry.get('instances', 1),
-            entry.get('variant', 'default')
+            read_published_channel(entry, where=f'{asset_root} staged context.json')
         )
         for entry in parameters.get('assets', [])
         if entry.get('asset')
@@ -149,7 +154,7 @@ def _check_staged_build(asset_root: Path, channel_name: str) -> list[str]:
             findings.append(f'COUNT    {label}: {uri} staged={instances} '
                             f'departments={expected_instances}')
         if channel != expected_channel:
-            findings.append(f'VARIANT  {label}: {uri} staged={channel} '
+            findings.append(f'CHANNEL  {label}: {uri} staged={channel} '
                             f'departments={expected_channel}')
     for uri in sorted(set(expected) - set(staged_assets)):
         findings.append(f'MISSING  {label}: departments track {uri} '

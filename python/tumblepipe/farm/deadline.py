@@ -1,62 +1,63 @@
-"""Farm-side Deadline helpers.
+"""Farm-side Deadline helpers: the job that runs a farm worker.
 
 `tumblepipe.apps.deadline` is a generic Deadline submission wrapper. The farm
-layer is what knows a task runs from an HPM package, so HPM manifest generation
-lives here, not in the generic wrapper: the `Task` factory builds a Job and
-attaches the hpm.toml the HPM plugin installs on a worker cache miss. The
-generic `submit()` only writes `job.manifest` into the shared job dir and hands
-the plugin its path.
+layer is what knows a worker runs from an HPM package, so HPM manifest
+generation lives here, not in the generic wrapper: :func:`farm_job` builds a
+Job and attaches the hpm.toml the HPM plugin installs on a worker cache miss.
+The generic `submit()` only writes `job.manifest` into the shared job dir and
+hands the plugin its path.
 """
-import logging
 import os
 import re
 from pathlib import Path
 
 import tomli_w
 
-from tumblepipe.api import default_client, path_str, to_windows_path
+from tumblepipe.api import default_client, path_str
 from tumblepipe.apps.deadline import Job, hpm_package_spec
-
-log = logging.getLogger(__name__)
+from tumblepipe.apps.houdini import resolve_houdini_version
+from tumblepipe.farm.env import get_base_env
+from tumblepipe.naming import random_name
+from tumblepipe.util.io import store_json
 
 # Default for hpm_task_manifest's ``project``: read the project's manifest.
 _LOOK_UP = object()
 
+# The worker scripts a farm job runs (``tumblepipe.farm.workers``).
+WORKERS = Path(__file__).parent / 'workers'
+
 # Captures the package-root prefix (…/.hpm/packages/<name>@<version>) of a
-# script path, whether Windows (C:/…) or WSL (/mnt/c/…) form.
+# script path.
 _PACKAGE_ROOT_RE = re.compile(r'^(.*?/\.hpm/packages/[^/]+@[^/]+)/')
 
-# Registry to declare if the submitter's config can't be read (the studio's one
-# registry). Render nodes are never `hpm registry add`-ed, so the manifest must
-# carry the registries itself — a manifest [[registries]] block is additive to
-# (and sufficient without) any per-user config.
-_FALLBACK_REGISTRY = {
-    'name': 'tumbletrove',
-    'url': 'https://api.tumbletrove.com/v1/registry',
-    'type': 'api',
-}
+
+class FarmManifestError(RuntimeError):
+    """The farm job's hpm.toml cannot be built from what this machine has."""
 
 
-def _package_full_name(script_path, bare_name) -> str:
+def _package_full_name(script_path) -> str:
     """The registry-qualified `creator/slug` name of the running package.
 
     The HPM store keys packages by bare slug (`tumblepipe@1.12.2`), but the
     registry resolves by `creator/slug` (`tumblehead/tumblepipe`). A bare-name
     dependency 404s on a fresh worker that has no cached registry index, so the
-    manifest must use the full name — read it from the package's own hpm.toml
-    `[package].path`. Falls back to the bare slug if it can't be read.
+    manifest must use the full name — read from the package's own hpm.toml
+    `[package].path`. An installed package always has one; not finding it
+    raises rather than shipping a name the worker cannot resolve.
     """
     norm = str(script_path).replace('\\', '/')
     match = _PACKAGE_ROOT_RE.match(norm)
     if match is None:
-        return bare_name
-    root = Path(to_windows_path(Path(match.group(1))))
-    try:
-        text = (root / 'hpm.toml').read_text()
-    except OSError:
-        return bare_name
+        raise FarmManifestError(
+            f'{script_path} is not under an HPM package store '
+            '(…/.hpm/packages/<name>@<version>/)'
+        )
+    manifest_path = Path(match.group(1)) / 'hpm.toml'
+    text = manifest_path.read_text(encoding='utf-8')
     path_match = re.search(r'(?m)^\s*path\s*=\s*["\']([^"\']+)["\']', text)
-    return path_match.group(1) if path_match is not None else bare_name
+    if path_match is None:
+        raise FarmManifestError(f'{manifest_path} has no [package].path')
+    return path_match.group(1)
 
 
 def _parse_requirements(requirements_path) -> list:
@@ -70,10 +71,7 @@ def _parse_requirements(requirements_path) -> list:
     """
     if requirements_path is None:
         return []
-    try:
-        text = Path(requirements_path).read_text()
-    except OSError:
-        return []
+    text = Path(requirements_path).read_text()
     requirements = []
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -106,7 +104,7 @@ def _project_runtime() -> dict:
     return {
         'TH_PROJECT_PATH': {
             'method': 'set',
-            'value': path_str(to_windows_path(default_client().PROJECT_PATH)),
+            'value': path_str(default_client().PROJECT_PATH),
         },
     }
 
@@ -147,15 +145,17 @@ def read_project_manifest(env=None) -> dict | None:
     """The project's parsed hpm.toml, or None when none can be found.
 
     A job manifest only counts under ``$HPM_PACKAGE_ROOT``; see
-    :func:`project_manifest_candidates`.
+    :func:`project_manifest_candidates`. A candidate that exists but does not
+    parse raises.
     """
     import tomllib
     env = os.environ if env is None else env
     for path, must_be_job in project_manifest_candidates(env):
         try:
-            data = tomllib.loads(path.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            continue
+            text = path.read_text(encoding='utf-8')
+        except FileNotFoundError:
+            continue  # Candidates are guesses; most do not exist.
+        data = tomllib.loads(text)
         is_job = (data.get('package') or {}).get('path') == JOB_PACKAGE_PATH
         if must_be_job and not is_job:
             continue
@@ -163,7 +163,7 @@ def read_project_manifest(env=None) -> dict | None:
     return None
 
 
-def job_dependencies(project: dict | None, full_name: str, version: str) -> dict:
+def job_dependencies(project: dict, full_name: str, version: str) -> dict:
     """The job's `[dependencies]`: the project's, with the task's package pinned.
 
     A farm task needs the environment the artist's Houdini had — a rigged
@@ -175,30 +175,39 @@ def job_dependencies(project: dict | None, full_name: str, version: str) -> dict
     slug = full_name.split('/')[-1]
     dependencies = {
         name: pinned
-        for name, pinned in ((project or {}).get('dependencies') or {}).items()
-        # The project's entry for the same package, under either spelling
-        # (the full name falls back to the bare slug when unreadable).
+        for name, pinned in (project.get('dependencies') or {}).items()
+        # The project's entry for the same package, full name or bare slug.
         if name.split('/')[-1] != slug
     }
     dependencies[full_name] = version
     return dependencies
 
 
-def job_runtime(project: dict | None, project_runtime: dict) -> dict:
+def job_runtime(project: dict, project_runtime: dict) -> dict:
     """The job's `[runtime]`: the project's, with ``project_runtime`` on top."""
-    runtime = dict((project or {}).get('runtime') or {})
+    runtime = dict(project.get('runtime') or {})
     runtime.update(project_runtime)
     return runtime
 
 
-def job_registries(project: dict | None, submitter: list) -> list:
-    """The submitter's registries, then any other the project declares (by name)."""
+def job_registries(project: dict, submitter: list) -> list:
+    """The submitter's registries, then any other the project declares (by name).
+
+    Render nodes are never `hpm registry add`-ed, so the manifest must carry
+    the registries itself; none at all raises.
+    """
     registries = list(submitter)
-    names = {r.get('name') for r in registries}
-    for registry in (project or {}).get('registries') or []:
-        if registry.get('name') not in names:
+    names = {r['name'] for r in registries}
+    for registry in project.get('registries') or []:
+        if registry['name'] not in names:
             registries.append(registry)
-            names.add(registry.get('name'))
+            names.add(registry['name'])
+    if not registries:
+        raise FarmManifestError(
+            'No hpm registry to put in the farm job: neither ~/.hpm/config.toml '
+            "nor the project's hpm.toml declares one. Add one with "
+            '`hpm registry add`.'
+        )
     return registries
 
 
@@ -209,7 +218,7 @@ def _script_module(relative_script: str) -> str:
     `python -m <module>` executed inside the package-env (the package's python/
     dir is on PYTHONPATH). Strip the leading `python/` source-root, drop the
     `.py`, and turn slashes into dots:
-    `python/tumblepipe/farm/tasks/render/render.py` -> `tumblepipe.farm.tasks.render.render`.
+    `python/tumblepipe/farm/workers/render.py` -> `tumblepipe.farm.workers.render`.
     """
     norm = relative_script.replace('\\', '/').strip('/')
     if norm.startswith('python/'):
@@ -225,13 +234,20 @@ def _submitter_registries() -> list:
     Embedding them in the job manifest makes the worker resolve against the same
     registries the submitter used, with no `hpm registry add` on the node.
     """
+    import tomllib
     config_path = Path(os.path.expanduser('~')) / '.hpm' / 'config.toml'
     try:
-        import tomllib
-        registries = tomllib.loads(config_path.read_text()).get('registries', [])
-    except Exception:
-        registries = []
-    return registries if registries else [_FALLBACK_REGISTRY]
+        text = config_path.read_text(encoding='utf-8')
+    except FileNotFoundError:
+        return []  # No per-user config: the project's registries must do.
+    return tomllib.loads(text).get('registries') or []
+
+
+def _job_houdini_compat() -> str:
+    """The job runs against the Houdini major it was created in (the
+    USD/resolver ABI is per-major), so its manifest admits exactly that major."""
+    major = int(resolve_houdini_version().split('.')[0])
+    return f'>={major}, <{major + 1}'
 
 
 def hpm_task_manifest(script_path, requirements_path=None, project=_LOOK_UP) -> str:
@@ -269,21 +285,21 @@ def hpm_task_manifest(script_path, requirements_path=None, project=_LOOK_UP) -> 
       found by :func:`read_project_manifest`), so the worker's hpm sets up the
       packages the artist's Houdini had — TumbleRig included — and writes one
       Houdini package file per dependency into ``<job>/.hpm/packages``, which
-      ``tasks.env.get_hython_env`` hands to hython. ``project`` overrides the
-      lookup (tests); without a project manifest the job carries the task's
-      package alone, as it always did, and says so.
+      ``farm.env.get_hython_env`` hands to hython. ``project`` overrides the
+      lookup (tests). Without a project manifest it raises: a job carrying the
+      task's package alone fails on the first rig it cooks.
     """
     if project is _LOOK_UP:
         project = read_project_manifest()
     if project is None:
-        log.warning(
-            "No project hpm.toml found (TT_PROJECT_DIR / HOUDINI_PACKAGE_DIR); "
-            "the farm job carries only the task's own package, so anything "
-            "that needs another package (a TumbleRig rig) will not cook"
+        raise FarmManifestError(
+            "No project hpm.toml found (HPM_PACKAGE_ROOT / TT_PROJECT_DIR / "
+            "HOUDINI_PACKAGE_DIR), so the farm job cannot carry the project's "
+            'packages. Submit from a Houdini TumbleTrove Desktop launched.'
         )
     package_spec, relative_script = hpm_package_spec(script_path)
-    bare_name, _, version = package_spec.partition('@')
-    full_name = _package_full_name(script_path, bare_name)
+    _, _, version = package_spec.partition('@')
+    full_name = _package_full_name(script_path)
     module = _script_module(relative_script)
     task_script = {
         'cmd': f'python -m {module}',
@@ -298,7 +314,7 @@ def hpm_task_manifest(script_path, requirements_path=None, project=_LOOK_UP) -> 
             'name': 'deadline-hpm-job',
             'version': '0.0.0',
         },
-        'compat': {'houdini': '>=21, <99'},
+        'compat': {'houdini': _job_houdini_compat()},
         'registries': job_registries(project, _submitter_registries()),
         'dependencies': job_dependencies(project, full_name, version),
         'runtime': job_runtime(project, _project_runtime()),
@@ -308,13 +324,80 @@ def hpm_task_manifest(script_path, requirements_path=None, project=_LOOK_UP) -> 
     })
 
 
-def Task(script_path, requirements_path, *args, **kwargs):
-    """Create a farm Job and attach its HPM manifest.
+def worker_requirements(worker: str) -> Path | None:
+    """The worker's own pip requirements (``workers/<worker>_requirements.txt``),
+    None when it needs nothing beyond the package's dependencies."""
+    path = WORKERS / f'{worker}_requirements.txt'
+    return path if path.exists() else None
 
-    Drop-in replacement for `apps.deadline.Job` — the farm tasks import this as
-    `Task`. For HPM jobs it generates and provides the hpm.toml so the generic
-    submit layer never has to know about packages.
+
+def farm_job(
+    worker: str,
+    context: dict,
+    staging_path: Path,
+    *,
+    name: str,
+    pool: str,
+    group: str,
+    priority: int,
+    max_minutes: int,
+    paths: dict[Path, Path] | None = None
+    ) -> Job:
+    """A Deadline job that runs farm worker ``worker`` on ``context``.
+
+    ``context`` is written to ``<staging>/<worker>_<random>/context.json``,
+    bundled into the job's data dir, and its bundle-relative path is the
+    worker's config argument. ``paths`` (source -> bundle-relative path) are
+    bundled with it. The job carries the farm's base environment and the HPM
+    manifest that sets up the worker's package env. The caller sets the
+    frames: :func:`run_once` or :func:`run_batched`.
     """
-    job = Job(script_path, requirements_path, *args, **kwargs)
+    script_path = WORKERS / f'{worker}.py'
+    requirements_path = worker_requirements(worker)
+    context_path = staging_path / f'{worker}_{random_name(8)}' / 'context.json'
+    store_json(context_path, context)
+    relative_context_path = context_path.relative_to(staging_path)
+    job = Job(script_path, path_str(relative_context_path))
+    job.name = name
+    job.pool = pool
+    job.group = group
+    job.priority = priority
+    job.max_frame_time = max_minutes
+    if paths is not None:
+        job.paths.update(paths)
+    job.paths[context_path] = relative_context_path
+    job.env.update(get_base_env())
     job.manifest = hpm_task_manifest(script_path, requirements_path)
     return job
+
+
+def run_once(job: Job, first_frame: int, last_frame: int) -> None:
+    """Schedule ``job`` as one Deadline task spanning ``first..last``.
+
+    For a worker that processes its whole range itself (an encode, a stage,
+    a publish): a second chunk would be a second worker redoing the whole
+    job. The span, not the stepped frame count, is the chunk.
+    """
+    job.start_frame = first_frame
+    job.end_frame = last_frame
+    job.step_size = 1
+    job.chunk_size = last_frame - first_frame + 1
+
+
+def run_batched(
+    job: Job,
+    first_frame: int,
+    last_frame: int,
+    step_size: int,
+    batch_size: int,
+    frames: list[int]
+    ) -> None:
+    """Schedule ``job`` as Deadline tasks of ``batch_size`` frames each:
+    ``frames`` when given, else ``first..last`` by ``step_size``."""
+    if len(frames) > 0:
+        job.frames.extend(frames)
+    else:
+        job.start_frame = first_frame
+        job.end_frame = last_frame
+    job.step_size = step_size
+    job.chunk_size = batch_size

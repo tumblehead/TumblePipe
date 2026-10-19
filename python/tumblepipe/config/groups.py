@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 
-GROUPS_URI = Uri.parse_unsafe('groups:/')
+GROUPS_URI = Uri.parse('groups:/')
 
 @dataclass(frozen=True)
 class Group:
@@ -20,7 +20,7 @@ class Group:
         if len(self.uri.segments) < 1:
             return None
         context = self.uri.segments[0]
-        return Uri.parse_unsafe(f'entity:/{context}')
+        return Uri.parse(f'entity:/{context}')
 
 def is_group_uri(uri: Uri) -> bool:
     if uri.purpose != 'groups': return False
@@ -36,7 +36,7 @@ def add_group(
     group_uri = GROUPS_URI / context / name
     properties = api.config.get_properties(group_uri)
     if properties is not None: raise ValueError('Group already exists')
-    root_uri = Uri.parse_unsafe(f'entity:/{context}')
+    root_uri = Uri.parse(f'entity:/{context}')
     for member in members:
         if not root_uri.contains(member):
             raise ValueError('Invalid group member list')
@@ -51,7 +51,7 @@ def remove_group(group_uri: Uri):
 
 def add_member(group_uri: Uri, member_uri: Uri):
     context = group_uri.segments[0]
-    root_uri = Uri.parse_unsafe(f'entity:/{context}')
+    root_uri = Uri.parse(f'entity:/{context}')
     if not root_uri.contains(member_uri):
         raise ValueError('Invalid group member')
     properties = api.config.get_properties(group_uri)
@@ -70,7 +70,7 @@ def add_member(group_uri: Uri, member_uri: Uri):
 
 def remove_member(group_uri: Uri, member_uri: Uri):
     context = group_uri.segments[0]
-    root_uri = Uri.parse_unsafe(f'entity:/{context}')
+    root_uri = Uri.parse(f'entity:/{context}')
     if not root_uri.contains(member_uri):
         raise ValueError('Invalid group member')
     properties = api.config.get_properties(group_uri)
@@ -120,7 +120,7 @@ def get_group(group_uri: Uri) -> Group | None:
     if properties is None: return None
     return Group(
         uri = group_uri,
-        members = list(map(Uri.parse_unsafe, properties['members'])),
+        members = list(map(Uri.parse, properties['members'])),
         departments = properties['departments']
     )
 
@@ -130,7 +130,7 @@ def list_groups(context: str) -> list[Group]:
     return [
         Group(
             uri = entity.uri,
-            members = list(map(Uri.parse_unsafe, entity.properties['members'])),
+            members = list(map(Uri.parse, entity.properties['members'])),
             departments = entity.properties['departments']
         )
         for entity in entities
@@ -143,22 +143,3 @@ def find_group(context: str, member: Uri, department: str) -> Group | None:
         return group
     return None
 
-
-def find_groups_for_entity(entity_uri: Uri) -> list[Group]:
-    """
-    Find all groups that contain an entity (regardless of department).
-
-    Args:
-        entity_uri: The entity URI to search for
-
-    Returns:
-        List of groups containing this entity
-    """
-    if len(entity_uri.segments) < 1:
-        return []
-    context = entity_uri.segments[0]  # 'assets' or 'shots'
-    result = []
-    for group in list_groups(context):
-        if entity_uri in group.members:
-            result.append(group)
-    return result

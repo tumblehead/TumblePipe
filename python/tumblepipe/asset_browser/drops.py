@@ -12,6 +12,8 @@ Routes asset / shot / Root drops onto Houdini network panes:
 - Multi-drop: bundles selected assets into one ``th::import_assets``
   (or appends to an existing one); shots are skipped (multi-shot drops
   are not supported yet).
+- Deck-item drop: one ``th::import_layer`` per dragged department deck
+  item of an asset or shot, LOP only.
 
 The router owns no mutable state — every call routes off the catalog
 services it was constructed with.
@@ -19,16 +21,15 @@ services it was constructed with.
 
 from __future__ import annotations
 
-import logging
+from pathlib import Path
 from typing import Callable
 
-from tumbletrove.asset_browser.core.projects import ProjectConfig
+from .projects import ProjectConfig
 
 from . import containers as containers
 from .containers import SceneContainer
 from . import uris as uris
 
-log = logging.getLogger(__name__)
 
 
 def entity_uri_for(asset_or_detail) -> str | None:
@@ -42,7 +43,7 @@ def entity_uri_for(asset_or_detail) -> str | None:
     if len(parts) != 3:
         # Exactly PROJECT/SECOND/THIRD. The old `< 3` silently accepted a
         # 4+-segment id and took parts[1]/parts[2], building a plausible-but-
-        # wrong URI; reject it instead (mirrors parse_entity_ref).
+        # wrong URI; reject it instead (mirrors AssetResolver.split).
         return None
     _project, second, third = parts
     if "type:asset" in asset_or_detail.tags:
@@ -54,22 +55,16 @@ def entity_uri_for(asset_or_detail) -> str | None:
 
 def is_import_assets_node(node) -> bool:
     """Detect the *plural* import_assets HDA (multi-asset wrapper)."""
-    if node is None:
-        return False
-    try:
-        return node.type().name().startswith("th::import_assets::")
-    except Exception:
-        return False
+    return node is not None and node.type().name().startswith(
+        "th::import_assets::",
+    )
 
 
 def is_import_asset_node(node) -> bool:
     """Detect the *singular* import_asset HDA (one asset per node)."""
-    if node is None:
-        return False
-    try:
-        return node.type().name().startswith("th::import_asset::")
-    except Exception:
-        return False
+    return node is not None and node.type().name().startswith(
+        "th::import_asset::",
+    )
 
 
 def show_dropped_node(raw) -> None:
@@ -94,11 +89,14 @@ class DropRouter:
     """Dispatches asset/shot/Root drops to the right Houdini handler.
 
     The catalog instantiates one and forwards ``on_drop`` /
-    ``on_deck_drop`` / ``on_multi_drop`` / ``attach_network_thumbnail``
-    through it. Catalog-side concerns (project activation, asset
-    resolution, sidecar thumbnail lookup, detail fetch) are injected
-    via constructor so the router has no implicit dependency on the
-    full catalog surface.
+    ``on_deck_drop`` / ``on_multi_drop`` through it. Catalog-side concerns
+    (project activation, asset resolution, sidecar thumbnail lookup,
+    detail fetch) are injected via constructor so the router has no
+    implicit dependency on the full catalog surface.
+
+    A drop raises when it fails: the browser is the failure boundary
+    (TumbleTrove >= 0.48) — it reports the error and does not retry the
+    drop its own way.
     """
 
     def __init__(
@@ -106,12 +104,14 @@ class DropRouter:
         *,
         activate_project: Callable[[ProjectConfig], None],
         project_for_asset_id: Callable[[str], ProjectConfig | None],
+        project_for_path: Callable[[Path], ProjectConfig | None],
         thumbnail_path: Callable[[str], object],
         get_detail: Callable[[str], object],
         get_registry,
     ) -> None:
         self._activate_project = activate_project
         self._project_for_asset_id = project_for_asset_id
+        self._project_for_path = project_for_path
         self._thumbnail_path = thumbnail_path
         self._get_detail = get_detail
         self._registry = get_registry
@@ -136,11 +136,7 @@ class DropRouter:
 
         entity_uri = entity_uri_for(detail)
         if entity_uri is None:
-            hou.ui.setStatusMessage(
-                f"Cannot derive entity URI for {detail.name}",
-                severity=hou.severityType.Warning,
-            )
-            return True  # Always handled — never fall through to fallback menu
+            raise ValueError(f"{detail.id} does not name an asset or a shot")
 
         # Activate the asset's project so import_asset / import_shot
         # resolve against the right pipeline config.
@@ -166,21 +162,10 @@ class DropRouter:
             "type:shot" not in detail.tags
             and is_import_assets_node(target)
         ):
-            try:
-                from tumblepipe.pipe.houdini.lops import import_assets
-                wrapper = import_assets.ImportAssets(target)
-                wrapper.add_asset_entry(uris.parse(entity_uri))
-                wrapper.execute()
-            except Exception:
-                log.exception(
-                    "Failed to append %s to %s",
-                    detail.id, target.path(),
-                )
-                hou.ui.setStatusMessage(
-                    f"Failed to add {detail.name} (see console)",
-                    severity=hou.severityType.Error,
-                )
-                return True
+            from tumblepipe.pipe.houdini.lops import import_assets
+            wrapper = import_assets.ImportAssets(target)
+            wrapper.add_asset_entry(uris.parse(entity_uri))
+            wrapper.execute()
             hou.ui.setStatusMessage(
                 f"Added {detail.name} to {target.name()}",
                 severity=hou.severityType.Message,
@@ -189,21 +174,16 @@ class DropRouter:
 
         # Drop onto a singular import_asset → upgrade it to a plural
         # import_assets node carrying both the original asset and the
-        # newly dropped one, preserving wiring and position.
+        # newly dropped one, preserving wiring and position. One with no
+        # asset set yet has nothing to combine with: the drop then makes
+        # its own node beside it.
         if (
             "type:shot" not in detail.tags
             and is_import_asset_node(target)
         ):
-            try:
-                raw = self._upgrade_singular_to_plural(
-                    target, uris.parse(entity_uri),
-                )
-            except Exception:
-                log.exception(
-                    "Failed to upgrade %s to plural import_assets",
-                    target.path(),
-                )
-                raw = None
+            raw = self._upgrade_singular_to_plural(
+                target, uris.parse(entity_uri),
+            )
             if raw is not None:
                 raw.setSelected(True, clear_all_selected=True)
                 self.attach_network_thumbnail(detail.id, raw, drop)
@@ -212,40 +192,31 @@ class DropRouter:
                     severity=hou.severityType.Message,
                 )
                 return True
-            # Fall through to the normal single-asset path on failure.
 
         network = drop.network
-        try:
-            if "type:shot" in detail.tags:
-                from tumblepipe.pipe.houdini.lops import import_shot
-                # Prefix with sequence so the node name matches the
-                # displayed Asset.name and avoids leading-digit shot
-                # names (e.g. "010") that Houdini rejects.
-                seq = detail.metadata.get("sequence", "")
-                node_name = f"{seq}_{detail.name}" if seq else detail.name
-                node = import_shot.create(network, node_name.replace(" ", "_"))
-                node.set_shot_uri(uris.parse(entity_uri))
-                node.execute()
-            else:
-                from tumblepipe.pipe.houdini.lops import import_asset
-                node = import_asset.create(network, detail.name.replace(" ", "_"))
-                node.set_entity_uri(uris.parse(entity_uri))
-                node.execute()
-            raw = node.native()
-            if drop.position is not None:
-                raw.setPosition(drop.position - hou.Vector2(0.5, 0.0))
-            else:
-                raw.moveToGoodPosition()
-            raw.setSelected(True, clear_all_selected=True)
-            show_dropped_node(raw)
-            self.attach_network_thumbnail(detail.id, raw, drop)
-        except Exception:
-            log.exception("Failed to drop %s", detail.id)
-            hou.ui.setStatusMessage(
-                f"Failed to import {detail.name} (see console)",
-                severity=hou.severityType.Error,
-            )
-            return True  # Always handled — error logged + status message
+        if "type:shot" in detail.tags:
+            from tumblepipe.pipe.houdini.lops import import_shot
+            # Prefix with sequence so the node name matches the
+            # displayed Asset.name and avoids leading-digit shot
+            # names (e.g. "010") that Houdini rejects.
+            seq = detail.metadata.get("sequence", "")
+            node_name = f"{seq}_{detail.name}" if seq else detail.name
+            node = import_shot.create(network, node_name.replace(" ", "_"))
+            node.set_entity_uri(uris.parse(entity_uri))
+            node.execute()
+        else:
+            from tumblepipe.pipe.houdini.lops import import_asset
+            node = import_asset.create(network, detail.name.replace(" ", "_"))
+            node.set_entity_uri(uris.parse(entity_uri))
+            node.execute()
+        raw = node.native()
+        if drop.position is not None:
+            raw.setPosition(drop.position - hou.Vector2(0.5, 0.0))
+        else:
+            raw.moveToGoodPosition()
+        raw.setSelected(True, clear_all_selected=True)
+        show_dropped_node(raw)
+        self.attach_network_thumbnail(detail.id, raw, drop)
 
         hou.ui.setStatusMessage(
             f"Imported {detail.name}", severity=hou.severityType.Message,
@@ -255,9 +226,71 @@ class DropRouter:
     # ── Deck item drop ────────────────────────────────────
 
     def on_deck_drop(self, asset, deck_keys, drop) -> bool:
-        """Asset/shot dept deck items fall through to the browser's
-        default ``import_layer`` LOP path."""
-        return False
+        """Import one department layer per dragged department deck item.
+
+        Each key is a department of the asset or shot; each becomes a
+        ``th::import_layer`` on its 'current' version (the newest export)
+        in the LOP network under the cursor, stacked below the drop point.
+        Returns False for a card with no entity (a Multi or Root), whose
+        deck items are not layers. Refuses an asset of another project
+        than the open scene's: the USD resolver serves one project's
+        exports at a time, so the layers would not resolve.
+        """
+        import hou
+
+        entity_uri = entity_uri_for(asset)
+        if entity_uri is None:
+            return False
+        if drop.context != "lop" or not drop.network:
+            hou.ui.setStatusMessage(
+                "Department layers can only be imported into LOP networks",
+                severity=hou.severityType.Warning,
+            )
+            return True
+
+        asset_proj = self._project_for_asset_id(asset.id)
+        scene_proj = self._project_for_path(Path(hou.hipFile.path()))
+        if (
+            asset_proj is not None and scene_proj is not None
+            and asset_proj.name != scene_proj.name
+        ):
+            hou.ui.setStatusMessage(
+                f"Cannot import {asset_proj.name} layers into a "
+                f"{scene_proj.name} scene — the USD resolver serves one "
+                "project at a time.",
+                severity=hou.severityType.Warning,
+            )
+            return True
+        if asset_proj is not None:
+            self._activate_project(asset_proj)
+
+        from tumblepipe.pipe.houdini.lops import import_layer
+
+        uri = uris.parse(entity_uri)
+        for index, dept in enumerate(deck_keys):
+            node = import_layer.create(
+                drop.network, f"{asset.name}_{dept}".replace(" ", "_"),
+            )
+            node.set_entity_uri(uri)
+            node.set_department_name(dept)
+            node.execute()
+            raw = node.native()
+            if drop.position is not None:
+                raw.setPosition(
+                    drop.position + hou.Vector2(-0.5, -index * 1.2),
+                )
+            else:
+                raw.moveToGoodPosition()
+            first = index == 0
+            raw.setSelected(first, clear_all_selected=first)
+            show_dropped_node(raw)
+            self.attach_network_thumbnail(asset.id, raw, drop)
+
+        hou.ui.setStatusMessage(
+            f"Imported {asset.name} / {', '.join(deck_keys)}",
+            severity=hou.severityType.Message,
+        )
+        return True
 
     # ── Multi-asset drop ─────────────────────────────────
 
@@ -270,8 +303,7 @@ class DropRouter:
 
         Returns False only when there is no asset to bundle. The browser
         answers False by dropping each asset on its own, which would put
-        an import_asset beside the import_assets this built. A failure is
-        reported here and the drop still counts as handled.
+        an import_asset beside the import_assets this built.
         """
         import hou
 
@@ -290,123 +322,65 @@ class DropRouter:
         # A single asset should fall back to the single-drop path so
         # we get an `import_asset` node instead of an `import_assets`.
         if len(asset_items) == 1:
-            try:
-                detail = self._get_detail(asset_items[0].id)
-            except Exception:
-                log.exception("Failed to fetch detail for single drop")
-                return False
-            return self.on_drop(detail, drop)
+            return self.on_drop(self._get_detail(asset_items[0].id), drop)
+
+        entity_uris = [entity_uri_for(a) for a in asset_items]
 
         # If the drop lands on an existing import_assets node,
         # append each dragged asset as a new entry.
         target = getattr(drop, "target_node", None)
         if is_import_assets_node(target):
-            try:
-                from tumblepipe.pipe.houdini.lops import import_assets
-                wrapper = import_assets.ImportAssets(target)
-                added = 0
-                for a in asset_items:
-                    uri_str = entity_uri_for(a)
-                    if uri_str is None:
-                        continue
-                    wrapper.add_asset_entry(uris.parse(uri_str))
-                    added += 1
-                wrapper.execute()
-            except Exception:
-                log.exception(
-                    "Failed to append %d assets to %s",
-                    len(asset_items), target.path(),
-                )
-                hou.ui.setStatusMessage(
-                    f"Failed to add {len(asset_items)} assets to "
-                    f"{target.name()} (see console)",
-                    severity=hou.severityType.Error,
-                )
-                return True
+            from tumblepipe.pipe.houdini.lops import import_assets
+            wrapper = import_assets.ImportAssets(target)
+            for entity_uri in entity_uris:
+                wrapper.add_asset_entry(uris.parse(entity_uri))
+            wrapper.execute()
             hou.ui.setStatusMessage(
-                f"Added {added} assets to {target.name()}",
+                f"Added {len(entity_uris)} assets to {target.name()}",
                 severity=hou.severityType.Message,
             )
             return True
 
-        network = drop.network
-        try:
-            from tumblepipe.pipe.houdini.lops import import_assets
+        from tumblepipe.pipe.houdini.lops import import_assets
 
-            node = import_assets.create(network, "import_assets")
-            multiparm = node.parm("asset_imports")
-            multiparm.set(len(asset_items))
+        node = import_assets.create(drop.network, "import_assets")
+        node.parm("asset_imports").set(len(entity_uris))
+        for i, entity_uri in enumerate(entity_uris, start=1):
+            node.parm(f"entity{i}").set(entity_uri)
 
-            for i, a in enumerate(asset_items, start=1):
-                entity_uri = entity_uri_for(a)
-                if entity_uri is None:
-                    continue
-                node.parm(f"entity{i}").set(entity_uri)
-
-            node.execute()
-            raw = node.native()
-            if drop.position is not None:
-                raw.setPosition(drop.position - hou.Vector2(0.5, 0.0))
-            else:
-                raw.moveToGoodPosition()
-            raw.setSelected(True, clear_all_selected=True)
-            show_dropped_node(raw)
-        except Exception:
-            log.exception("Failed multi-drop of %d assets", len(asset_items))
-            hou.ui.setStatusMessage(
-                f"Failed to import {len(asset_items)} assets (see console)",
-                severity=hou.severityType.Error,
-            )
-            return True
+        node.execute()
+        raw = node.native()
+        if drop.position is not None:
+            raw.setPosition(drop.position - hou.Vector2(0.5, 0.0))
+        else:
+            raw.moveToGoodPosition()
+        raw.setSelected(True, clear_all_selected=True)
+        show_dropped_node(raw)
 
         hou.ui.setStatusMessage(
-            f"Imported {len(asset_items)} assets",
+            f"Imported {len(entity_uris)} assets",
             severity=hou.severityType.Message,
         )
         return True
 
-    # ── Thumbnail attach (public — used by browser host too) ──
+    # ── Thumbnail attach ──────────────────────────────────
 
     def attach_network_thumbnail(self, asset_id, raw_node, drop) -> None:
         """Attach the asset/shot's ``thumbnail.png`` sidecar as a
-        ``hou.NetworkImage`` next to the given import node.
-
-        Public so the asset browser host can call it for non-catalog-
-        owned drops too (e.g. ``import_layer`` nodes created by the
-        deck item drop path). No-op when the sidecar isn't on disk or
-        the drop didn't land on a network editor.
+        ``hou.NetworkImage`` next to the given import node. No-op when
+        the sidecar isn't on disk.
         """
         import hou
-        try:
-            thumb = self._thumbnail_path(asset_id)
-            if thumb is None:
-                log.debug(
-                    "network thumbnail: no path resolvable for %s",
-                    asset_id,
-                )
-                return
-            if not thumb.exists():
-                log.debug(
-                    "network thumbnail: sidecar missing on disk for %s "
-                    "(expected at %s)",
-                    asset_id, thumb,
-                )
-                return
-            from tumblepipe.pipe.houdini import network_thumbnail
-            editor = (
-                drop.pane
-                if isinstance(drop.pane, hou.NetworkEditor)
-                else None
-            )
-            log.debug(
-                "network thumbnail: attaching %s to %s (editor=%s)",
-                thumb, raw_node.path(), editor,
-            )
-            network_thumbnail.attach(raw_node, thumb, editor=editor)
-        except Exception:
-            log.exception(
-                "Failed to attach network thumbnail for %s", asset_id,
-            )
+        thumb = self._thumbnail_path(asset_id)
+        if thumb is None or not thumb.exists():
+            return
+        from tumblepipe.pipe.houdini import network_thumbnail
+        editor = (
+            drop.pane
+            if isinstance(drop.pane, hou.NetworkEditor)
+            else None
+        )
+        network_thumbnail.attach(raw_node, thumb, editor=editor)
 
     # ── Per-context handlers ─────────────────────────────
 
@@ -415,75 +389,28 @@ class DropRouter:
 
         Sets the HDA's ``entity`` parm to the asset URI, defaults the
         ``department`` parm based on tags (``blendshape`` if the asset
-        is tagged as such; ``model`` otherwise), then triggers the
-        HDA's ``execute()`` so the internal LOP chain populates.
-        Returns ``True`` always — failures emit a status message.
+        is tagged as such; ``model`` otherwise), then runs its Import.
         """
         import hou
+        from tumblepipe.pipe.houdini.sops.import_model import ImportModel
 
-        network = drop.network
-        node_name = detail.name.replace(" ", "_")
-        try:
-            raw = network.createNode("th::import_model::1.0", node_name)
-            raw.parm("entity").set(entity_uri)
-            dept_parm = raw.parm("department")
-            if dept_parm is not None:
-                dept = "blendshape" if "type:blendshape" in detail.tags else "model"
-                dept_parm.set(dept)
-            # Drive the internal lopnet/import_layer directly rather than
-            # going through the HDA's PythonModule.execute(). The HDA's
-            # execute() relies on hou.pwd() which isn't set from a drop-
-            # handler context, AND its definition may be cached in the
-            # live session (so a freshly-rebuilt .hda's new signatures
-            # wouldn't be live yet). Talking straight to the inner IL
-            # node sidesteps both issues; entity/department/version on
-            # the IL are channel-referenced to the SOP HDA's parms, so
-            # we just set the SOP parms above and let IL.execute() read
-            # them through the references.
-            try:
-                il_node = raw.node("lopnet/import_layer")
-                if il_node is not None:
-                    from tumblepipe.pipe.houdini.lops import import_layer
-                    import_layer.ImportLayer(il_node).execute()
-                    # Copy the IL's resolved labels onto the SOP HDA so
-                    # entity_label / version_label show the live values
-                    # instead of "from_context: none".
-                    for parm_name in ("entity_label", "version_label"):
-                        src = il_node.parm(parm_name)
-                        dst = raw.parm(parm_name)
-                        if src is not None and dst is not None:
-                            dst.set(src.eval())
-                    # Mirror IL's bypass onto the outer SOP HDA so the
-                    # node is visibly disabled when the asset isn't
-                    # staged on disk. IL already wrote a "Bypassed: ..."
-                    # comment with the reason — surface that on the
-                    # outer node instead of leaving it silent.
-                    if il_node.isBypassed():
-                        comment = il_node.comment() or "Bypassed: No staged asset"
-                        raw.setComment(comment)
-                        raw.setGenericFlag(
-                            hou.nodeFlag.DisplayComment, True,
-                        )
-                        raw.bypass(True)
-            except Exception:
-                log.exception(
-                    "import_model: driving inner import_layer failed for %s",
-                    detail.id,
-                )
-            if drop.position is not None:
-                raw.setPosition(drop.position - hou.Vector2(0.5, 0.0))
-            else:
-                raw.moveToGoodPosition()
-            raw.setSelected(True, clear_all_selected=True)
-            show_dropped_node(raw)
-            self.attach_network_thumbnail(detail.id, raw, drop)
-        except Exception:
-            log.exception("Failed to drop %s as import_model", detail.id)
-            hou.ui.setStatusMessage(
-                f"Failed to import {detail.name} (see console)",
-                severity=hou.severityType.Error,
-            )
-            return True
+        raw = drop.network.createNode(
+            "th::import_model::1.0", detail.name.replace(" ", "_"),
+        )
+        raw.parm("entity").set(entity_uri)
+        raw.parm("department").set(
+            "blendshape" if "type:blendshape" in detail.tags else "model",
+        )
+        # The same Import the node's button runs: it mirrors the inner
+        # import's labels and bypass reason onto the SOP.
+        ImportModel(raw).execute()
+        if drop.position is not None:
+            raw.setPosition(drop.position - hou.Vector2(0.5, 0.0))
+        else:
+            raw.moveToGoodPosition()
+        raw.setSelected(True, clear_all_selected=True)
+        show_dropped_node(raw)
+        self.attach_network_thumbnail(detail.id, raw, drop)
 
         hou.ui.setStatusMessage(
             f"Imported {detail.name}", severity=hou.severityType.Message,
@@ -496,11 +423,10 @@ class DropRouter:
 
         The asset resolver maps that URI to the latest exported scene
         USD at evaluation time, so the sublayer stays in sync with
-        re-exports automatically. Returns ``True`` always (drop is
-        considered handled even on failure — failures emit a status
-        message rather than fall through to a fallback menu).
+        re-exports automatically.
         """
         import hou
+        from tumblepipe.pipe.usd.sublayer_refs import generate_scene_sublayer_uri
 
         if drop.context != "lop" or not drop.network:
             hou.ui.setStatusMessage(
@@ -511,57 +437,26 @@ class DropRouter:
 
         ref = containers.parse(detail.id)
         if not isinstance(ref, SceneContainer):
-            return True
+            raise ValueError(f"{detail.id} is not a Root")
 
         proj = self._registry.get(ref.project_name)
         if proj is not None:
-            try:
-                self._activate_project(proj)
-            except Exception:
-                log.exception(
-                    "activate_project failed for Root drop %s", detail.id,
-                )
+            self._activate_project(proj)
 
-        try:
-            from tumblepipe.pipe.usd import generate_scene_sublayer_uri
-            layer_uri = generate_scene_sublayer_uri(ref.uri)
-        except Exception:
-            log.exception(
-                "Failed to build sublayer URI for Root %s", detail.id,
-            )
-            hou.ui.setStatusMessage(
-                f"Failed to sublayer Root {detail.name}",
-                severity=hou.severityType.Warning,
-            )
-            return True
-
-        network = drop.network
+        layer_uri = generate_scene_sublayer_uri(ref.uri)
         name = (detail.name or "root").replace(" ", "_")
-        try:
-            node = network.createNode("sublayer", name)
-            # ``num_files`` controls the multiparm count for layer
-            # paths; defaults to 1 on a fresh node but set explicitly
-            # in case of future schema changes.
-            try:
-                node.parm("num_files").set(1)
-            except Exception:
-                pass
-            node.parm("filepath1").set(layer_uri)
-            if drop.position is not None:
-                node.setPosition(drop.position - hou.Vector2(0.5, 0.0))
-            else:
-                node.moveToGoodPosition()
-            node.setSelected(True, clear_all_selected=True)
-            node.setDisplayFlag(True)
-        except Exception:
-            log.exception(
-                "Failed to create sublayer for Root %s", detail.id,
-            )
-            hou.ui.setStatusMessage(
-                f"Failed to import Root {detail.name}",
-                severity=hou.severityType.Warning,
-            )
-            return True
+        node = drop.network.createNode("sublayer", name)
+        # ``num_files`` controls the multiparm count for layer paths;
+        # defaults to 1 on a fresh node but set explicitly in case of
+        # future schema changes.
+        node.parm("num_files").set(1)
+        node.parm("filepath1").set(layer_uri)
+        if drop.position is not None:
+            node.setPosition(drop.position - hou.Vector2(0.5, 0.0))
+        else:
+            node.moveToGoodPosition()
+        node.setSelected(True, clear_all_selected=True)
+        node.setDisplayFlag(True)
 
         hou.ui.setStatusMessage(
             f"Sublayered Root: {detail.name}",
@@ -578,29 +473,21 @@ class DropRouter:
 
         Preserves the target's position, name, wiring, exclude-departments,
         include-layerbreak flag, and import mode. Returns the new raw node,
-        or ``None``
-        if the existing asset URI couldn't be read (the caller should
-        fall back to the regular drop path in that case).
+        or ``None`` when the singular node has no asset set yet (there is
+        nothing to combine with).
         """
         from tumblepipe.pipe.houdini.lops import import_asset, import_assets
 
         # Read state from the singular node before we destroy it.
-        try:
-            old = import_asset.ImportAsset(target)
-            old_uri = old.get_entity_uri()
-            old_channel = old.get_channel_name()
-            old_version = old.get_version_name()
-            old_excl = old.get_exclude_department_names()
-            old_layerbreak = old.get_include_layerbreak()
-            old_import_mode = old.get_import_mode()
-        except Exception:
-            log.exception(
-                "Failed to read state from singular import_asset %s",
-                target.path(),
-            )
-            return None
+        old = import_asset.ImportAsset(target)
+        old_uri = old.get_entity_uri()
         if old_uri is None:
             return None
+        old_channel = old.get_channel_name()
+        old_version = old.get_version_name()
+        old_excl = old.get_exclude_department_names()
+        old_layerbreak = old.get_include_layerbreak()
+        old_import_mode = old.get_import_mode()
 
         old_position = target.position()
         old_color = target.color()
@@ -609,16 +496,9 @@ class DropRouter:
         output_conns = list(target.outputConnections())
         network = target.parent()
 
-        # Free the name so the plural node can take it cleanly. Suffix
-        # the old node so unique_name=False would still work; we destroy
-        # it shortly anyway.
-        try:
-            target.setName(f"{old_name}__obsolete", unique_name=True)
-        except Exception:
-            log.debug(
-                "Could not rename %s before upgrade", target.path(),
-                exc_info=True,
-            )
+        # Free the name so the plural node can take it cleanly; the old
+        # node is destroyed below.
+        target.setName(f"{old_name}__obsolete", unique_name=True)
 
         plural = import_assets.create(network, old_name)
         raw = plural.native()
@@ -626,20 +506,10 @@ class DropRouter:
         # Reset the default entry count so the two add_asset_entry calls
         # below produce indices 1 and 2 instead of stacking on top of an
         # empty pre-allocated entry from the HDA's default state.
-        try:
-            plural.parm('asset_imports').set(0)
-        except Exception:
-            log.debug("Could not reset asset_imports count", exc_info=True)
-
-        try:
-            plural.set_exclude_department_names(old_excl)
-            plural.set_include_layerbreak(old_layerbreak)
-            plural.set_import_mode(old_import_mode)
-        except Exception:
-            log.debug(
-                "Could not transfer node-level params to plural",
-                exc_info=True,
-            )
+        plural.parm('asset_imports').set(0)
+        plural.set_exclude_department_names(old_excl)
+        plural.set_include_layerbreak(old_layerbreak)
+        plural.set_import_mode(old_import_mode)
 
         plural.add_asset_entry(
             old_uri, channel=old_channel, version=old_version, instances=1,
@@ -649,42 +519,20 @@ class DropRouter:
         # Re-wire: inputs going into target now go into the new raw,
         # outputs consuming target now consume the new raw.
         for ic in input_conns:
-            try:
-                src_node = ic.inputNode()
-                src_idx = ic.outputIndex()
-                dst_idx = ic.inputIndex()
-                raw.setInput(dst_idx, src_node, src_idx)
-            except Exception:
-                log.debug("Failed to rewire input", exc_info=True)
+            raw.setInput(ic.inputIndex(), ic.inputNode(), ic.outputIndex())
         for oc in output_conns:
-            try:
-                consumer = oc.inputNode()
-                src_idx = oc.outputIndex()
-                dst_idx = oc.inputIndex()
-                consumer.setInput(dst_idx, raw, src_idx)
-            except Exception:
-                log.debug("Failed to rewire output", exc_info=True)
+            # outputNode() is the consumer. (This read inputNode(), the
+            # old node itself, and a swallow hid that no output was ever
+            # rewired.)
+            oc.outputNode().setInput(oc.inputIndex(), raw, oc.outputIndex())
 
         # Destroy the old singular AFTER wiring so we don't disconnect
         # anything by accident.
-        try:
-            target.destroy()
-        except Exception:
-            log.exception("Failed to destroy old singular %s", old_name)
+        target.destroy()
 
         # Position + color/style the new node where the old one was.
-        try:
-            raw.setPosition(old_position)
-            if old_color is not None:
-                raw.setColor(old_color)
-        except Exception:
-            log.debug("Position transfer failed", exc_info=True)
+        raw.setPosition(old_position)
+        raw.setColor(old_color)
 
-        try:
-            plural.execute()
-        except Exception:
-            log.exception(
-                "execute() failed on upgraded plural import_assets %s",
-                old_name,
-            )
+        plural.execute()
         return raw

@@ -33,7 +33,7 @@
         default { "0" }
         hidewhen "{ use_entity == 0 }"
         parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
-        parmtag { "script_callback" "hou.phm().select_entity()" }
+        parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.create_asset as th_node; th_node.select_entity(kwargs)" }
         parmtag { "script_callback_language" "python" }
     }
     parm {

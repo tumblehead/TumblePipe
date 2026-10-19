@@ -2,11 +2,10 @@ import hou
 
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
+import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.lops import (
     import_shot,
-    render_vars,
-    lpe_tags,
-    puzzle_mattes,
+    mattes,
     export_layer
 )
 
@@ -18,7 +17,7 @@ IMPORT_POS = hou.Vector2(0.0, 2.62)
 GEO_RENDER_SETTINGS_POS = hou.Vector2(0.0, 1.39)
 RENDER_VARS_POS = hou.Vector2(0.0, 0.27)
 LPE_TAGS_POS = hou.Vector2(0.0, -0.89)
-PUZZLE_MATTES_POS = hou.Vector2(0.0, -2.06)
+MATTES_POS = hou.Vector2(0.0, -2.06)
 EXPORT_POS = hou.Vector2(0.0, -3.38)
 COLUMN_STRIDE = 5.0
 
@@ -41,7 +40,7 @@ NOTES = [
      hou.Vector2(-4.03, 0.16), hou.Vector2(2.96, 0.52)),
     ('Add custom light passes here -->',
      hou.Vector2(-4.01, -1.1), hou.Vector2(3.65, 0.61)),
-    ('Add RGB masks here -->',
+    ('Add mattes and distance ramps here -->',
      hou.Vector2(-4.02, -2.21), hou.Vector2(3.65, 0.61)),
     ('Set custom render visibility on scene geometry here -->',
      hou.Vector2(-4.0, 1.09), hou.Vector2(2.96, 0.91)),
@@ -63,7 +62,7 @@ def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
     # Create the import node (shot resolves from context)
     import_node = import_shot.create(scene_node, f'import_shot{suffix}')
     if pin:
-        import_node.set_shot_uri(entity_uri)
+        import_node.set_entity_uri(entity_uri)
         import_node.set_department_name(department_name)
 
     import_native = import_node.native()
@@ -80,7 +79,7 @@ def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
     prev_node = geo_render_settings_node
 
     # Declare the render vars (utility AOVs get added onto this node)
-    render_vars_node = render_vars.create(scene_node, f'render_vars{suffix}')
+    render_vars_node = ns.create_node(scene_node, f'render_vars{suffix}', ns.Node, 'render_vars')
     render_vars_node.setInput(0, prev_node)
     for parm_name in RENDER_VARS_ENABLED:
         render_vars_node.parm(parm_name).set(True)
@@ -90,18 +89,16 @@ def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
     prev_node = render_vars_native
 
     # Light path expression tags (custom light passes get added here)
-    lpe_tags_node = lpe_tags.create(scene_node, f'lpe_tags{suffix}')
+    lpe_tags_node = ns.create_node(scene_node, f'lpe_tags{suffix}', ns.Node, 'lpe_tags')
     lpe_tags_node.setInput(0, prev_node)
     lpe_tags_node.native().setPosition(LPE_TAGS_POS + offset)
     prev_node = lpe_tags_node.native()
 
-    # Puzzle mattes (RGB masks get added here)
-    puzzle_mattes_node = puzzle_mattes.create(
-        scene_node, f'puzzle_mattes{suffix}'
-    )
-    puzzle_mattes_node.setInput(0, prev_node)
-    puzzle_mattes_node.native().setPosition(PUZZLE_MATTES_POS + offset)
-    prev_node = puzzle_mattes_node.native()
+    # Mattes and distance ramps (objid_* / ramp_* AOVs get added here)
+    mattes_node = mattes.create(scene_node, f'mattes{suffix}')
+    mattes_node.setInput(0, prev_node)
+    mattes_node.native().setPosition(MATTES_POS + offset)
+    prev_node = mattes_node.native()
 
     # Create the export node
     export_node = export_layer.create(scene_node, f'export_shot{suffix}')

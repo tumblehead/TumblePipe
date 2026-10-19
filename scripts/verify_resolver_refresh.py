@@ -68,7 +68,7 @@ plugin = Plug.Registry().GetPluginWithName("tumbleResolver")
 print(f"tumbleResolver plugin: {plugin.path if plugin else 'NOT FOUND'}")
 check("tumbleResolver plugin registered", plugin is not None)
 
-URI = "entity:/assets/PROP/RefreshTest?dept=model&variant=default&version=v0001"
+URI = "entity:/assets/PROP/RefreshTest?dept=model&channel=default&version=v0001"
 
 write_version("v0001", 1)
 

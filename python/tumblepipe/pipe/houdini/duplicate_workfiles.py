@@ -12,18 +12,69 @@ concrete entity/department naming the source becomes 'from_context'
 becomes the target's. Prints one JSON line per workfile and exits non-zero
 if any failed.
 
-Runs in its own process so the artist's open scene is never touched.
+Runs in its own process so the artist's open scene is never touched;
+:func:`run_duplicate` is the launching side, called from the GUI session.
 """
 
 import json
 import sys
+import tempfile
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 
 import hou
 
 from tumblepipe.pipe.duplicate import prim_path_for, replace_prim_prefix
 from tumblepipe.util.uri import Uri
+
+
+@dataclass(frozen=True)
+class DuplicateRun:
+    """How a :func:`run_duplicate` job went: hython's exit code, one result
+    dict per workfile (``error`` set on the ones that failed), and its log."""
+    returncode: int
+    results: list[dict]
+    log_path: Path
+
+    @property
+    def failed(self) -> list[dict]:
+        return [r for r in self.results if 'error' in r]
+
+    @property
+    def ok(self) -> bool:
+        return self.returncode == 0 and not self.failed
+
+
+def run_duplicate(
+    source_uri: Uri, target_uri: Uri,
+    workfiles: list[tuple[str, Path]], nc_type: str | None,
+) -> DuplicateRun:
+    """Copy ``workfiles`` (``pipe.duplicate.plan_duplicate``) to ``target_uri``
+    in a hython worker running this module; blocking, so call it off the
+    main thread. The job file and log go to a fresh temp folder.
+    """
+    from tumblepipe.pipe.houdini.launch import run_hython
+
+    job_dir = Path(tempfile.mkdtemp(prefix='th_duplicate_'))
+    job_path = job_dir / 'job.json'
+    job_path.write_text(json.dumps({
+        'source': str(source_uri),
+        'target': str(target_uri),
+        'nc_type': nc_type,
+        'workfiles': [[dept, str(path)] for dept, path in workfiles],
+    }), encoding='utf-8')
+    log_path = job_dir / 'duplicate.log'
+    process = run_hython(Path(__file__), [str(job_path)], log_path)
+    results = []
+    for line in (process.stdout or '').splitlines():
+        try:
+            results.append(json.loads(line))
+        except ValueError:
+            # hython's stdout carries Houdini's own chatter beside the one
+            # JSON line per workfile the job prints.
+            continue
+    return DuplicateRun(process.returncode, results, log_path)
 
 
 def rewrite_prim_paths(old: str, new: str) -> int:
@@ -56,10 +107,10 @@ def duplicate_workfile(
     from tumblepipe.pipe.context import (
         save_context,
         save_entity_context,
-        save_hip_file,
         workfile_context,
     )
-    from tumblepipe.pipe.houdini import util
+    from tumblepipe.pipe.houdini.workfile_save import save_hip_file
+    from tumblepipe.pipe.houdini import playbar
     from tumblepipe.pipe.houdini.scene_retarget import retarget_scene
     from tumblepipe.pipe.paths import (
         get_workfile_context,
@@ -87,7 +138,7 @@ def duplicate_workfile(
         note=f'Duplicated from {source_uri}',
     )
     save_entity_context(next_path.parent, new_ctx)
-    with util.update_mode(hou.updateMode.Manual):
+    with playbar.update_mode(hou.updateMode.Manual):
         retargeted = retarget_scene(prev_ctx, new_ctx) if prev_ctx else []
         rewritten = rewrite_prim_paths(
             prim_path_for(source_uri), prim_path_for(target_uri),
@@ -103,8 +154,8 @@ def duplicate_workfile(
 
 def main(job_path: str) -> int:
     job = json.loads(Path(job_path).read_text(encoding='utf-8'))
-    source_uri = Uri.parse_unsafe(job['source'])
-    target_uri = Uri.parse_unsafe(job['target'])
+    source_uri = Uri.parse(job['source'])
+    target_uri = Uri.parse(job['target'])
     failed = 0
     for department_name, hip_path in job['workfiles']:
         try:

@@ -9,8 +9,8 @@ Deliberately read-only: nothing here changes what loads. The data comes from
 re-deriving, so what is shown is what composed.
 """
 
-from qtpy.QtGui import QBrush, QColor
-from qtpy.QtWidgets import (
+from PySide6.QtGui import QBrush, QColor
+from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
@@ -176,15 +176,24 @@ class AssetLayerDialog(QDialog):
         # Imported here, not at module scope: this module is imported to build
         # the dialog and the workfiles module pulls in hou-only machinery.
         from tumblepipe.pipe.houdini import workfiles
+        from tumblepipe.pipe.houdini.ui.report import report_failure
 
-        asset_uri = Uri.parse_unsafe(self._report.asset_uri)
+        asset_uri = Uri.parse(self._report.asset_uri)
         if new:
-            workfiles.open_workfile_in_new_instance(asset_uri, department)
+            try:
+                workfiles.open_workfile_in_new_instance(asset_uri, department)
+            except Exception as exc:
+                report_failure(
+                    f"Opening the {department} workfile in a new Houdini", exc,
+                )
             return
 
         # Loading a scene tears down the node this dialog was opened from —
         # and with it this dialog's parent. Close first: a modeless dialog
         # outliving its owner is how the Browser's teardown crashes started
-        # (designs/qt-thread-safety.md).
+        # (*Qt and threads* in docs/development.md).
         self.accept()
-        workfiles.open_workfile_in_session(asset_uri, department)
+        try:
+            workfiles.open_workfile_in_session(asset_uri, department)
+        except Exception as exc:
+            report_failure(f"Opening the {department} workfile", exc)

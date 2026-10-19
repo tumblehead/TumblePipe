@@ -1,3 +1,3 @@
-from tumblepipe.pipe.houdini.lops import sop_modify
+import tumblepipe.pipe.houdini.nodes as ns
 
-sop_modify.on_created(kwargs['node'])
+ns.on_created(kwargs['node'], ns.SHAPE_NODE_DEFAULT)

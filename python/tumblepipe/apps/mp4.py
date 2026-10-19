@@ -5,7 +5,6 @@ import shutil
 
 from tumblepipe.api import (
     path_str,
-    local_path,
     api
 )
 from tumblepipe.util.uri import Uri
@@ -55,7 +54,7 @@ def from_jpg(
         raise ValueError(f'Missing frames: {missing_frame_indices}')
 
     # Open temporary workspace
-    base_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    base_temp_path = api.storage.resolve(Uri.parse('temp:/'))
     base_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
         temp_dir_path = Path(temp_dir)
@@ -106,12 +105,12 @@ def from_jpg(
             '-framerate', str(framerate),
             '-pattern_type', 'sequence',
             '-start_number', str(frame_range.first_frame),
-            '-i', path_str(local_path(temp_framestack_path)),
+            '-i', path_str(temp_framestack_path),
             '-frames:v', str(span_frame_count),
             '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
             *_H264_ENCODE,
             '-pix_fmt', 'yuv420p',
-            path_str(local_path(temp_output_mp4_path))
+            path_str(temp_output_mp4_path)
         ])
         output_mp4_path.parent.mkdir(exist_ok=True, parents=True)
         shutil.copyfile(temp_output_mp4_path, output_mp4_path)
@@ -129,7 +128,7 @@ def scale(
         )
     
     # Open temporary workspace
-    base_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+    base_temp_path = api.storage.resolve(Uri.parse('temp:/'))
     base_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
         temp_dir_path = Path(temp_dir)
@@ -146,7 +145,7 @@ def scale(
         )
         houdini.FFmpeg().run([
             '-y',
-            '-i', path_str(local_path(input_mp4_path)),
+            '-i', path_str(input_mp4_path),
             '-vf', (
                 'scale='
                 f'trunc(iw{scale_expression}/2)*2:'
@@ -154,7 +153,7 @@ def scale(
             ),
             *_H264_ENCODE,
             '-pix_fmt', 'yuv420p',
-            path_str(local_path(temp_output_mp4_path))
+            path_str(temp_output_mp4_path)
         ])
         output_mp4_path.parent.mkdir(exist_ok=True, parents=True)
         shutil.copyfile(temp_output_mp4_path, output_mp4_path)

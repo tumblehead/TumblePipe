@@ -14,7 +14,7 @@ via TumbleTrove Desktop's run_hython or a dev launch:
 
     hython scripts/verify_import_shot_layer_stack.py
 
-Needs no project data: it drives ``_update_layer_stack_ui`` directly
+Needs no project data: it drives ``ui.layer_stack.update_layer_stack`` directly
 with synthetic layer infos, never composing or resolving anything.
 
 Checks:
@@ -48,26 +48,27 @@ def top_level(node):
 
 LAYERS = [
     {
-        "path": "entity:/shots/seq/shot?dept=root&variant=default&version=v0001",
+        "path": "entity:/shots/seq/shot?dept=root&channel=default&version=v0001",
         "type": "root",
         "department": "root",
-        "variant": "default",
+        "channel": "default",
     },
     {
-        "path": "entity:/shots/seq/shot?dept=animation&variant=default&version=v0003",
+        "path": "entity:/shots/seq/shot?dept=animation&channel=default&version=v0003",
         "type": "shot_department",
         "department": "animation",
-        "variant": "default",
+        "channel": "default",
     },
     {
-        "path": "entity:/assets/PROP/Crate?variant=default&version=v0002",
+        "path": "entity:/assets/PROP/Crate?channel=default&version=v0002",
         "type": "asset",
         "department": None,
-        "variant": "default",
+        "channel": "default",
     },
 ]
 
 from tumblepipe.pipe.houdini.lops import import_shot  # noqa: E402
+from tumblepipe.pipe.houdini.ui import layer_stack  # noqa: E402
 
 stage = hou.node("/stage")
 raw = stage.createNode("th::import_shot::1.0", "verify_layer_stack")
@@ -76,7 +77,7 @@ node = import_shot.ImportShot(raw)
 # execute() sizes the Sublayer LOP before rebuilding the UI; mirror that.
 raw.node("import").parm("num_files").set(len(LAYERS))
 
-node._update_layer_stack_ui(LAYERS)
+layer_stack.update_layer_stack(raw, LAYERS)
 first = top_level(raw)
 check(
     "Layer Stack inserted after Selection",
@@ -86,7 +87,7 @@ check(
 
 # Artist unchecks a layer, then re-imports.
 raw.parm("layer_1_enable").set(0)
-node._update_layer_stack_ui(LAYERS)
+layer_stack.update_layer_stack(raw, LAYERS)
 second = top_level(raw)
 check("layout stable on re-update", second == first, f"order={second}")
 check(
@@ -94,7 +95,7 @@ check(
     raw.parm("layer_1_enable").eval() == 0,
 )
 
-node._update_layer_stack_ui(LAYERS)
+layer_stack.update_layer_stack(raw, LAYERS)
 third = top_level(raw)
 check("layout stable on third update (no rename cascade)", third == first,
       f"order={third}")
@@ -124,12 +125,12 @@ check(
 inspect_parm = raw.parm("layer_2_inspect")
 if inspect_parm is not None:
     callback = inspect_parm.parmTemplate().scriptCallback()
-    # Routed through the HDA's PythonModule rather than a baked module path:
-    # spare-parm callbacks are serialized into the artist's .hip, and this
-    # indirection is what ships with the package.
     check(
-        "inspect button calls the PythonModule with its row index",
-        callback == "hou.phm().inspect_asset_layer(2)",
+        "inspect button calls import_shot with its row index",
+        callback == (
+            "import tumblepipe.pipe.houdini.lops.import_shot as th_node; "
+            "th_node.inspect_asset_layer(kwargs, 2)"
+        ),
         f"callback={callback!r}",
     )
     check(
@@ -140,7 +141,7 @@ if inspect_parm is not None:
 
 # The button is a spare parm like the rest of the folder, so it must survive
 # the same rebuild the toggles do.
-node._update_layer_stack_ui(LAYERS)
+layer_stack.update_layer_stack(raw, LAYERS)
 check(
     "inspect button survives a re-update",
     raw.parm("layer_2_inspect") is not None,
@@ -151,12 +152,11 @@ check(
     f"order={top_level(raw)}",
 )
 
-# The PythonModule side of the callback — a near-miss name here is swallowed
-# as a silent no-op, so assert the method actually exists.
-phm = raw.hdaModule()
+# The module side of the callback — a near-miss name here only fails on a
+# click, so assert the function actually exists.
 check(
-    "PythonModule exposes inspect_asset_layer",
-    hasattr(phm, "inspect_asset_layer"),
+    "import_shot exposes inspect_asset_layer",
+    callable(getattr(import_shot, "inspect_asset_layer", None)),
 )
 check(
     "ImportShot implements inspect_asset_layer",

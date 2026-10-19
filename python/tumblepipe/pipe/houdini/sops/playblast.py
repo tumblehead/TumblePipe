@@ -5,12 +5,12 @@ import os
 
 import hou
 
-from tumblepipe.api import path_str, local_path, api
+from tumblepipe.api import path_str, api
 from tumblepipe.apps import mp4
 from tumblepipe.config.timeline import get_frame_range, get_fps
-from tumblepipe.pipe.houdini import util
+from tumblepipe.pipe.houdini import prim_queries
 from tumblepipe.pipe.houdini import nodes as ns
-from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.houdini.entity_node import EntityNode, FROM_CONTEXT
 from tumblepipe.pipe.paths import (
     get_next_playblast_path,
     get_latest_playblast_path,
@@ -18,9 +18,10 @@ from tumblepipe.pipe.paths import (
 )
 from tumblepipe.util.uri import Uri
 
-
 class Playblast(EntityNode):
 
+    # A playblast is always a shot's.
+    ENTITY_CONTEXTS = ('shots',)
     # Playblasts list the renderable shot departments.
     DEPARTMENT_CONTEXT = 'shots'
     DEPARTMENT_FILTER = 'renderable'
@@ -40,58 +41,46 @@ class Playblast(EntityNode):
         if stage is None: return None
         return stage.GetPseudoRoot()
 
-    def list_entity_uris(self) -> list[str]:
-        uris = api.config.list_entity_uris(
-            filter=Uri.parse_unsafe('entity:/shots'),
-            closure=True
-        )
-        return ['from_context'] + [str(uri) for uri in uris]
 
     def list_camera_paths(self):
         root = self._get_stage_root()
         if root is None: return []
-        return util.list_stage_cameras(root)
+        return prim_queries.list_stage_cameras(root)
     
     def list_camera_names(self):
         camera_paths = self.list_camera_paths()
         return [path.rsplit('/', 1)[-1] for path in camera_paths]
     
-    def get_department_names(self):
-        department_names = self.list_department_names()
-        department_name = self.parm('department').eval()
-        if department_name not in department_names: return None
-        return department_name
+    def list_department_names(self):
+        # The Department parm defaults to 'from_context' (the workfile's own
+        # department); EntityNode.get_department_name resolves it.
+        return [FROM_CONTEXT] + super().list_department_names()
 
     def get_camera_path(self):
         camera_paths = self.list_camera_paths()
         camera_names = self.list_camera_names()
         camera_name = self.parm('camera').eval()
-        if camera_name not in camera_names: return None
-        camera_index = camera_names.index(camera_name)
-        if camera_index >= len(camera_paths): return None
-        return camera_paths[camera_index]
-    
+        if camera_name not in camera_names:
+            raise self._error(
+                f"camera '{camera_name}' is not a camera on the stage "
+                f"(cameras: {', '.join(camera_names) or 'none'})"
+            )
+        return camera_paths[camera_names.index(camera_name)]
+
     def set_camera_name(self, camera_name):
         camera_names = self.list_camera_names()
-        if camera_name not in camera_names: return
+        if camera_name not in camera_names:
+            raise self._error(
+                f"camera '{camera_name}' is not a camera on the stage "
+                f"(cameras: {', '.join(camera_names) or 'none'})"
+            )
         self.parm('camera').set(camera_name)
         self._update_labels()
 
     def _update_labels(self):
         """Update label parameters to show current entity/department selection."""
-        entity_raw = self.parm('entity').eval()
-        if entity_raw == 'from_context':
-            entity_uri = self.get_entity_uri()
-            if entity_uri:
-                self.parm('entity_label').set(f'from_context: {entity_uri}')
-            else:
-                self.parm('entity_label').set('from_context: none')
-        else:
-            # Specific entity URI selected - no label needed
-            self.parm('entity_label').set('')
-
-        # Department doesn't have from_context option, so just clear label
-        self.parm('department_label').set('')
+        self.parm('entity_label').set(self._entity_label())
+        self.parm('department_label').set(self._department_label())
 
     def _initialize(self):
         """Initialize node and update labels to show resolved values."""
@@ -112,10 +101,19 @@ class Playblast(EntityNode):
         render_node = playblast_node.node('render')
 
         # Parameters and paths
-        entity_uri = self.get_entity_uri()
-        department_name = self.get_department_names()
+        entity_uri = self.require_entity_uri()
+        department_name = self.require_department_name()
         camera_path = self.get_camera_path()
         frame_range = get_frame_range(entity_uri)
+        if frame_range is None:
+            raise self._error(
+                f'{entity_uri} has no frame range authored in the database'
+            )
+        fps = get_fps(entity_uri)
+        if fps is None:
+            raise self._error(
+                f'no fps configured for {entity_uri} or the project'
+            )
         render_range = frame_range.full_range()
         output_playblast_path = get_next_playblast_path(entity_uri, department_name)
         output_daily_path = get_daily_path(entity_uri, department_name)
@@ -124,7 +122,7 @@ class Playblast(EntityNode):
         camera_node.parm('primpath').set(camera_path)
 
         # Work in a temporary directory
-        root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_dir_path = Path(temp_dir)
@@ -143,7 +141,7 @@ class Playblast(EntityNode):
             mp4.from_jpg(
                 temp_framestack_path,
                 render_range,
-                get_fps(),
+                fps,
                 temp_playblast_path
             )
 
@@ -156,8 +154,8 @@ class Playblast(EntityNode):
     def view_latest(self):
 
         # Parameters and paths
-        entity_uri = self.get_entity_uri()
-        department_name = self.get_department_names()
+        entity_uri = self.require_entity_uri()
+        department_name = self.require_department_name()
         output_playblast_path = get_latest_playblast_path(entity_uri, department_name)
 
         # Open playblast
@@ -175,8 +173,8 @@ class Playblast(EntityNode):
     def open_location(self):
 
         # Parameters and paths
-        entity_uri = self.get_entity_uri()
-        department_name = self.get_department_names()
+        entity_uri = self.require_entity_uri()
+        department_name = self.require_department_name()
         output_playblast_path = get_latest_playblast_path(entity_uri, department_name)
         # No playblast yet → fall back to the (not-yet-populated) output dir.
         if output_playblast_path is None:
@@ -191,12 +189,9 @@ class Playblast(EntityNode):
 def create(scene, name):
     return ns.create_node(scene, name, Playblast, 'playblast', 'Sop')
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node, ns.SHAPE_NODE_EXPORT)
-
 def on_created(raw_node):
     # Set node style
-    set_style(raw_node)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_EXPORT)
 
     # Validate node type
     raw_node_type = raw_node.type()
@@ -207,39 +202,21 @@ def on_created(raw_node):
     node = Playblast(raw_node)
     node._initialize()
 
-def export():
-    raw_node = hou.pwd()
+def export(kwargs):
+    raw_node = kwargs['node']
     node = Playblast(raw_node)
     node.playblast()
 
-def view_latest():
-    raw_node = hou.pwd()
+def view_latest(kwargs):
+    raw_node = kwargs['node']
     node = Playblast(raw_node)
     node.view_latest()
 
-def open_location():
-    raw_node = hou.pwd()
+def open_location(kwargs):
+    raw_node = kwargs['node']
     node = Playblast(raw_node)
     node.open_location()
 
-def select():
-    """HDA button callback to open entity selector dialog."""
-    from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
-
-    raw_node = hou.pwd()
-    node = Playblast(raw_node)
-
-    dialog = EntitySelectorDialog(
-        api=api,
-        entity_filter='shots',  # Only shots for playblast
-        include_from_context=True,
-        current_selection=node.parm('entity').eval(),
-        title="Select Shot",
-        parent=hou.qt.mainWindow()
-    )
-
-    if dialog.exec_():
-        selected_uri = dialog.get_selected_uri()
-        if selected_uri:
-            node.parm('entity').set(selected_uri)
-            node._update_labels()
+def select(kwargs):
+    """Entity button."""
+    Playblast(kwargs['node']).pick_entity('Select Shot')

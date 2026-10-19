@@ -40,7 +40,7 @@ the other installed packages' documentation. The same pages are online at
 
 ## Setting up a project
 
-- [Configuration](configuration.md) — environment variables, the setup wizard, the convention framework, departments, migrations
+- [Configuration](configuration.md) — environment variables, the setup wizard, the project config and storage table, departments, migrations
 - [Deadline and the render farm](deadline.md) — the farm plugins, worker prerequisites, submitting from Python
 
 ## How it works

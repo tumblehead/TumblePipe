@@ -7,8 +7,7 @@ film at [Tumblehead](https://tumblehead.com).
 **Full documentation:** [tumblepipe.readthedocs.io](https://tumblepipe.readthedocs.io) —
 getting started, the Asset Browser, the pipeline nodes, configuration, the
 render farm, and troubleshooting. The same pages ship inside the package and
-open offline from **TumbleTrove ▸ Documentation ▸ TumblePipe** in Houdini
-(TumbleTrove 0.27.0 or newer).
+open offline from **TumbleTrove ▸ Documentation ▸ TumblePipe** in Houdini.
 
 ## Install
 
@@ -31,13 +30,11 @@ for the full prerequisite list.
 
 ## Configure
 
-TumblePipe is customized through a config directory pointed at by
-`TH_CONFIG_PATH`, containing three Python convention modules
-(`config_convention.py`, `naming_convention.py`, `storage_convention.py`)
-and a `db/` of JSON-backed entity, schema, and convention data. The
+TumblePipe is customized through a per-project config directory pointed at
+by `TH_CONFIG_PATH`: a `storage.json` table of where each kind of file lives,
+and a `db/` of JSON entity, schema and project data. The
 [configuration guide](https://tumblepipe.readthedocs.io/en/latest/configuration.html)
-documents each one; the [*Turbulence* tech demo](https://www.sidefx.com/tech-demos/turbulence/)
-ships a working example.
+documents both.
 
 ## Package layout
 
@@ -45,13 +42,12 @@ ships a working example.
 - `python/tumblepipe/` — pipeline Python modules.
 - `python3.Xlibs/` — per-Python-version libraries and Houdini startup hooks.
 - `scripts/` — bundled project template and maintenance CLIs.
-- `python_panels/` — Python panels (icon browser).
 - `desktop/` — Houdini desktop layout.
 - `resources/`, `ocio/` — resource files and OpenColorIO configuration.
 - `src/resolver/` — source for the `entity://` USD asset resolver.
 - `src/wizard/` — source for the native `tt_setup` project-setup wizard (Rust/egui).
-- `src/vram/` — the VRAM Inspector's native code: `hook/`, the viewport hook DSO it measures with (built into `dso/` per Houdini major.minor), plus research that is not shipped: a Vulkan-layer probe and the scripts that calibrated `tumblepipe.vram.sizes`.
-- `docs/` — the documentation, as Markdown. Ships in the package and renders offline under **TumbleTrove ▸ Documentation** (TumbleTrove 0.27.0+); also hosted on Read the Docs.
+- `src/vram/` — the VRAM Inspector's native code: `hook/`, the viewport hook DSO it measures with (built into `dso/` per Houdini major.minor), plus the scripts that calibrated `tumblepipe.vram.sizes` (not shipped).
+- `docs/` — the documentation, as Markdown. Ships in the package and renders offline under **TumbleTrove ▸ Documentation**; also hosted on Read the Docs.
 - `tests/` — property-based test harness (uv-managed, independent of hpm).
 - `hpm.toml` — HPM package manifest.
 

@@ -5,26 +5,29 @@ helpers that derive context from the currently-loaded ``.hip``
 file (entity ref, dept, version, project lookup). All of these
 talk to ``hou.hipFile`` and the tumblepipe context layer.
 
-Same backref pattern as :class:`WorkfileManager` and
-:class:`DetailSectionBuilder`: every method calls multiple catalog
-services (project activator, asset resolver, cache invalidation,
-detail / card refresh hooks, workfile-side timeline application).
-The win is file separation — these methods used to be scattered
-across the catalog at various depths; now they're together.
+Its dependencies are handed in (resolver, project activator, browser
+refresh, the catalog's cache invalidation, prefs, the per-asset version
+overrides), not the catalog.
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
-from . import farm_grid
-from .houdini import report_failure, run_on_main_thread, session_nc_type
+from tumblepipe.farm.submit import grid as farm_grid
 from . import uris as uris
+from .containers import GroupContainer
+from .houdini import session_nc_type
+from tumblepipe.pipe.houdini.ui.report import report_failure, run_on_main_thread
 
 if TYPE_CHECKING:
-    from .catalog import PipelineCatalog
+    from .houdini import ProjectActivator
+    from .prefs import PipelinePrefs
+    from .refresh import BrowserRefresh
+    from .resolver import AssetResolver
+    from .types import DeptVersionStore
 
 log = logging.getLogger(__name__)
 
@@ -32,11 +35,24 @@ log = logging.getLogger(__name__)
 class SceneManager:
     """Scene-state lifecycle for the Pipeline catalog."""
 
-    def __init__(self, catalog: "PipelineCatalog") -> None:
-        self._catalog = catalog
-        # One full traceback per session for a failing context resolve — see
-        # get_loaded_scene_context.
-        self._ctx_resolve_logged = False
+    def __init__(
+        self,
+        catalog_id: str,
+        *,
+        resolver: "AssetResolver",
+        activator: "ProjectActivator",
+        refresh: "BrowserRefresh",
+        invalidate_cache: Callable[[], None],
+        prefs: "PipelinePrefs",
+        dept_versions: "DeptVersionStore",
+    ) -> None:
+        self._catalog_id = catalog_id
+        self._resolver = resolver
+        self._activator = activator
+        self._refresh = refresh
+        self._invalidate_cache = invalidate_cache
+        self._prefs = prefs
+        self._dept_versions = dept_versions
 
     def apply_scene_timeline(
         self, asset_id: str, *, force_frame_range: bool = False,
@@ -62,17 +78,20 @@ class SceneManager:
         (otherwise a fresh asset workfile would sit at Houdini's 1-240
         default). After that the artist owns it.
 
-        Only entities whose config can't be resolved at all get FPS-only
-        treatment (``_get_frame_range_obj`` returns ``None``).
+        An entity with no frame range gets FPS only.
         """
-        from tumblepipe.pipe.houdini import util
-        frame_range = self._catalog._get_frame_range_obj(asset_id)
-        if frame_range is not None:
-            if force_frame_range or self._catalog._is_entity_animatable(asset_id):
-                util.set_frame_range(frame_range)
-        fps = self._catalog._get_fps(asset_id)
+        from tumblepipe.pipe.houdini import playbar
+        from .discovery import entity_animatable, entity_fps, entity_frame_range
+        uri = self._resolver.uri_for_ready(asset_id)
+        frame_range = entity_frame_range(self._catalog_id, asset_id, uri)
+        if frame_range is not None and (
+            force_frame_range
+            or entity_animatable(self._catalog_id, asset_id, uri)
+        ):
+            playbar.set_frame_range(frame_range)
+        fps = entity_fps(self._catalog_id, asset_id, uri)
         if fps is not None:
-            util.set_fps(fps)
+            playbar.set_fps(fps)
 
     def refresh_scene_imports(self) -> tuple[int, int]:
         """Re-execute every import node in the loaded scene so the latest
@@ -107,15 +126,15 @@ class SceneManager:
         def _do_update():
             try:
                 import hou
-                from tumblepipe.pipe.houdini import util
+                from tumblepipe.pipe.houdini import playbar
                 hip = hou.hipFile.path()
                 proj = (
-                    self._catalog._project_for_hip_path(Path(hip))
+                    self._resolver.project_for_path(Path(hip))
                     if hip else None
                 )
                 if proj is not None:
-                    self._catalog._activate_project(proj)
-                with util.update_mode(hou.updateMode.Manual):
+                    self._activator.activate(proj)
+                with playbar.update_mode(hou.updateMode.Manual):
                     executed, failed = self.refresh_scene_imports()
                 if failed:
                     # The sweep deliberately survives a bad node, which used
@@ -138,45 +157,19 @@ class SceneManager:
                 report_failure("Update Imports", exc)
             finally:
                 if callable(refresh_cb):
-                    try:
-                        refresh_cb()
-                    except Exception:
-                        log.exception(
-                            "Detail refresh after import update failed",
-                        )
+                    refresh_cb()
 
         run_on_main_thread(_do_update)
 
     def get_loaded_scene_context(self):
-        """Return the current scene's ``Context`` if it has pipeline metadata.
-
-        Falls back to parsing the context from the hip file path for
-        migrated projects that don't have ``context.json``.
-        """
-        try:
-            import hou
-            from tumblepipe.pipe.paths import get_workfile_context
-            hip_str = hou.hipFile.path()
-            if not hip_str:
-                return None
-            hip_path = Path(hip_str)
-            ctx = get_workfile_context(hip_path)
-            if ctx is None:
-                ctx = self.context_from_hip_path(hip_path)
-            return ctx
-        except Exception:
-            # None here is indistinguishable from "this scene has no context",
-            # so a raising resolve would otherwise vanish without a trace.
-            # Full traceback once, then quiet: the detail panel and session
-            # panel call this on every repaint, and a broken scene would
-            # otherwise write one trace per frame into a shared project log.
-            if self._ctx_resolve_logged:
-                log.debug("Failed to resolve the loaded scene's context",
-                          exc_info=True)
-            else:
-                self._ctx_resolve_logged = True
-                log.exception("Failed to resolve the loaded scene's context")
+        """Return the current scene's ``Context`` if it has pipeline metadata
+        (its department's ``context.json``), else ``None``."""
+        import hou
+        from tumblepipe.pipe.paths import get_workfile_context
+        hip_str = hou.hipFile.path()
+        if not hip_str:
             return None
+        return get_workfile_context(Path(hip_str))
 
     def reload_current_scene(self, refresh_cb=None) -> None:
         """Reload the currently-loaded .hip from disk.
@@ -189,28 +182,20 @@ class SceneManager:
         """
         def _settle():
             if callable(refresh_cb):
-                try:
-                    refresh_cb()
-                except Exception:
-                    log.exception("Detail refresh after reload failed")
+                refresh_cb()
 
-        try:
-            import hou
-            hip = hou.hipFile.path()
-        except Exception as exc:
-            report_failure("Reload Scene", exc)
-            _settle()
-            return
+        import hou
+        hip = hou.hipFile.path()
         if not hip:
             _settle()
             return
 
-        target_proj = self._catalog._project_for_hip_path(Path(hip))
+        target_proj = self._resolver.project_for_path(Path(hip))
 
         def _do_reload(proj=target_proj):
             try:
                 import hou
-                from tumblepipe.pipe.houdini import util
+                from tumblepipe.pipe.houdini import playbar
                 # Same unsaved-changes interception as the three open
                 # paths in WorkfileManager: without it, hou.hipFile.load
                 # pops Houdini's native prompt whose "Save" overwrites
@@ -222,11 +207,11 @@ class SceneManager:
                 if decision is None:
                     return  # user cancelled; finally-block settles
                 if proj is not None:
-                    self._catalog._activate_project(proj)
+                    self._activator.activate(proj)
                 # Manual update mode so the reload itself doesn't trigger
                 # a live full-graph cook - same guard as the three open
                 # paths in WorkfileManager.
-                with util.update_mode(hou.updateMode.Manual):
+                with playbar.update_mode(hou.updateMode.Manual):
                     hou.hipFile.load(hip, suppress_save_prompt=decision)
                     log.info("Reloaded scene: %s", hip)
                     # Reconcile the timeline exactly like the open paths -
@@ -240,7 +225,7 @@ class SceneManager:
                     asset_id = self.get_scene_asset_id()
                     if asset_id is not None:
                         self.apply_scene_timeline(asset_id)
-                self._catalog._request_global_detail_refresh()
+                self._refresh.detail()
             except Exception as exc:
                 report_failure("Reload Scene", exc)
             finally:
@@ -276,26 +261,19 @@ class SceneManager:
         return self._scene_id(entities_only=False)
 
     def _scene_id(self, *, entities_only: bool) -> str | None:
-        try:
-            import hou
-            from tumblepipe.pipe.paths import get_workfile_context
-            hip_path = Path(hou.hipFile.path())
-            scene_ctx = get_workfile_context(hip_path)
-            if scene_ctx is None:
-                return None
-            proj = self._catalog._project_for_hip_path(hip_path)
-            if proj is None:
-                return None
-            return self.id_from_scene_uri(
-                scene_ctx.entity_uri, proj.name,
-                entities_only=entities_only,
-            )
-        except Exception:
-            # Debug, not exception: this runs per browsed row, so a broken
-            # scene would otherwise fill the log with one trace per repaint.
-            log.debug("Failed to resolve the loaded scene's asset id",
-                      exc_info=True)
+        import hou
+        from tumblepipe.pipe.paths import get_workfile_context
+        hip_path = Path(hou.hipFile.path())
+        scene_ctx = get_workfile_context(hip_path)
+        if scene_ctx is None:
             return None
+        proj = self._resolver.project_for_path(hip_path)
+        if proj is None:
+            return None
+        return self.id_from_scene_uri(
+            scene_ctx.entity_uri, proj.name,
+            entities_only=entities_only,
+        )
 
     @staticmethod
     def id_from_scene_uri(
@@ -316,16 +294,11 @@ class SceneManager:
         therefore rejects every Multi, which is right for "give me an
         asset id" and wrong for "what is open".
         """
-        if uri is None or not project_name:
-            return None
-        segments = list(uri.segments or ())
-        if getattr(uri, "purpose", "") == "groups":
-            if entities_only or not segments:
+        if uri.purpose == "groups":
+            if entities_only:
                 return None
-            return f"group:{project_name}:{'/'.join(segments)}"
-        if len(segments) >= 3:
-            return f"{project_name}/{segments[1]}/{segments[2]}"
-        return None
+            return GroupContainer(project_name, "/".join(uri.segments)).collection_id
+        return uris.asset_id_for(project_name, uri)
 
     def scene_matches_asset(self, asset_id: str) -> bool:
         """True iff the currently loaded .hip belongs to ``asset_id``."""
@@ -357,74 +330,28 @@ class SceneManager:
             return (
                 scene_ctx.department_name, scene_ctx.version_name or "",
             )
-        target_uri = self._catalog._resolver.uri_for_ready(asset_id)
+        target_uri = self._resolver.uri_for_ready(asset_id)
         if target_uri is None:
             return None
-        target_proj = self._catalog._resolver.project_for(asset_id)
-        try:
-            import hou
-            from tumblepipe.pipe.paths import get_workfile_context
-            hip_path = Path(hou.hipFile.path())
-            scene_ctx = get_workfile_context(hip_path)
-            if scene_ctx is None:
-                return None
-            if str(scene_ctx.entity_uri) != str(target_uri):
-                return None
-            # Also confirm the loaded scene actually lives under this
-            # project's project_path — otherwise two projects with the
-            # same entity URI shape would falsely match.
-            scene_proj = self._catalog._project_for_hip_path(hip_path)
-            if scene_proj is None or (
-                target_proj is not None
-                and scene_proj.name != target_proj.name
-            ):
-                return None
-            return (scene_ctx.department_name, scene_ctx.version_name or "")
-        except Exception:
-            log.debug("Failed to match the loaded scene against %s",
-                      asset_id, exc_info=True)
+        target_proj = self._resolver.project_for(asset_id)
+        import hou
+        from tumblepipe.pipe.paths import get_workfile_context
+        hip_path = Path(hou.hipFile.path())
+        scene_ctx = get_workfile_context(hip_path)
+        if scene_ctx is None:
             return None
-
-    def context_from_hip_path(self, hip_path: Path):
-        """Derive a pipeline Context from the hip file's path when
-        ``get_workfile_context`` returns ``None`` (e.g. migrated
-        projects without ``context.json``).
-
-        Path convention:
-        ``{PROJECT}/shots/{seq}/{shot}/{dept}/{prefix}_{version}.hip``
-        ``{PROJECT}/assets/{cat}/{name}/{dept}/{prefix}_{version}.hip``
-        """
-        try:
-            from tumblepipe.pipe.paths import Context
-
-            parts = hip_path.parts
-            # Find 'assets' or 'shots' in the path to anchor parsing.
-            for i, seg in enumerate(parts):
-                if seg in ("assets", "shots") and i + 3 < len(parts):
-                    kind = seg                # "assets" or "shots"
-                    cat_or_seq = parts[i + 1]  # category or sequence
-                    name = parts[i + 2]        # asset/shot name
-                    dept = parts[i + 3]        # department
-                    break
-            else:
-                return None
-
-            uri = uris.entity(kind, cat_or_seq, name)
-            # Extract version from filename
-            stem = hip_path.stem
-            tail = stem.rsplit("_", 1)
-            version = tail[1] if len(tail) == 2 else None
-
-            return Context(
-                entity_uri=uri,
-                department_name=dept,
-                version_name=version,
-            )
-        except Exception:
-            log.debug(
-                "Failed to parse context from path %s", hip_path,
-            )
+        if str(scene_ctx.entity_uri) != str(target_uri):
             return None
+        # Also confirm the loaded scene actually lives under this
+        # project's project_path — otherwise two projects with the
+        # same entity URI shape would falsely match.
+        scene_proj = self._resolver.project_for_path(hip_path)
+        if scene_proj is None or (
+            target_proj is not None
+            and scene_proj.name != target_proj.name
+        ):
+            return None
+        return (scene_ctx.department_name, scene_ctx.version_name or "")
 
     def save_current_scene(self, refresh_cb=None, prompt_note: bool = True) -> None:
         """Save the loaded scene as the next workfile version of its own context.
@@ -485,35 +412,23 @@ class SceneManager:
         saving the same department at once would make any number shown here a
         guess, and a wrong version in the prompt is worse than none.
         """
-        if not self._catalog._prefs.prompt_note_on_save:
+        if not self._prefs.prompt_note_on_save:
             return ""
 
-        try:
-            # Imported inside the try, not above it: a missing/broken Qt is
-            # exactly the "no usable UI" case this degrades for, and an
-            # ImportError escaping here would land in _save_scene's outer
-            # handler and abandon the save entirely.
-            import hou
-            from PySide6.QtWidgets import QInputDialog
+        import hou
+        from PySide6.QtWidgets import QInputDialog
 
-            entity = "/".join(prev_ctx.entity_uri.segments[1:]) or str(
-                prev_ctx.entity_uri
-            )
-            after = prev_ctx.version_name or "v0000"
-            note, ok = QInputDialog.getMultiLineText(
-                hou.qt.mainWindow(),
-                "Save Version",
-                f"Note for the next {prev_ctx.department_name} version of "
-                f"{entity} (after {after}) — optional:",
-                "",
-            )
-        except Exception:
-            # No usable UI (headless, or Qt unavailable). Saving the artist's
-            # work matters more than annotating it, so fall through to a
-            # blank note rather than turning a failed dialog into a lost save.
-            log.exception("Version note prompt failed — saving without a note")
-            return ""
-
+        entity = "/".join(prev_ctx.entity_uri.segments[1:]) or str(
+            prev_ctx.entity_uri
+        )
+        after = prev_ctx.version_name or "v0000"
+        note, ok = QInputDialog.getMultiLineText(
+            hou.qt.mainWindow(),
+            "Save Version",
+            f"Note for the next {prev_ctx.department_name} version of "
+            f"{entity} (after {after}) — optional:",
+            "",
+        )
         if not ok:
             return None
         return note.strip()
@@ -551,13 +466,10 @@ class SceneManager:
         try:
             import hou
             from tumblepipe.pipe.paths import get_workfile_context
-            from tumblepipe.pipe.context import commit_next_workfile
+            from tumblepipe.pipe.houdini.workfile_save import commit_next_workfile
 
             hip_path = Path(hou.hipFile.path())
             prev_ctx = get_workfile_context(hip_path)
-            # Fallback for migrated projects without context.json
-            if prev_ctx is None:
-                prev_ctx = self.context_from_hip_path(hip_path)
             if prev_ctx is None:
                 # A dialog, not a status line: a Save that saved nothing must
                 # not look like a Save that worked.
@@ -581,9 +493,9 @@ class SceneManager:
 
             # Make sure the loaded scene's project is active before
             # we resolve the next path / save / write context json.
-            scene_proj = self._catalog._project_for_hip_path(hip_path)
+            scene_proj = self._resolver.project_for_path(hip_path)
             if scene_proj is not None:
-                self._catalog._activate_project(scene_proj)
+                self._activator.activate(scene_proj)
 
             # Reserve + save + record the next version as one atomic commit
             # (pointer written last). Match Houdini's Ctrl+S extension
@@ -601,38 +513,38 @@ class SceneManager:
                 severity=hou.severityType.Message,
             )
             # Drop scan caches so the next browse query re-scans.
-            self._catalog.invalidate_cache()
+            self._invalidate_cache()
             # Swap the saved entity's own card/list row in place — the
             # refresh_cb → _on_quick_action_done path only refreshes the
             # currently-displayed detail's card, which may be a
-            # different asset than the one just saved. Group URIs
-            # (groups:/ctx/name, two segments) use a different card id
-            # scheme and are skipped here.
-            try:
-                segs = prev_ctx.entity_uri.segments
-                if scene_proj is not None and len(segs) >= 3:
-                    self._catalog._request_card_refresh_for_id(
-                        f"{scene_proj.name}/{segs[1]}/{segs[2]}",
-                    )
-            except Exception:
-                log.debug("card refresh after save failed", exc_info=True)
+            # different asset than the one just saved.
+            if scene_proj is not None:
+                self._refresh.card(
+                    self.id_from_scene_uri(
+                        prev_ctx.entity_uri, scene_proj.name,
+                        entities_only=False,
+                    ),
+                )
         except Exception as exc:
             # The artist believes a Save landed. Staying quiet here is the
             # most expensive silence in this file: the scene-swap paths go on
             # to load the next scene with suppress_save_prompt=True, so a
             # swallowed failure discards the very work the save was meant to
             # keep. report_failures is off only for the crash-time emergency
-            # save, whose event loop cannot pump a modal.
+            # save, whose event loop cannot pump a modal: it goes to the
+            # status bar instead.
             if report_failures:
                 report_failure("Save", exc)
             else:
-                log.exception("Save failed")
+                log.exception("Emergency save failed")
+                import hou
+                hou.ui.setStatusMessage(
+                    f"Emergency save failed: {type(exc).__name__}: {exc}",
+                    severity=hou.severityType.Error,
+                )
         finally:
             if callable(refresh_cb):
-                try:
-                    refresh_cb()
-                except Exception:
-                    log.exception("Detail refresh after save failed")
+                refresh_cb()
 
     def publish_current_scene(self, refresh_cb=None) -> None:
         """Open the export window (ProcessDialog) for the loaded scene.
@@ -667,9 +579,9 @@ class SceneManager:
             # Activate the loaded scene's project so the export node wrappers,
             # config and storage resolve against the correct project before we
             # collect and run its publish tasks.
-            scene_proj = self._catalog._project_for_hip_path(Path(hou.hipFile.path()))
+            scene_proj = self._resolver.project_for_path(Path(hou.hipFile.path()))
             if scene_proj is not None:
-                self._catalog._activate_project(scene_proj)
+                self._activator.activate(scene_proj)
 
             from tumblepipe.pipe.houdini.ui.dialog_launcher import (
                 open_process_dialog_for_publish,
@@ -686,10 +598,7 @@ class SceneManager:
             # Always notify the browser so the spinner/detail can settle even if
             # publish bailed early or raised.
             if callable(refresh_cb):
-                try:
-                    refresh_cb()
-                except Exception:
-                    log.exception("Detail refresh after publish failed")
+                refresh_cb()
 
     def open_farm(self, refresh_cb=None) -> None:
         """Open the Farm Submit grid with the loaded workfile's publish ticked.
@@ -733,35 +642,29 @@ class SceneManager:
             scene_ctx = self.get_loaded_scene_context()
             if scene_ctx is not None:
                 import hou
-                scene_proj = self._catalog._project_for_hip_path(
+                scene_proj = self._resolver.project_for_path(
                     Path(hou.hipFile.path()),
                 )
                 if scene_proj is not None:
-                    self._catalog._activate_project(scene_proj)
+                    self._activator.activate(scene_proj)
             uris, names, context, department = farm_seed(scene_ctx, _multi_members)
-            self._catalog._open_submit_jobs_dialog(
+            open_submit_jobs_dialog(
                 uris, names, context, department=department, tick_kinds=tick_kinds,
             )
         except Exception as exc:
             report_failure(action, exc)
         finally:
             if callable(refresh_cb):
-                try:
-                    refresh_cb()
-                except Exception:
-                    log.exception("Detail refresh after opening Farm Submit failed")
+                refresh_cb()
 
     def refresh_asset(self, asset_id, refresh_cb) -> None:
         """Drop catalog caches for this asset and trigger a re-fetch."""
         if asset_id is not None:
-            self._catalog._dept_versions.clear(asset_id)
+            self._dept_versions.clear(asset_id)
         # Drop the discovery cache so the next browse query re-scans.
-        self._catalog.invalidate_cache()
+        self._invalidate_cache()
         if callable(refresh_cb):
-            try:
-                refresh_cb()
-            except Exception:
-                log.exception("Detail refresh callback failed")
+            refresh_cb()
 
     def prepare_scene_swap(self):
         """Handle the current scene's unsaved changes before a scene swap.
@@ -779,30 +682,17 @@ class SceneManager:
                         load with ``suppress_save_prompt=True``.
             ``False`` — this cannot be handled here: the scene has no
                         pipeline context to version up (untitled /
-                        off-pipeline), we could not determine whether it is
-                        dirty, or we could not put the prompt on screen. The
-                        caller should let Houdini's native prompt handle it
-                        rather than risk writing to an unknown location — or,
-                        worse, swapping over unsaved work while claiming to
-                        have dealt with it.
-        """
-        try:
-            import hou
-        except Exception:
-            return True  # no host to swap scenes in; nothing to lose
+                        off-pipeline). The caller should let Houdini's
+                        native prompt handle it rather than risk writing to
+                        an unknown location.
 
-        try:
-            if not hou.hipFile.hasUnsavedChanges():
-                return True
-        except Exception:
-            # "Handled" here would suppress Houdini's own save prompt on a
-            # scene we could not even ask about — the caller would swap over
-            # unsaved work. Defer to the native prompt instead, matching what
-            # the un-promptable branch below already does.
-            log.exception(
-                "Could not determine whether the scene has unsaved changes",
-            )
-            return False
+        Anything else that fails raises, so the swap aborts instead of
+        going ahead over unsaved work.
+        """
+        import hou
+
+        if not hou.hipFile.hasUnsavedChanges():
+            return True
 
         # Untitled / off-pipeline scenes have no version to bump — defer
         # to Houdini's native prompt rather than guessing a destination.
@@ -810,43 +700,31 @@ class SceneManager:
             return False
 
         # Opt-in: version up silently, no prompt.
-        if self._catalog._prefs.autosave_on_scene_change:
-            try:
-                self.save_current_scene(prompt_note=False)
-            except Exception:
-                log.exception("Autosave on scene change failed")
+        if self._prefs.autosave_on_scene_change:
+            self.save_current_scene(prompt_note=False)
             return True
 
         # Otherwise ask — but "Save" always means a new version, never an
         # in-place overwrite of the current workfile.
-        try:
-            import hou
-            choice = hou.ui.displayMessage(
-                "The current scene has unsaved changes.\n\n"
-                "Save a new version before switching?",
-                buttons=("Save new version", "Discard changes", "Cancel"),
-                severity=hou.severityType.ImportantMessage,
-                default_choice=0,
-                close_choice=2,
-                title="Save Scene",
-            )
-        except Exception:
-            # Can't prompt — fall back to Houdini's native prompt rather
-            # than silently discarding the user's work.
-            return False
+        choice = hou.ui.displayMessage(
+            "The current scene has unsaved changes.\n\n"
+            "Save a new version before switching?",
+            buttons=("Save new version", "Discard changes", "Cancel"),
+            severity=hou.severityType.ImportantMessage,
+            default_choice=0,
+            close_choice=2,
+            title="Save Scene",
+        )
 
         if choice == 0:
-            try:
-                # No note prompt on this path, deliberately. We have already
-                # told the caller "handled" by the time the save actually
-                # runs (it is queued onto the main thread), so it will load
-                # the next scene with suppress_save_prompt=True — a note
-                # dialog the artist then cancelled would silently discard
-                # the very changes they just asked to keep. Notes are worth
-                # having; they are not worth a data-loss path.
-                self.save_current_scene(prompt_note=False)
-            except Exception:
-                log.exception("Save on scene change failed")
+            # No note prompt on this path, deliberately. We have already
+            # told the caller "handled" by the time the save actually
+            # runs (it is queued onto the main thread), so it will load
+            # the next scene with suppress_save_prompt=True — a note
+            # dialog the artist then cancelled would silently discard
+            # the very changes they just asked to keep. Notes are worth
+            # having; they are not worth a data-loss path.
+            self.save_current_scene(prompt_note=False)
             return True
         if choice == 1:
             return True  # discard: suppress the native prompt too
@@ -864,7 +742,7 @@ def farm_seed(scene_ctx, members_of) -> tuple[list, list[str], str, str | None]:
     but not for a quick action whose workfile only suggests ticks.
     ``members_of(uri)`` lists a Multi's members.
     """
-    from .submit_jobs_resolve import expand_targets, is_group_target
+    from tumblepipe.farm.submit.settings import expand_targets, is_group_target
 
     if scene_ctx is None:
         return [], [], "shots", None
@@ -879,11 +757,41 @@ def farm_seed(scene_ctx, members_of) -> tuple[list, list[str], str, str | None]:
 
 
 def _multi_members(group_uri) -> list:
-    """Member URIs of the Multi at ``group_uri``; empty when unreadable."""
-    try:
-        from tumblepipe.config.groups import get_group
-        group = get_group(group_uri)
-        return list(group.members) if group is not None else []
-    except Exception:
-        log.exception("Failed to read the members of %s", group_uri)
-        return []
+    """Member URIs of the Multi at ``group_uri``; empty when it is gone."""
+    from tumblepipe.config.groups import get_group
+    group = get_group(group_uri)
+    return list(group.members) if group is not None else []
+
+
+#: The open Farm Submit dialog, held so it is not collected while shown.
+_submit_dialog = None
+
+
+def open_submit_jobs_dialog(
+    uris: list, names: list[str], context: str,
+    department: str | None = None,
+    tick_kinds: tuple[str, ...] = (farm_grid.RENDER,),
+) -> None:
+    """Open the Farm Submit grid (:class:`SubmitJobsDialog`) for ``context``.
+
+    ``uris`` start with ``tick_kinds`` ticked — Render, for the Render
+    quick action and **Submit Jobs…**; nothing, for the Farm Submit quick
+    action. The owning project must be active already, so department
+    lookups resolve against the right install.
+
+    Non-modal: Houdini stays usable while the grid is open, and the
+    submission itself runs in another process once it is sent. Imported
+    here rather than at module scope so opening the browser panel does
+    not pull the dialog's Qt widgets in with it. Raises; the caller is the
+    action's boundary.
+    """
+    global _submit_dialog
+    import hou
+    from .submit_jobs_dialog import SubmitJobsDialog
+    dialog = SubmitJobsDialog(
+        uris, names, context, parent=hou.qt.mainWindow(),
+        department=department, tick_kinds=tick_kinds,
+    )
+    _submit_dialog = dialog
+    dialog.show()
+    dialog.raise_()

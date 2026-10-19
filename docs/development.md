@@ -66,22 +66,23 @@ subprocess (`tests/_cargo.py`). Without cargo they fail rather than skip.
 The crates have their own tests, including the resolver's `proptest`
 properties: run `cargo test` in `src/resolver` and in `src/wizard`.
 
-The asset-browser catalog tests (`test_catalog*.py`) run the catalog
-against the **shipped TumbleTrove SDK**, not a stub: `tests/_catalog.py`
+The asset-browser catalog tests (`test_catalog*.py`) and the docs link
+check run against the **shipped TumbleTrove SDK**: `tests/_catalog.py`
 puts the `python/` dir of the newest `tumbletrove` package hpm has
 fetched (`~/.hpm/fetch/tumbletrove-tumbletrove-<version>/python`), else a
-sibling `tumbletrove` checkout's `python/`, or `TUMBLETROVE_PYTHON`, on
-`sys.path`. The SDK's `asset_browser.api`,
-`core.projects` and `common` layers are pure Python, so the catalog
-imports against the same base `Catalog`, `Collection`, `Asset` and
-project registry the browser uses — the only way a property can see the
-*host contract*. The lesson behind it: tumbletrove routes every operation
-on a Multi or Root through `Catalog.owns_collection` (since TumbleTrove
-0.9.0), and the catalog never overrode it, so an artist could create a
-Multi and then do nothing else with it. The old stub's base `Catalog` was `pass`, which made
-the missing override invisible to every property. Launch a project from
-TumbleTrove Desktop once so the SDK is fetched; `test_catalog_multis.py`
-refuses to run on the stub.
+sibling `tumbletrove` checkout's `python/`, on `sys.path`, and refuses one
+older than `hpm.toml [dependencies]` requires. `TUMBLETROVE_PYTHON` names
+an SDK `python/` dir outright and skips that floor — the way to run a
+branch against an unreleased SDK checkout, whose manifest still carries
+the last release's version. The SDK's `asset_browser.api` and
+`common` layers are pure Python, so the catalog
+imports against the same base `Catalog`, `Collection` and `Asset`
+the browser uses — the only way a property can see the
+*host contract*. The lesson behind it: tumbletrove once routed every
+operation on a Multi or Root through `Catalog.owns_collection`, and the
+catalog never overrode it, so an artist could create a Multi and then do nothing else
+with it — invisible to a stub whose base `Catalog` was `pass`. Launch a
+project from TumbleTrove Desktop once so the SDK is fetched.
 
 A second class of silent break lives *between* the catalog's own modules:
 they reach each other through the catalog instance
@@ -112,16 +113,21 @@ Worst, `_entity_uri_for` and `_project_for_asset_id` left this catalog
 in the 2026-05-26 DropRouter and AssetResolver extractions while their
 deck-item drop path went on calling them, so dragging a department deck
 item into a LOP network did nothing at all from v1.10.0 to v1.47.0.
-Both are back as thin delegations, and the comment above them says not
-to inline them away again.
+It died a second time on 2026-10-13, when `Uri.parse_unsafe` (which
+their browser called to build the node) was renamed `Uri.parse`.
 
-Six private members of `PipelineCatalog` are still reached this way
-(`_activate_project`, `_entity_uri_for`, `_project_for_asset_id`,
+TumbleTrove 0.48 ended this class of break at the source. The browser
+reaches no private member of ours: the deck-item drop is
+`DropRouter.on_deck_drop`, which builds the `th::import_layer` nodes
+here, and the bucket-delete count is the declared
+`Catalog.bucket_child_count`. The six private delegations it used to
+call (`_activate_project`, `_entity_uri_for`, `_project_for_asset_id`,
 `_project_for_hip_path`, `_count_for_project_category`,
-`_count_for_project_sequence`). Renaming any of them silently breaks a
-released TumbleTrove. The real fix is to move that drop path behind
-`on_deck_drop`, which we already implement, and take their three
-`tumblepipe` imports with it; until then, treat those six as public.
+`_count_for_project_sequence`) are gone, and their `test_catalog_calls`
+now fails on any private reach. Refreshing the open browsers goes the
+other way through the declared `Catalog.request_*_refresh` calls
+(`refresh.py`), not through their widgets, and a catalog hook the
+artist triggered may simply raise: the browser reports it.
 
 `test_catalog_wiring` now guards this from our end and their
 `test_catalog_calls` guards it from theirs. Neither is sufficient
@@ -140,8 +146,8 @@ catches a shipped-broken import or a stray `f''` before it reaches a
 release. Run it over the same trees the gate covers:
 
 ```bash
-uvx ruff check python/ .ci/ python3.11libs/ python3.13libs/ \
-  viewer_states/ scripts/ tests/ tools/ --select E9,F
+uvx ruff check python/ .ci/ python3.13libs/ \
+  scripts/ tests/ --select E9,F
 ```
 
 This runs automatically as a **pre-commit hook** (`.githooks/pre-commit`),
@@ -246,7 +252,7 @@ question it means to ask is whether a binary HDA was *committed*.
 
 UI behaviour that pins a fixed bug lives in standalone harnesses under
 `scripts/` that drive the real widgets — no Houdini required, since the
-widget stacks involved are pure qtpy:
+widget stacks involved are pure PySide6:
 
 - `verify_database_editor_ux.py` — the config editor's commit model
   (click-away/Enter/Tab commit, key renames, reverts).
@@ -256,11 +262,11 @@ widget stacks involved are pure qtpy:
   skip-vs-fail split described below, and the footer states: a styled
   Execute, a green Done after a clean run, Close plus retry otherwise).
 
-They need a desktop session and a Qt binding:
+They need a desktop session and PySide6:
 
 ```bash
 cd scripts
-uv run --python 3.12 --with pyside6 --with qtpy python verify_process_dialog_ux.py
+uv run --python 3.12 --with pyside6 python verify_process_dialog_ux.py
 ```
 
 ## Skipping a task instead of failing it
@@ -292,7 +298,7 @@ pulls in the validators and `pxr`.
 
 The farm path deliberately does **not** skip: a worker hitting the same
 disconnected node still fails its job, since nobody is watching a farm log to
-notice a skip. It does report it legibly though — `farm/tasks/export/
+notice a skip. It does report it legibly though — `farm/workers/
 export_houdini.py` returns a named error rather than dying on
 `None.GetPseudoRoot()`.
 
@@ -312,7 +318,8 @@ artist as *"the button does nothing"* — which is how a dead export window got
 reported rather than a stack trace.
 
 Route those failures through `report_failure(action, exc)` in
-`python/tumblepipe/asset_browser/houdini.py`. It logs the traceback, then
+`python/tumblepipe/pipe/houdini/ui/report.py` — the one path every node,
+dialog and browser action uses. It logs the traceback, then
 shows an error dialog naming the exception and the log file it landed in:
 
 ```python
@@ -334,12 +341,16 @@ which thread they are on.
 
 Three rules:
 
-- **Log-only is correct for background upkeep** — detail/card repaints, cache
-  invalidation, refresh hooks. An error dialog the artist cannot act on is
-  noise, and one raised from a repaint can fire every frame. Where a readonly
-  helper on a repaint path swallows for real (`get_loaded_scene_context`), log
-  the full traceback **once** per session behind a latch and drop to `debug`
-  after; a shared project log must not take one trace per frame.
+- **Background upkeep raises; it is never swallowed** — detail/card repaints,
+  cache invalidation, refresh hooks are not reported with a dialog (one the
+  artist cannot act on is noise, and one raised from a repaint can fire every
+  frame), but they do not catch either: a failure raises into the action that
+  triggered it or into the browser's own boundary around the catalog hook.
+  A `log.warning`/`log.debug` in an `except` is still a swallow. Only a
+  genuinely expected condition is caught, by its specific type, with a
+  one-line comment saying why it is expected (a file deleted between the glob
+  that found it and its `stat`). A callback Qt calls — a menu entry, a button
+  — is wrapped with `reporting(action, fn)`, which makes it its own boundary.
 - **A status line is not a report.** `hou.ui.setStatusMessage` scrolls past,
   so for the *whole outcome* of a click — "Save: no pipeline context",
   "Publish: nothing to publish" — use `displayMessage`. A Save that saved
@@ -382,6 +393,54 @@ prints, rather than a recomputed guess. Two traps when triaging from them:
   all, so an empty log is not evidence that nothing failed.
 - The filename is `$TH_USER` (never the OS username — these land in shared
   project storage). Identity-less writers share one `pipeline.log`.
+
+## Qt and threads
+
+A Qt object built, shown or destroyed off the GUI thread corrupts memory
+rather than raising. The heap corruption ends in a fail-fast trap that
+bypasses Houdini's crash handler, so the artist sees Houdini vanish with no
+dialog, no recovery prompt and no `crash.*.txt`. That is the signature to
+recognise: an ordinary crash produces all three.
+
+`hou` is different. HOM calls take a lock that parks Houdini's main thread,
+so they are serialised rather than racing. The lock gives mutual exclusion,
+not thread affinity, and no lock makes a `QWidget` legal off its thread:
+
+| From a worker thread | Safe? | Why |
+|---|---|---|
+| `hou.node()`, `hou.hipFile.path()`, `hou.ui.paneTabs()` | yes | the HOM lock serialises it |
+| `hou.ui.addEventLoopCallback` | yes | the HOM lock guards the callback list |
+| `hou.ui.displayMessage(...)` | **no** | builds a Qt dialog and a nested event loop |
+| constructing or `.show()`ing any widget | **no** | thread affinity |
+| a widget's destructor (including via the garbage collector) | **no** | thread affinity |
+
+The rules that follow:
+
+- **Workers do pure I/O**: bytes in, bytes or `QImage` out. Anything that
+  touches Qt goes through `run_on_main_thread` (or `report_failure`, which
+  marshals itself). A handler reachable from both the card menu (GUI thread)
+  and the catalog's `execute_action` (a worker) checks `is_main_thread()`
+  and re-dispatches itself, rather than trusting each call site.
+- **Parent every Qt object.** A parentless object is Python-owned; trapped in
+  a reference cycle, it is freed by the cyclic collector on whichever thread
+  crosses the allocation threshold — and workers allocate constantly.
+  A C++-parented object is C++-owned and out of the collector's reach.
+- **Close a dialog before tearing down its owner.** Loading a scene deletes
+  the node a dialog was opened from; a modeless dialog outliving its parent
+  is a teardown crash.
+- **Prefer Qt's own delivery** (queued connections, `QTimer.singleShot` on the
+  GUI thread) to hand-rolled liveness guards: `~QObject` removes the posted
+  events for the object, which is the invariant the guards try to re-create.
+  `QTimer` can't be started from a non-Qt thread (the Python Shell is one).
+- **Never `except Exception: pass` in a `paintEvent`**: it hides the
+  `RuntimeError` a dangling wrapper raises, which is the one readable symptom
+  this class of bug gives.
+
+For a crash with no log, enable WER LocalDumps for `houdini.exe` (HKLM
+`...\Windows Error Reporting\LocalDumps\houdini.exe`, `DumpType` 2) and
+`faulthandler` to a file from a startup script; `HOUDINI_UI_COREDUMP=1` stops
+the recovery save so the crash reaches WER unmediated. Don't also set
+`HOUDINI_COREDUMP=1`, which enables JIT debugging and suppresses LocalDumps.
 
 ## Resolver harness
 
@@ -543,7 +602,7 @@ ranges, replaying the Houdini package files, picking Houdini's own Python).
 dependencies, runtime and registries, the task's package pinned; where the
 project manifest is found) and the `.hpm/packages` dir the worker's hython
 loads. The per-entity settings resolution keeps its own tests in
-`tests/test_submit_jobs_resolve.py`.
+`tests/test_submit_settings.py`.
 
 **Mutation-testing these, a trap.** Python reuses a module's `.pyc` when the
 source's size and modification second are unchanged. A same-length mutation
@@ -565,10 +624,10 @@ publishing to the old one.
 It checks the four ways that contract has been broken:
 
 1. **Parm defaults** — an entity-addressing parm whose default is a concrete
-   URI, or the empty string. Empty is not neutral:
-   `EntityNode.get_entity_uri()` resolves an unset parm to the *first entity
-   in the project*, so the node silently addresses an arbitrary asset and
-   looks in the UI exactly like a deliberate choice.
+   URI, or the empty string. Empty is not neutral: an explicit value must
+   name an entity, so `EntityNode.get_entity_uri()` raises `EntityNodeError`
+   on an empty parm (it used to resolve it to the *first entity in the
+   project*, silently addressing an arbitrary asset).
 2. **`on_created` hooks** — a wrapper that writes a URI into the parm at node
    creation, defeating the sentinel it just defaulted to. Both shapes count:
    baking the workfile's own URI, and pinning the first entity in the project.
@@ -602,37 +661,33 @@ hand-written search misses.
 ## HDA callback audit
 
 `scripts/verify_hda_callbacks.py` pins the contract that every HDA callback
-reaches a function that exists. A parm's callback does not call
-`python/tumblepipe/…` directly — the HDA's own `PythonModule` section sits in
-between as a hand-maintained shim of one-line forwarders:
+reaches a function that exists. A pipeline HDA's callbacks call
+`python/tumblepipe/…` directly, with `kwargs`:
 
 ```text
-DialogScript            PythonModule            python/tumblepipe/…
-hou.phm().select()  ->  def select():       ->  def select():
-                            th_cache.select()       …
+parmtag { "script_callback" "import tumblepipe.pipe.houdini.cache as th_cache; th_cache.select(kwargs)" }
 ```
 
-Three files, and the middle one is the one nobody edits. Add the parm and the
-backing function and both ends look finished while the button is dead: a
-callback is a *string*, so nothing resolves it until an artist clicks and gets
-`AttributeError: 'module' object has no attribute 'select'`. That is how
-`th::cache` shipped its Entity button broken on both the SOP and the LOP
-(93e4dc1 touched only the two DialogScripts). No lint or build gate resolves
-callbacks, so nothing else catches this — run this audit after editing one.
+A callback is a *string*, so nothing resolves it until an artist clicks and
+gets an `AttributeError`. That is how `th::cache` shipped its Entity button
+broken on both the SOP and the LOP (93e4dc1), back when a `PythonModule` of
+one-line forwarders sat in between. No lint or build gate resolves callbacks,
+so nothing else catches this — run this audit after editing one.
 
-It checks both directions of the shim:
+It checks:
 
-1. **Dangling callback** — a name a DialogScript calls that the `PythonModule`
-   does not define, including the case of no `PythonModule` section at all.
-2. **Dangling forwarder** — a forwarder whose backing function is gone from
-   the module it delegates to. This is the near-miss class (`get_asset_uri` vs
-   `get_entity_uri`): the wrapper gets renamed and the shim keeps calling the
-   old name.
+1. **Dangling direct call** — a DialogScript callback or OnCreated script that
+   imports a `tumblepipe` module and calls a name the module does not define.
+2. **Dangling `hou.phm()` name** — the `PythonModule`s that remain (third-party
+   HDAs, and those whose parm *expressions* saved scenes store verbatim) must
+   define, or import from `tumblepipe`, every name `hou.phm()` asks for.
+3. **Dangling forwarder** — a `PythonModule` call into a `tumblepipe` module
+   whose function is gone (the `get_asset_uri` vs `get_entity_uri` near-miss).
 
-A **menu** script skips the shim: it constructs the wrapper itself and calls
-it, so it needs its own check.
+A **menu** script constructs the wrapper itself and calls it, so it needs its
+own check.
 
-3. **Dangling menu call** — a menu block does
+4. **Dangling menu call** — a menu block does
 
    ```python
    node = import_shot.ImportShot(hou.pwd())
@@ -861,13 +916,11 @@ on `PYTHONPATH` (e.g. TumbleTrove Desktop's `run_hython`).
 Build and Update over EXR fixtures and checks the alpha wiring *and* the
 cooked pixels (see
 [Compositing → Alpha lives in the beauty](compositing.md#alpha-lives-in-the-beauty)):
-a comp built from a legacy render (RGB `beauty.R/G/B` + `alpha.Z`) reads the
-alpha AOV; Updated to the denoise's RGBA publish (bare `R,G,B,A`) its alpha
-subnet reads the beauty and splits output 3 out, and every File COP asks for
-plane `C` (a File COP asked for `beauty` on bare channels loads nothing);
-Updated to an RGB beauty with no alpha the subnet goes and the channel comps
-opaque; and a comp that never had an alpha subnet gets one on Update at the
-comp's proxy scale.
+Build from an RGB beauty is refused; a comp built from a raw render's RGBA
+beauty (`beauty.R/G/B/A`) reads the beauty RGBA and splits output 3 out;
+Updated to the denoise's RGBA publish (bare `R,G,B,A`) every File COP asks
+for plane `C` (a File COP asked for `beauty` on bare channels loads
+nothing); and Update onto an RGB beauty is refused and changes nothing.
 
 It answers build_comp's project lookups itself (a subclass plus module-level
 stand-ins, installed *after* the nodes are created, because the HDA's
@@ -881,11 +934,11 @@ OnCreated reloads `build_comp`), writes its fixtures with the install's
 example, but the rule is general: this tree serializes a lot of its own
 identifiers, so a rename that looks purely internal can change data.
 
-`docs/composition.md` lists the frozen `variant` tokens. Two traps are worth
+`docs/composition.md` lists where each spelling lives now. Three things worth
 knowing before any similar sweep:
 
-- **A `dict(...)` keyword *is* a dict key.** `pipe/context.py` writes
-  `context.json` as `dict(…, variant=…)`, and every farm job config is built
+- **A `dict(...)` keyword *is* a dict key.** `pipe/context.py` wrote
+  `context.json` as `dict(…, variant=…)`, and every farm job config was built
   as `dict(variant_name=…)`. Rename the identifier and you have silently
   renamed an on-disk sidecar field and a submit↔worker JSON key that the
   reader still looks up by its old string. The same goes for anything
@@ -894,34 +947,41 @@ knowing before any similar sweep:
   getter/setter **name strings**.
 - **Check the new name is not already taken.** `channel_name` and `channels`
   were long-standing kwargs for Discord notify channels and for OIIO image
-  channels (`farm/tasks/notify`, `farm/jobs/houdini/{playblast,composite}`,
+  channels (`farm/workers/notify.py`, `farm/pipelines/{playblast,composite}.py`,
   `apps/exr.py`). A blanket rename in either direction silently rewrites them.
-- **The data and the reader ship separately, and that is a release-ordering
-  problem, not a code one.** Project data lives on the shared drive; every
-  reader ships per-machine in the hpm package. Rename a stored key and every
-  artist who has not updated is reading a layout their package predates. No
-  amount of care inside the sweep addresses this.
+  (The publish channel's job key is `channel_name` in `settings`; the Discord
+  channel's stays `channel_name` in `tasks` — same word, different dicts.)
+- **Where the data lives decides how the rename reaches it.** Project data
+  sits on the shared drive while every reader ships per-machine in the hpm
+  package, and TumblePipe has users outside the studio whose projects can be
+  at any config version and whose published data already exists. Sort every
+  stored spelling by who owns it before touching a reader:
 
-  The answer is a **tolerant reader**, not a synchronised cutover. Teach every
-  reader to accept the old and the new spelling first; only then let writers
-  emit the new one; migrate old data whenever convenient; drop the old
-  spelling much later, or never. Each step is independently shippable, and a
-  half-finished migration is a non-event because mixed data reads fine.
+  - *The project's config database* is the pipeline's to rewrite: add a
+    numbered `_config` migration step (`src/wizard/core/src/migration.rs`;
+    never edit a shipped step, never assume a minimum version) and let the
+    readers take the new spelling only. Every launch offers the migration.
+  - *Farm job configs* cross submitter → worker, but a job pins the exact
+    package version that submitted it (`farm.deadline.job_dependencies`), so
+    both ends always agree: rename them outright.
+  - *HDA parm names* are baked into every saved scene and Houdini drops a
+    value whose parm is gone before any script runs. Keep an invisible
+    carrier parm under the old name, bump the definition's Version, and move
+    the value in its `SyncNodeVersion` handler
+    (`pipe/houdini/node_version.py`).
+  - *Published data* is immutable and is never rewritten. Its readers accept
+    the old spelling forever — in one function per language, with the reason
+    beside it — and writers emit only the new one.
 
-  The one hard constraint is that writers must not flip until every reader
-  accepts both — a reader that predates the new spelling drops the key and
-  silently resolves the default. If the update cannot be coordinated, have
-  writers emit *both* keys for one release: old readers take the one they
-  know and ignore the other, so no machine has to be updated first.
-
-  `config.channels` and `src/resolver/src/uri.rs` are the worked example,
-  applied at all five boundaries the key crosses (URI query, config DB
-  property, stored record, farm job JSON, browser metadata). Enumerate the
-  boundaries first: leaving one out is not a smaller change, it is a hole that
-  only opens when the writers flip.
-  Accept both, treat an absent key as the existing default, and raise only
-  when both spellings are present and *disagree* — that is unresolvable, and
-  every other case has a right answer.
+  `channel` is the worked example of all four: migration v13, the
+  `channel_name(s)` job keys, the eleven HDAs' `variant` carriers, and
+  `config.channels.read_published_channel` / the resolver's
+  `uri::channel_from_query` for published `context.json`, staged URIs and
+  prim `customData`. Enumerate the boundaries first: leaving one out is not
+  a smaller change, it is a hole. Where a reader does accept both, treat an
+  absent key as the existing default and raise only when both spellings are
+  present and *disagree* — that is unresolvable, and every other case has a
+  right answer.
 
 Rename identifiers with a `tokenize` pass that edits only `NAME` tokens —
 never `STRING` tokens — so quoted keys survive by construction; a regex over
@@ -993,13 +1053,13 @@ beside it is a gitignored build artifact.
 `scripts/verify_cache_reference_fixes.py` pins the publish-by-reference
 contract for versioned `th::cache` files (see *Layer save paths and
 export portability* in `composition.md`): arcs into a cache root are
-pinned absolute (`_absolutize_cache_arcs`), skipped by the sidecar
+pinned absolute (`export_checks.absolutize_cache_arcs`), skipped by the sidecar
 localizer (`skip_roots`), and exempt from the escaping-path guard
 (`allowed_roots`) — while a missing cache file still aborts as a
 dangling arc. It needs `pxr` but no scene or project data (temp dirs
 only), so run it under any project hython (e.g. TumbleTrove Desktop's
-run_hython). The pure path-classification half is covered by
-`tests/test_usd_paths.py`.
+run_hython). The arc walk and the path classification are covered by
+`tests/test_arcs.py`.
 
 ## Animated switch/blend export (track prim existence)
 
@@ -1030,30 +1090,48 @@ prim (e.g. a constant transform) is lost by `usd_rop`, the Cache LOP, and
 `filecache`/`th::cache` alike — a USD default has no time coordinate, so
 the animation must be authored as time samples upstream.
 
-## Farm task and job modules
+## Farm modules
 
-Each farm task family under `python/tumblepipe/farm/tasks/<family>/` splits
-into a worker-side CLI script (`<family>.py`, run on the render node), a
-submit-side task builder (`task.py`), and — where the config schema is shared
-between them — a `_spec.py` holding the canonical config validator. The
-matching `farm/jobs/houdini/<name>/job.py` imports the same `_spec`.
+`python/tumblepipe/farm/` is split by the side of the farm each module runs on:
 
-Two rules keep these importable in the environments they run in:
+- **`jobs/<family>.py`** builds the one Deadline job that runs a worker:
+  `build(config, paths, staging_path)` validates its config and calls
+  `deadline.farm_job(<family>, context, ...)`, which bundles the worker's
+  context.json, sets the base environment and attaches the HPM manifest;
+  `run_once` / `run_batched` schedule its frames.
+- **`workers/<name>.py`** is what the job runs on a render node, as
+  `python -m tumblepipe.farm.workers.<name> <context> <first> <last>`. The
+  hython-side half of a worker, `workers/<name>_houdini.py`, is run by it as
+  `hython <script> <config>`. Every one of them ends in
+  `sys.exit(worker.run(spec.is_valid_context, main))` (`hou.exit` under
+  hython): `farm.worker` parses the arguments, loads and validates the config,
+  and owns the shared helpers (`error`, `headline`, `ensure_dir`); frame paths
+  go through `farm.frames` (`frame_file`, `with_frame_token`, `frame_of`), with
+  `####` the token in every config.
+- **`specs/<family>.py`** holds the config schemas: `is_valid_config` for what
+  the job builder takes, `is_valid_context` for what its worker reads (the
+  same function when the job stores its config as is), `is_valid_houdini_config`
+  for a hython half. They are built from the primitives in `farm.checks` and
+  import nothing else, so both sides can load them.
+- **`pipelines/<name>.py`** builds a batch of jobs:
+  `build(config, paths, temp_path, jobs, deps, depends_on)` and
+  `submit(config, paths)`, both on `pipelines/_batch.py`'s `submit_batch`, and a
+  command line (`python -m tumblepipe.farm.pipelines.<name> <config.json>`;
+  `update` takes `<department> <pool> <priority>`). `post_render` is the review
+  chain the render and composite pipelines end in; `batch_submit` is the Farm
+  Submit dialog's per-entity submission.
+- **`submit/`** is the Qt-free half of the Farm Submit dialog: `settings`
+  (what each entity's settings resolve to), `grid` and `status` (its cells and
+  their states), `camera` (the render camera probe) and `plan` (the
+  out-of-process runner, `python -m tumblepipe.farm.submit.plan <plan.json>`).
 
-- **Worker scripts must not import their family's `task.py`.** The task
-  builder imports `tumblepipe.farm.deadline`, which needs `tomli_w` at module
-  import time — present on submit machines, not guaranteed on workers or dev
-  environments. Shared config schemas therefore live in `_spec.py` (which
-  only depends on `tumblepipe.farm._common`), never in `task.py`.
-- **Generic scaffolding lives in `tumblepipe.farm._common`** (config-check
-  primitives, `valid_entity`, `run_task_cli`, `configure_logging`);
-  `farm/jobs/houdini/_common.py` re-exports it and adds the job-side
-  `submit_batch`/`run_cli`. Don't re-introduce per-module copies.
-
-The farm modules cannot be run-imported outside the farm (Deadline,
-`tomli_w`), so gate changes with a compile + lint pass instead. Use the
-same selection the pre-commit hook enforces (see *Linting* below — the
-`E9,F` set over every Python tree):
+The import graph runs one way: pipelines and the workers that chain more work
+(stage, export, collapse, publish) import jobs and pipelines; jobs never import
+a worker or a pipeline. A job references its worker by name only.
+`tests/test_farm_layout.py` pins these rules, and imports every farm module
+(the hython halves against the headless `hou` stub), so a broken import fails
+the test run rather than a render node. Gate changes with the test suite and
+the same lint the pre-commit hook enforces:
 
 ```bash
 python -m compileall -q python/tumblepipe/farm/
@@ -1071,10 +1149,9 @@ tree per `[stage].include`/`exclude`. Requirements: cmake, a Rust
 toolchain, and at least one Houdini install. (The hook apps are
 Houdini-independent — `build-wizard` needs only cargo, no HFS.)
 
-By default the resolver builds every major listed in
-`src/resolver/houdini_majors.toml`, which fails on a machine that doesn't
-have them all installed. Restrict the build to the majors you have with
-`HPM_HOUDINI_MAJORS` (bare space-separated majors, e.g. `22` or `21 22`):
+The resolver and VRAM hook build for the Houdini majors in
+`HPM_HOUDINI_MAJORS` (bare space-separated majors, e.g. `22`); without it
+the build stops and says so:
 
 ```bash
 HPM_HOUDINI_MAJORS=22 hpm build --platform windows-x86_64
@@ -1085,17 +1162,109 @@ from TumbleTrove Desktop (≥ 0.38, which sets the variable from the Houdini
 versions it discovers) do the same thing. Release CI always builds the
 full matrix — see `.woodpecker/build-*.yml`.
 
+## The package manifest
+
+`hpm.toml` keeps its comments short; this is the reasoning behind its
+less obvious entries.
+
+**`[compat].houdini`** is a Cargo-style requirement whose upper bound is
+exclusive: `<23` is the first *unsupported* major. (The pre-Manifest-2.0
+`max_version = "22"` compiled to `houdini_version < '22'` and silently
+disabled the package on every 22.x build.) Raise it only together with
+`HPM_HOUDINI_MAJORS` in `.woodpecker/build-*.yml`; otherwise users on the new
+major install cleanly and then fail at runtime, when USD finds no
+`resolver/houdini<major>/` tree.
+
+**Build outputs and staging.** `resolver/`, `bin/`, `dso/` and the collapsed
+`otls/*.hda` are gitignored, so `.hpmignore` re-includes them for staging —
+neither `[stage].include` nor place rules can re-include a gitignored path.
+There are no `[stage.platform.*]` place rules: a place `to` is literal, so
+`resolver/houdini*/**/` would collapse every file onto one path. The built
+trees ship as ordinary content instead, and each worker only ever has its
+own platform's build. Only `hpm build` and `hpm run <script>` run
+`[stage].prepack`; `hpm pack` packs what is there, which is why
+`.ci/build_platform.py` builds first and packs the staged image.
+
+**`TH_PROJECT_PATH`** is a required placeholder with no `value`. A valueless
+`required = true` entry means "the consuming project supplies this": an
+unset project fails `hpm install`, and TumbleTrove Desktop shows the empty
+required field beside the Configure button (`tt_setup`), which emits exactly
+this key. The earlier `value = ""` was a *satisfied* entry, so Houdini got an
+empty string and `TH_CONFIG_PATH`, `TH_EXPORT_PATH` and `TT_DOWNLOADS_PATH`
+collapsed to `/_config`, `/export` and `/library`. A project-level `set`
+override suppresses the package entry outright. Farm workers satisfy it
+through the synthetic job manifest in `tumblepipe.farm.deadline`; the two
+must stay in step, or every farm task fails at `hpm install`.
+
+**`OCIO`** points into the project's `_config/ocio/`, scaffolded from
+`scripts/project_template/_config/ocio/`. Houdini expands package variables
+top to bottom, so `$TH_CONFIG_PATH` is already set. Keeping the config out of
+the package also stops it being path-separator-joined with another package's
+OCIO into an unreadable value.
+
+**The resolver variables.** Houdini applies package env edits before USD's
+`Plug.Registry` first scans, the only in-process timing that works
+(`pythonrc.py` runs too late); `PXR_PLUGINPATH_NAME` is the load-bearing one.
+`PATH`, `LD_LIBRARY_PATH` and `DYLD_LIBRARY_PATH` do *not* help the
+in-process load on Linux and macOS — the loader reads them once at process
+start — which the resolver's `-rpath '$ORIGIN'` / `@loader_path`
+(`src/resolver/CMakeLists.txt`) covers instead. They stay for child
+processes (husk, hython, farm tasks), which read them at their own start.
+`$HPM_PACKAGE_ROOT` is rewritten by hpm at pack time; `$HOUDINI_MAJOR_RELEASE`
+and `$HOUDINI_MINOR_RELEASE` pass through and are expanded by Houdini.
+
+**The asset-browser catalog** is declared to TumbleTrove from
+`python3.13libs/pythonrc.py` rather than found through
+`ASSET_BROWSER_CATALOG_PATH`, so a renamed factory fails loudly and its
+settings page is filed under TumblePipe.
+
+**Desktop hooks.** `tt_setup` and `tt_prepare` run prebuilt binaries
+directly; the old PySide6 wizard needed a ~100 MB managed venv before its
+window could appear. Their program paths are absolute: Windows'
+`CreateProcess` resolves a relative program against the *caller's* cwd (the
+desktop app's), which failed with `os error 3` in v1.39.2. They are quoted
+because HPM's package root contains `@` and may contain spaces. `tt_prepare`
+is the migration hook because it runs on every launch — `tt_install` is
+per-project and does not re-fire after an upgrade. Scripts with a `label`
+are listed as buttons in the desktop's per-project Scripts panel; the hooks
+deliberately have none.
+
+## What a release publishes
+
+A version tag starts `.woodpecker/build-{linux,macos,windows}.yml` and then
+`release.yml`. Each is a thin wrapper around `.ci/ci.sh`, which logs into
+Infisical (every secret comes from there, by its key name), installs hpm and
+uv, and runs `.ci/build_platform.py` or `.ci/release_tumblepipe.py`.
+
+To run the tests on all three workers without releasing, start a manual
+pipeline with the variable `RUN=tests` (`tests/README.md`, "On the build
+workers"). Use it before tagging anything that could behave differently on
+Linux or macOS: the release pipeline itself does not test.
+
+Two trees leave the repo, both from hpm.toml's `[stage].include`
+(`.ci/_packaging.py`):
+
+- the **hpm archive**, staged by `hpm build` per `[stage].include`/`exclude`;
+- the **public source mirror** (`github.com/tumblehead/TumblePipe`): every
+  tracked file under `[stage].include`, plus `MIRROR_EXTRAS` (`src/`,
+  `.readthedocs.yaml`, `.gitattributes`, `.gitignore`). `[stage].exclude` is
+  not applied: the expanded HDA sources and Sphinx files it carves out of the
+  archive are what a source mirror is for. The mirror is replaced wholesale on
+  each release, so a file removed here is removed there.
+
+Both pass one deny guard (`_packaging.DENY`: CI machinery, assistant
+context, credentials) before the archive is signed or the mirror pushed.
+
 ## Writing the documentation
 
 `docs/` is plain Markdown and is read by two renderers:
 
 - **Offline, in the package.** The folder ships in the release archive and
   `tumblepipe.startup.register_package` hands it to TumbleTrove as
-  `docs=<package root>/docs`. TumbleTrove 0.27.0+ renders it into a static
+  `docs=<package root>/docs`. TumbleTrove renders it into a static
   site under the Houdini prefs directory every time someone opens
   **TumbleTrove ▸ Documentation ▸ TumblePipe**, with a sidebar, a per-page
-  outline and a top bar linking the other installed packages' docs. An older
-  TumbleTrove opens the folder itself instead of rendering it. The online
+  outline and a top bar linking the other installed packages' docs. The online
   build stays reachable as **TumblePipe: Online documentation** in the same
   menu.
 - **Online, on Read the Docs.** Sphinx + MyST builds the same files at

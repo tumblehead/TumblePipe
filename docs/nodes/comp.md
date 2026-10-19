@@ -24,8 +24,8 @@ Source: [`otls/cop_th.build_comp.1.0`](../../otls/cop_th.build_comp.1.0/th_8_8Co
 |---|---|---|
 | Shot | `from_context` | The shot; the label under it shows what resolved |
 | Input | `denoise` | The highest render department to read from — the imports search departments up to this one |
-| Quality | Render | **Render** reads farm frames; **Proxy** reads locally generated proxy frames |
-| Proxy Resolution | Full Size | Full / Half / Quarter — scales the proxy imports by 1, 2 or 4 |
+| Quality | Render | **Render** reads farm frames; **Proxy** reads locally generated, scaled-down copies of the same versions |
+| Proxy Resolution | Full Size | Full / Half / Quarter — the proxies are written at 1, 1/2 or 1/4 size and scaled back up by the imports |
 | Farm › Pool, Priority | first pool, `50` | |
 | Farm › Render Layer | `all` | Listed, but nothing reads it |
 | Jobs › Submit Partial | on | Also render **Start/Middle/End-Frame** as a quick preview task |
@@ -37,8 +37,10 @@ Buttons:
 
 - **Update COP network** — builds the network on first press, then
   re-resolves every import to the newest complete version. With Quality on
-  Proxy it instead cooks the node's TOP network to generate proxy frames;
-  **Stop** cancels that cook.
+  Proxy it first cooks the node's TOP network to write the missing proxy
+  frames, then points the imports at them (see
+  [Compositing → Proxies](../compositing.md#proxies)); **Stop** cancels
+  that cook.
 - **Render to mplay** — renders the current frame in place.
 - **Submit to farm** — saves the hip, flips Quality to Render for the
   save, and submits a composite job: a *stage* task, a *partial composite*

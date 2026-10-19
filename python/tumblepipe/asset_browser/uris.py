@@ -1,135 +1,128 @@
-"""Typed factories for tumblepipe URIs.
+"""Typed factories for tumblepipe URIs, and the URI -> browser id mapping.
 
 Centralises URI construction so the catalog code reads as
 ``uris.entity_asset(category, name)`` instead of
-``Uri.parse_unsafe(f"entity:/assets/{category}/{name}")``.
+``Uri.parse(f"entity:/assets/{category}/{name}")``. New URI schemes
+get one new function here, not a new f-string sprinkled across the catalog.
 
-Every callsite that built a URI via inline f-string interpolation
-goes through one of these helpers. New URI schemes get one new
-function here, not a new f-string sprinkled across the catalog.
-
-Imports of ``tumblepipe.util.uri`` are kept lazy: this module is
-imported at catalog-load time (when tumblepipe may not yet be fully
-available — see the warm-up dance in :meth:`PipelineCatalog.initialize`).
-Each factory does its own one-line import so the cost is paid only
-when a URI is actually constructed.
+:func:`asset_id_for` is the one place an entity URI becomes a browser asset
+id (``PROJECT/<bucket>/<name>``); the reverse is
+:meth:`AssetResolver.uri_for`.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from tumblepipe.util.uri import Uri
 
-if TYPE_CHECKING:
-    from tumblepipe.util.uri import Uri
+#: The entity kinds the browser shows as asset / shot cards.
+ENTITY_KINDS = ("assets", "shots")
 
 
-def _Uri():
-    """Return the ``Uri`` class, importing lazily on first use."""
-    from tumblepipe.util.uri import Uri
-    return Uri
+# ── Browser ids ──────────────────────────────────────────────
+
+
+def asset_id_for(project: str, uri: Uri) -> str:
+    """The browser id of an asset or shot: ``PROJECT/<bucket>/<name>``.
+
+    ``uri`` is an ``entity:/assets|shots/<bucket>/<name>`` URI — a Multi's
+    member, a Root's asset entry, a loaded workfile's entity. Anything else
+    (a bucket-only entity, a Multi, a scene) has no card, and asking for its
+    id is a bug: it raises ValueError rather than minting an id that names
+    nothing.
+    """
+    segments = uri.segments
+    if (
+        uri.purpose != "entity"
+        or len(segments) != 3
+        or segments[0] not in ENTITY_KINDS
+    ):
+        raise ValueError(f"{uri} is not an asset or shot URI")
+    return f"{project}/{segments[1]}/{segments[2]}"
 
 
 # ── Entity URIs (assets and shots) ───────────────────────────
 
 
-def entity(kind: str, second: str, third: str) -> "Uri":
+def entity(kind: str, second: str, third: str) -> Uri:
     """``entity:/<kind>/<second>/<third>`` — used when ``kind`` is
     already known to be ``"assets"`` or ``"shots"``."""
-    return _Uri().parse_unsafe(f"entity:/{kind}/{second}/{third}")
+    return Uri.parse(f"entity:/{kind}/{second}/{third}")
 
 
-def entity_asset(category: str, name: str) -> "Uri":
+def entity_asset(category: str, name: str) -> Uri:
     """``entity:/assets/<category>/<name>``"""
-    return _Uri().parse_unsafe(f"entity:/assets/{category}/{name}")
+    return Uri.parse(f"entity:/assets/{category}/{name}")
 
 
-def entity_shot(sequence: str, name: str) -> "Uri":
+def entity_shot(sequence: str, name: str) -> Uri:
     """``entity:/shots/<sequence>/<name>``"""
-    return _Uri().parse_unsafe(f"entity:/shots/{sequence}/{name}")
+    return Uri.parse(f"entity:/shots/{sequence}/{name}")
 
 
-def entity_category(category: str) -> "Uri":
+def entity_category(category: str) -> Uri:
     """``entity:/assets/<category>`` — parent-only entity for an empty
     category. tumblepipe supports 2-segment parent entities natively
     (see ``ensure_sequence`` in tools/csv_shot_import.py)."""
-    return _Uri().parse_unsafe(f"entity:/assets/{category}")
+    return Uri.parse(f"entity:/assets/{category}")
 
 
-def entity_sequence(sequence: str) -> "Uri":
+def entity_sequence(sequence: str) -> Uri:
     """``entity:/shots/<sequence>`` — parent-only entity for an empty
     sequence."""
-    return _Uri().parse_unsafe(f"entity:/shots/{sequence}")
-
-
-# ── Entity schema URIs ───────────────────────────────────────
-# tumblepipe derives an entity's schema from its position in the URI
-# hierarchy (see config_convention.get_entity_schema), so add_entity
-# takes only (uri, properties) — no schema URI is passed or stored.
-# The schema_* helpers that used to build those URIs are gone.
-
-
-def entity_from_suffix(suffix: str) -> "Uri":
-    """``entity:/<suffix>`` — for callers that already have the
-    post-scheme tail (e.g. extracted from another URI's segments)."""
-    return _Uri().parse_unsafe(f"entity:/{suffix}")
+    return Uri.parse(f"entity:/shots/{sequence}")
 
 
 # ── Group URIs ───────────────────────────────────────────────
 
 
-def group(path: str) -> "Uri":
+def group(path: str) -> Uri:
     """``groups:/<path>`` (e.g. ``groups:/shots/foo``)."""
-    return _Uri().parse_unsafe(f"groups:/{path}")
+    return Uri.parse(f"groups:/{path}")
 
 
-def group_in_context(context: str, name: str) -> "Uri":
+def group_in_context(context: str, name: str) -> Uri:
     """``groups:/<context>/<name>`` — for new-group creation where
     the path hasn't been joined yet."""
-    return _Uri().parse_unsafe(f"groups:/{context}/{name}")
+    return Uri.parse(f"groups:/{context}/{name}")
 
 
-def groups_root() -> "Uri":
+def groups_root() -> Uri:
     """``groups:/`` — base for building member-relative paths via
     ``groups_root() / segments``."""
-    return _Uri().parse_unsafe("groups:/")
+    return Uri.parse("groups:/")
 
 
 # ── Scene URIs ───────────────────────────────────────────────
 
 
-def scene(path_or_name: str) -> "Uri":
+def scene(path_or_name: str) -> Uri:
     """``scenes:/<path_or_name>``"""
-    return _Uri().parse_unsafe(f"scenes:/{path_or_name}")
-
-
-def scenes_root() -> "Uri":
-    """``scenes:/`` — base for building member-relative paths."""
-    return _Uri().parse_unsafe("scenes:/")
+    return Uri.parse(f"scenes:/{path_or_name}")
 
 
 # ── Project / export / config URIs ───────────────────────────
 
 
-def project_root() -> "Uri":
+def project_root() -> Uri:
     """``project:/`` — workfile-side mirror of the entity layout."""
-    return _Uri().parse_unsafe("project:/")
+    return Uri.parse("project:/")
 
 
-def export_scenes_root() -> "Uri":
+def export_scenes_root() -> Uri:
     """``export:/scenes`` — base for resolving Root export folders."""
-    return _Uri().parse_unsafe("export:/scenes")
+    return Uri.parse("export:/scenes")
 
 
-def export_for_entity(uri: "Uri") -> "Uri":
+def export_for_entity(uri: Uri) -> Uri:
     """``export:/<segments-of-entity-uri>`` — the export-side mirror
     of an ``entity:/`` URI. Used by the latest-export resolver."""
-    return _Uri().parse_unsafe(f"export:/{'/'.join(uri.segments)}")
+    return Uri.parse(f"export:/{'/'.join(uri.segments)}")
 
 
-def dept_template(context: str, dept: str) -> "Uri":
+def dept_template(context: str, dept: str) -> Uri:
     """``config:/templates/<context>/<dept>/template.py`` — points at
     the .py template file for new-from-template workfile creation."""
-    return _Uri().parse_unsafe(
+    return Uri.parse(
         f"config:/templates/{context}/{dept}/template.py"
     )
 
@@ -137,7 +130,7 @@ def dept_template(context: str, dept: str) -> "Uri":
 # ── Reparse pass-through ─────────────────────────────────────
 
 
-def parse(text: str) -> "Uri":
+def parse(text: str) -> Uri:
     """Parse an arbitrary URI string.
 
     Use only for strings that came from outside the catalog (drop
@@ -145,4 +138,4 @@ def parse(text: str) -> "Uri":
     constructions, prefer the named factories above so the URI scheme
     is documented at the callsite.
     """
-    return _Uri().parse_unsafe(text)
+    return Uri.parse(text)

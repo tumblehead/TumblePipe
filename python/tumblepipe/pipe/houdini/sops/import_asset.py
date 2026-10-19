@@ -1,9 +1,6 @@
-import hou
 
-from tumblepipe.api import api
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.lops import import_asset as lop_import_asset
-
 
 class ImportAsset(ns.Node):
     """SOP-side wrapper around th::Sop/import_asset::1.0.
@@ -30,18 +27,14 @@ class ImportAsset(ns.Node):
     def execute(self):
         return self.embedded().execute()
 
-
 def create(scene, name):
     return ns.create_node(
         scene, name, ImportAsset, 'import_asset', 'Sop',
         force_valid_node_name=True,
     )
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
-
 def on_created(raw_node):
-    set_style(raw_node)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
     node = ImportAsset(raw_node)
     # 'entity' keeps its 'from_context' default, mirroring the LOP's
     # on_created. Seeding it with the first asset in the project pinned every
@@ -51,29 +44,14 @@ def on_created(raw_node):
     # otherwise.
     node.embedded()._update_labels()
 
-def execute():
-    raw_node = hou.pwd()
+def execute(kwargs):
+    raw_node = kwargs['node']
     node = ImportAsset(raw_node)
     node.execute()
 
-def select():
-    """HDA button callback to open entity selector dialog."""
-    from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
-
-    raw_node = hou.pwd()
-    node = ImportAsset(raw_node)
-
-    dialog = EntitySelectorDialog(
-        api=api,
-        entity_filter='assets',
-        include_from_context=True,
-        current_selection=node.parm('entity').eval(),
-        title="Select Asset",
-        parent=hou.qt.mainWindow()
-    )
-
-    if dialog.exec_():
-        selected_uri = dialog.get_selected_uri()
-        if selected_uri:
-            node.parm('entity').set(selected_uri)
-            node.execute()
+def select(kwargs):
+    """Entity button: pick the asset, then import it."""
+    node = ImportAsset(kwargs['node'])
+    # The embedded node's 'entity' channel-references this one's.
+    if node.embedded().pick_entity('Select Asset'):
+        node.execute()

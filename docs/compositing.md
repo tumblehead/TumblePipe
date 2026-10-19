@@ -7,12 +7,11 @@ How rendered AOVs become a comp, and how a comp becomes a reviewable MP4.
 Farm renders write versioned frame stacks under
 
 ```
-render:/render/<shot>/<render department>/<variant>/v####/<aov>/
+render:/render/<shot>/<render department>/<channel>/v####/<aov>/
 ```
 
-(`<variant>` is the **channel** segment. That slot holds the channel
-*value*, not the literal word, so there is nothing in the path to rename; see
-`docs/composition.md` for the spellings that are moving and how.)
+(`<channel>` is the **channel** segment; see `docs/composition.md` for what a
+channel is and why it is not a USD variant.)
 
 with a `context.json` sidecar recording the frame range. A version is
 *complete* when every frame in that range exists on disk; comp tooling
@@ -46,9 +45,8 @@ oiiotool publish step, splice `ACESCG_ATTRIB_ARGS` into its final write.
 
 Each AOV's EXR compression is set **on the node that adds it**, in the render
 department: every AOV of [`th::render_vars`](nodes/lighting-and-rendering.md#thrender_vars-lop)
-and every [`th::mattes`](nodes/lighting-and-rendering.md#thmattes-lop) row and
-[`th::puzzlemattes`](nodes/lighting-and-rendering.md#thpuzzlemattes-lop)
-matte has a **Compression** menu. They default to lossless **ZIP** for data
+and every [`th::mattes`](nodes/lighting-and-rendering.md#thmattes-lop) row
+has a **Compression** menu. They default to lossless **ZIP** for data
 and lossy **DWAB** for colour. Colour is `beauty`, its `beauty_<tag>` light
 groups and their variance, `albedo` and the LPE splits (`diffuse`, `specular`,
 `volume`, `emission`); everything else is data — the `objid_*` / `holdout_*`
@@ -81,13 +79,13 @@ own alpha honours holdouts: 0 over a held-out object, 1 over what is seen.
   denoised: it goes around the denoise straight from the render input and
   is published back onto the denoised RGB, so the published beauty is RGBA
   with the render's own coverage, in the beauty's compression.
-- **slapcomp** and **`build_comp`** take each channel's alpha from the
-  beauty whenever it has four channels. A render from before the change has
-  an RGB beauty and an `alpha` AOV, and keeps working off that AOV. The
-  beauty wins even when an `alpha` AOV sits beside it — the latest beauty
-  and the latest alpha can come from different departments or versions, and
-  the old alpha ignores holdouts. An RGB beauty with no `alpha` AOV comps
-  opaque.
+- **`build_comp`** takes each channel's alpha from the beauty, and only
+  from the beauty: it refuses to build or update from a beauty with no `A`
+  channel (an RGB beauty, rendered before the change — re-render it), and
+  never imports an `alpha` AOV.
+- **slapcomp** does the same: each channel's alpha is its beauty's `A`,
+  and a beauty without one fails the slapcomp (re-render it). The composite
+  job's slapcomp resolves only the beauty.
 - The decision is made from the beauty file itself -- whether it has an
   `A` channel -- never from which AOV folders exist. slapcomp takes that
   channel by its index in oiiotool's order (`R,G,B,A`), not the EXR
@@ -104,10 +102,7 @@ summed back into a beauty, and an alpha in each would be added once per
 group. A comp that re-sums them takes A from the beauty, as above.
 
 An AOV no node sets falls back to the project's RenderProduct, which asks for
-DWAB. Up to 1.64.0 `th::render_vars` set every AOV to DWAB and
-`th::puzzlemattes` set none, so mattes and depth were lossy; 1.64.0 overrode
-data passes to ZIP on the farm instead, which the next release replaced with
-the menus.
+DWAB, so every node that adds a data AOV sets its compression.
 
 ## The build_comp node
 
@@ -122,15 +117,15 @@ it resolves the shot from the workfile's `context.json` sidecar.
   (`holdout_*`, the `ramp_*` distance ramps), and utility passes
   (`depth`, `normal`, `albedo`, …),
 - an `alpha` subnet per channel feeding the grade subnet's `alpha` input:
-  the RGBA beauty's A (read RGBA and split), or for a render from before
-  beauty went RGBA its `alpha` AOV. Update re-points it when a channel's
-  newest render switches from one to the other, and removes it when the
-  newest render has neither (the channel then comps opaque); a comp that
-  never had one gets one on Update, at the comp's proxy scale,
-- a mask's outputs follow its channel count, read from the header of the
-  AOV's first rendered frame: a 3-channel `th::puzzlemattes` matte is split
-  into R, G and B outputs, a 1-channel `th::mattes` matte is one output named
-  after the AOV. A header that can't be read is treated as 3-channel,
+  the RGBA beauty's A (read RGBA and split). Update re-points it at the
+  channel's newest beauty, and refuses a newest beauty without an `A`,
+  leaving the comp as it was. A comp built before the alpha came from the
+  beauty (no `alpha` subnet in a channel) is refused too; build it again,
+- one mask output per `objid_*` matte, named after the AOV. A matte must be
+  one channel (`th::mattes`), read from the header of the AOV's first
+  rendered frame: a 3-channel puzzle matte (from the retired
+  `th::puzzlemattes`) or an unreadable header refuses the build or update,
+  naming the matte — re-render it with `th::mattes`,
 - each import pinned to the **latest complete version** of that channel's
   AOV, searching render departments up to the node's selected department,
 - each `file` COP asks for the plane its file actually has: a raw render
@@ -143,8 +138,8 @@ it resolves the shot from the workfile's `context.json` sidecar.
   beauty,
 - channels over-merged back-to-front in shot channel order.
 
-The imports resolve against the shot's `variants` property — the frozen
-storage key for its channels (every shot has at least `default`). Re-pressing **Update** re-resolves to newer
+The imports resolve against the shot's `channels` property
+(every shot has at least `default`). Re-pressing **Update** re-resolves to newer
 versions; `build_comp` is deliberately excluded from the Asset Browser's
 import refresh on workfile open, so a comp never silently retargets —
 the artist decides when to take new renders.
@@ -152,6 +147,34 @@ the artist decides when to take new renders.
 The **source** switch flips the whole network between farm renders and
 locally generated proxy frames; **Preview** renders the current frame in
 place.
+
+### Proxies
+
+With the source on **Proxy**, **Update** first makes the proxies, then
+points the comp at them. It resolves the renders exactly as the Render
+source does (newest complete version per AOV, departments up to the
+node's Input), then cooks the TOP network inside the node
+(`proxy/tops`, driven by `cops/comp_proxy.py`): one local task per
+missing frame of every AOV the comp reads, each a File COP into a ROP
+Image at the **Proxy Resolution**'s pixel scale (Half writes half the
+width and height, Quarter a quarter). The beauty is written RGBA (the
+comp's alpha is its A), `objid_*` mattes, holdouts and ramps one channel,
+everything else RGB. When the cook finishes, every import is pointed at
+the proxies and its resample scales them back up, so the comp keeps its
+full-size canvas.
+
+A proxy mirrors its render on disk, under the `proxy` storage:
+
+```
+<proxy>/render/<resolution>/<shot>/<department>/<channel>/v####/<aov>/<same file names>
+```
+
+with a copy of the render's `context.json` in the `v####` folder. Frames
+already there are not cooked again, so a second Update is quick and only
+a new render version makes new proxies. Proxies are a cache: delete the
+folder to free space or to force them to be remade. The tasks run
+locally, a quarter of the CPU count at a time. Farm submission always
+comps the full renders.
 
 The first **Update** refuses to build when the renders cannot make a comp:
 no channel has a complete render, or a rendered channel is missing its
@@ -183,8 +206,8 @@ Submit; see `docs/deadline.md` for setting one up. Without a farm:
   `{"first_frame": 1001, "last_frame": 1100, "step_size": 1}`. Every frame
   in that range must exist for every AOV folder or the version is ignored.
   Write one EXR per AOV per frame, with its layer named after the AOV (the
-  name Karma gives the AOV's subimage). `beauty` is required, and should
-  be RGBA — its A is the comp's alpha (an RGB beauty comps opaque);
+  name Karma gives the AOV's subimage). `beauty` is required, and must
+  be RGBA — its A is the comp's alpha (an RGB beauty is refused);
   `beauty_*` light groups, `objid_*`, `holdout_*`, `ramp_*`, `albedo`, `normal`,
   `depth`, `uv` and `position` are picked up when present. Use the next
   free `v####` for each new render.
@@ -210,7 +233,7 @@ family, which chains on Deadline:
 1. *stage* — package the workfile,
 2. *partial/full composite* — render the node's COP graph per channel on
    the farm, writing versioned frames under
-   `render:/render/<shot>/composite/<variant>/v####/`,
+   `render:/render/<shot>/composite/<channel>/v####/`,
 3. per-channel *MP4* conversion, plus *edit* and *slapcomp* aggregation,
 4. *slapcomp MP4* and a Discord *notify* with the result.
 
@@ -220,8 +243,7 @@ default and can be overridden on the node.
 
 Independent of comp, every full **render** job also auto-chains a
 *slapcomp* — a headless oiiotool over-composite of the latest complete
-RGBA beauty across departments (or, for older renders, RGB beauty plus
-`alpha` AOV) — followed by its own MP4 and Discord
+RGBA beauty across departments — followed by its own MP4 and Discord
 notify. That quick-comp is what makes fresh renders reviewable before
 any composite workfile exists. When a render has several channels, the
 slapcomp stacks them bottom-up in the shot's channel order: the first

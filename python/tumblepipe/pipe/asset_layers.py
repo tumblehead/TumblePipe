@@ -7,8 +7,7 @@ in behind it.
 
 Everything here is asked of the resolver rather than re-derived, because the
 answer depends on the *mode* the asking node is in and getting that wrong is
-the whole bug this exists to expose (see ``designs/asset-layer-inspector.md``
-§2, §4.1):
+the whole bug this exists to expose:
 
 - ``latest`` — the resolver ignores every recorded pin at every level of the
   cascade (``src/resolver/src/resolve.rs`` ``pick_version``) and takes the
@@ -20,7 +19,6 @@ No ``hou`` here — this is a plain data read, and it stays testable outside
 Houdini.
 """
 
-import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -34,9 +32,7 @@ from tumblepipe.pipe.paths import (
     latest_hip_file_path_with_context,
     version_name_from_path,
 )
-from tumblepipe.pipe.usd import read_asset_department_layers
-
-logger = logging.getLogger(__name__)
+from tumblepipe.pipe.usd.sublayer_refs import read_asset_department_layers
 
 
 def _has_workfile(asset_uri: Uri, department: str) -> bool:
@@ -45,14 +41,7 @@ def _has_workfile(asset_uri: Uri, department: str) -> bool:
     Group-aware via ``latest_hip_file_path_with_context``, so a department
     covered by a Multi reports the group's workfile rather than nothing.
     """
-    try:
-        path = latest_hip_file_path_with_context(asset_uri, department)
-    except Exception:
-        logger.debug(
-            "Workfile probe failed for %s/%s", asset_uri, department,
-            exc_info=True,
-        )
-        return False
+    path = latest_hip_file_path_with_context(asset_uri, department)
     return path is not None and path.exists()
 
 
@@ -120,11 +109,7 @@ class AssetLayerReport:
 def _resolve_version(ref_uri: str, pinned: bool) -> Optional[str]:
     """The version ``ref_uri`` lands on, resolved as the asking node would."""
     with resolver.latest_mode(not pinned):
-        try:
-            resolved = resolver.try_resolve_entity_uri(ref_uri)
-        except Exception:
-            logger.debug("Inspector resolve failed: %s", ref_uri, exc_info=True)
-            return None
+        resolved = resolver.try_resolve_entity_uri(ref_uri)
     if resolved is None:
         return None
     return version_name_from_path(resolved)
@@ -145,13 +130,13 @@ def build_asset_layer_report(
     a build nobody is looking at.
 
     ``pinned`` is the asking node's mode: False when it floats to latest.
-    ``variant`` is the asset channel the asking node composed, used to look
+    ``channel`` is the asset channel the asking node composed, used to look
     up departments that are *not* in the build (the ones that are name their
     own channel in the ref).
 
     Departments are listed in **pool order**, honouring the asset's own
-    assignment, because pool order is pipeline order and is load-bearing
-    (``designs/per-entity-departments.md`` §3). A department that is assigned
+    assignment, because pool order is pipeline order and is load-bearing.
+    A department that is assigned
     but absent from the build still gets a row: unassigning or failing to
     export is not a reason to hide that a department exists.
     """
@@ -160,21 +145,9 @@ def build_asset_layer_report(
     )
     by_department = {ref.department: ref for ref in composed_refs}
 
-    renderable: dict[str, bool] = {}
-    try:
-        assigned = list_entity_departments(asset_uri)
-        roster = [d.name for d in assigned]
-        renderable = {d.name: d.renderable for d in assigned}
-    except Exception:
-        # A config read that throws must not blank the dialog — fall back to
-        # reporting exactly what composed, which is the question that was
-        # asked. Order is then the build's (reverse pipeline order), so say
-        # nothing about pipeline order in that case.
-        logger.warning(
-            "Could not read departments for %s; reporting composed layers "
-            "only", asset_uri, exc_info=True
-        )
-        roster = [r.department for r in composed_refs if r.department]
+    assigned = list_entity_departments(asset_uri)
+    roster = [d.name for d in assigned]
+    renderable = {d.name: d.renderable for d in assigned}
 
     # Anything that composed but isn't in the roster still gets reported: it
     # is in the build, so it is real work, whatever the config now says — and

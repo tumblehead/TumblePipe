@@ -50,7 +50,7 @@
             name    "pathprefix"
             label   "Import Path Prefix"
             type    string
-            default { [ "from tumblepipe.pipe.houdini.lops import create_model\nfrom tumblepipe.pipe.houdini.util import uri_to_prim_path\n\nnode = create_model.CreateModel(hou.pwd())\nasset_uri = node.get_entity_uri()\nif asset_uri is None: return ''\nreturn uri_to_prim_path(asset_uri)" python ] }
+            default { [ "from tumblepipe.pipe.houdini.lops import create_model\nfrom tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path\n\nnode = create_model.CreateModel(hou.pwd())\nasset_uri = node.get_entity_uri()\nif asset_uri is None: return ''\nreturn uri_to_prim_path(asset_uri)" python ] }
             disablewhen "{ enable_pathprefix == 0 }"
             parmtag { "autoscope" "0000000000000000" }
         }
@@ -87,11 +87,11 @@
             default { "from_context" }
             menu {
                 [ "from tumblepipe.pipe.houdini.lops import create_model" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = create_model.CreateModel(hou.pwd())" ]
-                [ "items = node.list_asset_uris()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "items = node.list_entity_uris()" ]
+                [ "return menus.list_to_menu(items)" ]
                 language python
             }
             parmtag { "script_callback_language" "python" }
@@ -1120,7 +1120,7 @@
             label   "Update"
             type    button
             default { "0" }
-            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.create_model as th_node; th_node.execute(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }

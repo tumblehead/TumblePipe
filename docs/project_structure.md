@@ -16,19 +16,16 @@ TumblePipe/
 ├── python/tumblepipe/           # Core pipeline Python modules
 │   ├── asset_browser/           #   TumbleTrove asset-browser catalog (declared at startup)
 │   └── vram/                    #   VRAM Inspector (TumbleTrove ▸ TumblePipe ▸ VRAM Inspector)
-├── python3.11libs/              # Houdini 21 startup stubs
 │   ├── pythonrc.py
 │   └── uiready.py
 ├── python3.13libs/              # Houdini 22 startup stubs (byte-identical to 3.11)
-├── python_panels/
-│   └── icon_browser.pypanel     # Icon browser Python panel
 ├── bin/                         # Pre-built hook apps (tt_setup, tt_prepare; per-platform)
 ├── resolver/                    # Pre-built USD asset resolver (native, per Houdini major)
 ├── dso/                         # Pre-built VRAM Inspector viewport hook (per Houdini major.minor)
 ├── src/                         # Native (Rust/C++) sources — built, not shipped as source
 │   ├── resolver/                #   `entity://` USD resolver (Rust core + C++ ArResolver shim)
 │   ├── wizard/                  #   hook apps: core + tt_setup + tt_prepare (Rust/egui)
-│   └── vram/                    #   VRAM Inspector: viewport hook DSO (C++), Vulkan-layer probe + calibration (dev-only)
+│   └── vram/                    #   VRAM Inspector: viewport hook DSO (C++) + size-model calibration (dev-only)
 ├── resources/                   # Icons, UI resources, templates
 ├── scripts/                     # TumbleTrove hooks, node event scripts, maintenance CLIs
 │   ├── project_template/        #   new-project scaffolding (also migration's source of truth)
@@ -53,7 +50,7 @@ with `from tumblepipe import ...`. Subpackages:
 
 - `api.py`, `startup.py`, `naming.py`, `storage.py` — package root: the
   lazy `api` client, Houdini-startup registrations (radial
-  menus/actions), and the naming/storage convention bases. The `_config`
+  menus/actions), the naming rules, and the storage table reader. The `_config`
   migrations are *not* here: they live in the `th_project_core` Rust
   crate and run from the `tt_prepare` binary.
 - `util/` — dependency-free primitives (`Uri`, io, logging, progress
@@ -62,7 +59,8 @@ with `from tumblepipe import ...`. Subpackages:
   departments, channels, timeline, farm, renderer, scene).
 - `pipe/` — pipeline core: `paths/` (all filesystem addressing),
   `graph.py` (dependency graph), `build.py` (shot/asset build
-  resolution), `context.py`, `usd.py`, `scene_build.py`, and
+  resolution), `context.py`, `usd/` (USD text, sublayer refs, render
+  settings, the farm collapse, composition arcs), `scene_build.py`, and
   `houdini/` (HDA node wrappers under `lops/`/`sops/`/`cops/`, shared
   `entity_node.py` base, `render_stage.py` — the single render-stage
   LOP graph builder shared by the farm stage tasks and the
@@ -83,13 +81,13 @@ with `from tumblepipe import ...`. Subpackages:
   `toolbar/*.shelf` files were never in the package allowlist, so those
   helpers shipped unreachable and went when the shelves did.
 
-### `python3.11libs/` and `python3.13libs/`
+### `python3.13libs/`
 
-Houdini's per-Python-version library locations (Houdini 21 → 3.11,
-Houdini 22 → 3.13). Each holds the same two thin stubs, kept
-byte-identical: `pythonrc.py` runs on Houdini Python startup (puts
-`python/` on `sys.path`, then delegates all registrations to
-`tumblepipe.startup`); `uiready.py` runs when the UI is ready (selects
+Houdini 22's Python 3.13 startup hooks. `pythonrc.py` runs on every
+startup, graphical or hython (`python/` is importable through `PYTHONPATH`
+from `hpm.toml [runtime]`): it registers Radial's menus, the TumbleTrove
+package and its scene-load callback, and the workfile context provider;
+`uiready.py` runs when the UI is ready (selects
 the TumblePipe desktop). Everything with actual logic lives in the
 package so the two interpreters cannot drift.
 
@@ -118,8 +116,8 @@ Existing projects gain the file via the v4 config migration.
 A TumbleTrove `asset_browser` *catalog* — the integration that surfaces
 pipeline assets, shots, Multis and Roots in the asset-browser pypanel.
 It is an ordinary subpackage: `tumblepipe.startup.register_package`
-**declares** `factory.create_catalog` to TumbleTrove at startup (needs
-TumbleTrove >= 0.26.0), so a renamed factory is an ImportError at launch
+**declares** `factory.create_catalog` to TumbleTrove at startup, so a
+renamed factory is an ImportError at launch
 rather than a catalog that quietly stops appearing. (It used to be a
 top-level `asset_browser_catalogs/` directory that TumbleTrove globbed
 for a `pipeline.py`; the `_pipeline_` prefixes and the `sys.path` tweak
@@ -128,32 +126,55 @@ catalog is built when the panel first opens, because importing it pulls
 Qt and the pipeline clients onto the launch path.
 
 - `factory.py` — `create_catalog()`: project registry + env bootstrap.
-- `catalog.py` — the `PipelineCatalog` class itself, which composes
-  everything below. It must override every collection hook the base
-  `Catalog` declares — tumbletrove routes each Multi / Root operation
-  through `owns_collection` and silently drops the call when no catalog
-  claims the id (`tests/test_catalog_multis.py` pins this).
-- `houdini.py` — Houdini main-thread bridge + project activation
-  (TH_* env / `default_client` reset), plus `report_failure`, the shared
-  "an action the artist asked for must not fail invisibly" reporter (see
-  *Reporting a failed action to the artist* in the development guide).
+- `catalog.py` — the `PipelineCatalog` class: the host-facing hooks and
+  the composition root. It builds each collaborator below with the narrow
+  services it needs (never the catalog itself) and routes every hook to
+  it; recipe, node and container ids are routed before anything
+  entity-shaped sees them. It must override every collection hook the base
+  `Catalog` declares, since a default means "not offered" and the feature
+  would silently vanish (`tests/test_catalog_multis.py` pins this).
+- `container_menu.py` — the Multi / Root menu entries beyond tumbletrove's
+  own (Open Location, the Root's export and rebuilds) and their
+  confirmations.
+- `projects.py` — the registry of projects the catalog spans (moved here
+  from the TumbleTrove SDK, which no longer knows about TumblePipe).
+- `houdini.py` — project activation (TH_* env / `default_client` reset)
+  and the session's workfile extension.
 - `clients.py` — per-project tumblepipe `Client` lifecycle.
-- `resolver.py` — asset-id → `(ref, project, client, uri, root)`
-  resolution.
+- `resolver.py` — asset id → project, client, entity URI and the entity's
+  own folder; a hip path → its project.
+- `discovery.py` — `ProjectBuckets` (a project's categories and
+  sequences) and `EntityIndex` (asset / shot cards and details, the
+  discovery pass and its cache, the department workfile scan, the
+  sidebar's per-bucket counts).
+- `sidebar.py` — the collections tree.
+- `dept_scope.py` — a context's department pool, and the departments one
+  entity shows (its assignment plus any with work).
+- `entity_ops.py` — creating, editing and deleting assets and shots, the
+  description sidecar, Duplicate, Generate Master, and the per-entity
+  actions (Departments…, Database Editor, todos, Submit Jobs…).
+- `menus.py` / `deck.py` / `hover.py` — card and deck-item menus (every
+  entry its own failure boundary), department decks, hover popups.
+- `refresh.py` — asking the open browsers to repaint (a card, the grid,
+  the sidebar, the detail panels, a thumbnail) through the SDK's
+  `Catalog.request_*_refresh` calls, handed to the managers as one
+  service.
 - `containers.py` — `GroupContainer` / `SceneContainer` typed sum
   replacing the Multi-vs-Root `kind` branching, plus the
   `ContainerManager` that owns all container behaviour: collection
-  discovery, member/dept coverage, member add/remove, and the Root
+  discovery, cards and details, member/dept coverage, the collection
+  lifecycle (delete, edit, add / remove members), and the Root
   context-menu actions (open location, rebuild assigned shots, export
   USD).
-- `uris.py` — typed factories for tumblepipe URIs.
+- `uris.py` — typed factories for tumblepipe URIs, and `asset_id_for`
+  (entity URI → browser id).
 - `drops.py` — the LOP / SOP / sublayer drop router.
 - `workfiles.py` — workfile open / create lifecycle plus the per-row
-  reads (user / mtime / licence) behind a department row.
+  reads (user / mtime / note) behind a department row.
 - `scene.py` — scene-state lifecycle: save / publish / reload /
-  save-before-swap (prompt or silent version-up) and the readonly
-  hip-context helpers, including which browser id addresses the open
-  .hip.
+  save-before-swap (prompt or silent version-up), the readonly
+  hip-context helpers (including which browser id addresses the open
+  .hip), and opening the Farm Submit grid.
 - `detail.py` — Qt widget construction for every section in the
   right-hand detail panel, which the browser fills from the selected
   card in every scope (`session_panel_mode` is `"off"`, so tumbletrove's
@@ -161,14 +182,15 @@ Qt and the pipeline clients onto the launch path.
   coverage editor is also hosted from the card menu, which reaches it
   without selecting the Multi first.
 - `departments.py` — the entity Departments… dialog (per-entity pool
-  scoping).
-- `submit_jobs_dialog.py`, `submit_jobs_resolve.py` — the Farm Submit dialog
-  (the grid of publish / playblast / render steps per entity) and the pure
-  per-entity settings resolver behind its form.
-- `farm_grid.py` — the grid's pure policy: cell states, tri-state ticks,
-  stale warnings and what each row submits.
-- `farm_status.py` — reads each cell's status: folder resolution on the main
-  thread, listing and stats on a worker thread.
+  scoping) and the project's department pool editor.
+- `recipes.py` / `nodes.py` — the Recipes and Nodes card kinds.
+- `submit_jobs_dialog.py` — the Farm Submit dialog (the grid of publish /
+  playblast / render steps per entity). Its Qt-free halves live in
+  `tumblepipe/farm/`: `submit_settings.py` (the per-entity settings resolver
+  behind its form), `submit_grid.py` (cell states, tri-state ticks, stale
+  warnings and what each row submits), `submit_status.py` (each cell's
+  status: folder resolution on the main thread, listing and stats on a
+  worker thread) and `submit_camera.py` (the render camera a row would use).
 - `farm_submission_window.py` — the non-modal window that follows a
   submission running in its own process.
 - `thumbnails.py` — sidecar thumbnail read / write / refresh.
@@ -194,8 +216,7 @@ favorites, so they cannot drift from what exists — they are gitignored
 and never ship. The directory is registered via
 `radial.add_custom_menu_dir()`. The `network.cop` / `network.vop`
 context menus are built in Python in `tumblepipe.startup` rather than as
-JSON, and bound with `radial.bind()` on Radial's own trigger key
-(Radial 0.4.0+).
+JSON, and bound with `radial.bind()` on Radial's own trigger key.
 
 ### `stock/`
 
@@ -214,7 +235,4 @@ where TumblePipe's rig menu would tie with TumbleRig's. See
 Asset-browser recipes (saved node clusters) are project content, not
 package content: they live under `<project>/recipes/<context>/<slug>/`
 and are read and written by `python/tumblepipe/asset_browser/recipes.py`.
-The package used to ship a read-only `recipes/` root through
-`ASSET_BROWSER_NETWORK_PATH`; that root went with TumbleTrove's Network
-catalog (TumbleTrove 0.35.0), and no entry was ever shipped in it. See
-[Recipes](asset-browser/recipes.md).
+See [Recipes](asset-browser/recipes.md).

@@ -17,7 +17,7 @@ from typing import Callable
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 
-VALIDATORS_URI = Uri.parse_unsafe('config:/validators')
+VALIDATORS_URI = Uri.parse('config:/validators')
 
 
 def get_validators_path(context: str, department: str) -> Path | None:
@@ -32,8 +32,6 @@ def get_validators_path(context: str, department: str) -> Path | None:
     """
     validators_uri = VALIDATORS_URI / context / department / 'validators.py'
     path = api.storage.resolve(validators_uri)
-    if path is None:
-        return None
     if not path.exists():
         return None
     return path
@@ -91,56 +89,3 @@ def get_validator_names_for_department(context: str, department: str) -> list[st
     module.register(NameCollector())
     return names
 
-
-def register_department_validators(registry, context: str, department: str) -> bool:
-    """Register all validators for a department into the given registry.
-
-    Loads the department's validators.py and calls its register()
-    function with the provided registry.
-
-    Args:
-        registry: StageValidatorRegistry to register validators into
-        context: 'shots' or 'assets'
-        department: Department name (e.g., 'render', 'model')
-
-    Returns:
-        True if validators were registered, False otherwise
-    """
-    path = get_validators_path(context, department)
-    if path is None:
-        return False
-
-    module = load_validators_module(path)
-    if not hasattr(module, 'register'):
-        return False
-
-    # A register() that raises is a broken validator and propagates.
-    module.register(registry)
-    return True
-
-
-def list_department_validators(context: str) -> dict[str, list[str]]:
-    """List all validators for all departments in a context.
-
-    Args:
-        context: 'shots' or 'assets'
-
-    Returns:
-        Dict mapping department name to list of validator names
-    """
-    result = {}
-    validators_context_uri = VALIDATORS_URI / context
-    context_path = api.storage.resolve(validators_context_uri)
-
-    if context_path is None or not context_path.exists():
-        return result
-
-    for dept_path in context_path.iterdir():
-        if not dept_path.is_dir():
-            continue
-        department = dept_path.name
-        validators = get_validator_names_for_department(context, department)
-        if validators:
-            result[department] = validators
-
-    return result

@@ -1,17 +1,13 @@
 """Houdini-side bridging for the Pipeline catalog.
 
-Centralizes the two things every action handler needs from the host
-process:
-
-- :func:`run_on_main_thread` — schedule a callable on Houdini's main
-  (GUI) thread without forcing each caller to re-import
-  ``gui_dispatch`` and bake args into a default-arg closure.
 - :class:`ProjectActivator` — switch ``TH_*`` env + the tumblepipe
   ``default_client`` singleton to a given project, with a fast path
   for the no-op case and a one-shot warning when the activated project
   diverges from Houdini's launch project.
-- :func:`report_failure` — put a failed *artist-initiated* action in
-  front of the artist instead of only in the log.
+- :func:`session_nc_type` — the license-driven workfile extension.
+
+Reporting a failure to the artist and hopping to the main thread live in
+:mod:`tumblepipe.pipe.houdini.ui.report`, shared with the nodes.
 
 Lives in its own module so the catalog file isn't carrying 70+ lines
 of env/singleton plumbing inline.
@@ -22,73 +18,12 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Callable
 
-from tumbletrove.asset_browser.core.projects import ProjectConfig
+from .projects import ProjectConfig
+
+from tumblepipe.pipe.houdini.ui.report import run_on_main_thread
 
 log = logging.getLogger(__name__)
-
-
-def report_failure(action: str, exc: BaseException) -> None:
-    """Put a failed artist-initiated action in front of the artist.
-
-    An action handler runs behind a toolbar button or a menu entry with no
-    console in sight, so an exception that is logged and nothing more reads
-    as "the button does nothing" - which is exactly how a dead export window
-    got reported. Every failure still lands in the log (this logs it); the
-    dialog only guarantees it is *visible*, and names the log file so the
-    full trace can be found afterwards.
-
-    Only for actions the artist explicitly asked for. Background upkeep -
-    detail/card repaints, cache invalidation, refresh hooks - stays log-only:
-    an error dialog the artist cannot act on is noise, and one raised from a
-    repaint can fire repeatedly.
-
-    Safe to call from any thread. Quick actions reach here from the browser's
-    GUI thread as readily as from Houdini's main thread, and ``hou.ui`` off
-    the main thread is the same unsupported call the scene ops marshal to
-    avoid - so the dialog goes through :func:`run_on_main_thread` rather than
-    trusting each caller to know which thread it is on. The message is built
-    eagerly, before the hop, so it does not depend on ``exc`` outliving it.
-
-    Never raises: a reporter that throws would replace the failure it was
-    called to explain with a different one.
-    """
-    log.exception("%s failed", action)
-    try:
-        from tumblepipe.util.logging import get_log_paths
-        locations = "\n".join(f"  {path}" for path in get_log_paths())
-    except Exception:
-        locations = ""
-    detail = f"\n\nFull traceback:\n{locations}" if locations else ""
-    message = f"{action} failed: {type(exc).__name__}: {exc}{detail}"
-
-    def _show() -> None:
-        try:
-            import hou
-            hou.ui.displayMessage(message, severity=hou.severityType.Error)
-        except Exception:
-            log.exception("Failed to show the %s failure dialog", action)
-
-    try:
-        run_on_main_thread(_show)
-    except Exception:
-        log.exception("Failed to report the %s failure to the user", action)
-
-
-def run_on_main_thread(func: Callable, *args, **kwargs) -> None:
-    """Schedule ``func(*args, **kwargs)`` on Houdini's main thread.
-
-    Thin wrapper around
-    ``tumbletrove.common.gui.gui_dispatch`` that accepts args
-    and kwargs explicitly instead of forcing callers to construct a
-    closure with default-arg capture (``def _do(p=path): ...``).
-    """
-    from tumbletrove.common.gui import gui_dispatch
-    if args or kwargs:
-        gui_dispatch(lambda: func(*args, **kwargs))
-    else:
-        gui_dispatch(func)
 
 
 def session_nc_type() -> str | None:
@@ -104,28 +39,20 @@ def session_nc_type() -> str | None:
     requested ``.hip`` as ``.hipnc``), even though SideFX's own Python helper
     (``houpythonportion.sceneFileExtension``) files it under ``.hip`` in 22.0 —
     so this is not delegated to that helper. This is only a *prediction*
-    either way; :func:`tumblepipe.pipe.context.save_hip_file` records whatever
+    either way; :func:`tumblepipe.pipe.houdini.workfile_save.save_hip_file` records whatever
     Houdini actually wrote, so a category missed here degrades to a log
     warning rather than a sidecar that points at a file that does not exist.
     """
-    try:
-        import hou
-        category = hou.licenseCategory()
-        nc_categories = [
-            hou.licenseCategoryType.Apprentice,
-            hou.licenseCategoryType.ApprenticeHD,
-        ]
-        # Older builds may lack the member; guard so a missing enum value
-        # never turns every license into "commercial".
-        education = getattr(hou.licenseCategoryType, "Education", None)
-        if education is not None:
-            nc_categories.append(education)
-        if category in nc_categories:
-            return "nc"
-        if category == hou.licenseCategoryType.Indie:
-            return "lc"
-    except Exception:
-        pass
+    import hou
+    category = hou.licenseCategory()
+    if category in (
+        hou.licenseCategoryType.Apprentice,
+        hou.licenseCategoryType.ApprenticeHD,
+        hou.licenseCategoryType.Education,
+    ):
+        return "nc"
+    if category == hou.licenseCategoryType.Indie:
+        return "lc"
     return None
 
 
@@ -205,16 +132,16 @@ class ProjectActivator:
         os.environ["TH_PROJECT_PATH"] = project.project_path
         os.environ["TH_CONFIG_PATH"] = project.config_path
         os.environ["TH_EXPORT_PATH"] = f"{project.project_path}/export"
-        try:
-            from tumblepipe.api import reset_default_client, default_client
-            reset_default_client()
-            # Warm the new project's Client now so the first downstream op
-            # doesn't eat the ~100ms construction. Modules read the client via
-            # the tumblepipe.api.api proxy, which always forwards to the current
-            # singleton, so a switch needs no per-module patching.
-            default_client()
-        except Exception:
-            log.debug("tumblepipe client reset unavailable")
+        from tumblepipe.api import reset_default_client, default_client
+        reset_default_client()
+        # Warm the new project's Client now so the first downstream op
+        # doesn't eat the ~100ms construction - and so a project whose
+        # config cannot load fails here, at the switch, instead of the
+        # action carrying on against the previous project's client.
+        # Modules read the client via the tumblepipe.api.api proxy, which
+        # always forwards to the current singleton, so a switch needs no
+        # per-module patching.
+        default_client()
         self._active_project_path = project.project_path
 
         if (

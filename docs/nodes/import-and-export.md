@@ -31,7 +31,7 @@ entity, or changing Exclude departments or Import Mode.
 
 What happens on import: the node resolves `export:/<asset>/_staged/<channel>`
 to a staged file, sublayers it, places it, and writes the pipeline metadata
-(`uri`, `instance`, `variant`, `inputs`) onto the asset's root prim — and
+(`uri`, `instance`, `channel`, `inputs`) onto the asset's root prim — and
 onto every sub-asset the staged `context.json` tracks, re-creating their
 multi-instance copies as it goes. The prim lands at the asset's own path
 (`/char/mom` for `entity:/assets/char/mom`). Inside a shot workfile the
@@ -329,9 +329,9 @@ Versioned caches in the pipeline's cache folders: the LOP writes USD
 The two share parms and behaviour; the SOP adds a **Simulation** toggle
 (on by default, forces sequential cooking).
 Source: [`otls/lop_th.cache.1.0`](../../otls/lop_th.cache.1.0/th_8_8Lop_1cache_8_81.0/DialogScript),
-[`lops/cache.py`](../../python/tumblepipe/pipe/houdini/lops/cache.py),
 [`otls/sop_th.cache.1.0`](../../otls/sop_th.cache.1.0/th_8_8Sop_1cache_8_81.0/DialogScript),
-[`sops/cache.py`](../../python/tumblepipe/pipe/houdini/sops/cache.py).
+[`cache.py`](../../python/tumblepipe/pipe/houdini/cache.py) (one `CacheBase`;
+`LopCache` and `SopCache` differ only in category, folder and extension).
 
 | Label | Default | What it does |
 |---|---|---|
@@ -426,7 +426,8 @@ Source: [`otls/lop_th.set_kinds.1.0`](../../otls/lop_th.set_kinds.1.0/th_8_8Lop_
 Wire several shot stages into its inputs and it plays them back to back from
 **Sequence Start Frame** (default `1001`), reading each input's
 `startTimeCode`/`endTimeCode` to lay them out (`1001–1100` is assumed for a
-stage that has none). `_TumblePipe/utils`.
+stage that has none). The stage's end time is the start plus every shot's
+length; with no shots wired in it ends where it starts. `_TumblePipe/utils`.
 
 | Label | Default | What it does |
 |---|---|---|
@@ -434,7 +435,8 @@ stage that has none). `_TumblePipe/utils`.
 | Sequence Start Frame | `1001` | Where the sequence starts |
 | Reload Shot Info | button | Re-read the inputs' time codes after they change |
 
-Source: [`otls/lop_th.shot_sequencer.1.0`](../../otls/lop_th.shot_sequencer.1.0/th_8_8Lop_1shot__sequencer_8_81.0/DialogScript).
+Source: [`otls/lop_th.shot_sequencer.1.0`](../../otls/lop_th.shot_sequencer.1.0/th_8_8Lop_1shot__sequencer_8_81.0/DialogScript),
+[`lops/shot_sequencer.py`](../../python/tumblepipe/pipe/houdini/lops/shot_sequencer.py).
 
 ## `th::animate` (LOP)
 

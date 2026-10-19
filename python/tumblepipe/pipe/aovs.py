@@ -6,7 +6,7 @@ data a comp reads numerically -- mattes, depth, normals, position --
 and DWA's quantisation shows up there as soft matte edges and banded depth.
 
 This is the rule the render department's nodes ship their per-AOV
-compression defaults by (``th::render_vars``, ``th::puzzlemattes``): ZIP for
+compression defaults by (``th::render_vars``, ``th::mattes``): ZIP for
 data, DWAB for colour. The nodes own the setting -- an artist can change it
 on the node, and nothing downstream rewrites it. Unknown AOVs count as data:
 an unnecessarily lossless colour pass costs disk, a lossy data pass costs a
@@ -15,11 +15,6 @@ comp.
 It also names the mattes and distance ramps, which the farm's denoise
 publishes untouched and ``build_comp`` imports as masks and mono passes.
 """
-
-# The compression defaults the render department's nodes ship with, in the
-# spelling of their Compression menus (husk's OpenEXR compression tokens).
-DATA_AOV_COMPRESSION = 'zip'
-COLOR_AOV_COMPRESSION = 'dwab'
 
 COLOR_AOV_NAMES = frozenset({
     'beauty',
@@ -42,14 +37,8 @@ def is_data_aov(aov_name: str) -> bool:
     return True
 
 
-def default_compression(aov_name: str) -> str:
-    """The compression a node defaults ``aov_name`` to."""
-    return DATA_AOV_COMPRESSION if is_data_aov(aov_name) else COLOR_AOV_COMPRESSION
-
-
-# Mattes: masks a comp reads edge for edge. `objid_*` comes from
-# th::puzzlemattes (three channels, R/G/B each a mask) and th::mattes (one
-# channel); `holdout_*` from a render layer's holdout setup.
+# Mattes: masks a comp reads edge for edge. `objid_*` comes from th::mattes
+# (one channel); `holdout_*` from a render layer's holdout setup.
 MATTE_AOV_PREFIXES = ('objid_', 'holdout_')
 
 # Distance ramps from th::mattes: one channel, 0 at the camera to 1 at the
@@ -67,43 +56,10 @@ def is_ramp_aov(aov_name: str) -> bool:
     return aov_name.lower().startswith(RAMP_AOV_PREFIX)
 
 
-def mask_output_labels(aov_name: str, channel_count) -> list[str]:
-    """The outputs ``build_comp`` gives an ``objid_*`` mask.
-
-    A single-channel matte (th::mattes) is one mask, named after the AOV; a
-    puzzle matte packs three masks into R, G and B and is split. A channel
-    count that could not be read (None) is taken to be a puzzle matte -- the
-    kind every render had before single-channel mattes existed.
-    """
-    if channel_count == 1:
-        return [aov_name]
-    return ['R', 'G', 'B']
-
-
-# Where a comp takes a channel's alpha from. The beauty is rendered RGBA
-# (th::render_vars authors it color4f): its alpha is the render's own
-# coverage and honours holdouts. The separate `alpha` AOV it replaced was
-# sourced from `ray:hit`, a utility AOV Karma's holdouts do not touch, so in
-# a render layer with the set held out it still counted the set as solid.
-# Renders made before the change still carry an RGB beauty and an `alpha`
-# AOV, and keep working: their alpha comes from that AOV.
-ALPHA_FROM_BEAUTY = 'beauty'
-ALPHA_FROM_AOV = 'alpha'
-LEGACY_ALPHA_AOV = 'alpha'
-
-
-def comp_alpha_source(beauty_alpha_index, aov_names):
-    """Where a comp reads a channel's alpha from, or None when nowhere.
-
-    ``beauty_alpha_index`` is the index of the beauty EXR's alpha channel
-    (``apps.exr.alpha_channel_index``), None when it has none or could not be
-    read; ``aov_names`` the AOVs the channel rendered. An RGBA beauty is used
-    whenever there is one -- even next to a legacy ``alpha`` AOV, which
-    ignores holdouts. Otherwise a legacy render's ``alpha`` AOV, else nothing
-    (the comp treats the channel as opaque).
-    """
-    if beauty_alpha_index is not None:
-        return ALPHA_FROM_BEAUTY
-    if LEGACY_ALPHA_AOV in set(aov_names):
-        return ALPHA_FROM_AOV
-    return None
+def is_edit_aov(aov_name: str) -> bool:
+    """True for the AOVs *Copy to edit* syncs into the edit folder: the
+    beauty, the mattes and the distance ramps -- what the grade reads."""
+    if aov_name.lower() == 'beauty': return True
+    if is_matte_aov(aov_name): return True
+    if is_ramp_aov(aov_name): return True
+    return False

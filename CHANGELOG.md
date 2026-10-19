@@ -12,6 +12,25 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.74.3 — 2026-10-19
+
+### Features
+- feat(wizard): tt_setup asks for one folder and takes the project name from Desktop (`3186c7e5`)
+
+### Documentation
+- docs: getting started and troubleshooting describe the one-folder setup window (`1a9091bd`)
+
+## v1.74.2 — 2026-10-13
+
+### Fixes
+- fix(resolver): plugInfo LibraryPath names the shipped library on Linux and macOS (`e1de65be`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.74.1 (`c5f267fa`)
+
+### Tests
+- test(deck): unpack menu entries instead of indexing them (`9d7c47e1`)
+
 ## v1.74.1 — 2026-10-13
 
 ### Fixes

@@ -3,21 +3,16 @@
 from typing import Sequence
 
 
-def sort_aovs(
-    aovs: Sequence[str],
-    include_combined: bool = False
-) -> list[str]:
+def sort_aovs(aovs: Sequence[str]) -> list[str]:
     """Sort AOVs by category: beauty, LPEs, mattes, others.
 
     Args:
         aovs: List of AOV names (case-insensitive matching)
-        include_combined: If True, also treat 'c' as beauty and 'c_*' as LPEs
-                         (used by puzzlemattes for combined AOVs)
 
     Returns:
         Sorted list with:
-        1. 'beauty' or 'c' (if present, case-insensitive)
-        2. 'beauty_*' or 'c_*' LPE channels
+        1. 'beauty' (if present, case-insensitive)
+        2. 'beauty_*' LPE channels
         3. 'objid_*' and 'holdout_*' (mattes)
         4. All other AOVs
     """
@@ -26,14 +21,11 @@ def sort_aovs(
     mattes = []
     other = []
 
-    beauty_names = {'beauty', 'c'} if include_combined else {'beauty'}
-    lpe_prefixes = ('beauty_', 'c_') if include_combined else ('beauty_',)
-
     for aov in aovs:
         _aov = aov.lower()
-        if _aov in beauty_names:
+        if _aov == 'beauty':
             beauty = aov
-        elif _aov.startswith(lpe_prefixes):
+        elif _aov.startswith('beauty_'):
             lpes.append(aov)
         elif _aov.startswith('objid_') or _aov.startswith('holdout_'):
             mattes.append(aov)
@@ -47,14 +39,13 @@ def sort_aovs(
     return result
 
 
-def get_ordered_render_vars(stage, include_combined: bool = False) -> str:
+def get_ordered_render_vars(stage) -> str:
     """Get space-separated ordered RenderVar paths from a USD stage.
 
     This is the full expression used in HDA channel parameters.
 
     Args:
         stage: USD stage to query
-        include_combined: If True, also treat 'c' as beauty
 
     Returns:
         Space-separated string of RenderVar prim paths, sorted by category
@@ -70,5 +61,5 @@ def get_ordered_render_vars(stage, include_combined: bool = False) -> str:
         if aov_prim.GetTypeName() == 'RenderVar'
     }
 
-    order = sort_aovs(aovs.keys(), include_combined=include_combined)
+    order = sort_aovs(aovs.keys())
     return ' '.join([aovs[aov] for aov in order])

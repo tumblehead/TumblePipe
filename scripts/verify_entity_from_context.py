@@ -12,8 +12,8 @@ workfile the node lives in, every time it is evaluated.
 This checks the four ways that contract has been broken before:
 
 1. HDA parm defaults — an entity-addressing parm whose default is a concrete
-   URI, or the empty string (which several wrappers silently resolve to the
-   *first entity in the project*, quietly operating on the wrong one).
+   URI, or the empty string (which used to resolve to the *first entity in
+   the project*, and now raises EntityNodeError on every evaluation).
 2. Baked-in on_created hooks — a wrapper that writes the workfile's URI into
    the parm at creation, defeating the sentinel it just defaulted to.
 3. Department templates — the single-entity branch (_create_entity) stamping
@@ -55,10 +55,7 @@ EXEMPT = {
 
 # Resolvers that read the pointer but deliberately accept a group, with the
 # reason. They must handle it, not merely tolerate it.
-GROUP_AWARE = {
-    'cops/build_comp.py::_entity_from_context_json':
-        'the comp builder runs in a Multi workfile and branches on the group',
-}
+GROUP_AWARE: dict[str, str] = {}
 
 
 _PARM_BLOCK = re.compile(
@@ -91,7 +88,7 @@ def check_hda_defaults() -> list[str]:
             value = default.group('default')
             if value == SENTINEL:
                 continue
-            shown = repr(value) if value else "'' (resolves to the first entity in the project)"
+            shown = repr(value) if value else "'' (an error: an empty entity never resolves)"
             failures.append(
                 f"{hda}: parm '{name.group('name')}' defaults to {shown}, "
                 f"expected '{SENTINEL}'"

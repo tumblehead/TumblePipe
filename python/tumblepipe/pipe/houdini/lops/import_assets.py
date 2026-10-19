@@ -1,44 +1,31 @@
 import hou
 
-from pathlib import Path
 
 from tumblepipe.api import api
+from tumblepipe import naming
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.department import (
     Department,
     list_departments,
     list_entity_departments,
 )
-from tumblepipe.config.channels import list_channels
-from tumblepipe.pipe.paths import list_version_paths, get_workfile_context
-from tumblepipe.pipe.houdini.util import uri_to_prim_path
+from tumblepipe.config.channels import CHANNEL_KEY, list_channels
+from tumblepipe.pipe.paths import list_version_paths
+from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
+from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.lops import import_asset
 
+def _instance_prim_paths(asset_prim_path: str, instances: int) -> list[str]:
+    """The prims the Duplicate LOP makes of ``asset_prim_path``, in order.
 
-def _clear_scene(dive_node, output_node, keep_names=()):
+    With its defaults (0-based ``@copy``, source deactivated) the copies of
+    ``/CHAR/Chair`` are ``/CHAR/Chair0`` .. ``/CHAR/Chair<N-1>``; the source
+    itself is not one of them.
+    """
+    return [f'{asset_prim_path}{index}' for index in range(instances)]
 
-    # Clear output connections
-    for input in output_node.inputConnections():
-        output_node.setInput(input.inputIndex(), None)
-
-    # Delete all nodes other than inputs, outputs, and preserved nodes.
-    # Preserved nodes (e.g. the persistent edit node) keep their promoted
-    # parm links and stored deltas across rebuilds.
-    keep = {output_node.name()} | set(keep_names)
-    for node in dive_node.children():
-        if node.name() in keep: continue
-        node.destroy()
-
-def _connect(node1, node2):
-    port = len(node2.inputs())
-    node2.setInput(port, node1)
-
-def _insert(data, path, value):
-    for key in path[:-1]:
-        data = data.setdefault(key, {})
-    data[path[-1]] = value
 
 def _update_script(instances):
 
@@ -46,7 +33,7 @@ def _update_script(instances):
     script = [
         'import hou',
         '',
-        'from tumblepipe.pipe.houdini import util',
+        'from tumblepipe.pipe.houdini import prim_metadata, prim_queries',
         '',
         'node = hou.pwd()',
         'stage = node.editableStage()',
@@ -62,7 +49,7 @@ def _update_script(instances):
     # Create the metadata when it's absent rather than only updating it in
     # place. customData does compose through the Duplicate LOP's reference
     # arcs (the historical "duplicates lose metadata" drops were the scrape
-    # not traversing instance proxies — see util._iter_prim_children), but
+    # not traversing instance proxies — see prim_queries.iter_prim_children), but
     # re-authoring it per instance keeps each copy's 'instance' name unique
     # and covers duplicate modes that don't reference the source.
     for prim_path, asset_uri_str, instance_name in instances:
@@ -71,11 +58,11 @@ def _update_script(instances):
         script += [
             f'{prim_var} = root.GetPrimAtPath("{prim_path}")',
             f'if {prim_var}.IsValid():',
-            f'    {metadata_var} = util.get_metadata({prim_var})',
+            f'    {metadata_var} = prim_metadata.get_metadata({prim_var})',
             f'    if {metadata_var} is None:',
             f"        {metadata_var} = {{'uri': '{asset_uri_str}', 'instance': '{instance_name}', 'inputs': []}}",
             f'    {metadata_var}["instance"] = "{instance_name}"',
-            f'    util.set_metadata({prim_var}, {metadata_var})',
+            f'    prim_metadata.set_metadata({prim_var}, {metadata_var})',
             ''
         ]
     
@@ -110,7 +97,7 @@ def _assets_metadata_script(
     script_lines = [
         'import hou',
         '',
-        'from tumblepipe.pipe.houdini import util',
+        'from tumblepipe.pipe.houdini import prim_metadata, prim_queries',
         '',
         'node = hou.pwd()',
         'stage = node.editableStage()',
@@ -132,10 +119,10 @@ def _assets_metadata_script(
             f'# Asset: {asset_uri}',
             f'prim = root.GetPrimAtPath("{prim_path}")',
             'if prim.IsValid():',
-            '    util.set_metadata(prim, {',
+            '    prim_metadata.set_metadata(prim, {',
             f"        'uri': '{str(asset_uri)}',",
             f"        'instance': '{base_name}',",
-            f"        'variant': '{channel}',",
+            f"        '{CHANNEL_KEY}': '{channel}',",
             f"        'inputs': {inputs_str}",
             '    })',
             '',
@@ -157,7 +144,7 @@ def _inline_marker_script(prim_paths: list[str]) -> str:
     script_lines = [
         'import hou',
         '',
-        'from tumblepipe.pipe.houdini import util',
+        'from tumblepipe.pipe.houdini import prim_metadata, prim_queries',
         '',
         'node = hou.pwd()',
         'stage = node.editableStage()',
@@ -169,7 +156,7 @@ def _inline_marker_script(prim_paths: list[str]) -> str:
         script_lines.extend([
             f'prim = root.GetPrimAtPath("{prim_path}")',
             'if prim.IsValid():',
-            '    util.mark_inlined(prim)',
+            '    prim_metadata.mark_inlined(prim)',
             '',
         ])
 
@@ -223,10 +210,7 @@ def apply_variant_selections(hda_node, stage, rows: dict[int, list[str]]):
     rows reordered without re-importing — must not land on another asset.
     """
     for index, prim_paths in rows.items():
-        parm = hda_node.parm(f'usd_variant{index}')
-        if parm is None:
-            continue
-        choice = _parse_variant_choice(parm.eval())
+        choice = _parse_variant_choice(hda_node.parm(f'usd_variant{index}').eval())
         if choice is None:
             continue
         set_name, variant_name = choice
@@ -255,8 +239,7 @@ class ImportAssets(EntityNode):
         N assets at once and its exclusion is node-level, so there is no
         single entity to narrow to — and narrowing to any one row would hide
         departments that another row's asset has. Union instead, ordered by
-        the pool, because pool order is pipeline order and is load-bearing
-        (designs/per-entity-departments.md §3).
+        the pool, because pool order is pipeline order and is load-bearing.
 
         Overriding this at all is not cosmetic: the base calls
         ``self.get_entity_uri()`` with no args, which this class's indexed
@@ -266,10 +249,8 @@ class ImportAssets(EntityNode):
         populate, and the singular→plural upgrade dropped the exclusion into
         a log.debug.
 
-        Read-only throughout. This runs from the exclusion menu's script, and
-        ``get_asset_imports()`` materializes each row's URI back onto its
-        parm — a parm write during menu evaluation dirties the node mid-draw
-        (see ``get_entity_uri``).
+        Read-only throughout: this runs from the exclusion menu's script,
+        and a parm write during menu evaluation dirties the node mid-draw.
         """
         pool = list_departments(context, include_generated=include_generated)
         assigned: set[str] = set()
@@ -295,7 +276,7 @@ class ImportAssets(EntityNode):
 
     def list_entity_uris(self, index) -> list[Uri]:
         all_asset_uris = api.config.list_entity_uris(
-            filter = Uri.parse_unsafe('entity:/assets'),
+            filter = Uri.parse('entity:/assets'),
             closure = True
         )
 
@@ -306,7 +287,7 @@ class ImportAssets(EntityNode):
             if other_index == index: continue
             other_asset_uri_raw = self.parm(f'entity{other_index}').eval()
             if len(other_asset_uri_raw) == 0: continue
-            other_asset_uri = Uri.parse_unsafe(other_asset_uri_raw)
+            other_asset_uri = Uri.parse(other_asset_uri_raw)
             if other_asset_uri in all_asset_uris:
                 other_asset_uris.add(other_asset_uri)
 
@@ -317,48 +298,63 @@ class ImportAssets(EntityNode):
         ]
 
     def get_entity_uri(self, index) -> Uri | None:
-        """Resolve the entity for a row, read-only.
+        """The row's asset; None for a row with no asset picked yet.
 
-        Falls back to the first available asset WITHOUT writing the parm:
-        this is called from the channel/version menu scripts, and a parm
-        write during menu evaluation dirties the node mid-draw (and can
-        re-trigger evaluation). The fallback is materialized on the parm
-        only by explicit actions (select/add_asset_entry/execute).
+        A row's asset is always explicit — an empty row used to resolve to
+        the first asset in the project, which imported an arbitrary asset.
+        An asset that is not in the project, or that another row already
+        imports, raises EntityNodeError.
         """
-        asset_uris = self.list_entity_uris(index)
-        if len(asset_uris) == 0: return None
         asset_uri_raw = self.parm(f'entity{index}').eval()
-        if len(asset_uri_raw) == 0 or Uri.parse_unsafe(asset_uri_raw) not in asset_uris:
-            return asset_uris[0]
-        return Uri.parse_unsafe(asset_uri_raw)
-    
+        if len(asset_uri_raw) == 0: return None
+        asset_uri = Uri.parse(asset_uri_raw)
+        if asset_uri in self.list_entity_uris(index):
+            return asset_uri
+        if asset_uri in self.list_asset_uris():
+            raise self._error(
+                f'row {index}: {asset_uri} is already imported by another '
+                'row. Remove one of the rows, or raise its Instances.'
+            )
+        raise self._error(
+            f'row {index}: {asset_uri} is not an asset in the project. '
+            "Pick one with the row's Entity button."
+        )
+
+    def require_entity_uri(self, index) -> Uri:
+        """The row's asset, for the import, which cannot skip a row."""
+        asset_uri = self.get_entity_uri(index)
+        if asset_uri is None:
+            raise self._error(
+                f"row {index} has no asset. Pick one with the row's Entity "
+                'button, or remove the row.'
+            )
+        return asset_uri
+
     def get_instances(self, index):
         return self.parm(f'instances{index}').eval()
 
     def list_channel_names(self, index: int) -> list[str]:
-        """List available channel names for the asset at this index."""
+        """The row's asset's channels, 'default' first; none while unset."""
         asset_uri = self.get_entity_uri(index)
         if asset_uri is None:
-            return ['default']
-        channels = list_channels(asset_uri)
-        if not channels:
-            return ['default']
-        if 'default' in channels:
-            channels.remove('default')
-            channels.insert(0, 'default')
-        return channels
+            return []
+        return list_channels(asset_uri)
 
     def get_channel_name(self, index: int) -> str:
-        """Get selected channel name for this index, defaults to 'default'."""
-        channel_names = self.list_channel_names(index)
-        channel_name = self.parm(f'variant{index}').eval()
-        if not channel_name or channel_name not in channel_names:
-            return 'default'
+        """The row's Channel, which must be a channel of the row's asset."""
+        asset_uri = self.require_entity_uri(index)
+        channel_names = list_channels(asset_uri)
+        channel_name = self.parm(f'channel{index}').eval()
+        if channel_name not in channel_names:
+            raise self._error(
+                f"row {index}: channel '{channel_name}' is not a channel of "
+                f"{asset_uri} (listed: {', '.join(channel_names)})"
+            )
         return channel_name
 
     def set_channel_name(self, index: int, channel_name: str):
         """Set channel name for this index."""
-        self.parm(f'variant{index}').set(channel_name)
+        self.parm(f'channel{index}').set(channel_name)
 
     def list_version_names(self, index: int) -> list[str]:
         """List available staged versions for asset at this index."""
@@ -367,9 +363,9 @@ class ImportAssets(EntityNode):
             return ['latest', 'current']
 
         # Staged directory for the row's channel
-        # (_staged/<variant>/v####, mirroring import_shot)
+        # (_staged/<channel>/v####, mirroring import_shot)
         staged_uri = (
-            Uri.parse_unsafe('export:/') /
+            Uri.parse('export:/') /
             asset_uri.segments /
             '_staged' /
             self.get_channel_name(index)
@@ -382,10 +378,12 @@ class ImportAssets(EntityNode):
         return ['latest', 'current'] + version_names
 
     def get_version_name(self, index: int) -> str:
-        """Get selected version name for this index. Default is 'latest'."""
+        """The row's version: 'latest', 'current' or a version name."""
         version_name = self.parm(f'version{index}').eval()
         if len(version_name) == 0:
-            return 'latest'
+            raise self._error(
+                f"row {index}: version is empty. Pick a version, or 'latest'."
+            )
         return version_name
 
     def set_version_name(self, index: int, version_name: str):
@@ -413,9 +411,11 @@ class ImportAssets(EntityNode):
             return menu
         try:
             stage = row_node.stage()
-            prim = stage.GetPrimAtPath(uri_to_prim_path(asset_uri))
-        except (hou.Error, ValueError):
+        except hou.Error:
+            # A row whose import fails to cook has no stage to list; the
+            # node's own cook error already says why.
             return menu
+        prim = stage.GetPrimAtPath(uri_to_prim_path(asset_uri))
         if not prim.IsValid():
             return menu
         variant_sets = prim.GetVariantSets()
@@ -430,21 +430,12 @@ class ImportAssets(EntityNode):
         return menu
 
     def get_asset_imports(self) -> list[tuple[Uri, str, str, int]]:
-        """Returns list of (asset_uri, channel, version, instances) for all asset imports.
-
-        Materializes each row's resolved URI back onto its entity parm —
-        this runs from execute() (an explicit action), and the saved scene
-        must record what the node actually imports (entity-parm sweeps
-        read workfiles, and get_entity_uri's fallback is deliberately
-        read-only for menu evaluation).
-        """
+        """(asset_uri, channel, version, instances) for every row. Every row
+        must name its asset; see require_entity_uri."""
         asset_imports = []
         count = self.parm('asset_imports').eval()
         for index in range(1, count + 1):
-            asset_uri = self.get_entity_uri(index)
-            if asset_uri is None: continue
-            if self.parm(f'entity{index}').eval() != str(asset_uri):
-                self.parm(f'entity{index}').set(str(asset_uri))
+            asset_uri = self.require_entity_uri(index)
             channel = self.get_channel_name(index)
             version = self.get_version_name(index)
             instances = self.get_instances(index)
@@ -452,8 +443,11 @@ class ImportAssets(EntityNode):
         return asset_imports
 
     def set_entity_uri(self, index, asset_uri: Uri):
-        asset_uris = self.list_entity_uris(index)
-        if asset_uri not in asset_uris: return
+        if asset_uri not in self.list_entity_uris(index):
+            raise self._error(
+                f'row {index}: {asset_uri} is not an asset in the project, '
+                'or another row already imports it'
+            )
         self.parm(f'entity{index}').set(str(asset_uri))
 
     def add_asset_entry(
@@ -476,7 +470,7 @@ class ImportAssets(EntityNode):
         new_index = count + 1
         self.parm('asset_imports').set(new_index)
         self.parm(f'entity{new_index}').set(str(asset_uri))
-        self.parm(f'variant{new_index}').set(channel)
+        self.parm(f'channel{new_index}').set(channel)
         self.parm(f'version{new_index}').set(version)
         self.parm(f'instances{new_index}').set(instances)
         return new_index
@@ -486,11 +480,9 @@ class ImportAssets(EntityNode):
 
     def _update_labels(self, index: int):
         """Update label parameters for the given index."""
-        entity_uri = self.get_entity_uri(index)
-        if entity_uri:
-            self.parm(f'entity_label{index}').set(str(entity_uri))
-        else:
-            self.parm(f'entity_label{index}').set('none')
+        self.parm(f'entity_label{index}').set(
+            self.parm(f'entity{index}').eval() or 'none'
+        )
 
         # Resolve version name (resolve 'latest' to actual version)
         version_name = self.get_version_name(index)
@@ -524,16 +516,11 @@ class ImportAssets(EntityNode):
 
         # Clear scene. The persistent edit node (layout_assets) that backs the
         # HDA's transform state lives at the HDA root, downstream of the
-        # layerbreak — inside the dive its layer sat above the break and every
-        # placement was stripped on export. An instance whose contents were
-        # unlocked before that move still carries it in the dive: preserve it
-        # there so its promoted parms + stored deltas survive the rebuild.
+        # layerbreak, so nothing in the dive survives a rebuild.
         context = self.native()
         dive_node = context.node('dive')
         output_node = dive_node.node('output')
-        edit_node = dive_node.node('layout_assets')
-        keep_names = ('layout_assets',) if edit_node is not None else ()
-        _clear_scene(dive_node, output_node, keep_names)
+        ns.clear_network(dive_node, output_node)
 
         # Parameters
         asset_imports = self.get_asset_imports()
@@ -589,7 +576,7 @@ class ImportAssets(EntityNode):
             if instances == 1:
                 all_prim_paths.append(asset_prim_path)
                 asset_prim_paths[asset_uri] = [asset_prim_path]
-                _connect(asset_node.native(), merge_node)
+                ns.connect_next(asset_node.native(), merge_node)
                 continue
 
             # Duplicate the asset (metadata in customData travels with the prim).
@@ -612,34 +599,26 @@ class ImportAssets(EntityNode):
                 '`@srcname``@copy`'
             )
             duplicate_node.parm('makeinstances').set(int(not animatable))
-            _connect(asset_node.native(), duplicate_node)
-            _connect(duplicate_node, merge_node)
+            ns.connect_next(asset_node.native(), duplicate_node)
+            ns.connect_next(duplicate_node, merge_node)
 
             # Update the script arguments to rename instance in metadata.
             # The Duplicate LOP (defaults: deactivate source, 0-based
             # @copy) names the copies Chair0..ChairN-1 and deactivates
-            # Chair. Tag both spellings for the first instance — the
-            # 0-based copy and the legacy kept-name form — since the
-            # update script skips invalid prim paths; the deactivated
-            # base harmlessly keeps its base metadata.
-            asset_prim_base = asset_prim_path.rsplit('/', 1)[0]  # e.g., /CHAR
-            prim_name = asset_prim_path.rsplit('/', 1)[1]  # e.g., Chair
+            # Chair; the deactivated base keeps its base metadata.
             base_name = asset_uri.segments[-1]  # Last segment is the asset name
-            for index in range(instances):
-                instance_name = api.naming.get_instance_name(base_name, index)
-                instance_prim_names = [f'{prim_name}{index}']
-                if index == 0:
-                    instance_prim_names.append(prim_name)
-                for instance_prim_name in instance_prim_names:
-                    instance_prim_path = f'{asset_prim_base}/{instance_prim_name}'
-                    script_args.append((
-                        instance_prim_path,
-                        str(asset_uri),
-                        instance_name
-                    ))
-                    asset_prim_paths.setdefault(asset_uri, []).append(
-                        instance_prim_path
-                    )
+            for index, instance_prim_path in enumerate(
+                _instance_prim_paths(asset_prim_path, instances)
+            ):
+                instance_name = naming.get_instance_name(base_name, index)
+                script_args.append((
+                    instance_prim_path,
+                    str(asset_uri),
+                    instance_name
+                ))
+                asset_prim_paths.setdefault(asset_uri, []).append(
+                    instance_prim_path
+                )
 
         # Update the instances names in the metadata. In inline mode the
         # update script must not run: it would (re)create pipeline metadata
@@ -656,13 +635,7 @@ class ImportAssets(EntityNode):
         )
         python_node.setInput(0, merge_node)
 
-        # Legacy unlocked instances route through their in-dive edit node;
-        # current definitions apply the edit after the layerbreak instead.
-        if edit_node is not None:
-            edit_node.setInput(0, python_node)
-            output_node.setInput(0, edit_node)
-        else:
-            output_node.setInput(0, python_node)
+        output_node.setInput(0, python_node)
 
         # Layout the nodes
         dive_node.layoutChildren()
@@ -671,20 +644,13 @@ class ImportAssets(EntityNode):
         asset_count = len(active_imports)
         ns.set_node_comment(context, f"Imported: {asset_count} asset{'s' if asset_count != 1 else ''}")
 
-        # Get workfile context for provenance tracking
-        shot_uri = None
-        shot_department = None
-        file_path = Path(hou.hipFile.path())
-        workfile_context = get_workfile_context(file_path)
-        if workfile_context is not None:
-            entity_uri = workfile_context.entity_uri
-            # Only track shot context (not asset context, and not the group a
-            # Multi's workfile records — that is not a shot to attribute to)
-            if (entity_uri.purpose == 'entity'
-                    and entity_uri.segments
-                    and entity_uri.segments[0] == 'shots'):
-                shot_uri = entity_uri
-                shot_department = workfile_context.department_name
+        # Provenance: only a shot workfile is tracked (not an asset, and not
+        # the group a Multi's workfile records — that is not a shot)
+        workfile_context = scene_context()
+        shot_uri = entity_in_contexts(workfile_context, contexts=('shots',))
+        shot_department = (
+            workfile_context.department_name if shot_uri is not None else None
+        )
 
         # Generate and set metadata script (runs after merge at HDA level).
         # Inline mode swaps the pipeline metadata for a marker on every
@@ -712,28 +678,24 @@ class ImportAssets(EntityNode):
 def create(scene, name):
     return ns.create_node(scene, name, ImportAssets, 'import_assets')
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
-
 def on_created(raw_node):
     # Set node style
-    set_style(raw_node)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
 
     node = ImportAssets(raw_node)
     node._initialize()
 
-def execute():
-    raw_node = hou.pwd()
+def execute(kwargs):
+    raw_node = kwargs['node']
     node = ImportAssets(raw_node)
     node.execute()
 
-def select(index: int):
-    """HDA button callback to open entity selector dialog."""
+def select(kwargs):
+    """A row's Entity button: pick that row's asset."""
     from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
 
-    raw_node = hou.pwd()
-    node = ImportAssets(raw_node)
-
+    index = kwargs['parm'].multiParmInstanceIndices()[0]
+    node = ImportAssets(kwargs['node'])
     dialog = EntitySelectorDialog(
         api=api,
         entity_filter='assets',
@@ -742,20 +704,17 @@ def select(index: int):
         title="Select Asset",
         parent=hou.qt.mainWindow()
     )
-
     if dialog.exec_():
         selected_uri = dialog.get_selected_uri()
         if selected_uri:
             node.parm(f'entity{index}').set(selected_uri)
             node._update_labels(index)
 
-
 def output_modified_prims(raw_node) -> str:
     """Return the imported asset prim paths, space-separated.
 
-    Resolve each row through the wrapper rather than parsing its raw parm: a
-    row whose entity has not been materialized yet holds an empty parm and
-    was skipped here, even though it resolves to a real asset.
+    Evaluated on every cook: a row with no asset picked yet modifies
+    nothing; a row naming an asset that does not resolve raises.
     """
     wrapper = ImportAssets(raw_node)
     count = raw_node.parm('asset_imports').eval()
@@ -764,8 +723,5 @@ def output_modified_prims(raw_node) -> str:
         entity_uri = wrapper.get_entity_uri(i)
         if entity_uri is None:
             continue
-        try:
-            paths.append(uri_to_prim_path(entity_uri))
-        except ValueError:
-            pass
+        paths.append(uri_to_prim_path(entity_uri))
     return ' '.join(paths)

@@ -37,7 +37,7 @@ the folder's name), keeping only its letters and digits. The name becomes
 the project's default farm pool.
 
 **Create project** copies the bundled template (`scripts/project_template/`)
-into the folder — `_config/` with the convention modules, the JSON databases and
+into the folder — `_config/` with the storage table, the JSON databases and
 the department templates — patches the databases with your fps and farm
 pool, and creates the top-level `assets/`, `shots/`, `groups/` and
 `export/` directories. If the copy fails, a **Project creation failed** modal

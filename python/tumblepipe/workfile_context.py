@@ -19,20 +19,16 @@ the one that knows the workfile, so it answers for it:
   are the *package* layer, where the stock rig menu would tie with
   TumbleRig's and the package names' order would pick.
 
-Everything is best-effort. Without ``tumbletrove.context`` (TumbleTrove
-older than the release carrying #24) nothing registers, and a provider
-function that fails answers "don't know" instead of raising into
-TumbleTrove's scene callbacks.
+A provider function that fails raises: ``tumbletrove.context`` is the
+boundary that logs a failing provider and carries on with "don't know", so
+swallowing here as well would only hide which provider broke and why.
 """
 
 from __future__ import annotations
 
-import inspect
-import logging
 import os
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
 
 #: The provider name TumbleTrove reports as ``Context.source``.
 PROVIDER_NAME = "tumblepipe"
@@ -64,12 +60,8 @@ def workfile_context(hip_path) -> dict | None:
     """The open workfile's department, entity and version, or ``None``."""
     if not hip_path:
         return None
-    try:
-        from tumblepipe.pipe.paths.workspace import get_workfile_context
-        ctx = get_workfile_context(Path(hip_path))
-    except Exception:
-        logger.debug("no workfile context for %s", hip_path, exc_info=True)
-        return None
+    from tumblepipe.pipe.paths.workspace import get_workfile_context
+    ctx = get_workfile_context(Path(hip_path))
     if ctx is None:
         return None
     return {
@@ -82,19 +74,15 @@ def workfile_context(hip_path) -> dict | None:
 def project_departments() -> list[str] | None:
     """The project's enabled departments, assets then shots, or ``None``.
 
-    ``None`` (no project, unreadable config) lets TumbleTrove fall back to
-    its standard list rather than offer an empty picker.
+    ``None`` (a project with no enabled department) lets TumbleTrove fall
+    back to its standard list rather than offer an empty picker.
     """
-    try:
-        from tumblepipe.config.department import list_department_names
-        names: list[str] = []
-        for context in _DEPARTMENT_CONTEXTS:
-            for name in list_department_names(context, include_disabled=False):
-                if name not in names:
-                    names.append(name)
-    except Exception:
-        logger.debug("could not list the project's departments", exc_info=True)
-        return None
+    from tumblepipe.config.department import list_department_names
+    names: list[str] = []
+    for context in _DEPARTMENT_CONTEXTS:
+        for name in list_department_names(context, include_disabled=False):
+            if name not in names:
+                names.append(name)
     return names or None
 
 
@@ -112,30 +100,14 @@ def stock_dir(kind: str) -> Path | None:
     return folder if folder.is_dir() else None
 
 
-def register() -> bool:
-    """Register with ``tumbletrove.context``. ``False`` when it isn't there.
+def register() -> None:
+    """Register with ``tumbletrove.context``."""
+    from tumbletrove import context
 
-    ``stock_dir`` is passed only to a TumbleTrove that takes it, so an
-    earlier build of the context API still gets the context, departments
-    and project folder.
-    """
-    try:
-        from tumbletrove import context
-    except ImportError:
-        return False
-    if not hasattr(context, "register_provider"):
-        return False
-
-    kwargs = {
-        "context": workfile_context,
-        "departments": project_departments,
-        "project_dir": project_dir,
-    }
-    try:
-        accepted = inspect.signature(context.register_provider).parameters
-    except (TypeError, ValueError):
-        accepted = {}
-    if "stock_dir" in accepted:
-        kwargs["stock_dir"] = stock_dir
-    context.register_provider(PROVIDER_NAME, **kwargs)
-    return True
+    context.register_provider(
+        PROVIDER_NAME,
+        context=workfile_context,
+        departments=project_departments,
+        project_dir=project_dir,
+        stock_dir=stock_dir,
+    )

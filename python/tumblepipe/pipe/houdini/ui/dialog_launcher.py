@@ -14,7 +14,6 @@ the farm), and so ``process_executor`` no longer imports ``process_dialog`` —
 the two used to cycle.
 """
 
-from pathlib import Path
 
 from .task_collection import (
     collect_tasks_for_export_node,
@@ -34,15 +33,14 @@ def open_process_dialog_for_node(export_node, dialog_title: str = "Export") -> N
         dialog_title: Title for the dialog window
     """
     import hou
-    from tumblepipe.pipe.paths import get_workfile_context
+    from tumblepipe.pipe.houdini.scene_context import scene_context
     from .process_dialog import ProcessDialog
 
     # Config reads are coherent: an entity's frame range / departments /
     # downstream deps written to disk after this session started (shot import,
     # a producer or another machine/session editing config) are picked up on
     # the next read. No manual refresh is needed before collecting them here.
-    file_path = Path(hou.hipFile.path())
-    context = get_workfile_context(file_path)
+    context = scene_context()
     if context is None:
         hou.ui.displayMessage(
             "Cannot determine workfile context. Save the file first.",
@@ -101,9 +99,8 @@ def open_process_dialog_for_publish(context, dialog_title: str = "Publish") -> N
     node's subset. This is the one-window replacement for the old headless
     per-node loop (a bare execute() per node opened one dialog per export node).
 
-    ``context`` is resolved by the caller (``SceneManager.get_loaded_scene_context``)
-    so migrated projects without ``context.json`` still work — do not re-derive
-    it from ``get_workfile_context`` here, which lacks that fallback.
+    ``context`` is the loaded scene's workfile context, which the caller
+    (``SceneManager.get_loaded_scene_context``) has already read.
 
     Must run on Houdini's main thread; the browser quick action fires off the
     GUI thread and marshals here via ``run_on_main_thread``.

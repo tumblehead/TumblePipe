@@ -9,15 +9,15 @@ way: ``view`` imports ``items``.
 
 from functools import partial
 
-from qtpy.QtCore import QObject, Qt, Signal
-from qtpy.QtGui import (
+from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtGui import (
     QBrush,
     QColor,
     QFont,
     QStandardItem,
     QStandardItemModel,
 )
-from qtpy.QtWidgets import (
+from PySide6.QtWidgets import (
     QInputDialog,
     QMenu,
     QMessageBox,

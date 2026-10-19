@@ -1,11 +1,4 @@
-import hou
-from tumblepipe.pipe.houdini.lops import import_assets
-
-def execute():
-    import_assets.execute()
-
-def select(index):
-    import_assets.select(index)
-
-def output_modified_prims(node):
-    return import_assets.output_modified_prims(node)
+# The hidden 'output_modified_prims' parm's pythonexprs reaches the HDA
+# module (saved scenes store the expression verbatim); every callback
+# calls tumblepipe.pipe.houdini.lops.import_assets directly.
+from tumblepipe.pipe.houdini.lops.import_assets import output_modified_prims  # noqa: F401

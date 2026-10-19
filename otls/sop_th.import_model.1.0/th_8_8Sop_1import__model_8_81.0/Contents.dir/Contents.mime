@@ -243,7 +243,7 @@ selection	[ 0	locks=0 ]	(	0	)
 entity_select	[ 0	locks=0 ]	(	0	)
 entity	[ 0	locks=0	autoscope=1	autosel=4294967295 ]	(	[ entity	from_context ] 	)
 entity_label	[ 0	locks=0 ]	(	""	)
-variant	[ 0	locks=0	autoscope=1	autosel=4294967295 ]	(	default	)
+channel	[ 0	locks=0	autoscope=1	autosel=4294967295 ]	(	default	)
 department	[ 0	locks=0 ]	(	[ department	from_context ] 	)
 department_label	[ 0	locks=0 ]	(	""	)
 version	[ 0	locks=0	autoscope=1	autosel=4294967295 ]	(	[ version	current ] 	)
@@ -325,48 +325,8 @@ Content-Type: text/plain
       flags = 0
       segment { options = {	 autoslope  ai ao }
 
-	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "def input_prims():
-    # Fallback for when the entity URI can't be resolved (unsaved hip,
-    # scratch scene, missing context.json). A glob is NOT usable here:
-    # setvariant resolves a concrete prim, so \"/*\" (and even \"/**\")
-    # collapse the variant menu to just the empty \"Clear From Active
-    # Layer\" entry, which reads to artists as a missing dropdown.
-    # lopinputprims() via hou.hscriptExpression() returns empty inside a
-    # parm expression, so scan the incoming stage instead. Shallow, and
-    # only ever reached on the failure path.
-    node = hou.pwd()
-    inputs = node.inputs()
-    if not inputs:
-        return \"\"
-    stage = inputs[0].stage()
-    if stage is None:
-        return \"\"
-    pending = [(child, 1) for child in stage.GetPseudoRoot().GetChildren()]
-    while pending:
-        prim, depth = pending.pop(0)
-        if prim.GetVariantSets().GetNames():
-            return str(prim.GetPath())
-        if depth < 3:
-            pending.extend((c, depth + 1) for c in prim.GetChildren())
-    return \"\"
-
-try:
-    from tumblepipe.pipe.houdini.util import uri_to_prim_path
-    from tumblepipe.util.uri import Uri
-    entity = hou.parm(\"../../entity\").eval()
-    if entity == \"from_context\":
-        from tumblepipe.pipe.paths import get_workfile_context
-        from pathlib import Path
-        context = get_workfile_context(Path(hou.hipFile.path()))
-        if context and context.entity_uri.purpose == \"entity\":
-            return uri_to_prim_path(context.entity_uri)
-        return input_prims()
-    if entity:
-        uri = Uri.parse_unsafe(entity)
-        return uri_to_prim_path(uri)
-    return input_prims()
-except Exception:
-    return input_prims()" language = python }
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.sops import import_model
+return import_model.variant_prim_path(hou.pwd())" language = python }
     }
     channel variantset1 {
       lefttype = extend

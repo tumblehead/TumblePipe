@@ -1,7 +1,7 @@
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 
-DISCORD_URI = Uri.parse_unsafe('config:/discord')
+DISCORD_URI = Uri.parse('config:/discord')
 
 def get_token() -> str | None:
     """Get the Discord bot token, or None when the project has not set one.
@@ -57,15 +57,6 @@ def get_channel_id(channel_name: str) -> int | None:
     if properties is None: return None
     return properties.get('channel_id')
 
-def get_channel_for_department(department: str) -> str | None:
-    """Get the channel name for a given department."""
-    properties = _lookup('departments', department)
-    if properties is None: return None
-    return properties.get('channel')
-
-def list_users() -> list[str]:
-    """List all registered Discord usernames."""
-    return list(_children('users').keys())
 
 def list_channels() -> list[str]:
     """List all registered Discord channel names."""

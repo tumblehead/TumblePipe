@@ -79,7 +79,7 @@ def check_a_absolutize(report):
         report.record("A. absolutize cache arcs", "SKIP", f"pxr unavailable ({exc})")
         return
     try:
-        from tumblepipe.pipe.houdini.lops.export_layer import _absolutize_cache_arcs
+        from tumblepipe.pipe.houdini.export_checks import absolutize_cache_arcs as _absolutize_cache_arcs
     except Exception as exc:  # noqa: BLE001
         report.record("A. absolutize cache arcs", "FAIL", f"import failed: {exc}")
         traceback.print_exc()
@@ -136,7 +136,7 @@ def check_b_skip_roots(report):
         report.record("B. localize skips cache", "SKIP", f"pxr unavailable ({exc})")
         return
     try:
-        from tumblepipe.pipe.houdini.lops.export_layer import _localize_external_sidecars
+        from tumblepipe.pipe.houdini.export_checks import localize_external_sidecars as _localize_external_sidecars
     except Exception as exc:  # noqa: BLE001
         report.record("B. localize skips cache", "FAIL", f"import failed: {exc}")
         traceback.print_exc()
@@ -197,9 +197,9 @@ def check_c_guard(report):
         report.record("C. guard exemption", "SKIP", f"pxr unavailable ({exc})")
         return
     try:
-        from tumblepipe.pipe.houdini.lops.export_layer import (
+        from tumblepipe.pipe.houdini.export_checks import (
             ExportLayerError,
-            _check_no_dangling_composition_paths,
+            check_no_dangling_composition_paths as _check_no_dangling_composition_paths,
         )
     except Exception as exc:  # noqa: BLE001
         report.record("C. guard exemption", "FAIL", f"import failed: {exc}")

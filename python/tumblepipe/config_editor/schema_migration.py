@@ -37,7 +37,7 @@ def collect_entities_by_schema(config, schema_uri: Uri) -> list[tuple[Uri, dict]
     just leaves) so a category-level schema edit still finds its entities.
 
     Args:
-        config: The ConfigConvention (for get_entity_schema_uri + cache)
+        config: The JsonConfigStore (for get_entity_schema_uri + cache)
         schema_uri: The schema URI being edited (e.g.
             ``schemas:/entity/assets/category/asset``)
 
@@ -56,7 +56,7 @@ def collect_entities_by_schema(config, schema_uri: Uri) -> list[tuple[Uri, dict]
             walk(child, uri / name)
 
     purpose_data = config.root(purpose) or {}
-    base_uri = Uri.parse_unsafe(f'{purpose}:/')
+    base_uri = Uri.parse(f'{purpose}:/')
     for name, child in purpose_data.get('children', {}).items():
         walk(child, base_uri / name)
 
@@ -76,7 +76,7 @@ def build_migration(
         {"frame_start": 1001, "name": "untitled"}
 
     Args:
-        config: The ConfigConvention (for entity discovery + schema derivation)
+        config: The JsonConfigStore (for entity discovery + schema derivation)
         schema_uri: The schema URI being modified
         old_props: The original schema properties (which ARE the fields)
         new_props: The new schema properties (which ARE the fields)
@@ -124,11 +124,11 @@ def apply_migration(adapter, migration: SchemaMigration) -> None:
             props = adapter.lookup_properties(uri)
             if field_name not in props:
                 props[field_name] = default
-                adapter.save_properties(uri, props)
+                adapter.save_properties(uri, props, merge=False)
 
     for field_name, affected in migration.removals.items():
         for uri, _ in affected:
             props = adapter.lookup_properties(uri)
             if field_name in props:
                 del props[field_name]
-                adapter.save_properties(uri, props)
+                adapter.save_properties(uri, props, merge=False)

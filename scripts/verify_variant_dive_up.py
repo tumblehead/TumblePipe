@@ -31,6 +31,8 @@ import sys
 
 import hou
 
+from tumblepipe.pipe.houdini.lops import create_asset
+
 ASSET = "/PROP/crate"
 
 
@@ -52,13 +54,12 @@ def walk_up(pwd):
 
 def set_variants(node, names):
     """Drive the Variants multiparm the way its callbacks do, minus the event loop."""
-    module = node.hdaModule()
     node.parm("variants").set(len(names))
     for i, name in enumerate(names, start=1):
         node.parm(f"variant_name{i}").set(name)
-    module._sync_variants(node)
+    create_asset.wrap(node).sync_variants()
     for i, name in enumerate(names, start=1):
-        module.on_variant_name(
+        create_asset.on_variant_name(
             {"node": node, "script_multiparm_index": str(i), "script_value": name})
 
 
@@ -137,14 +138,14 @@ def check_model(stage_ctx, check):
           got == {"alt": [42], "default": [8], "extra": []}, got)
 
     node.parm("variant_name2").set("hero")
-    node.hdaModule().on_variant_name(
+    create_asset.on_variant_name(
         {"node": node, "script_multiparm_index": "2", "script_value": "hero"})
     got = per_variant(node, mesh_points)
     check("rename keeps the wiring",
           outputs(create)[1] == "OUT_hero" and got.get("hero") == [42], (outputs(create), got))
 
     node.parm("variants").set(2)
-    node.hdaModule()._sync_variants(node)
+    create_asset.wrap(node).sync_variants()
     check("remove drops the orphaned output",
           outputs(create) == {0: "OUT_default", 1: "OUT_hero"}, outputs(create))
 

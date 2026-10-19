@@ -1,17 +1,5 @@
-import hou
 
 import tumblepipe.pipe.houdini.nodes as ns
-
-def _clear_dive(dive_node, output_node):
-
-    # Clear output connections
-    for input in output_node.inputConnections():
-        output_node.setInput(input.inputIndex(), None)
-
-    # Delete all nodes other than output
-    for node in dive_node.children():
-        if node.name() == output_node.name(): continue
-        node.destroy()
 
 class SetKinds(ns.Node):
     def __init__(self, native):
@@ -38,7 +26,7 @@ class SetKinds(ns.Node):
         output_node = dive_node.node('output')
 
         # Clear existing configure nodes
-        _clear_dive(dive_node, output_node)
+        ns.clear_network(dive_node, output_node)
 
         # Get parameters
         prim_path = self.get_prim_path()
@@ -96,15 +84,7 @@ class SetKinds(ns.Node):
 def create(scene, name):
     return ns.create_node(scene, name, SetKinds, 'set_kinds')
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node)
-
-def on_created(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
-def execute():
-    raw_node = hou.pwd()
+def execute(kwargs):
+    raw_node = kwargs['node']
     node = SetKinds(raw_node)
     node.execute()

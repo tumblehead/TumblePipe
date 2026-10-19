@@ -72,7 +72,7 @@ def main() -> int:
     record = _stub_discord()
 
     from tumblepipe.config import discord as discord_config
-    from tumblepipe.farm.tasks.notify import notify
+    from tumblepipe.farm.workers import notify
 
     results: list[bool] = []
 

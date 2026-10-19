@@ -25,6 +25,8 @@ import sys
 
 import hou
 
+from tumblepipe.pipe.houdini.lops.import_assets import ImportAssets
+
 ENTITY = os.environ.get("TH_VERIFY_ENTITY", "entity:/assets/Clash/goblin")
 PRIM_PATH = os.environ.get("TH_VERIFY_PRIM", "/Clash/goblin")
 SET_NAME = os.environ.get("TH_VERIFY_VARIANT_SET", "model")
@@ -61,6 +63,11 @@ def install_synthetic_fixture():
             UsdGeom.Cube.Define(stage, "%s/geo_%s" % (PRIM_PATH, name))
     variant_set.SetVariantSelection("a")
     stage.GetRootLayer().Save()
+    # Every staged build writes its context.json sidecar; import_asset
+    # reads the tracked sub-assets from it and refuses a build without one.
+    import json
+    (Path(fixture_dir) / "context.json").write_text(
+        json.dumps({"parameters": {"assets": []}}), encoding="utf-8")
 
     resolver.try_resolve_entity_uri = lambda uri: str(staged)
     print("INFO synthetic staged layer: %s" % staged)
@@ -95,7 +102,7 @@ def main():
     node.parm("asset_imports").set(1)
     node.parm("entity1").set(ENTITY)
     hou.setPwd(node)
-    node.hdaModule().execute()
+    ImportAssets(node).execute()
     if node.isBypassed():
         print("ABORT: %s did not import — is it still on disk?" % ENTITY)
         return 1
@@ -132,7 +139,7 @@ def main():
 
     # Survives a re-import (execute rebuilds the dive and the script).
     node.parm("usd_variant1").set("%s=%s" % (SET_NAME, VARIANT))
-    node.hdaModule().execute()
+    ImportAssets(node).execute()
     check("single: survives re-import",
           selections(node, [PRIM_PATH]), [VARIANT])
 
@@ -143,7 +150,7 @@ def main():
     multi.parm("instances1").set(3)
     multi.parm("usd_variant1").set("%s=%s" % (SET_NAME, VARIANT))
     hou.setPwd(multi)
-    multi.hdaModule().execute()
+    ImportAssets(multi).execute()
     copies = ["%s%d" % (PRIM_PATH, i) for i in range(3)]
     check("multi: every copy selected",
           selections(multi, copies), [VARIANT] * 3)
@@ -155,7 +162,7 @@ def main():
     inline.parm("import_mode").set(1)
     inline.parm("usd_variant1").set("%s=%s" % (SET_NAME, VARIANT))
     hou.setPwd(inline)
-    inline.hdaModule().execute()
+    ImportAssets(inline).execute()
     check("inline: selection applied",
           selections(inline, [PRIM_PATH]), [VARIANT])
 

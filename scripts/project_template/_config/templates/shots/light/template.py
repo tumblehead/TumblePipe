@@ -27,7 +27,7 @@ def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
     # Create the import node (shot resolves from context)
     import_node = import_shot.create(scene_node, f'import_shot{suffix}')
     if pin:
-        import_node.set_shot_uri(entity_uri)
+        import_node.set_entity_uri(entity_uri)
         import_node.set_department_name(department_name)
 
     import_native = import_node.native()

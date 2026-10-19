@@ -22,7 +22,7 @@ on the interface. It only switches on when nothing upstream has authored a
 `beauty` RenderVar, so a shot always renders at least the RGBA beauty —
 every other AOV comes from a separate
 [`th::render_vars`](#thrender_vars-lop), [`th::lpe_tags`](#thlpe_tags-lop)
-or [`th::puzzlemattes`](#thpuzzlemattes-lop) downstream.
+or [`th::mattes`](#thmattes-lop) downstream.
 Source: [`otls/lop_th.render_settings.1.0`](../../otls/lop_th.render_settings.1.0/th_8_8Lop_1render__settings_8_81.0/DialogScript),
 [`lops/render_settings.py`](../../python/tumblepipe/pipe/houdini/lops/render_settings.py).
 
@@ -59,7 +59,6 @@ it after `render_settings`. Every toggle is a RenderVar prim under
 `/Render/Products/Vars`, and **every toggle is off by default** — a fresh
 node adds nothing until you tick something.
 Source: [`otls/lop_th.render_vars.1.1`](../../otls/lop_th.render_vars.1.1/th_8_8Lop_1render__vars_8_81.1/DialogScript),
-[`lops/render_vars.py`](../../python/tumblepipe/pipe/houdini/lops/render_vars.py),
 [`pipe/houdini/aov.py`](../../python/tumblepipe/pipe/houdini/aov.py).
 
 | Toggle | AOV | What it contains |
@@ -107,7 +106,7 @@ loop reads the tags back **off the cooked stage** and builds a RenderVar for
 each one it finds.
 Source: [`otls/lop_th.lpe_tags.1.0`](../../otls/lop_th.lpe_tags.1.0/th_8_8Lop_1lpe__tags_8_81.0/DialogScript),
 [`lops/lpe_tags.py`](../../python/tumblepipe/pipe/houdini/lops/lpe_tags.py),
-[`pipe/houdini/util.py`](../../python/tumblepipe/pipe/houdini/util.py) (`propose_lpe_tags`, `unmatched_lpe_tags`).
+[`pipe/houdini/prim_queries.py`](../../python/tumblepipe/pipe/houdini/prim_queries.py) (`propose_lpe_tags`, `unmatched_lpe_tags`).
 
 | Label | Default | What it does |
 |---|---|---|
@@ -136,17 +135,16 @@ Single-channel grading passes, as many as you need from one node: object
 **mattes** and camera **distance ramps**, one row each (click **+** on the
 multiparm to add one). Tab menu `_TumblePipe/rendering`; place it in the
 render workfile **before** `th::render_settings`, which collects the AOVs
-into its product. For new work use this instead of
-[`th::puzzlemattes`](#thpuzzlemattes-lop): one matte per AOV instead of
-three packed into R, G and B.
+into its product. The shot render template places one, empty, after
+`th::lpe_tags`. It replaced `th::puzzlemattes`, which packed three mattes
+into the R, G and B of one AOV; that node is no longer shipped.
 Source: [`otls/lop_th.mattes.1.0`](../../otls/lop_th.mattes.1.0/th_8_8Lop_1mattes_8_81.0/DialogScript),
 [`lops/mattes.py`](../../python/tumblepipe/pipe/houdini/lops/mattes.py),
 [`pipe/mattes.py`](../../python/tumblepipe/pipe/mattes.py).
 
 - **Matte** → AOV `objid_<Name>`: 1 on the matched prims and everything
   under them, 0 elsewhere. A constant float primvar `objid_<Name>` on the
-  prims, read by a primvar RenderVar (the `th::puzzlemattes` mechanism, one
-  channel). To matte part of a mesh, give the path of a **GeomSubset**, for
+  prims, read by a primvar RenderVar. To matte part of a mesh, give the path of a **GeomSubset**, for
   example `/SET/Park/geo/bench/planks` for the wood of a bench whose legs and
   nails are other subsets of the same mesh: the mesh gets a per-face primvar,
   1 on the subset's faces and 0 on the rest.
@@ -179,29 +177,8 @@ set to 1. A render has **one** global AOV material: if something upstream
 already set a different one, the node errors rather than replace it.
 
 The farm's denoise passes mattes and ramps through untouched, and
-`build_comp` imports a 1-channel `objid_*` as a single mask and `ramp_*` as a
-mono pass.
-
-## `th::puzzlemattes` (LOP)
-
-One RGB matte AOV from three prim patterns. Kept for existing workfiles;
-new work uses [`th::mattes`](#thmattes-lop). Tab menu
-`_TumblePipe/rendering`. The node adds a `color3f` RenderVar named
-`objid_<Name>` sourced from a primvar it sets on the matched prims, so the
-red, green and blue channels of the AOV each mask one pattern. `build_comp`
-picks every `objid_*` up as a mask and splits a 3-channel one like this into
-R, G and B outputs (a 1-channel `objid_*` becomes a single mask output).
-Source: [`otls/lop_th.puzzlemattes.4.0`](../../otls/lop_th.puzzlemattes.4.0/th_8_8Lop_1puzzlemattes_8_84.0/DialogScript),
-[`lops/puzzle_mattes.py`](../../python/tumblepipe/pipe/houdini/lops/puzzle_mattes.py).
-
-| Label | Default | What it does |
-|---|---|---|
-| Name | `$OS` | AOV name suffix: the AOV is `objid_<Name>` |
-| Channels › Red / Green / Blue | *(empty)* | Prim pattern per channel (the action button opens the prim picker) |
-| Compression | ZIP | EXR compression of the matte. Keep it lossless: DWA softens the matte's edges |
-
-The node has a viewer state, but it is a stub: selecting prims in it does
-not fill the channels. Type the patterns.
+`build_comp` imports each `objid_*` (one channel) as a single mask and
+`ramp_*` as a mono pass.
 
 The denoise job leaves mattes alone: it runs OIDN over every AOV except the
 `*_mse` variances and the `objid_*` / `holdout_*` mattes and `ramp_*`
@@ -211,7 +188,7 @@ would soften their edges.
 ## Render layers (channels)
 
 A render layer is a **channel** of the shot, not a node: add the channel to
-the shot (the entity's `variants` property, via `config/channels.py` or the
+the shot (the entity's `channels` property, via `config/channels.py` or the
 Asset Browser), then in the render workfile branch the shot's chain once per
 channel and end each branch in its own
 [`th::export_layer`](import-and-export.md#thexport_layer-lop) with **Channel**
@@ -263,7 +240,7 @@ selected*. Two caveats on "the same graph", spelled out in
 stage task only — a **default** submission renders the flattened stage
 instead — and it has no department parm, so it always shows the **full**
 department stack, never a cut one. To see what husk really got, open the
-job's `collapsed_stage_<variant>.usda` or `stage_<variant>.usd`.
+job's `collapsed_stage_<channel>.usda` or `stage_<channel>.usd`.
 
 ## `th::lookdev_studio` (LOP)
 

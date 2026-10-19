@@ -25,11 +25,12 @@ from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.entities import is_terminal_entity
 
-SCENES_URI = Uri.parse_unsafe('scenes:/')
+SCENES_URI = Uri.parse('scenes:/')
 
-# Mirrors channels.DEFAULT_CHANNEL. Kept as a local constant rather than
-# imported so scene.py's import graph stays independent of channels.py.
+# Mirror channels.DEFAULT_CHANNEL and channels.CHANNEL_KEY. Local constants rather than
+# imports so scene.py's import graph stays independent of channels.py.
 DEFAULT_CHANNEL = 'default'
+CHANNEL_KEY = 'channel'
 
 
 @dataclass(frozen=True)
@@ -69,14 +70,6 @@ class SceneTreeNode:
 # ---------------------------------------------------------------------------
 # Scene objects (the scenes:/ storage side)
 # ---------------------------------------------------------------------------
-
-def is_scene_uri(uri: Uri) -> bool:
-    """Check if a URI is a valid scene URI (any depth >= 1)."""
-    if uri.purpose != 'scenes':
-        return False
-    if len(uri.segments) < 1:
-        return False
-    return True
 
 
 def add_scene(path: str, assets: list[AssetEntry] | None = None) -> Uri:
@@ -127,7 +120,7 @@ def add_scene(path: str, assets: list[AssetEntry] | None = None) -> Uri:
 
     api.config.add_entity(scene_uri, dict(
         assets=[
-            {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.channel}
+            {'asset': entry.asset, 'instances': entry.instances, CHANNEL_KEY: entry.channel}
             for entry in assets
         ]
     ))
@@ -154,12 +147,6 @@ def get_scene_by_uri(scene_uri: Uri) -> Scene | None:
     Returns:
         Scene object or None if not found
     """
-    # Function-local so the module-level import graph stays independent of
-    # channels.py, as the DEFAULT_CHANNEL comment above describes. The guard
-    # has to be the shared one: a second implementation of "is this data
-    # newer than me" is a second thing to get wrong.
-    from tumblepipe.config.channels import read_channel
-
     properties = api.config.get_properties(scene_uri)
     if properties is None:
         return None
@@ -170,7 +157,7 @@ def get_scene_by_uri(scene_uri: Uri) -> Scene | None:
         AssetEntry(
             asset=item['asset'],
             instances=item.get('instances', 1),
-            channel=read_channel(item, where=f'scene assets of {scene_uri}')
+            channel=item.get(CHANNEL_KEY, DEFAULT_CHANNEL)
         )
         for item in raw_assets
         if isinstance(item, dict)
@@ -254,7 +241,7 @@ def list_scene_tree() -> list[SceneTreeNode]:
 
     def build_node(path_info: dict) -> SceneTreeNode:
         entity = path_info['entity']
-        uri = Uri.parse_unsafe(path_info['uri_str'])
+        uri = Uri.parse(path_info['uri_str'])
         name = path_info['segments'][-1]
 
         # It's a scene if it has 'assets' property
@@ -299,7 +286,7 @@ def set_scene_assets(scene_uri: Uri, assets: list[AssetEntry]):
     if own is None:
         raise ValueError('Scene does not exist')
     own['assets'] = [
-        {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.channel}
+        {'asset': entry.asset, 'instances': entry.instances, CHANNEL_KEY: entry.channel}
         for entry in assets
     ]
     api.config.set_own_properties(scene_uri, own)
@@ -347,7 +334,7 @@ def find_shots_with_scene_ref(scene_uri: Uri) -> list[Uri]:
         List of entity URIs that directly reference this scene
     """
     shot_uris = api.config.list_entity_uris(
-        Uri.parse_unsafe('entity:/shots'),
+        Uri.parse('entity:/shots'),
         closure=True
     )
 
@@ -357,36 +344,6 @@ def find_shots_with_scene_ref(scene_uri: Uri) -> list[Uri]:
     for shot_uri in shot_uris:
         scene_ref = get_scene_ref(shot_uri)
         if scene_ref and str(scene_ref) == scene_uri_str:
-            affected.append(shot_uri)
-
-    return affected
-
-
-def find_all_shots_using_scene(scene_uri: Uri) -> list[Uri]:
-    """
-    Find all shots that use a scene (directly OR via inheritance).
-
-    Unlike find_shots_with_scene_ref() which only finds direct refs,
-    this finds all shots that would be affected if the scene changes.
-
-    Args:
-        scene_uri: The scene URI to search for
-
-    Returns:
-        List of entity URIs that use this scene (directly or inherited)
-    """
-    shot_uris = api.config.list_entity_uris(
-        Uri.parse_unsafe('entity:/shots'),
-        closure=True
-    )
-
-    affected = []
-    scene_uri_str = str(scene_uri)
-
-    for shot_uri in shot_uris:
-        # Get resolved scene (with inheritance)
-        resolved_scene, _ = get_inherited_scene_ref(shot_uri)
-        if resolved_scene and str(resolved_scene) == scene_uri_str:
             affected.append(shot_uri)
 
     return affected
@@ -418,7 +375,7 @@ def get_scene_ref(entity_uri: Uri) -> Uri | None:
     # Handle legacy format (list of assets) - return None to trigger migration
     if isinstance(scene_str, list):
         return None
-    return Uri.parse_unsafe(scene_str)
+    return Uri.parse(scene_str)
 
 
 def set_scene_ref(entity_uri: Uri, scene_uri: Uri | None):
@@ -465,44 +422,12 @@ def get_inherited_scene_ref(entity_uri: Uri) -> tuple[Uri | None, Uri | None]:
     for i in range(len(entity_uri.segments) - 1, 0, -1):
         parent_segments = entity_uri.segments[:i]
         uri_str = f"{entity_uri.purpose}:/{'/'.join(parent_segments)}"
-        parent_uri = Uri.parse_unsafe(uri_str)
+        parent_uri = Uri.parse(uri_str)
         scene_ref = get_scene_ref(parent_uri)
         if scene_ref is not None:
             return (scene_ref, parent_uri)  # Inherited from parent
 
     return (None, None)
-
-
-def get_resolved_scene_assets(entity_uri: Uri) -> list[Uri]:
-    """
-    Get resolved scene assets for an entity.
-
-    Resolves the scene reference (with inheritance) and returns the assets
-    from that scene.
-
-    Args:
-        entity_uri: The entity URI to resolve scene for
-
-    Returns:
-        List of asset URIs from the resolved scene, or empty list if no scene
-    """
-    scene_ref, _ = get_inherited_scene_ref(entity_uri)
-    if scene_ref is None:
-        return []
-
-    scene = get_scene_by_uri(scene_ref)
-    if scene is None:
-        return []
-
-    # Scene.assets is a list[AssetEntry]; return unique asset URIs in order.
-    seen = set()
-    result = []
-    for entry in scene.assets:
-        if entry.asset in seen:
-            continue
-        seen.add(entry.asset)
-        result.append(Uri.parse_unsafe(entry.asset))
-    return result
 
 
 def get_scene(entity_uri: Uri):
@@ -570,7 +495,7 @@ def list_available_assets() -> list[Uri]:
     """
     with api.config.coherent():
         asset_uris = api.config.list_entity_uris(
-            filter=Uri.parse_unsafe('entity:/assets'),
+            filter=Uri.parse('entity:/assets'),
             closure=True
         )
         return [

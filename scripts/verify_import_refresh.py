@@ -53,7 +53,7 @@ reset_default_client()
 from tumblepipe import resolver  # noqa: E402
 from tumblepipe.asset_browser import load_hook  # noqa: E402
 from tumblepipe.asset_browser.prefs import PipelinePrefs, save_prefs  # noqa: E402
-from tumblepipe.pipe.context import commit_next_workfile  # noqa: E402
+from tumblepipe.pipe.houdini.workfile_save import commit_next_workfile  # noqa: E402
 from tumblepipe.pipe.houdini.lops import import_assets, import_layer  # noqa: E402
 from tumblepipe.pipe.houdini.scene_imports import (  # noqa: E402
     find_import_nodes, refresh_scene_imports,
@@ -63,8 +63,8 @@ from tumblepipe.pipe.houdini.ui.helpers import load_module  # noqa: E402
 from tumblepipe.pipe.paths import get_export_uri  # noqa: E402
 from tumblepipe.util.uri import Uri  # noqa: E402
 
-CATEGORY = Uri.parse_unsafe("entity:/assets/PROP")
-ASSET = Uri.parse_unsafe("entity:/assets/PROP/crate")
+CATEGORY = Uri.parse("entity:/assets/PROP")
+ASSET = Uri.parse("entity:/assets/PROP/crate")
 FAILURES: list[str] = []
 
 
@@ -88,7 +88,7 @@ def publish_model(version: str) -> None:
     (out / "context.json").write_text(json.dumps({
         "inputs": [],
         "outputs": [{
-            "uri": str(ASSET), "department": "model", "variant": "default",
+            "uri": str(ASSET), "department": "model", "channel": "default",
             "version": version, "timestamp": "", "user": "verify",
             "parameters": {"assets": [], "aov_names": []},
         }],
@@ -206,7 +206,7 @@ def check_sweep() -> None:
 
 def check_farm_publish(hip: Path) -> None:
     print("5. the farm publish forces every import node to its newest publish")
-    from tumblepipe.farm.tasks.publish import publish_houdini
+    from tumblepipe.farm.workers import publish_houdini
 
     load(hip)
     il = import_layer.ImportLayer(hou.node("/stage/IMPORT_MODEL"))

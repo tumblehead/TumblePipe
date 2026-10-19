@@ -2,23 +2,20 @@
 
     hython scripts/verify_build_comp_alpha.py
 
-The beauty is rendered RGBA and its A is the comp's alpha; renders from before
-that carry an RGB beauty and a separate `alpha` AOV (see
+The beauty is rendered RGBA and its A is the comp's alpha (see
 docs/compositing.md, "Alpha lives in the beauty"). build_comp builds one
 `alpha` subnet per channel and Update re-points it as a channel's newest
-render changes shape. This drives the real node's Build and Update over EXR
+beauty changes shape. This drives the real node's Build and Update over EXR
 fixtures and checks the wiring *and* the cooked pixels:
 
-1. build from a legacy render (raw `beauty.R/G/B` + `alpha.Z`): the alpha
-   subnet reads the alpha AOV, the channel's A is that AOV's value;
-2. Update to an RGBA beauty published by the denoise (bare `R,G,B,A`, no
-   alpha AOV): the alpha subnet reads the beauty RGBA, splits output 3 (A)
-   out, and every File COP asks for plane `C` -- a File COP asked for
-   `beauty` on bare channels loads nothing ("rgba is missing");
-3. Update to an RGB beauty with no alpha: the alpha subnet goes and the
-   channel comps opaque (A = 1);
-4. a comp that never had an alpha subnet gets one on Update, resampled at
-   the comp's proxy scale like the channel's other imports.
+1. build from an RGB beauty (no A) is refused and builds nothing;
+2. build from a raw render's RGBA beauty (`beauty.R/G/B/A`): the alpha
+   subnet reads the beauty RGBA and splits output 3 (A) out, the channel's
+   A is the beauty's;
+3. Update to an RGBA beauty published by the denoise (bare `R,G,B,A`): every
+   File COP asks for plane `C` -- a File COP asked for `beauty` on bare
+   channels loads nothing ("rgba is missing");
+4. Update to an RGB beauty is refused and leaves the comp as it was.
 
 Needs Houdini (hython, with the th::build_comp HDA installed) and hoiiotool
 from the same install for the fixtures. It puts this checkout's python/ first
@@ -90,21 +87,24 @@ class FakeAov:
         return self.root / self.label / f"{self.label}.{frame}.exr"
 
 
-def write_render(root, beauty_fill, beauty_names, alpha_value=None):
+def write_render(root, beauty_fill, beauty_names):
     """One frame of a render: a beauty with ``beauty_names`` channels filled
-    with ``beauty_fill``, and an `alpha.Z` AOV when ``alpha_value`` is set."""
+    with ``beauty_fill``."""
     (root / "beauty").mkdir(parents=True)
     oiiotool("--create", "8x8", len(beauty_names),
              "--fill:color=" + ",".join(map(str, beauty_fill)), "8x8",
              "--chnames", ",".join(beauty_names),
              "-o", root / "beauty" / f"beauty.{FRAME:04d}.exr")
-    aovs = {"beauty": FakeAov("beauty", root)}
-    if alpha_value is not None:
-        (root / "alpha").mkdir(parents=True)
-        oiiotool("--create", "8x8", 1, f"--fill:color={alpha_value}", "8x8",
-                 "--chnames", "alpha.Z", "-o", root / "alpha" / f"alpha.{FRAME:04d}.exr")
-        aovs["alpha"] = FakeAov("alpha", root)
-    return aovs
+    return {"beauty": FakeAov("beauty", root)}
+
+
+def refused(call):
+    """True when ``call`` raises build_comp's "Cannot build the comp"."""
+    try:
+        call()
+    except RuntimeError as error:
+        return "Cannot build the comp" in str(error)
+    return False
 
 
 class Harness(bc.BuildComp):
@@ -113,8 +113,8 @@ class Harness(bc.BuildComp):
     aovs = {}
     resolution = bc.Resolution.Full
 
-    def get_shot_uri(self):
-        return Uri.parse_unsafe("entity:/shots/seq/shot")
+    def require_entity_uri(self):
+        return Uri.parse("entity:/shots/seq/shot")
 
     def list_render_department_names(self):
         return ["render"]
@@ -157,82 +157,61 @@ def rgb_at_centre(node):
 
 def main():
     root = Path(tempfile.mkdtemp(prefix="tp-build-comp-alpha-"))
-    # Create the nodes first: the HDA's OnCreated reloads build_comp, which
+    # Create the node first: the HDA's OnCreated reloads build_comp, which
     # would undo the stand-ins below
     copnet = hou.node("/obj").createNode("copnet", "comp")
     comp_native = copnet.createNode("th::build_comp::1.0", "build_comp")
-    fresh_native = copnet.createNode("th::build_comp::1.0", "fresh")
-    saved = (bc.list_channels, bc.get_frame_range, bc.get_fps, bc.util)
+    saved = (bc.list_channels, bc.get_frame_range, bc.get_fps, bc.playbar)
     bc.list_channels = lambda shot_uri: [CHANNEL]
     bc.get_frame_range = lambda shot_uri: FrameRange(FRAME, FRAME, 0, 0)
     bc.get_fps = lambda shot_uri: None
-    bc.util = SimpleNamespace(set_fps=lambda fps: None, set_frame_range=lambda frame_range: None)
+    bc.playbar = SimpleNamespace(set_fps=lambda fps: None, set_frame_range=lambda frame_range: None)
     try:
-        legacy = write_render(root / "v0001", (0.2, 0.3, 0.4), ["beauty.R", "beauty.G", "beauty.B"], 0.25)
+        raw = write_render(root / "v0001", (0.2, 0.3, 0.4, 0.25), ["beauty.R", "beauty.G", "beauty.B", "beauty.A"])
         rgba = write_render(root / "v0002", (0.5, 0.6, 0.7, 0.6), ["R", "G", "B", "A"])
         rgb_only = write_render(root / "v0003", (0.1, 0.1, 0.1), ["R", "G", "B"])
 
         comp = Harness(comp_native)
         dive = comp.native().node("dive")
 
-        # 1. built from a legacy render
-        Harness.aovs = legacy
+        # 1. an RGB beauty cannot be comped
+        Harness.aovs = rgb_only
+        check("rgb only: Build is refused", refused(comp._build), True)
+        check("rgb only: nothing is built", dive.node(CHANNEL), None)
+
+        # 2. built from a raw render's RGBA beauty
+        Harness.aovs = raw
         comp._build()
         channel = dive.node(CHANNEL)
         alpha = channel.node("alpha")
-        check("legacy: an alpha subnet is built", alpha is not None, True)
-        check("legacy: it reads the alpha AOV's plane", alpha.node(f"{CHANNEL}_alpha").parm("aov1").eval(), "alpha")
-        check("legacy: no split", alpha.node("split"), None)
+        check("raw: an alpha subnet is built", alpha is not None, True)
+        file_node = alpha.node(f"{CHANNEL}_alpha")
+        check("raw: it reads the beauty's plane, RGBA", (file_node.parm("aov1").eval(), file_node.parm("type1").eval()), ("beauty", 3))
+        check("raw: A is split output 3", alpha.node("outputs").inputConnections()[0].outputIndex(), 3)
         grade = channel.node("grade")
-        check("legacy: alpha feeds the grade's last input", grade.inputs()[-1].path(), alpha.path())
-        close("legacy: the channel's A is the alpha AOV", alpha_at_centre(channel), 0.25)
+        check("raw: alpha feeds the grade's last input", grade.inputs()[-1].path(), alpha.path())
+        close("raw: the channel's A is the beauty's A", alpha_at_centre(channel), 0.25)
 
-        # 2. Updated to the denoise's RGBA publish (bare R,G,B,A, no alpha AOV)
+        # 3. Updated to the denoise's RGBA publish (bare R,G,B,A)
         Harness.aovs = rgba
-        comp._update()
+        comp.update()
         alpha = channel.node("alpha")
         file_node = alpha.node(f"{CHANNEL}_alpha")
-        split = alpha.node("split")
         check("rgba: the alpha reads the beauty file", Path(file_node.parm("filename").eval()).name, f"beauty.{FRAME:04d}.exr")
         check("rgba: as plane C, RGBA", (file_node.parm("aov1").eval(), file_node.parm("type1").eval()), ("C", 3))
-        check("rgba: A is split output 3", split is not None and alpha.node("outputs").inputConnections()[0].outputIndex(), 3)
         beauty_file = channel.node("beauty").node(f"{CHANNEL}_beauty")
         check("rgba: Update re-points the beauty's plane too", beauty_file.parm("aov1").eval(), "C")
         rgb = rgb_at_centre(channel.node("beauty"))
         check("rgba: the beauty loads (not 'rgba is missing')", rgb is not None and abs(rgb[0] - 0.5) < 1e-3, True)
         close("rgba: the channel's A is the beauty's A", alpha_at_centre(channel), 0.6)
 
-        # 3. Updated to an RGB beauty with no alpha anywhere
+        # 4. Update onto an RGB beauty is refused and changes nothing
         Harness.aovs = rgb_only
-        comp._update()
-        check("rgb only: the alpha subnet is gone", channel.node("alpha"), None)
-        close("rgb only: the channel comps opaque", alpha_at_centre(channel), 1.0)
-
-        # 4. a comp that never had an alpha subnet gets one on Update, at the
-        # comp's proxy scale
-        Harness.aovs = rgb_only
-        fresh = Harness(fresh_native)
-        fresh._build()
-        fresh_channel = fresh.native().node("dive").node(CHANNEL)
-        check("fresh: built without an alpha subnet", fresh_channel.node("alpha"), None)
-        Harness.aovs = rgba
-        Harness.resolution = bc.Resolution.Half
-        fresh._update()
-        Harness.resolution = bc.Resolution.Full
-        fresh_alpha = fresh_channel.node("alpha")
-        check("fresh: Update builds the alpha subnet", fresh_alpha is not None, True)
-        check(
-            "fresh: resampled like the beauty",
-            fresh_alpha is not None and fresh_alpha.node("resample").parm("scale").eval(),
-            fresh_channel.node("beauty").node("resample").parm("scale").eval(),
-        )
-        check(
-            "fresh: wired into the grade",
-            fresh_channel.node("grade").inputs()[-1].path() if fresh_alpha else None,
-            fresh_alpha.path() if fresh_alpha else "an alpha subnet",
-        )
+        check("rgb only: Update is refused", refused(comp.update), True)
+        check("rgb only: the alpha still reads the RGBA beauty", Path(file_node.parm("filename").eval()).parent.parent.name, "v0002")
+        close("rgb only: the channel's A is unchanged", alpha_at_centre(channel), 0.6)
     finally:
-        bc.list_channels, bc.get_frame_range, bc.get_fps, bc.util = saved
+        bc.list_channels, bc.get_frame_range, bc.get_fps, bc.playbar = saved
         shutil.rmtree(root, ignore_errors=True)
 
     print()

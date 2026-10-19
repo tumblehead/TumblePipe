@@ -26,6 +26,8 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from tumblepipe.pipe.usd.arcs import arc_paths, looks_like_uri, open_layer, reference_paths
+
 logger = logging.getLogger(__name__)
 
 # Where an externally composed file and its dependencies land, below the
@@ -47,12 +49,6 @@ class LocalizeResult:
     missing_assets: list = field(default_factory=list)
 
 
-def _looks_like_uri(asset_path: str) -> bool:
-    # Same rule as pipe.usd._looks_like_uri: a 2+ letter scheme, so a
-    # Windows drive letter is still a path.
-    return bool(re.match(r'^[A-Za-z][A-Za-z0-9+.\-]+:', asset_path))
-
-
 def _resolved(path: Path) -> Path | None:
     # Resolve the folder, not the name: a texture name may carry a <UDIM>
     # token, which Windows refuses as a file name.
@@ -70,13 +66,12 @@ def _under_any(path: Path, roots) -> bool:
 
 
 def _resolve_roots(roots) -> list[Path]:
-    result = []
-    for root in roots:
-        try:
-            result.append(Path(root).resolve())
-        except OSError:
-            continue
-    return result
+    return [Path(root).resolve() for root in roots]
+
+
+def _names_in(folder: Path) -> set:
+    """Names already taken in ``folder``; none when it does not exist yet."""
+    return {p.name for p in folder.iterdir()} if folder.is_dir() else set()
 
 
 def _unique_name(name: str, used: set) -> str:
@@ -87,30 +82,6 @@ def _unique_name(name: str, used: set) -> str:
     while f'{stem}_{n}{suffix}' in used:
         n += 1
     return f'{stem}_{n}{suffix}'
-
-
-def _iter_prim_specs(layer):
-    """Every prim spec in ``layer``, variants included."""
-    stack = list(layer.rootPrims)
-    while stack:
-        prim = stack.pop()
-        yield prim
-        stack.extend(prim.nameChildren.values())
-        for variant_set in prim.variantSets.values():
-            for variant in variant_set.variants.values():
-                stack.append(variant.primSpec)
-
-
-def composition_arc_paths(layer) -> set:
-    """Raw asset paths of every sublayer, reference and payload in ``layer``."""
-    paths = {str(p) for p in layer.subLayerPaths}
-    for prim in _iter_prim_specs(layer):
-        for arc_list in (prim.referenceList, prim.payloadList):
-            for item in arc_list.GetAddedOrExplicitItems():
-                asset_path = str(getattr(item, 'assetPath', '') or '')
-                if asset_path:
-                    paths.add(asset_path)
-    return paths
 
 
 def _is_layer_path(path: str) -> bool:
@@ -128,7 +99,7 @@ def _copy_closure(src: Path, layer_files, asset_files, target: Path) -> Path:
     used: it flattens each source folder into a numbered one and writes
     paths like ``1/diff.png`` that do not resolve from a layer in ``0/``.
     """
-    from pxr import Sdf, UsdUtils
+    from pxr import UsdUtils
 
     files = {}
     for raw in [str(src), *layer_files, *asset_files]:
@@ -158,12 +129,10 @@ def _copy_closure(src: Path, layer_files, asset_files, target: Path) -> Path:
         copy_path = files.get(original)
         if copy_path is None:
             continue
-        layer = Sdf.Layer.FindOrOpen(str(copy_path))
-        if layer is None:
-            continue
+        layer = open_layer(copy_path)
 
         def remap(p: str, original=original, copy_path=copy_path) -> str:
-            if not p or _looks_like_uri(p):
+            if not p or looks_like_uri(p):
                 return p
             raw = Path(p)
             source = raw if raw.is_absolute() else original.parent / raw
@@ -203,78 +172,58 @@ def localize_external_arcs(layer_path, skip_roots=()) -> LocalizeResult:
     alone. Dependencies of a localised file that do not exist are reported
     in the result rather than raised here.
     """
-    from pxr import Sdf, UsdUtils
+    from pxr import UsdUtils
 
     result = LocalizeResult()
     layer_path = Path(layer_path)
-    layer = Sdf.Layer.FindOrOpen(str(layer_path))
-    if layer is None:
-        return result
+    layer = open_layer(layer_path)
     layer_dir = layer_path.parent
     layer_root = layer_dir.resolve()
     skip = _resolve_roots(skip_roots)
-    try:
-        used = {p.name for p in layer_dir.iterdir()}
-    except OSError:
-        used = set()
+    used = {p.name for p in layer_dir.iterdir()}
     external_root = layer_dir / EXTERNAL_DIR
-    try:
-        used_external = {p.name for p in external_root.iterdir()}
-    except OSError:
-        used_external = set()
+    used_external = _names_in(external_root)
 
-    for prim in _iter_prim_specs(layer):
-        for arc_list in (prim.referenceList, prim.payloadList):
-            for item in arc_list.GetAddedOrExplicitItems():
-                raw = str(getattr(item, 'assetPath', '') or '')
-                if not raw or raw in result.rewritten or _looks_like_uri(raw):
-                    continue
-                src = Path(raw)
-                abs_src = src if src.is_absolute() else layer_dir / src
-                resolved = _resolved(abs_src)
-                if resolved is None or resolved.is_relative_to(layer_root):
-                    continue
-                if _under_any(abs_src, skip):
-                    continue
-                if not abs_src.is_file():
-                    continue
+    for raw in dict.fromkeys(reference_paths(layer)):
+        if looks_like_uri(raw):
+            continue
+        src = Path(raw)
+        abs_src = src if src.is_absolute() else layer_dir / src
+        resolved = _resolved(abs_src)
+        if resolved is None or resolved.is_relative_to(layer_root):
+            continue
+        if _under_any(abs_src, skip):
+            continue
+        if not abs_src.is_file():
+            continue
 
-                layers, assets, unresolved = UsdUtils.ComputeAllDependencies(
-                    str(abs_src)
-                )
-                if len(layers) <= 1 and not assets and not unresolved:
-                    dest_name = _unique_name(abs_src.name, used)
-                    try:
-                        shutil.copy(abs_src, layer_dir / dest_name)
-                    except OSError:
-                        logger.warning('Could not localise %s', abs_src, exc_info=True)
-                        continue
-                    used.add(dest_name)
-                    result.rewritten[raw] = dest_name
-                    continue
+        layers, assets, unresolved = UsdUtils.ComputeAllDependencies(
+            str(abs_src)
+        )
+        if len(layers) <= 1 and not assets and not unresolved:
+            dest_name = _unique_name(abs_src.name, used)
+            shutil.copy(abs_src, layer_dir / dest_name)
+            used.add(dest_name)
+            result.rewritten[raw] = dest_name
+            continue
 
-                folder = _unique_name(abs_src.stem, used_external)
-                target = external_root / folder
-                try:
-                    root_copy = _copy_closure(
-                        abs_src, [layer.realPath for layer in layers],
-                        [str(a) for a in assets], target,
-                    )
-                except OSError:
-                    logger.warning('Could not localise %s', abs_src, exc_info=True)
-                    shutil.rmtree(target, ignore_errors=True)
-                    continue
-                used_external.add(folder)
-                result.rewritten[raw] = (
-                    f'{EXTERNAL_DIR}/{folder}/'
-                    + root_copy.relative_to(target).as_posix()
-                )
-                for missing in unresolved:
-                    missing = str(missing)
-                    if _is_layer_path(missing):
-                        result.missing_layers.append(missing)
-                    else:
-                        result.missing_assets.append(missing)
+        folder = _unique_name(abs_src.stem, used_external)
+        target = external_root / folder
+        root_copy = _copy_closure(
+            abs_src, [dep.realPath for dep in layers],
+            [str(a) for a in assets], target,
+        )
+        used_external.add(folder)
+        result.rewritten[raw] = (
+            f'{EXTERNAL_DIR}/{folder}/'
+            + root_copy.relative_to(target).as_posix()
+        )
+        for missing in unresolved:
+            missing = str(missing)
+            if _is_layer_path(missing):
+                result.missing_layers.append(missing)
+            else:
+                result.missing_assets.append(missing)
 
     if result.rewritten:
         UsdUtils.ModifyAssetPaths(
@@ -290,10 +239,7 @@ def localize_external_arcs(layer_path, skip_roots=()) -> LocalizeResult:
 
 def _tile_glob(path: Path) -> list[Path]:
     pattern = _TILE_TOKEN.sub('*', path.name)
-    try:
-        return sorted(p for p in path.parent.glob(pattern) if p.is_file())
-    except OSError:
-        return []
+    return sorted(p for p in path.parent.glob(pattern) if p.is_file())
 
 
 def localize_external_assets(
@@ -314,27 +260,22 @@ def localize_external_assets(
       tile it names;
     - missing: left alone and reported.
     """
-    from pxr import Sdf, UsdUtils
+    from pxr import UsdUtils
 
     result = LocalizeResult()
     layer_path = Path(layer_path)
-    layer = Sdf.Layer.FindOrOpen(str(layer_path))
-    if layer is None:
-        return result
+    layer = open_layer(layer_path)
     layer_dir = layer_path.parent
     layer_root = layer_dir.resolve()
     projects = _resolve_roots(project_roots)
     skip = _resolve_roots(skip_roots)
-    arcs = composition_arc_paths(layer)
+    arcs = set(arc_paths(layer))
     external_root = layer_dir / EXTERNAL_DIR
-    try:
-        used = {p.name for p in external_root.iterdir()}
-    except OSError:
-        used = set()
+    used = _names_in(external_root)
     copied: dict = {}  # resolved source -> rewritten path
 
     def localize(raw: str) -> str:
-        if not raw or raw in arcs or _looks_like_uri(raw):
+        if not raw or raw in arcs or looks_like_uri(raw):
             return raw
         if raw in result.rewritten:
             return result.rewritten[raw]
@@ -361,20 +302,16 @@ def localize_external_assets(
         if key not in copied:
             name = _unique_name(resolved.name, used)
             external_root.mkdir(exist_ok=True)
-            try:
-                if tiled:
-                    # Same prefix/suffix around the token, so the copied
-                    # tiles still match the rewritten pattern.
-                    head, tail = _TILE_TOKEN.split(resolved.name, 1)
-                    new_head, new_tail = _TILE_TOKEN.split(name, 1)
-                    for tile in files:
-                        token = tile.name[len(head):len(tile.name) - len(tail)]
-                        shutil.copy(tile, external_root / f'{new_head}{token}{new_tail}')
-                else:
-                    shutil.copy(files[0], external_root / name)
-            except OSError:
-                logger.warning('Could not localise %s', resolved, exc_info=True)
-                return raw
+            if tiled:
+                # Same prefix/suffix around the token, so the copied
+                # tiles still match the rewritten pattern.
+                head, tail = _TILE_TOKEN.split(resolved.name, 1)
+                new_head, new_tail = _TILE_TOKEN.split(name, 1)
+                for tile in files:
+                    token = tile.name[len(head):len(tile.name) - len(tail)]
+                    shutil.copy(tile, external_root / f'{new_head}{token}{new_tail}')
+            else:
+                shutil.copy(files[0], external_root / name)
             used.add(name)
             copied[key] = f'{EXTERNAL_DIR}/{name}'
         result.rewritten[raw] = copied[key]

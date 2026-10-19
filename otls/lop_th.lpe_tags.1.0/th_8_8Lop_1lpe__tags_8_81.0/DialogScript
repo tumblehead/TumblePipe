@@ -28,7 +28,7 @@
         label   "Generate LPEs from scene"
         type    button
         default { "0" }
-        parmtag { "script_callback" "hou.phm().generate()" }
+        parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.lpe_tags as th_node; th_node.generate(kwargs)" }
         parmtag { "script_callback_language" "python" }
     }
     multiparm {

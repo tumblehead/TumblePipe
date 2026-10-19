@@ -170,9 +170,22 @@ def get_fps(uri: Uri | None = None) -> int | None:
         FPS value or None if not configured
     """
     if uri is None:
-        uri = Uri.parse_unsafe('config:/project')
+        uri = Uri.parse('config:/project')
 
     properties = api.config.get_properties(uri)
     if properties is None: return None
     if 'fps' not in properties: return None
     return int(properties['fps'])
+
+def require_fps(uri: Uri | None = None) -> int:
+    """:func:`get_fps`, raising when no fps is configured.
+
+    For whatever cannot run without one -- an encode, a staged build, a
+    comp -- so a shot that overrides the project fps plays at its own and a
+    project that sets none fails instead of running at a guessed rate.
+    """
+    fps = get_fps(uri)
+    if fps is None:
+        where = 'the project' if uri is None else f'{uri} or the project'
+        raise ValueError(f'No fps configured for {where}')
+    return fps

@@ -102,7 +102,7 @@
             label   "Export Archive"
             type    button
             default { "0" }
-            parmtag { "script_callback" "hou.phm().export()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.archive as th_node; th_node.export(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }

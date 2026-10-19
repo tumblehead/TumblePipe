@@ -101,12 +101,12 @@ Content-Type: text/plain
                 default { "from_context: none" }
             }
             parm {
-                name    "variant"
-                label   "Variant"
+                name    "channel"
+                label   "Channel"
                 type    string
                 default { "default" }
                 menu {
-                    [ "opmenu -l -a lopnet/import_camera variant" ]
+                    [ "opmenu -l -a lopnet/import_camera channel" ]
                 }
                 parmtag { "script_callback_language" "python" }
             }
@@ -299,14 +299,14 @@ Content-Type: text/plain
 
 	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../entity\") }
     }
-    channel variant {
+    channel channel {
       lefttype = extend
       righttype = extend
       defaultString = \"default\"
       flags = 0
       segment { options = {	 autoslope  ai ao }
 
-	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../variant\") }
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../channel\") }
     }
     channel department {
       lefttype = extend
@@ -338,7 +338,7 @@ selection	[ 0	locks=0 ]	(	0	)
 entity_select	[ 0	locks=0 ]	(	0	)
 entity	[ 0	locks=0 ]	(	[ entity	from_context ] 	)
 entity_label	[ 0	locks=0 ]	(	"from_context: none"	)
-variant	[ 0	locks=0 ]	(	[ variant	default ] 	)
+channel	[ 0	locks=0 ]	(	[ channel	default ] 	)
 department	[ 0	locks=0 ]	(	[ department	from_context ] 	)
 department_label	[ 0	locks=0 ]	(	"from_context: none"	)
 version	[ 0	locks=0 ]	(	[ version	latest ] 	)

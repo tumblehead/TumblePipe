@@ -6,10 +6,10 @@
 
 #include <memory>
 
-// Export the class so MSVC's /OPT:REF can't drop the COMDAT section
-// containing AR_DEFINE_RESOLVER's anonymous static registration. Matches
-// USD's own plugin pattern (PXR_*_API macros). No-op on toolchains with
-// default visibility.
+// Export the class, matching USD's own plugin pattern (PXR_*_API macros),
+// so its vtable and RTTI survive dead-code elimination and the
+// `TumbleResolver` name the CI build greps for (.ci/build_resolver.py) is
+// in the export table.
 #if defined(_MSC_VER)
 #  define TH_RESOLVER_API __declspec(dllexport)
 #elif defined(__GNUC__) || defined(__clang__)
@@ -27,6 +27,12 @@ PXR_NAMESPACE_OPEN_SCOPE
 /// `th_resolver_core.h`. USD only routes `entity:` asset paths to this
 /// resolver; filesystem paths continue to flow through USD's default
 /// resolver.
+///
+/// No context overrides: plugInfo.json does not declare
+/// `implementsContexts`, so Ar's dispatching resolver never calls
+/// Bind/Unbind/RefreshContext on this class. Resolution depends only on
+/// process env and the filesystem; re-resolving already-loaded layers is
+/// `tumblepipe.resolver.refresh_context()`'s job.
 class TH_RESOLVER_API TumbleResolver final : public ArResolver {
 public:
     TumbleResolver();
@@ -44,8 +50,6 @@ protected:
     ArResolvedPath _Resolve(const std::string& assetPath) const override;
 
     ArResolvedPath _ResolveForNewAsset(const std::string& assetPath) const override;
-
-    void _RefreshContext(const ArResolverContext& context) override;
 
     ArTimestamp _GetModificationTimestamp(
         const std::string& assetPath,

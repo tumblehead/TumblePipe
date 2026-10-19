@@ -36,8 +36,8 @@ from tumblepipe.pipe.houdini.lops import export_layer, import_shot
 from tumblepipe.pipe.houdini.ui import task_factory
 from tumblepipe.util.uri import Uri
 
-SEQ = Uri.parse_unsafe('entity:/shots/verify_seq')
-SHOT = Uri.parse_unsafe('entity:/shots/verify_seq/verify_library')
+SEQ = Uri.parse('entity:/shots/verify_seq')
+SHOT = Uri.parse('entity:/shots/verify_seq/verify_library')
 FAILURES = []
 
 
@@ -87,7 +87,7 @@ def import_into(department):
     hou.hipFile.clear(suppress_save_prompt=True)
     stage_net = hou.node('/stage')
     node = import_shot.create(stage_net, 'import_shot')
-    node.set_shot_uri(SHOT)
+    node.set_entity_uri(SHOT)
     node.set_department_name(department)
     node.execute()
     return stage_net, node.native()
@@ -137,12 +137,12 @@ def main():
         shutil.rmtree(library, ignore_errors=True)
         if created:
             api.config.remove_entity(SHOT)
-            export_root = Path(api.storage.resolve(Uri.parse_unsafe('export:/shots/verify_seq/verify_library')))
+            export_root = Path(api.storage.resolve(Uri.parse('export:/shots/verify_seq/verify_library')))
             shutil.rmtree(export_root, ignore_errors=True)
         if created_seq:
             api.config.remove_entity(SEQ)
             shutil.rmtree(
-                Path(api.storage.resolve(Uri.parse_unsafe('export:/shots/verify_seq'))),
+                Path(api.storage.resolve(Uri.parse('export:/shots/verify_seq'))),
                 ignore_errors=True,
             )
 

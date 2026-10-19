@@ -1,66 +1,28 @@
-from pathlib import Path
 import datetime as dt
 
-import hou
 
 from tumblepipe.api import (
     get_user_name,
-    path_str,
-    api
+    path_str
 )
-from tumblepipe.util.uri import Uri
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.paths.naming import entity_stem
 from tumblepipe.pipe.context import save_layer_context
 from tumblepipe.pipe.paths import (
     get_next_version_path,
     get_rig_export_path,
-    get_workfile_context
 )
 
-
 class ExportRig(EntityNode):
+
+    # A rig is always an asset's, so 'from_context' inside a shot workfile
+    # resolves to nothing rather than to the shot.
+    ENTITY_CONTEXTS = ('assets',)
+
     def __init__(self, native):
         super().__init__(native)
 
-    def list_entity_uris(self) -> list[str]:
-        """List entity URIs as strings, with 'from_context' as first option."""
-        asset_uris = api.config.list_entity_uris(
-            filter = Uri.parse_unsafe('entity:/assets'),
-            closure = True
-        )
-        return ['from_context'] + [str(uri) for uri in asset_uris]
-
-    def get_entity_uri(self) -> Uri | None:
-        entity_uri_raw = self.parm('entity').eval()
-        if entity_uri_raw == 'from_context':
-            file_path = Path(hou.hipFile.path())
-            context = get_workfile_context(file_path)
-            if context is None:
-                return None
-            # Only accept entity URIs, not group URIs
-            if context.entity_uri.purpose != 'entity':
-                return None
-            # Verify it's an asset entity
-            if context.entity_uri.segments[0] != 'assets':
-                return None
-            return context.entity_uri
-        # From settings
-        entity_uris = self.list_entity_uris()
-        if len(entity_uris) <= 1:  # Only 'from_context' means no real URIs
-            return None
-        if len(entity_uri_raw) == 0:
-            return Uri.parse_unsafe(entity_uris[1])  # Skip 'from_context'
-        if entity_uri_raw not in entity_uris:
-            return None
-        return Uri.parse_unsafe(entity_uri_raw)
-
-    def set_entity_uri(self, entity_uri: Uri):
-        entity_uris = self.list_entity_uris()
-        uri_str = str(entity_uri)
-        if uri_str not in entity_uris:
-            return
-        self.parm('entity').set(uri_str)
 
     def get_department_name(self) -> str:
         return 'rig'
@@ -68,8 +30,10 @@ class ExportRig(EntityNode):
     def set_channel_name(self, channel_name: str):
         channel_names = self.list_channel_names()
         if channel_name not in channel_names:
-            return
-        self.parm('variant').set(channel_name)
+            raise self._error(
+                f"channel '{channel_name}' is not one of {channel_names}"
+            )
+        self.parm('channel').set(channel_name)
 
     def execute(self, force_local: bool = False):
         """
@@ -93,7 +57,7 @@ class ExportRig(EntityNode):
         export_node = context.node('export')
 
         # Parameters
-        entity_uri = self.get_entity_uri()
+        entity_uri = self.require_entity_uri()
         channel_name = self.get_channel_name()
         export_path = get_rig_export_path(entity_uri, channel_name)
         version_path = get_next_version_path(export_path)
@@ -101,7 +65,7 @@ class ExportRig(EntityNode):
         timestamp = dt.datetime.now().isoformat()
 
         # Prepare rig export
-        rig_file_name = '_'.join(entity_uri.segments[1:] + ['rig', version_name]) + '.bgeo.sc'
+        rig_file_name = f"{entity_stem(entity_uri, 'rig', version_name)}.bgeo.sc"
         output_file_path = version_path / rig_file_name
         export_node.parm('file').set(path_str(output_file_path))
 
@@ -135,18 +99,7 @@ class ExportRig(EntityNode):
 def create(scene, name):
     return ns.create_node(scene, name, ExportRig, 'export_rig', 'Sop')
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node, ns.SHAPE_NODE_EXPORT)
-
-def on_created(raw_node):
-
-    # Set node style. 'entity' keeps its 'from_context' default in every
-    # case. A rig export that cannot resolve its asset — no context, or a
-    # non-asset workfile — must export nothing and say so, not silently
-    # publish to whichever asset happens to sort first in the project.
-    set_style(raw_node)
-
-def execute():
-    raw_node = hou.pwd()
+def execute(kwargs):
+    raw_node = kwargs['node']
     node = ExportRig(raw_node)
     node.execute()

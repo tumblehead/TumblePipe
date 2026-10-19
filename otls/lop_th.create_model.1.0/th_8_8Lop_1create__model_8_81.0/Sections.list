@@ -12,5 +12,4 @@ DiveTarget	DiveTarget
 Version	Version
 IconImage	IconImage
 OnCreated	OnCreated
-PythonModule	PythonModule
 ExtraFileOptions	ExtraFileOptions

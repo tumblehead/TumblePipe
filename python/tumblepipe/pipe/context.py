@@ -1,21 +1,24 @@
 import datetime as dt
 import logging
 from pathlib import Path
-from tumblepipe.api import get_user_name, api
-from tumblepipe.util.io import store_json
+from tumblepipe.api import get_user_name
+from tumblepipe import naming
+from tumblepipe.config.channels import read_published_channel
+from tumblepipe.config.department import list_departments
+from tumblepipe.util.io import load_json, store_json
 from tumblepipe.util.houdini import hou
-from tumblepipe.pipe.paths import Context, get_hip_file_path, HIP_EXTENSIONS
+from tumblepipe.pipe.paths import (
+    Context,
+    get_hip_file_path,
+    latest_export_path,
+    resolve_workfile_uri,
+)
+from tumblepipe.pipe.paths.naming import version_of
+from tumblepipe.pipe.paths.workspace import scan_workspace
 from tumblepipe.util.uri import Uri
 
 logger = logging.getLogger(__name__)
 
-
-def find_input(data, **kwargs):
-    for context_input in data['inputs']:
-        # Check all provided kwargs match the input
-        if all(context_input.get(key) == value for key, value in kwargs.items()):
-            return context_input
-    return None
 
 def find_output(data, **kwargs):
     for context_output in data['outputs']:
@@ -24,21 +27,35 @@ def find_output(data, **kwargs):
             return context_output
     return None
 
-def list_inputs(data, **kwargs):
-    result = []
-    for context_input in data['inputs']:
-        # Check all provided kwargs match the input
-        if all(context_input.get(key) == value for key, value in kwargs.items()):
-            result.append(context_input)
-    return result
 
-def list_outputs(data, **kwargs):
-    result = []
-    for context_output in data['outputs']:
-        # Check all provided kwargs match the output
-        if all(context_output.get(key) == value for key, value in kwargs.items()):
-            result.append(context_output)
-    return result
+def get_source_department(inputs: list[dict], department_order: list[str]) -> str | None:
+    """The shot department that introduced an asset, from its ``inputs``.
+
+    Every shot export appends its own ``uri``/``department``/``version``
+    entry to the inputs of each asset it tracks; of those, the one earliest
+    in ``department_order`` (pipeline order) is where the asset came in.
+    None when no shot department touched the asset at all (an asset build's
+    own inputs).
+
+    Raises ValueError for a shot department missing from
+    ``department_order``: where it sits in the pipeline is unknown, so any
+    answer would be a guess about which cut keeps the asset.
+    """
+    shot_depts = [
+        inp['department'] for inp in inputs
+        if inp['uri'].startswith('entity:/shots/')
+    ]
+    if not shot_depts:
+        return None
+    unknown = sorted(set(shot_depts) - set(department_order))
+    if unknown:
+        raise ValueError(
+            f"asset inputs name shot department(s) {', '.join(unknown)} "
+            f"that are not in the department order "
+            f"({', '.join(department_order)})"
+        )
+    return next(dept for dept in department_order if dept in shot_depts)
+
 
 def get_aov_names_from_context(context_data: dict, channel: str = None) -> list[str]:
     """Extract AOV names from context.json outputs.
@@ -55,7 +72,7 @@ def get_aov_names_from_context(context_data: dict, channel: str = None) -> list[
 
     outputs = context_data.get('outputs', [])
     for output in outputs:
-        if channel is not None and output.get('variant') != channel:
+        if channel is not None and read_published_channel(output, where='context.json output') != channel:
             continue
         params = output.get('parameters', {})
         aov_names = params.get('aov_names', [])
@@ -81,15 +98,6 @@ def aggregate_aov_names_from_inputs(
     Returns:
         List of unique AOV names aggregated from all referenced assets
     """
-    if context_data is None:
-        return []
-
-    # Import here to avoid circular dependency
-    from tumblepipe.pipe.paths import latest_export_path
-    from tumblepipe.util.io import load_json
-    from tumblepipe.util.uri import Uri
-    from tumblepipe.config.department import list_departments
-
     aov_set = set()
 
     # Get assets from outputs[0].parameters.assets
@@ -108,43 +116,33 @@ def aggregate_aov_names_from_inputs(
 
     for asset_entry in assets:
         # Asset entries have structure: {asset: uri, instance: name, inputs: [...]}
-        asset_uri_str = asset_entry.get('asset', '')
-        if not asset_uri_str.startswith('entity:/assets/'):
-            continue
+        asset_uri = Uri.parse(asset_entry['asset'])
 
-        try:
-            asset_uri = Uri.parse_unsafe(asset_uri_str)
-
-            # Check all departments for this asset's exports
-            for department in asset_departments:
-                asset_export_path = latest_export_path(asset_uri, channel, department)
-                if asset_export_path is None:
-                    continue
-
-                # Load the asset's context.json
-                asset_context_path = asset_export_path / 'context.json'
-                asset_context = load_json(asset_context_path)
-                if asset_context is None:
-                    continue
-
-                # Extract AOV names from the asset (no channel filter)
-                asset_aov_names = get_aov_names_from_context(asset_context)
-                aov_set.update(asset_aov_names)
-
-        except Exception:
-            # Skip invalid entries gracefully
-            continue
+        # Check all departments for this asset's exports. Every export
+        # writes its context.json, so one missing is a broken export.
+        for department in asset_departments:
+            asset_export_path = latest_export_path(asset_uri, channel, department)
+            if asset_export_path is None:
+                continue
+            asset_context = load_json(asset_export_path / 'context.json')
+            aov_set.update(get_aov_names_from_context(asset_context))
 
     return list(aov_set)
 
 
 def file_path_from_context(context: Context):
-    """Get the hip file path for a context."""
-    if context is None:
+    """The hip file of ``context``'s version, or None when it cannot be seen.
+
+    None covers a stat that misses the file: on the SMB/CIFS shares the
+    pipeline runs on, a file written a moment ago can be invisible to
+    ``exists()`` for a while, and ``save_context`` asks right after a save.
+    """
+    try:
+        file_path = get_hip_file_path(
+            context.entity_uri, context.department_name, context.version_name
+        )
+    except FileNotFoundError:
         return None
-    if context.version_name is None:
-        return None
-    file_path = get_hip_file_path(context.entity_uri, context.department_name, context.version_name)
     if not file_path.exists():
         return None
     return file_path
@@ -165,19 +163,10 @@ def _list_present_version_codes(workspace_path: Path) -> set[int]:
     lineage entries — either is proof a version exists — so a version is not
     lost from lineage just because one of the two was cleaned up.
     """
-    codes: set[int] = set()
-    context_dir = workspace_path / "_context"
-    if context_dir.is_dir():
-        for entry in context_dir.glob("*.json"):
-            name = entry.stem
-            if api.naming.is_valid_version_name(name):
-                codes.add(api.naming.get_version_code(name))
-    for ext in HIP_EXTENSIONS:
-        for hip_path in workspace_path.glob(f"*.{ext}"):
-            name = hip_path.stem.rsplit("_", 1)[-1]
-            if api.naming.is_valid_version_name(name):
-                codes.add(api.naming.get_version_code(name))
-    return codes
+    return {
+        naming.get_version_code(name)
+        for name in scan_workspace(workspace_path).version_names()
+    }
 
 
 def _predecessor_version_name(workspace_path: Path, version_name: str) -> str:
@@ -189,11 +178,11 @@ def _predecessor_version_name(workspace_path: Path, version_name: str) -> str:
     pointer — so an unresolved predecessor can never silently re-anchor the
     lineage chain to ``v0000`` mid-history.
     """
-    target_code = api.naming.get_version_code(version_name)
+    target_code = naming.get_version_code(version_name)
     prior = [code for code in _list_present_version_codes(workspace_path) if code < target_code]
     if not prior:
         return "v0000"
-    return api.naming.get_version_name(max(prior))
+    return naming.get_version_name(max(prior))
 
 
 def save_context(target_path: Path, prev_context, next_context, houdini_version: str = None, file_extension: str = None, note: str = ""):
@@ -269,42 +258,6 @@ def save_context(target_path: Path, prev_context, next_context, houdini_version:
     )
 
 
-def save_hip_file(next_path: Path) -> Path:
-    """``hou.hipFile.save`` into ``next_path`` and return where the hip landed.
-
-    Houdini does not honour a requested extension the session's license is not
-    allowed to write: an Education or Apprentice session asked to save
-    ``foo.hip`` silently writes ``foo.hipnc`` instead. Every workfile commit
-    must therefore record the extension from the file Houdini *reports having
-    saved*, not from the path it was asked for — a sidecar built from the
-    request points ``get_hip_file_path`` at a ``.hip`` that never existed, and
-    the version can never be reopened from the browser (Rates, TumblePipe
-    1.44.2 on Houdini Education).
-
-    The predicted path (``session_nc_type``) is still worth getting right —
-    it names the file the artist sees — but this is the safety net for the
-    license categories the prediction does not know about. A rewrite is
-    logged at warning level so the mismatch is visible, not silently absorbed.
-    """
-    next_path = Path(next_path)
-    hou.hipFile.save(str(next_path))
-    # Tolerate a hipFile without ``path`` (test fakes, exotic hosts): the
-    # requested path is then the best knowledge we have.
-    path_of = getattr(hou.hipFile, "path", None)
-    saved = Path(path_of() or "") if path_of is not None else next_path
-    if not str(saved) or saved.stem != next_path.stem:
-        # Not a plain extension rewrite of our request (empty, or somewhere
-        # else entirely) — do not second-guess the caller's path.
-        return next_path
-    if saved.suffix != next_path.suffix:
-        logger.warning(
-            f"Houdini saved {next_path.name} as {saved.name} (license-driven "
-            f"extension rewrite); recording the extension actually on disk"
-        )
-        return next_path.with_suffix(saved.suffix)
-    return next_path
-
-
 def workfile_context(
     entity_uri: Uri,
     department_name: str,
@@ -318,70 +271,11 @@ def workfile_context(
     owner (:func:`resolve_workfile_uri`), so a Multi member's workfile,
     which lives in the Multi's folder, records the Multi.
     """
-    from tumblepipe.pipe.paths import resolve_workfile_uri
-
     return Context(
         entity_uri=resolve_workfile_uri(entity_uri, department_name),
         department_name=department_name,
-        version_name=Path(hip_path).stem.rsplit("_", 1)[-1],
+        version_name=version_of(hip_path),
     )
-
-
-def commit_next_workfile(
-    entity_uri: Uri,
-    department_name: str,
-    prev_context: Context = None,
-    nc_type: str = None,
-    note: str = "",
-) -> Path:
-    """Reserve, save the loaded hip into, and record the next workfile version.
-
-    The single implementation every workfile-save path shares, so version
-    allocation and the three-step commit are done one correct way:
-
-    1. atomically reserve the next version (:func:`reserve_next_hip_file_path`),
-       so two concurrent saves never pick the same number;
-    2. ``hou.hipFile.save`` the loaded scene into it (:func:`save_hip_file`,
-       so the recorded extension is the one Houdini actually wrote);
-    3. write the ``_context`` lineage entry, then the ``context.json`` pointer
-       **last** — so a crash always leaves the pointer at or below a
-       fully-committed version, never ahead of a missing one.
-
-    Rollback is deliberately narrow: if the *hip save* fails the reservation is
-    released (the number is reusable). If the hip saved but the bookkeeping
-    afterward fails, the file is **kept** — the artist's work is real — and the
-    reader reconciliation plus ``verify_context_chain`` recover the pointer and
-    chain rather than discarding a genuine save.
-
-    ``prev_context`` records provenance; pass the loaded scene's context on an
-    incremental save, or None (a fresh create / farm publish) to let
-    :func:`save_context` derive the predecessor from disk.
-
-    ``note`` is the artist's free-text "what changed" for this version, shown
-    in the asset browser's Note column. Collect it *before* calling this — the
-    version is reserved on the first line, so prompting from in here would hold
-    a reservation open for as long as a dialog sits on screen, and a cancel
-    would have to unwind a commit already in flight. Returns the saved path.
-    """
-    from tumblepipe.pipe.paths import (
-        reserve_next_hip_file_path, release_reserved_version,
-    )
-
-    next_path = reserve_next_hip_file_path(entity_uri, department_name, nc_type=nc_type)
-    try:
-        next_path = save_hip_file(next_path)
-    except BaseException:
-        release_reserved_version(next_path)
-        raise
-
-    next_context = workfile_context(entity_uri, department_name, next_path)
-    save_context(
-        next_path.parent, prev_context, next_context,
-        file_extension=next_path.suffix.lstrip("."),
-        note=note,
-    )
-    save_entity_context(next_path.parent, next_context)
-    return next_path
 
 
 def save_entity_context(target_path: Path, context: Context):
@@ -441,7 +335,7 @@ def save_export_context(
     context_data = dict(
         uri=str(entity_uri),
         department=department_name,
-        variant=channel_name,
+        channel=channel_name,
         version=version_name,
         timestamp=dt.datetime.now().isoformat(),
         user=get_user_name()
@@ -487,7 +381,7 @@ def save_layer_context(
         outputs=[dict(
             uri=str(entity_uri),
             department=department_name,
-            variant=channel_name,
+            channel=channel_name,
             version=version_name,
             timestamp=timestamp,
             user=user_name,

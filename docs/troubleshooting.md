@@ -41,18 +41,12 @@ Both come from the `tt_prepare` hook, which runs on every launch:
 
 ### The radial menus are missing (Alt+T does nothing)
 
-The `tumbleradial` package is not installed. Houdini's log carries
-`tumbleradial is not installed, so TumblePipe's radial menus (pipeline
-submenus, recipes, asset favorites, cop/vop network menus) will not
-register`. Install it from TumbleTrove and restart. Alt+R and Alt+F are also
-absent when fewer than two recipes / favourites exist. See
+Radial registration failed at startup: Houdini's console carries
+`[tumblepipe] radial registration failed:` and the traceback. Radial is a
+declared dependency, so a missing `tumbleradial` means the project's
+packages were not installed; reinstall from TumbleTrove Desktop. Alt+R and
+Alt+F are also absent when fewer than two recipes / favourites exist. See
 [Radial menus](radial-menus.md).
-
-TumblePipe v1.48.0 and earlier fail at startup against Radial 0.4.0 with
-`AttributeError: module 'tumbleradial' has no attribute 'register'`, which
-takes Alt+T, Alt+R, Alt+F and the COP/VOP menus down with it. Update
-TumblePipe. If only the COP/VOP menus are missing and the log says
-`tumbleradial predates bind() (Radial 0.4.0)`, update Radial instead.
 
 ### Shift+Space does nothing, or opens the wrong department's menu
 
@@ -89,7 +83,6 @@ The [VRAM Inspector](vram-inspector.md) measures only through its viewport
 hook, a plug-in TumblePipe ships under `dso/<major>.<minor>/` and puts on
 `HOUDINI_DSO_PATH`. Without it the window measures nothing. Causes:
 
-- **Houdini 21.** The hook is built for Houdini 22 only.
 - **A Houdini 22 minor release the package wasn't built for** (say 22.5 when
   the package ships `dso/22.0/`). A plug-in must match the major.minor it
   loads into; update TumblePipe.
@@ -365,14 +358,27 @@ names under `export/` and the workfile tree, so renaming one side in the
 config database alone would orphan its published work. Ask whoever
 maintains the project.
 
-### The column says "Channels" but paths and parms say "variant"
+### "The project config ... is on layout vN; this TumblePipe reads vM"
 
-Intended. A **channel** is the pipeline's publish-tree fork (`default`,
-`bg`, `fg`, …); *variant* is reserved for USD's own `variantSet`. Only labels
-were renamed — the `variants` property key, the `<variant>` path segment and
-HDA parm internal names keep the old spelling on purpose, and readers accept
-both. A project whose column still reads *Variants* has not taken the v5
-config migration. See
+The project has not taken the config migrations this TumblePipe needs (or
+was migrated by a newer one). The package reads exactly one config layout —
+an older one would not fail on its own but be read wrongly, e.g. every entity
+showing only the `default` channel after v13 — so it refuses the project
+when it opens. Launch the project from TumbleTrove Desktop and accept the
+migration (or run `python scripts/migrate_config.py <project>`). **Not now**
+leaves the project unopenable with this version until it is migrated. A farm
+worker never migrates, so migrate before submitting.
+
+### Old files still say "variant"
+
+Expected. A **channel** is the pipeline's publish-tree fork (`default`,
+`bg`, `fg`, …); *variant* is reserved for USD's own `variantSet`. Published
+versions are never rewritten, so `context.json` files, staged `.usda` URIs
+(`?variant=`) and prim `customData` published before the rename keep the old
+key and are read exactly like the new one. A scene saved with the old HDA
+parm (`variant`) is upgraded to `channel` when it loads. An expression on
+another node that read the old parm (`chs("../import_layer1/variant")`) is the
+one thing not carried over — point it at `channel`. See
 [Channels, and why they are not USD variants](composition.md#channels-and-why-they-are-not-usd-variants).
 
 ### Opening a model or lookdev scene warns "Ignoring data for locked node"
@@ -432,7 +438,7 @@ With no farm at all, see
 
 ### The Farm Submit button in TumbleTrove Desktop reports no Houdini
 
-`No installed Houdini satisfies '>=22.0' and '>=21, <23'` means no Houdini in
+`No installed Houdini satisfies '>=22.0' and '>=22, <23'` means no Houdini in
 the standard install location meets both the project's and TumblePipe's
 version range. Install one, or set `HFS` to the Houdini to use.
 `HOUDINI_PACKAGE_DIR is not set` means the launcher was run outside the
@@ -483,13 +489,7 @@ The job's bundled `hpm.toml` did not supply `TH_PROJECT_PATH`, which
 TumblePipe's manifest declares as a required placeholder — hpm resolves it
 against the job manifest, not the worker's environment. Resubmit from a
 current TumblePipe (the submitter writes it into the job manifest). See
-[Plugins: HPM and UV](deadline.md#plugins-hpm-default-and-uv-legacy).
-
-### Farm job failed: `Script file not found: …/.hpm/packages/…`
-
-The job used the legacy **UV** plugin, which bakes the submitter's absolute
-package path; it only works when every worker mirrors that path. Submit with
-the default **HPM** plugin. See [Deadline and the render farm](deadline.md).
+[The HPM plugin](deadline.md#the-hpm-plugin).
 
 ### Farm publish failed: `No export node found … refusing to publish an empty version`
 
@@ -685,9 +685,8 @@ To see what the farm will compose, collapse the staged build the way the
 submitter does and look at the copies' world positions:
 
     from pathlib import Path
-    from tumblepipe.pipe.usd import collapse_latest_references
-    staged = Path('<shot>/_staged/<variant>/vNNNN/<file>.usda')
-    text = collapse_latest_references(staged, staged.with_name('collapsed.usda'))
+    from tumblepipe.pipe.usd.collapse import collapse_latest_references
+    text = collapse_latest_references(Path('<shot>/_staged/<channel>/vNNNN/<file>.usda'))
 
 The instance defs are at the end of the returned text.
 

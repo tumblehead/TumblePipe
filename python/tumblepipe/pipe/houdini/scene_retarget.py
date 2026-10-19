@@ -48,11 +48,11 @@ LABELLED = {
     ("layer_split", "Lop"):
         "tumblepipe.pipe.houdini.lops.layer_split:LayerSplit",
     ("cache", "Lop"):
-        "tumblepipe.pipe.houdini.lops.cache:Cache",
+        "tumblepipe.pipe.houdini.cache:LopCache",
     ("create_model", "Lop"):
         "tumblepipe.pipe.houdini.lops.create_model:CreateModel",
     ("cache", "Sop"):
-        "tumblepipe.pipe.houdini.sops.cache:Cache",
+        "tumblepipe.pipe.houdini.cache:SopCache",
     ("import_rig", "Sop"):
         "tumblepipe.pipe.houdini.sops.import_rig:ImportRig",
     ("playblast", "Sop"):

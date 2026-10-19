@@ -1,8 +1,8 @@
 """Reusable entity selector dialog with hierarchical tree view."""
 
-from qtpy import QtWidgets
-from qtpy.QtCore import Qt
-from qtpy.QtGui import QStandardItemModel, QStandardItem
+from PySide6 import QtWidgets
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.entities import is_terminal_entity
@@ -154,20 +154,14 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         all_uris = []
         with self._api.config.coherent():
             if self._entity_filter in ('assets', 'both'):
-                try:
-                    all_uris.extend(self._api.config.list_entity_uris(
-                        Uri.parse_unsafe('entity:/assets'), closure=True
-                    ))
-                except Exception:
-                    pass
+                all_uris.extend(self._api.config.list_entity_uris(
+                    Uri.parse('entity:/assets'), closure=True
+                ))
 
             if self._entity_filter in ('shots', 'both'):
-                try:
-                    all_uris.extend(self._api.config.list_entity_uris(
-                        Uri.parse_unsafe('entity:/shots'), closure=True
-                    ))
-                except Exception:
-                    pass
+                all_uris.extend(self._api.config.list_entity_uris(
+                    Uri.parse('entity:/shots'), closure=True
+                ))
 
             # Drop empty categories/sequences: list_entities(closure=True)
             # returns any childless node, so a category with no assets yet

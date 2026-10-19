@@ -52,10 +52,10 @@
                                     "tooltip": "Render department"
                                 },
                                 {
-                                    "key": "variants",
+                                    "key": "channels",
                                     "label": "Channels",
                                     "type": "multi_select",
-                                    "property_path": "variants",
+                                    "property_path": "channels",
                                     "per_entity_choices": true,
                                     "width": 100,
                                     "tooltip": "Publish channels to render"

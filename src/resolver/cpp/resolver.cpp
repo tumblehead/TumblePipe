@@ -4,25 +4,26 @@
 #include <pxr/base/tf/diagnostic.h>
 #include <pxr/usd/ar/defineResolver.h>
 #include <pxr/usd/ar/filesystemAsset.h>
-#include <pxr/usd/ar/notice.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 
 PXR_NAMESPACE_OPEN_SCOPE
 
 namespace {
 
-constexpr const char* kEntityScheme = "entity:";
 constexpr size_t kPathBufferSize = 1024;
 
-// Diagnostic logging — gated on TH_RESOLVER_DEBUG. Writes to both
-// %TEMP%/tumble-resolver.log and stderr. The file path is the reliable
+// Diagnostic logging, gated on TH_RESOLVER_DEBUG. Writes to both
+// <temp dir>/tumble-resolver.log and stderr. The file is the reliable
 // channel since Houdini's launcher routes stderr away from any place
-// callers can read; stderr is kept as a convenience for in-shell
-// fd-2 capture. Production installs stay silent unless the env var is set.
+// callers can read; stderr is kept as a convenience for in-shell fd-2
+// capture. Production installs stay silent unless the env var is set.
 bool _DebugEnabled() {
     static const bool enabled = []() {
         const char* v = std::getenv("TH_RESOLVER_DEBUG");
@@ -31,67 +32,58 @@ bool _DebugEnabled() {
     return enabled;
 }
 
-const char* _DebugLogPath() {
-    static std::string path = []() -> std::string {
-        const char* tmp = std::getenv("TEMP");
-        if (!tmp) tmp = std::getenv("TMP");
-        if (!tmp) tmp = ".";
-        std::string p = tmp;
-        p += "/tumble-resolver.log";
-        return p;
+// Empty when the platform reports no temp directory; logging then goes to
+// stderr only.
+const std::string& _DebugLogPath() {
+    static const std::string path = []() -> std::string {
+        std::error_code ec;
+        const std::filesystem::path dir =
+            std::filesystem::temp_directory_path(ec);
+        return ec ? std::string() : (dir / "tumble-resolver.log").string();
     }();
-    return path.c_str();
+    return path;
 }
 
 inline void _DebugLog(const char* fn, const char* arg) {
     if (!_DebugEnabled()) return;
-    std::FILE* f = std::fopen(_DebugLogPath(), "a");
-    if (f) {
-        std::fprintf(f, "[tumbleResolver] %s(\"%s\")\n", fn, arg ? arg : "");
-        std::fclose(f);
+    const std::string& logPath = _DebugLogPath();
+    if (!logPath.empty()) {
+        if (std::FILE* f = std::fopen(logPath.c_str(), "a")) {
+            std::fprintf(f, "[tumbleResolver] %s(\"%s\")\n", fn, arg ? arg : "");
+            std::fclose(f);
+        }
     }
     std::fprintf(stderr, "[tumbleResolver] %s(\"%s\")\n", fn, arg ? arg : "");
     std::fflush(stderr);
-}
-
-bool _IsEntityUri(const std::string& s) {
-    return s.compare(0, std::strlen(kEntityScheme), kEntityScheme) == 0;
 }
 
 std::string _LastError() {
     std::array<char, 512> buf{};
     size_t len = 0;
     th_resolver_last_error(buf.data(), buf.size(), &len);
-    if (len > buf.size()) {
-        len = buf.size();
-    }
-    return std::string(buf.data(), len);
+    return std::string(buf.data(), std::min(len, buf.size()));
 }
 
 /// Call the Rust resolver. On success returns the resolved filesystem
 /// path; on failure logs via TF_WARN and returns an empty string, which
-/// USD interprets as "unresolved".
+/// USD interprets as "unresolved". Scheme checking is the core's job: a
+/// non-`entity:` path comes back as a parse error.
 std::string _CallRustResolve(const std::string& uri) {
-    std::array<char, kPathBufferSize> buf{};
+    std::string out(kPathBufferSize, '\0');
     size_t len = 0;
-    const int32_t rc = th_resolver_resolve(
-        uri.data(), uri.size(), buf.data(), buf.size(), &len);
+    int32_t rc = th_resolver_resolve(
+        uri.data(), uri.size(), out.data(), out.size(), &len);
 
-    if (rc == 0 && len <= buf.size()) {
-        return std::string(buf.data(), len);
+    // The core reports the size it needs; retry once at exactly that size.
+    if (rc == TH_RESOLVER_ERR_BUFFER_TOO_SMALL) {
+        out.assign(len, '\0');
+        rc = th_resolver_resolve(
+            uri.data(), uri.size(), out.data(), out.size(), &len);
     }
 
-    // Grow-and-retry path: the required size is reported in `len` even
-    // when the initial buffer was too small.
-    if (rc != 0 && len > buf.size()) {
-        std::string big(len, '\0');
-        size_t len2 = 0;
-        const int32_t rc2 = th_resolver_resolve(
-            uri.data(), uri.size(), big.data(), big.size(), &len2);
-        if (rc2 == 0) {
-            big.resize(len2);
-            return big;
-        }
+    if (rc == TH_RESOLVER_OK) {
+        out.resize(len);
+        return out;
     }
 
     TF_WARN("TumbleResolver: %s (uri=%s, rc=%d)",
@@ -125,10 +117,6 @@ std::string TumbleResolver::_CreateIdentifierForNewAsset(
 
 ArResolvedPath TumbleResolver::_Resolve(const std::string& assetPath) const {
     _DebugLog("_Resolve", assetPath.c_str());
-    if (!_IsEntityUri(assetPath)) {
-        _DebugLog("_Resolve:not-entity-uri", assetPath.c_str());
-        return ArResolvedPath();
-    }
     std::string resolved = _CallRustResolve(assetPath);
     _DebugLog("_Resolve:result", resolved.c_str());
     return resolved.empty() ? ArResolvedPath() : ArResolvedPath(std::move(resolved));
@@ -138,27 +126,7 @@ ArResolvedPath TumbleResolver::_ResolveForNewAsset(
     const std::string& assetPath) const
 {
     _DebugLog("_ResolveForNewAsset", assetPath.c_str());
-    // Read-only resolver: write paths go through the default FS resolver.
     return _Resolve(assetPath);
-}
-
-void TumbleResolver::_RefreshContext(const ArResolverContext& /*context*/) {
-    _DebugLog("_RefreshContext", "");
-    // The Rust core keeps no cache — every _Resolve re-scans the
-    // filesystem — but composed stages and the Sdf layer registry hold
-    // whatever an entity: URI resolved to at composition time. Without
-    // this notice they never re-resolve, so a version-less URI stays
-    // stuck on its first resolution for the life of the process (the
-    // "restart Houdini to see a new publish" bug).
-    //
-    // The passed context is deliberately ignored: entity: resolution
-    // depends only on process env (TH_RESOLVER_LATEST_MODE, TH_EXPORT_PATH)
-    // and the filesystem, never on a bound context object, so a refresh
-    // affects every stage regardless of which context it has bound. The
-    // default-constructed notice is the affects-all variant, which
-    // UsdStage::_HandleResolverDidChange answers by re-resolving asset
-    // paths and swapping in layers whose resolved path changed.
-    ArNotice::ResolverChanged().Send();
 }
 
 ArTimestamp TumbleResolver::_GetModificationTimestamp(
@@ -166,10 +134,8 @@ ArTimestamp TumbleResolver::_GetModificationTimestamp(
     const ArResolvedPath& resolvedPath) const
 {
     _DebugLog("_GetModificationTimestamp", resolvedPath.GetPathString().c_str());
-    // resolvedPath is the filesystem path we returned from _Resolve; the
-    // default filesystem timestamp is exactly what we want. Delegating
-    // here keeps the Rust side smaller (no stat wrapper needed) and
-    // benefits from any ABI-compatible improvements USD ships.
+    // resolvedPath is the filesystem path _Resolve returned, so the
+    // filesystem timestamp is exactly the answer.
     return ArFilesystemAsset::GetModificationTimestamp(resolvedPath);
 }
 
@@ -186,8 +152,8 @@ std::shared_ptr<ArWritableAsset> TumbleResolver::_OpenAssetForWrite(
 {
     _DebugLog("_OpenAssetForWrite", "");
     // Read-only resolver: entity:// assets cannot be written through us.
-    // Callers that need to write resolved filesystem paths should use
-    // USD's default filesystem resolver on the already-resolved path.
+    // Writers publish to plain filesystem paths, which USD's default
+    // resolver handles.
     return nullptr;
 }
 
@@ -211,7 +177,9 @@ std::shared_ptr<ArWritableAsset> TumbleResolver::_OpenAssetForWrite(
 // MSVC always preserves regardless of toolchain version. Calling
 // Ar_DefineResolver<>() directly is what the AR_DEFINE_RESOLVER macro
 // would have done; we just bypass the section-based registry mechanism
-// and rely on the standard CRT init path.
+// and rely on the standard CRT init path. (The object still has to be
+// linked in at all, which is what the /WHOLEARCHIVE in CMakeLists.txt is
+// for: nothing references this translation unit by symbol.)
 namespace {
 struct _ResolverRegistrar {
     _ResolverRegistrar() {

@@ -9,395 +9,165 @@ import hou
 
 logger = logging.getLogger(__name__)
 
-from tumblepipe.api import get_user_name, path_str, local_path, api
+from tumblepipe.api import get_user_name, path_str, api
 from tumblepipe.util.errors import TaskSkipped
 from tumblepipe.util.progress import report_progress
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.channels import list_channels, read_channel
-from tumblepipe.config.timeline import FrameRange, get_frame_range, get_fps
-from tumblepipe.config.farm import list_pools
-from tumblepipe.pipe.houdini import util
+from tumblepipe.config.channels import CHANNEL_KEY, list_channels
+from tumblepipe.config.timeline import get_fps
+from tumblepipe.pipe.houdini import prim_metadata, prim_queries
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.houdini.farm_node import FarmNode
+from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
+from tumblepipe.pipe.houdini.export_checks import (
+    ExportLayerError,
+    check_no_dropped_assets,
+    cook_errors,
+    list_expected_asset_uris,
+    make_portable,
+    validate_export_files,
+)
 from tumblepipe.pipe.paths import (
+    SHARED_CHANNEL,
     latest_export_path,
     next_export_path,
-    get_workfile_context,
     get_layer_file_name,
     latest_hip_file_path
 )
-from tumblepipe.pipe.usd import add_sublayer
+from tumblepipe.pipe.usd.sublayer_refs import add_sublayer
 from tumblepipe.pipe.context import save_layer_context
 from tumblepipe.pipe.build import sourced_from_shot, arrived_from_downstream
 from tumblepipe.config.department import list_departments
-from tumblepipe.apps.houdini import (
+from tumblepipe.pipe.usd.stitch import (
     stitch_usd_directories,
     calculate_chunks,
     flatten_sidecar_directories,
 )
 
 
-class ExportLayerError(Exception):
-    """Raised when export_layer encounters a validation or execution error."""
-    pass
+def _downstream_shot_departments(department_name: str) -> list[str]:
+    """Shot departments after ``department_name`` in the pool."""
+    names = [d.name for d in list_departments('shots')]
+    if department_name not in names:
+        return []
+    return names[names.index(department_name) + 1:]
 
 
-# The cook errors quoted in an export failure are cut to this many characters:
-# an APEX rig that fails to compile repeats its whole chain per sample.
-_COOK_ERROR_LIMIT = 1500
+def _scrape_assets(root, entity_uri, department_name, version_name, expected_asset_uris):
+    """The assets the export tracks, grouped by URI, and their inputs.
 
-
-def _cook_errors(node) -> str:
-    """The cook errors of ``node`` (and so of what feeds it), for a failure message."""
-    try:
-        errors = [e.strip() for e in node.errors() if e.strip()]
-    except hou.Error:
-        errors = []
-    if not errors:
-        return "No cook error was reported; look for the red node upstream."
-    text = "\n".join(errors)
-    if len(text) > _COOK_ERROR_LIMIT:
-        text = text[:_COOK_ERROR_LIMIT] + " …"
-    return "Cook error:\n" + text
-
-
-def _list_expected_asset_uris(native) -> set[str]:
-    """Asset URIs that upstream import nodes placed on the stage.
-
-    Walks the export node's input ancestors for import_asset /
-    import_assets instances so the export can cross-check the scraped
-    metadata against what the graph says should be there. The sibling
-    heuristic in util.list_dropped_asset_prims cannot see a drop when a
-    category holds no metadata-carrying asset at all (single asset, or
-    every asset dropped) - this expected-vs-scraped check can.
-    Best-effort: entries it cannot read are skipped, never blocking.
+    Returns ``({asset uri: [instance info]}, {json-encoded input})``. An
+    asset workfile does not track the assets of a shot layer it imported for
+    context; a shot export does not track an asset a downstream department
+    layer brought in, unless this workfile imports it too. A shot export
+    records itself in each tracked asset's inputs.
     """
-    expected = set()
-    for ancestor in native.inputAncestors():
-        if ancestor.isBypassed():
-            continue
-        # Inline-mode imports deliberately bake their assets into the
-        # export without pipeline metadata, so they are not expected in
-        # the scrape.
-        mode_parm = ancestor.parm('import_mode')
-        if mode_parm is not None and mode_parm.evalAsString() == 'inline':
-            continue
-        type_base = ancestor.type().nameComponents()[2]
-        entity_raws = []
-        if type_base == 'import_asset':
-            filepath_parm = ancestor.parm('import_filepath1')
-            entity_parm = ancestor.parm('entity')
-            if (
-                filepath_parm is not None and filepath_parm.eval()
-                and entity_parm is not None
-            ):
-                entity_raws.append(entity_parm.eval())
-        elif type_base == 'import_assets':
-            count_parm = ancestor.parm('asset_imports')
-            count = count_parm.eval() if count_parm is not None else 0
-            for index in range(1, count + 1):
-                instances_parm = ancestor.parm(f'instances{index}')
-                entity_parm = ancestor.parm(f'entity{index}')
-                if instances_parm is None or entity_parm is None:
-                    continue
-                if instances_parm.eval() <= 0:
-                    continue
-                entity_raws.append(entity_parm.eval())
-        elif type_base == 'import_layer':
-            # import_layer tags the imported entity's root prim when it
-            # brings in another asset's department layer. 'from_context'
-            # (and any self-import) is the workfile's own entity, which
-            # stays untagged — the caller discards the exporting entity's
-            # URI from the expected set.
-            entity_parm = ancestor.parm('entity')
-            entity_raw = entity_parm.eval() if entity_parm is not None else ''
-            loaded = any(
-                ancestor.parm(f'import_enable{index}') is not None
-                and ancestor.parm(f'import_enable{index}').eval()
-                and ancestor.parm(f'import_filepath{index}') is not None
-                and ancestor.parm(f'import_filepath{index}').eval()
-                for index in (1, 2)
+    is_shot_export = entity_uri.segments[0] == 'shots'
+    downstream_departments = (
+        _downstream_shot_departments(department_name) if is_shot_export else []
+    )
+    assets_by_uri = dict()
+    asset_inputs = set()
+    for asset_info in prim_metadata.list_assets(root):
+        prim_path = asset_info['prim_path']
+        asset_metadata = asset_info['metadata']
+        asset_uri_str = asset_metadata['uri']
+
+        if not is_shot_export and sourced_from_shot(asset_metadata.get('inputs')):
+            logger.info(
+                "Not tracking %s at %s: it came in through a shot layer",
+                asset_uri_str, prim_path,
             )
-            if entity_raw.startswith('entity:/assets/') and loaded:
-                entity_raws.append(entity_raw)
-        for entity_raw in entity_raws:
-            if not entity_raw:
-                continue
-            try:
-                expected.add(str(Uri.parse_unsafe(entity_raw)))
-            except ValueError:
-                continue
-    return expected
-
-
-def _validate_export_files(temp_path: Path, expected_filename: str, operation_desc: str) -> None:
-    """Validate that export operation created expected files.
-
-    Args:
-        temp_path: Directory where files should be created
-        expected_filename: Name of main USD file expected
-        operation_desc: Description for error message (e.g., "batch export chunk 1001-1010")
-
-    Raises:
-        ExportLayerError: If expected files don't exist with detailed diagnostic info
-    """
-    expected_file = temp_path / expected_filename
-
-    if not expected_file.exists():
-        # Check if temp directory itself exists
-        if not temp_path.exists():
-            raise ExportLayerError(
-                f"Export failed during {operation_desc}: "
-                f"Temp directory not found: {temp_path}\n"
-                f"This may indicate a disk I/O error or permission issue."
+            continue
+        if (
+            is_shot_export
+            and asset_uri_str not in expected_asset_uris
+            and arrived_from_downstream(
+                asset_metadata.get('inputs'), downstream_departments
             )
+        ):
+            logger.info(
+                "Not tracking %s at %s: it came in through a downstream "
+                "department layer",
+                asset_uri_str, prim_path,
+            )
+            continue
 
-        # List what files DO exist for diagnostics
-        existing_files = [f.name for f in temp_path.iterdir()] if temp_path.exists() else []
+        if is_shot_export:
+            shot_dept_entry = {
+                'uri': str(entity_uri),
+                'department': department_name,
+                'version': version_name
+            }
+            existing_inputs = asset_metadata.get('inputs', [])
+            if shot_dept_entry not in existing_inputs:
+                asset_metadata['inputs'] = existing_inputs + [shot_dept_entry]
 
-        raise ExportLayerError(
-            f"Export failed during {operation_desc}: "
-            f"Expected file not created: {expected_filename}\n"
-            f"Export path: {temp_path}\n"
-            f"Files found: {existing_files if existing_files else '(none)'}\n\n"
-            f"Possible causes:\n"
-            f"- Disk full or quota exceeded\n"
-            f"- Network drive disconnected\n"
-            f"- File permissions issue\n"
-            f"- Houdini export node errors (check Houdini console)"
+        assets_by_uri.setdefault(asset_uri_str, []).append({
+            'prim_path': prim_path,
+            'instance': asset_metadata['instance'],
+            CHANNEL_KEY: asset_metadata[CHANNEL_KEY],
+            'inputs': asset_metadata.get('inputs', [])
+        })
+        asset_inputs.update(set(map(json.dumps, asset_metadata['inputs'])))
+    return assets_by_uri, asset_inputs
+
+
+def _parameter_assets(assets_by_uri) -> list[dict]:
+    """The context.json 'assets' entries: one per asset, with its count.
+
+    'instance' names the asset's BASE prim, so it comes from the URI. The
+    first scraped instance is whichever copy the scrape walked first — and
+    since the prototype is deactivated, list_assets skips it and the first
+    LIVE copy wins, having tagged itself with its own name (Haybale9, not
+    Haybale). Consumers read this as the base name and regenerate
+    <base>0..<base>N-1 from it, so an arbitrary copy's name spawned a
+    phantom set at the origin.
+    """
+    return [
+        dict(
+            asset=asset_uri_str,
+            instance=Uri.parse(asset_uri_str).segments[-1],
+            instances=len(instances),
+            channel=instances[0][CHANNEL_KEY],
+            inputs=instances[0]['inputs'],
         )
+        for asset_uri_str, instances in assets_by_uri.items()
+    ]
 
 
-def _workfile_cache_storage_roots() -> list[Path]:
-    """The ``project:``/``proxy:`` storage roots of the active project.
-
-    Any absolute composition arc that lands in a ``cache/`` directory
-    below one of these roots is a versioned cache next to some workfile
-    (``<...>/<entity>/<dept>/cache/<name>/<version>/...``) and publishes
-    by reference — regardless of how it was loaded into the scene (a
-    ``th::cache`` node, a raw ``sublayer`` of the ``.bgeo.sc`` files, a
-    file SOP …). Unlike ``_versioned_cache_roots`` this needs no scene
-    node, so it also covers caches pulled from another workfile's folder.
-    Fail-open to no roots.
-    """
-    return _storage_roots(('project', 'proxy'))
-
-
-def _project_storage_roots() -> list[Path]:
-    """Shared project storage: asset paths under it are pinned, not copied."""
-    return _storage_roots(('project', 'proxy', 'export'))
-
-
-def _storage_roots(schemes) -> list[Path]:
-    roots: list[Path] = []
-    for scheme in schemes:
-        try:
-            base = api.storage.resolve(Uri.parse_unsafe(f'{scheme}:/'))
-        except Exception:
-            logger.warning("Could not resolve %s: storage root", scheme, exc_info=True)
-            continue
-        if base is None:
-            continue
-        try:
-            roots.append(Path(base).resolve())
-        except OSError:
-            continue
-    return roots
-
-
-def _check_no_dangling_composition_paths(
-    layer_path: Path, allowed_roots: list[Path] = (),
-    cache_storage_roots: list[Path] = (),
-) -> None:
-    """Abort the export if the layer composes geometry it can't carry.
-
-    Two confirmed failure classes raise:
-
-    - *Escaping* paths: sublayer/reference/payload arcs that resolve
-      outside the layer's own folder (absolute, or relative ``..``
-      climbs). The layer travels as a folder into the version location,
-      so such an arc dangles — or silently reads another machine's /
-      workfile's state — after publish even when the target exists right
-      now. The classic source is H22's sopcreate/sopimport 'Layer Save
-      Path' default (``$HIP/usd/$OS.usd``), which writes the node's
-      layer next to the workfile and sublayers it by an escaping path,
-      publishing a hollow layer.
-    - *Dangling* paths: arcs whose target doesn't exist at all, so every
-      consumer imports an empty asset (e.g. a payload anchored to a
-      machine-local scratch file).
-
-    Absolute arcs into a versioned cache on shared storage are exempt
-    from the escaping check — they publish by reference — whether the
-    location comes from a ``th::cache`` node (``allowed_roots``) or is any
-    ``cache/`` directory below a ``project:``/``proxy:`` storage root
-    (``cache_storage_roots``), which also covers a cache loaded straight
-    off another workfile's folder via a raw sublayer/reference. Either
-    way the dangling check still aborts when the cached file is missing.
-
-    Fail-open on analysis errors: a problem opening / walking the layer
-    only skips the check (preserving the prior behaviour), never blocks a
-    legitimate export.
-    """
-    from tumblepipe.pipe.usd import (
-        collect_layer_composition_paths,
-        find_dangling_layer_paths,
-        find_escaping_layer_paths,
-    )
-
-    try:
-        asset_paths = collect_layer_composition_paths(layer_path)
-    except Exception:
-        logger.warning(
-            "Dangling-path check skipped; could not analyse %s",
-            layer_path, exc_info=True,
-        )
+def _add_shared_sublayer(layer_path: Path, entity_uri, department_name: str):
+    """A multi-channel entity's channel layer composes the department's
+    channel-independent part (layer_split's shared export) when there is
+    one. Added before the copy, so the version is never published without
+    it."""
+    if len(list_channels(entity_uri)) <= 1:
         return
-
-    escaping = find_escaping_layer_paths(
-        asset_paths, layer_path.parent, allowed_roots=allowed_roots,
-        cache_storage_roots=cache_storage_roots,
-    )
-    if escaping:
-        bullets = "\n  - ".join(escaping)
-        raise ExportLayerError(
-            "Export aborted: the exported layer composes geometry from "
-            "path(s) outside the export folder, so the published layer "
-            f"would break (or go stale) on every other machine:\n  - {bullets}\n\n"
-            "This usually means a LOP in the scene has 'Layer Save Path' "
-            "enabled — H22 enables it by default on new SOP Create / SOP "
-            "Import nodes, pointing at $HIP/usd/. Disable 'Enable Layer "
-            "Save Path' on the offending node(s) and re-export so the "
-            "geometry flattens into the published layer. For caches, use "
-            "a th::cache node — its versioned cache locations publish by "
-            "reference and are allowed."
-        )
-
-    dangling = find_dangling_layer_paths(asset_paths, layer_path.parent)
-    if not dangling:
+    if latest_export_path(entity_uri, SHARED_CHANNEL, department_name) is None:
         return
-
-    bullets = "\n  - ".join(dangling)
-    raise ExportLayerError(
-        "Export aborted: the exported layer composes geometry from "
-        "path(s) that do not exist, so the published asset would import "
-        f"empty:\n  - {bullets}\n\n"
-        "This usually means the asset's geometry/payload was not written "
-        "into the version folder — for example a payload anchored to a "
-        "machine-local scratch path rather than the export directory. "
-        "Check the asset_payload / export setup and re-export so the "
-        "geometry travels with the layer."
-    )
+    shared_uri = f"{entity_uri}?dept={department_name}&channel={SHARED_CHANNEL}"
+    add_sublayer(layer_path, shared_uri)
+    logger.info(f"Added shared layer sublayer: {shared_uri}")
 
 
-def _resolve_under_any(path: Path, roots: list[Path]) -> bool:
-    """True if ``path`` resolves inside one of ``roots`` (already resolved)."""
-    try:
-        resolved = path.resolve()
-    except OSError:
-        return False
-    return any(resolved.is_relative_to(root) for root in roots)
+def _copy_to_version(temp_path: Path, version_path: Path):
+    """Copy the exported folder's contents into the version folder."""
+    report_progress(f"copying {version_path.name} to server")
+    version_path.mkdir(parents=True, exist_ok=True)
+    for temp_item_path in temp_path.iterdir():
+        output_item_path = version_path / temp_item_path.name
+        if temp_item_path.is_dir():
+            shutil.copytree(temp_item_path, output_item_path)
+        else:
+            shutil.copy(temp_item_path, output_item_path)
 
 
-def _versioned_cache_roots() -> list[Path]:
-    """The th::cache locations whose files may stay referenced by a publish.
+class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
 
-    Versioned caches — both the LOP ``th::cache`` (``lops_cache``, USD) and the
-    SOP ``th::cache`` (``cache``, ``.bgeo.sc``) — live on shared storage
-    (``project:``/``proxy:``) and are immutable per version, so — unlike other
-    external files — they are safe (and, given their size, necessary) to
-    publish by reference instead of copying into every version folder. Both
-    node types carry entity/department parms, so a node may address another
-    workfile's cache; walking the actual nodes keeps the exemption in agreement
-    with each node's resolved path wherever it points. Fail-open to no
-    exemptions.
-    """
-    from tumblepipe.pipe.houdini.lops.cache import (
-        list_cache_locations as list_lop_cache_locations,
-    )
-    from tumblepipe.pipe.houdini.sops.cache import (
-        list_cache_locations as list_sop_cache_locations,
-    )
-    roots = []
-    for list_locations in (list_lop_cache_locations, list_sop_cache_locations):
-        try:
-            locations = list_locations()
-        except Exception:
-            logger.warning("Could not determine th::cache locations", exc_info=True)
-            continue
-        for root in locations:
-            try:
-                roots.append(Path(root).resolve())
-            except OSError:
-                continue
-    return roots
-
-
-def _absolutize_cache_arcs(layer_path: Path, cache_roots: list[Path]) -> None:
-    """Pin arcs into versioned cache locations to absolute paths.
-
-    th::cache files publish by reference, but the layer is exported into a
-    temp folder that is then copied to the version location — so an arc the
-    ROP's "Use Relative Paths" processor relativised against the temp folder
-    would re-anchor wrongly after the copy. Rewrite every arc that resolves
-    into a cache location to its absolute form so it survives the move (and
-    machine hops on the shared mount).
-
-    Fail-open: any analysis error leaves the layer untouched for the
-    escaping-path guard to catch.
-    """
-    if not cache_roots:
-        return
-    try:
-        from pxr import Sdf, UsdUtils
-    except Exception:
-        logger.warning("Cache-arc pinning skipped; USD unavailable", exc_info=True)
-        return
-
-    from tumblepipe.pipe.usd import _looks_like_uri, collect_layer_composition_paths
-
-    layer = Sdf.Layer.FindOrOpen(str(layer_path))
-    if layer is None:
-        return
-
-    layer_dir = layer_path.parent
-    remap: dict[str, str] = {}
-    for raw in collect_layer_composition_paths(layer_path):
-        if not raw or raw in remap or _looks_like_uri(raw):
-            continue
-        src = Path(raw)
-        abs_src = src if src.is_absolute() else (layer_dir / src)
-        if not _resolve_under_any(abs_src, cache_roots):
-            continue
-        pinned = path_str(abs_src.resolve())
-        if pinned != raw:
-            remap[raw] = pinned
-
-    if not remap:
-        return
-
-    UsdUtils.ModifyAssetPaths(layer, lambda p: remap.get(p, p))
-    layer.Save()
-    logger.info("Pinned %d cache arc(s) absolute in %s", len(remap), layer_path)
-
-
-def _localize_external_sidecars(layer_path: Path, skip_roots: list[Path] = ()):
-    """Pull externally-anchored composition files into the layer's folder.
-
-    The ``asset_payload`` HDA writes its geometry into a ``payload.usd``
-    sidecar anchored to ``$HIP``, and a Reference LOP can point at a library
-    file anywhere on disk; the ROP can't relativise either into the export
-    folder, so the arc would dangle after publish. See
-    ``pipe.localize.localize_external_arcs``: self-contained files land next
-    to the layer, files with dependencies come in with all of them.
-    """
-    from tumblepipe.pipe.localize import localize_external_arcs
-    return localize_external_arcs(layer_path, skip_roots=skip_roots)
-
-
-class ExportLayer(EntityNode):
-
-    def __init__(self, native):
-        super().__init__(native)
+    POOL_PARM = 'export_pool'
+    PRIORITY_PARM = 'export_priority'
+    BATCH_SIZE_PARM = 'batch_size'
 
     def list_department_names(self) -> list[str]:
         entity_type = self.get_entity_type()
@@ -435,27 +205,6 @@ class ExportLayer(EntityNode):
         department_index = department_names.index(department_name)
         return department_names[department_index + 1:]
 
-    def list_pool_names(self) -> list[str]:
-        return [pool.name for pool in list_pools()]
-
-    def get_department_name(self) -> str | None:
-        department_name = self.parm('department').eval()
-        if department_name == 'from_context':
-            file_path = Path(hou.hipFile.path())
-            context = get_workfile_context(file_path)
-            if context is None:
-                return None
-            return context.department_name
-        # From settings
-        department_names = self.list_department_names()
-        if len(department_names) <= 1:  # Only 'from_context' means no real names
-            return None
-        if len(department_name) == 0:
-            return department_names[1]  # Skip 'from_context'
-        if department_name not in department_names:
-            return None
-        return department_name
-
     def get_downstream_department_names(self) -> list[str]:
         department_names = self.list_downstream_department_names()
         if len(department_names) == 0:
@@ -471,80 +220,14 @@ class ExportLayer(EntityNode):
         selected.sort(key=department_names.index)
         return selected
 
-    def get_pool_name(self) -> str | None:
-        pool_names = self.list_pool_names()
-        if len(pool_names) == 0:
-            return None
-        pool_name = self.parm('export_pool').eval()
-        if pool_name == '':
-            return pool_names[0]
-        return pool_name
-
-    def get_priority(self) -> int:
-        return self.parm('export_priority').eval()
-
-    def get_frame_range_source(self) -> str:
-        return self.parm('frame_range').eval()
-
-    def get_frame_range(self) -> tuple[FrameRange, int] | None:
-        # The node's 'frame_range' menu only offers 'from_context' and
-        # 'from_settings'. ('single_frame'/'playback_range' are options on the
-        # cache/archive nodes, not here.)
-        frame_range_source = self.get_frame_range_source()
-        match frame_range_source:
-            case 'from_context':
-                entity_uri = self.get_entity_uri()
-                if entity_uri is None:
-                    return None
-                frame_range = get_frame_range(entity_uri)
-                if frame_range is None:
-                    return None
-                return frame_range, 1
-            case 'from_settings':
-                return FrameRange(
-                    self.parm('frame_settingsx').eval(),
-                    self.parm('frame_settingsy').eval(),
-                    self.parm('roll_settingsx').eval(),
-                    self.parm('roll_settingsy').eval()
-                ), self.parm('frame_settingsz').eval()
-            case _:
-                assert False, f'Unknown frame range source: {frame_range_source}'
-
     def get_export_type(self) -> str:
         """Get export type ('local' or 'farm')."""
         return self.parm('export_type').eval()
 
-    def get_batch_size(self) -> int:
-        """Get batch size for chunked export.
-
-        Returns:
-            Batch size (0 means no batching, export all frames at once).
-        """
-        return self.parm('batch_size').eval()
-
     def _update_labels(self):
         """Update label parameters to show current entity/department selection."""
-        entity_raw = self.parm('entity').eval()
-        if entity_raw == 'from_context':
-            entity_uri = self.get_entity_uri()
-            if entity_uri:
-                self.parm('entity_label').set(f'from_context: {entity_uri}')
-            else:
-                self.parm('entity_label').set('from_context: none')
-        else:
-            # Specific entity URI selected
-            self.parm('entity_label').set(entity_raw)
-
-        department_raw = self.parm('department').eval()
-        if department_raw == 'from_context':
-            department_name = self.get_department_name()
-            if department_name:
-                self.parm('department_label').set(f'from_context: {department_name}')
-            else:
-                self.parm('department_label').set('from_context: none')
-        else:
-            # Specific department selected
-            self.parm('department_label').set(department_raw)
+        self.parm('entity_label').set(self._entity_label())
+        self.parm('department_label').set(self._department_label())
 
     def _initialize(self):
         """Initialize node and update labels to show resolved values."""
@@ -582,56 +265,19 @@ class ExportLayer(EntityNode):
             case _:
                 assert False, f'Unknown export type: {export_type}'
 
-    def _check_channel_parm_listed(self, entity_uri):
-        """Refuse to export when the Channel parm names an unlisted channel.
-
-        get_channel_name() silently falls back to 'default' for unknown
-        names, which is harmless on imports but on an export would quietly
-        publish under the wrong channel path (the casing/typo trap).
-        An empty parm legitimately means 'default'.
-
-        The parm is still internally named ``variant`` - that spelling is
-        frozen into every saved scene; only its label says Channel.
-        """
-        raw_channel = self.parm('variant').eval().strip()
-        channel_names = self.list_channel_names()
-        if raw_channel and raw_channel not in channel_names:
-            listed = ', '.join(channel_names)
-            raise ExportLayerError(
-                f"Export aborted: channel '{raw_channel}' is not a channel "
-                f"of {entity_uri} (listed: {listed}), so the export would "
-                "silently publish under 'default'. Fix the node's Channel "
-                "parm, or register the channel on the entity."
-            )
-
     def _export_local(self):
         native = self.native()
-        stage_node = native.node('IN_stage')
 
-        # Get parameters
-        entity_uri = self.get_entity_uri()
+        # Get parameters (each raises when it does not resolve)
+        entity_uri = self.require_entity_uri()
+        department_name = self.require_department_name()
         channel_name = self.get_channel_name()
-        department_name = self.get_department_name()
-        frame_range_result = self.get_frame_range()
+        frame_range = self.get_frame_range()
 
         logger.info(
             f"Starting local export: uri={entity_uri}, dept={department_name}, "
             f"channel={channel_name}"
         )
-
-        if entity_uri is None:
-            raise ExportLayerError("Entity URI is not set. Check 'Entity Source' setting or workfile context.")
-        if department_name is None:
-            raise ExportLayerError(f"Department name is not set for entity: {entity_uri}")
-        if frame_range_result is None:
-            raise ExportLayerError(
-                f"Frame range could not be determined for entity: {entity_uri}. "
-                "Its config resolves no frame range (is the entity registered?) - "
-                "set one on the entity, or switch the node's frame range source to "
-                "'From settings' and enter the range manually."
-            )
-
-        self._check_channel_parm_listed(entity_uri)
 
         # The render step is deliberately dropped: a published stage cache
         # must carry every frame so downstream renders can sample any frame
@@ -639,364 +285,54 @@ class ExportLayer(EntityNode):
         # render step also broke batched export - integer chunk boundaries
         # do not align to a step>1 grid, so the stitched samples came out
         # off-grid whenever batch_size was not a multiple of step. Exporting
-        # on 1s (export_f3 below) matches the farm exporter, which has always
+        # on 1s (export_f3) matches the farm exporter, which has always
         # discarded step (see the farm submit path and export_houdini).
-        frame_range, _step = frame_range_result
         render_range = frame_range.full_range()
-        batch_size = self.get_batch_size()
         user_name = get_user_name()
         timestamp = dt.datetime.now()
-        fps = get_fps()
-
-        # Determine version path
         version_path = next_export_path(entity_uri, channel_name, department_name)
         version_name = version_path.name
 
-        # Prepare for stage scrape
-        stage = stage_node.stage() if stage_node is not None else None
-        if stage is None:
-            if not any(native.inputs()):
-                # A node left disconnected in the network. There is nothing
-                # to publish, so skip this one and let the other exports in
-                # the group run - it used to crash on None.GetPseudoRoot().
-                raise TaskSkipped(
-                    f"Nothing exported for channel '{channel_name}': the node "
-                    f"{self.path()} has no stage input connected."
-                )
-            # Connected, but what feeds it failed to cook. That is a failure,
-            # not a skip, and saying "no stage input connected" sent people
-            # looking at the wiring (a farm job whose rig could not compile).
-            raise ExportLayerError(
-                f"Nothing exported for channel '{channel_name}': the input of "
-                f"{self.path()} failed to cook.\n"
-                + _cook_errors(stage_node)
-            )
-        root = stage.GetPseudoRoot()
-
-        # Check if we're exporting a shot (to add shot dept entry to inputs)
-        is_shot_export = str(entity_uri).startswith('entity:/shots/')
+        root = self._input_stage(channel_name).GetPseudoRoot()
 
         # What the upstream import nodes placed on the stage. Read before the
         # scrape: it decides which downstream-sourced assets stay, and the
-        # drop check below cross-checks the scrape against it.
-        expected_asset_uris = _list_expected_asset_uris(native)
-        # A self-import (import_layer pulling the exporting entity's own
-        # layer) is deliberately untagged — never expect it in the scrape.
-        expected_asset_uris.discard(str(entity_uri))
-
-        # Shot departments after this one. Their layers can be on the stage
-        # (import_shot exclude mode 'self'); the assets they track are theirs.
-        downstream_departments = []
-        if is_shot_export:
-            shot_department_names = [d.name for d in list_departments('shots')]
-            if department_name in shot_department_names:
-                downstream_departments = shot_department_names[
-                    shot_department_names.index(department_name) + 1:
-                ]
-
-        # Scrape stage for assets - group by asset URI to count instances
-        assets_by_uri = dict()  # {asset_uri: [list of instance info]}
-        asset_inputs = set()
-        for asset_info in util.list_assets(root):
-            prim_path = asset_info['prim_path']
-            asset_metadata = asset_info['metadata']
-            asset_uri_str = asset_metadata['uri']
-
-            # An asset workfile can import a shot layer for context; the
-            # shot's characters and props on that stage are not the asset's.
-            if not is_shot_export and sourced_from_shot(asset_metadata.get('inputs')):
-                logger.info(
-                    "Not tracking %s at %s: it came in through a shot layer",
-                    asset_uri_str, prim_path,
-                )
-                continue
-
-            # A downstream layer's asset is not this department's to track,
-            # unless this workfile imports it too.
-            if (
-                is_shot_export
-                and asset_uri_str not in expected_asset_uris
-                and arrived_from_downstream(
-                    asset_metadata.get('inputs'), downstream_departments
-                )
-            ):
-                logger.info(
-                    "Not tracking %s at %s: it came in through a downstream "
-                    "department layer",
-                    asset_uri_str, prim_path,
-                )
-                continue
-
-            # Add current shot department entry to inputs if exporting a shot
-            if is_shot_export:
-                shot_dept_entry = {
-                    'uri': str(entity_uri),
-                    'department': department_name,
-                    'version': version_name
-                }
-                # Add to inputs if not already present
-                existing_inputs = asset_metadata.get('inputs', [])
-                if shot_dept_entry not in existing_inputs:
-                    asset_metadata['inputs'] = existing_inputs + [shot_dept_entry]
-
-            # Group by asset URI to count instances
-            if asset_uri_str not in assets_by_uri:
-                assets_by_uri[asset_uri_str] = []
-            assets_by_uri[asset_uri_str].append({
-                'prim_path': prim_path,
-                'instance': asset_metadata['instance'],
-                'variant': read_channel(asset_metadata, where=f'prim {prim_path}'),
-                'inputs': asset_metadata.get('inputs', [])
-            })
-            asset_inputs.update(set(map(json.dumps, asset_metadata['inputs'])))
-
-        # Refuse to publish if an asset sitting on the stage lost its pipeline
-        # metadata: list_assets() (and every downstream consumer) only sees
-        # prims with customData, so such an asset would silently drop out of
-        # the export and out of every import that follows.
-        # The exporting entity's own root prim legitimately carries no
-        # metadata (it only gets tagged when another workfile imports it),
-        # so exclude it from the sibling check.
-        # Only a metadata-less prim that still composes from the *asset*
-        # export tree (export/assets/...) is a dropped asset; geometry the
-        # artist authored directly, or department-authored shot content
-        # imported from another department's shot export (an FX sim or a
-        # set-dress cache under export/shots/.../<dept>/...), never carried
-        # per-asset metadata and is a supported addition that passes.
-        # If the asset export root can't be resolved we fall back to
-        # flagging every metadata-less sibling (over-block, never silently
-        # drop).
-        asset_export_roots = []
-        try:
-            asset_export_roots.append(
-                local_path(api.storage.resolve(Uri.parse_unsafe('export:/assets')))
-            )
-        except Exception:
-            logger.warning(
-                "Could not resolve the asset export root for the drop guard; "
-                "falling back to flagging every metadata-less sibling."
-            )
-        dropped_prims = util.list_dropped_asset_prims(
-            root,
-            ignore_prim_paths={util.uri_to_prim_path(entity_uri)},
-            asset_export_roots=asset_export_roots,
+        # drop check cross-checks the scrape against it. A self-import
+        # (import_layer pulling the exporting entity's own layer) is
+        # deliberately untagged — never expect it in the scrape.
+        expected_asset_uris = {
+            str(uri) for uri in list_expected_asset_uris(native)
+            if uri != entity_uri
+        }
+        assets_by_uri, asset_inputs = _scrape_assets(
+            root, entity_uri, department_name, version_name, expected_asset_uris
         )
-        if dropped_prims:
-            bullets = "\n  - ".join(dropped_prims)
-            raise ExportLayerError(
-                "Export aborted: asset(s) on the stage carry no pipeline "
-                "metadata, so they would silently drop out of the published "
-                f"layer and every downstream import:\n  - {bullets}\n\n"
-                "This usually means the import node's metadata step didn't "
-                "reach these prims - e.g. a layerbreak stripped the customData, "
-                "or multi-instance duplicates didn't inherit it. Re-run the "
-                "import node (Import button) and re-export. If you meant to "
-                "bake these assets into the export, set the import node's "
-                "Import Mode to Inline instead."
-            )
+        check_no_dropped_assets(
+            root, entity_uri, expected_asset_uris, set(assets_by_uri)
+        )
 
-        # The sibling heuristic above is blind when a category holds no
-        # metadata-carrying asset at all (a shot's only asset dropped, or
-        # every asset dropped). Cross-check the scrape against what the
-        # upstream import nodes say they placed on the stage.
-        missing_asset_uris = sorted(expected_asset_uris - set(assets_by_uri))
-        if missing_asset_uris:
-            bullets = "\n  - ".join(missing_asset_uris)
-            raise ExportLayerError(
-                "Export aborted: asset(s) configured on upstream import "
-                "nodes carry no pipeline metadata on the stage, so they "
-                "would silently drop out of the published layer and every "
-                f"downstream import:\n  - {bullets}\n\n"
-                "Re-run the import node (Import button) so its metadata "
-                "step cooks, then re-export. If it persists, recreate the "
-                "import node or update the pipeline package."
-            )
+        self.parm('set_metadata_fps').set(get_fps())
 
-        # Set fps
-        self.parm('set_metadata_fps').set(fps)
-
-        # Export the stage
-        root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
-
-            # Collect asset parameters with instance counts
-            parameter_assets = []
-            for asset_uri_str, instances in assets_by_uri.items():
-                # Use first instance for metadata, count all instances
-                first_instance = instances[0]
-                # 'instance' names the asset's BASE prim, so derive it from
-                # the URI. instances[0] is whichever copy the scrape walked
-                # first — and since the prototype is deactivated, list_assets
-                # skips it and the first LIVE copy wins, having tagged itself
-                # with its own name (Haybale9, not Haybale). Consumers read
-                # this as the base name and regenerate <base>0..<base>N-1
-                # from it, so an arbitrary copy's name spawned a phantom set
-                # at the origin.
-                try:
-                    base_name = Uri.parse_unsafe(asset_uri_str).segments[-1]
-                except (ValueError, IndexError):
-                    base_name = first_instance['instance']
-                parameter_assets.append(dict(
-                    asset=asset_uri_str,
-                    instance=base_name,
-                    instances=len(instances),  # Count of instances
-                    variant=first_instance['variant'],
-                    inputs=first_instance['inputs']
-                ))
-
-            # Export the stage
-            layer_file_name = get_layer_file_name(entity_uri, channel_name, department_name, version_name)
-            self.parm('export_f3').set(1)
-
-            if batch_size > 0:
-                # Batched export: export chunks to separate directories then stitch
-                chunks = calculate_chunks(render_range.first_frame, render_range.last_frame, batch_size)
-
-                # Create chunks directory
-                chunks_dir = temp_path / 'chunks'
-                chunks_dir.mkdir(exist_ok=True)
-                chunk_dirs = []
-
-                for chunk_start, chunk_end in chunks:
-                    # Each chunk exports to its own subdirectory
-                    chunk_name = f"{chunk_start:04d}-{chunk_end:04d}"
-                    report_progress(f"cooking frames {chunk_start}-{chunk_end} of {render_range.last_frame}")
-                    chunk_dir = chunks_dir / chunk_name
-                    chunk_dir.mkdir(exist_ok=True)
-
-                    # Use 'stage.usd' as temp filename so sidecar directory is 'stage/'
-                    temp_export_name = 'stage.usd'
-                    chunk_temp_path = chunk_dir / temp_export_name
-                    chunk_main_path = chunk_dir / layer_file_name
-
-                    self.parm('export_f1').deleteAllKeyframes()
-                    self.parm('export_f2').deleteAllKeyframes()
-                    self.parm('export_f1').set(chunk_start)
-                    self.parm('export_f2').set(chunk_end)
-                    self.parm('export_lopoutput').set(path_str(chunk_temp_path))
-                    self.parm('export_execute').pressButton()
-
-                    # Validate files were created
-                    _validate_export_files(chunk_dir, temp_export_name, f"batch export chunk {chunk_name}")
-
-                    # Rename to final name
-                    try:
-                        chunk_temp_path.rename(chunk_main_path)
-                    except Exception as e:
-                        logger.error(f"Failed to rename chunk file: {e}")
-                        raise ExportLayerError(
-                            f"Failed to rename chunk file from {temp_export_name} to {layer_file_name}: {e}"
-                        )
-
-                    # Flatten any .usd.textures sidecar directories
-                    flatten_sidecar_directories(chunk_dir)
-
-                    logger.info(f"Chunk {chunk_name} exported successfully")
-
-                    chunk_dirs.append(chunk_dir)
-
-                # Stitch all chunks (main file + sidecar directories)
-                try:
-                    report_progress(f"stitching {len(chunk_dirs)} chunks")
-                    logger.info(f"Stitching {len(chunk_dirs)} chunks into final USD")
-                    stitch_usd_directories(chunk_dirs, layer_file_name, temp_path)
-                    logger.info("Chunk stitching completed successfully")
-                except Exception as e:
-                    logger.error(f"USD stitching failed: {e}")
-                    raise ExportLayerError(
-                        f"Failed to stitch USD chunks:\n"
-                        f"Chunks: {len(chunk_dirs)}\n"
-                        f"Output: {temp_path / layer_file_name}\n"
-                        f"Error: {str(e)}"
-                    )
-
-                # Clean up chunks directory
-                shutil.rmtree(chunks_dir)
-            else:
-                # Standard export: export all frames at once
-                # Use 'stage.usd' as temp filename so sidecar directory is 'stage/'
-                temp_export_name = 'stage.usd'
-                report_progress(f"cooking frames {render_range.first_frame}-{render_range.last_frame}")
-                logger.info(f"Exporting frames {render_range.first_frame}-{render_range.last_frame}")
-                self.parm('export_f1').deleteAllKeyframes()
-                self.parm('export_f2').deleteAllKeyframes()
-                self.parm('export_f1').set(render_range.first_frame)
-                self.parm('export_f2').set(render_range.last_frame)
-                self.parm('export_lopoutput').set(path_str(temp_path / temp_export_name))
-                self.parm('export_execute').pressButton()
-
-                # Validate files were created
-                _validate_export_files(
-                    temp_path,
-                    temp_export_name,
-                    f"standard export (frames {render_range.first_frame}-{render_range.last_frame})"
-                )
-
-                # Rename the exported file to the final layer name
-                try:
-                    (temp_path / temp_export_name).rename(temp_path / layer_file_name)
-                except Exception as e:
-                    logger.error(f"Failed to rename exported file: {e}")
-                    raise ExportLayerError(
-                        f"Failed to rename exported file from {temp_export_name} to {layer_file_name}: {e}"
-                    )
-
-                # Flatten any .usd.textures sidecar directories
-                flatten_sidecar_directories(temp_path)
-
-                logger.info("Export to temp completed successfully")
-
-            # Versioned th::cache files stay referenced (they can be huge
-            # and live on shared storage); pin their arcs absolute so they
-            # survive the temp -> version copy. Everything else external
-            # is pulled into the version folder so the published layer is
-            # self-contained and travels portably.
-            report_progress("localizing sidecars")
-            cache_roots = _versioned_cache_roots()
-            _absolutize_cache_arcs(temp_path / layer_file_name, cache_roots)
-            arcs = _localize_external_sidecars(
-                temp_path / layer_file_name, skip_roots=cache_roots,
+            layer_file_name = get_layer_file_name(
+                entity_uri, channel_name, department_name, version_name
             )
-            if arcs.missing_layers:
-                bullets = "\n  - ".join(arcs.missing_layers)
-                raise ExportLayerError(
-                    "Export aborted: a file referenced from outside the "
-                    "project composes layers that do not exist, so it would "
-                    f"publish empty:\n  - {bullets}\n\n"
-                    "Re-download or repair the referenced asset and re-export."
-                )
-            # Textures and other asset paths on the exported prims: the ROP
-            # made them relative to this temp folder.
-            from tumblepipe.pipe.localize import localize_external_assets
-            assets = localize_external_assets(
-                temp_path / layer_file_name,
-                project_roots=_project_storage_roots(),
-                skip_roots=cache_roots,
+            self._write_layer(
+                temp_path, layer_file_name, render_range, self.get_batch_size()
             )
-            for missing in arcs.missing_assets + assets.missing_assets:
-                logger.warning("Exported layer points at a missing file: %s", missing)
+            layer_path = temp_path / layer_file_name
+            make_portable(layer_path)
+            _add_shared_sublayer(layer_path, entity_uri, department_name)
 
-            # Refuse to publish a layer that composes geometry from a
-            # missing file (e.g. a payload anchored to a machine-local
-            # scratch path) — otherwise the asset silently imports empty.
-            report_progress("checking composition arcs")
-            _check_no_dangling_composition_paths(
-                temp_path / layer_file_name, allowed_roots=cache_roots,
-                cache_storage_roots=_workfile_cache_storage_roots(),
-            )
-
-            # Re-fetch root prim after export (stage may have been modified)
-            root = stage_node.stage().GetPseudoRoot()
-
-            # Extract AOV names from the stage
+            # The stage may have changed while exporting
+            root = self._input_stage(channel_name).GetPseudoRoot()
             aov_names = [
                 aov_path.rsplit('/', 1)[-1].lower()
-                for aov_path in util.list_render_vars(root)
+                for aov_path in prim_queries.list_render_vars(root)
             ]
-
-            # Write layer context
             save_layer_context(
                 target_path=temp_path,
                 entity_uri=entity_uri,
@@ -1005,99 +341,125 @@ class ExportLayer(EntityNode):
                 timestamp=timestamp.isoformat(),
                 user_name=user_name,
                 channel_name=channel_name,
-                parameters=dict(assets=parameter_assets, aov_names=aov_names),
+                parameters=dict(
+                    assets=_parameter_assets(assets_by_uri),
+                    aov_names=aov_names,
+                ),
                 inputs=list(map(json.loads, asset_inputs))
             )
+            _copy_to_version(temp_path, version_path)
 
-            # Copy all files to output path
-            report_progress(f"copying {version_name} to server")
-            version_path.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Copying exported files to: {version_path}")
-
-            try:
-                for temp_item_path in temp_path.iterdir():
-                    output_item_path = version_path / temp_item_path.name
-                    if temp_item_path.is_file():
-                        shutil.copy(temp_item_path, output_item_path)
-                    elif temp_item_path.is_dir():
-                        shutil.copytree(temp_item_path, output_item_path)
-            except Exception as e:
-                logger.error(f"Failed to copy files to output: {e}")
-                raise ExportLayerError(
-                    f"Failed to copy exported files to final location:\n"
-                    f"Source: {temp_path}\n"
-                    f"Destination: {version_path}\n"
-                    f"Error: {str(e)}"
-                )
-
-            logger.info("Files copied to output path successfully")
-
-        # Add shared layer as sublayer only if entity has multiple channels
-        from tumblepipe.pipe.paths import latest_shared_export_path
-
-        if len(list_channels(entity_uri)) > 1:
-            shared_version_path = latest_shared_export_path(entity_uri, department_name)
-            if shared_version_path is not None:
-                exported_layer_path = version_path / layer_file_name
-                shared_uri = f"{entity_uri}?dept={department_name}&variant=_shared"
-                try:
-                    add_sublayer(exported_layer_path, shared_uri)
-                    logger.info(f"Added shared layer sublayer: {shared_uri}")
-                except Exception as e:
-                    # Non-fatal error - log warning but don't fail the export
-                    logger.warning(f"Failed to add shared layer sublayer (non-fatal): {e}")
-
-        # Update node comment
-        native.setComment(
+        ns.set_node_comment(
+            native,
             f'last export: {version_name}\n'
             f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")}\n'
             f'by {user_name}'
         )
-        native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
-
         logger.info(
             f"Export completed: uri={entity_uri}, dept={department_name}, "
             f"version={version_name}, output={version_path}"
         )
-
         return version_name
 
-    def _export_farm(self):
-        entity_uri = self.get_entity_uri()
-        channel_name = self.get_channel_name()
-        department_name = self.get_department_name()
-        frame_range_result = self.get_frame_range()
-
-        if entity_uri is None:
-            raise ExportLayerError("Entity URI is not set. Check 'Entity Source' setting or workfile context.")
-        if department_name is None:
-            raise ExportLayerError(f"Department name is not set for entity: {entity_uri}")
-        if frame_range_result is None:
-            raise ExportLayerError(
-                f"Frame range could not be determined for entity: {entity_uri}. "
-                "Its config resolves no frame range (is the entity registered?) - "
-                "set one on the entity, or switch the node's frame range source to "
-                "'From settings' and enter the range manually."
+    def _input_stage(self, channel_name):
+        """The stage fed into the node; a disconnected node skips, a
+        connected one whose input fails to cook raises."""
+        native = self.native()
+        stage_node = native.node('IN_stage')
+        stage = stage_node.stage()
+        if stage is not None:
+            return stage
+        if not any(native.inputs()):
+            # A node left disconnected in the network. There is nothing to
+            # publish, so skip this one and let the other exports in the
+            # group run.
+            raise TaskSkipped(
+                f"Nothing exported for channel '{channel_name}': the node "
+                f"{self.path()} has no stage input connected."
             )
+        # Connected, but what feeds it failed to cook. That is a failure, not
+        # a skip, and saying "no stage input connected" sent people looking
+        # at the wiring (a farm job whose rig could not compile).
+        raise ExportLayerError(
+            f"Nothing exported for channel '{channel_name}': the input of "
+            f"{self.path()} failed to cook.\n"
+            + cook_errors(stage_node)
+        )
 
-        self._check_channel_parm_listed(entity_uri)
+    def _write_layer(self, temp_path, layer_file_name, render_range, batch_size):
+        """Export the stage into ``temp_path/layer_file_name``: in one go, or
+        (batch_size > 0) in chunks of frames stitched together."""
+        self.parm('export_f3').set(1)
+        if batch_size == 0:
+            report_progress(
+                f"cooking frames {render_range.first_frame}-{render_range.last_frame}"
+            )
+            self._export_frames(
+                temp_path, layer_file_name,
+                render_range.first_frame, render_range.last_frame,
+                f"standard export (frames {render_range.first_frame}-"
+                f"{render_range.last_frame})",
+            )
+            return
 
-        frame_range, _step = frame_range_result
+        chunks_dir = temp_path / 'chunks'
+        chunks_dir.mkdir()
+        chunk_dirs = []
+        for chunk_start, chunk_end in calculate_chunks(
+            render_range.first_frame, render_range.last_frame, batch_size
+        ):
+            chunk_name = f"{chunk_start:04d}-{chunk_end:04d}"
+            report_progress(
+                f"cooking frames {chunk_start}-{chunk_end} of {render_range.last_frame}"
+            )
+            chunk_dir = chunks_dir / chunk_name
+            chunk_dir.mkdir()
+            self._export_frames(
+                chunk_dir, layer_file_name, chunk_start, chunk_end,
+                f"batch export chunk {chunk_name}",
+            )
+            chunk_dirs.append(chunk_dir)
 
+        report_progress(f"stitching {len(chunk_dirs)} chunks")
+        try:
+            stitch_usd_directories(chunk_dirs, layer_file_name, temp_path)
+        except Exception as error:
+            raise ExportLayerError(
+                f"Failed to stitch {len(chunk_dirs)} USD chunks into "
+                f"{temp_path / layer_file_name}: {error}"
+            ) from error
+        shutil.rmtree(chunks_dir)
+
+    def _export_frames(self, out_dir, layer_file_name, first_frame, last_frame, description):
+        """Run the export ROP for ``first_frame``..``last_frame`` into
+        ``out_dir/layer_file_name``, flattening its sidecar folders."""
+        # 'stage.usd' as the ROP's file name makes its sidecar folder 'stage/'
+        temp_export_name = 'stage.usd'
+        self.parm('export_f1').deleteAllKeyframes()
+        self.parm('export_f2').deleteAllKeyframes()
+        self.parm('export_f1').set(first_frame)
+        self.parm('export_f2').set(last_frame)
+        self.parm('export_lopoutput').set(path_str(out_dir / temp_export_name))
+        self.parm('export_execute').pressButton()
+        validate_export_files(out_dir, temp_export_name, description)
+        (out_dir / temp_export_name).rename(out_dir / layer_file_name)
+        flatten_sidecar_directories(out_dir)
+
+    def _export_farm(self):
+        # Each getter raises when its parm does not resolve
+        entity_uri = self.require_entity_uri()
+        department_name = self.require_department_name()
+        channel_name = self.get_channel_name()
+        frame_range = self.get_frame_range()
         downstream_deps = self.get_downstream_department_names()
         pool_name = self.get_pool_name()
         priority = self.get_priority()
-
-        if pool_name is None:
-            raise ExportLayerError("No render pool available. Check Deadline configuration.")
-        if priority is None:
-            raise ExportLayerError("Priority is not set for farm export.")
 
         # Get workfile path for bundling
         workfile_path = latest_hip_file_path(entity_uri, department_name)
         if not workfile_path.exists():
             raise ExportLayerError(f"No workfile found for {entity_uri} {department_name}")
-        from tumblepipe.farm.jobs.houdini._publish import bundle_workfile
+        from tumblepipe.farm.pipelines.publish import bundle_workfile
         paths = {}
         workfile_dest = bundle_workfile(workfile_path, department_name, paths)
 
@@ -1105,7 +467,7 @@ class ExportLayer(EntityNode):
             'entity': {
                 'uri': str(entity_uri),
                 'department': department_name,
-                'variant': channel_name
+                'channel': channel_name
             },
             'settings': {
                 'priority': priority,
@@ -1121,7 +483,7 @@ class ExportLayer(EntityNode):
             'workfile_path': path_str(workfile_dest)
         }
 
-        from tumblepipe.farm.jobs.houdini.publish import job as publish_job
+        from tumblepipe.farm.pipelines import publish as publish_job
         try:
             publish_job.submit(config, paths)
         except Exception as e:
@@ -1170,58 +532,41 @@ class ExportLayer(EntityNode):
             return
         hou.ui.showInFileBrowser(path_str(export_path))
 
+
 def create(scene, name):
     return ns.create_node(scene, name, ExportLayer, 'export_layer')
 
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node, ns.SHAPE_NODE_EXPORT)
-
 def on_created(raw_node):
     # Set node style
-    set_style(raw_node)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_EXPORT)
 
     node = ExportLayer(raw_node)
     node._initialize()
 
-def execute():
-    raw_node = hou.pwd()
+
+def execute(kwargs):
+    raw_node = kwargs['node']
     node = ExportLayer(raw_node)
     node.execute()
 
-def open_location():
-    raw_node = hou.pwd()
+
+def open_location(kwargs):
+    raw_node = kwargs['node']
     node = ExportLayer(raw_node)
     node.open_location()
 
-def select():
-    """HDA button callback to open entity selector dialog."""
-    from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
 
-    raw_node = hou.pwd()
-    node = ExportLayer(raw_node)
-
-    dialog = EntitySelectorDialog(
-        api=api,
-        entity_filter='both',
-        include_from_context=True,
-        current_selection=node.parm('entity').eval(),
-        title="Select Entity",
-        parent=hou.qt.mainWindow()
-    )
-
-    if dialog.exec_():
-        selected_uri = dialog.get_selected_uri()
-        if selected_uri:
-            node.parm('entity').set(selected_uri)
-            node._update_labels()
+def select(kwargs):
+    """Entity button."""
+    ExportLayer(kwargs['node']).pick_entity()
 
 
-def validate():
+def validate(kwargs):
     """HDA button callback to run stage validation."""
     from tumblepipe.pipe.houdini.validators import validate_stage_for_department
 
-    raw_node = hou.pwd()
+    raw_node = kwargs['node']
     stage_node = raw_node.node('IN_stage')
 
     if stage_node is None:
@@ -1302,6 +647,6 @@ def output_modified_prims(raw_node) -> str:
     if entity_uri is None:
         return ''
     try:
-        return util.uri_to_prim_path(entity_uri)
+        return prim_queries.uri_to_prim_path(entity_uri)
     except ValueError:
         return ''

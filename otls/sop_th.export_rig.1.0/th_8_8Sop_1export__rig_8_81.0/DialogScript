@@ -25,29 +25,37 @@
             default { "from_context" }
             menu {
                 [ "from tumblepipe.pipe.houdini.sops import export_rig" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
                 [ "node = export_rig.ExportRig(hou.pwd())" ]
                 [ "items = node.list_entity_uris()" ]
-                [ "return util.list_to_menu(items)" ]
+                [ "return menus.list_to_menu(items)" ]
+                language python
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "channel"
+            label   "Channel"
+            type    string
+            default { "default" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.sops import export_rig" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
+                [ "" ]
+                [ "node = export_rig.ExportRig(hou.pwd())" ]
+                [ "items = node.list_channel_names()" ]
+                [ "return menus.list_to_menu(items)" ]
                 language python
             }
             parmtag { "script_callback_language" "python" }
         }
         parm {
             name    "variant"
-            label   "Channel"
+            label   "Legacy Variant"
             type    string
+            invisible
             default { "default" }
-            menu {
-                [ "from tumblepipe.pipe.houdini.sops import export_rig" ]
-                [ "from tumblepipe.pipe.houdini import util" ]
-                [ "" ]
-                [ "node = export_rig.ExportRig(hou.pwd())" ]
-                [ "items = node.list_channel_names()" ]
-                [ "return util.list_to_menu(items)" ]
-                language python
-            }
             parmtag { "script_callback_language" "python" }
         }
     }
@@ -61,7 +69,7 @@
             label   "Export"
             type    button
             default { "0" }
-            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.export_rig as th_node; th_node.execute(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }

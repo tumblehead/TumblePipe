@@ -19,7 +19,6 @@ entity-aware th:: HDA the entity parm defaults to 'from_context', resolving
 the shot from the workfile the node lives in.
 """
 
-import hou
 
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
@@ -43,8 +42,6 @@ class ImportLopCamera(EntityNode):
     def __init__(self, native):
         super().__init__(native)
 
-    def list_entity_uris(self) -> list[str]:
-        return ['from_context'] + [str(uri) for uri in self.list_shot_uris()]
 
     def list_department_names(self) -> list[str]:
         # Every shot department, not just the publishable ones: the camera is
@@ -59,14 +56,7 @@ class ImportLopCamera(EntityNode):
         return self.native().node(IMPORT_NODE)
 
     def _update_labels(self):
-        entity_raw = self.parm('entity').eval()
-        entity_uri = self.get_entity_uri()
-        if entity_raw == 'from_context':
-            self.parm('entity_label').set(
-                f'from_context: {entity_uri}' if entity_uri else 'from_context: none'
-            )
-        else:
-            self.parm('entity_label').set(str(entity_uri) if entity_uri else 'none')
+        self.parm('entity_label').set(self._entity_label())
 
     def execute(self):
         """Import button — drive the embedded import_shot.
@@ -79,7 +69,9 @@ class ImportLopCamera(EntityNode):
         self._update_labels()
         inner = self.embedded()
         if inner is None:
-            return
+            raise self._error(
+                f'the HDA has no embedded import_shot at {IMPORT_NODE}'
+            )
         import_shot.ImportShot(inner).execute()
 
 
@@ -87,39 +79,16 @@ def create(scene, name):
     return ns.create_node(scene, name, ImportLopCamera, 'import_lop_camera', 'Cop')
 
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
-
-
 def on_created(raw_node):
     # 'entity' keeps its 'from_context' default — see the module docstring.
-    set_style(raw_node)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
     ImportLopCamera(raw_node)._update_labels()
 
 
-def execute():
-    ImportLopCamera(hou.pwd()).execute()
+def execute(kwargs):
+    ImportLopCamera(kwargs['node']).execute()
 
 
-def select():
-    """Entity picker button callback."""
-    from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
-    from tumblepipe.api import default_client
-
-    raw_node = hou.pwd()
-    node = ImportLopCamera(raw_node)
-
-    dialog = EntitySelectorDialog(
-        api=default_client(),
-        entity_filter='shots',
-        include_from_context=True,
-        current_selection=raw_node.parm('entity').eval(),
-        title="Select Shot",
-        parent=hou.qt.mainWindow(),
-    )
-
-    if dialog.exec_():
-        selected_uri = dialog.get_selected_uri()
-        if selected_uri:
-            raw_node.parm('entity').set(selected_uri)
-            node._update_labels()
+def select(kwargs):
+    """Entity button."""
+    ImportLopCamera(kwargs['node']).pick_entity('Select Shot')

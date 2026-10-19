@@ -11,10 +11,8 @@ tasks run in native Windows python and drive Houdini's bundled tools directly â€
 
 Render-farm workers need a Houdini install matching the project's pinned version.
 It provides everything the farm uses: `husk`, the USD resolver, `iconvert`, and
-the bundled `hoiiotool` (OpenImageIO) and `hffmpeg`.
-
-> The **legacy UV farm plugin** additionally needs WSL2 + UV. See
-> [Deadline and the render farm](deadline.md).
+the bundled `hoiiotool` (OpenImageIO) and `hffmpeg`. See
+[Deadline and the render farm](deadline.md).
 
 ### Drive mapping
 

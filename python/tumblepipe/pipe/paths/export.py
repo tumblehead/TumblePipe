@@ -1,4 +1,3 @@
-import logging
 from typing import Optional
 from pathlib import Path
 
@@ -10,14 +9,34 @@ from tumblepipe.pipe.paths.version import (
     get_next_version_path,
 )
 
-logger = logging.getLogger(__name__)
-
 ###############################################################################
 # Export Paths
 ###############################################################################
-# Unified path structure: export:/{entity}/{channel}/{dept}/{version}/
-# All exports include a channel, with "default" as the standard channel name.
+# export:/{entity}/{channel}/{dept}/{version}/ — every export has a channel,
+# "default" being the standard one.
 ###############################################################################
+
+#: The reserved channel ``layer_split`` publishes a department's
+#: channel-independent part to: export:/{entity}/_shared/{dept}/{version}/
+SHARED_CHANNEL = '_shared'
+
+
+def get_export_uri(
+    entity_uri: Uri,
+    channel_name: str,
+    department_name: str
+    ) -> Uri:
+    """export:/{entity}/{channel}/{dept} — the directory holding its versions."""
+    return (
+        Uri.parse('export:/') /
+        entity_uri.segments /
+        channel_name /
+        department_name
+    )
+
+def get_rig_export_path(asset_uri: Uri, channel_name: str = 'default') -> Path:
+    """export:/{asset}/{channel}/rig — the directory holding a rig's versions."""
+    return api.storage.resolve(get_export_uri(asset_uri, channel_name, 'rig'))
 
 def get_export_path(
     entity_uri: Uri,
@@ -25,75 +44,28 @@ def get_export_path(
     department_name: str,
     version_name: str
     ) -> Path:
-    """Get export path for entity/channel/department/version.
-
-    Path structure: export:/{entity}/{channel}/{dept}/{version}/
-    """
-    export_uri = (
-        Uri.parse_unsafe('export:/') /
-        entity_uri.segments /
-        channel_name /
-        department_name /
-        version_name
-    )
-    return api.storage.resolve(export_uri)
+    """The export directory of one version."""
+    return api.storage.resolve(
+        get_export_uri(entity_uri, channel_name, department_name) / version_name)
 
 def latest_export_path(
     entity_uri: Uri,
     channel_name: str,
     department_name: str
     ) -> Optional[Path]:
-    """Get the latest version path for an export."""
-    export_uri = (
-        Uri.parse_unsafe('export:/') /
-        entity_uri.segments /
-        channel_name /
-        department_name
-    )
-    export_path = api.storage.resolve(export_uri)
-    version_paths = list_version_paths(export_path)
-    if len(version_paths) == 0:
-        logger.debug(
-            f"No export versions found: uri={entity_uri}, "
-            f"channel={channel_name}, dept={department_name}"
-        )
-        return None
-    latest_version_path = version_paths[-1]
-    logger.debug(
-        f"Resolved latest export: {latest_version_path}"
-    )
-    return latest_version_path
+    """The newest version's export directory, or None when there is none."""
+    version_paths = list_version_paths(api.storage.resolve(
+        get_export_uri(entity_uri, channel_name, department_name)))
+    return version_paths[-1] if version_paths else None
 
 def next_export_path(
     entity_uri: Uri,
     channel_name: str,
     department_name: str
     ) -> Path:
-    """Get the next version path for an export."""
-    export_uri = (
-        Uri.parse_unsafe('export:/') /
-        entity_uri.segments /
-        channel_name /
-        department_name
-    )
-    export_path = api.storage.resolve(export_uri)
-    return get_next_version_path(export_path)
-
-def get_export_uri(
-    entity_uri: Uri,
-    channel_name: str,
-    department_name: str
-    ) -> Uri:
-    """Get export URI for entity/channel/department.
-
-    Returns the URI (not resolved path) for use in import modules.
-    """
-    return (
-        Uri.parse_unsafe('export:/') /
-        entity_uri.segments /
-        channel_name /
-        department_name
-    )
+    """The export directory the next version will be written to."""
+    return get_next_version_path(api.storage.resolve(
+        get_export_uri(entity_uri, channel_name, department_name)))
 
 def get_layer_file_name(
     entity_uri: Uri,
@@ -108,6 +80,7 @@ def get_layer_file_name(
     Must match the resolver's department-flavor rule (resolve.rs:62-66).
     For the root department, use ``get_root_layer_file_name`` instead — the
     root layer is shot-level and does not include a channel in its name.
+    For the shared channel, use ``get_shared_layer_file_name``.
     """
     assert department_name != 'root', (
         "use get_root_layer_file_name() for the root department"
@@ -130,66 +103,16 @@ def get_root_layer_file_name(
     entity_name = '_'.join(entity_uri.segments)
     return f'{entity_name}_root_{version_name}.usda'
 
-###############################################################################
-# Shared Export Paths (for layer_split)
-###############################################################################
-# Shared exports use '_shared' as a reserved channel name
-# Path structure: export:/{entity}/_shared/{dept}/{version}/
-###############################################################################
-
-def get_shared_export_path(
-    entity_uri: Uri,
-    department_name: str,
-    version_name: str
-    ) -> Path:
-    """Get shared export path (_shared channel)."""
-    export_uri = (
-        Uri.parse_unsafe('export:/') /
-        entity_uri.segments /
-        '_shared' /
-        department_name /
-        version_name
-    )
-    return api.storage.resolve(export_uri)
-
-def latest_shared_export_path(
-    entity_uri: Uri,
-    department_name: str
-    ) -> Optional[Path]:
-    """Get latest shared export version path."""
-    export_uri = (
-        Uri.parse_unsafe('export:/') /
-        entity_uri.segments /
-        '_shared' /
-        department_name
-    )
-    export_path = api.storage.resolve(export_uri)
-    version_paths = list_version_paths(export_path)
-    if len(version_paths) == 0: return None
-    return version_paths[-1]
-
-def next_shared_export_path(
-    entity_uri: Uri,
-    department_name: str
-    ) -> Path:
-    """Get next shared export version path."""
-    export_uri = (
-        Uri.parse_unsafe('export:/') /
-        entity_uri.segments /
-        '_shared' /
-        department_name
-    )
-    export_path = api.storage.resolve(export_uri)
-    return get_next_version_path(export_path)
-
 def get_shared_layer_file_name(
     entity_uri: Uri,
     department_name: str,
     version_name: str
     ) -> str:
-    """Get shared layer filename.
+    """Layer filename of a ``SHARED_CHANNEL`` export.
 
-    Filename format: {entity}_shared_{dept}_{version}.usd
+    Filename format: {entity}_shared_{dept}_{version}.usd — not
+    ``get_layer_file_name`` with the shared channel, which would double the
+    underscore; the resolver has the same rule.
     """
     entity_name = '_'.join(entity_uri.segments)
     return f'{entity_name}_shared_{department_name}_{version_name}.usd'

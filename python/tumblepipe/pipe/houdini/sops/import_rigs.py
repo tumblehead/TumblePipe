@@ -4,38 +4,27 @@ from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.entity_node import EntityNodeError
 from tumblepipe.pipe.houdini.sops import import_rig
 from tumblepipe.config.channels import list_channels
 from tumblepipe.pipe.paths import list_version_paths
 
-def _clear_scene(dive_node, output_node):
-
-    # Clear output connections
-    for input in output_node.inputConnections():
-        output_node.setInput(input.inputIndex(), None)
-
-    # Delete all nodes other than inputs and outputs
-    for node in dive_node.children():
-        if node.name() == output_node.name(): continue
-        node.destroy()
-
-def _connect(node1, node2):
-    port = len(node2.inputs())
-    node2.setInput(port, node1)
-
-def _insert(data, path, value):
-    for key in path[:-1]:
-        data = data.setdefault(key, {})
-    data[path[-1]] = value
 
 class ImportRigs(ns.Node):
+    """One rig import per multiparm row. Each row's asset, channel and
+    version are explicit: a row resolves exactly what it names, or raises
+    EntityNodeError — an empty row is unset, never the first asset."""
+
     def __init__(self, native):
         super().__init__(native)
+
+    def _error(self, message: str) -> EntityNodeError:
+        return EntityNodeError(f'{self.path()}: {message}')
 
     def list_asset_uris(self) -> list[Uri]:
         with api.config.coherent():
             asset_uris = api.config.list_entity_uris(
-                filter=Uri.parse_unsafe('entity:/assets'),
+                filter=Uri.parse('entity:/assets'),
                 closure=True
             )
             return [
@@ -53,54 +42,70 @@ class ImportRigs(ns.Node):
             if other_index == index: continue
             other_uri_raw = self.parm(f'entity{other_index}').eval()
             if len(other_uri_raw) == 0: continue
-            other_uri = Uri.parse_unsafe(other_uri_raw)
+            other_uri = Uri.parse(other_uri_raw)
             if other_uri in all_uris:
                 used_uris.add(other_uri)
         return [uri for uri in all_uris if uri not in used_uris]
 
     def get_entity_uri(self, index: int) -> Uri | None:
-        asset_uris = self.list_entity_uris(index)
-        if len(asset_uris) == 0: return None
+        """The row's asset; None for a row with no asset picked yet.
+        Read-only: the channel/version menus call this."""
         asset_uri_raw = self.parm(f'entity{index}').eval()
-        if len(asset_uri_raw) == 0:
-            asset_uri = asset_uris[0]
-            self.parm(f'entity{index}').set(str(asset_uri))
+        if len(asset_uri_raw) == 0: return None
+        asset_uri = Uri.parse(asset_uri_raw)
+        if asset_uri in self.list_entity_uris(index):
             return asset_uri
-        asset_uri = Uri.parse_unsafe(asset_uri_raw)
-        if asset_uri not in self.list_asset_uris():
-            asset_uri = asset_uris[0]
-            self.parm(f'entity{index}').set(str(asset_uri))
+        if asset_uri in self.list_asset_uris():
+            raise self._error(
+                f'row {index}: {asset_uri} is already imported by another '
+                'row. Remove one of the rows, or raise its Instances.'
+            )
+        raise self._error(
+            f'row {index}: {asset_uri} is not an asset in the project. '
+            "Pick one with the row's Entity button."
+        )
+
+    def require_entity_uri(self, index: int) -> Uri:
+        asset_uri = self.get_entity_uri(index)
+        if asset_uri is None:
+            raise self._error(
+                f"row {index} has no asset. Pick one with the row's Entity "
+                'button, or remove the row.'
+            )
         return asset_uri
 
     def get_instances(self, index: int) -> int:
         return self.parm(f'instances{index}').eval()
 
     def list_channel_names(self, index: int) -> list[str]:
-        """List available channel names for the asset at this index."""
+        """The row's asset's channels, 'default' first; none while unset."""
         asset_uri = self.get_entity_uri(index)
         if asset_uri is None:
-            return ['default']
+            return []
         return list_channels(asset_uri)
 
     def get_channel_name(self, index: int) -> str:
-        """Get selected channel name for this index, defaults to 'default'."""
-        channel_names = self.list_channel_names(index)
-        channel_name = self.parm(f'variant{index}').eval()
-        if not channel_name or channel_name not in channel_names:
-            return 'default'
+        """The row's Channel, which must be a channel of the row's asset."""
+        asset_uri = self.require_entity_uri(index)
+        channel_names = list_channels(asset_uri)
+        channel_name = self.parm(f'channel{index}').eval()
+        if channel_name not in channel_names:
+            raise self._error(
+                f"row {index}: channel '{channel_name}' is not a channel of "
+                f"{asset_uri} (listed: {', '.join(channel_names)})"
+            )
         return channel_name
 
     def set_channel_name(self, index: int, channel_name: str):
         """Set channel name for this index."""
-        self.parm(f'variant{index}').set(channel_name)
+        self.parm(f'channel{index}').set(channel_name)
 
     def get_rig_imports(self) -> list[tuple[Uri, str, str, int]]:
         """Returns list of (asset_uri, channel, version, instances) for all rig imports."""
         rig_imports = []
         count = self.parm('rig_imports').eval()
         for index in range(1, count + 1):
-            asset_uri = self.get_entity_uri(index)
-            if asset_uri is None: continue
+            asset_uri = self.require_entity_uri(index)
             channel = self.get_channel_name(index)
             version = self.get_version_name(index)
             instances = self.get_instances(index)
@@ -108,8 +113,11 @@ class ImportRigs(ns.Node):
         return rig_imports
 
     def set_entity_uri(self, index: int, asset_uri: Uri):
-        asset_uris = self.list_asset_uris()
-        if asset_uri not in asset_uris: return
+        if asset_uri not in self.list_entity_uris(index):
+            raise self._error(
+                f'row {index}: {asset_uri} is not an asset in the project, '
+                'or another row already imports it'
+            )
         self.parm(f'entity{index}').set(str(asset_uri))
 
     def set_instances(self, index: int, instances: int):
@@ -121,17 +129,19 @@ class ImportRigs(ns.Node):
         if asset_uri is None:
             return ['latest']
         channel_name = self.get_channel_name(index)
-        export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / channel_name / 'rig'
+        export_uri = Uri.parse('export:/') / asset_uri.segments / channel_name / 'rig'
         asset_path = api.storage.resolve(export_uri)
         version_paths = list_version_paths(asset_path)
         version_names = [vp.name for vp in version_paths]
         return ['latest'] + version_names
 
     def get_version_name(self, index: int) -> str:
-        """Get selected version name for this index. Default is 'latest'."""
+        """The row's version: 'latest' or a version name."""
         version_name = self.parm(f'version{index}').eval()
         if len(version_name) == 0:
-            return 'latest'
+            raise self._error(
+                f"row {index}: version is empty. Pick a version, or 'latest'."
+            )
         return version_name
 
     def set_version_name(self, index: int, version_name: str):
@@ -140,11 +150,9 @@ class ImportRigs(ns.Node):
 
     def _update_labels(self, index: int):
         """Update label parameters for the given index."""
-        entity_uri = self.get_entity_uri(index)
-        if entity_uri:
-            self.parm(f'entity_label{index}').set(str(entity_uri))
-        else:
-            self.parm(f'entity_label{index}').set('none')
+        self.parm(f'entity_label{index}').set(
+            self.parm(f'entity{index}').eval() or 'none'
+        )
 
         # Resolve version name (resolve 'latest' to actual version)
         version_name = self.get_version_name(index)
@@ -178,7 +186,7 @@ class ImportRigs(ns.Node):
         context = self.native()
         dive_node = context.node('dive')
         output_node = dive_node.node('output')
-        _clear_scene(dive_node, output_node)
+        ns.clear_network(dive_node, output_node)
 
         # Parameters
         rig_imports = self.get_rig_imports()
@@ -208,7 +216,7 @@ class ImportRigs(ns.Node):
             # Import the rig
             rig_node = import_rig.create(dive_node, node_name)
             rig_node.set_entity_uri(asset_uri)
-            rig_node.parm('variant').set(channel)  # Set channel on import_rig node
+            rig_node.parm('channel').set(channel)
             rig_node.set_instances(instances)
             # Honour the selected version; 'latest' auto-resolves on execute.
             if version == 'latest':
@@ -219,12 +227,12 @@ class ImportRigs(ns.Node):
 
             # Connect the rig
             if prev_node is not None:
-                _connect(prev_node, rig_node.native())
+                ns.connect_next(prev_node, rig_node.native())
             prev_node = rig_node.native()
 
         # Connect to output
         if prev_node is not None:
-            _connect(prev_node, output_node)
+            ns.connect_next(prev_node, output_node)
 
         # Layout the nodes
         dive_node.layoutChildren()
@@ -236,26 +244,17 @@ class ImportRigs(ns.Node):
 def create(scene, name):
     return ns.create_node(scene, name, ImportRigs, 'import_rigs', 'Sop')
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
-
-def on_created(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
-def execute():
-    raw_node = hou.pwd()
+def execute(kwargs):
+    raw_node = kwargs['node']
     node = ImportRigs(raw_node)
     node.execute()
 
-def select(index: int):
-    """HDA button callback to open entity selector dialog."""
+def select(kwargs):
+    """A row's Entity button: pick that row's asset."""
     from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
 
-    raw_node = hou.pwd()
-    node = ImportRigs(raw_node)
-
+    index = kwargs['parm'].multiParmInstanceIndices()[0]
+    node = ImportRigs(kwargs['node'])
     dialog = EntitySelectorDialog(
         api=api,
         entity_filter='assets',
@@ -264,7 +263,6 @@ def select(index: int):
         title="Select Asset",
         parent=hou.qt.mainWindow()
     )
-
     if dialog.exec_():
         selected_uri = dialog.get_selected_uri()
         if selected_uri:

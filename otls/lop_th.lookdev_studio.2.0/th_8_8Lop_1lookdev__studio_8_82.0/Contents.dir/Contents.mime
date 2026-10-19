@@ -7496,11 +7496,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	puzzlemattes 1 1 "input1"
+0 	mattes 1 1 "input1"
 }
 inputs
 {
-0 	puzzlemattes 0 1
+0 	mattes 0 1
 }
 stat
 {
@@ -8173,11 +8173,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	render_vars 0 1 "input1"
+0 	rename_Beauty 1 1 "input1"
 }
 inputs
 {
-0 	render_vars 0 1
+0 	rename_Beauty 0 1
 }
 stat
 {
@@ -8518,14 +8518,14 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/puzzlemattes.init"
+Content-Disposition: attachment; filename="hdaroot/mattes.init"
 Content-Type: text/plain
 
-type = th::puzzlemattes::3.0
+type = th::mattes::1.0
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/puzzlemattes.def"
+Content-Disposition: attachment; filename="hdaroot/mattes.def"
 Content-Type: text/plain
 
 comment ""
@@ -8548,7 +8548,7 @@ stat
 {
   create -1
   modify -1
-  author tumblehead@matthias-4070
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.631373 0.870588 1 
@@ -8557,24 +8557,27 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/puzzlemattes.parm"
+Content-Disposition: attachment; filename="hdaroot/mattes.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-customMattes	[ 0	locks=0 ]	(	1	)
-matte_id_1	[ 0	locks=0 ]	(	turntable	)
-folder0_1	[ 0	locks=0 ]	(	1	)
-matte_group_red_1	[ 0	locks=0 ]	(	`chs(\"../primpattern\")`	)
-matte_group_green_1	[ 0	locks=0 ]	(	/scene/turntable/backdrop	)
-matte_group_blue_1	[ 0	locks=0 ]	(	/scene/turntable/podium	)
-sepparm1	[ 0	locks=0 ]	(	)
-sepparm2_1	[ 0	locks=0 ]	(	)
-sepparm2_1_2	[ 0	locks=0 ]	(	)
+settings_path	[ 0	locks=0 ]	(	/Render/rendersettings	)
+mattes	[ 0	locks=0 ]	(	3	)
+ramps	[ 0	locks=0 ]	(	0	)
+matte_name1	[ 0	locks=0 ]	(	turntable_asset	)
+matte_prims1	[ 0	locks=0 ]	(	`chs(\"../primpattern\")`	)
+matte_compression1	[ 0	locks=0 ]	(	"zip"	)
+matte_name2	[ 0	locks=0 ]	(	turntable_backdrop	)
+matte_prims2	[ 0	locks=0 ]	(	/scene/turntable/backdrop	)
+matte_compression2	[ 0	locks=0 ]	(	"zip"	)
+matte_name3	[ 0	locks=0 ]	(	turntable_podium	)
+matte_prims3	[ 0	locks=0 ]	(	/scene/turntable/podium	)
+matte_compression3	[ 0	locks=0 ]	(	"zip"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/puzzlemattes.userdata"
+Content-Disposition: attachment; filename="hdaroot/mattes.userdata"
 Content-Type: text/plain
 
 {
@@ -8585,10 +8588,6 @@ Content-Type: text/plain
 	"nodeshape":{
 		"type":"string",
 		"value":"rect"
-	},
-	"wirestyle":{
-		"type":"string",
-		"value":"rounded"
 	}
 }
 
@@ -58223,90 +58222,6 @@ Content-Type: text/plain
 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/render_vars.init"
-Content-Type: text/plain
-
-type = th::render_vars::1.0
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/render_vars.def"
-Content-Type: text/plain
-
-comment ""
-position 82.8631 -6.36593
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass on display off render off highlight off unload off savedata off compress on colordefault off exposed on debug off
-outputsNamed3
-{
-0 "output1"
-}
-inputsNamed3
-{
-1 	rename_Beauty 1 1 "input1"
-}
-inputs
-{
-0 	rename_Beauty 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@matthias-4070
-  access 0777
-}
-color UT_Color RGB 0.631373 0.870588 1 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/render_vars.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-beauty	[ 0	locks=0 ]	(	"on"	)
-beauty_mse	[ 0	locks=0 ]	(	"off"	)
-sample_count	[ 0	locks=0 ]	(	"off"	)
-alpha	[ 0	locks=0 ]	(	"on"	)
-albedo	[ 0	locks=0 ]	(	"on"	)
-albedo_mse	[ 0	locks=0 ]	(	"off"	)
-normal	[ 0	locks=0 ]	(	"on"	)
-normal_mse	[ 0	locks=0 ]	(	"off"	)
-sepparm	[ 0	locks=0 ]	(	)
-uv	[ 0	locks=0 ]	(	"off"	)
-position	[ 0	locks=0 ]	(	"off"	)
-diffuse	[ 0	locks=0 ]	(	"off"	)
-specular	[ 0	locks=0 ]	(	"off"	)
-depth	[ 0	locks=0 ]	(	"off"	)
-volume	[ 0	locks=0 ]	(	"off"	)
-emission	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/render_vars.netbox"
-Content-Type: text/plain
-
-__netbox25
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/render_vars.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":""
-	},
-	"nodeshape":{
-		"type":"string",
-		"value":"rect"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/TUNRTABLE_PODIUM_OUT.init"
 Content-Type: text/plain
 
@@ -64693,7 +64608,7 @@ Content-Type: text/plain
 Content-Disposition: attachment; filename="hdaroot.order"
 Content-Type: text/plain
 
-115
+114
 parent_prims_to_asset
 merge_bg
 INPUT
@@ -64708,7 +64623,7 @@ TURNTABLE_SET_OUT
 TURNTABLE_ASSET_OUT
 TURNTABLE_CAMERA_OUT
 graftbranches1
-puzzlemattes
+mattes
 remove_asset_from_scene
 OUT_bypass
 INPUT_STAGE
@@ -64793,7 +64708,6 @@ material_switch
 unassign_all_materials1
 remove_render_subdivs
 comp_sopnet1
-render_vars
 TUNRTABLE_PODIUM_OUT
 BEAUTY
 graftbranches_podium

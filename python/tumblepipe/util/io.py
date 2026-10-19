@@ -2,23 +2,32 @@ from typing import Optional
 from pathlib import Path
 import json
 
-def load_text(path: Path) -> Optional[str]:
-    if not path.exists(): return None
-    if not path.is_file(): return None
-    with path.open('r') as file:
-        return file.read()
 
 def store_text(path: Path, data: str):
     path.parent.mkdir(parents = True, exist_ok = True)
     with path.open('w') as file:
         file.write(data)
 
-def load_json(path: Path) -> Optional[dict]:
-    if not path.exists(): return None
-    if not path.is_file(): return None
-    if path.suffix != '.json': return None
-    with path.open('r') as file:
+def load_json(path: Path):
+    """The JSON document at ``path``.
+
+    Raises FileNotFoundError when there is none and ValueError for a path
+    that is not a ``.json`` file. A caller for which absence is a normal
+    state says so with :func:`load_json_if_exists` or its own ``exists()``.
+    """
+    if path.suffix != '.json':
+        raise ValueError(f"not a .json file: {path}")
+    with path.open('r', encoding='utf-8') as file:
         return json.load(file)
+
+def load_json_if_exists(path: Path) -> Optional[dict]:
+    """The JSON document at ``path``, or None when no file is there.
+
+    Only absence is None: a path that exists but is not a readable ``.json``
+    file raises like :func:`load_json`.
+    """
+    if not path.exists(): return None
+    return load_json(path)
 
 def store_json(path: Path, data: dict):
     """Write *data* as JSON to *path* atomically.

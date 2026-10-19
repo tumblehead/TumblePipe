@@ -88,7 +88,7 @@ path with a catalogue icon. `_TumblePipe/pipeline`. No template uses it —
 `th::create_asset_model` creates the same prim itself — so it is only
 needed when you assemble an asset out of plain LOPs.
 Source: [`otls/lop_th.create_asset.1.0`](../../otls/lop_th.create_asset.1.0/th_8_8Lop_1create__asset_8_81.0/DialogScript),
-[PythonModule](../../otls/lop_th.create_asset.1.0/th_8_8Lop_1create__asset_8_81.0/PythonModule).
+[`lops/create_asset.py`](../../python/tumblepipe/pipe/houdini/lops/create_asset.py).
 
 | Label | Default | What it does |
 |---|---|---|
@@ -112,7 +112,7 @@ variant set, and fills every variant from its own SOP network, grafted
 under `<asset>/geo`. `_TumblePipe/model`; the model template places one as
 `MODEL`. The input stage passes through.
 Source: [`otls/lop_th.create_asset_model.1.0`](../../otls/lop_th.create_asset_model.1.0/th_8_8Lop_1create__asset__model_8_81.0/DialogScript),
-[PythonModule](../../otls/lop_th.create_asset_model.1.0/th_8_8Lop_1create__asset__model_8_81.0/PythonModule).
+[`lops/create_asset.py`](../../python/tumblepipe/pipe/houdini/lops/create_asset.py).
 
 **Asset Definition**
 
@@ -187,7 +187,7 @@ USD variant per look, composed as an over-layer on the incoming model.
 `_TumblePipe/lookdev`; the lookdev template places one as `LOOKDEV` fed by
 `IMPORT_MODEL`.
 Source: [`otls/lop_th.create_asset_lookdev.1.0`](../../otls/lop_th.create_asset_lookdev.1.0/th_8_8Lop_1create__asset__lookdev_8_81.0/DialogScript),
-[PythonModule](../../otls/lop_th.create_asset_lookdev.1.0/th_8_8Lop_1create__asset__lookdev_8_81.0/PythonModule).
+[`lops/create_asset.py`](../../python/tumblepipe/pipe/houdini/lops/create_asset.py).
 
 | Label | Default | What it does |
 |---|---|---|
@@ -279,7 +279,7 @@ variant at a time. `_TumblePipe/pipeline`; the rig template drops two into
 and dropping an asset from the browser onto a SOP network creates one. It
 embeds a `th::import_layer` followed by a Set Variant and a LOP Import.
 Source: [`otls/sop_th.import_model.1.0`](../../otls/sop_th.import_model.1.0/th_8_8Sop_1import__model_8_81.0/DialogScript),
-[PythonModule](../../otls/sop_th.import_model.1.0/th_8_8Sop_1import__model_8_81.0/PythonModule).
+[`sops/import_model.py`](../../python/tumblepipe/pipe/houdini/sops/import_model.py).
 
 | Label | Default | What it does |
 |---|---|---|
@@ -412,7 +412,7 @@ Assign the stage's materials to prim patterns, seeded from the materials
 already on the stage. `_TumblePipe/lookdev`; the lookdev template places one
 after `material_library` inside `lookdev_subnet`.
 Source: [`otls/lop_th.material_assigner.1.0`](../../otls/lop_th.material_assigner.1.0/th_8_8Lop_1material__assigner_8_81.0/DialogScript),
-[PythonModule](../../otls/lop_th.material_assigner.1.0/th_8_8Lop_1material__assigner_8_81.0/PythonModule).
+[`lops/material_assigner.py`](../../python/tumblepipe/pipe/houdini/lops/material_assigner.py).
 
 Buttons:
 
@@ -435,9 +435,10 @@ Gotchas:
 
 - A row's Primitives is empty after Initialize; nothing is bound until you
   fill it in.
-- **Update Materials Paths** stops with a Python error (an undefined
-  `current_name` in its warning) if any row names a material that is no
-  longer on the stage. Delete the stale row first.
+- **Update Materials Paths** leaves a row whose material name is no longer
+  on the stage as it is, and prints a warning to the console naming it.
+- With no stage (nothing wired in, or an input that fails to cook) the
+  Material menu is empty and both buttons stop with an error saying so.
 
 ## `th::rename_packed` (SOP)
 

@@ -12,10 +12,12 @@ import os
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import ClassVar, Iterable, Literal, TypedDict, Union
+from typing import Iterable, TypedDict
 
 from tumbletrove.asset_browser.api.errors import CatalogInitError
 from tumbletrove.asset_browser.api.types import Collection
+
+from tumblepipe.naming import get_version_code
 
 
 # ── Asset metadata schema ────────────────────────────────────────
@@ -33,7 +35,7 @@ class PipelineAssetMetadata(TypedDict, total=False):
       or ``sequence`` (shots), and ``project``.
     - ``get_detail`` adds ``department_versions``, plus ``frame_start``,
       ``frame_end``, ``frame_total``, ``fps`` for shots, and
-      ``variants`` (the publish channels) for assets.
+      ``channels`` (the publish channels) for assets.
     - ``get_assets`` overlays ``is_current_scene`` for the asset whose
       hip file is open in Houdini.
 
@@ -73,11 +75,10 @@ class PipelineAssetMetadata(TypedDict, total=False):
     frame_total: int
     fps: int
 
-    # Publish channels (assets only). The key written stays "variants";
-    # readers take "channels" as well (submit_jobs_resolve.read_channel_list).
-    # tumbletrove never names this key -- metadata is opaque payload to it, so
-    # the spelling is entirely TumblePipe's to change.
-    variants: list[str]
+    # Publish channels (assets only). tumbletrove never names this key --
+    # metadata is opaque payload to it, and the catalog rebuilds it on every
+    # discovery, so nothing stored carries an older spelling.
+    channels: list[str]
 
 
 # ── Per-project Client lifecycle ─────────────────────────────────
@@ -152,101 +153,12 @@ class DeptVersionStore:
         self._overrides.pop(asset_id, None)
 
 
-# ── Entity refs (assets vs shots) ────────────────────────────────
-
-
-@dataclass(frozen=True)
-class AssetRef:
-    """A parsed asset id of the form ``"PROJECT/CATEGORY/Name"``."""
-
-    project: str
-    category: str
-    name: str
-
-    kind: ClassVar[Literal["assets"]] = "assets"
-
-    def __str__(self) -> str:
-        return f"{self.project}/{self.category}/{self.name}"
-
-
-@dataclass(frozen=True)
-class ShotRef:
-    """A parsed shot id of the form ``"PROJECT/SEQUENCE/Shot"``."""
-
-    project: str
-    sequence: str
-    shot: str
-
-    kind: ClassVar[Literal["shots"]] = "shots"
-
-    def __str__(self) -> str:
-        return f"{self.project}/{self.sequence}/{self.shot}"
-
-
-EntityRef = Union[AssetRef, ShotRef]
-
-
-def parse_entity_ref(
-    asset_id: str, categories: Iterable[str],
-) -> EntityRef | None:
-    """Parse ``"PROJECT/SECOND/THIRD"`` into an :class:`AssetRef` or
-    :class:`ShotRef`, using ``categories`` (the project's category list)
-    to disambiguate.
-
-    When ``categories`` is empty (e.g. the project's Client is not
-    READY), the id is classified as a shot — same behavior as the
-    legacy code path. Callers that need correctness in that case must
-    ensure the Client is ready before calling.
-    """
-    if not asset_id:
-        return None
-    # split() with no maxsplit (not split("/", 2)): a 4-segment id like
-    # "a/b/c/d" must be rejected, not glued into third="c/d".
-    parts = asset_id.split("/")
-    if len(parts) != 3:
-        return None
-    project, second, third = parts
-    if second in set(categories):
-        return AssetRef(project, second, third)
-    return ShotRef(project, second, third)
-
-
-def parse_project_name(asset_id: str) -> str | None:
-    """Extract just the project name from a 3-segment asset id."""
-    if not asset_id:
-        return None
-    parts = asset_id.split("/")
-    if len(parts) != 3:
-        return None
-    return parts[0]
-
-
-def entity_base_dir(ref: EntityRef, root: Path) -> Path:
-    """Return the on-disk base directory for ``ref`` under ``root``."""
-    if isinstance(ref, AssetRef):
-        return root / "assets" / ref.category / ref.name
-    return root / "shots" / ref.sequence / ref.shot
-
-
-def entity_uri_tail(ref: EntityRef) -> str:
-    """Return the URI tail after ``entity:/``, e.g. ``"assets/Heroes/Knight"``."""
-    if isinstance(ref, AssetRef):
-        return f"assets/{ref.category}/{ref.name}"
-    return f"shots/{ref.sequence}/{ref.shot}"
-
-
 # ── Workfile scanning ────────────────────────────────────────────
 
 
-# Workfile filenames follow ``{prefix}_{version}.hip[nc|lc]``. We
-# extract the trailing ``vNNNN`` token from the stem; this matches the
-# convention used by ``tumblepipe.pipe.paths.next_hip_file_path``.
+# Workfile filenames follow ``{prefix}_{version}.hip[nc|lc]``
+# (``tumblepipe.pipe.paths.naming``).
 WORKFILE_GLOB = "*.hip*"
-
-
-def version_code(label: str) -> int:
-    """Numeric code of a ``vNNNN`` version label (``version_code('v0007') == 7``)."""
-    return int(label[1:])
 
 
 def latest_version(labels: Iterable[str]) -> str | None:
@@ -258,7 +170,7 @@ def latest_version(labels: Iterable[str]) -> str | None:
     labels = list(labels)
     if not labels:
         return None
-    return max(labels, key=version_code)
+    return max(labels, key=get_version_code)
 
 
 def latest_by_dept(dept_versions: dict[str, list[str]]) -> dict[str, str]:
@@ -293,11 +205,14 @@ def scan_workfiles(dept_dir: Path) -> tuple[list[str], float]:
     missing directory.
     """
     import fnmatch
+    from tumblepipe.pipe.paths.naming import is_versioned, version_of
     versions: set[str] = set()
     newest = 0.0
     try:
         entries = list(os.scandir(dept_dir))
-    except OSError:
+    except FileNotFoundError:
+        # No workfile in this department yet: its folder is made on the
+        # first save. Any other OSError (an unreachable share) raises.
         return [], 0.0
     for entry in entries:
         if not fnmatch.fnmatch(entry.name, WORKFILE_GLOB):
@@ -306,93 +221,28 @@ def scan_workfiles(dept_dir: Path) -> tuple[list[str], float]:
             if not entry.is_file():
                 continue
             mtime = entry.stat().st_mtime
-        except OSError:
+        except FileNotFoundError:
+            # Deleted between the listing and this stat.
             continue
         if mtime > newest:
             newest = mtime
-        tail = Path(entry.name).stem.rsplit("_", 1)
-        if (
-            len(tail) == 2
-            and tail[1].startswith("v")
-            and tail[1][1:].isdigit()
-        ):
-            versions.add(tail[1])
+        if is_versioned(entry.name):
+            versions.add(version_of(entry.name))
     # Sort by numeric code, not lexically: version labels can exceed 4
     # digits (v10000), and every consumer takes [-1] as "latest" — a
     # lexical sort would rank v9999 after v10000 and open a stale workfile.
-    return sorted(versions, key=version_code), newest
+    return sorted(versions, key=get_version_code), newest
 
 
 def workfile_for_version(dept_dir: Path, version: str) -> Path | None:
     """Return the .hip whose filename trails with ``_{version}``."""
+    from tumblepipe.pipe.paths.naming import is_versioned, version_of
     if not dept_dir.exists():
         return None
     for hip in dept_dir.glob(WORKFILE_GLOB):
-        stem = hip.stem
-        tail = stem.rsplit("_", 1)
-        if len(tail) == 2 and tail[1] == version:
+        if is_versioned(hip) and version_of(hip) == version:
             return hip
     return None
-
-
-def latest_workfile(dept_dir: Path) -> Path | None:
-    """Return the newest .hip in *dept_dir* by mtime, or ``None``."""
-    if not dept_dir.exists():
-        return None
-    hip_files = sorted(
-        dept_dir.glob(WORKFILE_GLOB),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    return hip_files[0] if hip_files else None
-
-
-# ── Framework capability probes ──────────────────────────────────
-
-
-def _type_supports(type_name: str, field_name: str) -> bool:
-    """Whether the installed tumbletrove's *type_name* has *field_name*.
-
-    hpm declares no dependency between this package and tumbletrove —
-    the coupling is a convention (ship tumbletrove first) and a comment.
-    That is survivable for a field the framework *reads*, which an older
-    version simply ignores. It is not survivable for one we *pass*: these
-    are frozen dataclasses, so an unknown keyword is a ``TypeError`` at
-    construction rather than a feature quietly missing. Probe before
-    passing, and degrade to the shape the older version does accept.
-    """
-    try:
-        import dataclasses
-        import importlib
-        types = importlib.import_module(
-            "tumbletrove.asset_browser.api.types"
-        )
-        cls = getattr(types, type_name, None)
-        if cls is None:
-            return False
-        return any(
-            f.name == field_name for f in dataclasses.fields(cls)
-        )
-    except Exception:
-        return False
-
-
-#: tumbletrove >= 0.24 (``DeckItem.note`` + ``ListColumn.deck_note``).
-#: Both halves are probed as one flag on purpose: they ship together, and
-#: honouring only one would give a Note column no row can ever fill, or
-#: notes on rows with nowhere to render. Below this the catalog declares
-#: no Note column and passes no ``note=`` — version notes still get
-#: written to disk, they just aren't shown until tumbletrove catches up.
-DECK_NOTES_SUPPORTED = (
-    _type_supports("DeckItem", "note")
-    and _type_supports("ListColumn", "deck_note")
-)
-
-#: tumbletrove >= 0.40 (``MenuItem``: a menu entry with an icon and a
-#: hover tooltip). Below this the version menus stay plain ``(label, fn)``
-#: pairs — an older browser unpacks every item as a pair, and a
-#: ``MenuItem`` it cannot import would never get that far anyway.
-MENU_ITEM_SUPPORTED = _type_supports("MenuItem", "tooltip")
 
 
 # ── Department iconography ───────────────────────────────────────

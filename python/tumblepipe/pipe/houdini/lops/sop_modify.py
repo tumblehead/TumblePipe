@@ -2,17 +2,14 @@ from pathlib import Path
 
 import hou
 
-from tumblepipe.api import path_str, api
-from tumblepipe.config.timeline import FrameRange
-from tumblepipe.pipe.houdini import util
+from tumblepipe.api import path_str
+from tumblepipe import naming
+from tumblepipe.pipe.houdini import playbar
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
 from tumblepipe.pipe.paths import (
     list_version_paths
 )
-
-def _connect(node1, node2):
-    port = len(node2.inputs())
-    node2.setInput(port, node1)
 
 def _clear_children(scene_node):
     for child_node in scene_node.children():
@@ -48,7 +45,7 @@ def _create_exporter_node(scene_node, node_name, config):
     prune_node.parm('vtxdel').set(' '.join(config['vertex_attribs']))
     prune_node.parm('primdel').set(' '.join(config['primitive_attribs']))
     prune_node.parm('dtldel').set(' '.join(config['detail_attribs']))
-    _connect(exporter_node_input, prune_node)
+    ns.connect_next(exporter_node_input, prune_node)
 
     # Create file cache node
     cache_node = exporter_node.createNode('filecache', 'export_cache')
@@ -62,7 +59,7 @@ def _create_exporter_node(scene_node, node_name, config):
     cache_node.parm('f1').set(config['frame_first'])
     cache_node.parm('f2').set(config['frame_last'])
     cache_node.parm('f3').set(config['frame_step'])
-    _connect(prune_node, cache_node)
+    ns.connect_next(prune_node, cache_node)
     return cache_node
 
 def _create_importer_node(scene_node, node_name, config):
@@ -96,7 +93,7 @@ def _create_importer_node(scene_node, node_name, config):
     clip_node.parm('endframe').set(config['frame_last'])
     return clip_node
 
-class SopModify(ns.Node):
+class SopModify(FrameRangeNode, ns.Node):
     def __init__(self, native):
         super().__init__(native)
 
@@ -107,9 +104,9 @@ class SopModify(ns.Node):
         version_names = self.list_version_names()
         if len(version_names) == 0: return 'v0001'
         latest_version_name = version_names[-1]
-        latest_version_code = api.naming.get_version_code(latest_version_name)
+        latest_version_code = naming.get_version_code(latest_version_name)
         next_version_code = latest_version_code + 1
-        return api.naming.get_version_name(next_version_code)
+        return naming.get_version_name(next_version_code)
     
     def _list_cache_configs(self, version_name):
         result = list()
@@ -117,7 +114,7 @@ class SopModify(ns.Node):
         if cache_name is None or version_name is None:
             return result
         cache_path = self._get_cache_path() / cache_name / version_name
-        frame_range, step = self.get_frame_range()
+        frame_range = self.get_frame_range()
         render_range = frame_range.full_range()
         for index in range(self.parm('exports').eval()):
             export_name = self.parm(f'export_name{index}').eval()
@@ -139,7 +136,7 @@ class SopModify(ns.Node):
                 simulation = simulation,
                 frame_first = render_range.first_frame,
                 frame_last = render_range.last_frame,
-                frame_step = step
+                frame_step = frame_range.step_size
             ))
         return result
 
@@ -165,11 +162,11 @@ class SopModify(ns.Node):
         if cache_name is None: return []
         cache_path = cache_path / cache_name
         version_names = list(filter(
-            api.naming.is_valid_version_name,
+            naming.is_valid_version_name,
             [path.name for path in list_version_paths(cache_path)]
         ))
         if len(version_names) == 0: return []
-        version_names.sort(key = api.naming.get_version_code)
+        version_names.sort(key = naming.get_version_code)
         return version_names
     
     def get_cache_name(self):
@@ -178,38 +175,26 @@ class SopModify(ns.Node):
         return result
 
     def get_version_name(self):
-        version_names = self.list_version_names()
-        if len(version_names) == 0: return None
+        """The version to load; None until one is picked. A picked version
+        that is not on disk raises."""
         version_name = self.parm('version').eval()
-        if len(version_name) == 0: return version_names[0]
-        if version_name not in version_names: return None
+        if len(version_name) == 0: return None
+        self._require_version_on_disk(version_name)
         return version_name
-    
-    def get_frame_range_source(self):
-        return self.parm('frame_range').eval()
-    
-    def get_frame_range(self):
-        frame_range_source = self.get_frame_range_source()
-        match frame_range_source:
-            case 'playback_range':
-                frame_range = util.get_frame_range()
-                return frame_range, 1
-            case 'from_settings':
-                return FrameRange(
-                    self.parm('frame_settingsx').eval(),
-                    self.parm('frame_settingsy').eval(),
-                    self.parm('roll_settingsx').eval(),
-                    self.parm('roll_settingsy').eval()
-                ), self.parm('frame_settingsz').eval()
-            case _:
-                assert False, f'Unknown frame range setting "{frame_range_source}"'
-    
+
+    def _require_version_on_disk(self, version_name):
+        version_names = self.list_version_names()
+        if version_name not in version_names:
+            raise self._error(
+                f"version '{version_name}' does not exist "
+                f"(on disk: {', '.join(version_names) or 'none'})"
+            )
+
     def set_cache_name(self, name):
         self.parm('name').set('' if name is None else name)
-    
+
     def set_version_name(self, version_name):
-        version_names = self.list_version_names()
-        if version_name not in version_names: return
+        self._require_version_on_disk(version_name)
         self.parm('version').set(version_name)
 
     def cache(self):
@@ -225,7 +210,7 @@ class SopModify(ns.Node):
         # Generate the cache nodes
         exporter_nodes = list()
         version_name = self._next_version_name()
-        with util.update_mode(hou.updateMode.Manual):
+        with playbar.update_mode(hou.updateMode.Manual):
             for config in self._list_cache_configs(version_name):
 
                 # Create the exporter nodes
@@ -236,7 +221,7 @@ class SopModify(ns.Node):
                     exporter_name,
                     config
                 )
-                _connect(caching_node_input, exporter_node.parent())
+                ns.connect_next(caching_node_input, exporter_node.parent())
                 exporter_nodes.append(exporter_node)
         
         # Layout the created nodes
@@ -270,7 +255,7 @@ class SopModify(ns.Node):
 
         # Generate the loading nodes
         version_name = self.get_version_name()
-        with util.update_mode(hou.updateMode.Manual):
+        with playbar.update_mode(hou.updateMode.Manual):
             for config in self._list_cache_configs(version_name):
 
                 # Create the importer nodes
@@ -281,8 +266,8 @@ class SopModify(ns.Node):
                     importer_name,
                     config
                 )
-                _connect(loading_node_input, importer_node)
-                _connect(importer_node, merge_node)
+                ns.connect_next(loading_node_input, importer_node)
+                ns.connect_next(importer_node, merge_node)
         
         # Layout the created nodes
         loading_node.layoutChildren()
@@ -308,28 +293,20 @@ class SopModify(ns.Node):
 def create(scene, name):
     return ns.create_node(scene, name, SopModify, 'sop_modify')
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node)
-
-def on_created(raw_node):
-
-    # Set node style
-    set_style(raw_node)
-
-def latest():
-    raw_node = hou.pwd()
+def latest(kwargs):
+    raw_node = kwargs['node']
     node = SopModify(raw_node)
     version_names = node.list_version_names()
     if len(version_names) == 0: return
     latest_version_name = version_names[-1]
     node.set_version_name(latest_version_name)
 
-def cache():
-    raw_node = hou.pwd()
+def cache(kwargs):
+    raw_node = kwargs['node']
     node = SopModify(raw_node)
     node.cache()
 
-def load():
-    raw_node = hou.pwd()
+def load(kwargs):
+    raw_node = kwargs['node']
     node = SopModify(raw_node)
     node.load()

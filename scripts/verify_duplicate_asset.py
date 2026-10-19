@@ -34,8 +34,8 @@ from tumblepipe.pipe.houdini.lops import export_layer
 from tumblepipe.pipe.paths import get_workfile_context, reserve_next_hip_file_path
 from tumblepipe.util.uri import Uri
 
-SOURCE = Uri.parse_unsafe('entity:/assets/PROP/dupsrc')
-TARGET = Uri.parse_unsafe('entity:/assets/PROP/dupsrc_copy')
+SOURCE = Uri.parse('entity:/assets/PROP/dupsrc')
+TARGET = Uri.parse('entity:/assets/PROP/dupsrc_copy')
 FAILURES = []
 
 
@@ -49,9 +49,9 @@ def make_source_workfile() -> Path:
     from tumblepipe.pipe.context import (
         save_context,
         save_entity_context,
-        save_hip_file,
         workfile_context,
     )
+    from tumblepipe.pipe.houdini.workfile_save import save_hip_file
     hou.hipFile.clear(suppress_save_prompt=True)
     stage = hou.node('/stage')
     ex = export_layer.create(stage, 'export_model')

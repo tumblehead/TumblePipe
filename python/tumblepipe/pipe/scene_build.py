@@ -11,7 +11,7 @@ imports to be deferred inside config.
 
 from pathlib import Path
 
-from tumblepipe.api import api, local_path
+from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import store_text, store_json
 from tumblepipe.config.scene import (
@@ -19,19 +19,18 @@ from tumblepipe.config.scene import (
     get_scene_by_uri,
     get_inherited_scene_ref,
 )
-from tumblepipe.config.timeline import get_frame_range, get_fps
+from tumblepipe.config.timeline import get_frame_range, require_fps
 from tumblepipe.pipe.paths import (
     get_next_version_path,
     get_root_layer_file_name,
     next_scene_staged_path,
     get_scene_layer_file_name,
 )
-from tumblepipe.pipe.usd import (
-    generate_usda_content,
-    generate_simple_usda_content,
+from tumblepipe.pipe.usd.sublayer_refs import (
     generate_scene_sublayer_uri,
     generate_staged_sublayer_uri,
 )
+from tumblepipe.pipe.usd.usda import generate_usda_content
 
 
 def export_scene_version(scene_uri: Uri) -> Path:
@@ -64,7 +63,7 @@ def export_scene_version(scene_uri: Uri) -> Path:
 
     # 1. Direct assets FIRST (strongest in USD composition)
     for entry in scene.assets:
-        asset_uri = Uri.parse_unsafe(entry.asset)
+        asset_uri = Uri.parse(entry.asset)
         staged_uri = generate_staged_sublayer_uri(asset_uri, entry.channel)
         layer_uris.append(staged_uri)
 
@@ -88,10 +87,7 @@ def export_scene_version(scene_uri: Uri) -> Path:
     output_path = version_path / layer_file_name
 
     # Generate USDA content (no timing metadata for scenes)
-    usda_content = generate_simple_usda_content(
-        layer_paths=layer_uris,
-        output_path=output_path
-    )
+    usda_content = generate_usda_content(layer_paths=layer_uris)
 
     # Write files
     version_path.mkdir(parents=True, exist_ok=True)
@@ -104,7 +100,7 @@ def export_scene_version(scene_uri: Uri) -> Path:
         'version': version_name,
         'parameters': {
             'assets': [
-                {'asset': entry.asset, 'instances': entry.instances, 'variant': entry.channel}
+                {'asset': entry.asset, 'instances': entry.instances, 'channel': entry.channel}
                 for entry in scene.assets
             ]
         }
@@ -143,10 +139,8 @@ def generate_root_version(shot_uri: Uri) -> Path:
     if frame_range is None:
         raise ValueError(f"No frame range defined for {shot_uri}")
 
-    # Get fps (default to 24 if not set)
-    fps = get_fps(shot_uri)
-    if fps is None:
-        fps = 24
+    # The root layer's timing is the shot's: its own fps, else the project's
+    fps = require_fps(shot_uri)
 
     # Collect sublayer references
     layer_refs = []
@@ -159,14 +153,14 @@ def generate_root_version(shot_uri: Uri) -> Path:
     # Root defaults template (weakest - provides camera, render settings, render vars)
     # Note: This is the only exception - config templates use filesystem paths
     # since they are static and don't need dynamic version resolution
-    root_defaults_uri = Uri.parse_unsafe('config:/usd/root_default_prims.usda')
-    root_defaults_path = local_path(api.storage.resolve(root_defaults_uri))
+    root_defaults_uri = Uri.parse('config:/usd/root_default_prims.usda')
+    root_defaults_path = api.storage.resolve(root_defaults_uri)
     if root_defaults_path.exists():
         layer_refs.append(root_defaults_path)
 
     # Get next version path for root (shot-level, not channel-specific)
-    export_uri = Uri.parse_unsafe('export:/') / shot_uri.segments / '_root'
-    export_path = local_path(api.storage.resolve(export_uri))
+    export_uri = Uri.parse('export:/') / shot_uri.segments / '_root'
+    export_path = api.storage.resolve(export_uri)
     version_path = get_next_version_path(export_path)
     version_name = version_path.name
 
@@ -180,7 +174,7 @@ def generate_root_version(shot_uri: Uri) -> Path:
     # Generate USDA content with sublayers and timing metadata
     usda_content = generate_usda_content(
         layer_paths=layer_refs,
-        output_path=output_path,
+        relative_to=output_path.parent,
         fps=fps,
         start_frame=full_range.first_frame,
         end_frame=full_range.last_frame

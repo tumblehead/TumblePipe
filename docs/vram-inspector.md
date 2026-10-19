@@ -137,9 +137,6 @@ folder.
 
 ## What it does not do
 
-- **Run in Houdini 21.** The viewport hook is built for Houdini 22 only. In
-  Houdini 21 the window says the hook isn't loaded and measures nothing
-  (see [Troubleshooting](troubleshooting.md#the-vram-inspector-says-the-vram-hook-is-not-loaded)).
 - **Cook anything.** A Copernicus node that has not cooked is left out (the
   status line counts these). Measuring it would mean cooking it.
 - **Itemise OBJ/SOP viewers.** Their geometry is measured, but its rows

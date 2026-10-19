@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from tumblepipe.pipe.houdini.ui.report import report_failure
 from tumbletrove.asset_browser.core.theme import (
     ACCENT, BG_MID, BORDER, BUTTON_GHOST_STYLE, BUTTON_PRIMARY_STYLE,
     COMBO_STYLE, FONT_FAMILY, FONT_SMALL, TEXT_DIM, TEXT_PRIMARY, scaled,
@@ -93,9 +94,13 @@ class DepartmentPoolEditor(QWidget):
     readable, the controls grey out, and the note says why.
     """
 
-    def __init__(self, catalog, parent=None) -> None:
+    def __init__(
+        self, *, activator, refresh, invalidate_cache, parent=None,
+    ) -> None:
         super().__init__(parent)
-        self._catalog = catalog
+        self._activator = activator
+        self._refresh = refresh
+        self._invalidate_cache = invalidate_cache
         self._project = None
         self._editable = False
         self._working: dict[str, list[_Dept]] = {c: [] for c in CONTEXTS}
@@ -124,7 +129,7 @@ class DepartmentPoolEditor(QWidget):
         else:
             # Every config read and write has to resolve against this
             # project, not whichever one happens to be active.
-            self._catalog._activate_project(project)
+            self._activator.activate(project)
             self._working = {c: self._load(c) for c in CONTEXTS}
         self._original = {c: [d.name for d in depts]
                           for c, depts in self._working.items()}
@@ -491,14 +496,11 @@ class DepartmentPoolEditor(QWidget):
         try:
             self._commit()
         except Exception as exc:
-            QMessageBox.critical(
-                self, "Apply Department Changes",
-                f"Failed to apply: {exc}\n\nSee the Houdini console.",
-            )
-            raise
+            report_failure("Applying the department changes", exc)
+            return
 
-        self._catalog.invalidate_cache()
-        self._catalog._request_global_detail_refresh()
+        self._invalidate_cache()
+        self._refresh.detail()
         # Re-read what was written, so the editor shows the pool as it now is
         # and Apply greys out until the next change.
         self.set_project(self._project, editable=self._editable,
@@ -511,7 +513,7 @@ class DepartmentPoolEditor(QWidget):
     def _commit(self) -> None:
         from tumblepipe.config import department as dept_mod
 
-        self._catalog._activate_project(self._project)
+        self._activator.activate(self._project)
         for context in CONTEXTS:
             working = self._working[context]
             live = {
@@ -560,16 +562,21 @@ class EntityDepartmentsDialog(QDialog):
     flagged. Nothing here can change a render.
     """
 
-    def __init__(self, catalog, asset_id: str, parent=None) -> None:
+    def __init__(
+        self, asset_id: str, *, resolver, activator, index, refresh,
+        invalidate_cache, parent=None,
+    ) -> None:
         super().__init__(parent)
-        self._catalog = catalog
+        self._activator = activator
+        self._refresh = refresh
+        self._invalidate_cache = invalidate_cache
         self._asset_id = asset_id
 
-        project = catalog._resolver.project_for(asset_id)
-        self._entity_uri = catalog._resolver.uri_for(asset_id)
+        project = resolver.project_for(asset_id)
+        self._entity_uri = resolver.uri_for(asset_id)
         if project is None or self._entity_uri is None:
             raise ValueError(f"Not a pipeline entity: {asset_id}")
-        catalog._activate_project(project)
+        activator.activate(project)
         self._project = project
 
         from tumblepipe.config.department import (
@@ -585,7 +592,7 @@ class EntityDepartmentsDialog(QDialog):
         # ticked, which is also how the user turns it back off.
         self._checked = set(assigned) if assigned else set(self._pool)
         self._with_work = set(
-            catalog._get_department_workfile_info(asset_id).keys()
+            index.department_versions(asset_id).keys()
         )
 
         self.setWindowTitle(f"Departments — {asset_id.split('/')[-1]}")
@@ -659,15 +666,13 @@ class EntityDepartmentsDialog(QDialog):
         # added to the pool later.
         names = [] if set(selected) == set(self._pool) else selected
         try:
-            self._catalog._activate_project(self._project)
+            self._activator.activate(self._project)
             set_entity_departments(self._entity_uri, names)
         except Exception as exc:
-            QMessageBox.critical(
-                self, "Departments",
-                f"Failed to apply: {exc}\n\nSee the Houdini console.",
-            )
-            raise
+            report_failure(f"Setting the departments of {self._entity_uri}", exc)
+            return
 
-        self._catalog._request_card_refresh_for_id(self._asset_id)
-        self._catalog._request_global_detail_refresh()
+        self._invalidate_cache()
+        self._refresh.card(self._asset_id)
+        self._refresh.detail()
         self.accept()

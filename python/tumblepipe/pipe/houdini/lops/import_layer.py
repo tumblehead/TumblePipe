@@ -11,17 +11,16 @@ from tumblepipe.util.io import load_json
 from tumblepipe.config.channels import list_channels
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
-from tumblepipe.pipe.houdini.util import uri_to_prim_path
+from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
+from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 from tumblepipe.pipe.houdini.lops import import_asset
 import tumblepipe.pipe.context as ctx
 from tumblepipe.pipe.paths import (
     list_version_paths,
-    get_workfile_context,
     latest_export_path,
     get_export_uri,
-    latest_shared_export_path
+    SHARED_CHANNEL,
 )
-
 
 def _valid_version_path(path: Path) -> bool:
     context_path = path / 'context.json'
@@ -45,7 +44,7 @@ def _metadata_update_script(
     header = [
         'import hou',
         '',
-        'from tumblepipe.pipe.houdini import util',
+        'from tumblepipe.pipe.houdini import prim_metadata',
         '',
         'node = hou.pwd()',
         'stage = node.editableStage()',
@@ -57,7 +56,7 @@ def _metadata_update_script(
     content = []
     for asset_info in assets:
         asset_uri_str = asset_info['asset']
-        asset_uri = Uri.parse_unsafe(asset_uri_str)
+        asset_uri = Uri.parse(asset_uri_str)
         prim_path = uri_to_prim_path(asset_uri)
 
         instance_name = asset_uri.segments[-1] if asset_uri.segments else ''
@@ -65,15 +64,15 @@ def _metadata_update_script(
             f"# Asset: {asset_uri_str}",
             f"prim = root.GetPrimAtPath('{prim_path}')",
             "if prim.IsValid():",
-            "    metadata = util.get_metadata(prim)",
+            "    metadata = prim_metadata.get_metadata(prim)",
             "    if metadata is None:",
             f"        metadata = {{'uri': '{asset_uri_str}', 'instance': '{instance_name}', 'inputs': []}}",
-            "    util.add_metadata_input(metadata, {",
+            "    prim_metadata.add_metadata_input(metadata, {",
             f"        'uri': '{str(entity_uri)}',",
             f"        'department': '{department_name}',",
             f"        'version': '{version_name}',",
             "    })",
-            "    util.set_metadata(prim, metadata)",
+            "    prim_metadata.set_metadata(prim, metadata)",
             "",
         ])
 
@@ -100,7 +99,7 @@ def _inline_marker_script(assets: list[dict]) -> str:
     script_lines = [
         'import hou',
         '',
-        'from tumblepipe.pipe.houdini import util',
+        'from tumblepipe.pipe.houdini import prim_metadata',
         '',
         'node = hou.pwd()',
         'stage = node.editableStage()',
@@ -109,12 +108,12 @@ def _inline_marker_script(assets: list[dict]) -> str:
     ]
 
     for asset_info in assets:
-        asset_uri = Uri.parse_unsafe(asset_info['asset'])
+        asset_uri = Uri.parse(asset_info['asset'])
         prim_path = uri_to_prim_path(asset_uri)
         script_lines.extend([
             f"prim = root.GetPrimAtPath('{prim_path}')",
             'if prim.IsValid():',
-            '    util.mark_inlined(prim)',
+            '    prim_metadata.mark_inlined(prim)',
             '',
         ])
 
@@ -171,68 +170,44 @@ class ImportLayer(EntityNode):
         # Add 'current' option at the beginning (resolves to highest numbered version)
         return ['current'] + version_names
 
-    def get_department_name(self) -> str | None:
-        department_name_raw = self.parm('department').eval()
-        # Handle 'from_context' special value
-        if department_name_raw == 'from_context':
-            file_path = Path(hou.hipFile.path())
-            context = get_workfile_context(file_path)
-            if context is None:
-                return None
-            return context.department_name
-        # From settings
-        department_names = self.list_department_names()
-        if len(department_names) == 0:
-            return None
-        if len(department_name_raw) == 0:
-            return department_names[0]
-        if department_name_raw not in department_names:
-            return None
-        return department_name_raw
-
     def get_version_name(self) -> str | None:
-        version_names = self.list_version_names()
-        if len(version_names) == 0:
-            return None
+        """The export version to import. 'current' is the newest export,
+        None while nothing is exported yet. A named version that is not
+        exported raises."""
         version_name = self.parm('version').eval()
-        if len(version_name) == 0:
-            return version_names[-1]
+        version_names = self.list_version_names()[1:]  # Drop 'current'
         if version_name == 'current':
-            return version_names[-1]
+            return version_names[-1] if version_names else None
         if version_name not in version_names:
-            return None
+            raise self._error(
+                f"version '{version_name}' is not exported "
+                f"(exported: {', '.join(version_names) or 'none'})"
+            )
         return version_name
 
     def set_channel_name(self, channel_name: str):
         """Set channel name."""
-        self.parm('variant').set(channel_name)
+        self.parm('channel').set(channel_name)
         self._update_labels()
 
     def set_version_name(self, version_name: str):
         version_names = self.list_version_names()
         if version_name not in version_names:
-            return
+            raise self._error(
+                f"version '{version_name}' is not one of {version_names}"
+            )
         self.parm('version').set(version_name)
         self._update_labels()
 
     def _update_labels(self):
         """Update label parameters to show current entity selection."""
-        entity_raw = self.parm('entity').eval()
-        if entity_raw == 'from_context':
-            entity_uri = self.get_entity_uri()
-            if entity_uri:
-                self.parm('entity_label').set(f'from_context: {entity_uri}')
-            else:
-                self.parm('entity_label').set('from_context: none')
-        else:
-            # Specific entity URI selected
-            self.parm('entity_label').set(entity_raw)
+        self.parm('entity_label').set(self._entity_label())
 
     def _initialize(self):
         """Refresh the labels. The 'entity' parm keeps its 'from_context'
         default even when the context can't be read: falling back to the
         first entity in the project silently imports the wrong one, where an
-        unresolved 'from_context' visibly imports nothing."""
+        unresolved 'from_context' refuses to import and says why."""
         self._update_labels()
 
     def execute(self):
@@ -242,9 +217,9 @@ class ImportLayer(EntityNode):
     def _import_layer(self):
         """Unified import method for both assets and shots."""
         native = self.native()
-        entity_uri = self.get_entity_uri()
+        entity_uri = self.require_entity_uri()
         channel_name = self.get_channel_name()
-        department_name = self.get_department_name()
+        department_name = self.require_department_name()
         version_name = self.get_version_name()
 
         def _bypass(reason: str):
@@ -256,20 +231,13 @@ class ImportLayer(EntityNode):
             ns.set_node_comment(native, f"Bypassed: {reason}")
             native.bypass(True)
 
-        if entity_uri is None:
-            logger.debug("Import bypassed: No entity selected")
-            _bypass("No entity selected")
-            return
-        if department_name is None:
-            logger.debug(f"Import bypassed: No department selected for {entity_uri}")
-            _bypass("No department selected")
-            return
+        # Nothing exported yet is the one expected empty state (an upstream
+        # department that has not published); everything else raised above.
         if version_name is None:
-            logger.debug(f"Import bypassed: No version selected for {entity_uri}/{department_name}")
-            _bypass("No version selected")
+            _bypass(f"No '{department_name}' export of {entity_uri} yet")
             return
 
-        # The guards above are the only bypass sources, and they are sticky:
+        # The guard above is the only bypass source, and it is sticky:
         # nothing else ever cleared the flag, so a node bypassed once (e.g. by
         # switching Department to one this entity has no export for) stayed
         # dead after switching back to a valid selection, despite a resolved
@@ -289,10 +257,10 @@ class ImportLayer(EntityNode):
         shared_resolved = ''
         shared_exists = False
         if len(list_channels(entity_uri)) > 1:
-            shared_path = latest_shared_export_path(entity_uri, department_name)
+            shared_path = latest_export_path(entity_uri, SHARED_CHANNEL, department_name)
             if shared_path is not None:
                 shared_version = shared_path.name
-                shared_uri = f"{entity_uri}?dept={department_name}&variant=_shared&version={shared_version}"
+                shared_uri = f"{entity_uri}?dept={department_name}&channel={SHARED_CHANNEL}&version={shared_version}"
                 resolved = _resolve_pinned(shared_uri)
                 if resolved and Path(resolved).exists():
                     shared_resolved = resolved
@@ -303,7 +271,7 @@ class ImportLayer(EntityNode):
         self.parm('import_enable1').set(1 if shared_exists else 0)
 
         # Channel layer (index 2)
-        channel_uri = f"{entity_uri}?dept={department_name}&variant={channel_name}&version={version_name}"
+        channel_uri = f"{entity_uri}?dept={department_name}&channel={channel_name}&version={version_name}"
         resolved_channel = _resolve_pinned(channel_uri)
         channel_exists = bool(resolved_channel) and Path(resolved_channel).exists()
         self.parm('import_filepath2').set(resolved_channel if channel_exists else '')
@@ -417,15 +385,14 @@ class ImportLayer(EntityNode):
         """
         if len(entity_uri.segments) == 0 or entity_uri.segments[0] != 'assets':
             return None
-        shot_uri = None
-        shot_department = None
-        workfile_context = get_workfile_context(Path(hou.hipFile.path()))
-        if workfile_context is not None:
-            if str(workfile_context.entity_uri) == str(entity_uri):
-                return None
-            if str(workfile_context.entity_uri).startswith('entity:/shots/'):
-                shot_uri = workfile_context.entity_uri
-                shot_department = workfile_context.department_name
+        workfile_context = scene_context()
+        if (workfile_context is not None
+                and str(workfile_context.entity_uri) == str(entity_uri)):
+            return None
+        shot_uri = entity_in_contexts(workfile_context, contexts=('shots',))
+        shot_department = (
+            workfile_context.department_name if shot_uri is not None else None
+        )
         if self.get_import_mode() == 'inline':
             return import_asset._inline_metadata_script(entity_uri)
         return import_asset._metadata_script(
@@ -436,30 +403,23 @@ class ImportLayer(EntityNode):
         )
 
     def open_location(self):
-        entity_uri = self.get_entity_uri()
-        if entity_uri is None:
-            return
+        entity_uri = self.require_entity_uri()
         channel_name = self.get_channel_name()
-        department_name = self.get_department_name()
-        if department_name is None:
-            return
-
+        department_name = self.require_department_name()
         export_path = latest_export_path(entity_uri, channel_name, department_name)
         if export_path is None:
-            return
-        if not export_path.exists():
-            return
+            raise self._error(
+                f"{entity_uri} has no '{department_name}' export on channel "
+                f"'{channel_name}' yet"
+            )
         hou.ui.showInFileBrowser(path_str(export_path))
 
 def create(scene, name):
     return ns.create_node(scene, name, ImportLayer, 'import_layer')
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
-
 def on_created(raw_node):
     # Set node style
-    set_style(raw_node)
+    ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
 
     # Validate node type
     raw_node_type = raw_node.type()
@@ -474,38 +434,21 @@ def on_created(raw_node):
     node = ImportLayer(raw_node)
     node._initialize()
 
-def execute():
-    raw_node = hou.pwd()
+def execute(kwargs):
+    raw_node = kwargs['node']
     node = ImportLayer(raw_node)
     node.execute()
 
-def open_location():
-    raw_node = hou.pwd()
+def open_location(kwargs):
+    raw_node = kwargs['node']
     node = ImportLayer(raw_node)
     node.open_location()
 
-def select():
-    """HDA button callback to open entity selector dialog."""
-    from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
-
-    raw_node = hou.pwd()
-    node = ImportLayer(raw_node)
-
-    dialog = EntitySelectorDialog(
-        api=api,
-        entity_filter='both',
-        include_from_context=True,
-        current_selection=node.parm('entity').eval(),
-        title="Select Entity",
-        parent=hou.qt.mainWindow()
-    )
-
-    if dialog.exec_():
-        selected_uri = dialog.get_selected_uri()
-        if selected_uri:
-            node.parm('entity').set(selected_uri)
-            node.execute()
-
+def select(kwargs):
+    """Entity button: pick the entity, then import it."""
+    node = ImportLayer(kwargs['node'])
+    if node.pick_entity():
+        node.execute()
 
 def output_modified_prims(raw_node) -> str:
     """Return the prim path this HDA wrote, for the output's modifiedprims.
@@ -514,10 +457,8 @@ def output_modified_prims(raw_node) -> str:
     sentinel, which is not a URI, so parsing it raw reported no modified
     prims for a node in its default state.
     """
+    # Evaluated on every cook: an unset 'from_context' modifies nothing.
     entity_uri = ImportLayer(raw_node).get_entity_uri()
     if entity_uri is None:
         return ''
-    try:
-        return uri_to_prim_path(entity_uri)
-    except ValueError:
-        return ''
+    return uri_to_prim_path(entity_uri)

@@ -6,7 +6,8 @@ Contents.gz	Contents.gz
 TypePropertiesOptions	TypePropertiesOptions
 Help	Help
 EditableNodes	EditableNodes
-PythonModule	PythonModule
 OnCreated	OnCreated
 Tools.shelf	Tools.shelf
+Version	Version
+SyncNodeVersion	SyncNodeVersion
 ExtraFileOptions	ExtraFileOptions

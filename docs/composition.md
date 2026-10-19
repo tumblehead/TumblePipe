@@ -13,71 +13,63 @@ falls back to its `default` export.
 This used to be called a *variant*, which collided head-on with USD's own
 `variantSet` — an unrelated mechanism, authored on a prim by Solaris' Add
 Variant / Set Variant and by our `th::create_asset_model` /
-`th::create_asset_lookdev` HDAs, and selected per row by `th::import_assets`'
-Variant menu. In the UI, "variant" now means exactly the USD thing; the
-publish-tree fork is a channel.
+`th::create_asset_lookdev` HDAs (their **Variants** multiparm is that USD
+thing), and selected per row by `th::import_assets`' Variant menu.
+"Variant" now means exactly the USD thing; the publish-tree fork is a
+channel, in the UI, the code and the data:
 
-The rename changed vocabulary only. `variant` is still what every writer
-**emits** — the `?variant=` URI query parameter and the `_shared` sentinel,
-the path segment and the `{entity}_{variant}_{dept}_{ver}.usd` filename, HDA
-parm *internal* names (only their labels changed), the farm's `variant_name`
-/ `variant_names` job keys, the `variants` entity property, and the asset
-browser's `metadata["variants"]`. Published staged files embed those URIs
-and the resolver parses them, so flipping a writer without the sequencing
-below would orphan shipped data. Read `<variant>` in a path as "the channel
-segment" — that slot holds the channel *value*, not the literal word, so
-there is nothing there to rename.
+| Where | Spelled | How older data gets there |
+|---|---|---|
+| config DB entity property | `channels` | migration v13 rewrites every project on upgrade |
+| config DB scene asset entry | `channel` | migration v13 |
+| browser column key / property path | `channels` | migration v13 (v5 had moved the label) |
+| HDA parm | `channel` / `channel#` | upgraded on scene load (below) |
+| farm job config | `channel_name` / `channel_names` | nothing to upgrade: a job pins the package version that submitted it |
+| `entity:` URI query, `context.json`, prim `customData` | `channel` | never rewritten — see *Published data* |
 
-Frozen is not the same as forever — the intent is still to eliminate
-`variant`. What makes that awkward is that the data sits on the shared
-project drive while every reader ships per-machine in the hpm package, so the
-two update on their own schedules and will always pass each other somewhere.
+The channel slot in paths (`export/<entity>/<channel>/…`,
+`{entity}_{channel}_{dept}_{ver}.usd`) always held the channel *value*, not
+the word, so paths did not change.
 
-So the readers accept **both** spellings rather than insisting on one, at
-every boundary the key crosses:
+### Published data keeps reading `variant`
 
-| Boundary | Reader |
-|---|---|
-| `entity:` URI query key | `src/resolver/src/uri.rs` |
-| config DB property | `channels.read_channel_names` |
-| stored record (`context.json`, scene assets) | `channels.read_channel` |
-| farm job JSON | `channels.read_channel_name` / `_name_list` |
-| browser metadata + submission settings | `submit_jobs_resolve.read_channel_list` |
+Every `export/**/context.json`, every `entity:/…?variant=…` URI inside a
+staged `.usda` and every prim's pipeline `customData` written before the
+rename spells the channel `variant`. Published versions are immutable —
+nothing rewrites them, not a migration, not a re-stage — and they stay
+loadable for as long as anything references them. So reading a channel out
+of published data accepts both spellings, in exactly one place per language:
 
-A project halfway through a migration reads correctly; so does an artist a
-release behind.
+- Python: `tumblepipe.config.channels.read_published_channel` — behind
+  every published-data reader (staged builds, the scene and sub-asset
+  closures, sublayer-ref parsing, `prim_metadata.get_metadata`, which hands
+  callers `channel` whichever key the prim carries);
+- Rust: `uri::channel_from_query` in the resolver.
 
-An **absent** key is not ambiguity — it is the ordinary encoding of "the
-default channel", and stays silent. Carrying **both** spellings is
-legitimate; carrying both with *different* values raises, because picking one
-would be a guess with a wrong render behind it. The resolver still refuses a
-query key it does not recognise at all, which is what catches `?varaint=`.
+Writers emit only `channel`. An absent key is the default channel; both keys
+with different values raise rather than guess. The resolver still refuses a
+query key it does not know at all, which is what catches a typo like
+`?chanel=`.
 
-That tolerance is what turns the changeover from one synchronised flag day
-into four independent steps:
+### Scenes saved with the old HDA parm
 
-1. **readers accept both** — where we are; nothing on disk changes;
-2. **writers emit `channel`** — only once every machine has step 1, or an
-   out-of-date reader drops the key and silently resolves `default`;
-3. **a migration rewrites old data**, whenever convenient — interruptible
-   and restartable, because mixed data reads fine either way;
-4. **drop `variant`**, much later.
-
-Step 2 carries the only real ordering constraint. Step 3 may never need doing
-at all: departments re-export constantly, so the new spelling spreads on its
-own, and old exports keep working for as long as step 4 is deferred.
-
-Two spellings that should NOT move: the HDA parm *internal* names are baked
-into every saved `.hip` and Houdini looks parms up by name, so tolerance
-cannot help there — renaming them would need dual parms and a scene-load
-migration, for no artist-visible gain since their labels already read
-"Channel". And the `<variant>` path segment holds the channel *value*, not
-the literal word, so there is nothing there to rename.
+Houdini stores parm values by name and drops a value whose parm no longer
+exists before any script runs ("Skipping unrecognized parameter"). So the
+eleven HDAs whose parm was renamed keep an invisible `variant` (or
+`variant#`) *carrier* parm, declare definition **Version** 2 and call
+`tumblepipe.pipe.houdini.node_version.sync` from their `SyncNodeVersion`
+event — Houdini's upgrade-handler mechanism, run when a node saved at an
+older version loads. It moves the carrier's value, expression or keyframes
+onto `channel` once and reverts the carrier; the next save records version 2
+and the node is never synced again. This works for scenes from any earlier
+release, and for th:: nodes inside a studio's own locked HDA too. The one
+thing not carried: an expression on *another* node that reads the old name
+(`chs("../import_layer1/variant")`) — repoint it at `channel`.
 
 ## Department exports and staged files
 
 Every publish writes a versioned layer under
-`export/<entity>/<variant>/<department>/v####/` together with a
+`export/<entity>/<channel>/<department>/v####/` together with a
 `context.json` sidecar. The sidecar's `parameters.assets` records every
 pipeline asset present on the exported stage (scraped from the
 `customData` metadata that import nodes author on asset root prims).
@@ -97,7 +89,7 @@ them however often they were removed (HideAndReek's Kangaroo in 020/040).
 Unlike the asset-side rule, this one only applies at export: existing layers
 that already adopted an asset keep it until re-exported.
 
-The *staged* file (`_staged/<variant>/v####/<Entity>_v####.usda`, one per
+The *staged* file (`_staged/<channel>/v####/<Entity>_v####.usda`, one per
 channel) is what
 imports actually load. For an asset it sublayers, strongest first:
 
@@ -271,8 +263,7 @@ after publish.
 
 The common way to author an escaping arc without noticing is the LOP
 **Layer Save Path**: Houdini 22 creates `sopcreate` and `sopimport`
-nodes with it *enabled* and pointing at `$HIP/usd/$OS.usd` (Houdini 21
-shipped it off). On export, a save-path'ed layer is written next to the
+nodes with it *enabled* and pointing at `$HIP/usd/$OS.usd`. On export, a save-path'ed layer is written next to the
 workfile instead of flattening into the published layer, which then
 composes empty everywhere else. The pipeline neutralizes the default at
 node-creation time (`scripts/lop/*_OnCreated.py`) and the scene
@@ -301,7 +292,7 @@ that, because the file *does* exist — it just holds someone else's asset.
 
 The payload sidecar is now anchored to `$HIP` and keyed on the asset prim
 path (`payload_prop_crate.usd`), so two assets can never collide, and
-`_localize_external_sidecars` copies it into the version folder at export
+`export_checks.localize_external_sidecars` copies it into the version folder at export
 so the published arc is a bare sibling filename that travels with the
 layer. `scripts/verify_asset_payload_sidecar.py` pins this, including the
 publish-A-then-B-then-re-read-A sequence that produced the empty asset.
@@ -351,9 +342,9 @@ the SOP `th::cache`. Leaving both on `from_context` targets the node's own
 workfile — the common case, byte-identical to the pre-Department behaviour —
 while pointing Department (or Entity) elsewhere lets a node **load a cache
 another workfile produced**. The export guard stays in agreement because
-`_versioned_cache_roots()` walks the actual `th::cache` nodes in the scene —
-both the LOP `lops.cache.list_cache_locations()` and the SOP
-`sops.cache.list_cache_locations()`, not the workfile's own location — so it
+`export_checks.versioned_cache_roots()` walks the actual `th::cache` nodes in the scene —
+LOP and SOP alike, through `cache.list_cache_locations()`, not the
+workfile's own location — so it
 sees wherever each node's parms point, and a `.bgeo.sc` sequence referenced
 from another shot's SOP cache publishes by reference instead of aborting the
 export.
@@ -366,10 +357,6 @@ which the resolver looks up in its search roots rather than next to the
 layer. An arc the resolver locates — such as Quick Surface Material's
 `houdini/usd/materials/...` library, resolved against `$HFS` — resolves
 on every machine with the same Houdini install and is allowed through.
-
-`scripts/fix_enabled_savepaths.py` (hython) sweeps a project's
-workfiles for nodes that already saved the enabled state — dry-run by
-default, `--apply` disables and resaves with a backup copy.
 
 ## Two ways to build multi-asset environments
 
@@ -457,8 +444,8 @@ The prototype those duplicates reference is re-established too. Only a
 side authors one — importing a set left a bare prototype where importing
 the same asset by hand gave the full XformCommonAPI op set. Each point
 authors the identity set on it
-(`pipe.houdini.util.author_identity_placement_ops`, mirrored as USDA text
-in `pipe.usd.IDENTITY_PLACEMENT_OPS_USDA` for the flatten), before the
+(`pipe.houdini.prim_queries.author_identity_placement_ops`, mirrored as USDA text
+in `pipe.usd.instances.IDENTITY_PLACEMENT_OPS_USDA` for the flatten), before the
 duplicates, so the op set reaches them through the reference arc while
 their own locally-authored placement values still win.
 
@@ -472,7 +459,7 @@ a clobbered prototype from a guarded one (both end up with five ops); only
 the values distinguish them.
 
 The placement op order comes from one shared rule
-(`pipe.usd.composed_placement_op_order`) at all three points that
+(`pipe.usd.instances.composed_placement_op_order`) at all three points that
 re-create instance prims and their prototype: the `import_asset`
 metadata script (GUI), the `import_shot` duplicates subnet (also the
 farm stage-task graph), and the batch-submit direct-render flatten,
@@ -543,9 +530,9 @@ Because a consumer only sees a tracked asset through its `customData`,
 an *imported* asset that lost that tag would silently vanish from the
 published layer and every downstream import. The export refuses to
 publish when it finds such a drop, via two complementary checks: a
-sibling scan (`util.list_dropped_asset_prims` — a metadata-less
+sibling scan (`prim_metadata.list_dropped_asset_prims` — a metadata-less
 `Scope`/`Xform` beside a real asset) and an upstream cross-check
-(`export_layer._list_expected_asset_uris` — an import node's declared
+(`export_checks.list_expected_asset_uris` — an import node's declared
 URI missing from the stage). Re-running the import node (its metadata
 step re-cooks) clears a genuine drop.
 
@@ -578,7 +565,7 @@ instead, through a Configure Stage node inside the import. USD mutes by
 exact layer identifier (no patterns), and an `entity:/` layer's identifier
 is its ref as written in the parent file, version pin included. So the node
 reads the staged `.usda` chain and mutes exactly those strings
-(`pipe.usd.nested_asset_department_refs`). Two consequences: the mute holds
+(`pipe.usd.sublayer_refs.nested_asset_department_refs`). Two consequences: the mute holds
 for the whole stage below the node, and a newly floated version is only
 covered after the next import.
 
@@ -740,7 +727,7 @@ subtractive on both paths, and each path has to apply it in two places or
 not at all:
 
 - direct render drops the excluded sublayer refs before flattening
-  (`pipe.usd.excluded_staged_refs`) — both the shot's own department
+  (`pipe.usd.collapse.excluded_staged_refs`) — both the shot's own department
   layers and the assets those departments introduced, whose provenance
   comes from the staged `context.json`. A dropped asset also gets no
   multi-instance copies: departments that stay can still hold empty
@@ -766,8 +753,8 @@ submission.
 ### Direct render (default): the static flatten
 
 `batch_submit` collapses the shot's latest staged build into a single
-`collapsed_stage_<variant>.usda` at submission time
-(`pipe.usd.collapse_latest_references`), and husk renders that. It walks
+`collapsed_stage_<channel>.usda` at submission time
+(`pipe.usd.collapse.collapse_latest_references`), and husk renders that. It walks
 the staged file's sublayers recursively — minus the ones past the
 department cut above — resolves every `entity:` URI to
 an absolute filesystem path, and emits them as one flat sublayer stack —
@@ -812,7 +799,7 @@ Three things to know about it:
 
 This path does not compose the staged file directly. The stage task
 builds a dedicated LOP graph per channel and exports it
-to a `stage_<variant>.usd` (the filename keeps the wire token) that husk
+to a `stage_<channel>.usd` that husk
 then renders. The graph — built by
 `tumblepipe.pipe.houdini.render_stage.build_render_stage_graph`, and
 identically by the `th::render_debug` HDA for in-session inspection —
@@ -850,7 +837,7 @@ stage task specifically — a default (direct-render) submission renders
 the flattened stage above instead — and it has no department parm, so it
 always previews the **full** department stack, not a cut one. To see what
 husk actually got for a given submission, inspect that job's
-`collapsed_stage_<variant>.usda` (direct) or `stage_<variant>.usd`
+`collapsed_stage_<channel>.usda` (direct) or `stage_<channel>.usd`
 (standalone) in its `data/` directory.
 
 ### Where the render settings live
@@ -877,7 +864,7 @@ prim that does not exist and the stage task's lookup found nothing — every
 value the artist set in the dialog was discarded, and the render came back at
 project defaults, which is indistinguishable from a correct render.
 
-So neither path assumes: `pipe.usd.find_render_settings_prim_path(stage)`
+So neither path assumes: `pipe.usd.render_settings.find_render_settings_prim_path(stage)`
 collects every `UsdRender.Settings` prim on the composed stage, uses it when
 there is exactly one, and **raises on zero or many**. That is the question
 husk itself answers. The two call sites — the flatten's override section and

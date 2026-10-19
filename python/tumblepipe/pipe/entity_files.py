@@ -39,13 +39,9 @@ class ArchiveError(RuntimeError):
     """The entity's folders could not all be moved; none were."""
 
 
-def _root(storage: str) -> Path | None:
-    try:
-        root = api.storage.resolve(Uri.parse_unsafe(storage))
-    except Exception:
-        logger.warning('Could not resolve %s', storage, exc_info=True)
-        return None
-    return None if root is None else Path(root)
+def _root(storage: str) -> Path:
+    """The storage root ``storage`` resolves to."""
+    return api.storage.resolve(Uri.parse(storage))
 
 
 def entity_folders(entity_uri: Uri) -> list[tuple[Path, Path]]:
@@ -60,8 +56,6 @@ def entity_folders(entity_uri: Uri) -> list[tuple[Path, Path]]:
     seen = set()
     for storage, prefix in ENTITY_STORAGE:
         root = _root(storage)
-        if root is None:
-            continue
         folder = root.joinpath(*prefix, *entity_uri.segments)
         key = str(folder).lower()
         if key in seen or not folder.is_dir():
@@ -101,11 +95,7 @@ def archive_entity_folders(
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(folder), str(target))
         except OSError as exc:
-            for source, dest in reversed(moved):
-                try:
-                    shutil.move(str(dest), str(source))
-                except OSError:
-                    logger.exception('Could not move %s back to %s', dest, source)
+            restore_entity_folders(moved)
             raise ArchiveError(
                 f'Could not move {folder} to the {ARCHIVE_DIR} folder: {exc}. '
                 'Close any scene or viewer using its files and try again.'
@@ -114,3 +104,59 @@ def archive_entity_folders(
     for source, dest in moved:
         logger.info('Archived %s to %s', source, dest)
     return moved
+
+
+def restore_entity_folders(moved: list[tuple[Path, Path]]) -> None:
+    """Undo :func:`archive_entity_folders`: move each ``(from, to)`` back.
+
+    Best effort by necessity — it runs while another failure is already on
+    its way to the caller — so a folder that will not move back is logged
+    with both paths, for a person to put back, rather than raised over the
+    failure that made the rollback necessary.
+    """
+    for source, dest in reversed(moved):
+        try:
+            shutil.move(str(dest), str(source))
+        except OSError:
+            logger.exception('Could not move %s back to %s', dest, source)
+
+
+def delete_entity(entity_uri: Uri) -> None:
+    """Remove ``entity_uri`` from the config, archiving its folders first.
+
+    Left in place, the folders would be picked up by a new entity of the same
+    name. All or nothing: the folders move first (:class:`ArchiveError` when
+    one cannot, with none moved), and if the config removal then fails they
+    are moved back before the error propagates. Works on the active project.
+    """
+    moved = archive_entity_folders(entity_uri)
+    try:
+        api.config.remove_entity(entity_uri)
+    except BaseException:
+        restore_entity_folders(moved)
+        raise
+
+
+class EntityHasFiles(ValueError):
+    """A rename refused because the entity's files would stay under the old name."""
+
+
+def rename_entity(entity_uri: Uri, new_name: str) -> Uri:
+    """Rename ``entity_uri`` to ``new_name`` in the config; the new URI.
+
+    Workfiles, exports and renders sit in folders named after the entity,
+    and published layers name it inside, so renaming one that has files
+    would leave all of that under the old name and the renamed entity empty:
+    refused with :class:`EntityHasFiles`. Duplicate it under the new name
+    instead. Works on the active project.
+    """
+    if has_entity_files(entity_uri):
+        raise EntityHasFiles(
+            f"'{entity_uri.segments[-1]}' has workfiles or exports on disk, so "
+            "it can't be renamed: they would stay under the old name and the "
+            "renamed entity would come up empty. Use Duplicate… on its card "
+            "in the Asset Browser to make a copy under the new name, then "
+            "delete the old one."
+        )
+    api.config.rename_entity(entity_uri, new_name)
+    return Uri(entity_uri.purpose, [*entity_uri.segments[:-1], new_name])

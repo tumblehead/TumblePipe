@@ -13,6 +13,10 @@
 //! TT_PARITY_EXPECTED  the same file after the Python migrator relabelled it
 //! ```
 //!
+//! The run goes on through v13, which moves the column's `key` and
+//! `property_path` from `variants` to `channels`; [`with_v13`] applies that
+//! one edit to the expected text, so the comparison stays byte for byte.
+//!
 //! Unset, the test still runs its own round-trip on a synthetic document, so
 //! the formatting contract is pinned in ordinary CI.
 
@@ -40,13 +44,11 @@ fn scaffold() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("_config").join("templates")).unwrap();
     std::fs::create_dir_all(dir.path().join("_config").join("ocio")).unwrap();
-    // Every step has to be Ready for the run to reach the relabel, and v6
-    // blocks when the packaged storage convention is missing.
+    // Every step has to be Ready for the run to complete, and v11 blocks
+    // when the packaged storage table is missing.
     std::fs::write(
-        dir.path().join("_config").join("storage_convention.py"),
-        "class StorageConvention:
-    pass
-",
+        dir.path().join("_config").join("storage.json"),
+        include_str!("../../../../scripts/project_template/_config/storage.json"),
     )
     .unwrap();
     dir
@@ -62,6 +64,13 @@ fn run_relabel(config_json: &str) -> String {
         "the relabel step did not run"
     );
     std::fs::read_to_string(project.path().join("_config").join("db").join("config.json")).unwrap()
+}
+
+/// `text` as v13 leaves it: the column naming the channel property points at
+/// `channels`, in place, and nothing else moves.
+fn with_v13(text: &str) -> String {
+    text.replace("\"key\": \"variants\"", "\"key\": \"channels\"")
+        .replace("\"property_path\": \"variants\"", "\"property_path\": \"channels\"")
 }
 
 /// Formatting contract: 4-space indent, key order preserved, numbers verbatim,
@@ -83,14 +92,17 @@ fn relabelled_output_keeps_pythons_formatting() {
         "    ]\n",
         "}\n",
     );
-    let expected = input
-        .replace("\"label\": \"Variants\"", "\"label\": \"Channels\"")
-        .replace("\"Variants to render\"", "\"Channels to render\"");
+    let expected = with_v13(
+        &input
+            .replace("\"label\": \"Variants\"", "\"label\": \"Channels\"")
+            .replace("\"Variants to render\"", "\"Channels to render\""),
+    );
 
     let actual = run_relabel(input);
     assert_eq!(
         actual, expected,
-        "relabel must touch only the label and tooltip, byte for byte"
+        "v5 must touch only the label and tooltip and v13 only the key and \
+         property path, byte for byte"
     );
 }
 
@@ -107,7 +119,7 @@ fn matches_the_python_migrator_on_a_real_project() {
     };
 
     let input = std::fs::read_to_string(PathBuf::from(&input_path)).unwrap();
-    let expected = std::fs::read_to_string(Path::new(&expected_path)).unwrap();
+    let expected = with_v13(&std::fs::read_to_string(Path::new(&expected_path)).unwrap());
 
     let actual = run_relabel(&input);
     // Dump for an external diff when the assertion below is the thing failing.

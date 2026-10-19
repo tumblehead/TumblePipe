@@ -4,11 +4,11 @@
 //!
 //! Two things make these worth more than they look:
 //!
-//! - The release profile sets `panic = "abort"`, so `ffi_guard`'s
-//!   `catch_unwind` cannot catch anything in the plugin Houdini actually
-//!   loads. A panic anywhere under `th_resolver_resolve` takes the whole DCC
-//!   down with it. "Never panics, on any input" is therefore a contract, not
-//!   a nicety, and it is pinned here for the parser and for `resolve_uri`.
+//! - `ffi_guard` turns a panic into an error code instead of a Houdini
+//!   crash, but that only means the user sees a `TF_WARN` and an
+//!   unresolved layer rather than a dead session. "Never panics, on any
+//!   input" is still the contract, and it is pinned here for the parser and
+//!   for `resolve_uri`.
 //! - Every published layer is found again only through this crate, so the
 //!   parser has to read back exactly what the writers put in the query, in
 //!   any key order and in either channel spelling.
@@ -21,7 +21,7 @@ use std::sync::Mutex;
 use proptest::prelude::*;
 
 use th_resolver_core::env::{EXPORT_PATH_VAR, LATEST_MODE_VAR};
-use th_resolver_core::uri::DEFAULT_VARIANT;
+use th_resolver_core::uri::{CHANNEL_KEY, DEFAULT_CHANNEL, LEGACY_CHANNEL_KEY};
 use th_resolver_core::version::find_latest;
 use th_resolver_core::{resolve_uri, EntityUri};
 
@@ -81,15 +81,15 @@ fn build_uri(segments: &[String], query: &[(String, String)], slash: bool) -> St
 /// The query a writer would emit, as (key, value) pairs in writer order.
 fn query_pairs(
     dept: &Option<String>,
-    variant: &Option<String>,
+    channel: &Option<String>,
     version: &Option<String>,
 ) -> Vec<(String, String)> {
     let mut query = Vec::new();
     if let Some(d) = dept {
         query.push(("dept".to_owned(), d.clone()));
     }
-    if let Some(v) = variant {
-        query.push(("variant".to_owned(), v.clone()));
+    if let Some(c) = channel {
+        query.push((CHANNEL_KEY.to_owned(), c.clone()));
     }
     if let Some(v) = version {
         query.push(("version".to_owned(), v.clone()));
@@ -157,7 +157,7 @@ proptest! {
         // to seed is not what this property is about.
         let mut dir = td.path().join(segments.join("/"));
         dir.push("_staged");
-        dir.push(DEFAULT_VARIANT);
+        dir.push(DEFAULT_CHANNEL);
         if fs::create_dir_all(&dir).is_ok() {
             for n in &seed_versions {
                 let _ = fs::create_dir(dir.join(format!("v{n:04}")));
@@ -175,15 +175,15 @@ proptest! {
     fn parse_reads_back_written_fields(
         segments in entity_segments(),
         dept in prop::option::of(token()),
-        variant in prop::option::of(token()),
+        channel in prop::option::of(token()),
         version in prop::option::of(version_name()),
         slash in any::<bool>(),
     ) {
-        let query = query_pairs(&dept, &variant, &version);
+        let query = query_pairs(&dept, &channel, &version);
         let parsed = EntityUri::parse(&build_uri(&segments, &query, slash)).unwrap();
         prop_assert_eq!(parsed.segments, segments);
         prop_assert_eq!(parsed.department, dept);
-        prop_assert_eq!(parsed.variant, variant.unwrap_or_else(|| DEFAULT_VARIANT.to_owned()));
+        prop_assert_eq!(parsed.channel, channel.unwrap_or_else(|| DEFAULT_CHANNEL.to_owned()));
         prop_assert_eq!(parsed.version, version);
     }
 
@@ -193,21 +193,22 @@ proptest! {
     fn parse_ignores_query_order(
         segments in entity_segments(),
         dept in token(),
-        variant in token(),
+        channel in token(),
         version in version_name(),
         order in Just(vec![0usize, 1, 2]).prop_shuffle(),
     ) {
-        let query = query_pairs(&Some(dept), &Some(variant), &Some(version));
+        let query = query_pairs(&Some(dept), &Some(channel), &Some(version));
         let shuffled: Vec<_> = order.iter().map(|&i| query[i].clone()).collect();
         let a = EntityUri::parse(&build_uri(&segments, &query, true)).unwrap();
         let b = EntityUri::parse(&build_uri(&segments, &shuffled, true)).unwrap();
         prop_assert_eq!(a, b);
     }
 
-    /// `channel` is the other spelling of `variant`: same value, same parse,
-    /// alone or alongside an agreeing `variant`.
+    /// A URI published before the rename (`?variant=`) parses exactly like
+    /// the `?channel=` URI a writer emits today: same value, same parse,
+    /// alone or alongside an agreeing `channel`.
     #[test]
-    fn channel_spelling_parses_like_variant(
+    fn published_variant_key_parses_like_channel(
         segments in entity_segments(),
         value in token(),
         dept in prop::option::of(token()),
@@ -221,12 +222,38 @@ proptest! {
             q.push((key.to_owned(), value.clone()));
             EntityUri::parse(&build_uri(&segments, &q, true)).unwrap()
         };
-        let as_variant = with("variant");
-        prop_assert_eq!(&with("channel"), &as_variant);
+        let as_channel = with(CHANNEL_KEY);
+        prop_assert_eq!(&as_channel.channel, &value);
+        prop_assert_eq!(&with(LEGACY_CHANNEL_KEY), &as_channel);
         let mut both = base.clone();
-        both.push(("variant".to_owned(), value.clone()));
-        both.push(("channel".to_owned(), value.clone()));
-        prop_assert_eq!(EntityUri::parse(&build_uri(&segments, &both, true)).unwrap(), as_variant);
+        both.push((LEGACY_CHANNEL_KEY.to_owned(), value.clone()));
+        both.push((CHANNEL_KEY.to_owned(), value.clone()));
+        prop_assert_eq!(EntityUri::parse(&build_uri(&segments, &both, true)).unwrap(), as_channel);
+    }
+
+    /// ...and resolves to the same file, for a department layer and a
+    /// staged file alike.
+    #[test]
+    fn published_variant_key_resolves_like_channel(
+        segments in entity_segments(),
+        value in token(),
+        dept in prop::option::of(token()),
+        version in version_name(),
+    ) {
+        prop_assume!(dept.as_deref() != Some("root"));
+        let td = tempfile::tempdir().unwrap();
+        let mut query = Vec::new();
+        if let Some(d) = &dept {
+            query.push(("dept".to_owned(), d.clone()));
+        }
+        query.push(("version".to_owned(), version));
+        let with = |key: &str| {
+            let mut q = query.clone();
+            q.push((key.to_owned(), value.clone()));
+            with_env(td.path(), false, || resolve_uri(&build_uri(&segments, &q, true)))
+        };
+        let current = with(CHANNEL_KEY).unwrap();
+        prop_assert_eq!(with(LEGACY_CHANNEL_KEY).unwrap(), current);
     }
 
     /// Two spellings naming different channels is unresolvable, in either
@@ -236,11 +263,11 @@ proptest! {
         segments in entity_segments(),
         a in token(),
         b in token(),
-        variant_first in any::<bool>(),
+        legacy_first in any::<bool>(),
     ) {
         prop_assume!(a != b);
-        let mut query = vec![("variant".to_owned(), a), ("channel".to_owned(), b)];
-        if !variant_first {
+        let mut query = vec![(LEGACY_CHANNEL_KEY.to_owned(), a), (CHANNEL_KEY.to_owned(), b)];
+        if !legacy_first {
             query.reverse();
         }
         prop_assert!(EntityUri::parse(&build_uri(&segments, &query, true)).is_err());
@@ -306,19 +333,19 @@ proptest! {
     #[test]
     fn department_resolves_to_its_own_layer(
         segments in entity_segments(),
-        variant in token(),
+        channel in token(),
         dept in token(),
         version in version_name(),
     ) {
         prop_assume!(dept != "root");
         let td = tempfile::tempdir().unwrap();
-        let query = query_pairs(&Some(dept.clone()), &Some(variant.clone()), &Some(version.clone()));
+        let query = query_pairs(&Some(dept.clone()), &Some(channel.clone()), &Some(version.clone()));
         let resolved = with_env(td.path(), false, || {
             resolve_uri(&build_uri(&segments, &query, true))
         }).unwrap();
         let entity = segments.join("_");
         let expected_tail = format!(
-            "{}/{variant}/{dept}/{version}/{entity}_{variant}_{dept}_{version}.usd",
+            "{}/{channel}/{dept}/{version}/{entity}_{channel}_{dept}_{version}.usd",
             segments.join("/"),
         );
         let base = td.path().to_string_lossy().replace('\\', "/");
@@ -343,12 +370,12 @@ proptest! {
         match dept.as_deref() {
             Some("root") => dir.push("_root"),
             Some(d) => {
-                dir.push(DEFAULT_VARIANT);
+                dir.push(DEFAULT_CHANNEL);
                 dir.push(d);
             }
             None => {
                 dir.push("_staged");
-                dir.push(DEFAULT_VARIANT);
+                dir.push(DEFAULT_CHANNEL);
             }
         }
         touch_versions(&dir, &versions, &[4]);

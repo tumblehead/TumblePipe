@@ -4,6 +4,7 @@ from pathlib import Path
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 
+from tumblepipe.pipe.paths.naming import entity_stem
 from tumblepipe.pipe.paths.version import (
     list_version_paths,
     get_latest_version_path,
@@ -13,13 +14,17 @@ from tumblepipe.pipe.paths.version import (
 ###############################################################################
 # Staged Paths
 ###############################################################################
+def _staged_file_name(entity_uri: Uri, version_name: str) -> str:
+    """``<entity>_<version>.usda`` -- the resolver's staged-file rule."""
+    return f'{entity_stem(entity_uri, version_name)}.usda'
+
 def get_staged_path(
     entity_uri: Uri,
     version_name: str,
     channel_name: str = 'default'
     ) -> Path:
     staged_uri = (
-        Uri.parse_unsafe('export:/') /
+        Uri.parse('export:/') /
         entity_uri.segments /
         '_staged' /
         channel_name /
@@ -37,13 +42,7 @@ def get_staged_file_path(
         version_name,
         channel_name
     )
-    usd_file_name = '.'.join([
-        '_'.join(entity_uri.segments[1:] + [
-            version_name
-        ]),
-        'usda'
-    ])
-    return version_path / usd_file_name
+    return version_path / _staged_file_name(entity_uri, version_name)
 
 def current_staged_path(
     entity_uri: Uri,
@@ -51,7 +50,7 @@ def current_staged_path(
     ) -> Optional[Path]:
     """Get path to the highest numbered staged version directory."""
     staged_uri = (
-        Uri.parse_unsafe('export:/') /
+        Uri.parse('export:/') /
         entity_uri.segments /
         '_staged' /
         channel_name
@@ -67,27 +66,21 @@ def current_staged_file_path(
     channel_name: str = 'default'
     ) -> Optional[Path]:
     """Get path to the highest numbered staged .usda file."""
-    usd_file_name_pattern = '.'.join([
-        '_'.join(entity_uri.segments[1:] + [
-            '*'
-        ]),
-        'usda'
-    ])
     current_version_path = current_staged_path(
         entity_uri,
         channel_name
     )
     if current_version_path is None: return None
-    version_name = current_version_path.name
-    usd_file_name = usd_file_name_pattern.replace('*', version_name)
-    return current_version_path / usd_file_name
+    return current_version_path / _staged_file_name(
+        entity_uri, current_version_path.name
+    )
 
 def next_staged_path(
     entity_uri: Uri,
     channel_name: str = 'default'
     ) -> Path:
     staged_uri = (
-        Uri.parse_unsafe('export:/') /
+        Uri.parse('export:/') /
         entity_uri.segments /
         '_staged' /
         channel_name
@@ -99,19 +92,11 @@ def next_staged_file_path(
     entity_uri: Uri,
     channel_name: str = 'default'
     ) -> Path:
-    usd_file_name_pattern = '.'.join([
-        '_'.join(entity_uri.segments[1:] + [
-            '*'
-        ]),
-        'usda'
-    ])
     version_path = next_staged_path(
         entity_uri,
         channel_name
     )
-    version_name = version_path.name
-    usd_file_name = usd_file_name_pattern.replace('*', version_name)
-    return version_path / usd_file_name
+    return version_path / _staged_file_name(entity_uri, version_path.name)
 
 def get_staged_base_path(
     entity_uri: Uri,
@@ -119,7 +104,7 @@ def get_staged_base_path(
 ) -> Path:
     """Get base staged path for an entity (without version)."""
     staged_uri = (
-        Uri.parse_unsafe('export:/') /
+        Uri.parse('export:/') /
         entity_uri.segments /
         '_staged' /
         channel_name
@@ -142,12 +127,7 @@ def get_latest_staged_file_path(
     version_path = get_latest_staged_path(entity_uri, channel_name)
     if version_path is None:
         return None
-    version_name = version_path.name
-    usd_file_name = '.'.join([
-        '_'.join(entity_uri.segments[1:] + [version_name]),
-        'usda'
-    ])
-    return version_path / usd_file_name
+    return version_path / _staged_file_name(entity_uri, version_path.name)
 
 ###############################################################################
 # Scene Staged Paths
@@ -155,7 +135,7 @@ def get_latest_staged_file_path(
 def get_scene_staged_path(scene_uri: Uri) -> Path:
     """Get base staged path for a scene."""
     staged_uri = (
-        Uri.parse_unsafe('export:/') /
+        Uri.parse('export:/') /
         'scenes' /
         scene_uri.segments /
         '_staged'
@@ -181,7 +161,3 @@ def get_scene_layer_file_name(scene_uri: Uri, version_name: str) -> str:
     """Get filename for scene layer (e.g., 'forest_v0001.usda')."""
     scene_name = scene_uri.segments[-1]
     return f'{scene_name}_{version_name}.usda'
-
-def get_rig_export_path(asset_uri: Uri, channel_name: str = 'default') -> Path:
-    export_uri = Uri.parse_unsafe('export:/') / asset_uri.segments / channel_name / 'rig'
-    return api.storage.resolve(export_uri)

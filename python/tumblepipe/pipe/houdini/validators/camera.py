@@ -1,7 +1,7 @@
 """Camera validation for USD render stages."""
 
-from tumblepipe.pipe.houdini import util
-from tumblepipe.pipe.usd import (
+from tumblepipe.pipe.houdini import prim_queries
+from tumblepipe.pipe.usd.render_settings import (
     RenderSettingsError,
     find_render_settings_prim_path,
 )
@@ -25,7 +25,7 @@ def validate_cameras(root) -> ValidationResult:
         return result
 
     # Find all cameras in the stage
-    camera_paths = util.list_cameras(root)
+    camera_paths = prim_queries.list_cameras(root)
 
     if not camera_paths:
         result.add_error(

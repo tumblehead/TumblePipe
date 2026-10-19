@@ -1,6 +1,6 @@
 """Shared LOP graph builder for the render stage.
 
-The farm's stage tasks (farm/tasks/stage, farm/tasks/cloud_stage) and the
+The farm's stage worker (farm/workers/stage.py) and the
 th::render_debug HDA all need the same composition: the shot's staged build
 for one channel, the current department exports layered on top, root default
 prims, render-settings overrides and AOV pruning. These used to be drifting
@@ -21,7 +21,7 @@ Composition semantics (deliberate, see the render/farm divergence notes):
   thing and still honoured: the point is that composition follows what the
   submitter *asked for*, never what workfile happens to be open.
 - The channel is set explicitly; without it every channel used to compose
-  on top of the *default* variant's staged stack.
+  on top of the *default* channel's staged stack.
 - One import_layer per renderable shot department re-applies the current
   exports (resolved to pinned filesystem paths at build time) on top of the
   staged stack, so a render picks up department publishes made since the
@@ -38,7 +38,6 @@ from pathlib import Path
 from tumblepipe.api import (
     api,
     path_str,
-    local_path
 )
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
@@ -48,7 +47,8 @@ from tumblepipe.config.department import (
 )
 from tumblepipe.config.channels import DEFAULT_CHANNEL
 from tumblepipe.pipe.paths import latest_export_path
-from tumblepipe.pipe.houdini import util
+from tumblepipe.pipe.houdini import prim_queries
+import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.lops import (
     import_shot,
     import_layer
@@ -57,9 +57,6 @@ from tumblepipe.pipe.houdini.lops import (
 ROOT_DEFAULTS_URI = 'config:/usd/root_default_prims.usda'
 
 
-def _connect(node1, node2):
-    port = len(node2.inputs())
-    node2.setInput(port, node1)
 
 
 def get_render_settings_script(render_settings_path: Path) -> str:
@@ -72,7 +69,7 @@ def get_render_settings_script(render_settings_path: Path) -> str:
     ``renderSettingsPrimPath = "/scene/Render/rendersettings"``: there the
     prim lookup failed, the function returned, and every override the artist
     set in the submit dialog was dropped without a word. The same constant is
-    fixed in ``usd.py``'s collapse path; the two farm modes have to agree or
+    fixed in ``pipe.usd.collapse``; the two farm modes have to agree or
     they diverge again.
 
     Not finding the settings is now a raise, which errors the LOP and fails
@@ -82,15 +79,10 @@ def get_render_settings_script(render_settings_path: Path) -> str:
     _render_settings_path = path_str(render_settings_path)
     return (
         'from pathlib import Path\n'
-        'import json\n'
         'import hou\n'
         '\n'
-        'from tumblepipe.pipe.usd import find_render_settings_prim_path\n'
-        '\n'
-        'def _load_json(path):\n'
-        '    if not path.exists(): return None\n'
-        '    with path.open("r") as file:\n'
-        '        return json.load(file)\n'
+        'from tumblepipe.pipe.usd.render_settings import find_render_settings_prim_path\n'
+        'from tumblepipe.util.io import load_json\n'
         '\n'
         'def _edit_render_settings():\n'
         '    \n'
@@ -100,8 +92,7 @@ def get_render_settings_script(render_settings_path: Path) -> str:
         '    \n'
         '    # Load render settings\n'
         f'    render_settings_path = Path("{_render_settings_path}")\n'
-        '    render_settings_data = _load_json(render_settings_path)\n'
-        '    if render_settings_data is None: return\n'
+        '    render_settings_data = load_json(render_settings_path)\n'
         '    overrides = render_settings_data.get("overrides") or {}\n'
         '    if not overrides: return\n'
         '    \n'
@@ -122,8 +113,8 @@ def get_render_settings_script(render_settings_path: Path) -> str:
 
 
 def _get_aov_names(render_settings_path: Path) -> set | None:
+    """The AOVs the submission keeps, None when it names none (keep all)."""
     render_settings_data = load_json(render_settings_path)
-    if render_settings_data is None: return None
     if 'aov_names' not in render_settings_data: return None
     return set(render_settings_data['aov_names'])
 
@@ -166,8 +157,8 @@ def build_render_stage_graph(
     shot_node = import_shot.create(
         scene_node, f'{name_prefix}import_shot'
     )
-    shot_node.set_shot_uri(shot_uri)
-    shot_node.set_department_name('none')
+    shot_node.set_entity_uri(shot_uri)
+    shot_node.set_department_name(import_shot.NO_DEPARTMENT)
     shot_node.set_exclude_downstream_of(render_department_name)
     shot_node.set_channel_name(channel_name)
     shot_node.set_version_name('current')
@@ -175,27 +166,27 @@ def build_render_stage_graph(
     prev_node = shot_node.native()
 
     # Sublayer root defaults to get render settings and RenderVar prims
-    root_defaults_path = local_path(api.storage.resolve(
-        Uri.parse_unsafe(ROOT_DEFAULTS_URI)
-    ))
+    root_defaults_path = api.storage.resolve(
+        Uri.parse(ROOT_DEFAULTS_URI)
+    )
     if root_defaults_path.exists():
         sublayer_node = scene_node.createNode(
             'sublayer', f'{name_prefix}root_defaults'
         )
         sublayer_node.parm('filepath1').set(path_str(root_defaults_path))
-        _connect(prev_node, sublayer_node)
+        ns.connect_next(prev_node, sublayer_node)
         prev_node = sublayer_node
 
     # Re-apply the current department exports for this channel on top of
     # the staged stack.
     channel_subnet = scene_node.createNode(
-        'subnet', f'{name_prefix}variant_{channel_name}'
+        'subnet', f'{name_prefix}channel_{channel_name}'
     )
     channel_subnet.node('output0').destroy()
     channel_subnet_input = channel_subnet.indirectInputs()[0]
     channel_subnet_output = channel_subnet.createNode('output', 'output')
 
-    _connect(prev_node, channel_subnet)
+    ns.connect_next(prev_node, channel_subnet)
     subnet_prev_node = channel_subnet_input
 
     for included_department_name in included_department_names:
@@ -217,10 +208,10 @@ def build_render_stage_graph(
         layer_node.set_channel_name(layer_channel_name)
         layer_node.set_version_name('current')
         layer_node.execute()
-        _connect(subnet_prev_node, layer_node.native())
+        ns.connect_next(subnet_prev_node, layer_node.native())
         subnet_prev_node = layer_node.native()
 
-    _connect(subnet_prev_node, channel_subnet_output)
+    ns.connect_next(subnet_prev_node, channel_subnet_output)
     channel_subnet.layoutChildren()
     prev_node = channel_subnet
 
@@ -234,7 +225,7 @@ def build_render_stage_graph(
         edit_render_settings_node.parm('python').set(
             get_render_settings_script(render_settings_path)
         )
-        _connect(prev_node, edit_render_settings_node)
+        ns.connect_next(prev_node, edit_render_settings_node)
         prev_node = edit_render_settings_node
 
         # Prune the AOVs not in the render settings - use the composed
@@ -245,7 +236,7 @@ def build_render_stage_graph(
             root = prev_node.stage().GetPseudoRoot()
             aov_paths = {
                 aov_path.rsplit('/', 1)[1]: aov_path
-                for aov_path in util.list_render_vars(root)
+                for aov_path in prim_queries.list_render_vars(root)
             }
             excluded_aov_names = set(aov_paths.keys()) - included_aov_names
             prune_aovs_node = scene_node.createNode(
@@ -257,7 +248,7 @@ def build_render_stage_graph(
                     for aov_name in excluded_aov_names
                 ])
             )
-            _connect(prev_node, prune_aovs_node)
+            ns.connect_next(prev_node, prune_aovs_node)
             prev_node = prune_aovs_node
 
     return prev_node

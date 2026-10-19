@@ -22,7 +22,7 @@ the hub; the other modules in that folder are named where they matter.
 
 The `TumblePipe` desktop (`desktop/TumblePipe.desk`) carries the Asset
 Browser as a Python Panel pane tab, and
-[`python3.11libs/uiready.py`](../../python3.11libs/uiready.py) switches
+[`python3.13libs/uiready.py`](../../python3.13libs/uiready.py) switches
 Houdini to that desktop once the UI is ready. If you use another desktop,
 open it the TumbleTrove way: the **TumbleTrove** menu in Houdini's menu bar,
 or a pane tab's type menu → **Python Panel** → **Asset Browser**.
@@ -232,8 +232,6 @@ version exists.
 | **User** | who saved the newest version | who saved that version |
 | **Edited** | when, as `2h ago` | when |
 
-The **Note** column only appears on TumbleTrove 0.24 or newer.
-
 Sort options: **Name A-Z**, **Name Z-A**, **Latest Update**, **Oldest
 Update**.
 
@@ -333,7 +331,7 @@ Multis subheader offers **New Multi...** alone, the Roots header **New
 Root...** alone, the Recipes section **New Recipe...** alone, and anywhere
 unscoped offers **New Asset...**, **New Shot...**, **New Recipe...**, **New
 Multi...** and **New Root...**. Dragging selected nodes from a network editor
-onto the grid also opens **New Recipe** (TumbleTrove 0.35 or later). A
+onto the grid also opens **New Recipe**. A
 **Project** dropdown is added to every form when more than one project is
 registered.
 
@@ -365,9 +363,8 @@ shows **Project**, **Sequence** and **Name** read-only and lets you change
 **Frame Start** and **Frame End**; only values you actually changed are
 written, as the shot's own override, so an untouched field keeps following
 the sequence. For an asset every field is read-only. Edit refuses an entity
-that is not in the project configuration and writes nothing; the status bar
-reads *Edit failed for 'name' — see Python Shell*, and the shell shows
-`EntityNotRegistered`. Up to TumblePipe 1.47.1 such an edit silently added
+that is not in the project configuration and writes nothing; an error
+dialog reads *Editing 'name' failed* and names `EntityNotRegistered`. Up to TumblePipe 1.47.1 such an edit silently added
 the entity.
 
 **Delete** removes the entity from the project configuration after a

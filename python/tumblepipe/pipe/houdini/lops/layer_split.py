@@ -1,7 +1,5 @@
 from tempfile import TemporaryDirectory
 from pathlib import Path
-import subprocess
-import platform
 import shutil
 import logging
 
@@ -9,37 +7,23 @@ import hou
 
 logger = logging.getLogger(__name__)
 
-from tumblepipe.api import path_str, local_path, api
+from tumblepipe.api import path_str, api
 from tumblepipe.util.progress import report_progress
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.timeline import get_frame_range as config_get_frame_range, get_fps, FrameRange
+from tumblepipe.config.timeline import get_fps
 from tumblepipe.pipe.houdini import nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
 from tumblepipe.pipe.paths import (
-    get_workfile_context,
-    next_shared_export_path,
-    latest_shared_export_path,
-    get_shared_layer_file_name
+    SHARED_CHANNEL,
+    get_shared_layer_file_name,
+    latest_export_path,
+    next_export_path,
 )
 from tumblepipe.pipe.context import save_export_context
 
 
-class LayerSplit(EntityNode):
-    def __init__(self, native):
-        super().__init__(native)
-
-    def list_entity_uris(self) -> list[str]:
-        uris = (
-            api.config.list_entity_uris(
-                filter=Uri.parse_unsafe('entity:/shots'),
-                closure=True
-            ) +
-            api.config.list_entity_uris(
-                filter=Uri.parse_unsafe('entity:/assets'),
-                closure=True
-            )
-        )
-        return ['from_context'] + [str(uri) for uri in uris]
+class LayerSplit(FrameRangeNode, EntityNode):
 
     def list_department_names(self) -> list[str]:
         entity_type = self.get_entity_type()
@@ -51,65 +35,12 @@ class LayerSplit(EntityNode):
         )
         return ['from_context'] + [dept.name for dept in departments]
 
-    def get_department_name(self) -> str | None:
-        department_name = self.parm('department').eval()
-        if department_name == 'from_context':
-            file_path = Path(hou.hipFile.path())
-            context = get_workfile_context(file_path)
-            if context is None:
-                return None
-            return context.department_name
-        # From settings
-        department_names = self.list_department_names()
-        if len(department_names) <= 1:  # Only 'from_context' means no real names
-            return None
-        if len(department_name) == 0:
-            return department_names[1]  # Skip 'from_context'
-        if department_name not in department_names:
-            return None
-        return department_name
-
-    def get_frame_range_source(self) -> str:
-        return self.parm('frame_range').eval()
-
-    def get_frame_range(self) -> tuple[FrameRange, int] | None:
-        frame_range_source = self.get_frame_range_source()
-        match frame_range_source:
-            case 'from_context':
-                entity_uri = self.get_entity_uri()
-                if entity_uri is None:
-                    return None
-                frame_range = config_get_frame_range(entity_uri)
-                if frame_range is None:
-                    return None
-                return frame_range, 1
-            case 'from_settings':
-                return FrameRange(
-                    self.parm('frame_settingsx').eval(),
-                    self.parm('frame_settingsy').eval(),
-                    self.parm('roll_settingsx').eval(),
-                    self.parm('roll_settingsy').eval()
-                ), self.parm('frame_settingsz').eval()
-            case _:
-                assert False, f'Unknown frame range source: {frame_range_source}'
 
     def _update_labels(self):
         """Update label parameters to show current entity/department selection."""
-        entity_raw = self.parm('entity').eval()
-        if entity_raw == 'from_context':
-            entity_uri = self.get_entity_uri()
-            if entity_uri:
-                self.parm('entity_label').set(f'from_context: {entity_uri}')
-            else:
-                self.parm('entity_label').set('from_context: none')
-        else:
-            self.parm('entity_label').set(entity_raw)
+        self.parm('entity_label').set(self._entity_label())
 
-        department_name = self.get_department_name()
-        if department_name:
-            self.parm('department_label').set(department_name)
-        else:
-            self.parm('department_label').set('')
+        self.parm('department_label').set(self._department_label())
 
     def _initialize(self):
         """Refresh the labels. Both 'entity' and 'department' keep their
@@ -135,19 +66,10 @@ class LayerSplit(EntityNode):
     def _execute(self):
         """Internal execution - export the shared layer to _shared path."""
         self._update_labels()
-        entity_uri = self.get_entity_uri()
-        if entity_uri is None:
-            raise ValueError('No valid entity URI')
-
-        department_name = self.get_department_name()
-        if department_name is None:
-            raise ValueError('No valid department name')
-
-        # Get frame range from settings or entity configuration
-        frame_range_result = self.get_frame_range()
-        if frame_range_result is None:
-            raise ValueError(f'No frame range defined for {entity_uri}')
-        frame_range, frame_step = frame_range_result
+        entity_uri = self.require_entity_uri()
+        department_name = self.require_department_name()
+        frame_range = self.get_frame_range()
+        frame_step = frame_range.step_size
 
         # Get full range (including roll)
         full_range = frame_range.full_range()
@@ -157,13 +79,14 @@ class LayerSplit(EntityNode):
             f"frames={full_range.first_frame}-{full_range.last_frame}, step={frame_step}"
         )
 
-        # Get fps (default to 24 if not set)
         fps = get_fps(entity_uri)
         if fps is None:
-            fps = 24
+            raise self._error(
+                f'no fps configured for {entity_uri} or the project'
+            )
 
         # Get next version path for shared export
-        export_path = next_shared_export_path(entity_uri, department_name)
+        export_path = next_export_path(entity_uri, SHARED_CHANNEL, department_name)
         version_name = export_path.name
 
         # Get export filename
@@ -174,7 +97,7 @@ class LayerSplit(EntityNode):
         )
 
         # Export to temp first, then copy to network
-        root_temp_path = local_path(api.storage.resolve(Uri.parse_unsafe('temp:/')))
+        root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
         root_temp_path.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
@@ -215,52 +138,29 @@ class LayerSplit(EntityNode):
         return version_name
 
         # Downstream references use the entity URI form
-        # ({entity_uri}?dept={department_name}&variant=_shared); the custom
+        # ({entity_uri}?dept={department_name}&channel=_shared); the custom
         # USD resolver handles dynamic version lookup at runtime, eliminating
         # the need for copy-based "latest" directories.
 
     def open_location(self):
         """Open the latest shared export location in file browser."""
-        entity_uri = self.get_entity_uri()
-        if entity_uri is None:
-            return
-
-        department_name = self.get_department_name()
-        if department_name is None:
-            return
-
-        # Get latest shared export path
-        export_path = latest_shared_export_path(entity_uri, department_name)
-        if export_path is None or not export_path.exists():
-            # Fall back to parent directory
-            export_uri = (
-                Uri.parse_unsafe('export:/') /
-                entity_uri.segments /
-                '_shared' /
-                department_name
+        entity_uri = self.require_entity_uri()
+        department_name = self.require_department_name()
+        export_path = latest_export_path(entity_uri, SHARED_CHANNEL, department_name)
+        if export_path is None:
+            raise self._error(
+                f"{entity_uri} has no shared '{department_name}' export yet"
             )
-            export_path = api.storage.resolve(export_uri)
-
-        # Open in file browser
-        if platform.system() == 'Windows':
-            subprocess.run(['explorer', path_str(export_path)])
-        elif platform.system() == 'Darwin':
-            subprocess.run(['open', path_str(export_path)])
-        else:
-            subprocess.run(['xdg-open', path_str(export_path)])
+        hou.ui.showInFileBrowser(path_str(export_path))
 
 
 def create(scene, name):
     return ns.create_node(scene, name, LayerSplit, 'layer_split')
 
 
-def set_style(raw_node):
-    ns.set_node_style(raw_node)
-
-
 def on_created(raw_node):
     # Set node style
-    set_style(raw_node)
+    ns.set_node_style(raw_node)
 
     # Validate node type
     raw_node_type = raw_node.type()
@@ -272,46 +172,28 @@ def on_created(raw_node):
     node._initialize()
 
 
-def execute():
-    raw_node = hou.pwd()
+def execute(kwargs):
+    raw_node = kwargs['node']
     node = LayerSplit(raw_node)
     node.execute()
 
 
-def open_location():
-    raw_node = hou.pwd()
+def open_location(kwargs):
+    raw_node = kwargs['node']
     node = LayerSplit(raw_node)
     node.open_location()
 
 
-def select():
-    """HDA button callback to open entity selector dialog."""
-    from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
-
-    raw_node = hou.pwd()
-    node = LayerSplit(raw_node)
-
-    dialog = EntitySelectorDialog(
-        api=api,
-        entity_filter='both',
-        include_from_context=True,
-        current_selection=node.parm('entity').eval(),
-        title="Select Entity",
-        parent=hou.qt.mainWindow()
-    )
-
-    if dialog.exec_():
-        selected_uri = dialog.get_selected_uri()
-        if selected_uri:
-            node.parm('entity').set(selected_uri)
-            node._update_labels()
+def select(kwargs):
+    """Entity button."""
+    LayerSplit(kwargs['node']).pick_entity()
 
 
-def validate():
+def validate(kwargs):
     """HDA button callback to run stage validation."""
     from tumblepipe.pipe.houdini.validators import validate_stage_for_department
 
-    raw_node = hou.pwd()
+    raw_node = kwargs['node']
     stage_node = raw_node.node('IN_stage')
 
     if stage_node is None:
@@ -330,15 +212,8 @@ def validate():
         return
 
     node = LayerSplit(raw_node)
-    entity_uri = node.get_entity_uri()
-    department = node.get_department_name()
-
-    if entity_uri is None or department is None:
-        hou.ui.displayMessage(
-            "Entity or department not set on this layer split - cannot pick validators.",
-            severity=hou.severityType.Warning
-        )
-        return
+    entity_uri = node.require_entity_uri()
+    department = node.require_department_name()
 
     uri_str = str(entity_uri)
     entity_context = 'shots' if uri_str.startswith('entity:/shots/') else 'assets'
@@ -380,9 +255,3 @@ def validate():
     )
     dialog.exec_()
 
-
-def update_labels():
-    """HDA callback to update label parameters when entity/department changes."""
-    raw_node = hou.pwd()
-    node = LayerSplit(raw_node)
-    node._update_labels()

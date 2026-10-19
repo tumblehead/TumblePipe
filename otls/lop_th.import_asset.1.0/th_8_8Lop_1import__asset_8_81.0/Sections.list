@@ -11,4 +11,6 @@ PythonModule	PythonModule
 OnCreated	OnCreated
 OnDeleted	OnDeleted
 OnNameChanged	OnNameChanged
+Version	Version
+SyncNodeVersion	SyncNodeVersion
 ExtraFileOptions	ExtraFileOptions

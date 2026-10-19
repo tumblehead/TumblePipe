@@ -16,7 +16,7 @@ per-asset metadata, so two legitimate cases aborted the export:
   imported from another department's shot export (the sh020_Clash
   'cannonball' effects geometry that blocked a light export).
 
-util.list_dropped_asset_prims takes asset_export_roots (the resolved
+prim_metadata.list_dropped_asset_prims takes asset_export_roots (the resolved
 export:/assets tree) and only flags a metadata-less prim that still
 composes from that *asset* export tree. A real dropped asset keeps
 pulling its geometry through the import node's sublayer of an
@@ -27,9 +27,7 @@ so both are allowed.
 This builds a stage that mixes all four cases and asserts:
 - with asset_export_roots set: only the dropped asset (composed from the
   asset export tree) is flagged; artist geometry and department shot
-  geometry pass; the tagged asset is never flagged;
-- with asset_export_roots empty: the historical fail-closed behaviour
-  still flags every metadata-less sibling.
+  geometry pass; the tagged asset is never flagged.
 """
 
 import sys
@@ -38,7 +36,7 @@ from pathlib import Path
 
 from pxr import Usd
 
-from tumblepipe.pipe.houdini import util
+from tumblepipe.pipe.houdini import prim_metadata
 
 
 def _write_asset_layer(export_root: Path) -> Path:
@@ -95,10 +93,10 @@ def _build_stage(asset_layer: Path, shot_dept_layer: Path) -> Usd.Stage:
     stage.DefinePrim('/CHAR', 'Xform')
     # /CHAR/dad is a correctly tracked asset — proves /CHAR is a category.
     dad = stage.DefinePrim('/CHAR/dad', 'Xform')
-    util.set_metadata(dad, {
+    prim_metadata.set_metadata(dad, {
         'uri': 'entity:/assets/CHAR/dad',
         'instance': 'dad',
-        'variant': 'default',
+        'channel': 'default',
         'inputs': [],
     })
     # /CHAR/artistProp is geometry the artist authored directly into the
@@ -120,23 +118,14 @@ def main() -> int:
 
     # Asset-scoped: only the asset-composed dropped asset is flagged;
     # artist geometry and department shot geometry both pass.
-    dropped = util.list_dropped_asset_prims(root, asset_export_roots=[asset_root])
+    dropped = prim_metadata.list_dropped_asset_prims(root, asset_export_roots=[asset_root])
     if dropped != ['/CHAR/mom']:
         failures.append(
             f'asset-scoped: expected only /CHAR/mom flagged, got {dropped}'
         )
 
-    # Fail-closed fallback: no roots -> every metadata-less sibling flagged.
-    dropped_all = util.list_dropped_asset_prims(root)
-    expected_all = ['/CHAR/artistProp', '/CHAR/cannonball', '/CHAR/mom']
-    if sorted(dropped_all) != expected_all:
-        failures.append(
-            'fallback: expected every metadata-less sibling flagged, '
-            f'got {sorted(dropped_all)}'
-        )
-
-    # The tagged asset is never a drop, either way.
-    if '/CHAR/dad' in dropped or '/CHAR/dad' in dropped_all:
+    # The tagged asset is never a drop.
+    if '/CHAR/dad' in dropped:
         failures.append('the tracked asset /CHAR/dad was flagged as dropped')
 
     for failure in failures:
@@ -145,7 +134,7 @@ def main() -> int:
         print(f'-- {len(failures)} failure(s)')
         return 1
     print('PASS asset-scoped drop-guard: artist + department shot geometry '
-          'allowed, asset drop still blocked, fallback intact')
+          'allowed, asset drop still blocked')
     return 0
 
 

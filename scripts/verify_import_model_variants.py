@@ -20,6 +20,8 @@ import sys
 
 import hou
 
+from tumblepipe.pipe.houdini.sops.import_model import ImportModel
+
 ENTITY = os.environ.get("TH_VERIFY_ENTITY", "entity:/assets/Clash/goblin")
 VERSION = os.environ.get("TH_VERIFY_VERSION", "v0015")
 PRIM_PATH = os.environ.get("TH_VERIFY_PRIM", "/Clash/goblin")
@@ -54,7 +56,7 @@ def main():
     geo = hou.node("/obj").createNode("geo", "verify_import_model_variants")
 
     node = build(geo, "resolved")
-    node.hdaModule().execute(node)
+    ImportModel(node).execute()
     set_variant = node.node("lopnet/set_variant")
 
     if node.node("lopnet/import_layer").isBypassed():
@@ -87,7 +89,7 @@ def main():
     for variant, want_prims in COMPOSE:
         target = build(geo, "compose_" + variant)
         target.parm("model_variant").set(variant)
-        target.hdaModule().execute(target)
+        ImportModel(target).execute()
         prim = target.node("lopnet/set_variant").stage().GetPrimAtPath(PRIM_PATH)
         check("compose %s: selection" % variant,
               prim.GetVariantSet("model").GetVariantSelection(), variant)
@@ -99,18 +101,18 @@ def main():
     # the node dead with a resolved version and filepath still on it.
     trip = build(geo, "bypass_roundtrip")
     trip.parm("model_variant").set("default")
-    trip.hdaModule().execute(trip)
+    ImportModel(trip).execute()
     inner = trip.node("lopnet/import_layer")
     check("roundtrip: imports clean",
           (inner.isBypassed(), trip.isBypassed()), (False, False))
 
     trip.parm("department").set("blendshape")
-    trip.hdaModule().execute(trip)
+    ImportModel(trip).execute()
     check("roundtrip: bypasses on missing export",
           (inner.isBypassed(), trip.isBypassed()), (True, True))
 
     trip.parm("department").set("model")
-    trip.hdaModule().execute(trip)
+    ImportModel(trip).execute()
     check("roundtrip: recovers on valid department",
           (inner.isBypassed(), trip.isBypassed()), (False, False))
     check("roundtrip: geometry comes back",

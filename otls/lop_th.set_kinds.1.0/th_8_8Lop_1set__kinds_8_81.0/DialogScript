@@ -36,7 +36,7 @@
             label   "Apply"
             type    button
             default { "0" }
-            parmtag { "script_callback" "hou.phm().execute()" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.set_kinds as th_node; th_node.execute(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }

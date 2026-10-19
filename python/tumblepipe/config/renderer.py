@@ -6,7 +6,7 @@ from typing import Any
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 
-RENDERER_URI = Uri.parse_unsafe('config:/renderer')
+RENDERER_URI = Uri.parse('config:/renderer')
 SETTINGS_URI = RENDERER_URI / 'settings'
 
 

@@ -6,7 +6,7 @@ import subprocess
 import logging
 from enum import Enum
 
-from qtpy import QtCore
+from PySide6 import QtCore
 
 from tumblepipe.util.houdini import hou
 
@@ -29,14 +29,7 @@ class USDViewerLauncher(QtCore.QObject):
     This class manages launching various USD viewing applications like
     3D-Info (artist-friendly viewer), USD Manager (file browser/editor),
     and usdview (Pixar's official viewer).
-
-    Signals:
-        viewer_launched: Emitted when a viewer is successfully launched (viewer_type, file_path)
-        viewer_failed: Emitted when viewer launch fails (viewer_type, error_message)
     """
-
-    viewer_launched = QtCore.Signal(str, str)  # viewer_type, file_path
-    viewer_failed = QtCore.Signal(str, str)    # viewer_type, error_message
 
     # Supported USD file extensions
     USD_EXTENSIONS = {'.usd', '.usda', '.usdc', '.usdz'}
@@ -50,25 +43,23 @@ class USDViewerLauncher(QtCore.QObject):
         super().__init__(parent)
         self._settings = QtCore.QSettings('Tumblehead', 'ProjectBrowser')
 
-    def launch_viewer(self, file_path: Path, viewer_type: USDViewerType = USDViewerType.AUTO) -> bool:
+    def launch_viewer(self, file_path: Path, viewer_type: USDViewerType = USDViewerType.AUTO) -> None:
         """Launch a USD viewer for the given file.
 
         Args:
             file_path: Path to the USD file to view
             viewer_type: Type of viewer to launch (defaults to AUTO for preference-based)
 
-        Returns:
-            True if viewer was launched successfully, False otherwise
+        Raises:
+            ValueError: ``file_path`` is not a USD file, or no viewer of
+                that type is configured.
+            FileNotFoundError: the file or the viewer executable is missing.
+            OSError: the viewer process could not be started.
         """
         if not self.is_usd_file(file_path):
-            logger.warning(f"File is not a USD file: {file_path}")
-            return False
-
+            raise ValueError(f"{file_path} is not a USD file")
         if not file_path.exists():
-            error_msg = f"File does not exist: {file_path}"
-            logger.error(error_msg)
-            self.viewer_failed.emit(viewer_type.value, error_msg)
-            return False
+            raise FileNotFoundError(f"{file_path} does not exist")
 
         # Resolve AUTO to actual viewer type
         if viewer_type == USDViewerType.AUTO:
@@ -76,28 +67,18 @@ class USDViewerLauncher(QtCore.QObject):
 
         viewer_path = self._get_viewer_path(viewer_type)
         if not viewer_path:
-            error_msg = f"Viewer not configured: {viewer_type.value}"
-            logger.warning(error_msg)
-            self.viewer_failed.emit(viewer_type.value, error_msg)
-            return False
-
+            raise ValueError(
+                f"No {viewer_type.value} viewer is configured. Set one in "
+                "Settings > Configure USD Viewers."
+            )
         if not viewer_path.exists():
-            error_msg = f"Viewer executable not found: {viewer_path}"
-            logger.error(error_msg)
-            self.viewer_failed.emit(viewer_type.value, error_msg)
-            return False
+            raise FileNotFoundError(
+                f"The {viewer_type.value} viewer is not at {viewer_path}"
+            )
 
-        try:
-            # Launch viewer as detached process
-            self._launch_process(viewer_path, file_path)
-            logger.info(f"Launched {viewer_type.value} for {file_path}")
-            self.viewer_launched.emit(viewer_type.value, str(file_path))
-            return True
-        except Exception as e:
-            error_msg = f"Failed to launch {viewer_type.value}: {str(e)}"
-            logger.error(error_msg)
-            self.viewer_failed.emit(viewer_type.value, error_msg)
-            return False
+        # Launch viewer as detached process
+        self._launch_process(viewer_path, file_path)
+        logger.info(f"Launched {viewer_type.value} for {file_path}")
 
     def _get_3d_info_from_bin_path(self) -> Optional[Path]:
         """Get path to 3D-Info executable from TH_BIN_PATH environment variable.
@@ -161,39 +142,6 @@ class USDViewerLauncher(QtCore.QObject):
             return None
 
         return executable_path if executable_path.exists() else None
-
-    def launch_3d_info(self, file_path: Path) -> bool:
-        """Launch 3D-Info viewer for the given USD file.
-
-        Args:
-            file_path: Path to the USD file
-
-        Returns:
-            True if successful, False otherwise
-        """
-        return self.launch_viewer(file_path, USDViewerType.THREE_D_INFO)
-
-    def launch_usd_manager(self, file_path: Path) -> bool:
-        """Launch USD Manager for the given USD file.
-
-        Args:
-            file_path: Path to the USD file
-
-        Returns:
-            True if successful, False otherwise
-        """
-        return self.launch_viewer(file_path, USDViewerType.USD_MANAGER)
-
-    def launch_usdview(self, file_path: Path) -> bool:
-        """Launch usdview for the given USD file.
-
-        Args:
-            file_path: Path to the USD file
-
-        Returns:
-            True if successful, False otherwise
-        """
-        return self.launch_viewer(file_path, USDViewerType.USDVIEW)
 
     @classmethod
     def is_usd_file(cls, path: Path) -> bool:
@@ -382,13 +330,9 @@ class USDViewerLauncher(QtCore.QObject):
             return env
 
         # The out-of-process viewer links this session's USD, so the resolver
-        # build must match the running Houdini's major (the USD ABI is per-major)
-        # — derive it rather than hardcoding, so it stays correct across upgrades.
-        try:
-            import hou
-            houdini_major = hou.applicationVersion()[0]
-        except Exception:
-            houdini_major = 21
+        # build must match the running Houdini's major (the USD ABI is per-major).
+        import hou
+        houdini_major = hou.applicationVersion()[0]
         resolver_resources = plugin_resources_path(pipeline_path, houdini_major=houdini_major)
         if not resolver_resources.exists():
             logger.warning(f"USD resolver resources not found: {resolver_resources}")
@@ -414,20 +358,3 @@ class USDViewerLauncher(QtCore.QObject):
             )
 
         return env
-
-
-# Convenience function for quick access
-def launch_usd_viewer(file_path: Path, viewer_type: USDViewerType = USDViewerType.AUTO) -> bool:
-    """Launch a USD viewer for the given file.
-
-    Convenience function that creates a launcher instance and launches the viewer.
-
-    Args:
-        file_path: Path to the USD file to view
-        viewer_type: Type of viewer to launch
-
-    Returns:
-        True if viewer was launched successfully, False otherwise
-    """
-    launcher = USDViewerLauncher()
-    return launcher.launch_viewer(file_path, viewer_type)
