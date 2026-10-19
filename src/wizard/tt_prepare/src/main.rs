@@ -349,17 +349,10 @@ fn args() -> Args {
     parse_args(std::env::args().skip(1))
 }
 
-/// The bundled `project_template/`, which the migrations copy from. Mirrors
-/// `tt_setup`'s resolution: an explicit `--template-dir`, else relative to the
-/// package root the hook is invoked from.
+/// The bundled `project_template/`, which the migrations copy from:
+/// [`th_project_core::bundled_template_dir`], shared with `tt_setup`.
 fn template_dir_from(parsed: &Args) -> PathBuf {
-    if let Some(explicit) = &parsed.template_dir {
-        return explicit.clone();
-    }
-    if let Ok(root) = std::env::var("HPM_PACKAGE_ROOT") {
-        return PathBuf::from(root).join("scripts").join("project_template");
-    }
-    PathBuf::from("scripts").join("project_template")
+    th_project_core::bundled_template_dir(parsed.template_dir.as_deref())
 }
 
 /// Why a window must not be opened here, if it must not.
@@ -424,6 +417,17 @@ impl Drop for Lock {
 
 // ---------- the window -----------------------------------------------------
 
+/// What not migrating costs, said the same way wherever the window or the
+/// log lets the artist go on without it. Since 1.75.0 a client refuses a
+/// project that is not on the layout the package reads
+/// (`tumblepipe.config.layout`), so deferring is no longer the harmless
+/// choice this window used to call it ("this project works as it is"): the
+/// Asset Browser came up with "failed to initialize project" and nothing
+/// named the migration as the cause.
+const UNTIL_MIGRATED: &str = "Until it is migrated, this version of TumblePipe will not open \
+                              the project: the Asset Browser and the pipeline tools refuse it. \
+                              Houdini itself still starts.";
+
 struct Plan {
     project: PathBuf,
     template: PathBuf,
@@ -477,7 +481,7 @@ fn show(plan: Plan) -> Result<(), String> {
     let final_outcome = outcome.lock().unwrap().clone();
     match &final_outcome {
         Outcome::Deferred => {
-            eprintln!("tt_prepare: migration deferred by the user.");
+            eprintln!("tt_prepare: migration deferred by the user. {UNTIL_MIGRATED}");
             Ok(())
         }
         Outcome::Migrated(summary) => {
@@ -539,8 +543,9 @@ impl eframe::App for App {
                             };
                             self.finished = Some(result);
                         }
-                        // Deferring is a choice, not a failure — the launch
-                        // carries on and the project is untouched.
+                        // Deferring leaves the project untouched and the
+                        // launch carries on, but TumblePipe refuses the
+                        // project until it is migrated; the body says so.
                         if ui.button("Not now").clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
@@ -573,10 +578,10 @@ impl eframe::App for App {
                 Some(Err(why)) => {
                     ui.colored_label(STATUS_ERROR, why);
                     ui.add_space(4.0);
-                    ui.label(
-                        "The project was left as it was. Nothing needs undoing; report this \
-                         and launch as normal.",
-                    );
+                    ui.label(format!(
+                        "The project was left as it was; nothing needs undoing. \
+                         {UNTIL_MIGRATED} Report the message above."
+                    ));
                 }
                 None => {
                     if let Some((step, why)) = &self.plan.blocker {
@@ -587,10 +592,11 @@ impl eframe::App for App {
                         ui.add_space(4.0);
                         ui.label(why);
                         ui.add_space(6.0);
-                        ui.label(
-                            "Nothing has been changed. The launch will carry on — this project \
-                             works as it is, but it will not pick up newer config features.",
-                        );
+                        ui.label(format!(
+                            "Nothing has been changed. {UNTIL_MIGRATED} Fix the problem above \
+                             and launch again, or run Migrate Project Config from the project's \
+                             menu in TumbleTrove Desktop."
+                        ));
                     } else {
                         ui.label("These steps will run:");
                         ui.add_space(4.0);
@@ -598,11 +604,10 @@ impl eframe::App for App {
                             ui.label(format!("  v{} — {}", step.version(), step.description()));
                         }
                         ui.add_space(8.0);
-                        ui.label(
-                            "Anything replaced is backed up alongside as .bak first. You can \
-                             defer this and keep working; the project is only changed if you \
-                             choose to migrate.",
-                        );
+                        ui.label(format!(
+                            "Anything replaced is backed up alongside as .bak first. \
+                             {UNTIL_MIGRATED} Not now leaves the project unchanged."
+                        ));
                     }
                 }
             }
@@ -685,14 +690,18 @@ mod tests {
         assert_eq!(parsed.project, None);
     }
 
+    /// With no `--template-dir`, an `HPM_PACKAGE_ROOT` that holds the template
+    /// is used (the test binary has none beside it). The full order is pinned
+    /// in `th_project_core`.
     #[test]
     fn template_dir_falls_back_to_the_package_root() {
-        std::env::set_var("HPM_PACKAGE_ROOT", "/pkg");
-        assert_eq!(
-            template_dir_from(&Args::default()),
-            PathBuf::from("/pkg").join("scripts").join("project_template")
-        );
+        let pkg = tempfile::tempdir().unwrap();
+        let template = pkg.path().join("scripts").join("project_template");
+        std::fs::create_dir_all(&template).unwrap();
+        std::env::set_var("HPM_PACKAGE_ROOT", pkg.path());
+        let got = template_dir_from(&Args::default());
         std::env::remove_var("HPM_PACKAGE_ROOT");
+        assert_eq!(got, template);
     }
 
     /// The report behind this: a project with no `_config` launched fine and

@@ -1255,6 +1255,16 @@ Two trees leave the repo, both from hpm.toml's `[stage].include`
 Both pass one deny guard (`_packaging.DENY`: CI machinery, assistant
 context, credentials) before the archive is signed or the mirror pushed.
 
+The version is then registered with TumbleTrove (`.ci/release_tumblepipe.py`):
+one build per platform, the `[compat].houdini` range as display bounds, and
+the registry entries of `[dependencies]` as the version's `dependencies`. The
+registry serves those as `deps`, and TumbleTrove Desktop chooses a project's
+unpinned TumbleTrove and Radial by them at every launch, so **the ranges in
+`[dependencies]` are what keep a TumbleTrove release that breaks this version
+away from projects on it**. Give `tumbletrove/tumbletrove` an upper bound
+whenever the next TumbleTrove may change an API TumblePipe calls: 1.74 is
+capped below 0.48 because 0.48 removed the browser API 1.74 used.
+
 ## Writing the documentation
 
 `docs/` is plain Markdown and is read by two renderers:

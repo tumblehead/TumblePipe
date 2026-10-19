@@ -32,9 +32,11 @@ Both come from the `tt_prepare` hook, which runs on every launch:
 - **TumblePipe — project configuration** ("This project's configuration is
   out of date") — the project's `_config/` is behind. **Migrate now** applies
   the listed steps (replaced files are backed up as `.bak`); **Not now**
-  launches with the project untouched and asks again next time. `Cannot
-  migrate: …` with **Continue without migrating** means a step is blocked —
-  the reason is on the window; the project keeps working as it is. See
+  launches with the project untouched and asks again next time, but this
+  TumblePipe will not open the project until it is migrated — the Asset
+  Browser shows it as failing to initialize. `Cannot migrate: …` with
+  **Continue without migrating** means a step is blocked — the reason is on
+  the window; fix it and launch again. See
   [Migrating at launch](configuration.md#migrating-at-launch).
 - **TumblePipe — project not configured** — see the previous entry;
   **Launch anyway** opens Houdini without a pipeline.

@@ -57,8 +57,9 @@ Houdini does, both from the `tt_prepare` hook that runs on every launch:
   out of date") — the project's `_config/` is behind the version this
   TumblePipe expects. The window lists the steps that would run, backs up
   anything it replaces as `.bak`, and waits: **Migrate now** or **Not now**.
-  Not now launches with the project untouched. When a step cannot run the
-  window says `Cannot migrate: …` and offers **Continue without migrating**.
+  Not now launches with the project untouched, but TumblePipe will not open
+  it until it is migrated. When a step cannot run the window says
+  `Cannot migrate: …` and offers **Continue without migrating**.
   See [Migrating at launch](configuration.md#migrating-at-launch).
 - **TumblePipe — project not configured** ("This project has not been
   configured for TumblePipe yet … No _config/db/entity.json was found

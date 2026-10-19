@@ -119,6 +119,64 @@ pub fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+// ---------- the bundled template -------------------------------------------
+
+/// The package-relative location of the project template.
+const TEMPLATE_REL: &str = "scripts/project_template";
+
+/// The bundled `scripts/project_template/` the hooks scaffold and migrate
+/// from, for `tt_setup` and `tt_prepare` alike.
+///
+/// The first of these that is a directory: an explicit `--template-dir`; the
+/// template beside the running binary (`bin/<platform>/<exe>` →
+/// `<root>/scripts/project_template`); `$HPM_PACKAGE_ROOT`'s; the working
+/// directory's. The binary's own package comes before the environment and
+/// the working directory because it is the one fact about where the package
+/// is that the caller cannot get wrong: `tt_prepare` used to fall back to a
+/// cwd-relative path straight after `HPM_PACKAGE_ROOT`, and a migration run
+/// from anywhere else reported its own packaged `storage.json` as missing
+/// ("the TumblePipe package is incomplete") while the file sat in the
+/// package. An explicit path that is not a directory falls through too, so
+/// a wrong `--template-dir` is repaired rather than reported. When nothing
+/// exists, the explicit path, else the binary-relative one, names what was
+/// expected in the error that follows.
+pub fn bundled_template_dir(explicit: Option<&Path>) -> PathBuf {
+    template_dir_among(
+        explicit,
+        std::env::current_exe().ok().as_deref(),
+        std::env::var_os("HPM_PACKAGE_ROOT").map(PathBuf::from).as_deref(),
+        |p| p.is_dir(),
+    )
+}
+
+/// [`bundled_template_dir`] with its inputs passed in, so the order is
+/// testable without a real executable or environment.
+pub fn template_dir_among(
+    explicit: Option<&Path>,
+    exe: Option<&Path>,
+    package_root: Option<&Path>,
+    is_dir: impl Fn(&Path) -> bool,
+) -> PathBuf {
+    let beside_exe = exe
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .map(|root| root.join(TEMPLATE_REL));
+    let candidates = [
+        explicit.map(Path::to_path_buf),
+        beside_exe.clone(),
+        package_root.map(|root| root.join(TEMPLATE_REL)),
+        Some(PathBuf::from(TEMPLATE_REL)),
+    ];
+    if let Some(found) = candidates.iter().flatten().find(|p| is_dir(p)) {
+        return found.clone();
+    }
+    explicit
+        .map(Path::to_path_buf)
+        .or(beside_exe)
+        .unwrap_or_else(|| PathBuf::from(TEMPLATE_REL))
+}
+
 // ---------- scaffolding -----------------------------------------------------
 
 /// Copy the template, create the top-level dirs, and customize the config DBs.
@@ -367,6 +425,59 @@ pub fn store_json(path: &Path, value: &Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every combination of which candidates exist, with and without an
+    /// explicit path: exhaustive over the four locations, so the order is
+    /// pinned entirely rather than by example.
+    #[test]
+    fn the_template_is_the_first_location_that_exists() {
+        let exe = Path::new("/pkg/bin/macos-aarch64/tt_prepare");
+        let explicit = PathBuf::from("/given/template");
+        let beside = PathBuf::from("/pkg/scripts/project_template");
+        let from_env = PathBuf::from("/env/scripts/project_template");
+        let cwd = PathBuf::from("scripts/project_template");
+        for with_explicit in [false, true] {
+            for mask in 0u8..16 {
+                let exists = |p: &Path| {
+                    (mask & 1 != 0 && p == explicit)
+                        || (mask & 2 != 0 && p == beside)
+                        || (mask & 4 != 0 && p == from_env)
+                        || (mask & 8 != 0 && p == cwd)
+                };
+                let got = template_dir_among(
+                    with_explicit.then_some(explicit.as_path()),
+                    Some(exe),
+                    Some(Path::new("/env")),
+                    exists,
+                );
+                let order = [
+                    (with_explicit && mask & 1 != 0, &explicit),
+                    (mask & 2 != 0, &beside),
+                    (mask & 4 != 0, &from_env),
+                    (mask & 8 != 0, &cwd),
+                ];
+                let want = order
+                    .iter()
+                    .find(|(ok, _)| *ok)
+                    .map(|(_, p)| (*p).clone())
+                    .unwrap_or_else(|| if with_explicit { explicit.clone() } else { beside.clone() });
+                assert_eq!(got, want, "explicit={with_explicit} mask={mask:04b}");
+            }
+        }
+    }
+
+    /// The reported failure: run from outside the package with no
+    /// `--template-dir` and no `HPM_PACKAGE_ROOT`, the template beside the
+    /// binary is found, never a cwd-relative path that does not exist.
+    #[test]
+    fn a_run_from_elsewhere_finds_the_template_beside_the_binary() {
+        let pkg = tempfile::tempdir().unwrap();
+        let template = pkg.path().join("scripts").join("project_template");
+        std::fs::create_dir_all(&template).unwrap();
+        let exe = pkg.path().join("bin").join("macos-aarch64").join("tt_prepare");
+        let got = template_dir_among(None, Some(&exe), None, |p| p.is_dir());
+        assert_eq!(got, template);
+    }
 
     #[test]
     fn valid_project_names() {

@@ -616,9 +616,12 @@ when the project is already current it does nothing visible at all. When the
 project is behind, it opens a small window listing the steps it would run and
 waits for an answer.
 
-**Not now** is a first-class answer — the launch carries on and the project is
-left exactly as it was. Nothing is written unless you choose to migrate, and
-anything replaced is backed up alongside as `.bak` first.
+**Not now** leaves the project exactly as it was and the launch carries on,
+but this TumblePipe will not open the project until it is migrated: the
+package reads exactly one config layout and refuses any other (see
+the "is on layout vN" entry in [Troubleshooting](troubleshooting.md)). Nothing is written unless you
+choose to migrate, and anything replaced is backed up alongside as `.bak`
+first.
 
 Two cases where the window deliberately never appears:
 

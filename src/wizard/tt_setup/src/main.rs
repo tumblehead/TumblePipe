@@ -120,41 +120,22 @@ fn main() -> ExitCode {
     }
 }
 
-/// Locate the bundled `project_template/` directory.
-///
-/// hpm invokes this binary from the package root, and its `[scripts.tt_setup]`
-/// command passes `--template-dir scripts/project_template` explicitly. Fall
-/// back to a couple of sensible locations (cwd, exe-relative) so the binary is
-/// still runnable standalone during development.
+/// Locate the bundled `project_template/` directory: an explicit
+/// `--template-dir` if it exists, else [`th_project_core::bundled_template_dir`]'s
+/// search, shared with `tt_prepare`.
 fn resolve_template_dir() -> PathBuf {
+    let mut explicit = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         if arg == "--template-dir" {
-            if let Some(value) = args.next() {
-                return PathBuf::from(value);
-            }
+            explicit = args.next().map(PathBuf::from);
+            break;
         } else if let Some(value) = arg.strip_prefix("--template-dir=") {
-            return PathBuf::from(value);
+            explicit = Some(PathBuf::from(value));
+            break;
         }
     }
-
-    // cwd-relative (hpm runs from the package root).
-    let cwd_candidate = PathBuf::from("scripts/project_template");
-    if cwd_candidate.is_dir() {
-        return cwd_candidate;
-    }
-
-    // exe-relative: bin/<platform>/tt_setup -> <root>/scripts/project_template.
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(root) = exe.parent().and_then(|p| p.parent()).and_then(|p| p.parent()) {
-            let candidate = root.join("scripts/project_template");
-            if candidate.is_dir() {
-                return candidate;
-            }
-        }
-    }
-
-    cwd_candidate
+    th_project_core::bundled_template_dir(explicit.as_deref())
 }
 
 // ---------- GUI -------------------------------------------------------------
